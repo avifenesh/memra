@@ -1,0 +1,15 @@
+1794606157.165812 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":90124681216,"synchronization_errors":[]}
+1794606157.408770 [prefix-cache] on: budget 50534MB (50533580800 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 50533580800 B; boot driver free 104825257984 B, post-reserve clamp 101067161600 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794606157.408776 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794606207.745431 [spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794606223.712441 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":88329736192,"synchronization_errors":[]}
+1794606228.845722 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":87540506624,"synchronization_errors":[]}
+1794606228.845773 [admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+1794606228.845776 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 1536MB (static was 1536MB; measured 1214MB; probe kv charge 127MB, draft-state 34MB, drafted 87 accepted 34; [dev0 peak-mapped 19808MB rest-mapped 18432MB charged 161MB -> 1214MB]; 5.1s)
+1794606228.845803 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794606228.845805 [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+1794606232.514754 [admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+1794606232.514758 [admission] request cost: model="q38" ctx=1607 path=spec = 31552 B/token x ctx + 473MB prefill-workspace + 0MB fixed = 524MB
+1794606232.514761 [prefix-cache] stable-boundary capture armed at 992 of 1031 prompt tokens (model q38)
+1794606232.529156 [admission] fixed residual high-water: model="q38" 316MB (observed 365MB at ctx 1551 path=spec)
+1794606234.465328 [prefix-cache] insert (spec-boundary): 992 tokens, 156.9MB (resident 156.9MB / 50534MB, model q38)

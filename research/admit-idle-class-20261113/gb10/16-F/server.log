@@ -1,0 +1,187 @@
+1794607695.946275 [server] build: memra-0.141.1-fdaa981786c7 (id: source-tree, git: unknown)
+1794607695.946332 [server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1794607695.946950 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1794607695.947186 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1794607696.048007 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1794607696.286407 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1794607696.286453 [worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1794607696.330138 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1794607703.310021 [mtp-draft] loading external MTP draft: ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+1794607703.388170 [mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+1794607703.801249 [frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+1794607703.987550 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1794607703.987654 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1794607703.987660 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794607703.987699 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1794607703.987706 [route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1794607746.054751 [fa-pool] grow #0 dev=0 o_len 0 -> 3244032 ml_len 0 -> 12672 (retired kept, zero=false)
+1794607746.360852 [fa-pool] grow #1 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+1794607749.714859 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":90299756544,"synchronization_errors":[]}
+1794607749.714904 [wave-probe] 32 sessions at depth 2048: two 16-row waves 262.5 ms, one 32-row wave 263.1 ms (tensor-core tier 229.3 ms) -> wave cap 32, tensor-core b32 on (45.5s; released 16288MB of cached pool to the driver)
+1794607749.714908 [worker] q38: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+1794607749.936209 [vision] tower loaded from ~/models/Qwen3.8-27B-NVFP4 (27 blocks, out_width 5120, f32-resident)
+1794607749.941164 [vision] overlay intake: tower dev0 -> intake dev0 (cross_context=false) publish=Auto servable=true
+1794607749.941221 [prefix-cache] on: budget 50537MB (50536761344 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 50536761344 B; boot driver free 104831619072 B, post-reserve clamp 101073522688 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794607749.941228 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794607800.276518 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1794607800.276631 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q4_K_mmvq
+1794607800.276642 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q6_K_mmvq
+1794607800.277449 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1794607800.277476 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1794607800.277479 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1794607800.283066 [spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794607800.295548 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1393.314
+1794607800.295595 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794607804.723181 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1393.009
+1794607804.723218 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794607806.538166 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1391.181
+1794607806.538232 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794607808.441177 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1390.605
+1794607808.441215 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794607810.260776 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1395.746
+1794607810.260832 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794607810.782126 [spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+1794607813.930129 [spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+1794607816.301183 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":88491814912,"synchronization_errors":[]}
+1794607816.301231 [spec-cost] model="q38" depth=2048 pooled=true plain_cap=32 round_overhead=9.65ms draft_step=0.00ms pooled_overhead=Some((4, 3.1560463541666692)) pooled_draft_step=None verify_ms[1..16]=[76.4 74.0 74.0 74.5 75.2 75.9 77.6 79.3 81.8 84.2 86.7 89.2 91.5 93.7 96.0 98.3] plain_ms[1..]=[74.4 77.3 81.0 84.8 89.1 93.5 97.9 102.3 107.0 111.8 116.6 121.4 126.1 130.9 135.7 140.5 146.1 151.8 157.4 163.1 168.7 174.4 180.0 185.7 191.3 197.0 202.7 208.3 214.0 219.6 225.3 230.9] (66.4s)
+1794607816.301238 [prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1794607818.856527 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1794607818.856579 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1794607818.884961 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2562.540
+1794607818.884995 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794607821.428380 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":87700164608,"synchronization_errors":[]}
+1794607821.428424 [admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+1794607821.428428 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 1536MB (static was 1536MB; measured 1214MB; probe kv charge 127MB, draft-state 34MB, drafted 87 accepted 34; [dev0 peak-mapped 19808MB rest-mapped 18432MB charged 161MB -> 1214MB]; 5.1s)
+1794607821.428431 [admission] idle capacity (post-load, cache empty): dev0 free 104211MB (pool used 19178MB)
+1794607821.428436 [admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1794607821.428459 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794607821.428463 [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+1794607821.428465 [kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+1794607821.428468 [deadline] unified memory (48 SMs, served ctx 262144): streaming TTFT default/max 997311 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 3045311 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+1794607821.429439 [server] worker ready; serving models: ["q38"]
+1794607821.430263 [server] listening on http://127.0.0.1:8090
+1794607848.303813 [meter] admit id=chatcmpl-4af50870df2ffff042575b80ac24cd54 tenant=default lane=interactive model="q38"
+1794607848.327897 [spec-cost] model="q38" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+1794607848.327932 [admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+1794607848.327937 [admission] request cost: model="q38" ctx=28582 path=spec = 31552 B/token x ctx + 2369MB prefill-workspace + 0MB fixed = 3271MB
+1794607848.327940 [prefix-cache] stable-boundary capture armed at 27968 of 28006 prompt tokens (model q38)
+1794607848.373906 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=28006 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794607848.373960 [admission] fixed residual high-water: model="q38" 381MB (observed 1281MB at ctx 28526 path=spec)
+1794607848.373964 [prefix-loan] reconcile why=tick books=0 lent_live=0 adopted=0.0MB charged=0.0MB real=0.0MB adoptions=0 compactions=0 pool_used=20439.2MB
+1794607850.812105 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2419.693
+1794607850.812140 [prime-yield] count=1 remaining=13 chunks=1 wall_ms=2419.693 max_chunk_ms=2419.693
+1794607850.812145 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=2438.320 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794607850.812149 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2438.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607851.347451 [meter] admit id=chatcmpl-0291f2157d8379036a3ad35bdebad780 tenant=default lane=interactive model="q38"
+1794607853.294064 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2481.565
+1794607853.294099 [prime-yield] count=2 remaining=12 chunks=1 wall_ms=2481.565 max_chunk_ms=2481.565
+1794607853.294104 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=2481.616 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794607853.294107 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2481.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607853.295326 [spec-cost] model="q38" n=2 rung=3 -> K=3 (exploring: no acceptance history yet)
+1794607853.295363 [admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+1794607853.295367 [admission] request cost: model="q38" ctx=1607 path=spec = 31552 B/token x ctx + 473MB prefill-workspace + 381MB fixed = 905MB
+1794607853.295370 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1150MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22179MB used 21030MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607855.867902 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2572.355
+1794607855.867957 [prime-yield] count=3 remaining=11 chunks=1 wall_ms=2572.355 max_chunk_ms=2572.355
+1794607855.867964 [tick-spec] seq=1 slot=0 trace=- start_ms=0.005 gap_ms=0.005 wall_ms=2572.406 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794607855.867992 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2572.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607855.867997 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1133MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22179MB used 21046MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607858.511360 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2643.254
+1794607858.511410 [prime-yield] count=4 remaining=10 chunks=1 wall_ms=2643.254 max_chunk_ms=2643.254
+1794607858.511415 [tick-spec] seq=1 slot=0 trace=- start_ms=0.005 gap_ms=0.005 wall_ms=2643.302 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794607858.511418 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2643.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607858.511422 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1150MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22213MB used 21063MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607861.245975 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2734.524
+1794607861.246010 [prime-yield] count=5 remaining=9 chunks=1 wall_ms=2734.524 max_chunk_ms=2734.524
+1794607861.246015 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=2734.573 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794607861.246018 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2734.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607861.246021 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1167MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22247MB used 21080MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607864.052190 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2806.088
+1794607864.052217 [prime-yield] count=6 remaining=8 chunks=1 wall_ms=2806.088 max_chunk_ms=2806.088
+1794607864.052221 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=2806.139 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794607864.052224 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2806.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607864.052388 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1183MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21097MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607866.633240 [prime-chunk] phase=mtp-trunk rows=3430 wall_ms=2580.545
+1794607866.633304 [prime-yield] count=7 remaining=7 chunks=1 wall_ms=2580.545 max_chunk_ms=2580.545
+1794607866.633309 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=2580.591 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794607866.633312 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=2580.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607866.633316 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607866.656170 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=22.773
+1794607866.656213 [prime-yield] count=8 remaining=6 chunks=1 wall_ms=22.773 max_chunk_ms=22.773
+1794607866.656216 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=22.814 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794607866.656245 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=22.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607866.656249 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607866.679928 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.620
+1794607866.679964 [prime-yield] count=9 remaining=5 chunks=1 wall_ms=23.620 max_chunk_ms=23.620
+1794607866.679968 [tick-spec] seq=1 slot=0 trace=- start_ms=0.002 gap_ms=0.002 wall_ms=23.657 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794607866.679971 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607866.679973 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607866.703217 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.178
+1794607866.703254 [prime-yield] count=10 remaining=4 chunks=1 wall_ms=23.178 max_chunk_ms=23.178
+1794607866.703259 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=23.214 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794607866.703261 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607866.703264 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607866.726581 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.247
+1794607866.726615 [prime-yield] count=11 remaining=3 chunks=1 wall_ms=23.247 max_chunk_ms=23.247
+1794607866.726618 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=23.282 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794607866.726621 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607866.726624 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607866.749916 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.230
+1794607866.749951 [prime-yield] count=12 remaining=2 chunks=1 wall_ms=23.230 max_chunk_ms=23.230
+1794607866.749954 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=23.260 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794607866.749957 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607866.749959 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607866.773316 [prime-chunk] phase=mtp-draft-fill rows=4096 wall_ms=23.293
+1794607866.773348 [prime-yield] count=13 remaining=1 chunks=1 wall_ms=23.293 max_chunk_ms=23.293
+1794607866.773352 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=23.323 generated=0->0 rounds=0 drafted=0 accepted=0 k=3
+1794607866.773372 [tick] act=1 int=1 priming=1 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=23.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607866.773376 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607866.793972 [prime-chunk] phase=mtp-draft-fill rows=3430 wall_ms=20.557
+1794607866.794013 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794607867.743015 [spec-acc] ctx=28006 burst=21/30 cum=21/30=0.700
+1794607867.743048 [tick-spec] seq=1 slot=0 trace=- start_ms=0.001 gap_ms=0.001 wall_ms=969.947 generated=0->32 rounds=10 drafted=30 accepted=21 k=3
+1794607867.743051 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=970.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607867.743207 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1427MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 20853MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607867.743236 [prefix-cache] unified memory: insert budget 18642MB (configured 50537MB; live free 22244MB, headroom 3758MB, resident 0MB, new entry 157MB)
+1794607867.743239 [prefix-cache] insert (spec-boundary): 27968 tokens, 156.9MB (resident 156.9MB / 18642MB, model q38)
+1794607867.743242 [specpub] Lend publication why=spec-boundary pos=27968 lent=882.4MB us=45 pool_reserved=22280142848 pool_used=20852747336
+1794607869.084662 [spec-acc] ctx=28038 burst=20/42 cum=41/72=0.569
+1794607869.084688 [tick-spec] seq=1 slot=0 trace=- start_ms=0.033 gap_ms=0.033 wall_ms=1341.354 generated=32->66 rounds=14 drafted=42 accepted=20 k=3
+1794607869.084691 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1341.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607869.084692 [prefix-loan] reconcile why=retire books=34 lent_live=34 adopted=0.0MB charged=156.9MB real=156.9MB adoptions=0 compactions=0 pool_used=20852.7MB
+1794607869.086561 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=156913664 pool_cached_gain_bytes=156893184 trim_released_bytes=134217728 driver_free_bytes 4404092928 -> 4539953152 pool_reserved_bytes 22280142848 -> 22145925120 pool_used_bytes 20852747336 -> 20695854152 pool_retained_bytes=22675456 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794607869.086602 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 0MB -> 0MB
+1794607869.086604 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1450MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22146MB used 20696MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607869.086609 [prefix-loan] reconcile why=tick books=0 lent_live=0 adopted=0.0MB charged=0.0MB real=0.0MB adoptions=0 compactions=0 pool_used=20695.9MB
+1794607870.429913 [spec-acc] ctx=28072 burst=18/42 cum=59/114=0.518
+1794607870.429945 [tick-spec] seq=1 slot=0 trace=- start_ms=0.034 gap_ms=0.034 wall_ms=1343.353 generated=66->98 rounds=14 drafted=42 accepted=18 k=3
+1794607870.429949 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1343.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607870.430067 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1450MB pool-cached) < cost 941MB + reserve 1611MB — queueing (FIFO) [pool res 22146MB used 20696MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794607871.195454 [spec-acc] ctx=28104 burst=15/24 cum=74/138=0.536
+1794607871.195510 [tick-spec] seq=1 slot=0 trace=- start_ms=0.033 gap_ms=0.033 wall_ms=765.071 generated=98->120 rounds=8 drafted=24 accepted=15 k=3
+1794607871.195514 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=765.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607871.276796 [prefix-cache] stable-boundary capture armed at 992 of 1031 prompt tokens (model q38)
+1794607871.276831 [worker] spec-affinity: declined (history diverged at 10 of checkpoint 27968; 1 parked, 1031 prompt tokens; model q38)
+1794607871.277328 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1031 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794607872.368051 [prime-chunk] phase=mtp-trunk rows=1031 wall_ms=1090.891
+1794607872.368085 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794607873.201778 [spec-acc] ctx=1031 burst=23/30 cum=23/30=0.767
+1794607873.201819 [tick-spec] seq=1 slot=0 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=1924.524 generated=0->34 rounds=10 drafted=30 accepted=23 k=3
+1794607873.201823 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1924.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607873.201827 [prefix-cache] unified memory: insert budget 18132MB (configured 50537MB; live free 21733MB, headroom 3758MB, resident 0MB, new entry 157MB)
+1794607873.201829 [prefix-cache] insert (spec-boundary): 992 tokens, 156.9MB (resident 156.9MB / 18132MB, model q38)
+1794607873.201831 [specpub] Lend publication why=spec-boundary pos=992 lent=31.3MB us=63 pool_reserved=22145925120 pool_used=21371147080
+1794607874.550930 [spec-acc] ctx=1065 burst=17/48 cum=40/78=0.513
+1794607874.550967 [tick-spec] seq=1 slot=0 trace=- start_ms=0.039 gap_ms=0.039 wall_ms=1348.989 generated=34->67 rounds=16 drafted=48 accepted=17 k=3
+1794607874.550977 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1349.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607874.550979 [prefix-loan] reconcile why=retire books=34 lent_live=34 adopted=0.0MB charged=156.9MB real=156.9MB adoptions=0 compactions=0 pool_used=21371.1MB
+1794607874.550981 [spec-cost] model="q38" realized n=1 K=3: 24.7 tok/s (now priced from serving)
+1794607875.641277 [spec-acc] ctx=1098 burst=19/39 cum=59/117=0.504
+1794607875.641321 [tick-spec] seq=1 slot=0 trace=- start_ms=0.069 gap_ms=0.069 wall_ms=1090.373 generated=67->99 rounds=13 drafted=39 accepted=19 k=3
+1794607875.641325 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1090.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607876.572521 [spec-acc] ctx=1130 burst=17/33 cum=76/150=0.507
+1794607876.572584 [tick-spec] seq=1 slot=0 trace=- start_ms=0.060 gap_ms=0.060 wall_ms=930.863 generated=99->127 rounds=11 drafted=33 accepted=17 k=3
+1794607876.572587 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=930.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794607891.608784 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1794607891.608815 [server] drain complete in 0.0s; exiting
+1794607891.708395 [server] GPU worker shutdown complete
