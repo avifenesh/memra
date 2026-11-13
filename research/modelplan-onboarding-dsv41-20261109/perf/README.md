@@ -1254,8 +1254,8 @@ at 1, 4, 5 and 8 rows; the kernel gate passes 177 of 177 on the 5090 (ring = par
 the pair = two calls; the vendor fixtures' router and compressor lines unchanged from k3's). On GB10
 (121a, `receipts/r1-dig/gates-r2-gb10`): kernels 177 of 177, the layer gate 161 of 161 with its 111 saved
 tensors equal to k3's set (the hash list's sha256 46164854b745e1d8, k3's), and the order gate's 13 chat
-tapes byte for byte k3's (78 of 78 files: d = 0 on the chat group). The tp and decode gates follow in
-`receipts/r1-dig/gates-r2-gb10`.
+tapes byte for byte k3's (78 of 78 files: d = 0 on the chat group); tp at 2 and 4 ranks of the card
+(peer-pull) 478 / 0 and 914 / 0, decode 240 / 0, 240 / 0 and 60 / 0 (`receipts/r1-dig/gates-r2-gb10`).
 Above 8 rows the narrow kernel with K in parts stays: r1's segment kernel was slower there (16 rows
 71 against 55 us). PRO 6000: owed (`receipts/r1-dig/wrx/COMMANDS.md`: the byte gate against kpc on
 one card, then the pair's step timing against kpc, about 15 minutes of two cards after a 12-minute
