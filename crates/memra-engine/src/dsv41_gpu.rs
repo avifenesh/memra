@@ -559,6 +559,7 @@ pub mod ffi {
             tiles: *mut c_void,
             ntiles: *mut i32,
             err: *mut i32,
+            flag: *mut i32,
             stream: *mut c_void,
         ) -> i32;
         /// The grouped expert GEMMs over a device tile list and the rank's expert weight table.
@@ -621,17 +622,6 @@ pub mod ffi {
             ldo: i64,
             rows: i32,
             d: i32,
-            stream: *mut c_void,
-        ) -> i32;
-        pub fn memra_v41_moe_owner(
-            order: *const i32,
-            n: i32,
-            off: *const i32,
-            per: i32,
-            nr: i32,
-            np: i32,
-            out: *mut i32,
-            bad: *mut i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_v41_index_score_part(
@@ -2974,9 +2964,13 @@ pub struct Ctx {
     pub nvtx: bool,
     /// this rank's routed experts when the layers hold none ([`LayerW::load_part_with`])
     pub experts: Option<experts::ExpertCache>,
-    /// i32, sticky, read with the step's logits. Bit 0: an N-rank one-token MoE whose plan placed
-    /// other than `rows * topk` pairs (`memra_v41_moe_owner`). Bit 16: a small gather whose
-    /// peer never arrived (`memra_v41_gather`).
+    /// Two i32 flags, read with a call's logits ([`Self::route_flags`]). Word 0, the call's:
+    /// bit 0, a router row that selected an expert outside `[0, n_experts)` (a non-finite router
+    /// row; `memra_v41_route` names no expert there and the plan skips it); cleared by the read
+    /// that reports it, so a flag belongs to the calls issued since the last read. Word 1, the
+    /// transport's: bit 16, a small gather whose peer never arrived (`memra_v41_gather`), never
+    /// cleared: the gathers' sequence words can no longer be trusted, and the group refuses every
+    /// later forward ([`tp::Group::live`]).
     pub route_bad: Buf,
     /// the card's second stream, made at the first one-token MoE ([`Side`])
     side: Option<Side>,
@@ -3105,7 +3099,7 @@ impl Ctx {
             g.yarn_beta_fast,
             g.yarn_beta_slow,
         )?;
-        let route_bad = ops.buf(4)?;
+        let route_bad = ops.buf(8)?;
         Ok(Self {
             ops,
             g,
@@ -5620,6 +5614,7 @@ impl Ctx {
                 plan.tiles.p(&st).m(),
                 plan.ntiles.p(&st).im(),
                 plan.err.p(&st).im(),
+                self.route_bad.p(&st).im(),
                 self.ops.sv(),
             )
         })?;
@@ -5883,6 +5878,26 @@ impl Ctx {
             Some(s) => s.join(&self.ops.st),
             None => Ok(()),
         }
+    }
+
+    /// The rank's two route flags `(call, transport)` ([`Self::route_bad`]), read after the
+    /// stream drains, then the call word cleared on the stream for the calls after this one.
+    pub fn route_flags(&self) -> Result<(i32, i32), String> {
+        let st = &self.ops.st;
+        let w = bytes_i32(&self.route_bad.host(st)?);
+        if w[0] != 0 {
+            // SAFETY: the first 4 bytes of the 8-byte flag buffer, on its stream
+            unsafe {
+                cudarc::driver::result::memset_d8_async(
+                    self.route_bad.p(st).addr(),
+                    0,
+                    4,
+                    self.ops.sv() as cudarc::driver::sys::CUstream,
+                )
+            }
+            .map_err(|e| format!("clear the route flag: {e:?}"))?;
+        }
+        Ok((w[0], w[1]))
     }
 
     /// The partial pass of [`Self::hc_mix`] for the virtual warps `[b0, b0 + nb)` of 8: the sums

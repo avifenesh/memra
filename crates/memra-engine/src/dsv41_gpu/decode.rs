@@ -443,6 +443,12 @@ impl<'a> Runner<'a> {
         Ok(out)
     }
 
+    /// Whether the group lost its transport ([`super::tp::Group::lost`]): every later forward
+    /// refuses, so a serving route stops instead of failing each step.
+    pub fn transport_lost(&self) -> Option<&str> {
+        self.grp.lost.as_deref()
+    }
+
     /// Every rank's expert-cache counters, summed, and the slots per rank.
     pub fn cache_stats(&self) -> (CacheStats, Vec<usize>) {
         let mut st = CacheStats::default();
@@ -537,6 +543,7 @@ impl<'a> Runner<'a> {
     /// in the given order from its current length. Returns each call's final stream for
     /// [`Self::logits`]. An error part-way leaves the sequences it touched unusable.
     pub fn forward(&mut self, seqs: &mut [Seq], calls: &[Call]) -> Result<Vec<Out>, String> {
+        self.grp.live()?;
         let n = self.grp.n();
         let g = self.g.clone();
         // positions first, so a refused call leaves every sequence as it was
@@ -763,6 +770,7 @@ impl<'a> Runner<'a> {
         seqs: &mut [Seq],
         rows: &[(usize, u32)],
     ) -> Result<Out, String> {
+        self.grp.live()?;
         let n = self.grp.n();
         let g = self.g.clone();
         let nr = rows.len();
@@ -1292,21 +1300,12 @@ impl<'a> Runner<'a> {
                 super::bytes_i32(&idx.host(&st)?),
                 n,
             );
-            // the stream is drained: this forward's flag (the one-token MoEs' pair counts, a
-            // small gather's missing slice), read as `Group::head_logits` reads it
-            let bad = super::bytes_i32(&c.route_bad.host(&st)?)[0];
-            if bad & 0x10000 != 0 {
-                return Err(format!(
-                    "rank {r}: a peer's slice of a gather never arrived"
-                ));
-            }
-            if bad != 0 {
-                return Err(format!(
-                    "rank {r} route: a layer placed other than rows x topk pairs"
-                ));
-            }
-            Ok(got)
+            // the stream is drained: the route flags of the calls since the last read, read as
+            // `Group::head_logits` reads them
+            Ok((got, c.route_flags()?))
         })?;
+        let (parts, flags): (Vec<_>, Vec<(i32, i32)>) = parts.into_iter().unzip();
+        self.grp.route_verdict(&flags)?;
         let mut best = vec![(f32::NEG_INFINITY, 0u32); rows];
         let mut col = 0usize;
         for (val, idx, n) in parts {

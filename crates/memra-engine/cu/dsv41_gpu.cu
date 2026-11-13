@@ -3741,9 +3741,13 @@ __global__ void v41_route_kernel(const float* __restrict__ raw, long ldr, const 
                 bi = oi;
             }
         }
+        // a row with fewer than topk orderable scores (a NaN raw value: its score never compares)
+        // would pick an expert already taken (they sit at -inf, which equals the start); the slot
+        // names none instead, which the plan counts as out of range and skips
+        if (!(best > -INFINITY)) bi = -1;
         isel[j] = bi;
         float wv = 0.f;
-        if ((bi & 31) == lane) {
+        if (bi >= 0 && (bi & 31) == lane) {
             int slot = bi >> 5;
 #pragma unroll
             for (int i = 0; i < PER; ++i)
@@ -3752,7 +3756,7 @@ __global__ void v41_route_kernel(const float* __restrict__ raw, long ldr, const 
                     bs[i] = -INFINITY;
                 }
         }
-        wsel[j] = __shfl_sync(0xffffffffu, wv, bi & 31);
+        wsel[j] = __shfl_sync(0xffffffffu, wv, bi < 0 ? 0 : bi & 31);
     }
     if (lane == 0) {
         float sum = 0.f;
@@ -4042,13 +4046,14 @@ extern "C" int memra_v41_add_cast(const float* y, const void* add, void* out, lo
 // with tokens ascending inside an expert, each token's pair indices in ascending expert id, plus the
 // tile list of the grouped expert GEMMs (one entry per `bm` rows of an expert that has rows). No
 // host round trip: per-chunk expert counts, one block scanning them, then each chunk placing its
-// tokens in order. `err` counts expert ids outside [0, ne) (skipped, their order slot -1).
+// tokens in order. `err` counts expert ids outside [0, ne) (skipped, their order slot -1), and such an id
+// sets bit 0 of `*flag` when it is given (the rank's call flag, read with the call's logits).
 
 #define V41_PLAN_CH 256
 
 __global__ void __launch_bounds__(V41_PLAN_CH) v41_moe_count_kernel(const int* __restrict__ sel, int rows, int topk,
                                                                      int ne, int* __restrict__ counts,
-                                                                     int* __restrict__ err) {
+                                                                     int* __restrict__ err, int* flag) {
     extern __shared__ int v41_cnt[];
     for (int e = threadIdx.x; e < ne; e += blockDim.x) v41_cnt[e] = 0;
     __syncthreads();
@@ -4056,8 +4061,12 @@ __global__ void __launch_bounds__(V41_PLAN_CH) v41_moe_count_kernel(const int* _
     if (t < rows)
         for (int j = 0; j < topk; ++j) {
             int e = sel[(long)t * topk + j];
-            if (e < 0 || e >= ne) atomicAdd(err, 1);
-            else atomicAdd(&v41_cnt[e], 1);
+            if (e < 0 || e >= ne) {
+                atomicAdd(err, 1);
+                if (flag) atomicOr(flag, 1);
+            } else {
+                atomicAdd(&v41_cnt[e], 1);
+            }
         }
     __syncthreads();
     for (int e = threadIdx.x; e < ne; e += blockDim.x) counts[(long)blockIdx.x * ne + e] = v41_cnt[e];
@@ -4167,7 +4176,8 @@ __global__ void __launch_bounds__(1024) v41_moe_plan_small_kernel(const int* __r
                                                                   int ne, int bm, int e0, int e1, int* __restrict__ off,
                                                                   int* __restrict__ ptok, float* __restrict__ pw,
                                                                   int* __restrict__ order, V41Tile* __restrict__ tiles,
-                                                                  int* __restrict__ ntiles, int* __restrict__ err) {
+                                                                  int* __restrict__ ntiles, int* __restrict__ err,
+                                                                  int* flag) {
     __shared__ int s_sel[V41_PLAN_SMALL], s_off[1024], s_til[1024], s_placed;
     int tid = threadIdx.x, np = rows * topk;
     if (tid < np) {
@@ -4194,6 +4204,7 @@ __global__ void __launch_bounds__(1024) v41_moe_plan_small_kernel(const int* __r
         off[ne] = o;
         *ntiles = tt;
         *err = bad;
+        if (bad && flag) atomicOr(flag, 1);
         s_placed = o;
     }
     __syncthreads();
@@ -4230,17 +4241,17 @@ __global__ void __launch_bounds__(1024) v41_moe_plan_small_kernel(const int* __r
 // ceil(rows * topk / bm) + min(ne, rows * topk); the tile list covers experts [e0, e1)
 extern "C" int memra_v41_moe_plan(const int* sel, const float* selw, int rows, int topk, int ne, int bm, int e0, int e1,
                                   int* counts, int* off, int* ptok, float* pw, int* order, void* tiles, int* ntiles,
-                                  int* err, void* stream) {
+                                  int* err, int* flag, void* stream) {
     if (rows <= 0) return rows < 0 ? 41025 : 0;
     if (ne <= 0 || ne > 1024 || topk <= 0 || topk > 16 || bm <= 0 || e0 < 0 || e1 > ne || e0 > e1) return 41025;
     cudaStream_t st = (cudaStream_t)stream;
     if (rows * topk <= V41_PLAN_SMALL) {
         v41_moe_plan_small_kernel<<<1, 1024, 0, st>>>(sel, selw, rows, topk, ne, bm, e0, e1, off, ptok, pw, order,
-                                                     (V41Tile*)tiles, ntiles, err);
+                                                     (V41Tile*)tiles, ntiles, err, flag);
         V41_ERR();
     }
     int nch = (rows + V41_PLAN_CH - 1) / V41_PLAN_CH;
-    v41_moe_count_kernel<<<nch, V41_PLAN_CH, ne * 4, st>>>(sel, rows, topk, ne, counts, err);
+    v41_moe_count_kernel<<<nch, V41_PLAN_CH, ne * 4, st>>>(sel, rows, topk, ne, counts, err, flag);
     v41_moe_scan_kernel<<<1, 1024, 0, st>>>(counts, nch, ne, bm, e0, e1, off, (V41Tile*)tiles, ntiles);
     v41_moe_place_kernel<<<nch, V41_PLAN_CH, ne * 4 * (1 + V41_PLAN_CH / 32), st>>>(sel, selw, rows, topk, ne, counts,
                                                                                   off, ptok, pw, order);
@@ -4275,30 +4286,6 @@ extern "C" int memra_v41_moe_combine(const void* slots, long lds, const int* ord
     dim3 grid(rows, (d + 1023) / 1024);
     v41_moe_combine_kernel<<<grid, 256, 0, (cudaStream_t)stream>>>((const v41_bf*)slots, lds, order, topk,
                                                                    (const v41_bf*)shared, ldsh, (v41_bf*)out, ldo, d);
-    V41_ERR();
-}
-
-// N-rank routed-expert rows without a host read of the plan. Every rank writes its experts' rows into region
-// `rank` of a buffer of nr regions of np rows, the regions are gathered whole, and each pair's row is then read
-// from the region of the rank that owns its expert. Pairs are ordered by expert and rank q owns the experts
-// [q * per, (q + 1) * per), so q is the number of boundaries off[r * per], r = 1..nr-1, at or below the pair.
-// out[i] = order[i] + q * np (-1 stays -1). *bad is set when the plan placed other than np pairs, the check
-// the host made on the offsets it read.
-__global__ void v41_moe_owner_kernel(const int* __restrict__ order, int n, const int* __restrict__ off, int per,
-                                     int nr, int np, int* __restrict__ out, int* __restrict__ bad) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i == 0 && off[(long)per * nr] != np) *bad = 1;
-    if (i >= n) return;
-    int p = order[i], q = 0;
-    for (int r = 1; r < nr; ++r) q += p >= off[(long)r * per];
-    out[i] = p < 0 ? p : p + q * np;
-}
-
-extern "C" int memra_v41_moe_owner(const int* order, int n, const int* off, int per, int nr, int np, int* out,
-                                   int* bad, void* stream) {
-    if (n <= 0) return n < 0 ? 41017 : 0;
-    if (per <= 0 || nr <= 0 || np <= 0) return 41017;
-    v41_moe_owner_kernel<<<(n + 255) / 256, 256, 0, (cudaStream_t)stream>>>(order, n, off, per, nr, np, out, bad);
     V41_ERR();
 }
 
@@ -4971,9 +4958,21 @@ __global__ void v41_gather_kernel(const uint8_t* src, long pitch, int width, int
     __shared__ int go;
     uint32_t seq = *ctr + 1;
     long o = (seq & 1) ? alt : 0;
-    if (word_first && threadIdx.x == 0) {
-        for (int p = 0; p < npeer; ++p) *(volatile uint32_t*)((uint8_t*)dst.w[p] + o) = seq;
-        __threadfence_system();
+    if (word_first) {
+        if (threadIdx.x == 0) {
+            for (int p = 0; p < npeer; ++p) *(volatile uint32_t*)((uint8_t*)dst.w[p] + o) = seq;
+            __threadfence_system();
+            // the control holds its data back 50 us, so a consumer that saw the word reads the slot
+            // before the data lands: the consumer's fence after its spin would otherwise close the
+            // window the race needs, and the control would pass by timing
+            unsigned long long t0, t;
+            asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t0));
+            do {
+                __nanosleep(1000);
+                asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t));
+            } while (t - t0 < 50000);
+        }
+        __syncthreads();
     }
     for (int p = 0; p < npeer; ++p) v41_blk_move<1>((uint8_t*)src, pitch, width, rows, dst.d[p] + o);
     __threadfence_system();
@@ -4989,8 +4988,12 @@ __global__ void v41_gather_kernel(const uint8_t* src, long pitch, int width, int
             for (int p = 0; p < npeer; ++p)
                 ok &= (*(volatile const uint32_t*)((const uint8_t*)in.w[p] + o) == seq) ? 1 : 0;
         }
+        // the words seen, the payload stores they were ordered after are visible to this thread;
+        // the fence orders this block's loads of them after the words (the barrier below hands
+        // that to every thread)
+        __threadfence_system();
         go = ok;
-        if (!ok) *bad = *bad | 0x10000;  // sticky, read with the step's logits
+        if (!ok) atomicOr(bad, 0x10000);  // the rank's transport flag: sticky, the group is lost
     }
     __syncthreads();
     if (go)

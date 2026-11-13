@@ -485,6 +485,7 @@ impl<'a> Runner<'a> {
         let (hc, d, win, v) = (g.hc, g.dim, g.window, g.vocab);
         let b = dw.cfg.block;
         let mr = dw.cfg.markov_rank;
+        self.grp.live()?;
         if pos == 0 || pos + b > self.max_pos {
             return Err(format!(
                 "draft at position {pos}: a block of {b} past the prompt and inside {}",

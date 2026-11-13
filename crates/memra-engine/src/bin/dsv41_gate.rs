@@ -1086,6 +1086,50 @@ fn kernels(root: &Path, rep: &mut Report) -> Result<(), String> {
             "identical expert ids and order",
             format!("{same}/{}", wi.len()),
         );
+        // a router row with NaN raw values: a NaN score never compares, so past the row's
+        // orderable experts the selection names none (-1, weight 0) instead of an expert
+        // already taken
+        {
+            let orderable = 2usize;
+            let mut row = vec![f32::NAN; ne];
+            for (i, v) in row.iter_mut().take(orderable).enumerate() {
+                *v = 1.0 + i as f32;
+            }
+            let draw = Buf::from_f32(&st, &row)?;
+            let nsel = ops.buf(tk * 4)?;
+            let nselw = ops.buf(tk * 4)?;
+            ck("route", unsafe {
+                ffi::memra_v41_route(
+                    draw.p(&st).f(),
+                    ne as i64,
+                    gb.p(&st).f(),
+                    ne as i32,
+                    tk as i32,
+                    1,
+                    rs,
+                    nsel.p(&st).im(),
+                    nselw.p(&st).fm(),
+                    1,
+                    sv,
+                )
+            })?;
+            let ids = bytes_i32(&nsel.host(&st)?);
+            let w = bytes_f32(&nselw.host(&st)?);
+            let named: Vec<i32> = ids.iter().copied().filter(|&e| e >= 0).collect();
+            let mut uniq = named.clone();
+            uniq.sort_unstable();
+            uniq.dedup();
+            let ok = named.len() == orderable.min(tk)
+                && uniq.len() == named.len()
+                && named.iter().all(|&e| (e as usize) < orderable)
+                && ids.iter().zip(&w).all(|(&e, &x)| e >= 0 || x == 0.0);
+            rep.raw(
+                "moe/route_nan_row",
+                ok,
+                "a row of NaN raw values past 2 experts: those 2 named once each, every other slot -1 with weight 0",
+                format!("ids {ids:?}"),
+            );
+        }
         rep.f32rel(
             "moe/route_w",
             &f32h(&ops, &selw)?,
@@ -1453,6 +1497,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         let tiles = ops.buf(max_tiles * 16)?;
         let ntiles = ops.buf(4)?;
         let err = ops.buf(4)?;
+        let flag = ops.buf(4)?;
         ck("moe_plan", unsafe {
             ffi::memra_v41_moe_plan(
                 dsel.p(&st).i(),
@@ -1471,6 +1516,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 tiles.p(&st).m(),
                 ntiles.p(&st).im(),
                 err.p(&st).im(),
+                flag.p(&st).im(),
                 sv,
             )
         })?;
@@ -1479,13 +1525,69 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             && bytes_i32(&ptok.host(&st)?) == host.ptok
             && bytes_f32(&pw.host(&st)?) == host.pw
             && bytes_i32(&order.host(&st)?) == host.order
-            && bytes_i32(&err.host(&st)?)[0] == 0;
+            && bytes_i32(&err.host(&st)?)[0] == 0
+            && bytes_i32(&flag.host(&st)?)[0] == 0;
         rep.raw(
             &format!("schedule/moe_plan/rows{rows}_bm{bm}"),
             ok,
             "device plan == host MoePlan (offsets, pair tokens, weights, per-token order)",
             format!("{np} pairs, {} tiles", bytes_i32(&ntiles.host(&st)?)[0]),
         );
+        if rows == 3 {
+            // a selection naming no expert (the router's -1 for a NaN row): the plan skips the
+            // pair, counts it and sets bit 0 of the rank's call flag
+            let mut bad_sel = sel.clone();
+            bad_sel[topk] = -1;
+            let dbad = Buf::from_i32(&st, &bad_sel)?;
+            // its own outputs: the tile-list check below reads the plan above
+            let (off2, ptok2, pw2, order2) = (
+                ops.buf((ne + 1) * 4)?,
+                ops.buf(np * 4)?,
+                ops.buf(np * 4)?,
+                ops.buf(np * 4)?,
+            );
+            let (tiles2, ntiles2, err2, flag2) = (
+                ops.buf(max_tiles * 16)?,
+                ops.buf(4)?,
+                ops.buf(4)?,
+                ops.buf(4)?,
+            );
+            ck("moe_plan", unsafe {
+                ffi::memra_v41_moe_plan(
+                    dbad.p(&st).i(),
+                    dselw.p(&st).f(),
+                    rows as i32,
+                    topk as i32,
+                    ne as i32,
+                    bm as i32,
+                    0,
+                    ne as i32,
+                    counts.p(&st).im(),
+                    off2.p(&st).im(),
+                    ptok2.p(&st).im(),
+                    pw2.p(&st).fm(),
+                    order2.p(&st).im(),
+                    tiles2.p(&st).m(),
+                    ntiles2.p(&st).im(),
+                    err2.p(&st).im(),
+                    flag2.p(&st).im(),
+                    sv,
+                )
+            })?;
+            let ord = bytes_i32(&order2.host(&st)?);
+            let (e2, f2) = (
+                bytes_i32(&err2.host(&st)?)[0],
+                bytes_i32(&flag2.host(&st)?)[0],
+            );
+            let skipped = ord[topk..2 * topk].iter().filter(|&&o| o < 0).count();
+            let placed = bytes_i32(&off2.host(&st)?)[ne];
+            rep.raw(
+                "schedule/moe_plan/out_of_range_id",
+                e2 == 1 && f2 == 1 && skipped == 1 && placed as usize == np - 1,
+                "an id outside [0, ne): counted, call flag bit 0 set, its pair skipped (order -1, one pair fewer placed)",
+                format!("err {e2}, flag {f2}, token 1 skips {skipped}, {placed} of {np} placed"),
+            );
+        }
         // w1-shaped MXFP4 experts (n 2304, k 5120) through the tile list vs the reference per expert
         let (n, k) = (2304usize, 5120usize);
         let a = Buf::from_bytes(&st, &rng.e4m3(np * k))?;

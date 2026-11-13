@@ -16,9 +16,11 @@
 //!   - attention: each rank writes its groups' `wo_a` output columns, all-gather those columns, each
 //!     rank computes its `wo_b` output columns over the full row (the K sum of every output element
 //!     is the single-card sum), all-gather the output columns;
-//!   - MoE: every rank runs the router on its own replicated copy and builds the same host
-//!     dispatch plan from its read-back (pairs sorted by expert, tokens ascending inside an expert,
-//!     as the per-expert loop orders them; a rank whose routing differs refuses); each rank runs its
+//!   - MoE: every rank runs the router on its own replicated copy and builds the same dispatch
+//!     plan (pairs sorted by expert, tokens ascending inside an expert, as the per-expert loop
+//!     orders them). The copies are the same bytes through the same kernels, so the routings
+//!     agree by construction; nothing compares them at run time (the N-rank gates compare the
+//!     ranks' bytes with the single-card program's). Each rank runs its
 //!     experts' pairs through one grouped GEMM per projection, all-gather the bf16 expert output
 //!     rows, and every rank adds each token's rows in ascending expert id into an fp32 zero, then
 //!     the shared expert, then rounds (the per-expert loop's scatter-add order);
@@ -182,6 +184,9 @@ pub struct Group {
     pub(super) capturing: bool,
     /// with [`Group::log_routes`]: every block's routing and one-row MoE output, in call order
     pub route_log: Option<RouteLog>,
+    /// why the group can no longer run a forward: a gather whose peer never arrived
+    /// ([`Self::route_verdict`]); every later call refuses ([`Self::live`])
+    pub lost: Option<String>,
 }
 
 /// What the router chose and what the MoE returned, call by call in the order the blocks ran
@@ -210,12 +215,6 @@ struct FfnIn<'a> {
     a_post: &'a [Buf],
     a_comb: &'a [Buf],
 }
-
-/// The largest `[pairs][dim]` bf16 block the N-rank MoE gathers whole from every rank instead of
-/// reading the plan's offsets on the host for each rank's exact rows ([`Group::moe`]): 4 tokens'
-/// pairs. Below it a peer copy takes its fixed latency (at the 49 GB/s measured between two
-/// cards, 256 KiB is 5 us); a prefill chunk's rows are megabytes and keep the exact gather.
-const STAGED_MOE_ROWS_BYTES: usize = 256 << 10;
 
 /// Bytes ahead of a slot's payload in a device-push inbox: the sequence word, padded so the
 /// payload starts on its own cache lines.
@@ -676,6 +675,7 @@ impl Group {
             graphs: super::graph::Graphs::from_env()?,
             capturing: false,
             route_log: None,
+            lost: None,
         };
         gr.probe()?;
         gr.stats = CommStats::default();
@@ -689,6 +689,33 @@ impl Group {
 
     pub fn n(&self) -> usize {
         self.cx.len()
+    }
+
+    /// Refuse a forward once the group is lost ([`Self::lost`]).
+    pub fn live(&self) -> Result<(), String> {
+        match &self.lost {
+            Some(why) => Err(format!("the dsv41 group is lost: {why}")),
+            None => Ok(()),
+        }
+    }
+
+    /// What the ranks' route flags (`(call, transport)` of [`Ctx::route_flags`], rank order) say
+    /// about the calls they were read with: a transport flag loses the group for good (a peer's
+    /// slice of a gather never arrived, so the gathers' sequence words can no longer be trusted);
+    /// a call flag fails these calls only.
+    pub fn route_verdict(&mut self, flags: &[(i32, i32)]) -> Result<(), String> {
+        if let Some(r) = flags.iter().position(|f| f.1 & 0x10000 != 0) {
+            let why = format!("rank {r}: a peer's slice of a gather never arrived");
+            self.lost = Some(why.clone());
+            return Err(why);
+        }
+        if let Some(r) = flags.iter().position(|f| f.0 != 0) {
+            return Err(format!(
+                "rank {r} route: a router row selected an expert outside the model's (a non-finite \
+                 router row)"
+            ));
+        }
+        Ok(())
     }
 
     /// `parallel` (one host thread per rank) or `serial`.
@@ -1110,7 +1137,7 @@ impl Group {
                     ctr[r] as *mut u32,
                     alt,
                     addr[r] as *mut std::ffi::c_void,
-                    c.route_bad.p(&st).im(),
+                    c.route_bad.at(&st, 4).im(),
                     word_first,
                     c.ops.sv(),
                 )
@@ -1188,7 +1215,8 @@ impl Group {
         for r in 0..n {
             let st = self.cx[r].ops.st.clone();
             diff += bytes_i32(&cnt[r].host(&st)?)[0] as u64;
-            flagged += (bytes_i32(&self.cx[r].route_bad.host(&st)?)[0] != 0) as u64;
+            let (call, transport) = self.cx[r].route_flags()?;
+            flagged += (call != 0 || transport != 0) as u64;
         }
         Ok((diff, flagged))
     }
@@ -2114,69 +2142,6 @@ impl Group {
             })?
         };
         let np = rows * topk;
-        if np * d * 2 <= STAGED_MOE_ROWS_BYTES && lw.iter().all(|w| !w.experts.is_empty()) {
-            // A one-token forward: no host read of the plan. The read drained rank 0's stream
-            // in the middle of every layer, and nothing of the second half of the layer could
-            // be queued behind the first. Every rank runs its tile lists over all the pairs
-            // into its own region of a staged buffer, the regions are gathered whole (61 KiB
-            // a rank at one token, where a copy costs its latency, not its bytes), and the
-            // combine reads each pair's row from the region of the rank that owns its expert.
-            let reg = np * d * 2;
-            let parts = self.each(|r, c| {
-                let st = c.ops.st.clone();
-                let x = x2[r].at(&st, r0 * d * 2);
-                let all = c.ops.tmp(n * reg)?;
-                c.experts_tiles(&lw[r], x, &plans[r], 0, np, all.at(&st, r * reg), None)?;
-                let so = c.shared_expert(&lw[r], x, rows)?;
-                Ok((all, so))
-            })?;
-            let (all, shared_out): (Vec<Buf>, Vec<Buf>) = parts.into_iter().unzip();
-            let refs: Vec<&Buf> = all.iter().collect();
-            let blks: Vec<Blk> = (0..n).map(|r| Blk::flat(r * reg, reg)).collect();
-            self.allgather(&refs, &blks)?;
-            self.each(|r, c| {
-                let st = c.ops.st.clone();
-                let ord = c.ops.tmp(np * 4)?;
-                ck("moe_owner", unsafe {
-                    ffi::memra_v41_moe_owner(
-                        plans[r].order.p(&st).i(),
-                        np as i32,
-                        plans[r].off.p(&st).i(),
-                        (ne / n) as i32,
-                        n as i32,
-                        np as i32,
-                        ord.p(&st).im(),
-                        c.route_bad.p(&st).im(),
-                        c.ops.sv(),
-                    )
-                })?;
-                ck("moe_combine", unsafe {
-                    ffi::memra_v41_moe_combine(
-                        all[r].p(&st).c(),
-                        d as i64,
-                        ord.p(&st).i(),
-                        topk as i32,
-                        shared_out[r].p(&st).c(),
-                        d as i64,
-                        m[r].at(&st, r0 * d * 2).m(),
-                        d as i64,
-                        rows as i32,
-                        d as i32,
-                        c.ops.sv(),
-                    )
-                })
-            })?;
-            if trace {
-                for r in 0..n {
-                    let st = self.cx[r].ops.st.clone();
-                    let err = bytes_i32(&plans[r].err.host(&st)?)[0];
-                    if err != 0 {
-                        return Err(format!("rank {r} route: {err} expert ids out of range"));
-                    }
-                }
-            }
-            return Ok(());
-        }
         let off: Vec<usize> = bytes_i32(&host_timed(&plans[0].off, &self.cx[0].ops.st)?)
             .into_iter()
             .map(|x| x as usize)
@@ -2415,20 +2380,11 @@ impl Group {
             c.ops
                 .linear_bf16(x.p(&st), d, rows, &hw[r], lg.p(&st), hw[r].n, true)?;
             let lg = bytes_f32(&host_timed(&lg, &st)?);
-            // the stream is drained: the one-token MoEs' pair counts of this forward
-            let bad = bytes_i32(&c.route_bad.host(&st)?)[0];
-            if bad & 0x10000 != 0 {
-                return Err(format!(
-                    "rank {r}: a peer's slice of a gather never arrived"
-                ));
-            }
-            if bad != 0 {
-                return Err(format!(
-                    "rank {r} route: a layer placed other than rows x topk pairs"
-                ));
-            }
-            Ok(lg)
+            // the stream is drained: the flags of the calls since the last read
+            Ok((lg, c.route_flags()?))
         })?;
+        let (parts, flags): (Vec<Vec<f32>>, Vec<(i32, i32)>) = parts.into_iter().unzip();
+        self.route_verdict(&flags)?;
         let mut out = vec![0f32; rows * g.vocab];
         let mut col = 0;
         for r in 0..n {
