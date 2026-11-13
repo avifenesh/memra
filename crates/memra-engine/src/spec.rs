@@ -8319,6 +8319,7 @@ impl HybridModel {
     /// [`Self::spec_round_transient_bytes`] plus [`Engine::fa_part_growth_bytes`] at `k + 1` rows
     /// attending `pos + k + 1` keys, at the widest full-attention geometry.
     pub fn spec_round_bytes(&self, e: &Engine, k: usize, pos: usize) -> usize {
+        let _numeric = self.enter_numeric();
         let fa = self
             .pooled_fa_geometries()
             .iter()
