@@ -1490,7 +1490,8 @@ load is a speed step only: when its block cannot be had it logs and the load goe
 still stops the load. The shared copy checked on GB10 (`receipts/emb-share-gb10`): `dsv41-run
 --cases` (capital, code_pal, the 3,761-token needle; 4 layers, Engram layer 1 inside) on two ranks
 of one card, which now share the table, writes the one-rank run's 12 value files byte for byte,
-and both equal the build before the fix (a table a rank).
+and both equal the build before the fix (a table a rank). The build's source is commit `076fa74ed3`
+(`source.txt` there: the commit, and the blob ids of the engine sources the run reached).
 
 `dsv41-tpbench` did not run on GB10 for either build (`emb-gates-gb10/gates-b.txt`, `tpbench rc 1`:
 with the checkpoint in the page cache the card had about 2.2 GiB free for the 5.2 GiB reserve, does

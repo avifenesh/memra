@@ -1,0 +1,25 @@
+The source the GB10 run built (src-emb.tar, unpacked on the unit and built for 121a by embshare.sh):
+
+commit 076fa74ed3bc56f303e7339c770cbf685b26c788  (emb's teardown and warm-up fix on an earlier route head,
+       c9554f4d8e; a local commit, published as 5a06c8fe56 after a restack: same engine patch)
+tree   76e1e89dba
+Every file of the archive (1,143: Cargo.toml, Cargo.lock, rust-toolchain.toml, rustfmt.toml, crates/) has
+that commit's blob; checked with git hash-object against git ls-tree, 0 differ, 0 missing.
+
+The engine sources the run reached, git blob ids:
+238839549b6d8187be51de5418cbfbd65e34c48e  Cargo.lock
+9a885bf2e7ea8a68a409d7fa36c71508d08a7b02  crates/memra-engine/Cargo.toml
+5f57d84eacbb40491eead7237d5d6b08d9c4e5d1  crates/memra-engine/build.rs
+765e35d4c2bf70b1766d29d76415b8cd1dc7e351  crates/memra-engine/cu/dsv41_gpu.cu
+53d6cdc44aa5e5f5ff0929708477a846b9949277  crates/memra-engine/src/bin/dsv41_run.rs
+108b7c85a961cada27aa4cf304f7313723507030  crates/memra-engine/src/dsv41_gpu.rs
+849b8c27186e75f709878fa12105175e5955df18  crates/memra-engine/src/dsv41_gpu/decode.rs
+bd13183f239c4a66bfdd355be9e49674e07bbd24  crates/memra-engine/src/dsv41_gpu/draft.rs
+64a1359049a04fbafbaf7a71bdad17837fe46fa1  crates/memra-engine/src/dsv41_gpu/engram.rs
+c84966edd99e6824f44355400afee175bbc11878  crates/memra-engine/src/dsv41_gpu/experts.rs
+0ad4192b2cbfcfd854eaad8eb780fc1eb987f644  crates/memra-engine/src/dsv41_gpu/graph.rs
+c6f56c13241c112071d9039868f5efe43fe3082a  crates/memra-engine/src/dsv41_gpu/tp.rs
+
+After the run the branch was restacked onto the route's later heads. emb's three engine commits keep
+their engine patches unchanged (same git patch-id --stable over crates/memra-engine); the trees differ
+only by the route's own review fixes, which the route's gates cover.
