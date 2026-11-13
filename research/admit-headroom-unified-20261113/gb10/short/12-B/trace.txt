@@ -1,0 +1,15 @@
+1794601447.195569 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":90012905472,"synchronization_errors":[]}
+1794601448.251398 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794601498.350543 [spec] draft-session state high-water: 33MB (max of parked delta 33MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794601514.311068 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":87379542016,"synchronization_errors":[]}
+1794601519.437299 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":86592167936,"synchronization_errors":[]}
+1794601519.437349 [admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+1794601519.437352 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 1536MB (static was 1536MB; measured 1215MB; probe kv charge 127MB, draft-state 33MB, drafted 87 accepted 34; [dev0 peak-mapped 19808MB rest-mapped 18432MB charged 160MB -> 1215MB]; 5.1s)
+1794601519.437356 [admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1794601519.437359 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794601519.437362 [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+1794601548.669488 [admission] per-session draft-state charge: model="q38" +35MB (measured capture high-water)
+1794601548.669492 [admission] request cost: model="q38" ctx=1607 path=spec = 31552 B/token x ctx + 473MB prefill-workspace + 0MB fixed = 524MB
+1794601548.679521 [admit-trim] dev0 driver_free_bytes=803020800 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=19178338256 pool_reserved_bytes=19327352832 driver_free_after=802955264 before prime
+1794601548.709249 [admission] fixed residual high-water: model="q38" 280MB (observed 329MB at ctx 1551 path=spec)
+1794601549.824048 [spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2266MB (allocatable 1858MB + pool-cached 407MB) < required 3139MB (2x appetite 33MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
