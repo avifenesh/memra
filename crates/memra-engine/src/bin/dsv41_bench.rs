@@ -800,6 +800,48 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
             ));
         }
     }
+    // the ratio-2 compressor's kv and gate (two fp32 linears of the same rows, 512 wide): one call over both
+    // against the two calls one after the other, by rows
+    {
+        let (n, k) = (512usize, 5120usize);
+        let mut rng = Lcg(0x5eed_d542);
+        let rand_bf16 = |rng: &mut Lcg, len: usize| -> Vec<u8> {
+            let mut v = rng.bytes(len * 2);
+            for c in v.chunks_exact_mut(2) {
+                c[1] = (c[1] & 0x80) | 0x3F;
+            }
+            v
+        };
+        let w0 = v::BW {
+            w: Buf::from_bytes(&st, &rand_bf16(&mut rng, n * k))?,
+            n,
+            k,
+        };
+        let w1 = v::BW {
+            w: Buf::from_bytes(&st, &rand_bf16(&mut rng, n * k))?,
+            n,
+            k,
+        };
+        for m in [1usize, 4, 8] {
+            let x = Buf::from_bytes(&st, &rand_bf16(&mut rng, m * k))?;
+            let (c0, c1) = (ops.buf(m * n * 4)?, ops.buf(m * n * 4)?);
+            let two = median(&time_ms(&ops, reps, || {
+                ops.linear_bf16(x.p(&st), k, m, &w0, c0.p(&st), n, true)?;
+                ops.linear_bf16(x.p(&st), k, m, &w1, c1.p(&st), n, true)
+            })?);
+            let h2 = sha(&[c0.host(&st)?, c1.host(&st)?].concat());
+            let pair = median(&time_ms(&ops, reps, || {
+                ops.linear_f32_pair(x.p(&st), k, m, &w0, c0.p(&st), &w1, c1.p(&st), n)
+            })?);
+            let hp = sha(&[c0.host(&st)?, c1.host(&st)?].concat());
+            eprintln!(
+                "gemm ffma comp pair m {m} n {n} k {k}: two calls {two:.4} ms, one call {pair:.4} ms, sha {h2} / {hp}"
+            );
+            out.push(format!(
+                "{{\"op\": \"ffma_pair\", \"m\": {m}, \"n\": {n}, \"k\": {k}, \"two_ms\": {two:.5}, \"pair_ms\": {pair:.5}, \"sha_two\": \"{h2}\", \"sha_pair\": \"{hp}\"}}"
+            ));
+        }
+    }
     // grouped MXFP4 experts through the tile-list dispatch: w1/w3 (n 2304, k 5120) and w2 (n 5120,
     // k 2304), `ng` experts of `rows` rows, tiles as `Ctx::moe_bm` picks them for that slice
     for &(ng, rows) in &[

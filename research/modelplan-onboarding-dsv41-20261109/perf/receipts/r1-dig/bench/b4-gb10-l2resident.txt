@@ -1,0 +1,123 @@
+device NVIDIA GB10, 48 SMs, L2 24 MB, 1 weight copies rotated
+empty-kernel graph step: 0.49 us [0.49, 0.51]
+  floor: 5120 dependent fma     10.93 us [  10.92,   10.93]  net    10.43
+M=1 N=384 K=5120: r2 vs kpc 0 of 384 differ, r2 pair vs kpc 0, r1 vs kpc 359 differ (max rel 7.35e-05)
+  kpc                           42.74 us [  42.73,   43.73]  net    42.25
+  r1 (seg)                      13.23 us [  13.21,   14.43]  net    12.74
+  r2 (stream chain)             19.74 us [  19.73,   20.98]  net    19.24
+  r2x (r2, word widening)       16.13 us [  16.12,   16.14]  net    15.64
+  r2x (pair) vs kpc: 0 of 768 differ
+  r2w (2 warps, fp32 stage)     27.31 us [  27.30,   27.65]  net    26.82
+  r2w (pair) vs kpc: 0 of 768 differ
+M=1 N=512 K=5120: r2 vs kpc 0 of 512 differ, r2 pair vs kpc 0, r1 vs kpc 480 differ (max rel 7.35e-05)
+  kpc                           62.98 us [  62.96,   63.01]  net    62.49
+  r1 (seg)                      18.14 us [  18.12,   18.16]  net    17.64
+  r2 (stream chain)             20.12 us [  20.12,   22.08]  net    19.63
+  r2x (r2, word widening)       16.54 us [  16.53,   18.23]  net    16.05
+  r2x (pair) vs kpc: 0 of 1024 differ
+  r2w (2 warps, fp32 stage)     40.44 us [  40.43,   43.70]  net    39.95
+  r2w (pair) vs kpc: 0 of 1024 differ
+  kpc pair (2 launches)        125.98 us [ 125.96,  126.54]  net   124.99
+  r1 pair (2 launches)          36.34 us [  36.29,   36.37]  net    35.35
+  r2 pair (1 launch)            34.45 us [  34.45,   36.43]  net    33.96
+  r2w pair (1 launch)           80.31 us [  80.30,   83.34]  net    79.82
+M=2 N=384 K=5120: r2 vs kpc 0 of 768 differ, r2 pair vs kpc 0, r1 vs kpc 719 differ (max rel 2.99e-04)
+  kpc                           44.46 us [  44.44,   45.45]  net    43.97
+  r1 (seg)                      13.64 us [  13.62,   13.66]  net    13.14
+  r2 (stream chain)             20.08 us [  20.06,   21.64]  net    19.58
+  r2x (r2, word widening)       16.48 us [  16.47,   18.15]  net    15.98
+  r2x (pair) vs kpc: 0 of 1536 differ
+  r2w (2 warps, fp32 stage)     27.82 us [  27.80,   27.83]  net    27.33
+  r2w (pair) vs kpc: 0 of 1536 differ
+M=2 N=512 K=5120: r2 vs kpc 0 of 1024 differ, r2 pair vs kpc 0, r1 vs kpc 962 differ (max rel 2.99e-04)
+  kpc                           64.97 us [  64.95,   66.13]  net    64.48
+  r1 (seg)                      19.06 us [  19.03,   19.10]  net    18.56
+  r2 (stream chain)             20.89 us [  20.88,   22.51]  net    20.40
+  r2x (r2, word widening)       17.43 us [  17.41,   17.43]  net    16.93
+  r2x (pair) vs kpc: 0 of 2048 differ
+  r2w (2 warps, fp32 stage)     41.08 us [  41.08,   44.83]  net    40.59
+  r2w (pair) vs kpc: 0 of 2048 differ
+  kpc pair (2 launches)        129.91 us [ 129.88,  131.32]  net   128.92
+  r1 pair (2 launches)          39.17 us [  39.14,   41.86]  net    38.18
+  r2 pair (1 launch)            36.24 us [  36.22,   38.21]  net    35.74
+  r2w pair (1 launch)           80.85 us [  80.83,   82.25]  net    80.35
+M=4 N=384 K=5120: r2 vs kpc 0 of 1536 differ, r2 pair vs kpc 0, r1 vs kpc 1439 differ (max rel 3.95e-04)
+  kpc                           48.15 us [  48.13,   48.17]  net    47.65
+  r1 (seg)                      16.56 us [  16.52,   16.58]  net    16.06
+  r2 (stream chain)             21.25 us [  21.23,   22.44]  net    20.75
+  r2x (r2, word widening)       17.63 us [  17.62,   17.65]  net    17.13
+  r2x (pair) vs kpc: 0 of 3072 differ
+  r2w (2 warps, fp32 stage)     28.42 us [  28.41,   30.13]  net    27.93
+  r2w (pair) vs kpc: 0 of 3072 differ
+M=4 N=512 K=5120: r2 vs kpc 0 of 2048 differ, r2 pair vs kpc 0, r1 vs kpc 1922 differ (max rel 3.95e-04)
+  kpc                           69.88 us [  69.83,   71.29]  net    69.39
+  r1 (seg)                      23.05 us [  22.97,   23.12]  net    22.56
+  r2 (stream chain)             22.50 us [  22.48,   24.34]  net    22.01
+  r2x (r2, word widening)       18.78 us [  18.78,   20.34]  net    18.28
+  r2x (pair) vs kpc: 0 of 4096 differ
+  r2w (2 warps, fp32 stage)     42.23 us [  42.21,   45.49]  net    41.74
+  r2w (pair) vs kpc: 0 of 4096 differ
+  kpc pair (2 launches)        139.82 us [ 139.74,  141.41]  net   138.83
+  r1 pair (2 launches)          46.19 us [  46.06,   47.67]  net    45.20
+  r2 pair (1 launch)            45.11 us [  45.09,   47.56]  net    44.62
+  r2w pair (1 launch)           83.78 us [  83.77,   89.24]  net    83.28
+M=8 N=384 K=5120: r2 vs kpc 0 of 3072 differ, r2 pair vs kpc 0, r1 vs kpc 2895 differ (max rel 6.23e-04)
+  kpc                           64.05 us [  64.03,   64.80]  net    63.55
+  r1 (seg)                      31.80 us [  31.77,   33.43]  net    31.31
+  r2 (stream chain)             21.93 us [  21.92,   23.52]  net    21.43
+  r2x (r2, word widening)       18.48 us [  18.48,   18.48]  net    17.98
+  r2x (pair) vs kpc: 0 of 6144 differ
+  r2w (2 warps, fp32 stage)     34.34 us [  34.33,   36.33]  net    33.85
+  r2w (pair) vs kpc: 0 of 6144 differ
+M=8 N=512 K=5120: r2 vs kpc 0 of 4096 differ, r2 pair vs kpc 0, r1 vs kpc 3858 differ (max rel 6.23e-04)
+  kpc                           91.75 us [  91.67,   94.56]  net    91.25
+  r1 (seg)                      44.30 us [  44.26,   46.49]  net    43.81
+  r2 (stream chain)             24.76 us [  24.74,   26.52]  net    24.26
+  r2x (r2, word widening)       22.85 us [  22.84,   24.70]  net    22.36
+  r2x (pair) vs kpc: 0 of 8192 differ
+  r2w (2 warps, fp32 stage)     50.69 us [  50.63,   53.14]  net    50.20
+  r2w (pair) vs kpc: 0 of 8192 differ
+  kpc pair (2 launches)        182.60 us [ 182.57,  185.26]  net   181.61
+  r1 pair (2 launches)          89.71 us [  89.61,   91.98]  net    88.72
+  r2 pair (1 launch)            49.93 us [  49.85,   52.15]  net    49.43
+  r2w pair (1 launch)          100.08 us [  99.91,  103.26]  net    99.58
+M=16 N=384 K=5120: r2 vs kpc 0 of 6144 differ, r2 pair vs kpc 0, r1 vs kpc 5835 differ (max rel 6.23e-04)
+  kpc                           71.54 us [  71.51,   71.57]  net    71.04
+  r1 (seg)                      83.10 us [  83.05,   85.28]  net    82.60
+  r2w (2 warps, fp32 stage)     67.83 us [  67.80,   70.05]  net    67.34
+  r2w (pair) vs kpc: 0 of 12288 differ
+M=16 N=512 K=5120: r2 vs kpc 0 of 8192 differ, r2 pair vs kpc 0, r1 vs kpc 7760 differ (max rel 6.23e-04)
+  kpc                          102.45 us [ 102.41,  105.83]  net   101.95
+  r1 (seg)                     120.37 us [ 120.20,  122.17]  net   119.87
+  r2w (2 warps, fp32 stage)     99.95 us [  99.94,  102.30]  net    99.46
+  r2w (pair) vs kpc: 0 of 16384 differ
+  kpc pair (2 launches)        204.84 us [ 204.80,  205.00]  net   203.85
+  r1 pair (2 launches)         240.60 us [ 240.58,  244.22]  net   239.61
+  r2w pair (1 launch)          183.75 us [ 183.58,  186.95]  net   183.25
+M=24 N=384 K=5120: r2 vs kpc 0 of 9216 differ, r2 pair vs kpc 0, r1 vs kpc 8740 differ (max rel 5.72e-03)
+  kpc                           82.65 us [  82.54,   82.73]  net    82.15
+  r1 (seg)                     125.41 us [ 125.28,  125.51]  net   124.92
+  r2w (2 warps, fp32 stage)    101.55 us [ 101.53,  105.09]  net   101.06
+  r2w (pair) vs kpc: 0 of 18432 differ
+M=24 N=512 K=5120: r2 vs kpc 0 of 12288 differ, r2 pair vs kpc 0, r1 vs kpc 11638 differ (max rel 5.72e-03)
+  kpc                          116.11 us [ 116.02,  116.15]  net   115.62
+  r1 (seg)                     179.89 us [ 179.80,  183.05]  net   179.39
+  r2w (2 warps, fp32 stage)    134.62 us [ 134.62,  137.13]  net   134.12
+  r2w (pair) vs kpc: 0 of 24576 differ
+  kpc pair (2 launches)        231.88 us [ 231.77,  235.63]  net   230.90
+  r1 pair (2 launches)         359.86 us [ 359.71,  363.11]  net   358.87
+  r2w pair (1 launch)          268.04 us [ 268.01,  274.33]  net   267.55
+M=32 N=384 K=5120: r2 vs kpc 0 of 12288 differ, r2 pair vs kpc 0, r1 vs kpc 11669 differ (max rel 5.72e-03)
+  kpc                           92.59 us [  92.51,   94.79]  net    92.10
+  r1 (seg)                     165.05 us [ 164.93,  165.31]  net   164.55
+  r2w (2 warps, fp32 stage)    134.81 us [ 134.81,  138.57]  net   134.32
+  r2w (pair) vs kpc: 0 of 24576 differ
+M=32 N=512 K=5120: r2 vs kpc 0 of 16384 differ, r2 pair vs kpc 0, r1 vs kpc 15548 differ (max rel 5.72e-03)
+  kpc                          130.45 us [ 130.25,  133.88]  net   129.96
+  r1 (seg)                     237.07 us [ 236.93,  239.67]  net   236.58
+  r2w (2 warps, fp32 stage)    183.62 us [ 183.59,  183.63]  net   183.12
+  r2w (pair) vs kpc: 0 of 32768 differ
+  kpc pair (2 launches)        260.93 us [ 260.63,  262.92]  net   259.94
+  r1 pair (2 launches)         473.90 us [ 473.60,  477.21]  net   472.91
+  r2w pair (1 launch)          365.03 us [ 364.98,  368.61]  net   364.53
+BYTES-OK: r2 == kpc on every shape

@@ -1190,6 +1190,77 @@ Prefill on one rank (`prefillab-k3-prefill-n1`): 4,096 tokens level (median 0.99
 thread, so fewer blocks fit a multiprocessor; that cost is open (a narrower tile keeps every
 element's program).
 
+### The fp32 FMA family: the K-segment order moved the outputs; the chain streamed instead
+
+The router's gate (every layer), the ratio-2 compressor's kv and gate (the kv-source layers 2, 8 and
+14) and the head take an fp32 output of a bf16 weight: each output is one fma chain over K = 5,120 in K
+order. At one row the narrow outputs (384 and 512 wide) are bound by that chain: 36 us a call on an RTX
+5090, against 8.3 us for 5,120 dependent fmas.
+
+r1 (not landed) summed these outputs in the bf16 family's K-segment order. On four cards it bought
+10.050 -> 9.419 ms at one row, 13.017 -> 12.467 at 4, 17.293 -> 16.651 at 8, and failed the order gate:
+chat d +3.93e-03 [+8.4e-04, +7.09e-03] by tape, top-1 96.9 -> 95.9% (the vendor's second program
+97.5%); all 18 tapes +5.25e-03 [+2.26e-03, +7.82e-03], top-1 96.6 -> 95.7%. Against two other
+realizations, k3 and the CUTLASS build (which passed), r1 sat furthest from the vendor on 7 of the 9
+tapes of 20 steps or more (`receipts/r1-dig/og-r1/per-tape-r1-cutlass-k3.md`; 7 or more of 9 at 1 in 3
+a tape: p 0.008).
+
+At equal inputs the order is not further from the vendor: on the kernel gate's vendor fixtures r1's
+router weights sit closer (exact 70 -> 100 of 270, rel_l2 2.0e-7 -> 1.2e-7) and so does the ratio-2
+compressor's latent (rel_l2 8.5e-5 -> 1.3e-6). The bisect used a research build that takes the order
+per call site (`receipts/r1-dig/r1x-site-switch.patch`; never landed):
+
+| arm | layer-gate tensors moved (of 111) | attention output rel_l2 vs the vendor, layer 2 / 14 | chat tapes: d [by-tape 95%], top-1 |
+|---|---|---|---|
+| none (the switch off everywhere) | 0: k3's set byte for byte | 8.65e-3 / 9.60e-3 | (k3: 96.9%) |
+| router only | 13: the MoE outputs' last bits; no metric moves in 4 digits | 8.65e-3 / 9.60e-3 | +4.59e-03 [+9.74e-04, +7.48e-03], 96.5% |
+| compressor only | 32: layers 2 and 14 from the latent on | 4.43e-3 / 1.36e-2 | +3.90e-09 [-5.26e-09, +2.65e-08], 96.9%: 511 of 517 steps' top-32 byte-equal to k3's |
+| both (r1) | 41 | 4.43e-3 / 1.36e-2 | +3.93e-03 [+8.44e-04, +7.09e-03], 95.9% |
+
+The router alone carries the shift: its chat KL equals r1's to the last digit on 6 of the 13 tapes and
+its d is r1's within the interval, while the compressor alone moves only the two needle tapes' 6 steps
+of the 517 (it does move the 3,761-token layer gate's attention: on the chat prompts its last bits
+rarely reach the logits). The route log is not a factor: r1's tapes ran with it, the arms without,
+and they agree. A router order change moves only the last bits of each layer's MoE output at equal
+inputs, and through 40 layers of fp8 and fp4 quantization that is a different trajectory; the
+K-segment one lands further from the vendor's. It is not that the one chain is the vendor's order:
+on an RTX 5090 (torch 2.14 with CUDA 13.0, TF32 off as the vendor's oracle runs) the vendor's fp32
+`F.linear` matches neither order bit for bit at 1 to 4,096 rows (the one chain 3.5 to 5.6% of outputs,
+the K-segment order 11.6 to 16.9%), and the K-segment order sits about 5x closer in max error
+(`receipts/r1-dig/bench/cublas-order-5090.txt`). So the order gate, not closeness at the
+source, decides: a changed router order is a new trajectory, and this one measured worse.
+
+What landed instead keeps every output's one chain, so the bytes are the current route's, and takes
+the speed from the kernel. `v41_gemv_ffma_ring_kernel` (a narrow output at 1 to 8 rows): a block is one
+warp that owns 4 columns; K streams through a 4-stage cp.async ring, so the first stage is the only
+wait; the chain reads its next 8 values of each operand one step ahead, and a 32-bit word's two bf16
+values are widened by a shift and a mask (3.4 instructions an fma instead of about 5, under the fma's
+4-cycle latency). The compressor's kv and gate run in one launch (`memra_v41_gemm_ffma2`). Measured and
+dropped: a second warp that widened each stage to fp32 for the chain's warp (22 us at one row).
+
+| RTX 5090, K = 5,120, us a call | current (one chain) | r1 (K-segment order) | ring (one chain) |
+|---|---|---|---|
+| router, 1 row (kernel, graph-timed, weights from memory) | 36.0 | 11.3 | 12.8 |
+| router, 4 rows | 39.0 | 13.2 | 15.8 |
+| router, 8 rows | 49.1 | 29.6 | 15.8 |
+| compressor (512 wide), 1 row | 37.4 | 12.4 | 13.7 |
+| router 1 / 4 / 5 / 8 rows, the engine's own timer (`dsv41-bench gemm`, mean of 2 runs) | 52.0 / 55.4 / 55.6 / 67.5 | 18.1 / 21.0 / 24.5 / 37.7 | 22.5 / 24.3 / 24.4 / 24.5 |
+| compressor's pair, 1 / 4 / 8 rows, two calls -> one (engine timer) | | | 35.1 -> 21.4 / 38.0 -> 24.8 / 38.8 -> 39.7 |
+
+GB10 (121a), the same kernels: router one row 42.3 / 12.7 / 15.6 us with the weights in L2, 55.5 /
+25.5 / 23.4 from memory (`receipts/r1-dig/bench`). Bytes: the ring's outputs equal the current route's
+on every bench shape (1 to 8 rows, both widths, the pair); the engine's router outputs hash the same
+at 1, 4, 5 and 8 rows; the kernel gate passes 177 of 177 on the 5090 (ring = parts = groups of 8 = tile;
+the pair = two calls; the vendor fixtures' router and compressor lines unchanged from k3's). On GB10
+(121a, `receipts/r1-dig/gates-r2-gb10`): kernels 177 of 177, the layer gate 161 of 161 with its 111 saved
+tensors equal to k3's set (the hash list's sha256 46164854b745e1d8, k3's), and the order gate's 13 chat
+tapes byte for byte k3's (78 of 78 files: d = 0 on the chat group). The tp and decode gates follow in
+`receipts/r1-dig/gates-r2-gb10`.
+Above 8 rows the narrow kernel with K in parts stays: r1's segment kernel was slower there (16 rows
+71 against 55 us). PRO 6000: owed (`receipts/r1-dig/wrx/COMMANDS.md`: the byte gate against kpc on
+one card, then the pair's step timing against kpc, about 15 minutes of two cards after a 12-minute
+build).
+
 ### A four-card prefill's copies, and the copy call that was slow
 
 On four cards a 4,096-token prefill took 4.0 s (vLLM's: 0.24 s). The night pass's trace

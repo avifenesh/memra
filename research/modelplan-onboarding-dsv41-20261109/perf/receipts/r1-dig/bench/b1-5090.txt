@@ -1,0 +1,55 @@
+2026-11-13T03:51:38
+name, clocks.current.sm [MHz], clocks.max.sm [MHz], power.draw [W], temperature.gpu, utilization.gpu [%]
+NVIDIA GeForce RTX 5090 Laptop GPU, 180 MHz, 3090 MHz, 12.34 W, 74, 0 %
+device NVIDIA GeForce RTX 5090 Laptop GPU, 82 SMs, L2 64 MB
+empty-kernel graph step: 0.42 us [0.41, 0.43]
+M=1 N=384 K=5120: r2 vs kpc 0 of 384 differ, r2 pair vs kpc 0, r1 vs kpc 362 differ (max rel 7.35e-05)
+  kpc                           36.16 us [  36.04,   36.20]  net    35.74
+  r1 (seg)                      11.98 us [  11.96,   12.02]  net    11.56
+  r2 (stream chain)             15.35 us [  15.30,   15.40]  net    14.93
+M=1 N=512 K=5120: r2 vs kpc 0 of 512 differ, r2 pair vs kpc 0, r1 vs kpc 482 differ (max rel 7.35e-05)
+  kpc                           37.49 us [  37.42,   37.53]  net    37.07
+  r1 (seg)                      13.01 us [  12.98,   13.04]  net    12.59
+  r2 (stream chain)             16.00 us [  15.92,   16.05]  net    15.58
+  kpc pair (2 launches)         74.90 us [  74.81,   75.07]  net    74.05
+  r1 pair (2 launches)          26.47 us [  25.93,   26.54]  net    25.62
+  r2 pair (1 launch)            18.02 us [  17.89,   19.94]  net    17.60
+M=2 N=384 K=5120: r2 vs kpc 0 of 768 differ, r2 pair vs kpc 0, r1 vs kpc 724 differ (max rel 2.99e-04)
+  kpc                           36.87 us [  36.81,   42.56]  net    36.44
+  r1 (seg)                      12.53 us [  12.46,   12.58]  net    12.10
+  r2 (stream chain)             15.79 us [  15.49,   15.87]  net    15.36
+M=2 N=512 K=5120: r2 vs kpc 0 of 1024 differ, r2 pair vs kpc 0, r1 vs kpc 965 differ (max rel 2.99e-04)
+  kpc                           38.07 us [  38.01,   38.70]  net    37.65
+  r1 (seg)                      13.54 us [  13.45,   14.12]  net    13.11
+  r2 (stream chain)             16.70 us [  16.57,   16.76]  net    16.27
+  kpc pair (2 launches)         75.98 us [  75.92,   79.36]  net    75.14
+  r1 pair (2 launches)          29.69 us [  26.87,   30.27]  net    28.84
+  r2 pair (1 launch)            20.86 us [  20.73,   26.63]  net    20.44
+M=4 N=384 K=5120: r2 vs kpc 0 of 1536 differ, r2 pair vs kpc 0, r1 vs kpc 1446 differ (max rel 3.95e-04)
+  kpc                           41.47 us [  38.57,   50.07]  net    41.04
+  r1 (seg)                      13.71 us [  13.56,   13.79]  net    13.28
+  r2 (stream chain)             18.61 us [  18.55,   18.65]  net    18.18
+M=4 N=512 K=5120: r2 vs kpc 0 of 2048 differ, r2 pair vs kpc 0, r1 vs kpc 1925 differ (max rel 3.95e-04)
+  kpc                           40.35 us [  39.96,   42.81]  net    39.93
+  r1 (seg)                      14.86 us [  14.76,   15.96]  net    14.44
+  r2 (stream chain)             18.90 us [  18.51,   18.94]  net    18.48
+  kpc pair (2 launches)         79.84 us [  79.77,   83.55]  net    79.00
+  r1 pair (2 launches)          32.09 us [  29.58,   32.40]  net    31.24
+  r2 pair (1 launch)            27.34 us [  21.73,   27.55]  net    26.91
+M=8 N=384 K=5120: r2 vs kpc 0 of 3072 differ, r2 pair vs kpc 0, r1 vs kpc 2903 differ (max rel 6.23e-04)
+  kpc                           49.40 us [  49.31,   59.10]  net    48.98
+  r1 (seg)                      28.96 us [  26.52,   29.14]  net    28.53
+  r2 (stream chain)             17.76 us [  17.70,   18.00]  net    17.34
+M=8 N=512 K=5120: r2 vs kpc 0 of 4096 differ, r2 pair vs kpc 0, r1 vs kpc 3863 differ (max rel 6.23e-04)
+  kpc                           50.77 us [  50.63,   53.91]  net    50.34
+  r1 (seg)                      29.90 us [  27.61,   30.29]  net    29.48
+  r2 (stream chain)             19.68 us [  19.63,   20.34]  net    19.25
+  kpc pair (2 launches)        101.49 us [ 101.22,  109.81]  net   100.64
+  r1 pair (2 launches)          59.66 us [  55.28,   60.18]  net    58.81
+  r2 pair (1 launch)            43.89 us [  43.24,   45.13]  net    43.47
+BYTES-OK: r2 == kpc on every shape
+rc 0
+clocks.current.sm [MHz], power.draw [W], temperature.gpu
+2550 MHz, 150.75 W, 84
+2026-11-13T03:51:48
+BENCH-DONE b1

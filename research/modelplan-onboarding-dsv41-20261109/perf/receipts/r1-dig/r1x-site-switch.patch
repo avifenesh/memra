@@ -1,0 +1,55 @@
+--- r1_dsv41_gpu.rs	2026-11-13 04:20:08.756802389 +0200
++++ dsv41_gpu.rs	2026-11-13 03:38:11.145609293 +0200
+@@ -1425,7 +1425,10 @@
+         out_f32: bool,
+     ) -> Result<(), String> {
+         if out_f32 {
+-            return self.linear_f32(x, ldx, rows, w, out, ldc, false);
++            // r1x (research binary, never lands): the narrow outputs (<= 4096 wide: the compressor's pair)
++            // are site 2, the wide ones (the head) site 4
++            let site = if w.n <= 4096 { 2 } else { 4 };
++            return self.linear_f32(x, ldx, rows, w, out, ldc, !r1x_seg(site));
+         }
+         self.gemm_bf16(
+             x,
+@@ -2556,6 +2559,31 @@
+ /// (`v41_wide` in cu/dsv41_gpu.cu): the expert tiles stay 8-row tiles (an expert with more
+ /// rows gets several) and the mHC mixes stay on each rank whole. The two limits the walk
+ /// itself applies are held here; [`set_wide_rows`] moves all five.
++/// r1x (research binary for the router step's bisect, never lands): the call sites of the fp32 FMA family that
++/// take the K-segment order, from `MEMRA_R1X_SEG` (a list of `router`, `comp`, `head`; unset: all three, which is
++/// r1; `none`: the one-chain program everywhere); the others take the one-chain program.
++fn r1x_seg(site: u8) -> bool {
++    static MASK: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
++    let m = *MASK.get_or_init(|| match std::env::var("MEMRA_R1X_SEG") {
++        Err(_) => 7,
++        Ok(v) => {
++            let mut m = 0u8;
++            for t in v.split(',') {
++                match t.trim() {
++                    "router" => m |= 1,
++                    "comp" => m |= 2,
++                    "head" => m |= 4,
++                    "none" | "" => {}
++                    other => panic!("MEMRA_R1X_SEG: unknown site {other}"),
++                }
++            }
++            eprintln!("r1x: K-segment order on sites mask {m} (1 router, 2 comp, 4 head)");
++            m
++        }
++    });
++    m & site != 0
++}
++
+ pub static WIDE_TILES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(48);
+ pub static WIDE_MIX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(32);
+
+@@ -5400,7 +5428,7 @@
+         let ne = g.n_experts;
+         let raw = self.ops.tmp(rows * ne * 4)?;
+         self.ops
+-            .linear_f32(x, g.dim, rows, &lw.gate_w, raw.p(&st), ne, chain)?;
++            .linear_f32(x, g.dim, rows, &lw.gate_w, raw.p(&st), ne, chain || !r1x_seg(1))?;
+         let sel = self.ops.tmp(rows * g.topk * 4)?;
+         let selw = self.ops.tmp(rows * g.topk * 4)?;
+         ck("route", unsafe {

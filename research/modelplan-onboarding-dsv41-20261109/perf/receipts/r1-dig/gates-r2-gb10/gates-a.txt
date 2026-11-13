@@ -1,0 +1,43 @@
+build start 05:30:23
+build end 05:34:27
+258b307d6c3a6c32e3978b7ab992b1f6d64840b8ade6fd48da3d0c5efd664519  /home/avifenesh/.cache/dsv41-speed/bins/r2/dsv41-bench
+a7d55d0ce5a49bfbb9a3f5e934c5ccd9a5c9fddb61407879922ab11886ba9588  /home/avifenesh/.cache/dsv41-speed/bins/r2/dsv41-gate
+097c15d8c66403f537fbec8c6bdeb84d0fd70470be43add6a63c04008c4b6126  /home/avifenesh/.cache/dsv41-speed/bins/r2/dsv41-run
+0c4e388bd3a32691bcaa5ab7511517fd678613fe7296b7646cadfa65cc17d11a  /home/avifenesh/.cache/dsv41-speed/bins/r2/dsv41-tpbench
+kernels rc 0 177 checks, 0 failed 0 FAIL lines 05:34:30
+PASS schedule/gemm_ffma/m3_n32_k5120: 384 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_24/n32_k5120: 1024 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_40/n32_k5120: 1024 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_tile/n32_k5120: 1024 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m3_n32_k5120/first: 384 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m3_n32_k5120/second: 384 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m8_n32_k5120/first: 1024 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m8_n32_k5120/second: 1024 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma/m4_n512_k5120: 8192 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_24/n512_k5120: 16384 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_40/n512_k5120: 16384 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_tile/n512_k5120: 16384 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m4_n512_k5120/first: 8192 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m4_n512_k5120/second: 8192 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m8_n512_k5120/first: 16384 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m8_n512_k5120/second: 16384 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma/m1_n384_k5120: 1536 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_24/n384_k5120: 12288 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_40/n384_k5120: 12288 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_tile/n384_k5120: 12288 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m1_n384_k5120/first: 1536 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m1_n384_k5120/second: 1536 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m8_n384_k5120/first: 12288 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m8_n384_k5120/second: 12288 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma/m1_n5000_k1280: 20000 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_24/n5000_k1280: 160000 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_40/n5000_k1280: 160000 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_tile/n5000_k1280: 160000 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m1_n5000_k1280/first: 20000 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m1_n5000_k1280/second: 20000 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m8_n5000_k1280/first: 160000 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2/m8_n5000_k1280/second: 160000 bytes, 0 differ [byte-identical to the reference schedule]
+layer rc 0 161 checks, 0 failed 0 FAIL lines 05:38:42
+layer saved tensors against k3's set: 111 compared, 0 differ
+46164854b745e1d8b1b7ccec290f631cdd6f4ef180b50303997d6966aea64b33  /home/avifenesh/.cache/dsv41-speed/out/gates-r2/save-r2.sha256
+GATES-R2-DONE a 05:38:53

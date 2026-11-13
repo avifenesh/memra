@@ -1833,12 +1833,25 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             }
         }
         if batch == 1 {
+            // the fp32-FMA family is one chain an output over K in K order, so every form writes the same bytes
+            // for a row: up to 8 rows the small-row kernels (the ring kernel on a narrow output), 24 the narrow
+            // kernel with K in parts, 40 the groups of 8, 64 the tile kernel
+            let a64 = Buf::from_bytes(&st, &rng.bf16(64 * k))?;
             let small = ops.buf(m * n * 4)?;
             let full = ops.buf(8 * n * 4)?;
-            for (c, rows) in [(&small, m), (&full, 8)] {
+            let mid = ops.buf(24 * n * 4)?;
+            let tall = ops.buf(40 * n * 4)?;
+            let tile = ops.buf(64 * n * 4)?;
+            for (c, rows) in [
+                (&small, m),
+                (&full, 8),
+                (&mid, 24),
+                (&tall, 40),
+                (&tile, 64),
+            ] {
                 ck("gemm_ffma", unsafe {
                     ffi::memra_v41_gemm_ffma(
-                        a.p(&st).c(),
+                        a64.p(&st).c(),
                         k as i64,
                         b.p(&st).c(),
                         k as i64,
@@ -1858,6 +1871,75 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 &small.host(&st)?,
                 &fh[..m * n * 4],
             );
+            same(
+                rep,
+                &format!("schedule/gemm_ffma_24/n{n}_k{k}"),
+                &mid.host(&st)?[..8 * n * 4],
+                &fh[..],
+            );
+            same(
+                rep,
+                &format!("schedule/gemm_ffma_40/n{n}_k{k}"),
+                &tall.host(&st)?[..8 * n * 4],
+                &fh[..],
+            );
+            same(
+                rep,
+                &format!("schedule/gemm_ffma_tile/n{n}_k{k}"),
+                &tile.host(&st)?[..8 * n * 4],
+                &fh[..],
+            );
+            // the compressor's pair: one call over two weights writes each output's single-call bytes
+            let b1 = Buf::from_bytes(&st, &rng.bf16(n * k))?;
+            for rows in [m, 8] {
+                let (p0, p1) = (ops.buf(rows * n * 4)?, ops.buf(rows * n * 4)?);
+                let one = ops.buf(rows * n * 4)?;
+                ck("gemm_ffma2", unsafe {
+                    ffi::memra_v41_gemm_ffma2(
+                        a64.p(&st).c(),
+                        k as i64,
+                        b.p(&st).c(),
+                        k as i64,
+                        p0.p(&st).fm(),
+                        n as i64,
+                        n as i32,
+                        b1.p(&st).c(),
+                        k as i64,
+                        p1.p(&st).fm(),
+                        n as i64,
+                        n as i32,
+                        rows as i32,
+                        k as i32,
+                        sv,
+                    )
+                })?;
+                ck("gemm_ffma", unsafe {
+                    ffi::memra_v41_gemm_ffma(
+                        a64.p(&st).c(),
+                        k as i64,
+                        b1.p(&st).c(),
+                        k as i64,
+                        one.p(&st).fm(),
+                        n as i64,
+                        rows as i32,
+                        n as i32,
+                        k as i32,
+                        sv,
+                    )
+                })?;
+                same(
+                    rep,
+                    &format!("schedule/gemm_ffma2/m{rows}_n{n}_k{k}/first"),
+                    &p0.host(&st)?,
+                    &fh[..rows * n * 4],
+                );
+                same(
+                    rep,
+                    &format!("schedule/gemm_ffma2/m{rows}_n{n}_k{k}/second"),
+                    &p1.host(&st)?,
+                    &one.host(&st)?,
+                );
+            }
         }
     }
     // the one-row selects over a long row cut into blocks against the one-block forms: a row of few

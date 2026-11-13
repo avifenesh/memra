@@ -423,6 +423,23 @@ pub mod ffi {
             k: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_v41_gemm_ffma2(
+            a: *const c_void,
+            lda: i64,
+            b0: *const c_void,
+            ldb0: i64,
+            c0: *mut f32,
+            ldc0: i64,
+            n0: i32,
+            b1: *const c_void,
+            ldb1: i64,
+            c1: *mut f32,
+            ldc1: i64,
+            n1: i32,
+            m: i32,
+            k: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_v41_cast(
             x: *const c_void,
             y: *mut c_void,
@@ -1470,6 +1487,42 @@ impl Ops {
             n as i32,
             k as i32,
             batch as i32,
+            self.sv()
+        ))
+    }
+    /// Two fp32 linears of the same `rows` rows of `x` (the ratio-2 compressor's kv and gate, outputs
+    /// `ldc` apart a row): each output the bytes of [`Self::linear_bf16`] with an f32 output, and on a few
+    /// rows one launch over both (`memra_v41_gemm_ffma2`), so the two K-long chains run side by side.
+    #[allow(clippy::too_many_arguments)]
+    pub fn linear_f32_pair(
+        &self,
+        x: Dp,
+        ldx: usize,
+        rows: usize,
+        w0: &BW,
+        out0: Dp,
+        w1: &BW,
+        out1: Dp,
+        ldc: usize,
+    ) -> Result<(), String> {
+        if w0.k != w1.k {
+            return Err(format!("linear_f32_pair: K {} and {}", w0.k, w1.k));
+        }
+        launch!(memra_v41_gemm_ffma2(
+            x.c(),
+            ldx as i64,
+            w0.w.p(&self.st).c(),
+            w0.k as i64,
+            out0.fm(),
+            ldc as i64,
+            w0.n as i32,
+            w1.w.p(&self.st).c(),
+            w1.k as i64,
+            out1.fm(),
+            ldc as i64,
+            w1.n as i32,
+            rows as i32,
+            w0.k as i32,
             self.sv()
         ))
     }
@@ -3606,16 +3659,15 @@ impl Ctx {
         }
         let kvf = self.ops.tmp(s * hd * 4)?;
         let scf = self.ops.tmp(s * hd * 4)?;
-        self.ops
-            .linear_bf16(x.p(&st), g.dim, s, &cw.wkv, kvf.p(&st), hd, true)?;
-        self.ops.linear_bf16(
+        self.ops.linear_f32_pair(
             x.p(&st),
             g.dim,
             s,
+            &cw.wkv,
+            kvf.p(&st),
             cw.wgate.as_ref().unwrap(),
             scf.p(&st),
             hd,
-            true,
         )?;
         if ls.c_kv.is_none() {
             // carried state: zeroed, so a slot no token wrote yet holds the same bytes on every rank
@@ -4234,16 +4286,15 @@ impl Ctx {
                 } else {
                     let kvf = self.ops.tmp(n * hd * 4)?;
                     let scf = self.ops.tmp(n * hd * 4)?;
-                    self.ops
-                        .linear_bf16(x.p(&st), g.dim, n, &cw.wkv, kvf.p(&st), hd, true)?;
-                    self.ops.linear_bf16(
+                    self.ops.linear_f32_pair(
                         x.p(&st),
                         g.dim,
                         n,
+                        &cw.wkv,
+                        kvf.p(&st),
                         cw.wgate.as_ref().unwrap(),
                         scf.p(&st),
                         hd,
-                        true,
                     )?;
                     let l = self.ops.tmp(n * hd * 2)?;
                     let mut done = 0usize;
@@ -4894,16 +4945,15 @@ impl Ctx {
                 } else {
                     let kvf = self.ops.tmp(n * hd * 4)?;
                     let scf = self.ops.tmp(n * hd * 4)?;
-                    self.ops
-                        .linear_bf16(x.p(&st), g.dim, n, &cw.wkv, kvf.p(&st), hd, true)?;
-                    self.ops.linear_bf16(
+                    self.ops.linear_f32_pair(
                         x.p(&st),
                         g.dim,
                         n,
+                        &cw.wkv,
+                        kvf.p(&st),
                         cw.wgate.as_ref().unwrap(),
                         scf.p(&st),
                         hd,
-                        true,
                     )?;
                     // the fp32 rows as 16-bit words, each into its open pair's slot; then the
                     // pairs pooled where they are

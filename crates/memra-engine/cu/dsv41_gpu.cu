@@ -2342,10 +2342,120 @@ __global__ void __launch_bounds__(128) v41_gemv_ffma_narrow_parts_kernel(const v
     if (chain) C[(long)r * ldc + n0 + cc] = acc;
 }
 
+// The same chain for a narrow output of up to 8 rows, its K streamed: a block is one warp that owns 4 columns
+// and lane (row, column) = (lane / 4, lane % 4) runs the output's one fma chain over K in K order (the narrow
+// kernel's bytes). K arrives through a ring of V41_RING_NS stages of V41_RING_KC elements (the 4 columns and
+// the call's rows, lane l landing the l-th 16 bytes of each), stages in flight while the chain runs, and the
+// chain reads its next 8 values of each operand one step ahead.
+// WHY: an output is K dependent fmas whatever the kernel, so the chain's latency is the call's floor (4 cycles an
+// fma on sm_120: 8.3 us for K = 5,120 on an RTX 5090); the narrow kernel added the wait for all of K to land and a
+// shared-memory read the chain waited on at each turn of its loop (36 us a call of the router at one row). Here the
+// first stage is the only wait, and a block is small enough that both outputs of the compressor's pair run in one
+// launch (memra_v41_gemm_ffma2). Measured and dropped: a second warp widening each stage to fp32 for the chain's
+// warp (22 us: the hand-over costs more than the widening).
+#define V41_RING_KC 256
+#define V41_RING_NS 4
+#define V41_RING_PITCH (V41_RING_KC + 8)  // elements: a stage's rows 16 bytes apart in the bank map
+
+// one output of a ring launch: the weight, the output and its width; `nblk` blocks of 4 columns
+struct V41RingOut {
+    const v41_bf* B;
+    long ldb;
+    float* C;
+    long ldc;
+    int N;
+    int nblk;
+};
+
+__global__ void __launch_bounds__(32) v41_gemv_ffma_ring_kernel(const v41_bf* __restrict__ A, long lda, V41RingOut o0,
+                                                                V41RingOut o1, int M, int K) {
+    extern __shared__ __align__(16) uint8_t v41_ffma_sm[];
+    v41_bf* sm = (v41_bf*)v41_ffma_sm;
+    int b = blockIdx.x;
+    const bool second = b >= o0.nblk;
+    const v41_bf* __restrict__ B = second ? o1.B : o0.B;
+    const long ldb = second ? o1.ldb : o0.ldb;
+    float* __restrict__ C = second ? o1.C : o0.C;
+    const long ldc = second ? o1.ldc : o0.ldc;
+    const int N = second ? o1.N : o0.N;
+    if (second) b -= o0.nblk;
+    const int n0 = b * V41_SMF_NC, rows = V41_SMF_NC + M, lane = threadIdx.x, nk = K / V41_RING_KC;
+    // stage t: rows 0..3 the columns, then the call's rows
+    auto land = [&](int t) {
+        v41_bf* base = sm + (t % V41_RING_NS) * rows * V41_RING_PITCH;
+        long k0 = (long)t * V41_RING_KC + lane * 8;
+#pragma unroll
+        for (int row = 0; row < V41_SMF_NC; ++row) {
+            bool ok = n0 + row < N;
+            v41_cp16(base + row * V41_RING_PITCH + lane * 8, B + (long)(ok ? n0 + row : 0) * ldb + k0, ok);
+        }
+        for (int row = 0; row < M; ++row)
+            v41_cp16(base + (V41_SMF_NC + row) * V41_RING_PITCH + lane * 8, A + (long)row * lda + k0, true);
+    };
+#pragma unroll
+    for (int t = 0; t < V41_RING_NS - 1; ++t) {
+        if (t < nk) land(t);
+        v41_cp_commit();
+    }
+    const int r = lane / V41_SMF_NC, cc = lane % V41_SMF_NC;
+    const bool chain = r < M && n0 + cc < N;
+    float acc = 0.f;
+    for (int t = 0; t < nk; ++t) {
+        v41_cp_wait<V41_RING_NS - 2>();
+        __syncwarp();  // stage t landed by every lane; every lane is done with stage t - 1's slot
+        if (t + V41_RING_NS - 1 < nk) land(t + V41_RING_NS - 1);
+        v41_cp_commit();
+        if (chain) {
+            const v41_bf* base = sm + (t % V41_RING_NS) * rows * V41_RING_PITCH;
+            const v41_bf* ar = base + (V41_SMF_NC + r) * V41_RING_PITCH;
+            const v41_bf* br = base + cc * V41_RING_PITCH;
+            uint4 av = *(const uint4*)ar, bv = *(const uint4*)br;
+#pragma unroll
+            for (int k = 0; k < V41_RING_KC; k += 8) {
+                uint4 an = av, bn = bv;
+                if (k + 8 < V41_RING_KC) {
+                    an = *(const uint4*)(ar + k + 8);
+                    bn = *(const uint4*)(br + k + 8);
+                }
+                // a 32-bit word holds two bf16 values: the low one widened by a shift, the high one by a mask
+                // (one instruction each, where a 16-bit pick and a shift took two)
+                const uint32_t aw[4] = {av.x, av.y, av.z, av.w}, bw[4] = {bv.x, bv.y, bv.z, bv.w};
+#pragma unroll
+                for (int u = 0; u < 4; ++u) {
+                    acc = __fmaf_rn(__uint_as_float(aw[u] << 16), __uint_as_float(bw[u] << 16), acc);
+                    acc = __fmaf_rn(__uint_as_float(aw[u] & 0xffff0000u), __uint_as_float(bw[u] & 0xffff0000u), acc);
+                }
+                av = an;
+                bv = bn;
+            }
+        }
+    }
+    if (chain) C[(long)r * ldc + n0 + cc] = acc;
+}
+
+// the ring kernel takes the call: up to 8 rows, outputs up to 4096 wide, K whole stages, 16-byte rows
+static bool v41_ring_fits(const void* a, long lda, const void* b, long ldb, int m, int n, int k) {
+    return m >= 1 && m <= V41_SM_MAX && n <= 4096 && k % V41_RING_KC == 0 && lda % 8 == 0 && ldb % 8 == 0 &&
+           ((uintptr_t)a | (uintptr_t)b) % 16 == 0;
+}
+
+static int v41_ring_launch(const void* a, long lda, V41RingOut o0, V41RingOut o1, int m, int k, void* stream) {
+    int smem = V41_RING_NS * (V41_SMF_NC + m) * V41_RING_PITCH * 2;
+    v41_gemv_ffma_ring_kernel<<<o0.nblk + o1.nblk, 32, smem, (cudaStream_t)stream>>>((const v41_bf*)a, lda, o0, o1, m,
+                                                                                     k);
+    V41_ERR();
+}
+
 extern "C" int memra_v41_gemm_ffma(const void* a, long lda, const void* b, long ldb, float* c, long ldc, int m, int n,
                                    int k, void* stream) {
     if (k % 32 || m < 0 || n <= 0) return 41023;
     if (m == 0) return 0;
+    if (v41_ring_fits(a, lda, b, ldb, m, n, k)) {
+        // a narrow output (the router's gate, the compressor) of up to 8 rows: the chain with K streamed
+        V41RingOut o0{(const v41_bf*)b, ldb, c, ldc, n, (n + V41_SMF_NC - 1) / V41_SMF_NC}, o1{nullptr, 0, nullptr, 0,
+                                                                                            0, 0};
+        return v41_ring_launch(a, lda, o0, o1, m, k, stream);
+    }
     // the row forms load 16 bytes at a time from the rows of a and b: their bases too must be aligned
     bool al = lda % 8 == 0 && ldb % 8 == 0 && ((uintptr_t)a | (uintptr_t)b) % 16 == 0;
     if (m > V41_SM_MAX && m <= 32 && m <= v41_wide(2) && n <= 4096 && al) {
@@ -2406,6 +2516,24 @@ extern "C" int memra_v41_gemm_ffma(const void* a, long lda, const void* b, long 
         v41_gemm_ffma_kernel<false><<<grid, 256, 0, (cudaStream_t)stream>>>((const v41_bf*)a, lda, (const v41_bf*)b,
                                                                             ldb, c, ldc, m, n, k);
     V41_ERR();
+}
+
+// Two fp32 linears of the same input (the ratio-2 compressor's kv and gate): c0 = a . b0^T [m][n0] and
+// c1 = a . b1^T [m][n1], each output the bytes memra_v41_gemm_ffma writes for it. A call the ring kernel takes is
+// one launch over both outputs' columns (two chains of K side by side instead of one after the other); any other
+// is the two calls.
+extern "C" int memra_v41_gemm_ffma2(const void* a, long lda, const void* b0, long ldb0, float* c0, long ldc0, int n0,
+                                    const void* b1, long ldb1, float* c1, long ldc1, int n1, int m, int k,
+                                    void* stream) {
+    if (k % 32 || m < 0 || n0 <= 0 || n1 <= 0) return 41023;
+    if (m == 0) return 0;
+    if (v41_ring_fits(a, lda, b0, ldb0, m, n0, k) && v41_ring_fits(a, lda, b1, ldb1, m, n1, k)) {
+        V41RingOut o0{(const v41_bf*)b0, ldb0, c0, ldc0, n0, (n0 + V41_SMF_NC - 1) / V41_SMF_NC},
+            o1{(const v41_bf*)b1, ldb1, c1, ldc1, n1, (n1 + V41_SMF_NC - 1) / V41_SMF_NC};
+        return v41_ring_launch(a, lda, o0, o1, m, k, stream);
+    }
+    int rc = memra_v41_gemm_ffma(a, lda, b0, ldb0, c0, ldc0, m, n0, k, stream);
+    return rc ? rc : memra_v41_gemm_ffma(a, lda, b1, ldb1, c1, ldc1, m, n1, k, stream);
 }
 
 // ---------------------------------------------------------------------------------------------
