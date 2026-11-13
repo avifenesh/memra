@@ -1,0 +1,48 @@
+1ac8c6d50e7088ba3ab1a35a0d85d0ceca28bc8ce9d7325ae9a1f81e0dca4ad2  /home/access/dsv41/perf-bins/kpc/dsv41-gate
+980ed56217c51675220697e0c5c9a0039bff4c7a53866d7e1f50c61a813e4282  /home/access/dsv41/perf-bins/r2/dsv41-gate
+layer kpc rc 0 161 checks, 0 failed
+layer r2 rc 0 161 checks, 0 failed
+layer saved tensors r2 against kpc: 111 compared, 0 differ
+gemm run 1 kpc rc 0
+gemm ffma head m 1 n 129280 k 5120: median 0.8573 ms (1544 GB/s) sha 5aed36cb1fb79a1f312a0aec
+gemm ffma head m 4 n 129280 k 5120: median 1.0088 ms (1312 GB/s) sha 47af928c628d77a5f2ef4e11
+gemm ffma head m 5 n 129280 k 5120: median 1.2543 ms (1055 GB/s) sha 254c976b62de390570b5a4ca
+gemm ffma head m 8 n 129280 k 5120: median 1.5374 ms (861 GB/s) sha 8b641b1f6955435e12972f96
+gemm ffma router m 1 n 384 k 5120: median 0.0243 ms (162 GB/s) sha d58ddb83a717adf2be4b7611
+gemm ffma router m 4 n 384 k 5120: median 0.0261 ms (150 GB/s) sha e6f9f48f2874c6331ff77401
+gemm ffma router m 5 n 384 k 5120: median 0.0265 ms (148 GB/s) sha 9941de28b8a92c91fd4652c3
+gemm ffma router m 8 n 384 k 5120: median 0.0336 ms (117 GB/s) sha c9ef3e74e71a36a7c1848107
+gemm run 2 r2 rc 0
+gemm ffma head m 1 n 129280 k 5120: median 0.8594 ms (1540 GB/s) sha 5aed36cb1fb79a1f312a0aec
+gemm ffma head m 4 n 129280 k 5120: median 1.0195 ms (1299 GB/s) sha 47af928c628d77a5f2ef4e11
+gemm ffma head m 5 n 129280 k 5120: median 1.2621 ms (1049 GB/s) sha 254c976b62de390570b5a4ca
+gemm ffma head m 8 n 129280 k 5120: median 1.5485 ms (855 GB/s) sha 8b641b1f6955435e12972f96
+gemm ffma router m 1 n 384 k 5120: median 0.0200 ms (196 GB/s) sha d58ddb83a717adf2be4b7611
+gemm ffma router m 4 n 384 k 5120: median 0.0216 ms (182 GB/s) sha e6f9f48f2874c6331ff77401
+gemm ffma router m 5 n 384 k 5120: median 0.0220 ms (179 GB/s) sha 9941de28b8a92c91fd4652c3
+gemm ffma router m 8 n 384 k 5120: median 0.0219 ms (179 GB/s) sha c9ef3e74e71a36a7c1848107
+gemm ffma comp pair m 1 n 512 k 5120: two calls 0.0355 ms, one call 0.0209 ms, sha 58d6b2e232d75c1428075419 / 58d6b2e232d75c1428075419
+gemm ffma comp pair m 4 n 512 k 5120: two calls 0.0387 ms, one call 0.0230 ms, sha bf7ad5aa3edb85a41d552b09 / bf7ad5aa3edb85a41d552b09
+gemm ffma comp pair m 8 n 512 k 5120: two calls 0.0401 ms, one call 0.0254 ms, sha 77355f2d73ddb15510ef8fb2 / 77355f2d73ddb15510ef8fb2
+gemm run 3 r2 rc 0
+gemm ffma head m 1 n 129280 k 5120: median 0.8598 ms (1540 GB/s) sha 5aed36cb1fb79a1f312a0aec
+gemm ffma head m 4 n 129280 k 5120: median 1.0263 ms (1290 GB/s) sha 47af928c628d77a5f2ef4e11
+gemm ffma head m 5 n 129280 k 5120: median 1.2711 ms (1041 GB/s) sha 254c976b62de390570b5a4ca
+gemm ffma head m 8 n 129280 k 5120: median 1.5627 ms (847 GB/s) sha 8b641b1f6955435e12972f96
+gemm ffma router m 1 n 384 k 5120: median 0.0198 ms (199 GB/s) sha d58ddb83a717adf2be4b7611
+gemm ffma router m 4 n 384 k 5120: median 0.0213 ms (184 GB/s) sha e6f9f48f2874c6331ff77401
+gemm ffma router m 5 n 384 k 5120: median 0.0216 ms (182 GB/s) sha 9941de28b8a92c91fd4652c3
+gemm ffma router m 8 n 384 k 5120: median 0.0216 ms (182 GB/s) sha c9ef3e74e71a36a7c1848107
+gemm ffma comp pair m 1 n 512 k 5120: two calls 0.0353 ms, one call 0.0206 ms, sha 58d6b2e232d75c1428075419 / 58d6b2e232d75c1428075419
+gemm ffma comp pair m 4 n 512 k 5120: two calls 0.0385 ms, one call 0.0227 ms, sha bf7ad5aa3edb85a41d552b09 / bf7ad5aa3edb85a41d552b09
+gemm ffma comp pair m 8 n 512 k 5120: two calls 0.0399 ms, one call 0.0251 ms, sha 77355f2d73ddb15510ef8fb2 / 77355f2d73ddb15510ef8fb2
+gemm run 4 kpc rc 0
+gemm ffma head m 1 n 129280 k 5120: median 0.8603 ms (1539 GB/s) sha 5aed36cb1fb79a1f312a0aec
+gemm ffma head m 4 n 129280 k 5120: median 1.0340 ms (1280 GB/s) sha 47af928c628d77a5f2ef4e11
+gemm ffma head m 5 n 129280 k 5120: median 1.2669 ms (1045 GB/s) sha 254c976b62de390570b5a4ca
+gemm ffma head m 8 n 129280 k 5120: median 1.5720 ms (842 GB/s) sha 8b641b1f6955435e12972f96
+gemm ffma router m 1 n 384 k 5120: median 0.0243 ms (162 GB/s) sha d58ddb83a717adf2be4b7611
+gemm ffma router m 4 n 384 k 5120: median 0.0261 ms (151 GB/s) sha e6f9f48f2874c6331ff77401
+gemm ffma router m 5 n 384 k 5120: median 0.0265 ms (148 GB/s) sha 9941de28b8a92c91fd4652c3
+gemm ffma router m 8 n 384 k 5120: median 0.0336 ms (117 GB/s) sha c9ef3e74e71a36a7c1848107
+R2-BYTES-DONE 06:24:32

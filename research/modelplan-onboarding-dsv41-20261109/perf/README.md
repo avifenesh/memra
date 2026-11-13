@@ -1259,8 +1259,8 @@ tapes byte for byte k3's (78 of 78 files: d = 0 on the chat group); tp at 2 and 
 Above 8 rows the narrow kernel with K in parts stays: r1's segment kernel was slower there (16 rows
 71 against 55 us).
 
-PRO 6000 (2026-11-13, `receipts/r1-dig/pro6000`; the run summaries and byte lines, the runs' raw
-logs on the measurement box under `receipts-perf/r2-bytes` and `r2-pair23`): the layer gate 161 of
+PRO 6000 (2026-11-13, `receipts/r1-dig/pro6000`: the run summaries, and the raw runs in `r2-bytes/` and
+`r2-pair23/` with gzipped telemetry): the layer gate 161 of
 161 on both builds with all 111 saved tensors equal to kpc's; every `dsv41-bench gemm` output hash
 equal to kpc's (head and router at 1, 4, 5 and 8 rows, the pair against two single calls); tp on
 the pair 480 / 0 (default) and 478 / 0 (peer-pull). The engine timer, kpc (runs 1 and 4) against
@@ -1272,8 +1272,13 @@ r2 (runs 2 and 3), us a call:
 | router, r2 | 20.0 / 19.8 | 21.6 / 21.3 | 22.0 / 21.6 | 21.9 / 21.6 |
 | compressor pair, two calls -> one (r2) | 35.5 -> 20.9, 35.3 -> 20.6 | 38.7 -> 23.0, 38.5 -> 22.7 | | 40.1 -> 25.4, 39.9 -> 25.1 |
 
+On the RTX 5090 Laptop the pair at 8 rows is slower as one launch: 38.1 -> 39.2 and 39.4 -> 40.2 us in the two
+runs (`receipts/r1-dig/gemm-5090`); at 1 and 4 rows it is faster, and the PRO 6000 is faster at every width.
+
 The pair's step (cards 2 and 3, 20 layers, kpc A against r2 B, A B B A B A A B, 4 runs an arm,
-steady calls past 0.5 s of load): one-row decode 6.670 -> 6.505 ms (-2.5%; 919 and 912 calls),
+steady calls past 0.5 s of load): one-row decode 6.670 -> 6.505 ms (-2.5%; 919 and 912 calls; by run,
+the median of each run's steady calls, kpc 6.664 [6.663, 6.679] against r2 6.499 [6.492, 6.514] over 4 runs an arm,
+the ranges apart; `r2-pair23/per-run.md`),
 4-row block 8.845 -> 8.824 (-0.2%), 8-row block 12.362 -> 12.344 (-0.1%; 36 calls an arm each); no
 run flagged for a slowdown, no page-cache drop inside a run.
 
