@@ -25421,13 +25421,14 @@ pub fn run(
                     // round (the memory cap verifies the others after it) on top of every member's
                     // burst-entry snapshot; when the reading cannot fund that, evictable memory
                     // goes before the step, not after it fails (`reclaim_for_spec_round`).
-                    let candidates: Vec<&Session> = active
+                    // In the order the cohorts stack them (`spec_order`).
+                    let candidates: Vec<&Session> = spec_order
                         .iter()
-                        .enumerate()
-                        .filter(|&(i, s)| {
-                            !finished.contains(&i) && spec_pool_candidate(s, &loaded[&s.model])
+                        .filter(|&&i| {
+                            !finished.contains(&i)
+                                && spec_pool_candidate(&active[i], &loaded[&active[i].model])
                         })
-                        .map(|(_, s)| s)
+                        .map(|&i| &active[i])
                         .collect();
                     let members: Vec<(usize, usize)> = candidates
                         .iter()
@@ -25447,13 +25448,23 @@ pub fn run(
                         // charge on the reading until they do (memra#1255's booking, single
                         // device only). They build after the cohorts step, so only the FA pool's
                         // growth overlaps them (`booking_overlap`).
-                        let fa_growth = candidates
+                        // The bound prices each model's cohort stacked in one pooled forward
+                        // (`spec_cohort_fa_growth_bytes`): a forward can grow the pool where no
+                        // single round does.
+                        let mut by_model: Vec<(&str, Vec<(usize, usize)>)> = Vec::new();
+                        for s in &candidates {
+                            let pos = s.spec.as_ref().map_or(0, |sp| sp.kv_position());
+                            match by_model.iter_mut().find(|(m, _)| *m == s.model.as_str()) {
+                                Some((_, rounds)) => rounds.push((s.spec_k, pos)),
+                                None => by_model.push((s.model.as_str(), vec![(s.spec_k, pos)])),
+                            }
+                        }
+                        let fa_growth = by_model
                             .iter()
-                            .map(|s| {
-                                let pos = s.spec.as_ref().map_or(0, |sp| sp.kv_position());
-                                loaded[&s.model]
+                            .map(|(m, rounds)| {
+                                loaded[*m]
                                     .model
-                                    .spec_round_fa_growth_bytes(&engine, s.spec_k, pos)
+                                    .spec_cohort_fa_growth_bytes(&engine, rounds)
                             })
                             .max()
                             .unwrap_or(0);
@@ -61343,7 +61354,7 @@ mod pre_cohort_reclaim_1266_tests {
                 "let booked = if is_multi_device_deployment(&loaded) { 0 } else { booking_overlap( ",
                 "unbuilt_session_booking(&active, admit_memory_cfg.armed), fa_growth, ) };"
             ),
-            "loaded[&s.model] .model .spec_round_fa_growth_bytes(&engine, s.spec_k, pos)",
+            "loaded[*m] .model .spec_cohort_fa_growth_bytes(&engine, rounds)",
             "need.saturating_add(spec_cohort_need_pad_bytes()), booked, );",
         ] {
             assert_eq!(count(needle), 1, "the Cohorts pass lost: {needle}");
