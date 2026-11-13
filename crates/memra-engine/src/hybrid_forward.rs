@@ -1696,20 +1696,57 @@ fn prime_pipeline_auto_geometry(n_layers: usize) -> bool {
 /// `cache::swa_ring_on_for_plan`), never the process default: a co-loaded step37 model arms
 /// that default for the whole process, and another family's schedule must not change with it.
 pub fn prime_chunk_tokens(t: usize, n_layers: usize, ring_on: bool) -> usize {
-    if let Ok(value) = std::env::var("MEMRA_PRIME_CHUNK") {
-        let parsed = value
-            .parse::<usize>()
-            .unwrap_or(crate::cache::PRIME_CHUNK_MAX_TOKENS);
-        return explicit_prime_chunk(parsed, ring_on);
+    prime_chunk_tokens_under(t, PrimeScheduleKind::from_env(n_layers), ring_on)
+}
+
+/// What the prime schedule reads from the environment and the placement. With it given,
+/// [`prime_chunk_tokens_under`] and [`prime_chunk_ranges_under`] are pure, so admission and the
+/// tests can evaluate every kind of schedule (memra#1276).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PrimeScheduleKind {
+    /// `MEMRA_PRIME_CHUNK` is set, to this value (one that does not parse reads as the cap).
+    Explicit(usize),
+    /// No pipeline geometry: the single-device schedule.
+    SingleDevice,
+    /// A pipelined PP prime's geometry (`prime_pipeline_auto_geometry`): the equal-modeled-time
+    /// schedule unless `MEMRA_PRIME_CHUNK_SCHED` asks for the fixed one.
+    Pipeline { dynamic: bool },
+}
+
+impl PrimeScheduleKind {
+    /// The kind this process schedules a trunk of `n_layers` layers with.
+    pub fn from_env(n_layers: usize) -> Self {
+        if let Some(value) = std::env::var_os("MEMRA_PRIME_CHUNK") {
+            return Self::Explicit(
+                value
+                    .to_str()
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .unwrap_or(crate::cache::PRIME_CHUNK_MAX_TOKENS),
+            );
+        }
+        if !prime_pipeline_auto_geometry(n_layers) {
+            return Self::SingleDevice;
+        }
+        Self::Pipeline {
+            dynamic: match std::env::var("MEMRA_PRIME_CHUNK_SCHED") {
+                Ok(value) => value == "dynamic",
+                Err(_) => true,
+            },
+        }
     }
+}
+
+/// [`prime_chunk_tokens`] under a given schedule kind.
+pub fn prime_chunk_tokens_under(t: usize, kind: PrimeScheduleKind, ring_on: bool) -> usize {
     let chunk = crate::cache::PRIME_CHUNK_MAX_TOKENS;
-    if prime_pipeline_auto_geometry(n_layers) && t >= 2 * PRIME_PIPE_MIN_CHUNK {
-        chunk.min(
+    match kind {
+        PrimeScheduleKind::Explicit(parsed) => explicit_prime_chunk(parsed, ring_on),
+        PrimeScheduleKind::SingleDevice => chunk,
+        PrimeScheduleKind::Pipeline { .. } if t >= 2 * PRIME_PIPE_MIN_CHUNK => chunk.min(
             t.div_ceil(PRIME_PIPE_MICROBATCHES)
                 .max(PRIME_PIPE_MIN_CHUNK),
-        )
-    } else {
-        chunk
+        ),
+        PrimeScheduleKind::Pipeline { .. } => chunk,
     }
 }
 
@@ -1753,10 +1790,10 @@ fn fixed_prime_chunk_ranges_on_grid(
         let mut end = (start + chunk).min(t);
         if t - end > 0 && t - end < PRIME_MIN_T {
             if ring_on {
-                let shifted = t - PRIME_MIN_T;
+                let shifted = t.saturating_sub(PRIME_MIN_T);
                 end = if shifted > start { shifted } else { t };
             } else if t - start > fold_cap {
-                let shifted = t - PRIME_MIN_T;
+                let shifted = t.saturating_sub(PRIME_MIN_T);
                 let on_grid = if grid > 1 {
                     shifted / grid * grid
                 } else {
@@ -1793,6 +1830,25 @@ pub(crate) fn single_device_prime_ranges(
         Some(c) => align_prime_ranges_to_gdn(&fixed, t, c),
         None => fixed,
     }
+}
+
+/// The step35 batched GEMM prime's schedule (`prime_cache_overlaid_inner`'s GEMM entry): ranges
+/// of `PRIME_CHUNK_MAX_TOKENS` rows whatever the chunk geometry, with a trailing remainder shorter
+/// than `PRIME_MIN_T` folded into the last range whatever its width (memra#1275 tracks that
+/// overrun). Admission reads the same schedule (`PrimeWorkspaceShape::call_rows`).
+pub(crate) fn step_gemm_prime_ranges(t: usize) -> Vec<(usize, usize)> {
+    let width = crate::cache::PRIME_CHUNK_MAX_TOKENS;
+    let mut ranges = Vec::with_capacity(t.div_ceil(width));
+    let mut start = 0usize;
+    while start < t {
+        let mut end = (start + width).min(t);
+        if t - end > 0 && t - end < PRIME_MIN_T {
+            end = t;
+        }
+        ranges.push((start, end));
+        start = end;
+    }
+    ranges
 }
 
 fn prime_chunk_work(prefix: usize, total: usize) -> u128 {
@@ -1861,37 +1917,161 @@ pub fn prime_chunk_ranges(
     gdn_grid: bool,
     ring_on: bool,
 ) -> Vec<(usize, usize)> {
-    let explicit_chunk = std::env::var_os("MEMRA_PRIME_CHUNK").is_some();
-    let chunk = prime_chunk_tokens(t, n_layers, ring_on);
-    if explicit_chunk {
+    prime_chunk_ranges_under(
+        t,
+        PrimeScheduleKind::from_env(n_layers),
+        gdn_grid.then(Engine::gdn_chunk_size),
+        ring_on,
+    )
+}
+
+/// [`prime_chunk_ranges`] under a given schedule kind and GDN chunk grid (`None`: no grid).
+pub fn prime_chunk_ranges_under(
+    t: usize,
+    kind: PrimeScheduleKind,
+    grid: Option<usize>,
+    ring_on: bool,
+) -> Vec<(usize, usize)> {
+    let chunk = prime_chunk_tokens_under(t, kind, ring_on);
+    match kind {
         // memra#1258: a fold the cap stops splits on the GDN grid, as the default's alignment
         // places it; every other explicit boundary stays where the operator's chunk puts it.
-        let grid = if gdn_grid {
-            Engine::gdn_chunk_size()
-        } else {
-            1
-        };
-        return fixed_prime_chunk_ranges_on_grid(t, chunk, ring_on, grid);
-    }
-    if !prime_pipeline_auto_geometry(n_layers) {
+        PrimeScheduleKind::Explicit(_) => {
+            fixed_prime_chunk_ranges_on_grid(t, chunk, ring_on, grid.unwrap_or(1))
+        }
         // The single-device schedule (`chunk` is the cap here).
-        return single_device_prime_ranges(t, ring_on, gdn_grid.then(Engine::gdn_chunk_size));
+        PrimeScheduleKind::SingleDevice => single_device_prime_ranges(t, ring_on, grid),
+        PrimeScheduleKind::Pipeline { dynamic } => {
+            let fixed = fixed_prime_chunk_ranges(t, chunk, ring_on);
+            let ranges = if dynamic {
+                dynamic_prime_chunk_ranges(t, chunk, &fixed)
+            } else {
+                fixed
+            };
+            match grid {
+                Some(c) => align_prime_ranges_to_gdn(&ranges, t, c),
+                None => ranges,
+            }
+        }
     }
-    let fixed = fixed_prime_chunk_ranges(t, chunk, ring_on);
-    let dynamic = match std::env::var("MEMRA_PRIME_CHUNK_SCHED") {
-        Ok(value) => value == "dynamic",
-        Err(_) => true,
-    };
-    let ranges = if !dynamic {
-        fixed
-    } else {
-        dynamic_prime_chunk_ranges(t, chunk, &fixed)
-    };
-    if gdn_grid {
-        align_prime_ranges_to_gdn(&ranges, t, Engine::gdn_chunk_size())
-    } else {
-        ranges
+}
+
+/// The widest call of a prime schedule, in rows (0 for an empty one).
+fn widest_prime_call(ranges: &[(usize, usize)]) -> usize {
+    ranges
+        .iter()
+        .map(|&(start, end)| end - start)
+        .max()
+        .unwrap_or(0)
+}
+
+/// Which schedule a running maximum is over (the key of its cached table).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum CallRowsSchedule {
+    /// [`prime_chunk_ranges_under`] with this kind, GDN grid and ring contract.
+    Prime(PrimeScheduleKind, Option<usize>, bool),
+    /// [`step_gemm_prime_ranges`].
+    StepGemm,
+}
+
+impl CallRowsSchedule {
+    fn widest_at(self, t: usize) -> usize {
+        // Below `PRIME_MIN_T` no prime splits: its callers walk such a prompt as one call or
+        // tokenwise (and the schedules assume t >= PRIME_MIN_T).
+        if t < PRIME_MIN_T {
+            return t;
+        }
+        match self {
+            Self::Prime(kind, grid, ring_on) => {
+                widest_prime_call(&prime_chunk_ranges_under(t, kind, grid, ring_on))
+            }
+            Self::StepGemm => widest_prime_call(&step_gemm_prime_ranges(t)),
+        }
     }
+
+    /// A length past which no prime's widest call is wider than the widest one at or below it.
+    /// A fixed schedule repeats after one chunk and its tail: every call is the chunk except the
+    /// last, and the last depends only on the remainder past a chunk boundary, all of which a
+    /// prime of one chunk plus `PRIME_MIN_T` rows already shows. The pipeline geometry's chunk
+    /// grows with the prompt until it reaches the cap at `PRIME_PIPE_MICROBATCHES` caps; past
+    /// that the calls narrow towards the cap as the range count grows (widest 4,809 rows at
+    /// 32,768 tokens with no grid, 4,694 past 65,536; dense to 270,000 and sampled to 1,048,576,
+    /// `no_prime_is_wider_than_the_running_maximum_past_its_horizon`). Twice that length leaves
+    /// a margin.
+    fn horizon(self) -> usize {
+        let cap = crate::cache::PRIME_CHUNK_MAX_TOKENS;
+        match self {
+            Self::Prime(PrimeScheduleKind::Pipeline { .. }, _, _) => {
+                2 * PRIME_PIPE_MICROBATCHES * cap
+            }
+            Self::Prime(PrimeScheduleKind::Explicit(parsed), _, ring_on) => {
+                explicit_prime_chunk(parsed, ring_on) + PRIME_MIN_T
+            }
+            Self::Prime(PrimeScheduleKind::SingleDevice, _, _) | Self::StepGemm => {
+                cap + PRIME_MIN_T
+            }
+        }
+    }
+}
+
+/// The widest call any prime of at most `t` rows makes under `schedule`, its running maximum.
+/// The table (prefix maxima to the schedule's horizon) is built once per schedule a process
+/// asks for and shared.
+fn running_widest_call(t: usize, schedule: CallRowsSchedule) -> usize {
+    type Tables = std::collections::HashMap<CallRowsSchedule, std::sync::Arc<Vec<u32>>>;
+    static TABLES: std::sync::OnceLock<std::sync::Mutex<Tables>> = std::sync::OnceLock::new();
+    let horizon = schedule.horizon();
+    let table = {
+        let mut tables = TABLES
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        tables
+            .entry(schedule)
+            .or_insert_with(|| {
+                let mut run = 0usize;
+                let prefix: Vec<u32> = (0..=horizon)
+                    .map(|s| {
+                        run = run.max(schedule.widest_at(s));
+                        run as u32
+                    })
+                    .collect();
+                std::sync::Arc::new(prefix)
+            })
+            .clone()
+    };
+    table[t.min(horizon)] as usize
+}
+
+/// The widest call any prime of at most `t` rows makes under `kind` (memra#1276). A prime often
+/// walks a shorter stretch than its whole prompt (a segment up to a capture stop, the suffix
+/// after a prefix-cache hit, one scheduler take), and the widest call is not monotone in the
+/// length: a PP-2 prompt of 32,773 tokens primes in calls of at most 4,217 rows while its
+/// 32,721-token prefix makes a 4,802-row call. A charge must therefore cover every length up to
+/// the rows it charges.
+pub fn prime_call_rows_max_under(
+    t: usize,
+    kind: PrimeScheduleKind,
+    grid: Option<usize>,
+    ring_on: bool,
+) -> usize {
+    running_widest_call(t, CallRowsSchedule::Prime(kind, grid, ring_on))
+}
+
+/// [`prime_call_rows_max_under`] under this process's schedule (the environment and placement
+/// [`prime_chunk_ranges`] reads).
+pub fn prime_call_rows_max(t: usize, n_layers: usize, gdn_grid: bool, ring_on: bool) -> usize {
+    prime_call_rows_max_under(
+        t,
+        PrimeScheduleKind::from_env(n_layers),
+        gdn_grid.then(Engine::gdn_chunk_size),
+        ring_on,
+    )
+}
+
+/// The running maximum of [`step_gemm_prime_ranges`]' widest call.
+pub(crate) fn step_gemm_call_rows_max(t: usize) -> usize {
+    running_widest_call(t, CallRowsSchedule::StepGemm)
 }
 
 /// The mHC prime schedule: how `prime_cache_hyper` SPLITS one prompt into calls.
@@ -2026,13 +2206,31 @@ pub struct PrimeWorkspaceShape {
     pub n_layers: usize,
     /// The model's SWA-ring contract (`HybridModel::swa_ring_on`), the schedule's ring input.
     pub swa_ring: bool,
+    /// The model's GDN grid-alignment input to the schedule (`HybridModel::gdn_prime_grid_on`).
+    pub gdn_grid: bool,
+    /// The model can take the step35 batched GEMM prime (`uses_sliding_gated_moe_program`), whose
+    /// calls follow [`step_gemm_prime_ranges`] instead of [`prime_chunk_ranges`].
+    pub step_gemm: bool,
 }
 
 impl PrimeWorkspaceShape {
-    /// The rows one prime call carries for a `prompt_rows` prime under the deployment's chunking
+    /// The rows of the widest call a `prompt_rows` prime makes under the deployment's chunking
     /// (WP-B day 39: the admission door books one call's workspace once, not once per session).
+    /// This is the widest range of the schedule the prime walks, not the chunk: a pipelined
+    /// prime's equal-modeled-time ranges, a fixed schedule after GDN grid alignment and an
+    /// explicit chunk's tail fold all make calls wider than the chunk (memra#1276).
     pub fn call_rows(&self, prompt_rows: usize) -> usize {
-        prompt_rows.min(prime_chunk_tokens(prompt_rows, self.n_layers, self.swa_ring).max(1))
+        self.call_rows_under(prompt_rows, PrimeScheduleKind::from_env(self.n_layers))
+    }
+
+    /// [`Self::call_rows`] under a given schedule kind (pure, what the tests sweep).
+    pub fn call_rows_under(&self, prompt_rows: usize, kind: PrimeScheduleKind) -> usize {
+        let grid = self.gdn_grid.then(Engine::gdn_chunk_size);
+        let mut rows = prime_call_rows_max_under(prompt_rows, kind, grid, self.swa_ring);
+        if self.step_gemm {
+            rows = rows.max(step_gemm_call_rows_max(prompt_rows));
+        }
+        rows
     }
 
     /// The charge for `prompt_rows` with an explicit per-call row count (pure arithmetic,
@@ -2045,12 +2243,10 @@ impl PrimeWorkspaceShape {
     }
 
     /// The charge under the deployment's prime chunking: `MEMRA_PRIME_CHUNK` (0 = monolithic
-    /// up to the launch cap, so the call rows are the whole prompt) or the auto geometry.
+    /// up to the launch cap, so the call rows are the whole prompt) or the auto geometry, at
+    /// the widest call ([`Self::call_rows`]).
     pub fn admission_bytes(&self, prompt_rows: usize) -> usize {
-        self.admission_bytes_with_call_rows(
-            prompt_rows,
-            prime_chunk_tokens(prompt_rows, self.n_layers, self.swa_ring),
-        )
+        self.admission_bytes_with_call_rows(prompt_rows, self.call_rows(prompt_rows))
     }
 
     /// What a prime of `prompt_rows` allocates at once beyond the device's resident prime slab
@@ -2112,15 +2308,18 @@ impl PrimeWorkspaceShape {
 }
 
 /// The largest number of token rows any ONE mHC prime call carries under
-/// [`hyper_prime_ranges`]. Every per-call transient in the walk — the `t*streams*hidden` stream
-/// state, the MLA query planes, and the DSA indexer's `t * n_pools` score plane — is
-/// proportional to this, so it is the single number a capacity assertion needs.
+/// [`hyper_prime_ranges`] for a prime of at most `t` rows (the running maximum, memra#1276: a
+/// walk of a shorter stretch can make a wider call). Every per-call transient in the walk — the
+/// `t*streams*hidden` stream state, the MLA query planes, and the DSA indexer's `t * n_pools`
+/// score plane — is proportional to this, so it is the single number a capacity assertion
+/// needs. The door's natural schedule is the single-device one.
 pub fn hyper_prime_call_rows(t: usize, n_layers: usize, gdn_grid: bool, ring_on: bool) -> usize {
-    hyper_prime_ranges(t, n_layers, gdn_grid, ring_on)
-        .iter()
-        .map(|&(start, end)| end - start)
-        .max()
-        .unwrap_or(0)
+    let kind = if hyper_prime_v2_on() && std::env::var_os("MEMRA_PRIME_CHUNK").is_none() {
+        PrimeScheduleKind::SingleDevice
+    } else {
+        PrimeScheduleKind::from_env(n_layers)
+    };
+    prime_call_rows_max_under(t, kind, gdn_grid.then(Engine::gdn_chunk_size), ring_on)
 }
 
 /// Per-request prefill WORKSPACE coefficients for a HyperConnections trunk, published to
@@ -2925,6 +3124,8 @@ impl HybridModel {
             prompt_row_bytes: h * f32b,
             n_layers: self.layers.len(),
             swa_ring: self.swa_ring_on(),
+            gdn_grid: self.gdn_prime_grid_on(),
+            step_gemm: self.uses_sliding_gated_moe_program(),
         })
     }
 
@@ -6289,15 +6490,9 @@ impl HybridModel {
             let width = crate::cache::PRIME_CHUNK_MAX_TOKENS;
             let mut hiddens = e.uninit(t * n_embd)?;
             let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
-            let mut start = 0usize;
-            let mut chunk_idx = 0usize;
-            while start < t {
-                // A trailing chunk below the walk floor folds into the previous one; every chunk
-                // this entry sees must clear PRIME_MIN_T on its own.
-                let mut end = (start + width).min(t);
-                if t - end > 0 && t - end < PRIME_MIN_T {
-                    end = t;
-                }
+            // A trailing chunk below the walk floor folds into the previous one; every chunk
+            // this entry sees must clear PRIME_MIN_T on its own.
+            for (chunk_idx, (start, end)) in step_gemm_prime_ranges(t).into_iter().enumerate() {
                 let mut out = self.step35_prime_cache_batch(
                     e,
                     &[&tokens[start..end]],
@@ -6322,8 +6517,6 @@ impl HybridModel {
                 // CANCELLATION POINT (memra#536): a gone client stops the walk here, at a
                 // completed chunk, before the next one starts; never after the last chunk.
                 crate::progress::prime_cancel_point(chunk_idx, end, t)?;
-                chunk_idx += 1;
-                start = end;
             }
             let (logits, h_seed) = last.expect("prime produced no chunk");
             // ENGAGEMENT RECEIPT, both directions. `base` is the discriminator: base=0 is a
@@ -31483,6 +31676,8 @@ mod prime_chunk_schedule_tests {
             prompt_row_bytes: 4 * 2048,
             n_layers: 41,
             swa_ring: false,
+            gdn_grid: false,
+            step_gemm: false,
         };
         let chunked_60k = shape.admission_bytes_with_call_rows(60_000, 4096);
         let chunked_257k = shape.admission_bytes_with_call_rows(257_000, 4096);
@@ -31521,6 +31716,8 @@ mod prime_chunk_schedule_tests {
             prompt_row_bytes: 4 * h,
             n_layers: 64,
             swa_ring: false,
+            gdn_grid: false,
+            step_gemm: false,
         };
         let (p, w) = (17_166usize, 4096usize);
         let cold = shape.admission_bytes_with_call_rows(p, w);
@@ -32040,6 +32237,145 @@ mod prime_chunk_schedule_tests {
             sizes(&fixed_prime_chunk_ranges_on_grid(4100, cap, false, 32)),
             vec![4064, 36]
         );
+    }
+
+    #[test]
+    fn prime_admission_charges_the_widest_call() {
+        // memra#1276: the admission charge's call rows were `min(prompt, chunk)`, but several
+        // schedules make calls wider than their chunk (PP-2's dynamic schedule reaches 4,832
+        // rows on a 4,096-row chunk; an explicit chunk's tail fold adds up to 15 rows). And a
+        // prime often walks a shorter stretch than the whole prompt (a segment up to a capture
+        // stop, the suffix after a prefix hit, one scheduler take), so the charge for t rows must
+        // cover the widest call of every prime of s <= t rows: the running maximum, computed
+        // here by brute force over every s, independently of the charge's table.
+        use super::{PrimeScheduleKind as K, PrimeWorkspaceShape, prime_chunk_ranges_under};
+        let cap = crate::cache::PRIME_CHUNK_MAX_TOKENS;
+        let shape = |gdn_grid: bool, swa_ring: bool, step_gemm: bool| PrimeWorkspaceShape {
+            call_row_bytes: 1_000,
+            slab_row_bytes: 800,
+            prompt_row_bytes: 10,
+            n_layers: 64,
+            swa_ring,
+            gdn_grid,
+            step_gemm,
+        };
+        let widest = |r: &[(usize, usize)]| r.iter().map(|&(s, e)| e - s).max().unwrap_or(0);
+        let kinds = [
+            K::SingleDevice,
+            K::Pipeline { dynamic: true },
+            K::Pipeline { dynamic: false },
+            K::Explicit(0),
+            K::Explicit(5),
+            K::Explicit(1_000),
+            K::Explicit(4_081),
+            K::Explicit(4_090),
+            K::Explicit(cap),
+            K::Explicit(8_192),
+        ];
+        // Every length past each schedule's horizon (65,536 for the pipeline geometry).
+        let dense = 2 * 8 * cap + 4 * cap;
+        for &kind in &kinds {
+            for gdn_grid in [false, true] {
+                for swa_ring in [false, true] {
+                    for step_gemm in [false, true] {
+                        let s = shape(gdn_grid, swa_ring, step_gemm);
+                        let grid = gdn_grid.then(crate::Engine::gdn_chunk_size);
+                        let mut running = 0usize;
+                        for t in 1..=dense {
+                            // A prompt below PRIME_MIN_T never splits (its callers gate on it).
+                            let mut calls = if t < PRIME_MIN_T {
+                                t
+                            } else {
+                                widest(&prime_chunk_ranges_under(t, kind, grid, swa_ring))
+                            };
+                            if step_gemm && t >= PRIME_MIN_T {
+                                calls = calls.max(widest(&super::step_gemm_prime_ranges(t)));
+                            }
+                            running = running.max(calls);
+                            let rows = s.call_rows_under(t, kind);
+                            assert_eq!(
+                                rows, running,
+                                "t={t} {kind:?} grid={gdn_grid} ring={swa_ring} step={step_gemm}: \
+                                 a prime of at most {t} rows makes {running}"
+                            );
+                            assert!(
+                                s.admission_bytes_with_call_rows(t, rows)
+                                    >= 1_000 * running + 10 * t
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        // The review's cases. PP-2 dynamic: a 32,721-row prime makes a 4,802-row call (4,832 on
+        // the 32-row grid), so every longer prompt is charged at least that.
+        let pp2 = K::Pipeline { dynamic: true };
+        for (grid, want) in [(false, 4_802), (true, 4_832)] {
+            assert_eq!(
+                widest(&prime_chunk_ranges_under(
+                    32_721,
+                    pp2,
+                    grid.then_some(32),
+                    false
+                )),
+                want
+            );
+            assert!(shape(grid, false, false).call_rows_under(32_773, pp2) >= want);
+        }
+        // Single device: main's charge, min(t, cap), at every length. A 4,100-token prompt with a
+        // capture stop at 4,096 primes one 4,096-row call.
+        for gdn_grid in [false, true] {
+            for swa_ring in [false, true] {
+                for t in (1..=4 * cap + 64).chain([65_536, 262_144, 1 << 20]) {
+                    assert_eq!(
+                        shape(gdn_grid, swa_ring, false).call_rows_under(t, K::SingleDevice),
+                        t.min(cap)
+                    );
+                }
+            }
+        }
+        // The step35 GEMM prime's fold: a 4,100-token prompt makes one 4,100-row call
+        // (memra#1275), and on a pipeline placement its calls are 4,096 rows.
+        assert_eq!(
+            shape(false, true, true).call_rows_under(4_100, K::SingleDevice),
+            4_100
+        );
+        assert_eq!(
+            shape(false, true, true).call_rows_under(16_384, pp2),
+            cap + PRIME_MIN_T - 1
+        );
+    }
+
+    #[test]
+    fn no_prime_is_wider_than_the_running_maximum_past_its_horizon() {
+        // The charge's table stops at each schedule's horizon and holds its last value past it.
+        // That is sound only if no longer prime makes a wider call: sampled to 1,048,576 rows
+        // (every 7th length to 131,072, every 997th past it).
+        use super::{PrimeScheduleKind as K, prime_call_rows_max_under, prime_chunk_ranges_under};
+        let widest = |r: &[(usize, usize)]| r.iter().map(|&(s, e)| e - s).max().unwrap_or(0);
+        for kind in [
+            K::Pipeline { dynamic: true },
+            K::Pipeline { dynamic: false },
+            K::SingleDevice,
+            K::Explicit(1_000),
+            K::Explicit(8_192),
+        ] {
+            for grid in [None, Some(32), Some(128)] {
+                for ring in [false, true] {
+                    let plateau = prime_call_rows_max_under(1 << 20, kind, grid, ring);
+                    for t in (PRIME_MIN_T..=131_072)
+                        .step_by(7)
+                        .chain((131_073..=1 << 20).step_by(997))
+                    {
+                        let w = widest(&prime_chunk_ranges_under(t, kind, grid, ring));
+                        assert!(
+                            w <= plateau,
+                            "t={t} {kind:?} grid={grid:?} ring={ring}: {w} > {plateau}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
