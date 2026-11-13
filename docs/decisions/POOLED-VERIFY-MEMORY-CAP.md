@@ -49,10 +49,15 @@ poolable and runs the eager pooled verify whether or not replay is suspended; th
   of them and `MemAvailable`, plus the async pool's cached blocks; an unreadable device reads 0,
   so nothing pools) and takes its members from a pure function, `pooled_verify_chunk`. A round
   after the first joins only while the forward's members (`pooled_verify_round_bytes`: each
-  member's checkpoint columns plus two logits stacks), the FA partial pool's growth at the
-  forward's width and deepest row (`fa_part_growth_bytes`, read from the pool's current lengths:
-  a pooled forward is wider than any member's serial verify, and the pool grows to twice its
-  size, keeping the old buffers) and the verify margin fit the reading. The first round always
+  member's checkpoint columns plus two logits stacks), the FA partial pool's growth for the
+  forward's rows and the verify margin fit the reading. The growth is priced launch by launch
+  (`fa_rows_growth`, from the pool's current lengths): the layer launches once per run of
+  consecutive rows on one split rung, members first and then riders, each launch sized by its own
+  rows and deepest row, and a launch the pool cannot hold grows it to twice its size, keeping the
+  old buffers. A pooled forward is wider than any member's serial verify, and one launch at the
+  deepest row's rung would underprice it: across the 16,384 rung a c = 3 cohort (K=5 at 15,990,
+  K=3 at 16,100, K=1 at 16,500) priced 0 there against 108.7 MiB of real growth, and pooled all
+  three at a reading the forward exceeds. The first round always
   joins: alone it is the serial round. The walk stops at the first round that does not fit and
   tries no smaller later one; that round leads the next chunk, after this one's rounds have
   finished and freed their checkpoints. Plain riders join within the same reading
@@ -63,10 +68,12 @@ poolable and runs the eager pooled verify whether or not replay is suspended; th
 - **The verify margin** (`POOLED_VERIFY_MARGIN`, 256 MiB) is its own constant: the part of the
   reading the pool could not deliver at the failure (195 MiB: 67 MiB driver free and 128 MiB of
   cached fragments could not serve a 15 MiB slab, after the pool had grown in one 64 MiB step),
-  rounded up to whole 64 MiB steps. A test pins it above the measurement.
+  rounded up to whole 64 MiB steps. One measurement (N = 1, the diagnostic boot), so it carries
+  no spread. A test pins it above the measurement.
 - **The pre-cohort reclaim.** After the newcomers primed and before the cohorts form, the
   reading must fund the cohort's first verify (`pre_cohort_need`): the largest member's round
-  (`spec_round_bytes`: its checkpoint columns, logits and the FA pool's growth for its rows),
+  (`spec_round_bytes`: its checkpoint columns, logits and the FA pool's growth for its rows, run
+  by run as above, since the serial verify launches per same-rung run too),
   every member's burst-entry snapshot (`spec_burst_snapshot_bytes`: each burst takes a fresh copy
   of the session's GDN state at its start and holds it to its end, one column, 149.6 MiB here;
   the diagnostic boot's reading fell from 1,915 to 1,616 MiB between the cohort's entry and its
@@ -74,10 +81,23 @@ poolable and runs the eager pooled verify whether or not replay is suspended; th
   the ladder (`spec_round_reclaim_ladder`, a pure function over injected readings and rungs)
   evicts unleased prefix entries first, oldest first, until the shortfall is freed and settled
   (`prefix_yield_to_reserve`, on unified memory too), then parked sessions, globally oldest
-  first, one at a time. An unreadable device does nothing. `[spec-pool] pre-cohort reclaim: ...`;
+  first, one at a time; under on-demand KV planes each parked eviction reaps the graveyard
+  (`vmm_reap_for`) before the next reading, or the evicted planes would not show and every parked
+  session would go. The reading leaves out the admitted sessions' unbuilt booking (memra#1255's
+  `unbuilt_session_booking`, single device only): those sessions build their state in the tick,
+  so their bytes are not the cohort's, and the prefix rung covers the need on top of them. An
+  unreadable device does nothing; a pass the fence alone funds evicts nothing and counts in
+  `spec_cohort_fence_funded_total`. `[spec-pool] pre-cohort reclaim: ...`;
   a pass that stays short with nothing evictable prints `[spec-pool] pre-cohort reclaim still
   short: ...` (the first 16, then every 256th); `/metrics` `spec_cohort_reclaims_total` and
   `spec_cohort_short_total`; the prefix evictions also count in `prefix_headroom_evictions`.
+- **The band past admission's floor.** At K = 5 the need is 1,314 MiB at c = 2, 1,464 at c = 3,
+  1,614 at c = 4 and 2,212 at c = 8 (the FA growth aside): from four members it passes
+  admission's 1,536 MiB transient floor, so a cohort admitted to the floor reclaims at its first
+  pass or stays short and counts it. The c = 4 cells read `spec_cohort_short_total`.
+- **The need-pad door.** `MEMRA_SPEC_COHORT_NEED_PAD_MB=N`, a test door, adds N MiB to the need,
+  so the ladder and its counters run on hardware where the real need is funded; the receipts
+  compare its texts with main's.
 - **The forced-cap arm.** `MEMRA_SPEC_POOL_SERIAL=1`, a test door, reads the allocatable memory
   as 0 on every forward, so every member verifies alone and no rider joins. The receipts compare
   it text for text with the default arm, which proves a capped request writes its uncapped text.
