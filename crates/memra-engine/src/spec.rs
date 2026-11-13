@@ -779,30 +779,40 @@ fn spec_pool_serial_door() -> bool {
 /// Laptop at the failure: 195 MiB of the reading (67 MiB driver free and 128 MiB of cached pool
 /// fragments) could not serve a 15 MiB checkpoint slab, and the pool had grown in one 64 MiB
 /// step before it failed (`research/pooled-verify-memcap-20261113/diag-5090/tl-01-D.txt`). The
-/// margin is that 195 MiB rounded up to whole 64 MiB growth steps.
+/// margin is that 195 MiB rounded up to whole 64 MiB growth steps. One measurement (N = 1: the
+/// diagnostic boot), so the margin carries no spread.
 pub const POOLED_VERIFY_MARGIN: usize = 256 << 20;
 
 /// One round's place in the lockstep's verify chunk walk (memra#1266): its verify rows, the
-/// bytes it allocates ([`pooled_verify_round_bytes`]), the keys its deepest row attends and
-/// whether it may pool at all (`ready`: poolable and at its cache's position).
+/// bytes it allocates ([`pooled_verify_round_bytes`]), its cache position `pos` (its rows attend
+/// `pos + 1 ..= pos + rows` keys) and whether it may pool at all (`ready`: poolable and at its
+/// cache's position).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct VerifyChunkCand {
     pub(crate) rows: usize,
     pub(crate) need: usize,
-    pub(crate) depth: usize,
+    pub(crate) pos: usize,
     pub(crate) ready: bool,
 }
 
+impl VerifyChunkCand {
+    /// The keys each of this round's rows attends, in row order.
+    fn t_kv_rows(&self) -> impl Iterator<Item = usize> + '_ {
+        (1..=self.rows).map(move |r| self.pos + r)
+    }
+}
+
 /// One pooled MTP verify forward's members as the walk chose them (memra#1266): `len` slots of
-/// the lockstep from the chunk's first (empty slots included), their `members`, `rows`, `held`
-/// bytes and deepest `depth`, and the need of the round the memory cap stopped at.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// the lockstep from the chunk's first (empty slots included), their `members`, `rows` and `held`
+/// bytes, the keys each of their rows attends in stack order (`t_kv`), and the need of the round
+/// the memory cap stopped at.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct VerifyChunk {
     pub(crate) len: usize,
     pub(crate) members: usize,
     pub(crate) rows: usize,
     pub(crate) held: usize,
-    pub(crate) depth: usize,
+    pub(crate) t_kv: Vec<usize>,
     pub(crate) capped_need: Option<usize>,
 }
 
@@ -812,15 +822,17 @@ pub(crate) struct VerifyChunk {
 /// walk takes consecutive slots from the first: an empty slot (a member with no round this time)
 /// is passed over, a round that cannot pool or would take the forward past 16 rows ends the
 /// chunk as before, and a round after the first joins only while the forward's members, the FA
-/// partial pool's growth at the forward's width and depth (`fa_growth(rows, depth)`) and
-/// [`POOLED_VERIFY_MARGIN`] fit `allocatable`. The first round always joins: alone it is the
+/// partial pool's growth for the forward's rows (`fa_growth(t_kv)`, the keys each row attends in
+/// stack order: the layer launches once per same-rung run of them, so a deeper member can need
+/// less growth than a shallower run, never priced at one row's rung) and [`POOLED_VERIFY_MARGIN`]
+/// fit `allocatable`. The first round always joins: alone it is the
 /// serial round, the same bytes either way. The walk stops at the first round that does not fit
 /// and tries no smaller later one: that round leads the next chunk, after this one's rounds have
 /// finished and freed their checkpoints.
 pub(crate) fn pooled_verify_chunk(
     cands: &[Option<VerifyChunkCand>],
     allocatable: usize,
-    fa_growth: &dyn Fn(usize, usize) -> usize,
+    fa_growth: &dyn Fn(&[usize]) -> usize,
 ) -> VerifyChunk {
     let mut out = VerifyChunk::default();
     for cand in cands {
@@ -831,12 +843,13 @@ pub(crate) fn pooled_verify_chunk(
         if !c.ready || out.rows + c.rows > 16 {
             break;
         }
-        let depth = out.depth.max(c.depth);
+        let mut t_kv = out.t_kv.clone();
+        t_kv.extend(c.t_kv_rows());
         if out.members > 0
             && out
                 .held
                 .saturating_add(c.need)
-                .saturating_add(fa_growth(out.rows + c.rows, depth))
+                .saturating_add(fa_growth(&t_kv))
                 .saturating_add(POOLED_VERIFY_MARGIN)
                 > allocatable
         {
@@ -845,7 +858,7 @@ pub(crate) fn pooled_verify_chunk(
         }
         out.held += c.need;
         out.rows += c.rows;
-        out.depth = depth;
+        out.t_kv = t_kv;
         out.members += 1;
         out.len += 1;
     }
@@ -853,28 +866,26 @@ pub(crate) fn pooled_verify_chunk(
 }
 
 /// How many of `want` plain riders join the forward `chunk` chose (memra#1266): riders hold one
-/// row of logits each (`rider_need`) and widen the forward, so they join only while the forward,
-/// the FA pool's growth at the new width and the deepest row (`rider_depths`, in queue order),
-/// and [`POOLED_VERIFY_MARGIN`] fit `allocatable`. The riders left out take the plain batched
-/// step, the same rows.
+/// row of logits each (`rider_need`) and stack after the members (`rider_t_kv`: the keys each
+/// rider's row attends, in queue order), so they join only while the forward, the FA pool's
+/// growth for the whole stack and [`POOLED_VERIFY_MARGIN`] fit `allocatable`. The riders left out
+/// take the plain batched step, the same rows.
 pub(crate) fn pooled_rider_take(
     chunk: &VerifyChunk,
     want: usize,
-    rider_depths: &[usize],
+    rider_t_kv: &[usize],
     rider_need: usize,
     allocatable: usize,
-    fa_growth: &dyn Fn(usize, usize) -> usize,
+    fa_growth: &dyn Fn(&[usize]) -> usize,
 ) -> usize {
-    let mut take = want.min(rider_depths.len());
+    let mut take = want.min(rider_t_kv.len());
     while take > 0 {
-        let depth = rider_depths[..take]
-            .iter()
-            .copied()
-            .fold(chunk.depth, usize::max);
+        let mut t_kv = chunk.t_kv.clone();
+        t_kv.extend_from_slice(&rider_t_kv[..take]);
         let total = chunk
             .held
             .saturating_add(take.saturating_mul(rider_need))
-            .saturating_add(fa_growth(chunk.rows + take, depth))
+            .saturating_add(fa_growth(&t_kv))
             .saturating_add(POOLED_VERIFY_MARGIN);
         if total <= allocatable {
             break;
@@ -8316,16 +8327,17 @@ impl HybridModel {
 
     /// The device bytes one MTP verify round at draft depth `k` of a session at cache position
     /// `pos` allocates, the FA partial pool's growth for its rows included (memra#1266):
-    /// [`Self::spec_round_transient_bytes`] plus [`Engine::fa_part_growth_bytes`] at `k + 1` rows
-    /// attending `pos + k + 1` keys, at the widest full-attention geometry.
+    /// [`Self::spec_round_transient_bytes`] plus [`Engine::fa_rows_growth_bytes`] for its `k + 1`
+    /// rows (`pos + 1 ..= pos + k + 1` keys; the serial verify launches once per same-rung run of
+    /// them too) at every full-attention geometry.
     pub fn spec_round_bytes(&self, e: &Engine, k: usize, pos: usize) -> usize {
         let _numeric = self.enter_numeric();
-        let fa = self
-            .pooled_fa_geometries()
-            .iter()
-            .map(|&(h, hkv, hd)| e.fa_part_growth_bytes(k + 1, pos + k + 1, h, hkv, hd))
-            .max()
-            .unwrap_or(0);
+        let rows: Vec<usize> = (1..=k + 1).map(|r| pos + r).collect();
+        let fa = e.fa_rows_growth_bytes(
+            &rows,
+            &self.pooled_fa_geometries(),
+            self.cfg.head_dim_k as usize,
+        );
         self.spec_round_transient_bytes(k).saturating_add(fa)
     }
 
@@ -8612,16 +8624,13 @@ impl HybridModel {
         // logits row width.
         let col_bytes = self.dspark_verify_ckpt_col_bytes();
         let n_vocab_v = self.output.out_features();
-        // ... and the FA partial pool's growth for a forward of `rows` rows whose deepest row
-        // attends `depth` keys, at the widest full-attention geometry (the pool is shared).
+        // ... and the FA partial pool's growth for a forward whose rows attend `t_kv` keys in
+        // stack order, launch by launch (one per same-rung run) at every full-attention geometry
+        // (the pool is shared).
         let fa_geoms = self.pooled_fa_geometries();
-        let fa_growth = |rows: usize, depth: usize| -> usize {
-            fa_geoms
-                .iter()
-                .map(|&(h, hkv, hd)| e.fa_part_growth_bytes(rows, depth, h, hkv, hd))
-                .max()
-                .unwrap_or(0)
-        };
+        let fa_elig_hd = self.cfg.head_dim_k as usize;
+        let fa_growth =
+            |t_kv: &[usize]| -> usize { e.fa_rows_growth_bytes(t_kv, &fa_geoms, fa_elig_hd) };
         loop {
             // Gate + draft-begin every live session (its own loop condition first).
             let mut drs: Vec<Option<SpecDraftRound>> = (0..n).map(|_| None).collect();
@@ -8775,7 +8784,7 @@ impl HybridModel {
                                 col_bytes,
                                 n_vocab_v,
                             ),
-                            depth: p.pos + p.verify_tokens.len(),
+                            pos: p.pos,
                             ready: ready(&preps[m], &bursts[m]),
                         })
                     })
@@ -8806,13 +8815,12 @@ impl HybridModel {
                     None => 0,
                 };
                 let want = cap.saturating_sub(rows).min(rider_q.len());
-                let rider_depths: Vec<usize> =
-                    rider_q.iter().take(want).map(|r| r.pos + 1).collect();
+                let rider_t_kv: Vec<usize> = rider_q.iter().take(want).map(|r| r.pos + 1).collect();
                 let rider_need = pooled_verify_round_bytes(1, false, col_bytes, n_vocab_v);
                 let take = pooled_rider_take(
                     &chunk,
                     want,
-                    &rider_depths,
+                    &rider_t_kv,
                     rider_need,
                     allocatable,
                     &fa_growth,
@@ -19001,18 +19009,50 @@ mod pooled_verify_cap_1266_tests {
     const COL: usize = 48 * (30_720 + 786_432) * 4;
     const VOCAB: usize = 248_320;
 
-    fn cand(rows: usize, depth: usize) -> Option<VerifyChunkCand> {
+    fn cand(rows: usize, pos: usize) -> Option<VerifyChunkCand> {
         Some(VerifyChunkCand {
             rows,
             need: pooled_verify_round_bytes(rows, true, COL, VOCAB),
-            depth,
+            pos,
             ready: true,
         })
     }
 
-    fn no_fa(_rows: usize, _depth: usize) -> usize {
+    fn no_fa(_t_kv: &[usize]) -> usize {
         0
     }
+
+    /// `fa_split_keys` on the RTX 5090 Laptop (82 SMs) for n_head_kv <= 4: 8 keys per split up
+    /// to 512, 64 up to 16,384, 128 beyond; every row here takes the seqs arm.
+    fn rung_5090(t_kv: usize) -> (bool, usize) {
+        let keys = if t_kv <= 512 {
+            8
+        } else if t_kv <= 16_384 {
+            64
+        } else {
+            128
+        };
+        (true, keys)
+    }
+
+    /// Qwen3.8-27B's full-attention geometry: 24 heads of 256.
+    fn grow(t_kv: &[usize], cur: (usize, usize)) -> usize {
+        crate::fa_rows_growth(t_kv, &rung_5090, 24, 256, cur).0
+    }
+
+    /// The pricing this change replaced: one launch of every row at the deepest row's rung.
+    fn grow_at_deepest(t_kv: &[usize], cur: (usize, usize)) -> usize {
+        let deepest = t_kv.iter().copied().max().unwrap();
+        let one = |_: usize| rung_5090(deepest);
+        crate::fa_rows_growth(t_kv, &one, 24, 256, cur).0
+    }
+
+    fn rows(pos: usize, n: usize) -> Vec<usize> {
+        (1..=n).map(|r| pos + r).collect()
+    }
+
+    /// The pool these boots held after its sixth grow: 14,131,200 o floats, 55,200 m and l.
+    const POOL: (usize, usize) = (14_131_200, 55_200);
 
     #[test]
     fn a_round_needs_its_checkpoint_columns_and_two_logits_stacks() {
@@ -19059,7 +19099,13 @@ mod pooled_verify_cap_1266_tests {
             1_294 * MIB,
             &no_fa,
         );
-        assert_eq!((c.len, c.members, c.rows, c.depth), (3, 3, 9, 6_000));
+        assert_eq!((c.len, c.members, c.rows), (3, 3, 9));
+        assert_eq!(
+            c.t_kv,
+            [
+                4_001, 4_002, 4_003, 5_001, 5_002, 5_003, 6_001, 6_002, 6_003
+            ]
+        );
         assert_eq!(c.capped_need, None);
         // K=5 + K=2 pools at the 10th percentile reading, K=5 + K=5 at the median, and K=5 +
         // K=2 does not at the minimum.
@@ -19122,22 +19168,77 @@ mod pooled_verify_cap_1266_tests {
     /// inside the forward. Six rows at that depth fit the pool and grow nothing.
     #[test]
     fn the_fa_pool_growth_counts_in_the_forward() {
-        let cur = (14_131_200, 55_200);
-        let grow = crate::fa_part_growth(12, 25_000, 128, 24, 256, cur);
-        assert_eq!(grow, (2 * 14_131_200 + 2 * 2 * 55_200) * 4);
-        assert_eq!(crate::fa_part_growth(6, 25_000, 128, 24, 256, cur), 0);
+        let mut twelve = rows(24_994, 6);
+        twelve.extend(rows(24_994, 6));
+        let grown = (2 * 14_131_200 + 2 * 2 * 55_200) * 4;
+        assert_eq!(grow(&twelve, POOL), grown);
+        assert_eq!(grow(&rows(24_994, 6), POOL), 0);
         // A reading that funds K=5 + K=5 and the margin but not the growth on top caps.
         let k5 = pooled_verify_round_bytes(6, true, COL, VOCAB);
-        let reading = 2 * k5 + POOLED_VERIFY_MARGIN + grow / 2;
-        let fa = |rows: usize, depth: usize| crate::fa_part_growth(rows, depth, 128, 24, 256, cur);
+        let reading = 2 * k5 + POOLED_VERIFY_MARGIN + grown / 2;
+        let fa = |t_kv: &[usize]| grow(t_kv, POOL);
+        let pair = [cand(6, 24_994), cand(6, 24_994)];
+        assert_eq!(pooled_verify_chunk(&pair, reading, &no_fa).members, 2);
+        assert_eq!(pooled_verify_chunk(&pair, reading, &fa).members, 1);
+    }
+
+    /// Round 2's finding: the layer launches once per same-rung run, so the growth is priced run
+    /// by run. Across the 16,384 edge (64-key splits to 16,384, 128 beyond) a c = 3 cohort, K=5
+    /// at 15,990, K=3 at 16,100 and K=1 at 16,500: the first two members are one 64-key run of
+    /// ten rows (252 splits) that doubles the pool, 113.9 MB; one launch at the deepest row's
+    /// rung (12 rows, 129 splits) fits the pool and priced 0. At 1,650 MiB the walk pooled all
+    /// three on that price (the forward needs 1,478 MiB against 1,455 deliverable); priced by
+    /// runs, the third member verifies after the forward.
+    #[test]
+    fn the_fa_growth_is_priced_per_same_rung_run_across_16384() {
+        let mut stack = rows(15_990, 6);
+        stack.extend(rows(16_100, 4));
+        stack.extend(rows(16_500, 2));
+        let grown = (2 * 14_131_200 + 2 * 2 * 55_200) * 4;
+        assert_eq!(grow(&stack, POOL), grown);
+        assert_eq!(grow_at_deepest(&stack, POOL), 0);
+        // The first two alone already grow the pool the same way.
+        assert_eq!(grow(&stack[..10], POOL), grown);
+        let cands = [cand(6, 15_990), cand(4, 16_100), cand(2, 16_500)];
+        let fa = |t_kv: &[usize]| grow(t_kv, POOL);
+        let c = pooled_verify_chunk(&cands, 1_650 * MIB, &fa);
+        assert_eq!((c.members, c.rows), (2, 10));
         assert_eq!(
-            pooled_verify_chunk(&[cand(6, 25_000), cand(6, 25_000)], reading, &no_fa).members,
-            2
+            c.capped_need,
+            Some(pooled_verify_round_bytes(2, true, COL, VOCAB))
         );
-        assert_eq!(
-            pooled_verify_chunk(&[cand(6, 25_000), cand(6, 25_000)], reading, &fa).members,
-            1
-        );
+        // One member straddling the edge: K=5 at 16,380, rows 16,381 to 16,384 on 64-key
+        // splits (256 of them), 16,385 and 16,386 on 128-key splits. A pool of 800 row-splits
+        // grows for the first run (39.6 MB); the deepest row's rung (6 x 129) fits it.
+        let cur = (800 * 24 * 256, 800 * 24);
+        let one = rows(16_380, 6);
+        assert_eq!(grow(&one, cur), (9_830_400 + 2 * 38_400) * 4);
+        assert_eq!(grow_at_deepest(&one, cur), 0);
+    }
+
+    /// The 512 edge (8-key splits to 512, 64 beyond), one member and two: K=5 at 508 has four
+    /// rows on 8-key splits (64 of them) and two on 64-key splits; K=2 at 505 and K=2 at 511 make
+    /// the same two runs across their seam. From an empty pool both grow 6.3 MB for the 8-key
+    /// run; one launch at the deepest row's rung (6 x 9 splits) prices 1.3 MB.
+    #[test]
+    fn the_fa_growth_is_priced_per_same_rung_run_across_512() {
+        let one = rows(508, 6);
+        let runs = (1_572_864 + 2 * 6_144) * 4;
+        assert_eq!(grow(&one, (0, 0)), runs);
+        assert_eq!(grow_at_deepest(&one, (0, 0)), (331_776 + 2 * 1_296) * 4);
+        let mut two = rows(505, 3);
+        two.extend(rows(511, 3));
+        assert_eq!(grow(&two, (0, 0)), runs);
+        assert!(grow_at_deepest(&two, (0, 0)) < runs);
+        // In the walk: a reading that funds both members, the margin and the deepest-rung price
+        // but not the runs' growth keeps the second member out.
+        let k2 = pooled_verify_round_bytes(3, true, COL, VOCAB);
+        let reading = 2 * k2 + POOLED_VERIFY_MARGIN + runs - 1;
+        let fa = |t_kv: &[usize]| grow(t_kv, (0, 0));
+        let at_deepest = |t_kv: &[usize]| grow_at_deepest(t_kv, (0, 0));
+        let pair = [cand(3, 505), cand(3, 511)];
+        assert_eq!(pooled_verify_chunk(&pair, reading, &at_deepest).members, 2);
+        assert_eq!(pooled_verify_chunk(&pair, reading, &fa).members, 1);
     }
 
     /// Riders shrink to fit: each holds one logits row and widens the forward.
@@ -19156,7 +19257,7 @@ mod pooled_verify_cap_1266_tests {
             3
         );
         // A growth past eight rows leaves two riders.
-        let fa = |rows: usize, _depth: usize| if rows > 8 { 100 * MIB } else { 0 };
+        let fa = |t_kv: &[usize]| if t_kv.len() > 8 { 100 * MIB } else { 0 };
         assert_eq!(
             pooled_rider_take(&chunk, 4, &[1, 1, 1, 1], rider, reading, &fa),
             2
@@ -19164,6 +19265,31 @@ mod pooled_verify_cap_1266_tests {
         assert_eq!(
             pooled_rider_take(&chunk, 4, &[1, 1, 1, 1], rider, 0, &no_fa),
             0
+        );
+    }
+
+    /// A rider's own depth prices its growth (round 2's nit: priced at the chunk's depth the
+    /// rider test passed too). K=5 at 4,000 rides 63 splits a row; a rider at 16,000 joins the
+    /// same 64-key run and takes it to 250 splits, growing a pool of 3,000,000 o floats by 43.3
+    /// MB; a rider at 4,000 grows nothing.
+    #[test]
+    fn a_rider_is_priced_at_its_own_depth() {
+        let k5 = pooled_verify_round_bytes(6, true, COL, VOCAB);
+        let rider = pooled_verify_round_bytes(1, false, COL, VOCAB);
+        let cur = (3_000_000, 12_000);
+        let chunk = pooled_verify_chunk(&[cand(6, 4_000)], 0, &no_fa);
+        let mut deep = chunk.t_kv.clone();
+        deep.push(16_000);
+        assert_eq!(grow(&deep, cur), (10_752_000 + 2 * 42_000) * 4);
+        let fa = |t_kv: &[usize]| grow(t_kv, cur);
+        let reading = k5 + rider + POOLED_VERIFY_MARGIN + 10 * MIB;
+        assert_eq!(
+            pooled_rider_take(&chunk, 1, &[16_000], rider, reading, &fa),
+            0
+        );
+        assert_eq!(
+            pooled_rider_take(&chunk, 1, &[4_000], rider, reading, &fa),
+            1
         );
     }
 
@@ -19184,11 +19310,12 @@ mod pooled_verify_cap_1266_tests {
             "let allocatable = pooled_verify_allocatable(e);",
             "let chunk = pooled_verify_chunk(&cands, allocatable, &fa_growth);",
             "let end = j + chunk.len;",
-            "let take = pooled_rider_take( &chunk, want, &rider_depths, rider_need, allocatable, \
+            "let take = pooled_rider_take( &chunk, want, &rider_t_kv, rider_need, allocatable, \
              &fa_growth, );",
             "MTP_POOL_CAPPED.fetch_add(1,",
             "MTP_POOL_RIDERS_CAPPED .fetch_add(",
-            ".map(|&(h, hkv, hd)| e.fa_part_growth_bytes(rows, depth, h, hkv, hd))",
+            "|t_kv: &[usize]| -> usize { e.fa_rows_growth_bytes(t_kv, &fa_geoms, fa_elig_hd) };",
+            "pos: p.pos,",
         ] {
             assert!(
                 body.contains(&squash(needle)),
@@ -19208,5 +19335,12 @@ mod pooled_verify_cap_1266_tests {
         let reader = &reader[..reader.find("\n}\n").unwrap()];
         assert!(reader.contains("crate::unified_memory::allocatable_mem_info(e.ctx())"));
         assert!(reader.contains("e.pool_cached_bytes()"));
+        // The pre-cohort reclaim's round prices its own rows run by run too.
+        let round = &production[production.find("pub fn spec_round_bytes(").unwrap()..];
+        let round = squash(&round[..round.find("\n    }\n").unwrap()]);
+        assert!(round.contains(&squash(
+            "let rows: Vec<usize> = (1..=k + 1).map(|r| pos + r).collect();"
+        )));
+        assert!(round.contains("e.fa_rows_growth_bytes("));
     }
 }
