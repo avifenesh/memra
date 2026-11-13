@@ -20,6 +20,10 @@ c84966edd99e6824f44355400afee175bbc11878  crates/memra-engine/src/dsv41_gpu/expe
 0ad4192b2cbfcfd854eaad8eb780fc1eb987f644  crates/memra-engine/src/dsv41_gpu/graph.rs
 c6f56c13241c112071d9039868f5efe43fe3082a  crates/memra-engine/src/dsv41_gpu/tp.rs
 
-After the run the branch was restacked onto the route's later heads. emb's three engine commits keep
-their engine patches unchanged (same git patch-id --stable over crates/memra-engine); the trees differ
-only by the route's own review fixes, which the route's gates cover.
+After the run the branch was restacked onto the route's later heads. The two commits behind this check
+(one table a card shared by its ranks; the teardown sync and the warm-up) keep their engine patches
+unchanged (same git patch-id --stable over crates/memra-engine). The two before them (the device gather
+of a call's rows; the --nvtx ranges) were re-applied in `Runner::forward` over the route's review fix
+that extends a sequence's ids only after its tokens are checked: the gather is the one built here, and
+the ids now extend after it. The rest of the trees' difference is the route's own review fixes, which
+the route's gates cover.
