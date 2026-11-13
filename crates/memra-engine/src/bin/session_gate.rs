@@ -219,9 +219,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         None
                     };
-                    let pos = model
-                        .spec_rewind_to_checkpoint(&e, &mut sess)?
-                        .expect("the checkpoint passed rewind_refusal");
+                    // A lend past the checkpoint refuses the in-place rewind; the server then
+                    // rewinds into a fresh cache, and so does the gate.
+                    let pos = if model.spec_rewind_lend_refusal(&sess).is_some() {
+                        let cap = sess.cache_max_ctx();
+                        println!("  the in-place rewind would write lent rows: a fresh cache");
+                        model.spec_rewind_into_fresh(&e, &mut sess, cap)?
+                    } else {
+                        model.spec_rewind_to_checkpoint(&e, &mut sess)?
+                    }
+                    .expect("the checkpoint passed rewind_refusal");
                     assert_eq!(
                         sess.committed[..],
                         hist[..pos],

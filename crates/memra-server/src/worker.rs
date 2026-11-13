@@ -3092,6 +3092,17 @@ pub struct Metrics {
     pub prefix_tail_hits: u64,
     pub prefix_tail_skips: u64,
     pub prefix_hit_tokens: u64,
+    /// The speculative boundary's lent planes (memra#1221 part 2): books whose plane its owner
+    /// still holds (`lent`) and books whose plane moved to the cache (`adopted`, with the bytes
+    /// they hold), gauges; adoptions, compactions, failed compactions and breaks of the cache's
+    /// invariants (`total_bytes` against the entries, charged against real), counters.
+    pub prefix_loan_lent: u64,
+    pub prefix_loan_adopted: u64,
+    pub prefix_loan_adopted_bytes: u64,
+    pub prefix_loan_adoptions: u64,
+    pub prefix_loan_compactions: u64,
+    pub prefix_loan_compaction_failures: u64,
+    pub prefix_loan_invariant_breaks: u64,
     /// Pinned-host spill tier behind the prefix cache (lane/kv-host-spill-20260830;
     /// MEMRA_KV_HOST_MB, default 0 = off). Entries/bytes are current gauges; demotions/
     /// promotions count tier round-trips; the *_ms fields are CUMULATIVE copy wall-time (the
@@ -4800,12 +4811,18 @@ enum SpecExtensionTake {
 /// `spec_pool_grid_refusal` admits it, and is declined otherwise. A text hit that rewinds then
 /// primes the prompt's own tokens past the checkpoint, so the resumed stream is the one a cold
 /// prime of the prompt sees.
+///
+/// `rewind` rewinds the session to its checkpoint: in place, or, when a prefix entry reads its
+/// rows past the checkpoint, into a fresh cache under the caller's scope and reclaim retry
+/// (`spec_lend_rewind`, memra#1221 review).
 fn spec_pool_take_extension(
-    engine: &Engine,
     lm: &LoadedModel,
     mut sess: memra_engine::spec::SpecSession,
     prompt: &[u32],
     model: &str,
+    rewind: impl FnOnce(
+        &mut memra_engine::spec::SpecSession,
+    ) -> Result<Option<usize>, Box<dyn std::error::Error>>,
 ) -> SpecExtensionTake {
     if !cache_carries_recurrent(sess.cache_ref()) {
         return SpecExtensionTake::ParkedEnd(sess);
@@ -4827,7 +4844,10 @@ fn spec_pool_take_extension(
     ) {
         return decline(&why);
     }
-    match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {
+    if lm.model.spec_rewind_lend_refusal(&sess).is_some() {
+        note_lend_rewind_fresh("grid-rewind", model);
+    }
+    match rewind(&mut sess) {
         Ok(Some(pos)) => {
             eprintln!(
                 "[kv-reuse] grid-rewind: spec extension of {committed} committed rows rewound to \
@@ -4838,17 +4858,35 @@ fn spec_pool_take_extension(
         }
         Ok(None) => decline("the checkpoint vanished"),
         Err(err) => {
-            note_lend_rewind_refusal(&err.to_string(), "grid-rewind", model);
+            note_lend_rewind_refusal(
+                lm.model.spec_rewind_lend_refusal(&sess).is_some(),
+                "grid-rewind",
+                model,
+            );
             decline(&format!("restore failed: {err}"))
         }
     }
 }
 
+/// A speculative session's in-place rewind refused by a lend (its target lies below rows it
+/// lends to a prefix entry): the rewind tries a fresh cache instead (memra#1221 review:
+/// `spec_lend_rewind`). Its retry can still rewind in place once a reclaim dropped the lends.
+/// One literal for every site, which the cells count (`LEND_REWIND_FRESH_LINE`).
+fn note_lend_rewind_fresh(site: &str, model: &str) {
+    eprintln!("{LEND_REWIND_FRESH_LINE} ({site}; model {model})");
+}
+
+/// The fresh-cache rewind's log line, without its site and model.
+const LEND_REWIND_FRESH_LINE: &str =
+    "[spec] rewind below a lent prefix row: the session tries a fresh cache";
+
 /// A speculative session's rewind refused because its target lies below rows it lends to a
-/// prefix entry (memra#1221 part 2: `KvPlane::lend`). The request primes cold instead; one line
-/// per refusal, so a cell can count what the guard costs.
-fn note_lend_rewind_refusal(err: &str, site: &str, model: &str) {
-    if err.contains("lent to a prefix entry") {
+/// prefix entry (memra#1221 part 2: `KvPlane::lend`) and the fresh-cache route did not land
+/// either (memra#1221 review: `spec_lend_rewind`; its allocation failed after the reclaim, and
+/// the reclaim could not drop the lends because a leased entry holds them). The request primes
+/// cold; one line per refusal, so a cell can count what the guard costs.
+fn note_lend_rewind_refusal(lent: bool, site: &str, model: &str) {
+    if lent {
         eprintln!(
             "[spec] rewind refused below a lent prefix row ({site}); the request primes cold \
              (model {model})"
@@ -9261,6 +9299,20 @@ fn prefix_insert_budget(
     budget
 }
 
+/// The budget the cache is held to between inserts (memra#1221 review): `prefix_insert_budget`'s
+/// for no new entry, without its line (it runs at every tick that charged an adoption).
+fn prefix_hold_budget(engine: &Engine, resident: usize) -> usize {
+    let configured = kv_flex_effective_budget();
+    if configured == 0 || !device_is_unified(engine) {
+        return configured;
+    }
+    let Some((live_free, _)) = effective_free_bytes(engine) else {
+        return configured;
+    };
+    let headroom = admit_driver_headroom_bytes().saturating_add(SPEC_SHRINK_RESERVE);
+    unified_insert_budget(configured, resident, 0, live_free, headroom)
+}
+
 fn pending_seed_bytes(active: &[Session]) -> usize {
     if prefix_cache_budget_bytes() == 0 {
         return 0;
@@ -10664,6 +10716,94 @@ fn alloc_with_single_reclaim_retry<T, E>(
     }
 }
 
+/// A speculative checkpoint rewind's route (memra#1221 review): in place, unless the capacity
+/// grows or a prefix entry reads the session's rows past its checkpoint (`needs_fresh`); then
+/// into a fresh cache, under the caller's allocation scope, with the one reclaim retry. The
+/// route is decided again on the retry: a reclaim that evicted the entries reading the session
+/// drops their lends, and the retry then rewinds in place, as main did, instead of failing to a
+/// cold prime.
+fn spec_lend_rewind<S, E>(
+    sess: &mut S,
+    needs_fresh: impl Fn(&S) -> bool,
+    mut in_place: impl FnMut(&mut S) -> Result<Option<usize>, E>,
+    mut fresh: impl FnMut(&mut S) -> Result<Option<usize>, E>,
+    reclaim: impl FnMut(&E) -> bool,
+) -> Result<Option<usize>, E> {
+    alloc_with_single_reclaim_retry(
+        || {
+            if needs_fresh(sess) {
+                fresh(sess)
+            } else {
+                in_place(sess)
+            }
+        },
+        reclaim,
+    )
+}
+
+/// The reclaim between a speculative rewind's allocation and its one retry (the affinity grow's
+/// policy): on an out-of-memory error every unleased prefix entry goes (those reading the
+/// session's rows with them, so a lend-refused rewind may then run in place) and the globally
+/// oldest parked session goes. True when anything was freed.
+fn spec_rewind_oom_reclaim<P: ParkedEntryAge, S: ParkedEntryAge, D: ParkedEntryAge>(
+    err: &(dyn std::error::Error + 'static),
+    px: &mut PrefixCache,
+    reuse: &mut HashMap<PoolKey, Vec<P>>,
+    spec_reuse: &mut HashMap<PoolKey, Vec<S>>,
+    dspark_reuse: &mut HashMap<PoolKey, Vec<D>>,
+    reuse_metrics: &mut ReuseMetrics,
+    site: &str,
+) -> bool {
+    if !is_cuda_oom(&err.to_string()) {
+        return false;
+    }
+    let evicted_prefix = px.evict_all();
+    if evicted_prefix > 0 {
+        eprintln!("[prefix-cache] evicted {evicted_prefix} entries after {site} OOM; retrying");
+    }
+    let evicted_parked = evict_oldest_parked(reuse, spec_reuse, dspark_reuse, reuse_metrics);
+    if let Some(pool) = evicted_parked {
+        eprintln!(
+            "[admit-oom] {site}: evicted oldest {} parked session (global LRU); retrying once",
+            match pool {
+                ParkedPool::Plain => "plain",
+                ParkedPool::Spec => "spec",
+                ParkedPool::Dspark => "dspark",
+            }
+        );
+    }
+    evicted_prefix > 0 || evicted_parked.is_some()
+}
+
+/// The fresh-cache half of [`spec_lend_rewind`] for a parked speculative session: rewind into a
+/// new cache and scratch of `target_cap` rows under the on-demand construction scope (WP-B day
+/// 37: every on-demand plane the scope allocated must be reachable by the session's ensure).
+fn spec_rewind_fresh_scoped(
+    engine: &Engine,
+    lm: &LoadedModel,
+    sess: &mut memra_engine::spec::SpecSession,
+    target_cap: usize,
+    prompt_rows: usize,
+    spec_k: usize,
+) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+    let Some(initial) = vmm_scope(engine, lm, target_cap, prompt_rows, spec_k) else {
+        return lm.model.spec_rewind_into_fresh(engine, sess, target_cap);
+    };
+    let (rewound, count) = memra_engine::cache::with_on_demand_kv(initial, || {
+        lm.model.spec_rewind_into_fresh(engine, sess, target_cap)
+    });
+    let rewound = rewound?;
+    if count > 0 && sess.kv_on_demand_planes() != count {
+        return Err(format!(
+            "vmm: on-demand plane not reachable by ensure (scope allocated {count}, session \
+             reaches {})",
+            sess.kv_on_demand_planes()
+        )
+        .into());
+    }
+    Ok(rewound)
+}
+
 /// The bytes of one prefix-entry plane (memra#1221 part 2): the entry's own allocation, or rows
 /// `[0, pos)` of a live session's plane read in place (a [`memra_engine::cache::KvLend`]: the
 /// speculative prime boundary's publication lends the session's planes instead of copying
@@ -11298,13 +11438,23 @@ struct PrefixCache {
     loan_adoptions: u64,
     /// Adopted planes copied into exact planes of their entries' own and freed.
     loan_compactions: u64,
-    /// Entries removed, counted: a compaction whose allocation failed is retried only after an
-    /// entry left the cache since.
-    removals: u64,
-    /// Breaks of `total_bytes == the entries' bytes` found at a reconcile (`check_total`).
+    /// Device bytes the cache freed, counted (an entry's departure, a stripped tail, a
+    /// compaction): a compaction whose allocation failed is retried only once at least the bytes
+    /// it needed were freed since (`compaction_may_retry`).
+    freed_bytes: u64,
+    /// Set by a failed compaction: `freed_bytes` then, and the bytes the failed allocation
+    /// needed.
+    compact_blocked: Option<(u64, usize)>,
+    /// Compactions stopped by a failed allocation or copy.
+    loan_compaction_failures: u64,
+    /// Breaks of the cache's invariants found at a reconcile (`check_total`): `total_bytes`
+    /// against the entries' bytes, and the charged bytes against what they really hold.
     loan_invariant_breaks: u64,
     /// The last reconcile trace line's numbers, so an unchanged state prints once.
     loan_trace_last: Option<(usize, usize, usize, usize)>,
+    /// The (total, budget) of the last budget hold that could free nothing (leases keep the
+    /// cache over its budget), so that state prints once and not at every tick.
+    hold_stuck: Option<(usize, usize)>,
     /// Test seam: the held bytes of a book with no real loan behind it (the book arithmetic's
     /// CPU test).
     #[cfg(test)]
@@ -11325,9 +11475,6 @@ struct LoanBook {
     holder: u64,
     /// Bytes charged to the holder: the adopted plane's held bytes, 0 while its owner holds it.
     charged: usize,
-    /// `PrefixCache::removals` when a compaction of this plane failed (a back-off: it is not
-    /// tried again until an entry left the cache).
-    compact_failed_at: Option<u64>,
 }
 
 impl LoanBook {
@@ -11343,6 +11490,13 @@ impl LoanBook {
 /// the open-output or large-`max_tokens` session whose entry is under half of it.
 fn loan_compaction_frees_more(held: usize, read: usize) -> bool {
     held.saturating_sub(read) > read
+}
+
+/// The back-off after a failed compaction (memra#1221 review): `blocked` is the cache's freed
+/// bytes when it failed and the bytes its allocation needed. Compaction may run again once at
+/// least that many bytes were freed since; with no failure on record it always may.
+fn compaction_may_retry(blocked: Option<(u64, usize)>, freed_now: u64) -> bool {
+    blocked.is_none_or(|(at, need)| freed_now.saturating_sub(at) >= need as u64)
 }
 
 /// Lower edges of the LCP histogram buckets: bucket i counts samples in
@@ -11451,7 +11605,7 @@ impl PrefixCache {
 
     /// The leased refusal: counted every time, printed through the throttle.
     fn refuse_leased(&mut self, bytes: usize, budget: usize, why: &str, key: &PoolKey) {
-        let leased = self.pinned_bytes();
+        let leased = self.leased_bytes();
         self.record_budget_skip(true);
         let shape = PrefixRefusalShape {
             leased: Some(leased),
@@ -11866,6 +12020,13 @@ impl PrefixCache {
             .sum()
     }
 
+    /// The bytes no eviction can free while the leases hold: the leased entries' own, plus the
+    /// adopted charges a leased reader inherits when their unleased holder goes (memra#1221
+    /// review, `charges_kept_by_leases`).
+    fn leased_bytes(&self) -> usize {
+        self.pinned_bytes() + self.charges_kept_by_leases() as usize
+    }
+
     /// Remove pool[i] under `key`, keeping the recency index exact: swap_remove moves the
     /// pool's LAST entry into slot i, so exactly one surviving entry needs its index
     /// re-pointed (pool order is free: every probe is order-independent, lookup's
@@ -11893,7 +12054,7 @@ impl PrefixCache {
         let mut dead = dead;
         self.unbook_lends(&mut dead);
         self.total_bytes = self.total_bytes.saturating_sub(dead.bytes);
-        self.removals += 1;
+        self.freed_bytes += dead.bytes as u64;
         Some(dead)
     }
 
@@ -11922,7 +12083,6 @@ impl PrefixCache {
             readers: Vec::new(),
             holder: entry,
             charged: 0,
-            compact_failed_at: None,
         });
         book.readers.push((entry, len));
         self.loans_of.entry(entry).or_default().push(id);
@@ -12004,26 +12164,35 @@ impl PrefixCache {
             }
         }
         let mut compacted = false;
+        // A failed compaction stops compaction for the rest of the pass, and for later passes
+        // until the bytes it needed were freed (memra#1221 review).
+        let mut compact = compact && compaction_may_retry(self.compact_blocked, self.freed_bytes);
+        if compact {
+            self.compact_blocked = None;
+        }
         let ids: Vec<u64> = self.adopted.iter().copied().collect();
         for id in ids {
             let Some(held) = self.loan_held(id, true) else {
                 continue;
             };
-            let Some((read, failed_at)) =
-                self.loans.get(&id).map(|b| (b.read(), b.compact_failed_at))
-            else {
+            let Some(read) = self.loans.get(&id).map(LoanBook::read) else {
                 self.adopted.remove(&id);
                 continue;
             };
             if compact
                 && let Some(engine) = engine
                 && loan_compaction_frees_more(held, read)
-                && failed_at.is_none_or(|at| at < self.removals)
             {
                 self.charge_loan(id, 0);
-                if self.compact_loan(engine, id, held, read) {
-                    compacted = true;
-                    continue;
+                match self.compact_loan(engine, id, held, read) {
+                    Ok(()) => {
+                        compacted = true;
+                        continue;
+                    }
+                    Err(need) => {
+                        self.compact_blocked = Some((self.freed_bytes, need));
+                        compact = false;
+                    }
                 }
             }
             if self.loans.get(&id).is_some_and(|b| b.charged != held) {
@@ -12091,7 +12260,13 @@ impl PrefixCache {
     /// adopted plane is freed when the last lend goes. False when an allocation or copy failed:
     /// the readers converted so far keep their copies and leave the book, the rest keep reading
     /// the plane, and the plane is not tried again until an entry left the cache (back-off).
-    fn compact_loan(&mut self, engine: &Engine, id: u64, held: usize, read: usize) -> bool {
+    fn compact_loan(
+        &mut self,
+        engine: &Engine,
+        id: u64,
+        held: usize,
+        read: usize,
+    ) -> Result<(), usize> {
         let t0 = Instant::now();
         let readers: Vec<u64> = self
             .loans
@@ -12100,7 +12275,7 @@ impl PrefixCache {
             .unwrap_or_default();
         let mut copied = 0usize;
         let mut converted: Vec<u64> = Vec::new();
-        let mut failed = false;
+        let mut failed: Option<usize> = None;
         'readers: for rid in readers {
             let Some(e) = self.entries.values_mut().flatten().find(|e| e.id == rid) else {
                 continue;
@@ -12111,11 +12286,16 @@ impl PrefixCache {
                         continue;
                     };
                     let n = lend.len();
+                    #[cfg(test)]
+                    if spec_plane_copy_fault() {
+                        failed = Some(n);
+                        break 'readers;
+                    }
                     let own = prefix_plane_alloc(engine, n).ok().and_then(|mut own| {
                         engine.copy_u8_into(&mut own, 0, lend, n).ok().map(|()| own)
                     });
                     let Some(own) = own else {
-                        failed = true;
+                        failed = Some(n);
                         break 'readers;
                     };
                     *buf = PlaneBuf::Owned(own);
@@ -12134,8 +12314,8 @@ impl PrefixCache {
                 }
             }
         }
-        if failed {
-            let removals = self.removals;
+        if let Some(need) = failed {
+            self.loan_compaction_failures += 1;
             let gone = match self.loans.get_mut(&id) {
                 Some(book) => {
                     book.readers.retain(|r| !converted.contains(&r.0));
@@ -12144,7 +12324,6 @@ impl PrefixCache {
                             if !book.readers.iter().any(|r| r.0 == book.holder) {
                                 book.holder = first;
                             }
-                            book.compact_failed_at = Some(removals);
                             false
                         }
                         None => true,
@@ -12158,16 +12337,18 @@ impl PrefixCache {
             }
             eprintln!(
                 "[prefix-loan] compact: plane {id} ({:.1}MB held) stopped after {:.1}MB: an \
-                 allocation or copy failed; the rest stays adopted until an entry leaves the cache",
+                 allocation or copy of {:.1}MB failed; no compaction until that much is freed",
                 held as f64 / 1e6,
                 copied as f64 / 1e6,
+                need as f64 / 1e6,
             );
-            return false;
+            return Err(need);
         }
         // Every lend of the plane went with the conversions above; the book goes with them.
         self.loans.remove(&id);
         self.adopted.remove(&id);
         self.loan_compactions += 1;
+        self.freed_bytes += held.saturating_sub(copied) as u64;
         if tick_trace_enabled() {
             eprintln!(
                 "[prefix-loan] compact: plane {id} held {:.1}MB, its readers copied {:.1}MB \
@@ -12178,7 +12359,7 @@ impl PrefixCache {
                 t0.elapsed().as_micros(),
             );
         }
-        true
+        Ok(())
     }
 
     /// The cache's charged bytes against the bytes its entries really hold: their own planes
@@ -12213,6 +12394,71 @@ impl PrefixCache {
             debug_assert_eq!(self.total_bytes, sum, "prefix cache total_bytes ({why})");
             self.total_bytes = sum;
         }
+        // The charges against what the entries and the adopted planes really hold (memra#1221
+        // review): every adopted plane charged its held bytes, once.
+        let (charged, real) = self.loan_charged_real();
+        if charged != real {
+            eprintln!("[prefix-loan] INVARIANT BROKEN why={why}: charged {charged} != real {real}");
+            self.loan_invariant_breaks += 1;
+            debug_assert_eq!(charged, real, "prefix cache charged against real ({why})");
+        }
+    }
+
+    /// Device bytes the adopted planes hold, each once.
+    fn loan_adopted_bytes(&self) -> usize {
+        self.adopted
+            .iter()
+            .filter_map(|&id| self.loan_held(id, false))
+            .sum()
+    }
+
+    /// The tick-top and retirement reconcile (memra#1221 review): the adoptions are charged and
+    /// the cache is held to its budget. On unified memory an adopted plane is compacted at its
+    /// adoption when that frees more than it copies (held - read > read: the over-hold is the
+    /// device's own memory there). A cache the new charges leave over its budget is memory
+    /// demand: compaction by the same rule, then LRU down to the budget (`hold_to_budget`).
+    fn reconcile_to_budget(&mut self, engine: &Engine, why: &str) {
+        let unified = device_is_unified(engine);
+        let before = self.total_bytes;
+        self.reconcile_loans(Some(engine), why, unified);
+        if self.total_bytes <= before && self.total_bytes <= kv_flex_effective_budget() {
+            self.hold_stuck = None;
+            return;
+        }
+        let budget = prefix_hold_budget(engine, self.total_bytes);
+        self.hold_to_budget(Some(engine), budget, why);
+    }
+
+    /// Bring the cache down to `budget` (memra#1221 review): with an engine, the adopted planes
+    /// that compaction frees more of than it copies are compacted first (`evict_to_bytes`'s own
+    /// reconcile), then the oldest unleased entries go. Returns (entries evicted, bytes freed).
+    fn hold_to_budget(
+        &mut self,
+        engine: Option<&Engine>,
+        budget: usize,
+        why: &str,
+    ) -> (usize, usize) {
+        if budget == 0 || self.total_bytes <= budget {
+            self.hold_stuck = None;
+            return (0, 0);
+        }
+        let before = self.total_bytes;
+        let (n, freed) = self.evict_to_bytes(engine, budget);
+        // A hold that compacted or evicted prints; one that could free nothing (every entry
+        // left is leased) prints once per (total, budget), not at every tick it repeats.
+        let stuck = n == 0 && self.total_bytes == before;
+        if stuck && self.hold_stuck == Some((before, budget)) {
+            return (n, freed);
+        }
+        self.hold_stuck = stuck.then_some((before, budget));
+        eprintln!(
+            "[prefix-loan] over budget after {why}: {:.1}MB against {:.1}MB; compacted and \
+             evicted {n} entries to {:.1}MB",
+            before as f64 / 1e6,
+            budget as f64 / 1e6,
+            self.total_bytes as f64 / 1e6,
+        );
+        (n, freed)
     }
 
     /// The reconcile trace (MEMRA_TICK_TRACE=1): the charged bytes (`total_bytes`) against the
@@ -12321,6 +12567,7 @@ impl PrefixCache {
         self.n_tails = self.n_tails.saturating_sub(1);
         e.bytes = e.bytes.saturating_sub(t.bytes);
         self.total_bytes = self.total_bytes.saturating_sub(t.bytes);
+        self.freed_bytes += t.bytes as u64;
         self.tail_strips += 1;
         eprintln!(
             "[prefix-cache] evict tail ({why}): {} prompt-end tokens past the {}-token entry, \
@@ -12506,7 +12753,7 @@ impl PrefixCache {
         // fits beside the leased bytes (every unleased byte is reclaimable for it, oldest
         // first) or is refused HERE, in bytes, without evicting anyone. Before this check such
         // an entry evicted every unleased neighbour and then itself.
-        if e.bytes > budget.saturating_sub(self.pinned_bytes()) {
+        if e.bytes > budget.saturating_sub(self.leased_bytes()) {
             if initial_pins == 0 {
                 self.refuse_leased(e.bytes, budget, why, key);
             } else {
@@ -12515,7 +12762,7 @@ impl PrefixCache {
                     "[prefix-cache] skip pinned {why} insert: entry {:.1}MB cannot fit \
                            beside {:.1}MB already pinned (budget {:.0}MB)",
                     e.bytes as f64 / 1e6,
-                    self.pinned_bytes() as f64 / 1e6,
+                    self.leased_bytes() as f64 / 1e6,
                     budget as f64 / 1e6
                 );
             }
@@ -12601,6 +12848,8 @@ impl PrefixCache {
         mut demote: Option<&mut dyn FnMut(PrefixEntry)>,
     ) -> bool {
         const WHY: &str = "snapshot preflight";
+        // The adoptions are charged before the room is decided (memra#1221 review).
+        self.reconcile_loans(None, "snapshot", false);
         if bytes > budget {
             self.refuse_oversize(bytes, budget, WHY, key);
             return false;
@@ -14070,7 +14319,9 @@ fn evict_all_demoting(
             && demoted_bytes < demote_budget_bytes
             && let Some(entry) = px.entries.get_mut(&key).and_then(|pool| pool.get_mut(i))
         {
-            let bytes = entry.bytes as u64;
+            // The host copy is the entry's logical bytes, lent planes included (memra#1221
+            // review): a borrowed entry is charged its own planes only but copies every row.
+            let bytes = entry.base_bytes() as u64;
             if matches!(
                 host_demote_prefix_ref(engine, host, entry),
                 HostDemoteOutcome::Demoted
@@ -23022,7 +23273,8 @@ pub fn run(
                                     shortfall.unwrap_or(usize::MAX),
                                     longer_bytes,
                                     || {
-                                        // A parked lender whose entry survives frees nothing.
+                                        // A parked lender whose entry survives frees none of
+                                        // its lent planes; it stays and the next oldest goes.
                                         let pool = evict_oldest_parked_freeing(
                                             &mut reuse,
                                             &mut spec_reuse,
@@ -24349,10 +24601,10 @@ pub fn run(
                 })
             };
             let automatic_demote = spec_k_pin().is_none() && spec_gate_on();
-            // Lent planes whose owner dropped them since the last tick are charged before this
-            // tick's publications and admissions read the cache (memra#1221 part 2); compaction
-            // waits for memory demand.
-            px.reconcile_loans(Some(&engine), "tick", false);
+            // Lent planes whose owner dropped them since the last tick are charged, and the
+            // cache held to its budget, before this tick's publications and admissions read it
+            // (memra#1221 part 2, `reconcile_to_budget`).
+            px.reconcile_to_budget(&engine, "tick");
             // PREFIX-CACHE spec publication sweep (lane/spec-prefix-cache): a speculative
             // session whose first cold burst produced a boundary capture publishes it ONCE, at
             // the tick boundary after the burst — commit-gated (the capture's pos prefixes the
@@ -27117,9 +27369,9 @@ pub fn run(
                 }
             }
         }
-        // The retired sessions' lent planes moved to their entries: charge them now (memra#1221
-        // part 2).
-        px.reconcile_loans(Some(&engine), "retire", false);
+        // The retired sessions' lent planes moved to their entries: charge them now and hold the
+        // cache to its budget (memra#1221 part 2, `reconcile_to_budget`).
+        px.reconcile_to_budget(&engine, "retire");
         if oom_teardowns > 0 {
             // memra#145: RECLAIM BEFORE RETRY. Until 2026-09-04 this block only trimmed the
             // pool, so every park/retry round released the same ~9 GB of freed session state
@@ -27378,6 +27630,13 @@ pub fn run(
             m.prefix_tail_hits = px.tail_hits;
             m.prefix_tail_skips = px.tail_skips;
             m.prefix_hit_tokens = px.hit_tokens;
+            m.prefix_loan_lent = px.loans.len().saturating_sub(px.adopted.len()) as u64;
+            m.prefix_loan_adopted = px.adopted.len() as u64;
+            m.prefix_loan_adopted_bytes = px.loan_adopted_bytes() as u64;
+            m.prefix_loan_adoptions = px.loan_adoptions;
+            m.prefix_loan_compactions = px.loan_compactions;
+            m.prefix_loan_compaction_failures = px.loan_compaction_failures;
+            m.prefix_loan_invariant_breaks = px.loan_invariant_breaks;
             m.prefix_host_entries = hpx.n_entries() as u64;
             m.prefix_host_bytes = hpx.total_bytes as u64;
             m.prefix_host_demotions = hpx.demotions;
@@ -31410,7 +31669,36 @@ fn admit(
                         .expect("spec extension candidate pool vanished")
                         .remove(index)
                         .sess;
-                    match spec_pool_take_extension(engine, lm, sess, &prompt, &req.model) {
+                    let rewind = |s: &mut memra_engine::spec::SpecSession| {
+                        let cap = s.cache_max_ctx();
+                        spec_lend_rewind(
+                            s,
+                            |s| lm.model.spec_rewind_lend_refusal(s).is_some(),
+                            |s| lm.model.spec_rewind_to_checkpoint(engine, s),
+                            |s| {
+                                spec_rewind_fresh_scoped(
+                                    engine,
+                                    lm,
+                                    s,
+                                    cap,
+                                    prompt.len(),
+                                    spec_k_decision.k,
+                                )
+                            },
+                            |err| {
+                                spec_rewind_oom_reclaim(
+                                    err.as_ref(),
+                                    px,
+                                    reuse,
+                                    spec_reuse,
+                                    dspark_reuse,
+                                    reuse_metrics,
+                                    "spec grid rewind",
+                                )
+                            },
+                        )
+                    };
+                    match spec_pool_take_extension(lm, sess, &prompt, &req.model, rewind) {
                         SpecExtensionTake::ParkedEnd(sess)
                             if sampled_parked_end_resume_refused(
                                 sampler.is_greedy(),
@@ -31454,74 +31742,41 @@ fn admit(
                         .get_mut(&pool_key)
                         .expect("spec affinity candidate pool vanished")
                         .remove(index);
-                    let rewound = if target_cap > old_cap {
-                        alloc_with_single_reclaim_retry(
-                            || {
-                                // WP-B day 37: a covered grow rebuilds the trunk cache and the
-                                // draft scratch under the on-demand scope; every on-demand plane
-                                // the scope allocated must be reachable by the session's ensure.
-                                let scope = vmm_scope(
+                    // The grow branch, and a rewind a lend refuses in place (memra#1221
+                    // review), rebuild the session under the on-demand scope with one reclaim
+                    // retry (`spec_lend_rewind`).
+                    let lent = lm.model.spec_rewind_lend_refusal(&entry.sess).is_some();
+                    if lent {
+                        note_lend_rewind_fresh(&format!("affinity, {target_cap} rows"), &req.model);
+                    }
+                    let rewound = if target_cap > old_cap || lent {
+                        spec_lend_rewind(
+                            &mut entry.sess,
+                            |s| {
+                                target_cap > old_cap
+                                    || lm.model.spec_rewind_lend_refusal(s).is_some()
+                            },
+                            |s| lm.model.spec_rewind_to_checkpoint(engine, s),
+                            |s| {
+                                spec_rewind_fresh_scoped(
                                     engine,
                                     lm,
+                                    s,
                                     target_cap,
                                     prompt.len(),
                                     spec_k_decision.k,
-                                );
-                                let Some(initial) = scope else {
-                                    return lm.model.spec_grow_and_rewind_to_checkpoint(
-                                        engine,
-                                        &mut entry.sess,
-                                        target_cap,
-                                    );
-                                };
-                                let (grown, count) =
-                                    memra_engine::cache::with_on_demand_kv(initial, || {
-                                        lm.model.spec_grow_and_rewind_to_checkpoint(
-                                            engine,
-                                            &mut entry.sess,
-                                            target_cap,
-                                        )
-                                    });
-                                let grown = grown?;
-                                if count > 0 && entry.sess.kv_on_demand_planes() != count {
-                                    return Err(format!(
-                                        "vmm: on-demand plane not reachable by ensure (scope \
-                                         allocated {count}, session reaches {})",
-                                        entry.sess.kv_on_demand_planes()
-                                    )
-                                    .into());
-                                }
-                                Ok(grown)
+                                )
                             },
                             |err| {
-                                if !is_cuda_oom(&err.to_string()) {
-                                    return false;
-                                }
-                                let evicted_prefix = px.evict_all();
-                                if evicted_prefix > 0 {
-                                    eprintln!(
-                                        "[prefix-cache] evicted {evicted_prefix} entries \
-                                               after spec-affinity grow OOM; retrying"
-                                    );
-                                }
-                                let evicted_parked = evict_oldest_parked(
+                                spec_rewind_oom_reclaim(
+                                    err.as_ref(),
+                                    px,
                                     reuse,
                                     spec_reuse,
                                     dspark_reuse,
                                     reuse_metrics,
-                                );
-                                if let Some(pool) = evicted_parked {
-                                    eprintln!(
-                                        "[admit-oom] spec-affinity grow: evicted oldest {} \
-                                               parked session (global LRU); retrying once",
-                                        match pool {
-                                            ParkedPool::Plain => "plain",
-                                            ParkedPool::Spec => "spec",
-                                            ParkedPool::Dspark => "dspark",
-                                        }
-                                    );
-                                }
-                                evicted_prefix > 0 || evicted_parked.is_some()
+                                    "spec-affinity grow",
+                                )
                             },
                         )
                     } else {
@@ -31547,7 +31802,11 @@ fn admit(
                             None
                         }
                         Err(err) => {
-                            note_lend_rewind_refusal(&err.to_string(), "affinity", &req.model);
+                            note_lend_rewind_refusal(
+                                lm.model.spec_rewind_lend_refusal(&entry.sess).is_some(),
+                                "affinity",
+                                &req.model,
+                            );
                             eprintln!(
                                 "[worker] affinity rewind failed ({err}); \
                                        dropping session, full prime"
@@ -49116,7 +49375,7 @@ mod tests {
         let production = &src[..src.find("\nmod tests {").unwrap()];
         let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(squashed.contains(
-            "match spec_pool_take_extension(engine, lm, sess, &prompt, &req.model) { SpecExtensionTake::ParkedEnd(sess) if sampled_parked_end_resume_refused( sampler.is_greedy(), suffix.as_deref().map(<[u32]>::len), prompt.len(), sess.committed.len(), ) => {"
+            "match spec_pool_take_extension(lm, sess, &prompt, &req.model, rewind) { SpecExtensionTake::ParkedEnd(sess) if sampled_parked_end_resume_refused( sampler.is_greedy(), suffix.as_deref().map(<[u32]>::len), prompt.len(), sess.committed.len(), ) => {"
         ));
         assert!(squashed.contains(
             "SpecExtensionTake::ParkedEnd(sess) => { text_suffix = suffix; Some(sess) } SpecExtensionTake::Rewound(sess, committed, pos) => { grid_rewound = Some((committed, pos)); Some(sess) } SpecExtensionTake::Declined => { reuse_metrics.spec_grid_declines += 1; None } }"
@@ -54497,6 +54756,264 @@ mod tests {
         );
         check(&px, "leased co-reader");
         assert_eq!(px.loan_invariant_breaks, 0);
+
+        // memra#1221 review round 2: the insert preflight counts the charge a leased reader
+        // inherits. With 1,350 resident (1,200 of it leased or kept by the lease) and a 1,400
+        // budget, a 300-byte insert cannot fit beside the lease: it is refused without evicting
+        // anyone (before the fix it evicted its neighbours and then itself), and with a 1,000
+        // budget it is refused too (before the fix the insert loop ended over budget).
+        for budget in [1_400usize, 1_000] {
+            let (mut px, ids) = fill([0, 1, 0]);
+            px.adoption_sink.push(7);
+            px.reconcile_loans(None, "test", false);
+            assert_eq!(
+                px.leased_bytes(),
+                b + held,
+                "the lease keeps its own and the charge"
+            );
+            let e = aged_entry(&k, 4, 64, 300, at);
+            let got = px.insert_with_budget_pins(&k, e, "test", budget, 0, None);
+            assert_eq!(got, None, "budget {budget}: refused beside the lease");
+            assert_eq!(
+                px.evictions, 0,
+                "budget {budget}: the refusal evicted entries"
+            );
+            assert_eq!(px.entries.values().flatten().count(), ids.len());
+            check(
+                &px,
+                &format!("preflight under a kept charge, budget {budget}"),
+            );
+        }
+
+        // The cache is held to its budget after an adoption (the tick-top and retirement
+        // reconciles): the adopted charge leaves it over, and the oldest unleased entries go
+        // until it fits (with an engine the compaction rule runs first).
+        let (mut px, ids) = fill([0, 0, 0]);
+        px.adoption_sink.push(7);
+        px.reconcile_loans(None, "test", false);
+        let budget = b + c + held;
+        let (n, _) = px.hold_to_budget(None, budget, "test");
+        assert!(
+            px.total_bytes <= budget,
+            "over budget after the hold: {}",
+            px.total_bytes
+        );
+        assert_eq!(
+            n, 1,
+            "the oldest entry went (its charge moved to the reader)"
+        );
+        assert!(px.entries.values().flatten().all(|e| e.id != ids[0]));
+        check(&px, "held to the budget");
+
+        // memra#1221 review round 3: a hold that can free nothing (every entry leased) records
+        // its state once, so it prints once and not at every tick that repeats it; going under
+        // the budget clears the state.
+        let (mut px, _) = fill([1, 1, 1]);
+        px.adoption_sink.push(7);
+        px.reconcile_loans(None, "test", false);
+        let (total, tight) = (px.total_bytes, b);
+        assert_eq!(px.hold_to_budget(None, tight, "test"), (0, 0), "all leased");
+        assert_eq!(px.hold_stuck, Some((total, tight)), "the stuck state");
+        assert_eq!(px.hold_to_budget(None, tight, "test"), (0, 0));
+        assert_eq!(px.hold_stuck, Some((total, tight)), "the same state again");
+        assert_eq!(px.hold_to_budget(None, total, "test"), (0, 0));
+        assert_eq!(px.hold_stuck, None, "under the budget");
+        check(&px, "a hold over leased entries");
+
+        // charge_loan's fallbacks: a holder the cache does not hold is replaced by a reader it
+        // does (charged there), and a book none of whose readers is in the cache is dropped.
+        let (mut px, ids) = fill([0, 0, 0]);
+        px.loans.get_mut(&7).unwrap().holder = u64::MAX;
+        px.adoption_sink.push(7);
+        px.reconcile_loans(None, "test", false);
+        assert_eq!(
+            px.loans[&7].holder, ids[0],
+            "the first reader in the cache holds it"
+        );
+        assert_eq!(bytes_of(&px, ids[0]), a + held);
+        check(&px, "holder fallback");
+        let (mut px, _) = fill([0, 0, 0]);
+        px.loans.get_mut(&7).unwrap().readers = vec![(u64::MAX - 1, 40), (u64::MAX - 2, 60)];
+        px.loans.get_mut(&7).unwrap().holder = u64::MAX - 1;
+        px.adoption_sink.push(7);
+        px.reconcile_loans(None, "test", false);
+        assert!(
+            !px.loans.contains_key(&7) && !px.adopted.contains(&7),
+            "the book is dropped"
+        );
+        check(&px, "no reader in the cache");
+        assert_eq!(px.loan_invariant_breaks, 0);
+    }
+
+    /// memra#1221 review round 3: the two reconciles that hold the cache to its budget after an
+    /// adoption, the tick top (before the tick's publications and admissions read the cache) and
+    /// after the retire loop, are `reconcile_to_budget`, and nothing else in the scheduler holds
+    /// the budget at those points. Also pins the fresh-cache rewind's log line, which the cells
+    /// count: one literal, printed by one function.
+    #[test]
+    fn the_tick_and_retirement_reconciles_hold_the_budget() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at = |needle: &str| {
+            assert_eq!(production.matches(needle).count(), 1, "{needle}");
+            production.find(needle).unwrap()
+        };
+        let tick = at("px.reconcile_to_budget(&engine, \"tick\");");
+        let sweep = at("// PREFIX-CACHE spec publication sweep (lane/spec-prefix-cache)");
+        assert!(
+            tick < sweep && sweep - tick < 400,
+            "the tick-top hold runs right before the publication sweep"
+        );
+        let retire = at("px.reconcile_to_budget(&engine, \"retire\");");
+        let after = production[retire..]
+            .find("if oom_teardowns > 0 {")
+            .expect("the OOM teardown block follows the retire hold");
+        assert!(
+            after < 120,
+            "the retire hold runs right after the retire loop"
+        );
+        assert_eq!(
+            production.matches("reconcile_to_budget(").count(),
+            3,
+            "the definition and its two callers"
+        );
+        for why in ["\"tick\"", "\"retire\""] {
+            assert!(
+                !production.contains(&format!("reconcile_loans(Some(&engine), {why}")),
+                "a bare reconcile at {why} charges without holding the budget"
+            );
+        }
+        // The fresh-cache line: the cells count this literal.
+        assert_eq!(
+            super::LEND_REWIND_FRESH_LINE,
+            "[spec] rewind below a lent prefix row: the session tries a fresh cache"
+        );
+        assert_eq!(
+            production
+                .matches("rewind below a lent prefix row: the session")
+                .count(),
+            1,
+            "one literal, in LEND_REWIND_FRESH_LINE"
+        );
+        assert_eq!(
+            production.matches("note_lend_rewind_fresh(").count(),
+            3,
+            "the function and its two sites (grid-rewind, affinity)"
+        );
+    }
+
+    /// memra#1221 review round 2: a failed compaction's back-off. With no failure on record a
+    /// compaction may run; after one it may run again only once the cache freed at least the
+    /// bytes the failed allocation needed (an eviction that freed less does not re-arm it).
+    #[test]
+    fn a_failed_compaction_waits_for_the_bytes_it_needed() {
+        use super::compaction_may_retry as may;
+        assert!(may(None, 0));
+        assert!(!may(Some((1_000, 500)), 1_000), "nothing freed since");
+        assert!(!may(Some((1_000, 500)), 1_499), "less than needed freed");
+        assert!(may(Some((1_000, 500)), 1_500), "the bytes it needed freed");
+    }
+
+    /// memra#1221 review round 2: a speculative checkpoint rewind a lend refuses in place goes
+    /// to a fresh cache; when that allocation fails and the reclaim drops the entries reading the
+    /// session (their lends go), the retry decides the route again and rewinds in place, as main
+    /// did, instead of dropping the session to a cold prime. A reclaim that frees nothing leaves
+    /// the error to the caller.
+    #[test]
+    fn a_lend_refused_rewind_survives_an_out_of_memory_fresh_cache() {
+        use std::cell::Cell;
+        struct Sess {
+            in_place: usize,
+            fresh: usize,
+        }
+        for reclaim_drops_the_lends in [true, false] {
+            let lent = Cell::new(true);
+            let mut sess = Sess {
+                in_place: 0,
+                fresh: 0,
+            };
+            let got = super::spec_lend_rewind(
+                &mut sess,
+                |_| lent.get(),
+                |s| {
+                    s.in_place += 1;
+                    Ok::<_, String>(Some(96))
+                },
+                |s| {
+                    s.fresh += 1;
+                    Err("cuMemAlloc: CUDA_ERROR_OUT_OF_MEMORY".to_string())
+                },
+                |err| {
+                    assert!(err.contains("OUT_OF_MEMORY"));
+                    if reclaim_drops_the_lends {
+                        lent.set(false);
+                    }
+                    reclaim_drops_the_lends
+                },
+            );
+            if reclaim_drops_the_lends {
+                assert_eq!(got, Ok(Some(96)), "the retry rewound in place");
+                assert_eq!((sess.fresh, sess.in_place), (1, 1));
+            } else {
+                assert!(got.is_err(), "nothing freed: the caller primes cold");
+                assert_eq!((sess.fresh, sess.in_place), (1, 0));
+            }
+        }
+    }
+
+    /// memra#1221 review round 2 (SF8's pin): the headroom ladders skip a parked session whose
+    /// rows a surviving prefix entry reads (dropping it frees none of its lent planes) and take
+    /// the next oldest; with only lenders left they take nothing. The plain ladder still takes
+    /// the oldest, lender or not.
+    #[test]
+    fn the_headroom_ladder_skips_a_parked_lender() {
+        struct Parked {
+            at: std::time::Instant,
+            lends: bool,
+        }
+        impl super::ParkedEntryAge for Parked {
+            fn parked_at(&self) -> std::time::Instant {
+                self.at
+            }
+            fn lends_rows(&self) -> bool {
+                self.lends
+            }
+        }
+        let t0 = std::time::Instant::now();
+        let later = t0 + std::time::Duration::from_secs(1);
+        let fill = || {
+            let mut spec: HashMap<PoolKey, Vec<Parked>> = HashMap::new();
+            spec.entry(key("a")).or_default().push(Parked {
+                at: t0,
+                lends: true,
+            });
+            spec.entry(key("b")).or_default().push(Parked {
+                at: later,
+                lends: false,
+            });
+            spec
+        };
+        let mut metrics = super::ReuseMetrics::default();
+        let mut plain: HashMap<PoolKey, Vec<Parked>> = HashMap::new();
+        let mut dspark: HashMap<PoolKey, Vec<Parked>> = HashMap::new();
+        let mut spec = fill();
+        let got =
+            super::evict_oldest_parked_freeing(&mut plain, &mut spec, &mut dspark, &mut metrics);
+        assert!(matches!(got, Some(super::ParkedPool::Spec)));
+        assert!(
+            spec.contains_key(&key("a")) && !spec.contains_key(&key("b")),
+            "the lender stayed"
+        );
+        let got =
+            super::evict_oldest_parked_freeing(&mut plain, &mut spec, &mut dspark, &mut metrics);
+        assert!(got.is_none(), "only a lender left: nothing taken");
+        let mut spec = fill();
+        let got = super::evict_oldest_parked(&mut plain, &mut spec, &mut dspark, &mut metrics);
+        assert!(matches!(got, Some(super::ParkedPool::Spec)));
+        assert!(
+            !spec.contains_key(&key("a")),
+            "the plain ladder takes the oldest"
+        );
     }
 
     /// memra#1221 part 2: compaction runs exactly when copying an adopted plane's readers frees
@@ -55115,6 +55632,111 @@ mod tests {
                     "{what}: pool used did not return to its baseline"
                 );
             }
+        }
+    }
+
+    /// GPU cell (memra#1221 review round 2): a failed compaction stops compaction for the rest of
+    /// the pass and for later passes until the bytes it needed were freed. 97 lent rows under a
+    /// 256-row session, adopted: every one of its planes would compact. The first plane's
+    /// allocation fails (a test fault): no plane compacts in that pass (one failure counted, every
+    /// plane still adopted and charged its capacity), a second pass with nothing freed tries
+    /// nothing, and after an unrelated entry's eviction freed more than the failed allocation
+    /// needed the next pass compacts every plane. Charged == real throughout.
+    #[test]
+    #[ignore = "requires a CUDA GPU; MEMRA_B1_MODEL adds a checkpoint's geometry"]
+    fn a_failed_compaction_stops_the_pass_until_bytes_are_freed() {
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let stream = engine.stream();
+        // Room for both entries: the 27B geometry's 156.9 MB lent entry and its 160 MB owned
+        // neighbour do not fit the test budget (256 MB), and LRU would evict the lent one before
+        // its lender dropped. A flex grant raises the budget for this cell and is taken back at
+        // its end.
+        struct Grant;
+        impl Drop for Grant {
+            fn drop(&mut self) {
+                super::KV_FLEX_GRANT.store(0, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        super::KV_FLEX_GRANT.store(1 << 30, std::sync::atomic::Ordering::Relaxed);
+        let _grant = Grant;
+        let used = || {
+            stream.synchronize().unwrap();
+            engine.pool_reserved_used().1
+        };
+        let mut seed = 0x6c07_8dbb_42e1_9a35u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let check = |px: &super::PrefixCache, what: &str| {
+            let (charged, real) = px.loan_charged_real();
+            assert_eq!(charged, real, "{what}: charged against real");
+            assert_eq!(px.loan_invariant_breaks, 0, "{what}");
+        };
+        let (pos, live) = (97usize, SpecPubFixture::CAP_ROWS);
+        for (name, cfg) in &SpecPubFixture::configs() {
+            let base = used();
+            let fx = SpecPubFixture::new(&engine, cfg, live, &mut next);
+            let (dk_tok, dv_tok) = fx.draft_tok;
+            let draft = Some((&fx.draft.0, &fx.draft.1, dk_tok, dv_tok));
+            let key: super::PoolKey = ("specpub-backoff".into(), String::new());
+            let other: super::PoolKey = ("specpub-backoff-other".into(), String::new());
+            let mut px = super::PrefixCache::default();
+            fx.publish_into(&engine, &mut px, pos, draft, &key, super::SpecPlanes::Lend);
+            // An unrelated owned entry whose eviction later frees its bytes.
+            fx.publish_into(
+                &engine,
+                &mut px,
+                pos,
+                draft,
+                &other,
+                super::SpecPlanes::Copy,
+            );
+            drop(fx);
+            px.reconcile_loans(Some(&engine), "test", false);
+            let books = px.adopted.len();
+            assert!(books > 0, "{name}: nothing adopted");
+            check(&px, &format!("{name}: adopted"));
+            super::SPEC_PLANE_COPY_FAULT.with(|f| f.set(Some(0)));
+            px.reconcile_loans(Some(&engine), "test", true);
+            super::SPEC_PLANE_COPY_FAULT.with(|f| f.set(None));
+            assert_eq!(px.loan_compaction_failures, 1, "{name}: one failure");
+            assert_eq!(
+                px.loan_compactions, 0,
+                "{name}: the pass went on after the failure"
+            );
+            assert_eq!(px.adopted.len(), books, "{name}");
+            check(&px, &format!("{name}: after the failure"));
+            px.reconcile_loans(Some(&engine), "test", true);
+            assert_eq!(
+                (px.loan_compaction_failures, px.loan_compactions),
+                (1, 0),
+                "{name}: retried with nothing freed"
+            );
+            let at = px
+                .key_index(&other, &(0..pos as u32).collect::<Vec<_>>())
+                .unwrap();
+            let dead = px.remove_at(&other, at).unwrap();
+            drop(dead);
+            px.reconcile_loans(Some(&engine), "test", true);
+            assert_eq!(
+                px.loan_compactions, books as u64,
+                "{name}: every plane compacted once freed"
+            );
+            assert!(px.adopted.is_empty() && px.loans.is_empty(), "{name}");
+            check(&px, &format!("{name}: compacted"));
+            assert_eq!(px.evict_all(), 1, "{name}");
+            let end = used();
+            eprintln!(
+                "[specpub backoff cell] {name}: {books} planes; one failure stopped the pass, no \
+                 retry with nothing freed, all compacted after a free; pool used base {base} end {end}"
+            );
+            assert_eq!(
+                end, base,
+                "{name}: pool used did not return to its baseline"
+            );
         }
     }
 
