@@ -1,0 +1,15 @@
+e8342cbd3fff9643d11a974405467eaea040fbb768859fa3f73f93c4bc7f228f  $RUN/bins/green3/memra-server
+               total        used        free      shared  buff/cache   available
+Mem:             121           5         115           0           1         116
+NVIDIA GB10, 208 MHz, 52
+ready=1 after 113s
+request A: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request B: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request C: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":" Informal Gron GronGaz/match匹配 Callingattention","reasoning_details":[{"type":"reasoning.text","text":" Informal Gron GronGaz/match匹配 Callingattention"}]},"finish_reason":"length"}],"usage":{"prompt_tokens":42,"completion_tokens":8,"total_tokens":50,"prompt_tokens_details
+route v41 phase idle requests 3 request_faults 2 dead_reason None
+[dsv41-serve] v41: MEMRA_DSV41_CALL_FAULT: steps [1, 2] fail with an injected call flag (a fault gate, not serving)
+[dsv41-serve] deepseek-v4.1 step: rank 0 route: a router row selected an expert outside the model's (a non-finite router row); failing 1 request(s)
+[dsv41-serve] the ranks probe clean after the fault: serving on
+[dsv41-serve] deepseek-v4.1 step: rank 0 route: a router row selected an expert outside the model's (a non-finite router row); failing 1 request(s)
+[dsv41-serve] the ranks probe clean after the fault: serving on
+SMOKE-DONE 15:45:43

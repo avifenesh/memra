@@ -62,16 +62,16 @@ no run of the lane's gates happened to show; the case is kept as a regression ga
 ## The route flag (engine item 2, server M2)
 
 `route_bad` was set by a gather whose peer never arrived and cleared only when the `Ctx` was made, so one timeout
-failed every later step while the route's health kept admitting. It is now two words. The call word is cleared by
-the read that reports it (`Ctx::route_flags`, with a call's logits), so a flag fails only the calls issued since
-the last read; it carries the MoE plan's out-of-range count (bit 0), which `Ctx::moe` read only under a trace
-before. The transport word keeps the gather timeout: the gathers' sequence words can no longer be trusted, so the
+failed every later step while the route's health kept admitting. It is now two words. The call word is cleared when
+a serving step opens (`Runner::begin_step`; the first push cleared it on the read that reported it, which the fix
+check below changed), so a flag fails that step's calls only; it carries the MoE plan's out-of-range count (bit 0),
+which `Ctx::moe` read only under a trace before. The transport word keeps the gather timeout: the gathers' sequence words can no longer be trusted, so the
 group is lost (`Group::route_verdict`) and every later forward, batched step and draft refuses (`Group::live`).
 
 The server books a step fault as failed (`RouteRun::fail`, `RouteHealth::note_request_fault`; they were booked as
-cancellations), and the route stops, with its reason in the health record and the waiting requests answered, when
-the engine lost its transport or when the step before also faulted: a fault fails every request of its step, so
-the next step holds only requests admitted since, and a second fault in a row is the route's.
+cancellations). When the route stops, with its reason in the health record and the waiting requests answered: only
+on a lost transport or a failed probe of the ranks (the fix check below; the first push also stopped it on two
+faulting steps in a row).
 
 ## The other findings
 
@@ -138,6 +138,46 @@ before this text was final: 47 steps, 45 pass; the two that need bubblewrap, whi
 runner installs ("Compiler input view and filesystem boundary", "Local development selection and immutable reuse
 controls"), pass on a machine that has it, on this commit's tree less these two logs and this paragraph
 (`receipts/cpu/`).
+
+## The fix check (2026-11-13)
+
+The fix check of both reviews at `f3d7086a57` approved the engine scope with nits and asked for one change in the
+shared scope, made in `04873a7ba9` (engine nits) and `bef6ed28f7` (the route's fault rule):
+
+- **Route death.** The first push stopped the route after any two faulting steps in a row, so two prompts that drive
+  a router row non-finite, or two allocation failures under a co-tenant, took it down for good. Now a step fault
+  fails that step's requests, then every rank is probed (`Runner::probe`: both streams drain and the context holds
+  no recorded error), and the route stops only when the engine lost its transport or the probe fails. Call-flag
+  faults, refused allocations and host panics fail their step and nothing else. Tests: two consecutive call-flag
+  faults leave the route serving; a failed probe or a lost transport stops it.
+- **The call flag's lifetime.** Cleared by the read that reported it, a call fault in an all-greedy batched step was
+  read (and cleared) by the device pick, which refused; the logits read that `pick_rows` falls back to then found it
+  clear and served the step. The flag is now cleared when a step opens (`Runner::begin_step`), so every read in the
+  step reports it and the step fails.
+- `MEMRA_DSV41_CALL_FAULT=<steps>`, the fault door of the serve smoke below: the listed steps run with the call flag
+  set on every rank (`Runner::inject_call_fault`).
+- Engine nits: a second stream's free list hands a buffer it cannot keep back to be freed behind the fence (it was
+  freed on the second stream alone); `memra_v41_gemm_bf16`, `memra_v41_swiglu_tiles` and `memra_v41_sparse_attn(_keys)`
+  refuse an unaligned base; Engram `Stage::load` checks the table's dtypes and scale shape; a forward checks a call's
+  tokens (Engram hashes, embedding rows) before the sequence takes them (`EngramConsts::hash_after`, unit-tested
+  against `hash_span` at every split); a leftover doc line on `Group::can_capture`.
+
+Evidence at `bef6ed28f7` (`receipts/fix-check/`):
+
+- **Serve smoke on GB10** (`memra-server` built at the head, `e8342cbd...`): the route on a 2-layer trunk
+  (`MEMRA_DSV41_TRUNK_LAYERS=2`, a rehearsal of the serving loop, not the checkpoint's answers), MEMRA_CTX=8192,
+  `MEMRA_DSV41_CALL_FAULT=1,2`, three chat requests one after another. Request A's decode step (1) and request B's
+  prefill step (2) fail with the route flag (HTTP 500, `engine_error`), two call-flag faults in a row; after each the
+  log reads `the ranks probe clean after the fault: serving on`. Request C is served (HTTP 200, 8 tokens), and the
+  route's health record reads phase idle, 3 requests, 2 request faults, no dead reason. A first try failed before
+  readiness because the page cache of the checkpoint left 1.3 GiB the card could count as free (GB10 memory is the
+  host's); the second try drops the checkpoint's cached pages first (`smoke-try1/` keeps the first).
+- **GB10 gates** (`dsv41-gate` at the head, `2d12d171...`): kernels 151 of 151, layer 161 of 161 with the 111 saved
+  tensors byte-identical to the k3 set (the fixes move no byte), tp at 0,0 default (device-push) 480 of 480.
+- **CPU** (the build box, 120a): the workspace's release build with all targets, `cargo clippy --workspace
+  --all-targets -- -D warnings` and fmt pass at the head, and clippy over memra-engine and memra-server passes at
+  `04873a7ba9` alone; memra-engine's dsv41 lib tests 18 of 18 (the new `hash_after` test), memra-server's lib tests
+  1,246 passed, 14 ignored (the new route-death and fault-door tests).
 
 ## Not run here
 

@@ -1,0 +1,8 @@
+2d12d171e4c6289c6d0614b6d5cd2388b1e11f45d9886f48b4912171d4bd5492  $RUN/bins/green3/dsv41-gate
+NVIDIA GB10, 305 MHz, 50
+kernels rc 0 151 checks, 0 failed 0 FAIL lines
+PASS moe/route_nan_row: ids [1, 0, -1, -1, -1, -1] [a row of NaN raw values past 2 experts: those 2 named once each, every other slot -1 with weight 0]
+PASS schedule/moe_plan/out_of_range_id: err 1, flag 1, token 1 skips 1, 17 of 18 placed [an id outside [0, ne): counted, call flag bit 0 set, its pair skipped (order -1, one pair fewer placed)]
+layer rc 0 161 checks, 0 failed 0 FAIL lines
+layer saved tensors against the k3 set: IDENTICAL (111 files, ref 111)
+GATES-A-DONE 15:38:34
