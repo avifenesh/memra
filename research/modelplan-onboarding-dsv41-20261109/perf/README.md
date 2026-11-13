@@ -1860,9 +1860,11 @@ check of the two-buffer body: 1,792 comparisons, 0 differ. Its GB10 gates are fi
 wrx run starts with its own kernel and tp gates on the PRO 6000s.
 
 On the PRO 6000 (2026-11-13, cards 2 and 3, 20 layers, `receipts/cfix-pro6000`: the run summary, the build's sync
-check, the chain; the runs' raw logs on the measurement box under `receipts-perf/cfix-two` and `cfix-tok23`): the
-kernel gate 972 checks, tp on the pair 480 (default), 478 (peer-pull) and 478 (host-canonical), 0 failed. k3 (A)
-against this tree (B), A B B A, steady calls past 0.5 s of load, ms:
+check, the chain, and the raw runs in `cfix-two/`, `cfix-tok23/` and the CUTLASS tree's four-card block
+`cutlass-four/`: every run's cells, logs, gate logs, the lease's 250 ms telemetry and slowdown counters, each run's
+decode token files as hashes; `per_run.py` reads them into `per_run.md`): the kernel gate 972 checks, tp on the pair
+480 (default), 478 (peer-pull) and 478 (host-canonical), 0 failed. k3 (A) against this tree (B), A B B A, steady
+calls past 0.5 s of load, ms (pooled over the runs of an arm):
 
 | call | k3 | this tree | this / k3 |
 |---|---|---|---|
@@ -1876,9 +1878,30 @@ against this tree (B), A B B A, steady calls past 0.5 s of load, ms:
 The CUTLASS tree before this fix was 10 to 12% slower than k3 on four cards at 1, 4 and 8 rows. The two arms' decode
 tokens differ at 20 layers on two cards, as the CUTLASS tree's did: the CUTLASS tree (498473abd8) and this tree write
 one token tape (`cfix-tok23`), so the fix keeps CUTLASS's bytes, and the 53-tape order gate judges that byte family
-against the vendor (below). Another job ran on the box's other two cards during these runs; the arms are interleaved,
-so the ratios hold. No run flagged for a slowdown, no page-cache drop inside a run. Owed: the four-card confirm (40
-layers) and the keys side's overlap A/B on four cards.
+against the vendor (below). Another job ran on the box's other two cards during these runs (cards 0 and 1 at their
+250 W cap and 1.58-1.66 GHz in every run's telemetry); the measured cards held 2.22-2.28 GHz, at most 77 C, no thermal
+clock reason in any line. The arms are interleaved, so the ratios hold. No run flagged for a slowdown, no page-cache
+drop inside a run.
+
+By run (`cfix-two/per_run.md`; one A B B A block, so two pairs; B / A of each pair):
+
+| call | run1 A, run2 B | run3 B, run4 A |
+|---|---|---|
+| one-row decode | 0.955 | 0.954 |
+| 4-row block | 1.015 | 0.993 |
+| 8-row block | 0.978 | 0.945 |
+| 9 rows | 0.988 | 0.955 |
+| 12 rows | 0.976 | 0.945 |
+| 16 rows | 0.948 | 0.912 |
+
+The one-row step moves by 0.1% between the pairs; the blocks move by 2 to 4% (k3's fourth run was slower at every
+block width), and the 4-row block's +1.0% sits inside that spread (one pair +1.5%, the other -0.7%). Token tapes: in
+`cfix-two` each arm writes one hash over its runs (k3 `e16ea3b7...`, this tree `8ae2b9d6...`), and in `cfix-tok23` the
+CUTLASS tree and this tree both write `8ae2b9d6...`. The CUTLASS tree's four-card block (`cutlass-four`, 40 layers, A
+B B A B A A B, all four cards in the run, 2.25-2.32 GHz, no thermal reason): B / A of each pair 1.102-1.104 at one
+row, 1.118-1.119 at 4 rows and 1.100-1.101 at 8, the README's 10 to 12% above. Owed: the four-card confirm of this
+tree (40 layers, four runs an arm), a second pair block on a quiet box, and the keys side's overlap A/B on four
+cards.
 
 GB10 (121a) gates of this tree (`receipts/gates-cutlass-gb10/s5`, the lease summaries; s1 and s4 beside it): the kernel
 gate 972 checks (576 dense small-row, 20 split-path, 96 fused), 0 failed; the layer gate 161 / 0 on the default form and

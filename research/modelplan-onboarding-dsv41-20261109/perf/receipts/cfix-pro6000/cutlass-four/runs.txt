@@ -1,0 +1,24 @@
+gate-default start 23:43:31 drops 22:05:37 22:06:10 
+gate-default rc 0 end 23:43:59 drops 22:05:37 22:06:10 
+gate-default: 916 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1, 2, 3]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1, 2, 3]: 25794741 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+gate-peer-pull start 23:43:59 drops 22:05:37 22:06:10 
+gate-peer-pull rc 0 end 23:44:26 drops 22:05:37 22:06:10 
+gate-peer-pull: 914 checks, 0 failed 0 FAIL lines
+run1-A start 23:44:26 drops 22:05:37 22:06:10 
+run1-A rc 0 end 23:44:50 drops 22:05:37 22:06:10 
+run2-B start 23:44:50 drops 22:05:37 22:06:10 
+run2-B rc 0 end 23:45:16 drops 22:05:37 22:06:10 
+run3-B start 23:45:16 drops 22:05:37 22:06:10 
+run3-B rc 0 end 23:45:42 drops 22:05:37 22:06:10 
+run4-A start 23:45:42 drops 22:05:37 22:06:10 
+run4-A rc 0 end 23:46:06 drops 22:05:37 22:06:10 
+run5-B start 23:46:06 drops 22:05:37 22:06:10 
+run5-B rc 0 end 23:46:32 drops 22:05:37 22:06:10 
+run6-A start 23:46:32 drops 22:05:37 22:06:10 
+run6-A rc 0 end 23:46:56 drops 22:05:37 22:06:10 
+run7-A start 23:46:56 drops 22:05:37 22:06:10 
+run7-A rc 0 end 23:47:21 drops 22:05:37 22:06:10 
+run8-B start 23:47:21 drops 22:05:37 22:06:10 
+run8-B rc 0 end 23:47:46 drops 22:05:37 22:06:10 
