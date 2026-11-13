@@ -1242,8 +1242,8 @@ left a stream idle 9.4 to 11 ms in all.
 
 Each item now happens at the load:
 
-- The embedding table on the card. Every rank keeps `embed.weight` (bf16 `[129,280][5,120]`, 1.32
-  GB) from the load (`Runner::load_embed`, with the head; a runner that never loads its residency
+- The embedding table on the card. Each card keeps one copy of `embed.weight` (bf16
+  `[129,280][5,120]`, 1.32 GB), read by the card's ranks, from the load (`Runner::load_embed`, with the head; a runner that never loads its residency
   takes it at its first forward). A forward checks the call's ids on the host, uploads them (16 KB
   at 4,096 tokens) and `v41_embed_rows` writes each token's row into its hc stream slots and the
   one-hot pre-mix: the bytes of the host gather, its upload and the hc copies (`dsv41-gate
