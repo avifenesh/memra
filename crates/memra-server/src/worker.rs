@@ -9623,7 +9623,10 @@ fn vmm_flush_ensure_walls(walls: &mut Vec<u64>) {
 
 /// The reclaim paths' reap (DAY37 addendum D): the step-OOM teardown and the admin trim drop the
 /// parked pools; under the door their on-demand planes sit in the graveyard, so the path waits on
-/// the graves' own fences and reaps before it trims the device pools back to the driver.
+/// the graves' own fences and reaps before it trims the device pools back to the driver. Every
+/// eviction whose bytes a later reading or allocation retry counts on reaps the same way before
+/// that reading or retry (memra#1278): the reading (driver free plus the pool's cached blocks)
+/// leaves the graveyard out. Unarmed it does nothing.
 fn vmm_reap_for(why: &str) {
     if !crate::kv_vmm::armed() {
         return;
@@ -10484,7 +10487,9 @@ fn reclaim_settle_keep(
 /// per device, in bytes. A shortfall (the trim released less than the gain: a live neighbour
 /// shares the chunk) is printed, never inferred away; those bytes stay counted by
 /// `effective_free_bytes` as pool-cached headroom, which is right for pool allocations and is
-/// the honest reading for everything else.
+/// the honest reading for everything else. Under on-demand KV planes an evicted entry that held
+/// the last lend of an adopted plane (memra#1221 part 2) sends that plane to the graveyard, not
+/// the pool, so the settle reaps after its fence (memra#1278); the reap moves no pool block.
 fn settle_reclaimed_prefix_bytes(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
@@ -10493,6 +10498,7 @@ fn settle_reclaimed_prefix_bytes(
     why: &str,
 ) {
     synchronize_model_devices(engine, loaded, why);
+    vmm_reap_for(why);
     for_each_device_engine(engine, loaded, &mut |device, owner| {
         let Some(prior) = before.iter().find(|r| r.device == device) else {
             return;
@@ -10970,30 +10976,39 @@ fn step_oom_fault_fire_batch(sessions: usize) -> bool {
 }
 
 /// Run one allocation retry only when the first failure released reclaimable state. The caller
-/// owns the reclaim policy; keeping the retry here makes the one-retry bound unit-testable.
+/// owns the reclaim policy; keeping the retry here makes the one-retry bound unit-testable. A
+/// reclaim that released something is reaped (`reap`) before the retry (memra#1278): under
+/// on-demand KV planes a dropped parked session's planes, and an adopted plane whose last lend a
+/// dropped prefix entry held, wait in the graveyard until a reap, so the retry would not get
+/// their bytes. Unarmed the reap does nothing.
 fn alloc_with_single_reclaim_retry<T, E>(
     mut alloc: impl FnMut() -> Result<T, E>,
     mut reclaim: impl FnMut(&E) -> bool,
+    reap: impl FnOnce(),
 ) -> Result<T, E> {
     match alloc() {
         Ok(value) => Ok(value),
-        Err(first_err) if reclaim(&first_err) => alloc(),
+        Err(first_err) if reclaim(&first_err) => {
+            reap();
+            alloc()
+        }
         Err(err) => Err(err),
     }
 }
 
 /// A speculative checkpoint rewind's route (memra#1221 review): in place, unless the capacity
 /// grows or a prefix entry reads the session's rows past its checkpoint (`needs_fresh`); then
-/// into a fresh cache, under the caller's allocation scope, with the one reclaim retry. The
-/// route is decided again on the retry: a reclaim that evicted the entries reading the session
-/// drops their lends, and the retry then rewinds in place, as main did, instead of failing to a
-/// cold prime.
+/// into a fresh cache, under the caller's allocation scope, with the one reclaim retry (reaped
+/// before it, `alloc_with_single_reclaim_retry`). The route is decided again on the retry: a
+/// reclaim that evicted the entries reading the session drops their lends, and the retry then
+/// rewinds in place, as main did, instead of failing to a cold prime.
 fn spec_lend_rewind<S, E>(
     sess: &mut S,
     needs_fresh: impl Fn(&S) -> bool,
     mut in_place: impl FnMut(&mut S) -> Result<Option<usize>, E>,
     mut fresh: impl FnMut(&mut S) -> Result<Option<usize>, E>,
     reclaim: impl FnMut(&E) -> bool,
+    reap: impl FnOnce(),
 ) -> Result<Option<usize>, E> {
     alloc_with_single_reclaim_retry(
         || {
@@ -11004,6 +11019,7 @@ fn spec_lend_rewind<S, E>(
             }
         },
         reclaim,
+        reap,
     )
 }
 
@@ -11613,8 +11629,10 @@ fn reclaim_after_partial_pass(covered: bool, kept_bytes: u64, flush_rest: impl F
 }
 
 /// The restorable spare's climb, after `longer_droppable` said the longer entry may go: evict
-/// parked sessions, oldest first (`evict`, false when none is left), re-reading the unbooked
-/// shortfall after each (`reread`), while the shortfall exceeds the longer entry's bytes.
+/// parked sessions, oldest first (`evict`, false when none is left), reaping (`reap`) and then
+/// re-reading the unbooked shortfall after each (`reread`), while the shortfall exceeds the
+/// longer entry's bytes. The reap comes first (memra#1278): under on-demand KV planes a dropped
+/// session's planes wait in the graveyard until a reap, and the reading leaves the graveyard out.
 /// `Ok(left)`: the longer entry's bytes cover what is left, so it goes, or `left == 0` and the
 /// ladder alone made room, so both entries stay. `Err(RECLAIM_KEPT_LADDER)`: the ladder ran out
 /// first, so the restorable entry goes and the longer one stays (the outcome before the spare;
@@ -11624,15 +11642,46 @@ fn reclaim_climb(
     mut short: usize,
     longer_bytes: usize,
     mut evict: impl FnMut() -> bool,
+    mut reap: impl FnMut(),
     mut reread: impl FnMut() -> Option<usize>,
 ) -> Result<usize, &'static str> {
     while short > longer_bytes {
         if !evict() {
             return Err(RECLAIM_KEPT_LADDER);
         }
+        reap();
         short = reread().ok_or(RECLAIM_KEPT_NO_READING)?;
     }
     Ok(short)
+}
+
+/// The reclaim-on-defer's parked ladder: while `reading` is not `sufficient`, evict one parked
+/// session (`evict`, false when none is left), reap (`reap`), then read again (`read`); it stops
+/// when the reading suffices, nothing is left to evict or the reading is lost (the last one
+/// stays). Returns the evictions. The reap comes before the reading (memra#1278): under on-demand
+/// KV planes a dropped session's planes wait in the graveyard until a reap, and the reading (driver
+/// free plus the pool's cached blocks) leaves the graveyard out, so without it the evicted bytes
+/// never show and one arrival could drop every parked session. Unarmed the reap does nothing.
+fn reclaim_parked_ladder<H>(
+    reading: &mut H,
+    sufficient: impl Fn(&H) -> bool,
+    mut evict: impl FnMut() -> bool,
+    mut reap: impl FnMut(),
+    mut read: impl FnMut() -> Option<H>,
+) -> usize {
+    let mut evicted = 0;
+    while !sufficient(reading) {
+        if !evict() {
+            break;
+        }
+        evicted += 1;
+        reap();
+        let Some(next) = read() else {
+            break;
+        };
+        *reading = next;
+    }
+    evicted
 }
 
 #[derive(Default)]
@@ -23602,6 +23651,7 @@ pub fn run(
                                         }
                                         pool.is_some()
                                     },
+                                    || vmm_reap_for("reclaim-on-defer climb"),
                                     || {
                                         let reading = primary_unbooked_shortfall(
                                             &engine,
@@ -23713,29 +23763,32 @@ pub fn run(
                         // pool keys, vectors, identity, checkpoints, and resume selection remain
                         // owned by their respective lanes. A parked session a surviving prefix
                         // entry reads frees none of its lent planes, so it is not dropped for
-                        // headroom (memra#1221 review).
-                        while !headroom.sufficient(required) {
-                            match evict_oldest_parked_freeing(
-                                &mut reuse,
-                                &mut spec_reuse,
-                                &mut dspark_reuse,
-                                &mut reuse_metrics,
-                            ) {
-                                Some(ParkedPool::Plain) => evicted_plain += 1,
-                                Some(ParkedPool::Spec) => evicted_spec += 1,
-                                Some(ParkedPool::Dspark) => evicted_dspark += 1,
-                                None => break,
-                            }
-                            let Some(next_headroom) = admission_headroom(
-                                &engine,
-                                &loaded,
-                                device_requirements.as_deref(),
-                            )
-                            .map(book) else {
-                                break;
-                            };
-                            headroom = next_headroom;
-                        }
+                        // headroom (memra#1221 review). Each drop is reaped before the re-read
+                        // (`reclaim_parked_ladder`, memra#1278).
+                        reclaim_parked_ladder(
+                            &mut headroom,
+                            |h| h.sufficient(required),
+                            || {
+                                let pool = evict_oldest_parked_freeing(
+                                    &mut reuse,
+                                    &mut spec_reuse,
+                                    &mut dspark_reuse,
+                                    &mut reuse_metrics,
+                                );
+                                match pool.as_ref() {
+                                    Some(ParkedPool::Plain) => evicted_plain += 1,
+                                    Some(ParkedPool::Spec) => evicted_spec += 1,
+                                    Some(ParkedPool::Dspark) => evicted_dspark += 1,
+                                    None => {}
+                                }
+                                pool.is_some()
+                            },
+                            || vmm_reap_for("reclaim-on-defer"),
+                            || {
+                                admission_headroom(&engine, &loaded, device_requirements.as_deref())
+                                    .map(book)
+                            },
+                        );
                         let evicted_prefix = evicted_prefix + evicted_spared;
                         if evicted_prefix + evicted_plain + evicted_spec + evicted_dspark > 0 {
                             eprintln!(
@@ -23934,8 +23987,12 @@ pub fn run(
                         // A DFlash request is refused its drafter only on this drained
                         // read (memra#1173 review): the refusal holds for the request's
                         // life, so it must not be taken on a reading a retiring session
-                        // has not yet left.
+                        // has not yet left. Under on-demand KV planes a retired or evicted
+                        // session's planes wait in the graveyard until a reap, which the
+                        // tick top runs only after this pass, so the drain reaps before
+                        // its trim like every reclaim path (memra#1278).
                         oom_teardown_fence(&engine, &loaded);
+                        vmm_reap_for("admission-drain");
                         trim_model_device_pools(&engine, &loaded, "admission-drain");
                         // The captured-arm and eager-arm device plans DIFFER, and the
                         // Devices-variant sufficiency check reads its per-device
@@ -30148,6 +30205,7 @@ fn admit(
                     }
                     evicted_prefix > 0 || evicted_parked.is_some()
                 },
+                || vmm_reap_for("park-compact grow"),
             )?;
             memra_engine::pp::restore_cache_checkpoint(
                 engine,
@@ -30334,6 +30392,7 @@ fn admit(
                         }
                         evicted_prefix > 0 || evicted_parked.is_some()
                     },
+                    || vmm_reap_for("plain-affinity grow"),
                 ) {
                     Ok(mut grown) => match memra_engine::pp::restore_cache_checkpoint(
                         engine,
@@ -32085,6 +32144,7 @@ fn admit(
                                     "spec grid rewind",
                                 )
                             },
+                            || vmm_reap_for("spec grid rewind"),
                         )
                     };
                     match spec_pool_take_extension(lm, sess, &prompt, &req.model, rewind) {
@@ -32167,6 +32227,7 @@ fn admit(
                                     "spec-affinity grow",
                                 )
                             },
+                            || vmm_reap_for("spec-affinity grow"),
                         )
                     } else {
                         lm.model.spec_rewind_to_checkpoint(engine, &mut entry.sess)
@@ -32318,6 +32379,8 @@ fn admit(
                                    (learned VRAM-tight; model {})",
                         req.model
                     );
+                    // The allocation below needs the evicted planes' bytes (memra#1278).
+                    vmm_reap_for("spec pool evict-first");
                 }
                 // WP-B day 37: with the on-demand planes on, a covered model's session is built
                 // with on-demand planes (`vmm_build_spec`); unarmed it is this call unchanged.
@@ -32346,6 +32409,8 @@ fn admit(
                                 "[worker] spec pool evicted ({evicted}) after alloc \
                                        failure; retrying (evict-first learned)"
                             );
+                            // The retry needs the evicted planes' bytes (memra#1278).
+                            vmm_reap_for("spec pool miss");
                         }
                         let retried = if evicted > 0 {
                             vmm_new_session(ctx_cap).ok()
@@ -33096,6 +33161,7 @@ fn admit(
                     }
                     evicted_prefix > 0 || evicted_parked.is_some()
                 },
+                || vmm_reap_for("reclaim-on-alloc-oom"),
             ) {
                 Ok(c) => Some(c),
                 Err(err) => {
@@ -43108,6 +43174,7 @@ mod tests {
                 reclaims.set(reclaims.get() + 1);
                 true // models one oldest parked entry released
             },
+            || {},
         );
 
         assert!(result.is_err());
@@ -43125,6 +43192,7 @@ mod tests {
                 Err("CUDA_ERROR_INVALID_VALUE")
             },
             |err| is_cuda_oom(err),
+            || unreachable!("nothing reclaimed, nothing to reap"),
         );
         assert!(result.is_err());
         assert_eq!(
@@ -51576,16 +51644,17 @@ mod tests {
                     }
                     None => false,
                 },
+                || {},
                 || Some(short.get()),
             );
             assert_eq!((got, n), (want, evicted));
         }
         assert_eq!(
-            super::reclaim_climb(259, 249, || true, || None),
+            super::reclaim_climb(259, 249, || true, || {}, || None),
             Err(super::RECLAIM_KEPT_NO_READING)
         );
         assert_eq!(
-            super::reclaim_climb(100, 249, || unreachable!(), || None),
+            super::reclaim_climb(100, 249, || unreachable!(), || unreachable!(), || None),
             Ok(100)
         );
 
@@ -51611,7 +51680,7 @@ mod tests {
         );
         let host = at("host_promote_candidate(&hpx, &key, prompt, s.keep.tokens).is_none()");
         let drop = at(".and_then(|s| s.drop_one(&mut px, climb.err()))");
-        let ladder = at("while !headroom.sufficient(required) {");
+        let ladder = at("reclaim_parked_ladder( &mut headroom, |h| h.sufficient(required),");
         assert!(inputs < pin && pin < flush && flush < gate && gate < shortfall);
         assert!(shortfall < host && host < drop && drop < ladder);
         // The climb runs inside the drop gate, before the drop and the main ladder, and stops
@@ -55392,6 +55461,7 @@ mod tests {
                     }
                     reclaim_drops_the_lends
                 },
+                || {},
             );
             if reclaim_drops_the_lends {
                 assert_eq!(got, Ok(Some(96)), "the retry rewound in place");
@@ -57681,11 +57751,12 @@ mod tests {
             "let evicted = evict_oldest_parked(reuse, spec_reuse, dspark_reuse, metrics).is_some(); if evicted { vmm_reap_for(\"pre-cohort reclaim\"); } evicted"
         ));
         // Every pool trim on a reclaim path follows its reap; the pre-cohort reclaim reaps
-        // between its evictions and trims nothing.
+        // between its evictions and trims nothing. memra#1278 adds the admission drain's trim and
+        // every eviction a reading or a retry counts on (`parked_evict_reap_1278_tests`).
         assert_eq!(
             live.matches("vmm_reap_for(\"").count(),
-            4,
-            "the three reclaim paths and the pre-cohort reclaim"
+            14,
+            "the four trims, the pre-cohort reclaim and memra#1278's nine eviction sites"
         );
     }
 
@@ -61479,5 +61550,274 @@ mod pre_cohort_reclaim_1266_tests {
         let raw = &src[src.find("fn prefix_yield_to_reserve(").unwrap()..];
         let rung = &raw[..raw.find("\n}\n").unwrap()];
         assert!(!rung.contains("device_is_unified"));
+    }
+}
+
+/// memra#1278: under on-demand KV planes (the RTX PRO 6000 Workstation serving default) a dropped
+/// parked session's planes wait in the graveyard until a reap, and the free-memory reading (driver
+/// free plus the pool's cached blocks) leaves the graveyard out. Every eviction whose bytes a later
+/// reading or allocation retry counts on reaps before that reading or retry.
+#[cfg(test)]
+mod parked_evict_reap_1278_tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    const GIB: usize = 1 << 30;
+
+    /// The fake device. Dropping a parked session sends its bytes to the graveyard under
+    /// on-demand planes and to the pool's cached blocks under pooled planes; the reading is driver
+    /// free plus pool cached; a reap hands the graveyard back to the driver.
+    struct FakeDevice {
+        on_demand: bool,
+        driver_free: usize,
+        pool_cached: usize,
+        graveyard: usize,
+        parked: Vec<usize>,
+        log: Vec<&'static str>,
+    }
+
+    impl FakeDevice {
+        fn new(on_demand: bool, driver_free: usize, parked: &[usize]) -> RefCell<Self> {
+            RefCell::new(Self {
+                on_demand,
+                driver_free,
+                pool_cached: 0,
+                graveyard: 0,
+                parked: parked.to_vec(),
+                log: Vec::new(),
+            })
+        }
+        fn evict(&mut self) -> bool {
+            let Some(bytes) = self.parked.pop() else {
+                return false;
+            };
+            if self.on_demand {
+                self.graveyard += bytes;
+            } else {
+                self.pool_cached += bytes;
+            }
+            self.log.push("evict");
+            true
+        }
+        fn reap(&mut self) {
+            self.driver_free += std::mem::take(&mut self.graveyard);
+            self.log.push("reap");
+        }
+        fn reading(&mut self) -> usize {
+            self.log.push("read");
+            self.driver_free + self.pool_cached
+        }
+        fn headroom(&mut self) -> AdmissionHeadroom {
+            AdmissionHeadroom::Primary {
+                free_bytes: self.reading(),
+                pool_cached_bytes: self.pool_cached,
+            }
+        }
+    }
+
+    /// The reclaim-on-defer's parked ladder: 10 GiB free, three parked sessions of 4 GiB, an
+    /// arrival that needs 12 GiB. One eviction covers it once its reap shows the bytes; on main
+    /// (no reap) the reading stayed at 10 GiB and the ladder dropped all three, still short.
+    #[test]
+    fn the_parked_ladder_stops_after_the_one_eviction_its_reap_funds() {
+        for on_demand in [true, false] {
+            let dev = FakeDevice::new(on_demand, 10 * GIB, &[4 * GIB; 3]);
+            let mut headroom = dev.borrow_mut().headroom();
+            let evicted = reclaim_parked_ladder(
+                &mut headroom,
+                |h| h.sufficient(12 * GIB),
+                || dev.borrow_mut().evict(),
+                || dev.borrow_mut().reap(),
+                || Some(dev.borrow_mut().headroom()),
+            );
+            let dev = dev.into_inner();
+            assert_eq!(
+                evicted, 1,
+                "on_demand={on_demand}: one eviction funds the arrival"
+            );
+            assert_eq!(
+                dev.parked.len(),
+                2,
+                "on_demand={on_demand}: two sessions stay parked"
+            );
+            assert!(headroom.sufficient(12 * GIB));
+            assert_eq!(dev.log, ["read", "evict", "reap", "read"]);
+        }
+        // An arrival nothing covers still takes every parked session, and stays short.
+        let dev = FakeDevice::new(true, 10 * GIB, &[4 * GIB; 3]);
+        let mut headroom = dev.borrow_mut().headroom();
+        let evicted = reclaim_parked_ladder(
+            &mut headroom,
+            |h| h.sufficient(30 * GIB),
+            || dev.borrow_mut().evict(),
+            || dev.borrow_mut().reap(),
+            || Some(dev.borrow_mut().headroom()),
+        );
+        assert_eq!((evicted, headroom.limiting_free_bytes()), (3, 22 * GIB));
+        // A lost reading stops the ladder on the last reading it had.
+        let dev = FakeDevice::new(true, 10 * GIB, &[4 * GIB; 3]);
+        let mut headroom = dev.borrow_mut().headroom();
+        let evicted = reclaim_parked_ladder(
+            &mut headroom,
+            |h| h.sufficient(30 * GIB),
+            || dev.borrow_mut().evict(),
+            || dev.borrow_mut().reap(),
+            || None,
+        );
+        assert_eq!((evicted, headroom.limiting_free_bytes()), (1, 10 * GIB));
+    }
+
+    /// The restorable spare's climb on the receipt's shape (short by 259 MB, the longer entry
+    /// 249 MB) with parked sessions of 20 MB: one eviction leaves 239 MB for the longer entry once
+    /// its reap shows the bytes; without it the shortfall stayed 259 MB, the climb spent every
+    /// parked session and the restorable entry went.
+    #[test]
+    fn the_restorable_climb_stops_after_the_one_eviction_its_reap_funds() {
+        const MB: usize = 1_000_000;
+        let dev = FakeDevice::new(true, 0, &[20 * MB; 3]);
+        let got = reclaim_climb(
+            259 * MB,
+            249 * MB,
+            || dev.borrow_mut().evict(),
+            || dev.borrow_mut().reap(),
+            || Some((259 * MB).saturating_sub(dev.borrow_mut().reading())),
+        );
+        let dev = dev.into_inner();
+        assert_eq!(got, Ok(239 * MB));
+        assert_eq!(dev.parked.len(), 2);
+        assert_eq!(dev.log, ["evict", "reap", "read"]);
+    }
+
+    /// The one reclaim retry (park-compact grow, plain-affinity grow, the cold cache allocation
+    /// and the speculative rewinds): 2 GiB free, one 4 GiB parked session, a 5 GiB allocation.
+    /// The retry gets the evicted bytes once the reap shows them; without it the retry failed
+    /// like the first allocation.
+    #[test]
+    fn a_reclaim_retry_gets_the_evicted_bytes_after_its_reap() {
+        let dev = FakeDevice::new(true, 2 * GIB, &[4 * GIB]);
+        let attempts = std::cell::Cell::new(0);
+        let got: Result<(), &str> = alloc_with_single_reclaim_retry(
+            || {
+                attempts.set(attempts.get() + 1);
+                let mut d = dev.borrow_mut();
+                if d.reading() >= 5 * GIB {
+                    d.driver_free -= 5 * GIB;
+                    Ok(())
+                } else {
+                    Err("DriverError(CUDA_ERROR_OUT_OF_MEMORY, out of memory)")
+                }
+            },
+            |err| is_cuda_oom(err) && dev.borrow_mut().evict(),
+            || dev.borrow_mut().reap(),
+        );
+        assert_eq!(got, Ok(()));
+        assert_eq!(attempts.get(), 2);
+        assert_eq!(dev.into_inner().log, ["read", "evict", "reap", "read"]);
+    }
+
+    /// The census: every parked eviction in the worker, and what follows it. A new eviction site
+    /// fails the counts below; if a reading or an allocation retry counts on its bytes, it reaps
+    /// first (`vmm_reap_for`) and joins the list.
+    #[test]
+    fn every_eviction_a_reading_or_a_retry_counts_on_reaps_first() {
+        let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        let src = include_str!("worker.rs");
+        let live = squash(&src[..src.find("\nmod tests {").expect("the test module")]);
+        let count = |needle: &str| live.matches(&squash(needle)).count();
+        // The parked evictions: two for headroom, seven others.
+        assert_eq!(count(concat!("evict_oldest_parked_freeing", "(")), 2);
+        assert_eq!(count(concat!("evict_oldest_parked", "(")), 7);
+        for needle in [
+            // The admission reclaim's parked ladder and the restorable spare's climb.
+            concat!(
+                "reclaim_parked_ladder( &mut headroom, |h| h.sufficient(required), || { let pool = ",
+                "evict_oldest_parked_freeing("
+            ),
+            concat!(
+                "pool.is_some() }, || vmm_reap_for(\"reclaim-on-defer\"), || { admission_headroom(",
+                "&engine, &loaded, device_requirements.as_deref()) .map(book) }, );"
+            ),
+            concat!(
+                "pool.is_some() }, || vmm_reap_for(\"reclaim-on-defer climb\"), || { let reading = ",
+                "primary_unbooked_shortfall("
+            ),
+            // The pre-cohort reclaim (memra#1266 review 2).
+            concat!(
+                "let evicted = evict_oldest_parked(reuse, spec_reuse, dspark_reuse, metrics).is_some(); ",
+                "if evicted { vmm_reap_for(\"pre-cohort reclaim\"); } evicted"
+            ),
+            // The on-demand grow's reclaim retry reaps itself.
+            concat!(
+                "let evicted_parked = evict_oldest_parked( &mut reuse, &mut spec_reuse, &mut dspark_reuse, ",
+                "&mut reuse_metrics, ); let _ = memra_engine::cache::vmm_reap_graveyard_blocking();"
+            ),
+            // The park cap counts sessions and reads nothing.
+            concat!(
+                "while parked_entry_count(reuse, spec_reuse, dspark_reuse) >= global_cap { if ",
+                "evict_oldest_parked(reuse, spec_reuse, dspark_reuse, metrics).is_none() {"
+            ),
+            // The speculative rewinds' reclaim, retried through `spec_lend_rewind`.
+            concat!(
+                "let evicted_parked = evict_oldest_parked(reuse, spec_reuse, dspark_reuse, ",
+                "reuse_metrics); if let Some(pool) = evicted_parked {"
+            ),
+            "\"spec grid rewind\", ) }, || vmm_reap_for(\"spec grid rewind\"), )",
+            "\"spec-affinity grow\", ) }, || vmm_reap_for(\"spec-affinity grow\"), )",
+            // The three cache allocations' reclaim retries.
+            concat!(
+                "evicted_prefix > 0 || evicted_parked.is_some() }, || vmm_reap_for(",
+                "\"park-compact grow\"), )?;"
+            ),
+            concat!(
+                "evicted_prefix > 0 || evicted_parked.is_some() }, || vmm_reap_for(",
+                "\"plain-affinity grow\"), ) {"
+            ),
+            concat!(
+                "evicted_prefix > 0 || evicted_parked.is_some() }, || vmm_reap_for(",
+                "\"reclaim-on-alloc-oom\"), ) {"
+            ),
+            // The spec pool's two clears before an allocation.
+            concat!(
+                "vmm_reap_for(\"spec pool evict-first\"); } // WP-B day 37: with the on-demand ",
+                "planes on"
+            ),
+            concat!(
+                "vmm_reap_for(\"spec pool miss\"); } let retried = if evicted > 0 { ",
+                "vmm_new_session(ctx_cap).ok()"
+            ),
+            // The admission drain's re-read and the prefix reclaim's settle.
+            concat!(
+                "oom_teardown_fence(&engine, &loaded); vmm_reap_for(\"admission-drain\"); ",
+                "trim_model_device_pools(&engine, &loaded, \"admission-drain\");"
+            ),
+            concat!(
+                "synchronize_model_devices(engine, loaded, why); vmm_reap_for(why); ",
+                "for_each_device_engine("
+            ),
+        ] {
+            assert_eq!(count(needle), 1, "lost: {needle}");
+        }
+        assert_eq!(
+            count(concat!(
+                "evict_oldest_parked(reuse, spec_reuse, dspark_reuse, reuse_metrics) } ",
+                "else { None };"
+            )),
+            3,
+            "the three cache allocations' reclaims"
+        );
+        assert_eq!(count(concat!("spec_rewind_oom_reclaim", "(")), 2);
+        assert_eq!(
+            count(concat!("p.clear", "(); n })")),
+            2,
+            "the spec pool's clears"
+        );
+        // The teardowns that drop every pool reap before their trims (DAY37 addendum D).
+        assert_eq!(
+            count(concat!(
+                "reuse.clear(); spec_reuse.clear(); dspark_reuse.",
+                "clear();"
+            )),
+            3
+        );
     }
 }

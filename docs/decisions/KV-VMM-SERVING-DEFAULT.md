@@ -5,7 +5,9 @@ full-attention K/V planes of a covered session (the MTP spec route and the plain
 device, no SWA ring, no latent planes, no ppN or TP stage ownership) as on-demand VMM planes. Each
 plane reserves its whole capacity as a fixed virtual range and maps physical granules only as the
 session's rows grow, inline on the owner thread. Releases run after an owner-stream event and are
-reaped at the tick top. The admission gate subtracts the reserved-but-unbacked bytes of active
+reaped at the tick top; every reclaim path, and every eviction whose bytes a later free-memory
+reading or allocation retry counts on, also reaps before that reading or retry, since the reading
+leaves the graveyard out (memra#1278). The admission gate subtracts the reserved-but-unbacked bytes of active
 on-demand sessions (`vmm_owed`). No numeric program changes: the same kernels touch the same
 bytes at addresses a session keeps for its life. `MEMRA_KV_ALLOCATOR` and `MEMRA_KV_VMM_GROW`
 are deleted. `MEMRA_KV_VMM_FAULT` stays as the fault door of the A5 cells and of
