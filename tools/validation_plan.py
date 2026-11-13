@@ -714,6 +714,18 @@ def git_text_batch(repo, requests):
                 raise Refused(detail)
 
 
+def _non_nested_batches(prefixes):
+    """Split paths into ls-tree calls in which no path is an ancestor of another: every path that
+    is no other path's ancestor in one call, then the ancestors one depth at a time (paths of one
+    depth cannot nest). A census over tens of thousands of paths stays a handful of calls."""
+    names = list(dict.fromkeys(prefixes))
+    parents = set(names) & {str(p) for n in names for p in PurePosixPath(n).parents}
+    batches = [tuple(n for n in names if n not in parents)]
+    for depth in sorted({p.count('/') for p in parents}):
+        batches.append(tuple(sorted(p for p in parents if p.count('/') == depth)))
+    return [batch for batch in batches if batch]
+
+
 class Tree:
     def __init__(self, repo, ref):
         self.repo, self.ref = Path(repo), ref
@@ -764,10 +776,10 @@ class Tree:
         args = ['--literal-pathspecs', 'ls-tree']
         if recursive:
             args.append('-r')
-        # Non-recursive, one ls-tree per path: given a directory and a path inside it in one
-        # call, git ls-tree descends into the directory and lists its children instead of the
-        # directory's own entry, so a nested receipt root read as missing.
-        batches = [prefixes] if recursive else [(prefix,) for prefix in prefixes]
+        # Non-recursive: given a directory and a path inside it in one call, git ls-tree descends
+        # into the directory and lists its children instead of the directory's own entry, so a
+        # nested receipt root read as missing. No call may hold a path and its ancestor.
+        batches = [prefixes] if recursive else _non_nested_batches(prefixes)
         result = {}
         for batch in batches:
             for row in git(self.repo, *args, '-z', self.ref, '--', *batch).split(b'\0'):
