@@ -756,11 +756,39 @@ pub mod ffi {
     }
 }
 
+/// The code `cu/dsv41_cutlass_stub.cu`'s launchers return: the build has no CUTLASS GEMMs.
+pub const NO_CUTLASS_GEMMS: i32 = 41049;
+
+/// The route's FP8/FP4 GEMMs are CUTLASS's sm_120 block-scaled kernels, which exist only on the
+/// 120a family (`120a`, `121a`). Every other family links a stub whose launchers refuse, so the
+/// route dropped its sm_89, sm_90a and sm_100a builds: such a build refuses at load, here, instead
+/// of loading the checkpoint and failing at the first GEMM.
+pub fn require_built_arch() -> Result<(), String> {
+    if crate::BUILT_CUDA_ARCH == "120a" {
+        return Ok(());
+    }
+    Err(dropped_arch(crate::BUILT_CUDA_TARGET))
+}
+
+/// The refusal of a build outside the 120a family, naming its target.
+fn dropped_arch(target: &str) -> String {
+    format!(
+        "DeepSeek-V4.1 needs a 120a-family build (sm_120a or sm_121a): its FP8/FP4 GEMMs run on \
+         CUTLASS's sm_120 block-scaled kernels, and this binary is built for sm_{target}. The \
+         route's sm_89, sm_90a and sm_100a builds were dropped with that move; rebuild with \
+         MEMRA_CUDA_ARCH=120a or 121a"
+    )
+}
+
 /// `rc` from a `memra_v41_*` launcher as a `Result`.
 pub fn ck(name: &str, rc: i32) -> Result<(), String> {
     tally::hit(name);
     match rc {
         0 => Ok(()),
+        NO_CUTLASS_GEMMS => Err(format!(
+            "{name}: refused ({NO_CUTLASS_GEMMS}, no CUTLASS GEMMs in this build): {}",
+            dropped_arch(crate::BUILT_CUDA_TARGET)
+        )),
         r if r >= 10000 => Err(format!("{name}: CUDA error {}", r - 10000)),
         r => Err(format!("{name}: contract refused ({r})")),
     }
@@ -2360,8 +2388,12 @@ pub struct Geo {
 }
 
 impl Geo {
+    /// The route's geometry from the checkpoint's config. Every load path reads it before any
+    /// weight (the server's route, `dsv41-run`, the gates and benches), so a build the route cannot
+    /// run on refuses here, by name ([`require_built_arch`]).
     pub fn from_config(mc: &memra_gguf::config::ModelConfig) -> Result<Self, String> {
         let c = mc.dsv41.as_ref().ok_or("not a deepseek_v41 config")?;
+        require_built_arch()?;
         let u = |v: &[u32]| v.iter().map(|&x| x as usize).collect::<Vec<_>>();
         Ok(Self {
             dim: mc.n_embd as usize,
@@ -6641,6 +6673,24 @@ pub fn copy_2d(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_build_without_cutlass_gemms_is_refused_by_name() {
+        // the stub's launchers return 41049, which read as "CUDA error 31049" before it was named
+        let e = ck("cutlass_gemm", NO_CUTLASS_GEMMS).unwrap_err();
+        assert!(!e.contains("CUDA error"), "{e}");
+        assert!(e.contains("120a-family build"), "{e}");
+        assert!(
+            e.contains("sm_89, sm_90a and sm_100a builds were dropped"),
+            "{e}"
+        );
+        assert!(dropped_arch("100a").contains("built for sm_100a"));
+        // the load check follows the build's family: the 120a family loads, any other refuses
+        match crate::BUILT_CUDA_ARCH {
+            "120a" => assert!(require_built_arch().is_ok()),
+            _ => assert!(require_built_arch().is_err()),
+        }
+    }
 
     #[test]
     fn mint_is_exact_and_refuses_what_e4m3_cannot_hold() {

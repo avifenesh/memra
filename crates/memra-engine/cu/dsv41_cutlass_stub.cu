@@ -1,5 +1,7 @@
 // Fail-closed twin of cu/dsv41_cutlass.cu for targets outside the 120a family (CUTLASS's sm_120 block-scaled
-// kernels exist only there): the launchers refuse, the layout helpers stay exact.
+// kernels exist only there): the launchers refuse (41049, `NO_CUTLASS_GEMMS` in src/dsv41_gpu.rs), the layout
+// helpers stay exact. The route itself refuses such a build at load (`require_built_arch`), so these launchers are
+// reached only by a caller that skips the load, such as the kernel gate.
 #include <cuda_runtime.h>
 
 extern "C" long memra_v41_sf_off(long r, long kb, long kbn) {

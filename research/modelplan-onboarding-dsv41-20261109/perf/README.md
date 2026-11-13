@@ -1460,7 +1460,8 @@ by kernel time: the block-scaled GEMMs 55%, the bf16 GEMMs 21%, attention 8%, mH
 The block-scaled linears (dense FP8 32 x 32, the MXFP4 routed experts, the minted NVFP4 form) moved from the
 hand-written chain kernels (the pipelined tile, the small-row bodies, the reference tile) to CUTLASS 4.8.1's sm_120
 block-scaled TMA warp-specialized cooperative kernels, vendored at `crates/memra-engine/third_party/cutlass`
-(`cu/dsv41_cutlass.cu`; the 120a family builds it, every other family gets a stub that refuses). The program is
+(`cu/dsv41_cutlass.cu`; the 120a family builds it, every other family gets a stub that refuses, and the route refuses
+such a build at load by name, so its sm_89, sm_90a and sm_100a builds are dropped). The program is
 the same instruction (`kind::mxf8f6f4.block_scale.scale_vec::1X`, ue8m0), one fp32 accumulator chained over the K
 tiles in ascending order, bf16 out; CUTLASS places the 32 products of a K block in other lanes than our chain
 did, so its fp32 accumulators differ from ours by one ulp in ~5e-5 of the elements (`receipts/cutlass-probe-gb10`).

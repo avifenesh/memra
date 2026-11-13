@@ -10,6 +10,7 @@ program on one RTX PRO 6000 Blackwell.
 | **Pack** | `deepseek_v41`, **NativeQualified** on that route (record `deepseek_v41-gpu-1x-pro6000`) and **NativeReference** on CPU (record `deepseek_v41-reference`) <!-- support: deepseek_v41-gpu-1x-pro6000,deepseek_v41-reference --> |
 | **Artifact** | `deepseek-ai/DeepSeek-V4.1-Flash-1017@1bae0e1088993b9b82de08f59de5be5a34e42170`, 48 safetensors shards, 96,085 header tensors |
 | **Hardware** | one 96 GB RTX PRO 6000 Blackwell and about 290 GB of free host memory for the pinned expert store; CPU for the reference executor |
+| **Builds** | the 120a family only (`MEMRA_CUDA_ARCH=120a`, or `121a` for GB10): the FP8/FP4 GEMMs are CUTLASS's sm_120 block-scaled kernels. sm_89, sm_90a and sm_100a builds of the route are dropped; such a build refuses to load the model, by name |
 | **Input** | text in the plan; the serve surface refuses image parts |
 
 ## Serve it
