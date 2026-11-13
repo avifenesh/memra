@@ -855,9 +855,10 @@ enum Home {
 /// drops it. Freed on the second stream alone, the device pool could hand the memory out once
 /// that stream passed the free, before the main stream's reads ran: to the main stream that is
 /// harmless (its own later work follows its reads), but a second rank on the same card shares
-/// the pool and takes it at once. The free therefore waits for the main stream first. A buffer
-/// that goes back to the branch's own free list needs nothing: the next branch to take it starts
-/// behind a fork from the main stream.
+/// the pool and takes it at once. The free therefore waits for the main stream first, for a
+/// buffer allocated outside the branch's free list and for one the list is too full to keep. A
+/// buffer the list keeps needs nothing: the next branch to take it starts behind a fork from the
+/// main stream.
 pub struct Fence {
     main: Arc<CudaStream>,
     ev: CudaEvent,
@@ -906,28 +907,44 @@ impl Drop for Buf {
         // SAFETY: `s` is taken once, here, and never touched again
         let s = unsafe { ManuallyDrop::take(&mut self.s) };
         let poison = POISON_FREE.load(std::sync::atomic::Ordering::Relaxed);
-        if let Home::Fenced(f) = &self.home {
-            // errors land in the context's error state, read by its next checked call
-            let _ = f.ev.record(&f.main).and_then(|()| s.stream().wait(&f.ev));
-            if poison {
-                poison_on(&s);
-            }
-            drop(s);
-            return;
-        }
-        let capture = matches!(&self.home, Home::Pool(p) if p.capture);
-        if poison && !capture && !matches!(self.home, Home::Alias) {
-            poison_on_drop(&s);
-        }
         match &self.home {
-            Home::Free => drop(s),
-            Home::Fenced(_) => unreachable!("freed above"),
-            Home::Pool(h) => h.put(s),
+            Home::Free => {
+                if poison {
+                    poison_on_drop(&s);
+                }
+                drop(s)
+            }
+            Home::Fenced(f) => free_fenced(f, s, poison),
+            Home::Pool(h) => {
+                // a second stream's list is filled behind its fence, where a reuse could be
+                if poison && !h.capture && h.fence.is_none() {
+                    poison_on_drop(&s);
+                }
+                // a full list hands the buffer back: freed as an allocation outside it would be
+                if let Some(s) = h.put(s) {
+                    match &h.fence {
+                        Some(f) => free_fenced(f, s, poison),
+                        None => drop(s),
+                    }
+                }
+            }
             Home::Alias => {
                 let _ = s.leak();
             }
         }
     }
+}
+
+/// Free a second-stream buffer behind its [`Fence`]: the second stream first waits for everything
+/// issued on the main stream so far (with [`POISON_FREE`], the fill lands there, where the pool
+/// could hand the memory out at the earliest).
+fn free_fenced(f: &Fence, s: CudaSlice<u8>, poison: bool) {
+    // errors land in the context's error state, read by its next checked call
+    let _ = f.ev.record(&f.main).and_then(|()| s.stream().wait(&f.ev));
+    if poison {
+        poison_on(&s);
+    }
+    drop(s);
 }
 
 /// The largest buffer a [`TmpPool`] keeps. A decode step's temporaries are a few rows of the
@@ -958,6 +975,9 @@ pub struct TmpPool {
     /// what it lacks is allocated outside the stream's order (a stream-ordered allocation inside
     /// a capture would become a node of the graph)
     capture: bool,
+    /// a card's second stream: the main stream a buffer of this list waits for before the device
+    /// pool takes it back, when the list does not keep it ([`Fence`]); None on a main stream
+    fence: Option<Arc<Fence>>,
 }
 
 /// The free buffers by size, and their bytes.
@@ -977,17 +997,20 @@ impl TmpPool {
         f.bytes -= n;
         Some(s)
     }
-    fn put(&self, s: CudaSlice<u8>) {
+    /// Keep `s` for this stream's next allocation of its size, or hand it back when the list is
+    /// full (or `s` is too large to keep): the caller frees it.
+    fn put(&self, s: CudaSlice<u8>) -> Option<CudaSlice<u8>> {
         let n = s.len();
         if n > TMP_POOL_MAX_BUF && !self.capture {
-            return;
+            return Some(s);
         }
         let mut f = self.free.lock().unwrap_or_else(|e| e.into_inner());
         if f.bytes + n > TMP_POOL_MAX_BYTES && !self.capture {
-            return;
+            return Some(s);
         }
         f.bytes += n;
         f.by_len.entry(n).or_default().push(s);
+        None
     }
 }
 
@@ -1051,7 +1074,7 @@ impl Buf {
         };
         let home = if n <= TMP_POOL_MAX_BUF || pool.capture {
             Home::Pool(pool.clone())
-        } else if let Some(f) = &ops.fence {
+        } else if let Some(f) = &pool.fence {
             Home::Fenced(f.clone())
         } else {
             Home::Free
@@ -1160,9 +1183,6 @@ pub struct Ops {
     pub st: Arc<CudaStream>,
     /// this stream's freed small temporaries ([`TmpPool`])
     pool: Arc<TmpPool>,
-    /// a card's second stream: the main stream its buffers wait for before the device pool
-    /// takes them back ([`Fence`]); None on a main stream
-    fence: Option<Arc<Fence>>,
 }
 
 macro_rules! launch {
@@ -1176,7 +1196,6 @@ impl Ops {
         Self {
             st,
             pool: Arc::default(),
-            fence: None,
         }
     }
     /// The stream handle for a launch, with its context made current first: the launchers use the
@@ -3019,8 +3038,11 @@ impl Side {
         };
         Ok(Self {
             ops: Ops {
-                fence: Some(Arc::new(fence)),
-                ..Ops::new(st)
+                st,
+                pool: Arc::new(TmpPool {
+                    fence: Some(Arc::new(fence)),
+                    ..TmpPool::default()
+                }),
             },
             scr: Scratch::default(),
             fork: cx.new_event(None).map_err(|e| format!("event: {e:?}"))?,

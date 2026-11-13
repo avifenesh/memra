@@ -634,14 +634,16 @@ impl<'a> Runner<'a> {
         let mut hashes: Vec<Option<Vec<i64>>> = Vec::with_capacity(calls.len());
         let mut h: Vec<Vec<Buf>> = Vec::with_capacity(calls.len());
         let mut pre: Vec<Vec<Buf>> = Vec::with_capacity(calls.len());
-        for (c, &(sp, _)) in calls.iter().zip(&pos) {
+        for c in calls {
             let q = &mut seqs[c.seq];
-            q.ids.extend_from_slice(&c.tokens);
+            // the call's tokens are checked (Engram hashes, embedding rows) before the sequence
+            // takes them
             hashes.push(match (&self.ec, engram) {
-                (Some(ec), true) => Some(ec.hash_span(&q.ids, sp)?),
+                (Some(ec), true) => Some(ec.hash_after(&q.ids, &c.tokens)?),
                 _ => None,
             });
             let (eb, pm) = self.embed(&c.tokens)?;
+            q.ids.extend_from_slice(&c.tokens);
             let s = c.tokens.len();
             let (hc, d) = (g.hc, g.dim);
             // each rank uploads the rows once and copies them into the hc stream slots
@@ -855,14 +857,16 @@ impl<'a> Runner<'a> {
         let engram = g.engram_layers.iter().any(|&l| l < self.n_layers);
         let tokens: Vec<u32> = rows.iter().map(|r| r.1).collect();
         let mut hashes: Vec<Vec<i64>> = Vec::with_capacity(nr);
-        for (&(si, t), &p) in rows.iter().zip(&positions) {
-            let q = &mut seqs[si];
-            q.ids.push(t);
-            if let (Some(ec), true) = (&self.ec, engram) {
-                hashes.push(ec.hash_span(&q.ids, p)?);
+        if let (Some(ec), true) = (&self.ec, engram) {
+            for &(si, t) in rows {
+                hashes.push(ec.hash_after(&seqs[si].ids, &[t])?);
             }
         }
         let (eb, pm) = self.embed(&tokens)?;
+        // the rows' tokens are checked (Engram hashes, embedding rows): the sequences take them
+        for &(si, t) in rows {
+            seqs[si].ids.push(t);
+        }
         let (hc, d) = (g.hc, g.dim);
         let pos_i32: Vec<i32> = positions.iter().map(|&p| p as i32).collect();
         // `[row][rank]`: each row's CSA2 state for this call (its group's store swapped in per layer)

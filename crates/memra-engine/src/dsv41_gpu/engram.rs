@@ -189,6 +189,17 @@ impl EngramConsts {
         let row = self.layer_ids.len() * self.cols();
         Ok(all[(from - start) * row..].to_vec())
     }
+
+    /// The hash rows of `tokens` at positions `ids.len()..`, without appending them to `ids`:
+    /// [`Self::hash_span`] of the whole sequence from `ids.len()`, which reads at most
+    /// `max_ngram - 1` tokens back. A caller checks a call's tokens before its sequence takes them.
+    pub fn hash_after(&self, ids: &[u32], tokens: &[u32]) -> Result<Vec<i64>, String> {
+        let keep = ids.len().min(self.max_ngram.saturating_sub(1));
+        let mut tail = Vec::with_capacity(keep + tokens.len());
+        tail.extend_from_slice(&ids[ids.len() - keep..]);
+        tail.extend_from_slice(tokens);
+        self.hash_span(&tail, keep)
+    }
 }
 
 /// Copy the hashed rows of one Engram table out of the host mmap: `(rows [n][hd] e4m3, scales
@@ -370,11 +381,20 @@ impl Stage {
         let (iw, w) = stm
             .raw(&format!("{table}.weight"))
             .ok_or_else(|| format!("missing {table}.weight"))?;
-        let (_, s) = stm
+        let (is, s) = stm
             .raw(&format!("{table}.scale"))
             .ok_or_else(|| format!("missing {table}.scale"))?;
-        if iw.shape != [n_rows as u64, hd as u64] {
-            return Err(format!("{table}: shape {:?}", iw.shape));
+        // the checks of `gather_host`: the rows and their per-32 scales as the table stores them
+        if iw.dtype != "F8_E4M3"
+            || iw.shape != [n_rows as u64, hd as u64]
+            || is.dtype != "F8_E8M0"
+            || is.shape != [n_rows as u64, sb as u64]
+        {
+            return Err(format!(
+                "{table}: {} {:?} rows and {} {:?} scales, want F8_E4M3 [{n_rows}, {hd}] and \
+                 F8_E8M0 [{n_rows}, {sb}]",
+                iw.dtype, iw.shape, is.dtype, is.shape
+            ));
         }
         {
             let pr = self
@@ -476,5 +496,22 @@ mod tests {
         let last = c.hash_span(&ids, ids.len() - 1).unwrap();
         assert_eq!(last.len(), row);
         assert!(c.hash_span(&ids, ids.len() + 1).is_err());
+    }
+
+    /// The rows of tokens not yet appended are the whole sequence's rows from where they start,
+    /// at every split (a prefill from nothing, decode tokens, a drafted block), and a token the
+    /// map does not hold is refused before any sequence takes it.
+    #[test]
+    fn hash_after_is_the_span_of_the_appended_sequence() {
+        let c = consts();
+        let ids: Vec<u32> = vec![5, 0, 19, 3, 3, 8, 11, 2, 17, 6];
+        for at in 0..=ids.len() {
+            assert_eq!(
+                c.hash_after(&ids[..at], &ids[at..]).unwrap(),
+                c.hash_span(&ids, at).unwrap(),
+                "split at {at}"
+            );
+        }
+        assert!(c.hash_after(&ids, &[20]).is_err());
     }
 }

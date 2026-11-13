@@ -2031,6 +2031,8 @@ __global__ void __launch_bounds__(SEG ? 32 * V41_KSEG : 128)
 extern "C" int memra_v41_gemm_bf16(const void* a, long lda, long sAz, const void* b, long ldb, long sBz, void* c,
                                    long ldc, long sCz, int out_f32, int m, int n, int k, int batch, void* stream) {
     if (k % 32 || m < 0 || n <= 0 || batch <= 0 || lda % 8 || ldb % 8 || sAz % 8 || sBz % 8) return 41006;
+    // every body lands a and b 16 bytes at a time (cp.async): an unaligned base is refused
+    if (((uintptr_t)a | (uintptr_t)b) % 16) return 41006;
     if (m == 0) return 0;
     if (m > 2 * V41_SM_MAX && m <= v41_wide(1)) {
         // the small-row body, a launch a group of 16 rows (a batch's planes keep their strides)
@@ -2619,7 +2621,9 @@ __global__ void __launch_bounds__(128) v41_sparse_attn_kernel(const v41_bf* __re
 extern "C" int memra_v41_sparse_attn(const void* q, long ldq, const void* kv, const int* idx, long ldi, int topk,
                                      const float* sink, float scale, void* o, long ldo, int m, int heads, int hd,
                                      void* stream) {
-    if (hd != V41_AD || heads % V41_AH || m < 0 || topk < 0 || ldq % 8 || ldo % 8) return 41007;
+    if (hd != V41_AD || heads % V41_AH || m < 0 || topk < 0 || ldq % 8 || ldo % 8 ||
+        ((uintptr_t)q | (uintptr_t)kv | (uintptr_t)o) % 16)
+        return 41007;
     if (m == 0) return 0;
     // the tiles plus the row's indices (rounded up to key blocks); a block holds at most 99 KB
     int smem = V41_ASMEM0 + (topk + V41_AK - 1) / V41_AK * V41_AK * 4;
@@ -2635,7 +2639,9 @@ extern "C" int memra_v41_sparse_attn(const void* q, long ldq, const void* kv, co
 extern "C" int memra_v41_sparse_attn_keys(const void* q, long ldq, const void* keys, const int* idx, long ldi,
                                           int topk, const float* sink, float scale, void* o, long ldo, int m,
                                           int heads, int hd, void* stream) {
-    if (hd != V41_AD || heads % V41_AH || m < 0 || topk < 0 || ldq % 8 || ldo % 8 || !keys) return 41007;
+    if (hd != V41_AD || heads % V41_AH || m < 0 || topk < 0 || ldq % 8 || ldo % 8 || !keys ||
+        ((uintptr_t)q | (uintptr_t)o) % 16)
+        return 41007;
     if (m == 0) return 0;
     int smem = V41_ASMEM0 + (topk + V41_AK - 1) / V41_AK * V41_AK * 4;
     if (smem > 99 * 1024) return 41007;
@@ -3981,7 +3987,7 @@ extern "C" int memra_v41_swiglu_tiles(const void* a, long lda, const void* as, l
                                       int wfmt, const float* wrow, float limit, void* h, long ldh, int n, int k,
                                       int bm, void* stream) {
     if (k % 32 || n <= 0 || lda % 16 || ldb % 16 || max_tiles < 0 || max_tiles > 65535 || bm <= 0 ||
-        bm > V41_SM_MAX || (wfmt != 1 && wfmt != 2))
+        bm > V41_SM_MAX || (wfmt != 1 && wfmt != 2) || (uintptr_t)a % 16)
         return 41043;
     if (max_tiles == 0) return 0;
     int kb = k / 32;
