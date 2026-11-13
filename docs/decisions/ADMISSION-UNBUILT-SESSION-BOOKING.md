@@ -154,11 +154,10 @@ and reclaim run is a single run.
 ### Same-pass gate (RTX 5090)
 
 `tools/same-pass-admission-gate.py`: two cold prompts (5,772 and 5,741 prompt tokens, charges
-816 and 814 MB) fired together beside a decoding keeper. The gate applied a reserve of 1,653 MB,
-the boot floor the calibration line prints as 1,576 MiB (read from a probe that defers), so one
-request fits at 2,469 MB of effective free and two at 3,283 MB; a ballast placed the reading at
-2,874 MB. The calibration line prints MiB and the admission lines decimal MB: 1,576 MiB is
-1,653 MB.
+816 and 814 MB) fired together beside a decoding keeper. The gate read an applied reserve of
+1,653 MB from a probe that defers: the boot floor, which the calibration line prints as 1,576 MiB.
+One request fits at 2,469 MB of effective free and two at 3,283 MB; a ballast placed the reading
+at 2,874 MB.
 
 | run | exit | failed verdicts | settle waits | out-of-memory lines | the keeper |
 |---|---|---|---|---|---|

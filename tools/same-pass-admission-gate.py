@@ -20,7 +20,7 @@ The cell, on one card and one boot:
    DFlash route; at the default band of 2 the pair is priced plain and builds its cache in
    `admit`, which is not the shape under test.
 3. Probe the reserve the gate applies (the boot floor, which the calibration line prints in
-   MiB, plus any verify-graph pool debt that door adds; a defer line names it in decimal MB):
+   MiB, plus any pool debt the verify-graph doors add; a defer line names it in decimal MB):
    B's prompt with a 4 s deadline on a reading it cannot fit; it defers, names the reserve and
    expires unadmitted.
 4. Place: hold a ballast (plain driver allocations in a child process) so effective free beside
@@ -391,7 +391,8 @@ def main() -> None:
     ap.add_argument("--keeper-tokens", type=int, default=12000,
                     help="the keeper's max_tokens: it must outlast the placement and the pair")
     ap.add_argument("--place", type=float, default=0.5,
-                    help="where in [charge_A + floor, charge_A + charge_B + floor) to place free")
+                    help="where in [charge_A + reserve, charge_A + charge_B + reserve) to place free "
+                         "(reserve: the applied reserve the probe reads)")
     ap.add_argument("--external-lock", type=int, help="an already-held GPU lock on this fd")
     ap.add_argument("--gpu-lock", default="/tmp/memra-5090.lock")
     args = ap.parse_args(argv)
@@ -437,8 +438,8 @@ def main() -> None:
         time.sleep(8.0)
         busy_free = effective_free(server.fresh_metrics())
         ballast = Ballast(args.out / "ballast.log")
-        # 2b. The reserve the gate applies is the boot floor plus any verify-graph pool debt, which
-        # no line prints before a request defers. Probe it: B's prompt once more, with a
+        # 2b. The reserve the gate applies is the boot floor plus any verify-graph pool debt. Only a
+        # defer or settle line prints that sum, so probe it: B's prompt once more, with a
         # 4 s deadline, on a reading 300 MB short of its charge plus the floor; its defer line
         # names the reserve and the request expires unadmitted (408).
         probe_free = learn["B"]["charge"] + floor - 300 * MB

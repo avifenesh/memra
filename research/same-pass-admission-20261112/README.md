@@ -65,10 +65,9 @@ Logs and telemetry over 20 kB are gzipped.
 ## Gate
 
 `GATES.md` has every line. Two cold prompts (5,772 and 5,741 prompt tokens, charges 816 and
-814 MB) fired together beside a decoding keeper. The gate applied a reserve of 1,653 MB, the
-boot floor the calibration line prints as 1,576 MiB (read from a probe that defers): one fits at
-2,469 MB of effective free, two at 3,283 MB; the ballast placed it at 2,874 MB. The calibration
-line prints MiB and the admission lines decimal MB: 1,576 MiB is 1,653 MB.
+814 MB) fired together beside a decoding keeper. The gate read an applied reserve of 1,653 MB
+from a probe that defers: the boot floor, which the calibration line prints as 1,576 MiB. One fits
+at 2,469 MB of effective free, two at 3,283 MB; the ballast placed it at 2,874 MB.
 
 | run | binary | exit | verdicts | what happened |
 |---|---|---|---|---|

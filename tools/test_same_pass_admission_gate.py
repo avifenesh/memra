@@ -28,7 +28,7 @@ def spec_k(prompt, active):
 PRIME = "[prime-yield] count=1 remaining=1 chunks=1 wall_ms=2270.200 max_chunk_ms=2270.200"
 KEEPER_ACC = "[dspark-acc] ctx=180 burst=20/31 cum=61/106=0.575"
 SETTLE = ('[admission] settle wait: model="gate" ctx=5901 effective free 1650MB after 816MB booked for '
-          '1 admitted session(s) with no route state yet < cost 814MB + reserve 1576MB; requeued for the '
+          '1 admitted session(s) with no route state yet < cost 814MB + reserve 1653MB; requeued for the '
           'next pass [queue 1]')
 OOM = ('[admit-oom] step OOM parked session back to queue (model gate, retry 1/3, 2 active) [dev0 free 54MB '
        'pool-res 20960MB pool-used 19660MB]: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")')
@@ -90,7 +90,7 @@ class Reserve(unittest.TestCase):
         defer = ('[admit-oom] VRAM defer: 2 active, effective free 2112MB (driver + 1652MB pool-cached) '
                  '< cost 815MB + reserve 1653MB \u2014 queueing (FIFO) [pool res 22750MB used 21098MB]')
         self.assertEqual(gate.RE_RESERVE.search(defer).group(1), "1653")
-        self.assertEqual(gate.RE_RESERVE.search(SETTLE).group(1), "1576")
+        self.assertEqual(gate.RE_RESERVE.search(SETTLE).group(1), "1653")
         self.assertIsNone(gate.RE_RESERVE.search(COST_SPEC))
 
 
