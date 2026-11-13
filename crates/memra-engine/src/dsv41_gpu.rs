@@ -2985,8 +2985,10 @@ pub struct Ctx {
     pub experts: Option<experts::ExpertCache>,
     /// Two i32 flags, read with a call's logits ([`Self::route_flags`]). Word 0, the call's:
     /// bit 0, a router row that selected an expert outside `[0, n_experts)` (a non-finite router
-    /// row; `memra_v41_route` names no expert there and the plan skips it); cleared by the read
-    /// that reports it, so a flag belongs to the calls issued since the last read. Word 1, the
+    /// row; `memra_v41_route` names no expert there and the plan skips it); cleared when a step
+    /// opens ([`decode::Runner::begin_step`]), so a flag belongs to the step's calls and every
+    /// read inside the step reports it (a refused device pick does not hide it from the logits
+    /// read after it). Word 1, the
     /// transport's: bit 16, a small gather whose peer never arrived (`memra_v41_gather`), never
     /// cleared: the gathers' sequence words can no longer be trusted, and the group refuses every
     /// later forward ([`tp::Group::live`]).
@@ -5903,23 +5905,58 @@ impl Ctx {
     }
 
     /// The rank's two route flags `(call, transport)` ([`Self::route_bad`]), read after the
-    /// stream drains, then the call word cleared on the stream for the calls after this one.
+    /// stream drains.
     pub fn route_flags(&self) -> Result<(i32, i32), String> {
-        let st = &self.ops.st;
-        let w = bytes_i32(&self.route_bad.host(st)?);
-        if w[0] != 0 {
-            // SAFETY: the first 4 bytes of the 8-byte flag buffer, on its stream
-            unsafe {
-                cudarc::driver::result::memset_d8_async(
-                    self.route_bad.p(st).addr(),
-                    0,
-                    4,
-                    self.ops.sv() as cudarc::driver::sys::CUstream,
-                )
-            }
-            .map_err(|e| format!("clear the route flag: {e:?}"))?;
-        }
+        let w = bytes_i32(&self.route_bad.host(&self.ops.st)?);
         Ok((w[0], w[1]))
+    }
+
+    /// Clear the call word of the route flags on the stream ([`decode::Runner::begin_step`]).
+    pub fn clear_call_flag(&self) -> Result<(), String> {
+        let st = &self.ops.st;
+        // SAFETY: the first 4 bytes of the 8-byte flag buffer, on its stream
+        unsafe {
+            cudarc::driver::result::memset_d8_async(
+                self.route_bad.p(st).addr(),
+                0,
+                4,
+                self.ops.sv() as cudarc::driver::sys::CUstream,
+            )
+        }
+        .map_err(|e| format!("clear the call flag: {e:?}"))
+    }
+
+    /// Whether the rank's device still runs: both streams drain and the context holds no error a
+    /// drop recorded. A sticky fault (an illegal address, a failed launch that poisons the
+    /// context) fails here; a fault of one call (a route flag, an allocation the pool refused)
+    /// does not.
+    pub fn probe(&self) -> Result<(), String> {
+        self.ops.sync()?;
+        if let Some(s) = &self.side {
+            s.ops.sync()?;
+        }
+        self.ops
+            .st
+            .context()
+            .check_err()
+            .map_err(|e| format!("context error: {e:?}"))
+    }
+
+    /// Fault injection of the serving route's step-fault gate (`MEMRA_DSV41_CALL_FAULT`): set bit
+    /// 0 of the call flag on the stream, as a router row naming no expert would, so the reads of
+    /// the flags in this step fail it.
+    pub fn set_call_flag(&self) -> Result<(), String> {
+        let st = &self.ops.st;
+        // SAFETY: the low byte of the call word (little-endian: bit 0), on the flag's stream
+        unsafe {
+            cudarc::driver::result::memset_d8_async(
+                self.route_bad.p(st).addr(),
+                1,
+                1,
+                self.ops.sv() as cudarc::driver::sys::CUstream,
+            )
+        }
+        .map_err(|e| format!("set the call flag: {e:?}"))
     }
 
     /// The partial pass of [`Self::hc_mix`] for the virtual warps `[b0, b0 + nb)` of 8: the sums

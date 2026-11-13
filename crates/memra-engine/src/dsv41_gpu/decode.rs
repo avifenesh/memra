@@ -449,6 +449,29 @@ impl<'a> Runner<'a> {
         self.grp.lost.as_deref()
     }
 
+    /// Whether every rank's device still runs after a failed call ([`super::Ctx::probe`]): `Err`
+    /// is a fault the device keeps (a serving route stops on it), `Ok` one that ended with its
+    /// call (a route flag, a refused allocation).
+    pub fn probe(&self) -> Result<(), String> {
+        for (r, c) in self.grp.cx.iter().enumerate() {
+            c.probe().map_err(|e| format!("rank {r}: {e}"))?;
+        }
+        Ok(())
+    }
+
+    /// Open a step: every rank's call flag cleared ([`super::Ctx::clear_call_flag`]), so the
+    /// flags read with this step's logits are those of its own calls. A serving route calls it
+    /// before each step's first call.
+    pub fn begin_step(&self) -> Result<(), String> {
+        self.grp.cx.iter().try_for_each(|c| c.clear_call_flag())
+    }
+
+    /// Fault injection of the serving route's step-fault gate (`MEMRA_DSV41_CALL_FAULT`): every
+    /// rank's call flag set ([`super::Ctx::set_call_flag`]), so the next read of the flags fails.
+    pub fn inject_call_fault(&self) -> Result<(), String> {
+        self.grp.cx.iter().try_for_each(|c| c.set_call_flag())
+    }
+
     /// Every rank's expert-cache counters, summed, and the slots per rank.
     pub fn cache_stats(&self) -> (CacheStats, Vec<usize>) {
         let mut st = CacheStats::default();

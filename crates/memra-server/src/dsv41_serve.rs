@@ -1010,6 +1010,11 @@ struct Up<'a> {
     price: Price,
     /// the most one-token steps one decode call carries (1: every call alone)
     batch_rows: usize,
+    /// `MEMRA_DSV41_CALL_FAULT`: the steps (0-based, counted over the steps that ran) whose call
+    /// flag is set before they run, the step-fault gate's injection
+    call_faults: Vec<usize>,
+    /// steps run so far
+    steps: usize,
 }
 
 /// What a batched call's rows hand the route: their logits (a sampler or penalties choose from
@@ -1087,6 +1092,22 @@ impl Price {
         } else {
             ms
         };
+    }
+}
+
+/// `MEMRA_DSV41_CALL_FAULT`: a comma list of 0-based step numbers whose call flag is set before
+/// they run (unset: none).
+fn resolve_call_faults(raw: Option<&str>) -> Result<Vec<usize>, String> {
+    match raw.map(str::trim) {
+        None | Some("") => Ok(Vec::new()),
+        Some(x) => x
+            .split(',')
+            .map(|s| {
+                s.trim().parse::<usize>().map_err(|_| {
+                    format!("MEMRA_DSV41_CALL_FAULT {x:?} is not a comma list of step numbers")
+                })
+            })
+            .collect(),
     }
 }
 
@@ -1309,6 +1330,14 @@ fn bring_up<'a>(
         price.rows.observe(w.rows, w.rows_ms);
         price.note_draft(w.draft_ms);
     }
+    let call_faults = resolve_call_faults(std::env::var("MEMRA_DSV41_CALL_FAULT").ok().as_deref())?;
+    if !call_faults.is_empty() {
+        eprintln!(
+            "[dsv41-serve] {}: MEMRA_DSV41_CALL_FAULT: steps {call_faults:?} fail with an injected \
+             call flag (a fault gate, not serving)",
+            cfg.name
+        );
+    }
     Ok(Up {
         rn,
         book,
@@ -1316,6 +1345,8 @@ fn bring_up<'a>(
         draft,
         price,
         batch_rows,
+        call_faults,
+        steps: 0,
     })
 }
 
@@ -1499,19 +1530,18 @@ fn serve_loop(
     let mut seqs: Vec<Seq> = Vec::new();
     let mut closing = false;
     let mut last_step = Instant::now();
-    // the last step faulted ([`route_dies`])
-    let mut faulted = false;
-    // a step fault: fail its requests, then stop the route when [`route_dies`] says so
+    // a step fault: fail its requests, probe the ranks, and stop the route when [`route_dies`]
+    // says so
     macro_rules! step_fault {
         ($why:expr) => {{
             let why: String = $why;
             fail_all(&mut act, &mut seqs, health, &why);
-            if let Some(dead) = route_dies(up.rn.transport_lost(), faulted, &why) {
+            if let Some(dead) = route_dies(up.rn.transport_lost(), up.rn.probe()) {
                 eprintln!("[dsv41-serve] {dead}");
                 fail_pending(&mut pending, health, &dead);
                 return Some(dead);
             }
-            faulted = true;
+            eprintln!("[dsv41-serve] the ranks probe clean after the fault: serving on");
             continue;
         }};
     }
@@ -1705,7 +1735,14 @@ fn serve_loop(
         let used_before = pool_used(&up.rn);
         pool_peak_reset(&up.rn);
         let ts = Instant::now();
+        let step_no = up.steps;
+        up.steps += 1;
         let stepped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // the flags read with this step's logits are its own calls'
+            up.rn.begin_step()?;
+            if up.call_faults.contains(&step_no) {
+                up.rn.inject_call_fault()?;
+            }
             let mut draft_ms = Vec::new();
             for (i, a) in act.iter_mut().enumerate() {
                 a.drafts.clear();
@@ -1974,7 +2011,6 @@ fn serve_loop(
                 panic_text(payload.as_ref())
             ));
         }
-        faulted = false;
     }
 }
 
@@ -2117,39 +2153,53 @@ fn panic_text(payload: &(dyn std::any::Any + Send)) -> String {
         .unwrap_or_else(|| "non-string panic payload".into())
 }
 
-/// Whether a step fault ends the route: the engine lost its transport (every later forward
-/// refuses), or the step before this one faulted too. A fault fails every request in its step,
-/// so the step after it holds only requests admitted since; a second fault in a row is not
-/// theirs but the route's. `Some` is the reason the route stops on.
-fn route_dies(lost: Option<&str>, faulted_before: bool, why: &str) -> Option<String> {
-    match lost {
-        Some(l) => Some(format!("deepseek-v4.1 route stopped: {l}")),
-        None if faulted_before => Some(format!(
-            "deepseek-v4.1 route stopped: two steps in a row faulted (the last: {why})"
-        )),
-        None => None,
+/// Whether a step fault ends the route, after the step's requests were failed: only when the
+/// engine lost its transport (every later forward refuses) or the probe of the ranks after the
+/// fault fails (a fault the device keeps). A fault that ended with its call (a route flag from a
+/// non-finite router row, an allocation the pool refused, a panic on the host) fails that step's
+/// requests and nothing else, however many steps in a row it hits: one request's data can do it.
+/// `Some` is the reason the route stops on.
+fn route_dies(lost: Option<&str>, probe: Result<(), String>) -> Option<String> {
+    if let Some(l) = lost {
+        return Some(format!("deepseek-v4.1 route stopped: {l}"));
     }
+    probe
+        .err()
+        .map(|e| format!("deepseek-v4.1 route stopped: the probe after a step fault failed: {e}"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// A step fault stops the route when the engine lost its transport, or when the step before
-    /// it faulted too (its requests were all failed, so the second fault is the route's); a lone
-    /// fault fails its step's requests and the route goes on.
+    /// Call-flag faults in consecutive steps leave the route serving while the ranks probe
+    /// clean; a failed probe or a lost transport stops it.
     #[test]
-    fn a_step_fault_stops_the_route_when_lost_or_twice_in_a_row() {
-        assert_eq!(route_dies(None, false, "step: e"), None);
-        let twice = route_dies(None, true, "step: e").expect("two in a row stop it");
-        assert!(twice.contains("two steps in a row") && twice.contains("step: e"));
+    fn a_step_fault_stops_the_route_only_on_a_lost_transport_or_a_failed_probe() {
+        for step in 0..2 {
+            assert_eq!(
+                route_dies(None, Ok(())),
+                None,
+                "call-flag fault in step {step}"
+            );
+        }
+        let probe = route_dies(None, Err("rank 0: sync: CUDA_ERROR_ILLEGAL_ADDRESS".into()))
+            .expect("a failed probe stops it");
+        assert!(probe.contains("probe") && probe.contains("ILLEGAL_ADDRESS"));
         let lost = route_dies(
             Some("rank 1: a peer's slice of a gather never arrived"),
-            false,
-            "x",
+            Ok(()),
         )
         .expect("a lost transport stops it at once");
         assert!(lost.contains("never arrived"));
+    }
+
+    #[test]
+    fn the_call_fault_door_takes_a_list_of_steps() {
+        assert_eq!(resolve_call_faults(None).unwrap(), Vec::<usize>::new());
+        assert_eq!(resolve_call_faults(Some("")).unwrap(), Vec::<usize>::new());
+        assert_eq!(resolve_call_faults(Some("1, 2")).unwrap(), vec![1, 2]);
+        assert!(resolve_call_faults(Some("one")).is_err());
     }
 
     /// Feed a stream's text step the tokens' byte pieces; returns the deltas and the final text.
