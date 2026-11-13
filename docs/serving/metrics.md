@@ -116,6 +116,7 @@ Present only for the operator scope.
 | `spec_pool_capped_rider_rows_total` | plain rider rows the pooled verify's memory cap left to the plain batched step (memra#1266) |
 | `spec_cohort_reclaims_total` | phase (a) passes where the reading could not fund the cohort's verify (the largest member's round, every member's burst snapshot, the margin), so prefix entries and then parked sessions were evicted before the cohorts stepped (memra#1266) |
 | `spec_cohort_short_total` | phase (a) passes that stayed short of the cohort's verify with nothing evictable left (memra#1266) |
+| `spec_cohort_fence_funded_total` | phase (a) passes the fence alone funded: short on the first reading, funded once the in-flight frees settled, nothing evicted (memra#1266) |
 | `constraint_compiler_fail_closed` | per model, 1 while the structured-output compiler refuses new compiles (4 timed-out compile workers still running), else 0. Absent until a compiler exists |
 | `serve_idle_seconds` | seconds the worker has been fully idle: no active session, no queued admission, no pending handoff |
 | `bg` | idle-time background job state (`state`, `yield_mode`, `launches`, `yields`, `resumes`, `preempts`, `ckpt_kills`, `last_yield_signal_us`, `job_pid`, `vram_budget_mb`). Present only when `MEMRA_BG_JOB` is set; see [deployment-binary.md](deployment-binary.md) |
@@ -313,7 +314,7 @@ dedicated route's allocations.
 | `memra_prefix_cache_hits_total`, `_misses_total`, `_inserts_total`, `_evictions_total`, `_hit_tokens_total` | counter | the same counters without labels, and the hit-token mass |
 | `memra_prefix_cache_bytes` | gauge | device prefix-cache bytes |
 | `memra_cache_hit_token_ratio` | gauge | the JSON `cache_hit_token_ratio` |
-| `memra_request_faults_total`, `memra_worker_respawns_total`, `memra_dspark_cold_drafter_grid_refusals_total`, `memra_spec_pool_capped_forwards_total`, `memra_spec_pool_capped_rider_rows_total`, `memra_spec_cohort_reclaims_total`, `memra_spec_cohort_short_total` | counter | the JSON fields of the same names |
+| `memra_request_faults_total`, `memra_worker_respawns_total`, `memra_dspark_cold_drafter_grid_refusals_total`, `memra_spec_pool_capped_forwards_total`, `memra_spec_pool_capped_rider_rows_total`, `memra_spec_cohort_reclaims_total`, `memra_spec_cohort_short_total`, `memra_spec_cohort_fence_funded_total` | counter | the JSON fields of the same names |
 
 **Dedicated routes** (operator), labelled `{route}` with the route's served model name:
 
