@@ -1883,7 +1883,8 @@ GB10 (121a) gates of this tree (`receipts/gates-cutlass-gb10/s5`, the lease summ
 gate 972 checks (576 dense small-row, 20 split-path, 96 fused), 0 failed; the layer gate 161 / 0 on the default form and
 on `--dense-form 4`, the saved tensors the CUTLASS tree's set (`fa825eee`); tp at 2 ranks 478 (peer-pull), 478
 (host-canonical), 480 (default), at 4 ranks 914 / 914 / 916; decode 240 / 240 / 60; the graph door 555 (one rank)
-and 1,105 (two); 0 failed anywhere. The order-gate tapes of this tree on GB10 are queued.
+and 1,105 (two); 0 failed anywhere. The order gate's tapes of this tree on GB10 are byte-identical to the CUTLASS
+tree's: chat 82 files and long 28 files, 0 lines differ (`s5/tapes-chat.txt`, `s5/tapes-long.txt`).
 
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
