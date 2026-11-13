@@ -349,6 +349,8 @@ contract, memra-server 1,229 passed (17 GPU cells ignored), memra-kv 89 (3), mem
 (66), the portable suites. memra-gguf passed 416 of 417 in one run: `fp8_blk_v_reorder_is_exact`
 read a config file another test was rewriting at the same path (`hybrid_cfg` wrote one path per
 process); it now writes one directory per call (417 of 417, its own commit).
+On the rebased head (`cpu/r1-full-rebased.txt`) the chain is green again: memra-server 1,240
+(main's new tests included), kv 89, engine 745, gguf 417, the portable suites.
 
 `loan_books_move_a_charge_once_and_always_to_a_reader` runs the books over (loan id, readers'
 lengths, held bytes) with no device: two entries read one plane (100 and 200 own bytes, 1,000
@@ -408,6 +410,12 @@ fault and KV cells as before. New:
 | CUDA out of memory | 0 | 0 | 0 |
 
 Adoptions are now counted once each, when the reconcile drains the queue.
+
+After the rebase onto main a17add18f3 (memra#1256 and memra#1272, which change the scheduler's
+round yield and add no caller of the guarded writes, restores or parked-session drops), one GB10
+agentic boot of the rebased head (`gb10/r1-agentic-rebased-u1/`): 29/29, texts equal to main's
+29 of 29 on the same unit, 89 of 89 reconciles charged == real, no invariant break, pool used after
+the trim 18,402 MiB as main's.
 
 The repo's four exactness gates on the review head (`gb10/r1-gates/`), all PASS: seeded invariance
 (u2; 54 rows, 26 lent `spec-boundary` publications, 6 spec restores), spec burst boundary (u1; 229
