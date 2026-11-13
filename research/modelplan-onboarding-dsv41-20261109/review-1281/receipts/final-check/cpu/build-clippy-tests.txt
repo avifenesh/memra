@@ -1,0 +1,10 @@
+waitfor: grep FULL-DONE $RUN/inv/full-none.txt (deadline 60m00s, every 15s)
+waitfor: MET after 0m00s
+head e6285f9075
+release build --workspace --all-targets rc=0 14 crates compiled
+clippy --workspace --all-targets -D warnings rc=0
+fmt --check rc=0
+FULL-DONE
+engine dsv41 lib tests rc=0 test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 810 filtered out; finished in 0.00s
+server lib tests rc=0 test result: ok. 1246 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out; finished in 13.83s
+FINAL-DONE
