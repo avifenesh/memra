@@ -1,0 +1,38 @@
+14:29:47 queueing on cb33: build t44f (121a)
+14:29:49 lease claude-code-20261113T142947-2270029
+started pgid 3969863
+14:34:42 released; LEASE-DONE
+14:34:43 queueing on cb33: t44f gates A (kernels, layer default form)
+14:37:43 lease claude-code-20261113T143443-2316322
+started pgid 4037600
+14:42:06 released; LEASE-DONE
+14:42:06 queueing on cb33: t44f gates C (decode, graph door, default form)
+14:45:51 lease claude-code-20261113T144206-2406640
+started pgid 4080775
+15:10:10 released; LEASE-DONE
+15:10:12 queueing on cb33: t44f order-gate tapes chat
+15:13:09 lease claude-code-20261113T151012-2869961
+started pgid 4180172
+15:32:13 released; LEASE-DONE
+CHAIN-cb33-DONE
+d3f09ac7cdd40ec504194e84f49c30f09cf202bdfe99fbfcc1d0778eeae01e06  dsv41-bench
+93034f57ac466d67c711098d7c9aaca2e097510ca4c98dab5437276a8ed986e8  dsv41-gate
+7ec6746865e4aa4ee118344b45f0891c013093bef736b4e2e11a8f99aedf20d6  dsv41-run
+e1b67aba7fb065f9c109e4309988a9397dfed16645822d616071999f5f11a57c  dsv41-tpbench
+14:35:03 queueing on b23d: t44f gates B1 (tp 2 ranks x3 transports, default form)
+14:35:04 lease claude-code-20261113T143503-2319169
+started pgid 1766193
+14:50:57 released; LEASE-DONE
+14:50:58 queueing on b23d: t44f gates B2 (tp 4 ranks peer-pull, host-canonical, default form)
+14:50:59 lease claude-code-20261113T145058-2600414
+started pgid 1834028
+15:01:55 released; LEASE-DONE
+15:01:55 queueing on b23d: t44f gates B3 (tp 4 ranks default, default form)
+15:01:57 lease claude-code-20261113T150155-2796638
+started pgid 1847203
+15:07:44 released; LEASE-DONE
+15:07:45 queueing on b23d: t44f race harness (reps 40, forms 2, 3, default; d6 control)
+15:07:46 lease claude-code-20261113T150745-2840381
+started pgid 1854280
+15:17:57 released; LEASE-DONE
+CHAIN-b23d-DONE

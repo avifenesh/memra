@@ -1905,9 +1905,10 @@ cards.
 
 GB10 (121a) gates of this tree (`receipts/gates-cutlass-gb10/s5`, the lease summaries; s1 and s4 beside it): the kernel
 gate 972 checks (576 dense small-row, 20 split-path, 96 fused), 0 failed; the layer gate 161 / 0 on the default form and
-on `--dense-form 4`, the saved tensors the CUTLASS tree's set (`fa825eee`); tp at 2 ranks 478 (peer-pull), 478
-(host-canonical), 480 (default), at 4 ranks 914 / 914 / 916; decode 240 / 240 / 60; the graph door 555 (one rank)
-and 1,105 (two); 0 failed anywhere. The order gate's tapes of this tree on GB10 are byte-identical to the CUTLASS
+on `--dense-form 4`, the saved tensors the CUTLASS tree's set (`fa825eee`); on `--dense-form 4` (the small-row body
+at every call of at most 16 rows) tp at 2 ranks 478 (peer-pull), 478 (host-canonical), 480 (default), at 4 ranks 914
+/ 914 / 916; decode 240 / 240 / 60; the graph door 555 (one rank) and 1,105 (two); 0 failed anywhere. The same gates
+on the default form, at the restacked head, are in the review section below. The order gate's tapes of this tree on GB10 are byte-identical to the CUTLASS
 tree's: chat 82 files and long 28 files, 0 lines differ (`s5/tapes-chat.txt`, `s5/tapes-long.txt`).
 
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
@@ -2051,6 +2052,71 @@ request (2,048 prompt tokens, 512 out) answered, rc 0, TTFT 0.11 s. The run set
 `MEMRA_DSV41_TRUNK_LAYERS=9` (9 of the 40 trunk layers: a rehearsal of the load and the serving loop,
 whose answers are not the checkpoint's), so its 283 tokens a second is not a model figure.
 
+### The review of 2026-11-13: the restack, the refusals, the race harness, the default form's gates
+
+An independent review of this lane (memra#1286) asked for evidence on eight points. This section covers what is in
+the tree; the PRO 6000 items wait for a four-card window (below).
+
+- **Builds outside the 120a family refuse at load.** An sm_89, sm_90a or sm_100a build links the stub of
+  `cu/dsv41_cutlass.cu`. Before this change it loaded the checkpoint and failed at the first GEMM, reported as "CUDA
+  error 31049". `Geo::from_config` is read by every load path before any weight. It now refuses such a build with a
+  message that names the dropped arches (`dsv41_gpu::require_built_arch`), and `ck` names the stub's 41049.
+- **The raw runs of the PRO 6000 pair results** are in `receipts/cfix-pro6000/` (the PRO 6000 paragraph above).
+- **The restack onto the route's review fixes** (memra#1281) conflicted in two commits: the block-scaled MMA and the
+  move to CUTLASS, both in launchers those commits replaced. `v41_wide` is the route's atomic accessor everywhere.
+  The route refuses an unaligned activation or weight base in `memra_v41_gemm_f8` and its tile list. Both launchers
+  are gone here, so the same rule now holds in the launchers that replaced them:
+  - `memra_v41_cutlass_gemm` and `memra_v41_cutlass_moe` refuse any base that is not 16-byte aligned (TMA moves 16
+    bytes);
+  - the two small-row bodies refuse rows not aligned to 16 bytes and scale codes not aligned to 4.
+
+  The keys side keeps the route's order: the fused `wq_a + wkv` call on the main stream, then `grow_keys`, then the
+  second stream's branch.
+- **The race harness is a gate option**, `dsv41-gate tp --reps N`. It runs the 12-, 16- and 32-row passes N rounds,
+  round r > 0 on the prompt rows from 7r, as the debug build of `receipts/race-cutlass-gb10` ran them, on the shipped
+  binary.
+
+GB10 (121a) at the restacked head (`receipts/gates-cutlass-gb10/r1`: lease summaries, gzipped logs, the scripts). The
+binaries were built from the trial restack `44fc300c3c`, whose crates equal the pushed head's file for file
+(`engine-files.txt` lists the dsv41 engine files' blob ids). Every gate ran on the default dense form, the shipping
+one, and every summary line names its form:
+
+| gate | result |
+|---|---|
+| kernels | 974 checks, 0 failed: s5's 972 and the route's two new cases, a NaN router row and a plan with an out-of-range id |
+| layer (needle, layers 1, 2, 14, 20, 21, 24, decode 2) | 161 / 0; the 111 saved tensors are the CUTLASS set (`fa825eee`) |
+| tp, 2 ranks: peer-pull / host-canonical / default | 478 / 478 / 480, 0 failed; every rank's hashes are the single card's (`out_stream` 529cef5959129bd1, `moe_out` f3cf05d6209a3893), as in s5 |
+| tp, 4 ranks: peer-pull / host-canonical / default | 914 / 914 / 916, 0 failed |
+| decode: straddle126 / gsm / capital | 256 / 256 / 72, 0 failed (s5 had 240 / 240 / 60; the route's review fixes added checks) |
+| the decode graph door: one rank / two ranks (device-push) | 555 / 1,105, 0 failed |
+| order-gate tapes, chat (13 tapes, 517 calls, the route log) | 82 files (the four gate files a tape, the full logits of 8 steps, the route log, meta.json), byte-identical to the CUTLASS set: 0 lines differ |
+
+The race harness on GB10 (`r1/race`): two ranks on one card, peer-pull, layers 2 and 24, `--reps 40`, which is 480
+compared passes a run. The arms were interleaved run by run in one lease.
+- **Positive control first.** The race's own debug build d6 had the unfixed swapped grouped forms. It wrote 7 corrupt
+  passes of 480 (14 failed checks; 12- and 16-row passes on both layers), so the harness still finds the race on this
+  card.
+- **This head, three runs an arm, 1,440 passes each:**
+  - `--dense-form 2` (every dense GEMM on CUTLASS's swapped tileN-8 form): 0 corrupt;
+  - `--dense-form 3` (tileN 16): 0 corrupt;
+  - the default form: 0 corrupt.
+- **The rate bound.** With none in 1,440, each arm's per-pass rate is below 2.1e-3 (95%, three over N). The control's
+  rate in the same lease was 1.5e-2, and the unfixed grouped forms ran at 2.3e-2 to 2.9e-2 (`race6`). Pooled over the
+  three arms, 0 of 4,320 passes puts the bound below 6.9e-4.
+- **What stays open.** The fault inside CUTLASS's swapped ptr-array path is still not located. The dense swapped
+  forms run the plain kernel, not that path. Neither form showed a corrupt pass under the harness that finds the
+  grouped one at 1.5e-2.
+
+Queued for a wrx window (`receipts/cfix-pro6000/window/win.sh` and its phase scripts):
+- the four-card decode A/B against the base route at 40 layers: four runs an arm, the kernel and tp gates first;
+- the prefill A/B on the pair and on four cards;
+- the residency byte check, with CheckpointParity and `verify serve` on one card. `dsv41-run --experts-host` runs
+  against the streamed runner on the 13 chat tapes, once with the cache as large as the card allows and once at its
+  floor;
+- the race harness at one rank a card on the pair: 3,840 passes, two transports;
+- a second pair block on a quiet box;
+- the four-card token tape against the CUTLASS tree.
+
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
 Every change in this lane keeps the bytes of the one-card route. At one row on four ranks three
@@ -2186,6 +2252,9 @@ weight traffic: 1.1 ms.
   freed serves later allocations of other sizes without the pool growing (ctypes, no model).
   `prefill_serial.py`: a `dsv41-tpbench --nvtx` trace's serial part of each prompt before its first
   launch, by the forward's ranges.
+- `receipts/cfix-pro6000/per_run.py`: the per-run figures of a `perf_cfix_four.sh` A/B (each run's steady
+  median, the arm's median of run medians, each adjacent A/B pair), the decode token hashes by arm, and
+  the cards' telemetry inside each run.
 - `steady.py`: the calls of `dsv41-tpbench` runs by how long the card has been busy (the first
   0.15 s, to 0.5 s, from 0.5 s on): the steady figure a served step pays next to the burst one.
   `trace_rot.py`: kernel time by name of a mixed-width trace against the sum of its widths traced

@@ -1,0 +1,126 @@
+== lease-b23d-gb.sh-143502.log
+14:35:03 queueing on b23d: t44f gates B1 (tp 2 ranks x3 transports, default form)
+14:35:04 lease claude-code-20261113T143503-2319169
+started pgid 1766193
+93034f57ac466d67c711098d7c9aaca2e097510ca4c98dab5437276a8ed986e8  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-gate
+tp 0,0 peer-pull, dense form default rc 0 478 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank1/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank1/moe_out f3cf05d6209a3893
+tp 0,0 host-canonical, dense form default rc 0 478 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank1/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank1/moe_out f3cf05d6209a3893
+tp 0,0 default, dense form default rc 0 480 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank1/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank1/moe_out f3cf05d6209a3893
+GATES-B1-DONE 14:50:44
+b23d: released
+14:50:57 released; LEASE-DONE
+== lease-b23d-gb.sh-145057.log
+14:50:58 queueing on b23d: t44f gates B2 (tp 4 ranks peer-pull, host-canonical, default form)
+14:50:59 lease claude-code-20261113T145058-2600414
+started pgid 1834028
+93034f57ac466d67c711098d7c9aaca2e097510ca4c98dab5437276a8ed986e8  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-gate
+tp 0,0,0,0 peer-pull, dense form default rc 0 914 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+tp 0,0,0,0 host-canonical, dense form default rc 0 914 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+GATES-B2-DONE 15:01:38
+b23d: released
+15:01:55 released; LEASE-DONE
+== lease-b23d-gb.sh-150155.log
+15:01:55 queueing on b23d: t44f gates B3 (tp 4 ranks default, default form)
+15:01:57 lease claude-code-20261113T150155-2796638
+started pgid 1847203
+93034f57ac466d67c711098d7c9aaca2e097510ca4c98dab5437276a8ed986e8  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-gate
+tp 0,0,0,0 default, dense form default rc 0 916 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+GATES-B3-DONE 15:07:32
+b23d: released
+15:07:44 released; LEASE-DONE
+== lease-b23d-race.sh-150744.log
+15:07:45 queueing on b23d: t44f race harness (reps 40, forms 2, 3, default; d6 control)
+15:07:46 lease claude-code-20261113T150745-2840381
+started pgid 1854280
+bins 93034f57ac466d67 /home/avifenesh/.cache/dsv41-cfix2/bins/t44f; 2 ranks on one card (--devices 0,0), peer-pull, layers 2,24, --reps 40
+control d6 (the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 14 failed FAIL lines 14 passes 480 secs 65 15:08:52
+FAIL layer2/rows16/rep3/pipelined/rank0/out_stream: 5575 of 655360 bytes differ (rel_l2 5.500e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep3/pipelined/rank1/out_stream: 5575 of 655360 bytes differ (rel_l2 5.500e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep9/pipelined/rank0/out_stream: 1292 of 491520 bytes differ (rel_l2 9.541e-5, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep9/pipelined/rank1/out_stream: 1292 of 491520 bytes differ (rel_l2 9.541e-5, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+form-2-1 (dense form 2) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 61 15:09:53
+form-3-1 (dense form 3) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 60 15:10:53
+form-d-1 (dense form default) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 59 15:11:52
+form-2-2 (dense form 2) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 61 15:12:53
+form-3-2 (dense form 3) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 59 15:13:52
+form-d-2 (dense form default) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 57 15:14:49
+form-2-3 (dense form 2) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 55 15:15:44
+form-3-3 (dense form 3) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 62 15:16:46
+form-d-3 (dense form default) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 60 15:17:46
+RACE-DONE 15:17:46
+b23d: released
+15:17:57 released; LEASE-DONE
+== lease-cb33-build.sh-142946.log
+14:29:47 queueing on cb33: build t44f (121a)
+14:29:49 lease claude-code-20261113T142947-2270029
+started pgid 3969863
+build t44f start 14:29:50
+t44f engine build rc 0 14:34:37
+d3f09ac7cdd40ec504194e84f49c30f09cf202bdfe99fbfcc1d0778eeae01e06  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-bench
+93034f57ac466d67c711098d7c9aaca2e097510ca4c98dab5437276a8ed986e8  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-gate
+7ec6746865e4aa4ee118344b45f0891c013093bef736b4e2e11a8f99aedf20d6  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-run
+e1b67aba7fb065f9c109e4309988a9397dfed16645822d616071999f5f11a57c  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-tpbench
+BUILD-DONE 14:34:37
+cb33: released
+14:34:42 released; LEASE-DONE
+== lease-cb33-ga.sh-143443.log
+14:34:43 queueing on cb33: t44f gates A (kernels, layer default form)
+14:37:43 lease claude-code-20261113T143443-2316322
+started pgid 4037600
+NVIDIA GB10, 208 MHz, 59
+93034f57ac466d67c711098d7c9aaca2e097510ca4c98dab5437276a8ed986e8  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-gate
+kernels (every form, by construction) rc 0 974 checks, 0 failed 0 FAIL lines
+kernels: 576 dense_small PASS, 20 split-path PASS, 96 fused PASS
+layer, dense form default rc 0 161 checks, 0 failed 0 FAIL lines
+fa825eeaa1bc5b0f98f0c957120022ce863718fc81b72d2495b899ce23ebf161  /home/avifenesh/.cache/dsv41-cfix2/out/gates-t44f/save.sha256
+layer, dense form default, saved tensors against the CUTLASS set: IDENTICAL (111 files; ref sha fa825eeaa1bc5b0f)
+GATES-A-DONE 14:41:53
+cb33: released
+14:42:06 released; LEASE-DONE
+== lease-cb33-gc.sh-144206.log
+14:42:06 queueing on cb33: t44f gates C (decode, graph door, default form)
+14:45:51 lease claude-code-20261113T144206-2406640
+started pgid 4080775
+93034f57ac466d67c711098d7c9aaca2e097510ca4c98dab5437276a8ed986e8  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-gate
+decode straddle126, dense form default rc 0 256 checks, 0 failed 0 FAIL lines
+decode gsm, dense form default rc 0 256 checks, 0 failed 0 FAIL lines
+decode capital, dense form default rc 0 72 checks, 0 failed 0 FAIL lines
+tp graph 0, dense form default rc 0 555 checks, 0 failed 0 FAIL lines
+tp graph 0,0, dense form default rc 0 1105 checks, 0 failed 0 FAIL lines
+GATES-C-DONE 15:10:03
+cb33: released
+15:10:10 released; LEASE-DONE
+== lease-cb33-tapes.sh-151010.log
+15:10:12 queueing on cb33: t44f order-gate tapes chat
+15:13:09 lease claude-code-20261113T151012-2869961
+started pgid 4180172
+chat start 15:13:10, 116 GB available, dense form default, 7ec6746865e4aa4e
+chat rc 0 dsv41-run: 1 forwards, 517 calls, 40 layer loads (1056.1s), blocks 67.1s, total 1130.9s dsv41-run: route log: 20680 blocks, 918920 routed rows  end 15:32:02, 116 GB available
+chat tapes: 82 files (the route log and meta.json included), ref 82 files, 0 diff lines against the CUTLASS set (BYTE-IDENTICAL)
+TAPES-chat-DONE 15:32:03
+cb33: released
+15:32:13 released; LEASE-DONE
