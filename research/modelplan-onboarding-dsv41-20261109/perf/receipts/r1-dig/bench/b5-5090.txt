@@ -1,0 +1,192 @@
+2026-11-13T04:57:09
+name, clocks.current.sm [MHz], clocks.max.sm [MHz], power.draw [W], temperature.gpu, utilization.gpu [%]
+NVIDIA GeForce RTX 5090 Laptop GPU, 180 MHz, 3090 MHz, 12.04 W, 73, 0 %
+device NVIDIA GeForce RTX 5090 Laptop GPU, 82 SMs, L2 64 MB, 48 weight copies rotated
+empty-kernel graph step: 0.42 us [0.42, 0.43]
+  floor: 5120 dependent fma      8.62 us [   8.61,    8.64]  net     8.20
+M=1 N=384 K=5120: r2 vs kpc 0 of 384 differ, r2 pair vs kpc 0, r1 vs kpc 359 differ (max rel 7.35e-05)
+  kpc                           36.44 us [  36.39,   36.60]  net    36.02
+  r1 (seg)                      11.75 us [  11.70,   11.85]  net    11.33
+  r2 (stream chain)             16.10 us [  15.89,   16.15]  net    15.68
+  r2x (r2, word widening)       13.26 us [  13.25,   13.48]  net    12.84
+  r2x (pair) vs kpc: 0 of 768 differ
+  r2w (2 warps, fp32 stage)     23.36 us [  23.17,   23.69]  net    22.94
+  r2w (pair) vs kpc: 0 of 768 differ
+M=1 N=512 K=5120: r2 vs kpc 0 of 512 differ, r2 pair vs kpc 0, r1 vs kpc 480 differ (max rel 7.35e-05)
+  kpc                           37.81 us [  37.78,   38.86]  net    37.39
+  r1 (seg)                      12.77 us [  12.73,   12.82]  net    12.35
+  r2 (stream chain)             16.89 us [  16.83,   16.95]  net    16.47
+  r2x (r2, word widening)       14.09 us [  14.03,   14.27]  net    13.68
+  r2x (pair) vs kpc: 0 of 1024 differ
+  r2w (2 warps, fp32 stage)     23.66 us [  23.46,   24.84]  net    23.24
+  r2w (pair) vs kpc: 0 of 1024 differ
+  kpc pair (2 launches)         75.58 us [  75.55,   75.69]  net    74.74
+  r1 pair (2 launches)          25.87 us [  25.42,   26.37]  net    25.03
+  r2 pair (1 launch)            20.33 us [  18.42,   21.26]  net    19.91
+  r2w pair (1 launch)           50.76 us [  49.39,   52.61]  net    50.34
+M=2 N=384 K=5120: r2 vs kpc 0 of 768 differ, r2 pair vs kpc 0, r1 vs kpc 719 differ (max rel 2.99e-04)
+  kpc                           39.15 us [  37.81,   42.35]  net    38.73
+  r1 (seg)                      12.31 us [  12.17,   13.63]  net    11.89
+  r2 (stream chain)             18.38 us [  17.89,   18.80]  net    17.96
+  r2x (r2, word widening)       14.69 us [  14.65,   14.91]  net    14.27
+  r2x (pair) vs kpc: 0 of 1536 differ
+  r2w (2 warps, fp32 stage)     25.18 us [  24.12,   25.91]  net    24.76
+  r2w (pair) vs kpc: 0 of 1536 differ
+M=2 N=512 K=5120: r2 vs kpc 0 of 1024 differ, r2 pair vs kpc 0, r1 vs kpc 962 differ (max rel 2.99e-04)
+  kpc                           38.64 us [  38.58,   39.66]  net    38.22
+  r1 (seg)                      13.21 us [  13.18,   14.33]  net    12.79
+  r2 (stream chain)             18.40 us [  17.92,   18.44]  net    17.98
+  r2x (r2, word widening)       15.12 us [  14.93,   15.17]  net    14.70
+  r2x (pair) vs kpc: 0 of 2048 differ
+  r2w (2 warps, fp32 stage)     25.43 us [  25.12,   26.03]  net    25.01
+  r2w (pair) vs kpc: 0 of 2048 differ
+  kpc pair (2 launches)         77.14 us [  77.11,   78.80]  net    76.30
+  r1 pair (2 launches)          27.48 us [  26.32,   28.00]  net    26.64
+  r2 pair (1 launch)            23.49 us [  19.83,   23.99]  net    23.07
+  r2w pair (1 launch)           50.40 us [  49.83,   63.12]  net    49.98
+M=4 N=384 K=5120: r2 vs kpc 0 of 1536 differ, r2 pair vs kpc 0, r1 vs kpc 1439 differ (max rel 3.95e-04)
+  kpc                           39.37 us [  38.63,   42.97]  net    38.95
+  r1 (seg)                      13.57 us [  13.51,   15.20]  net    13.15
+  r2 (stream chain)             19.93 us [  19.42,   20.11]  net    19.51
+  r2x (r2, word widening)       16.22 us [  16.16,   16.48]  net    15.80
+  r2x (pair) vs kpc: 0 of 3072 differ
+  r2w (2 warps, fp32 stage)     27.15 us [  26.66,   28.21]  net    26.73
+  r2w (pair) vs kpc: 0 of 3072 differ
+M=4 N=512 K=5120: r2 vs kpc 0 of 2048 differ, r2 pair vs kpc 0, r1 vs kpc 1922 differ (max rel 3.95e-04)
+  kpc                           40.22 us [  40.06,   42.49]  net    39.80
+  r1 (seg)                      14.96 us [  14.57,   15.81]  net    14.54
+  r2 (stream chain)             20.23 us [  20.02,   20.35]  net    19.81
+  r2x (r2, word widening)       17.07 us [  16.81,   17.50]  net    16.65
+  r2x (pair) vs kpc: 0 of 4096 differ
+  r2w (2 warps, fp32 stage)     27.13 us [  26.68,   28.65]  net    26.71
+  r2w (pair) vs kpc: 0 of 4096 differ
+  kpc pair (2 launches)         79.93 us [  79.86,   84.60]  net    79.09
+  r1 pair (2 launches)          31.08 us [  29.29,   33.25]  net    30.24
+  r2 pair (1 launch)            30.42 us [  25.97,   30.53]  net    30.00
+  r2w pair (1 launch)           53.68 us [  51.76,   73.24]  net    53.27
+M=8 N=384 K=5120: r2 vs kpc 0 of 3072 differ, r2 pair vs kpc 0, r1 vs kpc 2895 differ (max rel 6.23e-04)
+  kpc                           49.52 us [  49.48,   52.67]  net    49.10
+  r1 (seg)                      30.01 us [  26.08,   30.20]  net    29.59
+  r2 (stream chain)             19.71 us [  19.55,   19.76]  net    19.29
+  r2x (r2, word widening)       16.20 us [  16.16,   16.43]  net    15.78
+  r2x (pair) vs kpc: 0 of 6144 differ
+  r2w (2 warps, fp32 stage)     30.74 us [  30.35,   32.65]  net    30.32
+  r2w (pair) vs kpc: 0 of 6144 differ
+M=8 N=512 K=5120: r2 vs kpc 0 of 4096 differ, r2 pair vs kpc 0, r1 vs kpc 3858 differ (max rel 6.23e-04)
+  kpc                           50.67 us [  50.37,   51.56]  net    50.25
+  r1 (seg)                      31.02 us [  28.04,   31.08]  net    30.60
+  r2 (stream chain)             22.10 us [  21.24,   23.01]  net    21.68
+  r2x (r2, word widening)       19.34 us [  19.10,   19.45]  net    18.92
+  r2x (pair) vs kpc: 0 of 8192 differ
+  r2w (2 warps, fp32 stage)     33.28 us [  30.73,   36.42]  net    32.86
+  r2w (pair) vs kpc: 0 of 8192 differ
+  kpc pair (2 launches)        103.98 us [ 101.26,  105.48]  net   103.14
+  r1 pair (2 launches)          62.14 us [  56.10,   66.16]  net    61.30
+  r2 pair (1 launch)            50.11 us [  47.07,   50.36]  net    49.69
+  r2w pair (1 launch)           61.74 us [  61.02,   71.38]  net    61.32
+M=16 N=384 K=5120: r2 vs kpc 0 of 6144 differ, r2 pair vs kpc 0, r1 vs kpc 5835 differ (max rel 6.23e-04)
+  kpc                           55.26 us [  55.18,   57.22]  net    54.84
+  r1 (seg)                      71.81 us [  68.17,   72.23]  net    71.40
+  r2w (2 warps, fp32 stage)     44.40 us [  44.18,   44.78]  net    43.98
+  r2w (pair) vs kpc: 0 of 12288 differ
+M=16 N=512 K=5120: r2 vs kpc 0 of 8192 differ, r2 pair vs kpc 0, r1 vs kpc 7760 differ (max rel 6.23e-04)
+  kpc                           59.88 us [  59.51,   60.34]  net    59.46
+  r1 (seg)                      78.68 us [  76.09,   79.65]  net    78.26
+  r2w (2 warps, fp32 stage)     62.24 us [  60.76,   64.80]  net    61.82
+  r2w (pair) vs kpc: 0 of 16384 differ
+  kpc pair (2 launches)        119.29 us [ 118.84,  120.54]  net   118.46
+  r1 pair (2 launches)         152.98 us [ 152.19,  154.61]  net   152.14
+  r2w pair (1 launch)          106.43 us [ 105.46,  108.04]  net   106.01
+M=24 N=384 K=5120: r2 vs kpc 0 of 9216 differ, r2 pair vs kpc 0, r1 vs kpc 8740 differ (max rel 5.72e-03)
+  kpc                           63.93 us [  62.99,   66.42]  net    63.51
+  r1 (seg)                     100.53 us [  99.98,  101.64]  net   100.11
+  r2w (2 warps, fp32 stage)     58.74 us [  57.95,   59.20]  net    58.32
+  r2w (pair) vs kpc: 0 of 18432 differ
+M=24 N=512 K=5120: r2 vs kpc 0 of 12288 differ, r2 pair vs kpc 0, r1 vs kpc 11638 differ (max rel 5.72e-03)
+  kpc                           67.17 us [  64.63,   67.29]  net    66.75
+  r1 (seg)                     109.87 us [ 108.88,  110.24]  net   109.45
+  r2w (2 warps, fp32 stage)     77.16 us [  76.47,   77.46]  net    76.74
+  r2w (pair) vs kpc: 0 of 24576 differ
+  kpc pair (2 launches)        138.84 us [ 136.68,  139.38]  net   138.00
+  r1 pair (2 launches)         220.09 us [ 217.94,  223.73]  net   219.25
+  r2w pair (1 launch)          153.29 us [ 152.49,  153.50]  net   152.87
+M=32 N=384 K=5120: r2 vs kpc 0 of 12288 differ, r2 pair vs kpc 0, r1 vs kpc 11669 differ (max rel 5.72e-03)
+  kpc                           74.16 us [  73.18,   75.32]  net    73.74
+  r1 (seg)                     131.11 us [ 130.49,  132.44]  net   130.69
+  r2w (2 warps, fp32 stage)     74.69 us [  72.75,   75.16]  net    74.27
+  r2w (pair) vs kpc: 0 of 24576 differ
+M=32 N=512 K=5120: r2 vs kpc 0 of 16384 differ, r2 pair vs kpc 0, r1 vs kpc 15548 differ (max rel 5.72e-03)
+  kpc                           78.66 us [  77.20,   78.80]  net    78.24
+  r1 (seg)                     143.09 us [ 142.16,  143.25]  net   142.67
+  r2w (2 warps, fp32 stage)    103.00 us [ 102.53,  106.38]  net   102.58
+  r2w (pair) vs kpc: 0 of 32768 differ
+  kpc pair (2 launches)        154.48 us [ 154.28,  156.35]  net   153.64
+  r1 pair (2 launches)         293.63 us [ 284.51,  295.87]  net   292.79
+  r2w pair (1 launch)          198.24 us [ 197.69,  201.76]  net   197.82
+BYTES-OK: r2 == kpc on every shape
+rc 0
+clocks.current.sm [MHz], power.draw [W], temperature.gpu
+2415 MHz, 131.25 W, 86
+2026-11-13T04:57:26
+kernel gate rc 0 177 checks, 0 failed
+gemm kpc run 0 rc 0
+gemm ffma head m 1 n 129280 k 5120: median 1.5995 ms (828 GB/s) sha 5aed36cb1fb79a1f312a0aec
+gemm ffma head m 4 n 129280 k 5120: median 1.9901 ms (665 GB/s) sha 47af928c628d77a5f2ef4e11
+gemm ffma head m 5 n 129280 k 5120: median 2.4496 ms (540 GB/s) sha 254c976b62de390570b5a4ca
+gemm ffma head m 8 n 129280 k 5120: median 2.9044 ms (456 GB/s) sha 8b641b1f6955435e12972f96
+gemm ffma router m 1 n 384 k 5120: median 0.0533 ms (74 GB/s) sha d58ddb83a717adf2be4b7611
+gemm ffma router m 4 n 384 k 5120: median 0.0566 ms (69 GB/s) sha e6f9f48f2874c6331ff77401
+gemm ffma router m 5 n 384 k 5120: median 0.0568 ms (69 GB/s) sha 9941de28b8a92c91fd4652c3
+gemm ffma router m 8 n 384 k 5120: median 0.0664 ms (59 GB/s) sha c9ef3e74e71a36a7c1848107
+gemm r1 run 0 rc 0
+gemm ffma head m 1 n 129280 k 5120: median 1.6614 ms (797 GB/s) sha 9d271ee76d27d7e63207ea35
+gemm ffma head m 4 n 129280 k 5120: median 2.0395 ms (649 GB/s) sha dccbb5932ba9ff1072f4392f
+gemm ffma head m 5 n 129280 k 5120: median 2.3519 ms (563 GB/s) sha 9ec5e7a7cb86d69e5aedaf69
+gemm ffma head m 8 n 129280 k 5120: median 2.8927 ms (458 GB/s) sha 111aee8ce9c2b7cd9fa0c206
+gemm ffma router m 1 n 384 k 5120: median 0.0179 ms (220 GB/s) sha 01b9ea4935cbc6773ca4a8ca
+gemm ffma router m 4 n 384 k 5120: median 0.0208 ms (189 GB/s) sha cea521f2d33e980427beb260
+gemm ffma router m 5 n 384 k 5120: median 0.0243 ms (162 GB/s) sha 6cf0c6bfd20cd3a786669e9e
+gemm ffma router m 8 n 384 k 5120: median 0.0370 ms (106 GB/s) sha b0e2cf14b415bc12e2195c58
+gemm r2 run 0 rc 0
+gemm ffma head m 1 n 129280 k 5120: median 1.5996 ms (828 GB/s) sha 5aed36cb1fb79a1f312a0aec
+gemm ffma head m 4 n 129280 k 5120: median 1.9757 ms (670 GB/s) sha 47af928c628d77a5f2ef4e11
+gemm ffma head m 5 n 129280 k 5120: median 2.2696 ms (583 GB/s) sha 254c976b62de390570b5a4ca
+gemm ffma head m 8 n 129280 k 5120: median 2.7603 ms (480 GB/s) sha 8b641b1f6955435e12972f96
+gemm ffma router m 1 n 384 k 5120: median 0.0225 ms (175 GB/s) sha d58ddb83a717adf2be4b7611
+gemm ffma router m 4 n 384 k 5120: median 0.0243 ms (162 GB/s) sha e6f9f48f2874c6331ff77401
+gemm ffma router m 5 n 384 k 5120: median 0.0245 ms (161 GB/s) sha 9941de28b8a92c91fd4652c3
+gemm ffma router m 8 n 384 k 5120: median 0.0244 ms (161 GB/s) sha c9ef3e74e71a36a7c1848107
+gemm ffma comp pair m 1 n 512 k 5120: two calls 0.0340 ms, one call 0.0209 ms, sha 58d6b2e232d75c1428075419 / 58d6b2e232d75c1428075419
+gemm ffma comp pair m 4 n 512 k 5120: two calls 0.0372 ms, one call 0.0243 ms, sha bf7ad5aa3edb85a41d552b09 / bf7ad5aa3edb85a41d552b09
+gemm ffma comp pair m 8 n 512 k 5120: two calls 0.0381 ms, one call 0.0392 ms, sha 77355f2d73ddb15510ef8fb2 / 77355f2d73ddb15510ef8fb2
+gemm r2 run 2 rc 0
+gemm ffma head m 1 n 129280 k 5120: median 1.6003 ms (827 GB/s) sha 5aed36cb1fb79a1f312a0aec
+gemm ffma head m 4 n 129280 k 5120: median 1.9855 ms (667 GB/s) sha 47af928c628d77a5f2ef4e11
+gemm ffma head m 5 n 129280 k 5120: median 2.2754 ms (582 GB/s) sha 254c976b62de390570b5a4ca
+gemm ffma head m 8 n 129280 k 5120: median 2.7538 ms (481 GB/s) sha 8b641b1f6955435e12972f96
+gemm ffma router m 1 n 384 k 5120: median 0.0225 ms (175 GB/s) sha d58ddb83a717adf2be4b7611
+gemm ffma router m 4 n 384 k 5120: median 0.0243 ms (162 GB/s) sha e6f9f48f2874c6331ff77401
+gemm ffma router m 5 n 384 k 5120: median 0.0243 ms (162 GB/s) sha 9941de28b8a92c91fd4652c3
+gemm ffma router m 8 n 384 k 5120: median 0.0246 ms (160 GB/s) sha c9ef3e74e71a36a7c1848107
+gemm ffma comp pair m 1 n 512 k 5120: two calls 0.0361 ms, one call 0.0219 ms, sha 58d6b2e232d75c1428075419 / 58d6b2e232d75c1428075419
+gemm ffma comp pair m 4 n 512 k 5120: two calls 0.0387 ms, one call 0.0253 ms, sha bf7ad5aa3edb85a41d552b09 / bf7ad5aa3edb85a41d552b09
+gemm ffma comp pair m 8 n 512 k 5120: two calls 0.0394 ms, one call 0.0402 ms, sha 77355f2d73ddb15510ef8fb2 / 77355f2d73ddb15510ef8fb2
+gemm r1 run 2 rc 0
+gemm ffma head m 1 n 129280 k 5120: median 1.7098 ms (774 GB/s) sha 9d271ee76d27d7e63207ea35
+gemm ffma head m 4 n 129280 k 5120: median 2.2386 ms (591 GB/s) sha dccbb5932ba9ff1072f4392f
+gemm ffma head m 5 n 129280 k 5120: median 2.3950 ms (553 GB/s) sha 9ec5e7a7cb86d69e5aedaf69
+gemm ffma head m 8 n 129280 k 5120: median 3.0364 ms (436 GB/s) sha 111aee8ce9c2b7cd9fa0c206
+gemm ffma router m 1 n 384 k 5120: median 0.0183 ms (215 GB/s) sha 01b9ea4935cbc6773ca4a8ca
+gemm ffma router m 4 n 384 k 5120: median 0.0212 ms (185 GB/s) sha cea521f2d33e980427beb260
+gemm ffma router m 5 n 384 k 5120: median 0.0247 ms (159 GB/s) sha 6cf0c6bfd20cd3a786669e9e
+gemm ffma router m 8 n 384 k 5120: median 0.0384 ms (102 GB/s) sha b0e2cf14b415bc12e2195c58
+gemm kpc run 2 rc 0
+gemm ffma head m 1 n 129280 k 5120: median 1.5994 ms (828 GB/s) sha 5aed36cb1fb79a1f312a0aec
+gemm ffma head m 4 n 129280 k 5120: median 1.9594 ms (676 GB/s) sha 47af928c628d77a5f2ef4e11
+gemm ffma head m 5 n 129280 k 5120: median 2.2675 ms (584 GB/s) sha 254c976b62de390570b5a4ca
+gemm ffma head m 8 n 129280 k 5120: median 2.7260 ms (486 GB/s) sha 8b641b1f6955435e12972f96
+gemm ffma router m 1 n 384 k 5120: median 0.0506 ms (78 GB/s) sha d58ddb83a717adf2be4b7611
+gemm ffma router m 4 n 384 k 5120: median 0.0541 ms (73 GB/s) sha e6f9f48f2874c6331ff77401
+gemm ffma router m 5 n 384 k 5120: median 0.0544 ms (72 GB/s) sha 9941de28b8a92c91fd4652c3
+gemm ffma router m 8 n 384 k 5120: median 0.0686 ms (57 GB/s) sha c9ef3e74e71a36a7c1848107
+BENCH-DONE b5

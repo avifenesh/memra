@@ -1,0 +1,96 @@
+2026-11-13T04:00:40
+name, clocks.current.sm [MHz], clocks.max.sm [MHz], power.draw [W], temperature.gpu, utilization.gpu [%]
+NVIDIA GeForce RTX 5090 Laptop GPU, 180 MHz, 3090 MHz, 11.35 W, 69, 0 %
+device NVIDIA GeForce RTX 5090 Laptop GPU, 82 SMs, L2 64 MB
+empty-kernel graph step: 0.42 us [0.42, 0.43]
+  floor: 5120 dependent fma      8.74 us [   8.71,    8.75]  net     8.32
+M=1 N=384 K=5120: r2 vs kpc 0 of 384 differ, r2 pair vs kpc 0, r1 vs kpc 362 differ (max rel 7.35e-05)
+  kpc                           35.94 us [  35.92,   36.01]  net    35.52
+  r1 (seg)                      11.95 us [  11.89,   12.01]  net    11.53
+  r2 (stream chain)             15.27 us [  15.16,   15.35]  net    14.85
+  r2 NS3 KC256                  15.81 us [  15.79,   15.85]  net    15.40
+  r2 NS6 KC256                  15.41 us [  15.38,   15.44]  net    14.99
+  r2 NS3 KC512                  15.17 us [  15.14,   15.22]  net    14.75
+  r2 NS4 KC512                  15.71 us [  15.68,   15.73]  net    15.29
+  r2 NS4 KC512 vs kpc: 228 differ
+M=1 N=512 K=5120: r2 vs kpc 0 of 512 differ, r2 pair vs kpc 0, r1 vs kpc 482 differ (max rel 7.35e-05)
+  kpc                           37.37 us [  37.30,   37.42]  net    36.95
+  r1 (seg)                      13.00 us [  12.97,   13.06]  net    12.58
+  r2 (stream chain)             15.81 us [  15.79,   15.84]  net    15.39
+  r2 NS3 KC256                  16.26 us [  16.26,   16.31]  net    15.85
+  r2 NS6 KC256                  16.01 us [  15.98,   16.04]  net    15.59
+  r2 NS3 KC512                  15.79 us [  15.77,   15.81]  net    15.37
+  r2 NS4 KC512                  16.39 us [  16.36,   16.47]  net    15.97
+  r2 NS4 KC512 vs kpc: 512 differ
+  kpc pair (2 launches)         74.71 us [  74.63,   74.81]  net    73.87
+  r1 pair (2 launches)          25.99 us [  25.91,   26.33]  net    25.15
+  r2 pair (1 launch)            20.17 us [  17.76,   22.95]  net    19.75
+M=2 N=384 K=5120: r2 vs kpc 0 of 768 differ, r2 pair vs kpc 0, r1 vs kpc 724 differ (max rel 2.99e-04)
+  kpc                           37.81 us [  36.75,   49.48]  net    37.39
+  r1 (seg)                      12.64 us [  12.47,   13.30]  net    12.22
+  r2 (stream chain)             17.05 us [  16.78,   17.09]  net    16.63
+  r2 NS3 KC256                  17.32 us [  16.96,   17.36]  net    16.90
+  r2 NS6 KC256                  16.44 us [  16.25,   16.57]  net    16.02
+  r2 NS3 KC512                  16.04 us [  16.01,   16.10]  net    15.62
+  r2 NS4 KC512                  16.52 us [  16.49,   16.61]  net    16.10
+  r2 NS4 KC512 vs kpc: 768 differ
+M=2 N=512 K=5120: r2 vs kpc 0 of 1024 differ, r2 pair vs kpc 0, r1 vs kpc 965 differ (max rel 2.99e-04)
+  kpc                           38.04 us [  37.97,   39.36]  net    37.62
+  r1 (seg)                      13.49 us [  13.45,   14.46]  net    13.07
+  r2 (stream chain)             17.25 us [  17.06,   17.43]  net    16.83
+  r2 NS3 KC256                  17.38 us [  17.22,   17.53]  net    16.96
+  r2 NS6 KC256                  16.91 us [  16.69,   16.94]  net    16.49
+  r2 NS3 KC512                  16.59 us [  16.56,   16.61]  net    16.17
+  r2 NS4 KC512                  17.17 us [  17.11,   17.23]  net    16.75
+  r2 NS4 KC512 vs kpc: 1024 differ
+  kpc pair (2 launches)         76.73 us [  76.62,   77.75]  net    75.89
+  r1 pair (2 launches)          28.79 us [  27.65,   29.16]  net    27.95
+  r2 pair (1 launch)            21.08 us [  19.49,   23.44]  net    20.66
+M=4 N=384 K=5120: r2 vs kpc 0 of 1536 differ, r2 pair vs kpc 0, r1 vs kpc 1446 differ (max rel 3.95e-04)
+  kpc                           39.26 us [  38.51,   47.83]  net    38.84
+  r1 (seg)                      13.69 us [  13.58,   15.13]  net    13.27
+  r2 (stream chain)             19.13 us [  18.00,   19.17]  net    18.72
+  r2 NS3 KC256                  18.62 us [  18.56,   18.70]  net    18.20
+  r2 NS6 KC256                  18.23 us [  18.13,   18.26]  net    17.81
+  r2 NS3 KC512                  17.39 us [  17.36,   17.50]  net    16.97
+  r2 NS4 KC512                  17.94 us [  17.92,   18.06]  net    17.53
+  r2 NS4 KC512 vs kpc: 1536 differ
+M=4 N=512 K=5120: r2 vs kpc 0 of 2048 differ, r2 pair vs kpc 0, r1 vs kpc 1925 differ (max rel 3.95e-04)
+  kpc                           40.75 us [  40.07,   43.82]  net    40.33
+  r1 (seg)                      14.98 us [  14.80,   16.61]  net    14.56
+  r2 (stream chain)             19.89 us [  19.58,   20.14]  net    19.48
+  r2 NS3 KC256                  19.94 us [  19.64,   20.17]  net    19.52
+  r2 NS6 KC256                  19.02 us [  18.89,   19.18]  net    18.60
+  r2 NS3 KC512                  18.13 us [  18.10,   18.46]  net    17.71
+  r2 NS4 KC512                  19.40 us [  19.13,   19.43]  net    18.98
+  r2 NS4 KC512 vs kpc: 2048 differ
+  kpc pair (2 launches)         79.83 us [  79.76,   87.47]  net    78.99
+  r1 pair (2 launches)          31.79 us [  29.55,   33.08]  net    30.95
+  r2 pair (1 launch)            30.14 us [  23.46,   30.37]  net    29.72
+M=8 N=384 K=5120: r2 vs kpc 0 of 3072 differ, r2 pair vs kpc 0, r1 vs kpc 2903 differ (max rel 6.23e-04)
+  kpc                           49.61 us [  49.30,   65.59]  net    49.20
+  r1 (seg)                      28.31 us [  26.53,   29.29]  net    27.89
+  r2 (stream chain)             18.18 us [  18.15,   18.22]  net    17.76
+  r2 NS3 KC256                  18.96 us [  18.89,   19.40]  net    18.54
+  r2 NS6 KC256                  19.64 us [  19.35,   19.68]  net    19.22
+  r2 NS3 KC512                  18.91 us [  18.72,   19.02]  net    18.49
+  r2 NS4 KC512                  19.74 us [  19.72,   19.89]  net    19.32
+  r2 NS4 KC512 vs kpc: 3072 differ
+M=8 N=512 K=5120: r2 vs kpc 0 of 4096 differ, r2 pair vs kpc 0, r1 vs kpc 3863 differ (max rel 6.23e-04)
+  kpc                           50.40 us [  50.31,   56.30]  net    49.98
+  r1 (seg)                      30.06 us [  27.82,   30.26]  net    29.64
+  r2 (stream chain)             21.00 us [  19.70,   21.89]  net    20.59
+  r2 NS3 KC256                  23.00 us [  22.62,   23.29]  net    22.58
+  r2 NS6 KC256                  23.33 us [  22.89,   23.45]  net    22.91
+  r2 NS3 KC512                  21.95 us [  21.58,   21.99]  net    21.53
+  r2 NS4 KC512                  23.20 us [  22.14,   23.25]  net    22.78
+  r2 NS4 KC512 vs kpc: 4096 differ
+  kpc pair (2 launches)        102.88 us [ 100.70,  107.06]  net   102.04
+  r1 pair (2 launches)          60.80 us [  54.92,   61.87]  net    59.96
+  r2 pair (1 launch)            47.30 us [  44.40,   48.01]  net    46.89
+BYTES-FAIL 8 shapes
+rc 1
+clocks.current.sm [MHz], power.draw [W], temperature.gpu
+2422 MHz, 146.57 W, 81
+2026-11-13T04:00:50
+BENCH-DONE b2
