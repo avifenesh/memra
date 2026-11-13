@@ -15,7 +15,7 @@ writes the same texts. With a test door that pads the need, the reclaim ran on b
 reclaims on the RTX 5090; 48 reclaims and 240 short passes on GB10) with texts equal to main's.
 The rider cap counted 307 capped rider rows on GB10 in the forced-cap arm with texts equal to
 main's; on the RTX 5090 a rider steps plain inside each round, so that path does not run there.
-GB10 never reaches the cap in serving shape. At c = 4 the RTX 5090 decodes every session plain (no cohort forms at 4 in flight), and F6, its forced-cap arm and main answer 29 of 29 with equal texts; the seeded-invariance and exact-resend gates pass on F6. Pending: the cost bench.
+GB10 never reaches the cap in serving shape. At c = 4 the RTX 5090 decodes every session plain (no cohort forms at 4 in flight), and F6, its forced-cap arm and main answer 29 of 29 with equal texts; the seeded-invariance and exact-resend gates pass on F6. On the head rebased onto main with memra#1221 part 2's boundary lend, the need-pad cells ran again on both cards with the lend's reconcile invariants intact (charged equal to real on every line, 0 breaks) and texts equal to main's. The cost bench pins pooled and serial verifies bitwise equal; a member the cap holds back verifies at the serial price (+14% for K5+K5, up to +66% for four K2 rounds), about 0.2 s of a 4-minute c = 2 replay in serving shape (its takes could not meet the thermal rule; the best is banked with its 16.4% share).
 
 Decision record:
 [`docs/decisions/POOLED-VERIFY-MEMORY-CAP.md`](../../docs/decisions/POOLED-VERIFY-MEMORY-CAP.md).
@@ -32,12 +32,14 @@ Decision record:
 | fix (F4) | `e8a306389a`: F3 plus the numeric-scope guard in `spec_round_bytes` (it launches nothing); built, superseded by F5 before a cell ran on it | RTX 5090 (sm_120a) | `8cb259d1f85008b5` | |
 | fix (F5) | the review-round-2 code (`0551668a5d`, on `a17add18f3`) | RTX 5090 (sm_120a) | `6980707df19deedf` | |
 | fix (F6) | the review-round-3 code (`deb6114414`, on `202e1411fe`); the RTX 5090's c = 4 cells and gates; the head (`3cf70f3009`) adds only the booking bound priced on the stacked cohort, which no cell reaches | RTX 5090 (sm_120a) | `4006b4aa92925f8e` | |
+| fix (F7) | the head (`0ad2a9cbc9`): the fold-check code rebased onto main `d6ae4e525d` (memra#1221 part 2's boundary lend, #1267, #1288); the RTX 5090's need-pad rerun | RTX 5090 (sm_120a) | `b60801dfb04b2292` | |
 | diagnostic | main + `harness/rig/diag_probe.py` (log lines only) | RTX 5090 (sm_120a) | `8e7abde6637cc294` | `memra-0.141.1-c200db12045d` |
 | main | `11b368f7d7` | GB10 (sm_121a) | `2e1211ff9466a203` | `memra-0.141.1-32737cebc309` |
 | fix, round 0 | as above | GB10 (sm_121a) | `b9c35baaee789aca` | `memra-0.141.1-4e861bdcb961` |
 | M3, F3 | as above (`spec.rs`, `worker.rs` and server `lib.rs` hashed in the build log against the trees) | GB10 (sm_121a) | `4e262794c7bfd775` / `7df050125df70bf1` | |
 | F5 | as above (`spec.rs`, engine `lib.rs`, `worker.rs` and server `lib.rs` hashed against the tree); F6 differs only in the booking bound, which reaches no session in these cells (none builds its state in the tick), and a test | GB10 (sm_121a) | `065153e432ae8ac8` | |
-| bench | `decode-batch-bench` from the F6 tree | RTX 5090 (sm_120a) | `c6d6f98e4f9ca48d` | |
+| F7 | the head, as above (hashed against the tree), built on the second unit | GB10 (sm_121a) | `a3a41917e2011a96` | |
+| bench | `decode-batch-bench` from the head's tree | RTX 5090 (sm_120a) | `e409c6985fbec394` | |
 
 The RTX 5090 binaries were built on the CPU build host (`harness/build-host/dd_build.sh`; M3 by
 `dd_build_m3.sh`), the GB10 ones on the unit (`harness/gb10/build_gb10*.sh`). Card conditions:
@@ -166,6 +168,32 @@ session it can:
 - 01-F: 29 answered texts equal 01-F's; differing k: none
 - 02-F: 29 answered texts equal 01-F's; differing k: none
 - reference gag5/01-M: 29 answered texts equal 01-F's; differing k: none; k=19/21 equal: {19: True, 21: True}
+
+**On the rebased head** (F7, after main gained memra#1221 part 2's boundary lend, which lends a
+spec session's rows to its prefix entry: the reclaim's prefix rung now evicts entries that hold
+lends): the same two cells again. GB10 on the second unit (`pad-gb10-r3/`), 100,000 MiB pad:
+
+| boot | ok | failed | tokens | OOM lines | not parked | capped forwards | capped rider rows | pre-cohort reclaims | short passes | fence-funded passes | graph suspended | profile; limit under load W |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 02-F | 29 | - | 9665 | 0 | 0 | 0 | 0 | 48 | 240 | 0 | 0 | n/a |
+
+- 02-F: 29 answered texts equal 02-F's; differing k: none
+- reference gag5/01-M: 29 answered texts equal 02-F's; differing k: none; k=19/21 equal: {19: True, 21: True}
+
+Lend checks (`[prefix-loan]` lines): 86 reconcile lines, charged equal to real on every one, 60 of them with live lends, 25 of those right after a reclaim's evictions (`why=evict`); 918 adoptions; 0 `INVARIANT BROKEN` lines; `/metrics` `prefix_loan_invariant_breaks` 0. Texts equal main's (`agentic-gb10-c2-r2/01-M`) and the F5 pad boot's on all 29.
+
+RTX 5090 (`pad-5090-r3/`), 1,024 MiB pad:
+
+| boot | ok | failed | tokens | OOM lines | not parked | capped forwards | capped rider rows | pre-cohort reclaims | short passes | fence-funded passes | graph suspended | profile; limit under load W |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 01-F | 29 | - | 9396 | 0 | 0 | 0 | 0 | 11 | 0 | 0 | 4 | balanced; 175 (175 to 175) |
+
+- 01-F: 29 answered texts equal 01-F's; differing k: none
+- 01-F against memra#1221 part 2 head rtxag3/02-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
+- 01-F against memra#1221 part 2 head rtxag3/03-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
+- reference ag3/01-M: 27 answered texts equal 01-F's; differing k: none; k=19/21 equal: {}
+
+Lend checks: 98 reconcile lines, charged equal to real on every one, 93 with live lends, one right after a reclaim's evictions; 1,530 adoptions; 0 `INVARIANT BROKEN` lines; `prefix_loan_invariant_breaks` 0. Texts equal main's 27 and the head boots' 29 (k = 19 and 21 included) and the F5 pad boot's.
 
 ### Riders (`riders-5090/`, `riders-gb10/`, `riders-gb10-n6/`)
 
@@ -442,10 +470,33 @@ Level at every c, one text set per c, 0 capped forwards. The final code's pairs 
 
 ## What a capped round costs
 
-`decode-batch-bench --pooled` at the shapes the cap splits (6,6 / 6,3 / 3,3 / 3,3,3,3 / 4,4,4,4 /
-4,4; depth 4,096, 20 reps; pooled and serial verifies bitwise equal first), from the F6 tree,
-runs on the RTX 5090 under `--perf` and the take rule after the queued jobs; this section is
-updated when it finishes.
+`decode-batch-bench --pooled` (`bench-5090/`, built from the rebased head's tree): per shape, the
+same members' verify rounds pooled in one forward against one after another (median of 20 at depth
+4,096), after a bitwise pin of the verify rows and the follow-up steps. The one timed step, under
+`--perf` (profile performance, CPU cap 100/110 W) and the take rule, AC logged every second.
+
+| shape (rows per member) | rows | serial ms | pooled ms | a capped forward costs | bitwise (verify / follow-up) |
+|---|---|---|---|---|---|
+| 6, 6 | 12 | 66.8 | 58.8 | +14% | BITWISE EQUAL / BITWISE EQUAL |
+| 6, 3 | 9 | 53.9 | 44.9 | +20% | BITWISE EQUAL / BITWISE EQUAL |
+| 3, 3 | 6 | 46.9 | 33.2 | +41% | BITWISE EQUAL / BITWISE EQUAL |
+| 3, 3, 3, 3 | 12 | 95.5 | 57.5 | +66% | BITWISE EQUAL / BITWISE EQUAL |
+| 4, 4, 4, 4 | 16 | 100.8 | 64.6 | +56% | BITWISE EQUAL / BITWISE EQUAL |
+| 4, 4 | 8 | 50.6 | 42.3 | +20% | BITWISE EQUAL / BITWISE EQUAL |
+
+- the take here (`bench-5090/bench/`): take 4: sw thermal 16.4% of 61 samples under load, start 57 C, max 88 C, off AC 0 s, does not count
+- `bench.take1/`: take 1: sw thermal 83.6% of 67 samples under load, start 71 C, max 88 C, off AC 0 s, does not count
+- `bench.take2/`: take 2: sw thermal 19.7% of 61 samples under load, start 61 C, max 87 C, off AC 0 s, does not count
+- `bench.take3/`: take 3: sw thermal 20.0% of 60 samples under load, start 59 C, max 88 C, off AC 0 s, does not count
+- bitwise pin: 24 of 24 shape runs equal across the takes
+
+No take met the rule: a sustained load on this card throttles (the regime above), so the best of
+the four (take 4, software thermal slowdown on 16.4% of its samples under load) is banked with that
+share stated. Pooled and serial verifies are bitwise equal in every shape run. The cost, stated
+plainly: a member the cap holds back verifies at the serial price; in the agentic replay at c = 2
+the cap held back the K5+K5 rounds at the failure point, 23 forwards a boot at about 8 ms each,
+about 0.2 s of a 4-minute replay. Wider shapes cost more a round (+56 to +66% at 12 to 16 rows),
+and they are capped only when the reading cannot hold them.
 
 ## Gates
 
@@ -456,16 +507,16 @@ On F6 (`gates-5090/`, balanced lease, in block 1):
 
 ## CPU (`cpu/`)
 
-The head (`cpu/full-chain-head.txt`, `cpu/green-head.txt`, `cpu/red-head/arms.txt`): `3cf70f3009`, the
-fold-check code on main `202e1411fe`, on the CPU build host with the whole `research/` tree the suites read at
+The head (`cpu/full-chain-head.txt`, `cpu/green-head.txt`, `cpu/red-head/arms.txt`): `0ad2a9cbc9`, the
+fold-check code rebased onto main `d6ae4e525d`, on the CPU build host with the whole `research/` tree the suites read at
 run time. `cargo fmt --check`, `cargo clippy --release --all-targets -D warnings`, the coalescer
-contract, memra-server 1,243 passed / 0 failed, memra-kv 87 / 0, memra-engine lib 757 / 0,
-memra-gguf lib 418 / 0, the portable suites 448 passed / 0 skipped / 0 failed;
+contract, memra-server 1,251 passed / 0 failed, memra-kv 89 / 0, memra-engine lib 761 / 0,
+memra-gguf lib 418 / 0, the portable suites 450 passed / 0 skipped / 0 failed;
 `check-numeric-scope` passes on every entry site.
 
 Red arms (`harness/build-host/red_arms.py`, `dd_red.sh`): each arm changes one thing and the named
-test fails (cargo exit 101 with the test's own panic). The census arms use main's files
-(`7a32d9b10b`, the crates of `202e1411fe` for these files).
+test fails (cargo exit 101 with the test's own panic); all 17 do. The census arms swap in
+`7a32d9b10b`'s files for this PR's (main before it).
 
 | arm | what it changes | the test that fails |
 |---|---|---|
@@ -491,7 +542,8 @@ Earlier heads: `cpu/full-chain-final.txt` and `cpu/red-final/` hold the review-r
 `0551668a5d` (14 arms, all exit 101; one memra-gguf failure in that chain, the per-process
 temp-config race main fixed in landing 17, passed three reruns); `cpu/full-chain-rebased.txt` holds
 it rebased onto `202e1411fe`. The review-round-3 code (`deb6114414`) ran the full chain and 16 arms
-green and red as expected before the fold check added the 17th. `cpu/red/` and `cpu/red-r1/` hold
+green and red as expected before the fold check added the 17th; the fold-check code on
+`202e1411fe` (`3cf70f3009`) ran the chain and the 17 the same way before the last rebase. `cpu/red/` and `cpu/red-r1/` hold
 rounds 0 and 1, `cpu/full-chain.txt` round 0.
 
 ## What is here
@@ -499,10 +551,11 @@ rounds 0 and 1, `cpu/full-chain.txt` round 0.
 | path | what |
 |---|---|
 | `diag-5090/01-D/`, `diag-5090/tl-01-D.txt` | the diagnostic boot (server log with the `[p1266]` lines, per-request rows, telemetry, `guard.log`) and its timeline |
-| `agentic-5090-c2*/<boot>/`, `agentic-5090-c4*/<boot>/`, `agentic-gb10-c2*/<boot>/`, `pad-5090/<boot>/`, `pad-gb10/<boot>/` | `cells.jsonl`, per-request rows, `summary.txt` (line counts), `/metrics`, the server log, telemetry, `guard.log`, `run.log` (`take.json`: the take rule's verdict, `agentic-5090-c4-perf-take/`) |
+| `agentic-5090-c2*/<boot>/`, `agentic-5090-c4*/<boot>/`, `agentic-gb10-c2*/<boot>/`, `pad-5090*/<boot>/`, `pad-gb10*/<boot>/` | `cells.jsonl`, per-request rows, `summary.txt` (line counts), `/metrics`, the server log, telemetry, `guard.log`, `run.log` (`take.json`: the take rule's verdict, `agentic-5090-c4-perf-take/`) |
 | `riders-5090/<boot>/`, `riders-gb10/<boot>/`, `riders-gb10-n6/<boot>/` | the riders cell: `riders.jsonl` (per rider, solo re-run and stream: tokens, gaps, text sha), `texts/`, `metrics-<boot>.json`, the server log, `guard.log`, `summary.txt` |
 | `normal-5090*/<boot>/`, `normal-gb10*/<boot>/` | `normal.jsonl` (per request: tokens, TTFT, inter-token gaps, text sha), the server log, telemetry, `guard.log`, `summary.txt` |
 | `ref-1221b-head-texts.jsonl` | the memra#1221 part 2 head boots' text hashes |
+| `bench-5090/` | `decode-batch-bench --pooled` takes: `bench/` (the banked take) and `bench.takeN/` (the others), each with `summary.txt`, `bench.log`, telemetry with the thermal throttle reasons, `ac.txt` (AC each second), `take.json` (the take rule's verdict), `guard.log` |
 | `gates-5090/` | the seeded-invariance and exact-resend gate runs on F6 (logs, `.guard` with the profile at start and end, each run's directory as a tarball) |
 | `cpu/` | the red arms (`red/` round 0, `red-r1/` round 1, `red-final/` the review-round-2 code's 14, `red-head/` the head's), the new tests' green runs, the full CPU chains (`full-chain.txt` round 0, `full-chain-final.txt` the review-round-2 code, `full-chain-rebased.txt` it rebased onto `202e1411fe`, `full-chain-head.txt` the head) |
 | `harness/rig/`, `harness/gb10/`, `harness/build-host/` | the scripts that ran all of it, with the step files; paths and hosts are written generically (`harness/rig/sanitize_receipts.py`) |

@@ -1,0 +1,6 @@
+# memra#1266 after the rebase onto main d6ae4e525d, GB10 (u1, coordinator): build F7 (the rebased
+# head) and rerun the need-pad cell (100,000 MiB, c = 2), where the reclaim's prefix rung and
+# memra#1221 part 2's boundary lend both fire.
+b7build1 30 may-fail -- bash box/build_gb10_r4.sh 28
+b7build2 30 -- bash box/build_gb10_r4.sh 28
+gpad3-02-F 30 -- EXTRA_ADD=MEMRA_SPEC_COHORT_NEED_PAD_MB=100000 bash box/agentic_gb10.sh gpad3 02-F F7

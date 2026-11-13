@@ -5,7 +5,7 @@ import pathlib
 L = pathlib.Path.home() / ".cache/memra-1266"
 t = (L / "README.tmpl.md").read_text()
 # Round 2's sections first: their keys contain the older ones (R2_AG35 holds AG3, R2_GAG5 GAG).
-for key, name in [("R2_GRIDERS", "r2-griders"), ("R2_RIDERS", "r2-riders"), ("R2_AG35", "r2-ag35"),
+for key, name in [("R2_GPAD3", "r2-gpad3"), ("R2_PAD2", "r2-pad2"), ("R2_GRIDERS", "r2-griders"), ("R2_RIDERS", "r2-riders"), ("R2_AG35", "r2-ag35"),
                   ("R2_GAG5", "r2-gag5"), ("R2_GPAD", "r2-gpad"), ("R2_PAD", "r2-pad"),
                   ("R2_GNC5", "r2-gnc5")]:
     f = L / "sections" / f"{name}.md"

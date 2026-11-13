@@ -35,6 +35,8 @@ if out["ag35"] == "(not run)":
 out["pad"] = agentic("runs/pad", REF, L / "runs/ag3/01-M")
 out["gpad"] = agentic("gb10-runs/gpad", L / "gb10-runs/gag5/01-M")
 out["gag5"] = agentic("gb10-runs/gag5")
+out["gpad3"] = agentic("gb10-runs/gpad3", L / "gb10-runs/gag5/01-M")
+out["pad2"] = agentic("runs/pad2", REF, L / "runs/ag3/01-M")
 d = L / "runs/riders"
 out["riders"] = run(T / "riders_table.py", d) if have(d) else "(not run)"
 d = L / "gb10-runs/griders2"

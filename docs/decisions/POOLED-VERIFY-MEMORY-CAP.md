@@ -61,9 +61,12 @@ poolable and runs the eager pooled verify whether or not replay is suspended; th
   joins: alone it is the serial round. The walk stops at the first round that does not fit and
   tries no smaller later one; that round leads the next chunk, after this one's rounds have
   finished and freed their checkpoints. Plain riders join within the same reading
-  (`pooled_rider_take`). A capped member verifies after the forward; the forced-cap arm, which
-  verifies every member alone, writes the same texts as the default arm in every cell, so the
-  cap moves no token. `[spec-pool] pooled MTP verify capped by memory: ...`
+  (`pooled_rider_take`). A capped member verifies after the forward. Pooled and serial verifies
+  are bitwise equal (`decode-batch-bench --pooled`, every shape the cap splits), and the
+  forced-cap arm, which verifies every member alone, writes the same texts as the default arm in
+  every cell, so the cap moves no token. A member held back pays the serial price: +14% for a
+  K5+K5 round, up to +66% for four K2 rounds; in the agentic replay at c = 2, about 0.2 s of a
+  4-minute run. `[spec-pool] pooled MTP verify capped by memory: ...`
   (the first 16, then every 256th); `/metrics` `spec_pool_capped_forwards_total` and
   `spec_pool_capped_rider_rows_total`.
 - **The verify margin** (`POOLED_VERIFY_MARGIN`, 256 MiB) is its own constant: the part of the

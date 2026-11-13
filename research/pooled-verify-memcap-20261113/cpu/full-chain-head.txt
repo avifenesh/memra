@@ -1,24 +1,24 @@
-# head 3cf70f3009 (the fold-check code on main 202e1411fe)
-# 2026-11-13T15:36:22+01:00 full CPU chain of memra#1266
-# 2026-11-13T15:36:22+01:00 fmt
+# head 0ad2a9cbc9 (the fold-check code rebased onto main d6ae4e525d)
+# 2026-11-13T16:59:50+01:00 full CPU chain of memra#1266
+# 2026-11-13T16:59:50+01:00 fmt
 fmt rc=0
-# 2026-11-13T15:36:32+01:00 clippy
+# 2026-11-13T16:59:57+01:00 clippy
 clippy rc=0
-# 2026-11-13T15:37:59+01:00 coalescer
+# 2026-11-13T17:09:42+01:00 coalescer
 coalescer rc=0
-# 2026-11-13T15:38:03+01:00 server
+# 2026-11-13T17:09:45+01:00 server
 server rc=0
-  passed 1243, failed 0, ignored 14 over 6 binaries
-# 2026-11-13T15:49:18+01:00 kv
+  passed 1251, failed 0, ignored 18 over 6 binaries
+# 2026-11-13T17:16:36+01:00 kv
 kv rc=0
-  passed 87, failed 0, ignored 0 over 1 binaries
-# 2026-11-13T15:49:18+01:00 engine
+  passed 89, failed 0, ignored 3 over 1 binaries
+# 2026-11-13T17:17:12+01:00 engine
 engine rc=0
-  passed 757, failed 0, ignored 65 over 1 binaries
-# 2026-11-13T15:52:30+01:00 gguf
+  passed 761, failed 0, ignored 66 over 1 binaries
+# 2026-11-13T17:20:24+01:00 gguf
 gguf rc=0
   passed 418, failed 0, ignored 2 over 1 binaries
-# 2026-11-13T15:52:32+01:00 portable
+# 2026-11-13T17:20:26+01:00 portable
 portable rc=0
 FULL-DONE
-skip-census: 448 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 17 binaries
+skip-census: 450 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 17 binaries
