@@ -328,11 +328,8 @@ fn main() {
     let nvcc = resolve_nvcc();
     println!("cargo:rerun-if-env-changed=MEMRA_CUDA_ARCH");
     println!("cargo:rerun-if-env-changed=MEMRA_CUTLASS");
-    // Declared unconditionally: printed only inside its block, setting it after a build
-    // without it did not rerun this script, and the archive was silently left out.
-    println!("cargo:rerun-if-env-changed=MEMRA_DSV4_CUTLASS");
-    // Both CUTLASS archives compile against this header tree. Unwatched, pointing it at
-    // another tree after a build kept both archives on the old headers.
+    // The CUTLASS archive compiles against this header tree. Unwatched, pointing it at another
+    // tree after a build kept the archive on the old headers.
     println!("cargo:rerun-if-env-changed=MEMRA_CUTLASS_ROOT");
     println!("cargo:rustc-check-cfg=cfg(memra_portable_cuda)");
     println!("cargo:rustc-check-cfg=cfg(memra_hopper_mma)");
@@ -357,15 +354,11 @@ fn main() {
     // launchers remain fail-closed stubs on this arch.
     let portable = matches!(cuda_arch.as_str(), "89" | "90a");
     let hopper_mma = cuda_arch == "90a";
-    // The two CUTLASS archives below compile with a fixed sm_120a gencode, so they key on the
-    // exact TARGET: linked into any other build they would carry SASS the device cannot load.
+    // The CUTLASS archive below compiles with a fixed sm_120a gencode, so it keys on the exact
+    // TARGET: linked into any other build it would carry SASS the device cannot load.
     assert!(
         !(target != "120a" && std::env::var_os("MEMRA_CUTLASS").is_some()),
         "MEMRA_CUTLASS is sm_120a-only and cannot be enabled for this CUDA architecture"
-    );
-    assert!(
-        !(target != "120a" && std::env::var_os("MEMRA_DSV4_CUTLASS").is_some()),
-        "MEMRA_DSV4_CUTLASS is sm_120a-only and cannot be enabled for this CUDA architecture"
     );
     let gencode = format!("arch=compute_{target},code=sm_{target}");
     if portable {
@@ -854,71 +847,14 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=cuda");
     }
 
-    // DSV4 dense tensor-core path (memra #472). Deliberately INDEPENDENT of the MEMRA_CUTLASS
-    // block below: that one carries the fp4 experiment, sets the memra_cutlass cfg and pulls the
-    // fp4 Rust call sites in with it, and its archive hit an lld symbol-ordering failure on this
-    // box. This path needs none of that. It has its own switch, its own archive, and NO cfg,
-    // because cu/dsv4_gpu.cu declares memra_dsv4_dense_cutlass_fp8 WEAK: when this block does not
-    // run the symbol is null and the scalar kernel runs untouched.
-    //
-    // -fmad=false to match cu/dsv4_gpu.cu, because this family's numerics are the point.
-    if std::env::var("MEMRA_DSV4_CUTLASS").is_ok() {
-        let dense_src = "cu/dsv4_dense_cutlass.cu";
-        println!("cargo:rerun-if-changed={dense_src}");
-        let root = std::env::var("MEMRA_CUTLASS_ROOT")
-            .expect("MEMRA_DSV4_CUTLASS requires MEMRA_CUTLASS_ROOT");
-        let obj = out.join("dsv4_dense_cutlass.o");
-        let lib = out.join("libmemra_dsv4_cutlass.a");
-        let status = Command::new(&nvcc)
-            .args([
-                "-gencode",
-                "arch=compute_120a,code=sm_120a",
-                "-O3",
-                "-std=c++17",
-                "-fmad=false",
-                "--expt-relaxed-constexpr",
-                "-I",
-                &format!("{root}/include"),
-                "-I",
-                &format!("{root}/tools/util/include"),
-                "-c",
-                dense_src,
-                "-o",
-                obj.to_str().unwrap(),
-            ])
-            .status()
-            .expect("spawn nvcc (dsv4 dense cutlass)");
-        assert!(status.success(), "nvcc build failed for {dense_src}");
-        normalize_nvcc_temp_symbols(&obj);
-        let _ = std::fs::remove_file(&lib);
-        let status = Command::new("ar")
-            .args(["crus", lib.to_str().unwrap(), obj.to_str().unwrap()])
-            .status()
-            .expect("spawn ar (dsv4 dense cutlass)");
-        assert!(status.success(), "ar failed for {}", lib.display());
-        // link-LIB, not link-ARG, and this is the whole reason the first attempt produced a
-        // binary byte-identical to the baseline with the symbol still weak-undefined:
-        // `cargo:rustc-link-arg` applies only to the crate whose build script emitted it and to
-        // binaries in the SAME package, so it never reached memra-server in another package.
-        // `cargo:rustc-link-lib` does propagate to downstream crates, and the
-        // `static:+whole-archive` modifier carries the whole-archive that the CUDART
-        // fatbin-registration ctor needs (without it the device kernels silently never register).
-        println!("cargo:rustc-link-search=native={}", out.display());
-        println!("cargo:rustc-link-lib=static:+whole-archive=memra_dsv4_cutlass");
-        println!("cargo:rustc-link-lib=dylib=cudart");
-        println!("cargo:rustc-link-lib=dylib=stdc++");
-        bundled_archives.push(lib);
-    }
-
     // A bundled archive goes INTO the rlib, and a .cu-only edit changes no rustc input: with
     // RUSTC_WRAPPER=sccache (the rig default) the cached rlib came back carrying the previous
     // archive while every timestamp under target/ looked fresh (2026-09-06: three rig timing
     // rounds and one gate ran a kernel two edits old). Hashing the archives into a rustc env
     // makes the kernel bytes a rustc input, so any kernel change forces a real compile. Every
-    // bundled archive is hashed, in link order: libmemra_dsv4_cutlass.a is linked the same way
-    // as libmemra_mmq.a. A build without MEMRA_DSV4_CUTLASS hashes libmemra_mmq.a alone and
-    // keeps its earlier value. The MEMRA_CUTLASS archive below is a link-arg of this package's
-    // own binaries, not bundled, so it is not an rlib input.
+    // bundled archive is hashed, in link order (today libmemra_mmq.a alone). The MEMRA_CUTLASS
+    // archive below is a link-arg of this package's own binaries, not bundled, so it is not an
+    // rlib input.
     {
         use std::hash::Hasher;
         let mut h = std::collections::hash_map::DefaultHasher::new();

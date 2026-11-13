@@ -1752,6 +1752,10 @@ The `MEMRA_DSV4_CUTLASS` row before the 2026-11-12 rewrite (FLAGS.md section "Bu
 
 | `MEMRA_DSV4_CUTLASS` | off; decide-by: 2026-09-25 (passed) | set = compile `cu/dsv4_dense_cutlass.cu` into `libmemra_dsv4_cutlass.a` (needs `MEMRA_CUTLASS_ROOT`) and link it whole-archive, so the WEAK `memra_dsv4_dense_cutlass_fp8` is non-null and the DSV4 prefill's m = 32 dense chunks take the CUTLASS split-K GEMM (`docs/KERNELS.md`, DSV4 dense tensor-core path). sm_120a only: `build.rs` refuses the switch on any other `MEMRA_CUDA_ARCH`. No runtime read; `arm_dense_cutlass_for_gate` is the gate seam. Its numeric class is new (mma fragment registers per 128-k block, never bit-equal to the shipped tree). Receipts, [private detail removed] (LANE.md sections 40-44, raw cells under `receipts/`): engine-only prefill A/B **1.386x at the served width 512 and 1.252x at 64** (three interleaved reps, `dw-ab-gr2`); drift 21 of 448 top-1 changes, greedy identity 427/448, KL mean about 1e-2 both directions (`dw-drift-r1`); paired accuracy -2.0pp twin (p=0.18) and -3.0pp Hebrew (p=0.375), neither significant (`dw-acc-r1`). The lane read GO as the naked default. Still owed: the served end-to-end row on the merged code (the one served row, -37%, predates the device-keyed workspace fix the lane traced it to). The window after the 2026-09-11 landing closed with those receipts and without that row. It stays a build switch because a naked build has no CUTLASS tree. Decision owed (owner): make it the sm_120a default with a pinned CUTLASS source and the served row, or delete the switch, `cu/dsv4_dense_cutlass.cu` and its archive link. Under the 2026-11-04 ruling (winners with positive receipts become defaults) the engine-only rows qualify and the served row decides: it is a two-card DSV4 cell, [private detail removed] (owner, 2026-11-04, pair cells), and a positive row still needs the pinned CUTLASS source, a build dependency only the owner can add. |
 
+The `MEMRA_DSV4_CUTLASS` row before its removal on 2026-11-13:
+
+| `MEMRA_DSV4_CUTLASS` | unset (off); decide-by: 2026-09-25 | Set = compile `cu/dsv4_dense_cutlass.cu` into `libmemra_dsv4_cutlass.a` and link it whole-archive, so the weak `memra_dsv4_dense_cutlass_fp8` is non-null and the DSV4 prefill's m = 32 dense chunks take the CUTLASS split-K GEMM. Needs `MEMRA_CUTLASS_ROOT`. Its gencode is fixed at sm_120a, so build.rs refuses it for any other target. No runtime read: `arm_dense_cutlass_for_gate` is the gate seam. A new numeric class, never bit-equal to the shipped tree. It stays a build switch because a naked build has no CUTLASS tree. | [KERNELS.md](KERNELS.md#optional-cutlass-archives), [history](FLAGS-HISTORY.md#memra_dsv4_cutlass) |
+
 ## MEMRA_DSV4_FMAD
 
 The `MEMRA_DSV4_FMAD` row before the 2026-11-12 rewrite (FLAGS.md section "Build-time (build.rs / nvcc)"):
@@ -4003,6 +4007,23 @@ The `MEMRA_FETCH_URLS` row before the 2026-11-12 rewrite (FLAGS.md section "imag
 The `MEMRA_FETCH_URLS_ALLOWED_HOSTS` row before the 2026-11-12 rewrite (FLAGS.md section "image_url http(s) fetch, 2026-09-28"):
 
 | `MEMRA_FETCH_URLS_ALLOWED_HOSTS` | **Unset (default), read only when `MEMRA_FETCH_URLS=1`.** Comma-separated exact hostnames or literal IPs (case-insensitive) exempted from the address-range refusal above: memra#533's "unless allowlisted." Bypasses the ADDRESS check only: scheme and redirect-hop limits still apply, and an entry for one host or IP does not cover any other. Rollback: unset. |
+
+## Removed doors, 2026-11-13 (`MEMRA_DSV4_CUTLASS`: the DSV4 dense split-K archive, its decide-by passed)
+
+`MEMRA_DSV4_CUTLASS` linked the DSV4 dense tensor-core path (memra #472): `cu/dsv4_dense_cutlass.cu`, a CUTLASS split-K
+FP8 GEMM for the prefill's m = 32 dense chunks, compiled with `-fmad=false` into `libmemra_dsv4_cutlass.a` and linked
+whole-archive, with `cu/dsv4_gpu.cu` calling it through a weak symbol. A default build never linked it. Its
+receipts (the flag's history section): engine-only prefill 1.386x at the served width 512 and 1.252x at 64; 21 of 448
+top-1 tokens changed, greedy identity 427 of 448; paired accuracy -2.0 and -3.0 points, neither significant. The one
+served row (-37%) predated the device-keyed workspace fix and was never retaken on the merged code, and the decision
+it waited on (a pinned CUTLASS source plus the served row) was not taken by its decide-by date, 2026-09-25.
+
+Removed with it: the build switch and its asserts in `build.rs`, the kernel, the archive and its link, the weak
+declarations and both dispatch branches in `cu/dsv4_gpu.cu` (with the symbol null they never ran in a default
+build, so the shipped program is byte for byte the same), the gate seam in `src/dsv4_gpu.rs`
+(`arm_dense_cutlass_for_gate`, `dense_cutlass_armed_for_gate`, `dense_cutlass_counts_for_gate`), and the binaries
+`dsv4-dense-arm-ab` (with its CI contract tests) and `dsv4-dense-family-bench`. Their KERNELS.md rows and the
+`dsv4-dense-arm-ab` row of TESTING.md went with them.
 
 ## Removed doors, 2026-11-10 (`MEMRA_SERVE_BATCH`: the batched scheduler is the only served path; the server arm of the async chain went with the round-robin scheduler)
 

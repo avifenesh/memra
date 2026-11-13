@@ -242,14 +242,13 @@ why = "memra-probe is a diagnostic binary, not a served path"
 
 # --- kernels --------------------------------------------------------------------------
 # Arch-specific translation units, read from build.rs:
-#   cutlass_fp4_sm120.cu / dsv4_dense_cutlass.cu compile only with MEMRA_CUTLASS /
-#   MEMRA_DSV4_CUTLASS and only for the 120a target.
+#   cutlass_fp4_sm120.cu compiles only with MEMRA_CUTLASS and only for the 120a target.
 #   *_stub.cu replace mmq_fp4.cu, mmq_nvfp4_w4a8.cu and mmq_fp8_blk.cu on every family
 #   except 120a and 100a; the real files compile only there.
 #   wgmma_common.cuh device code is guarded by __CUDA_ARCH__ == 900.
 #   sm100_blockscale_layout.cuh is the sm_100a tcgen05 layout.
 [[rule]]
-pattern = '^crates/memra-engine/cu/(cutlass_fp4_sm120|dsv4_dense_cutlass)\.cu$'
+pattern = '^crates/memra-engine/cu/cutlass_fp4_sm120\.cu$'
 class = "kernel"
 targets = ["120a"]
 perf = true

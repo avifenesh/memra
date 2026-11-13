@@ -93,10 +93,10 @@ while IFS= read -r runtime_dir; do
     runtime_dirs+=("$runtime_dir")
 done < <(find crates -mindepth 2 -maxdepth 3 -type d \( -path '*/src' -o -path '*/src/bin' \) 2>/dev/null | sort)
 
-# Every crate's build script. A build.rs env read is a build-time door (MEMRA_DSV4_CUTLASS links
-# a whole tensor-core archive) and it needs its row as much as a runtime read does, but the
-# src-only scan never saw one: MEMRA_DSV4_CUTLASS reached KERNELS.md with no FLAGS.md row and no
-# decide-by date. Discovered like the src dirs, so a new crate's build.rs is covered on day one.
+# Every crate's build script. A build.rs env read is a build-time door (MEMRA_DSV4_CUTLASS, removed
+# 2026-11-13, linked a whole tensor-core archive) and it needs its row as much as a runtime read
+# does, but the src-only scan never saw one: MEMRA_DSV4_CUTLASS reached KERNELS.md with no
+# FLAGS.md row and no decide-by date. Discovered like the src dirs, so a new crate's build.rs is covered on day one.
 build_scripts=()
 while IFS= read -r build_script; do
     build_scripts+=("$build_script")

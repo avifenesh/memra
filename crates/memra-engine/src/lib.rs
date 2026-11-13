@@ -966,9 +966,8 @@ pub mod mimo_vision_rope_ffi;
 // self-contained — the old baked OUT_DIR *paths* pointed at the builder's temp dir and
 // broke every machine that wasn't the build machine. Same bytes, same module image;
 // the runtime MEMRA_GEMM_FATBIN tune-seam override below is preserved.
-/// Content hash of the host-launcher kernel archives bundled into this rlib, set by build.rs:
-/// `libmemra_mmq.a`, plus `libmemra_dsv4_cutlass.a` when `MEMRA_DSV4_CUTLASS` links it (a build
-/// without it hashes `libmemra_mmq.a` alone). Its only job is to be a rustc input: without it a
+/// Content hash of the host-launcher kernel archives bundled into this rlib, set by build.rs
+/// (today `libmemra_mmq.a` alone). Its only job is to be a rustc input: without it a
 /// `.cu`-only edit left every rustc input unchanged and `RUSTC_WRAPPER=sccache` returned the
 /// cached rlib with the OLD kernels (2026-09-06, selector v2 lane). Printed by the engine build
 /// line so a receipt names the bytes.
