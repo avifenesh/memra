@@ -37,8 +37,10 @@ for c in sorted(p for p in d.iterdir() if p.is_dir() and re.match(r"\d\d-", p.na
     oom = text.count("out of memory")
     refused = text.count("rewind refused below a lent prefix row")
     # Review round 1: rewinds that moved the session into a fresh cache (the floor kept, the
-    # session kept) and breaks of the cache's total_bytes invariant (must be 0).
-    fresh = text.count("rewind below a lent prefix row: the session moves to a fresh cache")
+    # session kept) and breaks of the cache's total_bytes invariant (must be 0). Review round 3:
+    # the line's prefix, which every form of it starts with (worker.rs LEND_REWIND_FRESH_LINE:
+    # "... : the session tries a fresh cache (SITE; model M)"; R2 printed "(SITE): ... moves to").
+    fresh = text.count("[spec] rewind below a lent prefix row")
     breaks = text.count("[prefix-loan] INVARIANT BROKEN")
     compacts = text.count("[prefix-loan] compact:")
     cell = None

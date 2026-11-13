@@ -75,30 +75,47 @@ floor of `Cache::rollback`, `Cache::rewind_recurrent_from` (`lib.rs`) and the MT
 - **A checkpoint under the lend.** The boundary capture can sit above the session's turn
   checkpoint (the seed at a prompt end on the 32-token grid over a stable stop under it, or a
   miss-LCP split above the stable point). The speculative checkpoint rewind then checks the
-  trunk's and the draft scratch's lends before it writes anything and, when a lend reads rows past
-  the checkpoint, moves the session into a fresh cache of its own capacity (the route the
-  affinity grow already takes: the checkpoint's rows copied, the lent planes to their entries),
-  so the parked session survives where main rewound in place. It prints `[spec] rewind below a
-  lent prefix row: the session moves to a fresh cache`.
+  trunk's and the draft scratch's lends before it writes anything and refuses in place. The
+  worker rewinds such a session into a fresh cache instead (`spec_lend_rewind`), on the affinity
+  grow's own path: under the on-demand construction scope (an on-demand card keeps its planes
+  on demand) and with its one out-of-memory reclaim retry, sized at the request's target
+  capacity on the affinity path and at the session's own on the spec pool's grid path. The route
+  is decided again on the retry: the reclaim evicts the unleased entries, those reading the
+  session among them, so their lends go and the retry rewinds in place, as main did. Only a lend
+  held by a leased entry, with the device still out of memory, sends the request cold (`[spec]
+  rewind refused below a lent prefix row`). The fresh cache is the checkpoint's rows copied, the
+  lent planes left to their entries. Before the attempt the worker prints `[spec] rewind below a
+  lent prefix row: the session tries a fresh cache (SITE; model M)`, one literal for both sites
+  (`LEND_REWIND_FRESH_LINE`; the cells count its prefix). Not measured on an RTX PRO 6000
+  (on-demand planes).
 - **Eviction semantics: charged bytes are real bytes.** An entry is charged the device bytes it
   holds. While the session holds the plane, the entry reads it and is charged nothing for it (the
   bytes are the session's, booked by admission); evicting it frees what it holds (the capture's
   recurrent planes) and nothing more, and the cache reports exactly that. When the session drops
   the plane, the plane is charged to one of the entries that read it at the next reconcile (the
-  tick top, after retirement, before every insert and eviction decision, and before admission's
-  reclaim) and LRU and the budget treat it as any entry; evicting it frees the plane. Two entries
+  tick top, after retirement, before every insert, eviction and snapshot decision, and before
+  admission's reclaim) and LRU and the budget treat it as any entry: the tick-top and retirement
+  reconciles hold the cache to its budget (`reconcile_to_budget`: compaction by the rule below,
+  then the oldest unleased entries), so an adoption never leaves it over budget past the tick
+  that charged it; evicting the entry frees the plane. Two entries
   reading one plane (the miss-LCP split and the stable boundary of one cold burst) share one book
   and one charge. The book lists its readers; its holder is always one of them: when the holder
   leaves the cache, a reader that stays becomes the holder (with or without a charge), and a
   charge it carried moves with it, which frees nothing, so the total does not change. Every
-  reconcile checks `total_bytes` against the entries' bytes (printed, counted and resynced when it
-  breaks; a debug build fails). Host demotion, the disk handoff and the exports keep the entry's
+  reconcile checks `total_bytes` against the entries' bytes (resynced when it breaks) and the
+  charges against what the entries and adopted planes hold; a break prints `[prefix-loan]
+  INVARIANT BROKEN`, counts in `memra_prefix_loan_invariant_breaks_total` (with the lent and
+  adopted gauges and the adoption and compaction counters in /metrics) and fails a debug build.
+  Host demotion (its byte budget counts the entry's logical bytes), the disk handoff and the
+  exports keep the entry's
   logical bytes.
 - **Admission counts each byte once.** Memory admission reads the device's free bytes from the
   device and is offered the cache's charged evictable bytes (`evictable_bytes`, exactly what
   `evict_all` frees), so a lent plane is the session's memory while the session holds it and the
   cache's charge after it drops, never both. A book charged to an unleased holder while another
-  reader is leased is not offered (evicting the holder moves the charge to the leased reader).
+  reader is leased is not offered (evicting the holder moves the charge to the leased reader),
+  and the insert preflight counts it with the leased bytes (`leased_bytes`), so an insert never
+  evicts its neighbours for room the lease keeps.
   Retirement reconciles in the same tick, and so does admission's reclaim before it reads the
   cache or sets the partial pass's target; a lender dropped in between is charged at the next
   reconcile, and until then the cache offers less than eviction would free, never more. The
@@ -107,14 +124,20 @@ floor of `Cache::rollback`, `Cache::rewind_recurrent_from` (`lib.rs`) and the MT
 - **Over-hold and compaction.** An adopted pooled plane is the session's whole capacity, prompt +
   `max_tokens` + 8 rows. A bounded long-prompt request holds a few hundred rows past its entry; an
   open-output request on a card without memory-shaped admission (GB10: ctx 262,144) can hold many
-  times its entry. Compaction runs on memory demand only: an insert that does not fit its budget,
-  and a partial eviction (the discrete cards' reclaim). There an adopted plane is compacted, its
-  readers' rows copied into exact planes of their own and the plane freed, exactly when that frees
-  more than it copies (`loan_compaction_frees_more`: held - read > read). A compaction whose
-  allocation fails is not tried again until an entry left the cache. Measured on a served
-  open-output cell (GB10, two 60k requests, 8 GB budget): the second request's insert compacted
-  the first session's adopted planes (34 planes, 8,270 MB held, 1,892 MB copied) in 0.4 ms on the
-  scheduler thread, and its first boundary stall was 7.0 ms against main's 18.3 ms.
+  times its entry. An adopted plane is compacted, its readers' rows copied into exact planes of
+  their own and the plane freed, exactly when that frees more than it copies
+  (`loan_compaction_frees_more`: held - read > read), at three points: on unified memory at its
+  adoption (the over-hold is the device's own memory there), whenever a reconcile leaves the cache
+  over its budget (the tick top and retirement, before the LRU that follows), and on memory demand
+  (an insert that does not fit, a partial eviction). The first failed allocation or copy stops
+  compaction for the rest of the pass, and no compaction runs again until the cache freed at least
+  the bytes that allocation needed (`compaction_may_retry`). On the served open-output cell (GB10,
+  two cold 60k requests whose planes are the 262,144-row context): the first session's adopted
+  planes compacted at its retirement (34 planes, 8,270 MB held, 1,892 MB copied, 0.3 to 0.4 ms on
+  the scheduler thread; the second's at its own retirement), the cache ended at 4,303.9 MB charged
+  == real against main's 4,286.3 MB, and MemAvailable followed main's within 0.25 GiB at its first,
+  lowest and last readings, at the default budget and at 8 GB. The boundary stalls stayed under
+  main's (4.3 and 0.0 ms against 26.8 and 14.7).
 - **Scope.** The MTP publisher lends on a plane ordered on the engine's own stream (one device).
   A lend carries no cross-stream event, so a pipeline-parallel stage's plane copies. The DSpark and
   GLM-5 publishers keep copying (`SpecPlanes::Copy`): their park rewinds are not checked against a
@@ -209,10 +232,10 @@ floor of `Cache::rollback`, `Cache::rewind_recurrent_from` (`lib.rs`) and the MT
 - **The floor guards the functions that lower a length**, `into_pooled` and `release_beyond`; the
   spec round loop's own length writes raise a length or restore the committed rows (at or past the
   boundary by construction, the invariant the copy relied on for one burst).
-- **Over-hold.** An adopted plane is charged its capacity until compaction (on memory demand) or
-  eviction; bounded requests hold a few hundred rows past their entry. On GB10 the default budget
-  is large and admission's reclaim evicts every unleased entry, so an open-output adoption is
-  usually held until the cache or admission evicts it, not compacted.
+- **Over-hold.** On a discrete card an adopted plane is charged its capacity until the cache is
+  over its budget, an insert needs room or it is evicted; bounded requests there hold a few
+  hundred rows past their entry, which no compaction pays for. On unified memory a plane that
+  holds more than twice what its readers read is compacted at its adoption.
 - **Admission's arrival term** in the discrete-card partial reclaim still counts a speculative
   arrival's entry at its logical bytes, though at publication it needs only its recurrent planes:
   conservative, unchanged from main, left for its own item.

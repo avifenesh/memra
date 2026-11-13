@@ -148,7 +148,7 @@ summary = {
               for t in (2, 3)},
     "turn1": sha(warm[0][1]),
     "refused_below_lend": len(re.findall(r"\[spec\] rewind refused below a lent prefix row", log)),
-    "fresh_cache_rewinds": len(re.findall(r"\[spec\] rewind below a lent prefix row: the session moves to a fresh cache", log)),
+    "fresh_cache_rewinds": len(re.findall(r"\[spec\] rewind below a lent prefix row", log)),
     "affinity_rewinds": len(re.findall(r"spec-affinity: rewound to", log)),
     "affinity_failed": len(re.findall(r"affinity rewind failed", log)),
     "grid_rewinds": len(re.findall(r"grid-rewind: spec extension", log)),

@@ -30,6 +30,7 @@ if [ "${SKIP_SERVER:-0}" != 1 ] && [ ! -x "$R/bins/$TAG/memra-server" ]; then
   cp -a "$CARGO_TARGET_DIR/release/memra-server" "$R/bins/$TAG/"
 fi
 for c in kv:memra-kv engine:memra-engine server:memra-server; do
+  [ "${SKIP_TESTS:-0}" = 1 ] && break
   n=${c%%:*}; p=${c#*:}
   [ -x "$R/bins/$TAG/$n-lib-test" ] && continue
   [ "$(left)" -gt 60 ] || { echo "$(date -Is) cap reached before $n tests" >> "$L"; exit 1; }

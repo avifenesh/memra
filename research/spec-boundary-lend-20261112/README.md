@@ -70,7 +70,7 @@ structure.
   nothing, takes the stall to -3 and 6.5 ms.
 - **Memory.** On main the entry's planes add 4.13 GB (131k) and 8.20 GB (260k) of pool used from
   the boundary to the end of the session (B: used 25.42 -> 29.56 GB and 30.31 -> 38.51 GB across
-  the publisher). MemAvailable moves less (1.1 and 1.9 GB): most of the entry is carved from blocks
+  the publisher). MemAvailable moves less (1.1 and 1.9 GiB): most of the entry is carved from blocks
   the prime's transients left cached, which the pool keeps either way; the 4.13 and 8.20 GB are
   what other sessions on the device can no longer take without the pool growing again.
 
@@ -90,7 +90,7 @@ B against S, B S S B B S, one cell per lease, the same cell as above.
 | burst 1 wall, ms | 1534.5 (2.4) | 1534.9 (11.1) | +0.5, overlap | 2241.4 (1.4) | 2248.6 (11.4) | +7.2, every S over every B |
 | TTFT, s | 117.543 (0.109) | 117.605 (0.338) | +0.062, overlap | 313.058 (0.435) | 313.328 (0.448) | +0.270, overlap |
 | total, s | 122.557 (0.100) | 122.551 (0.342) | -0.006, overlap | 324.032 (0.436) | 324.199 (0.452) | +0.167, overlap |
-| MemAvailable low after burst 1, GB | 86.51 | 87.52 | +1.01 | 77.57 | 79.30 | +1.73 |
+| MemAvailable low after burst 1, GiB | 86.51 | 87.52 | +1.01 | 77.57 | 79.30 | +1.73 |
 
 Medians (spread), N = 3 per arm. One text per context on every cell of both arms (e3b0c1e81f9a,
 5275df37e59f) and one burst structure. B's pool readings are its probe's at the publisher's exit, S's
@@ -425,6 +425,9 @@ refused below a lend and no invariant broke in any of them.
 
 ### Compaction on memory demand: served open-output cells (u1, `gb10/r1-openout-u1/`)
 
+Superseded by round 2 below: at this head the tick and retirement reconciles did not hold an
+adoption to the budget, and the comparison of 37.4 with 31.0 GB was the head against itself.
+
 Two cold open-output requests of 60,014 tokens on one server (no `max_tokens`: each session's
 planes are the served context's 262,144 rows), with their own nonces, after a 1k warm-up;
 `MEMRA_REUSE_POOL=0`, so the first session does not park and its planes move to its entry at
@@ -482,6 +485,162 @@ read. At the review head the rewind refuses in place and takes the fresh-cache r
 session survives (both turns rewound, none primed cold), and the lent rows keep their bytes.
 
 
+## Review round 2
+
+Round 2 (PR #1267) found that the tick and retirement reconciles charged an adoption without
+holding the cache to its budget, so on GB10 an open-output adoption stayed over the budget and
+the device held about 6.6 to 7.3 GiB less MemAvailable than main after two requests (the round-1
+open-output cells above; their "37.4 against 31.0 GB" compared the head with itself). It also
+found an insert preflight that missed a lease-kept charge, a fresh-cache rewind outside the
+affinity grow's scope and retry, a back-off re-armed by any removal, the host-demotion budget
+counting charged bytes, and an invariant check without charged == real. The fixes are in the
+record; this section is their evidence, on the round-2 head R2 (`R2-bdb2c2dcfb`). R2c adds the
+back-off cell's room guard (test-only). R2d (`842a6b350c`) installs the model's numeric profile
+at `spec_rewind_into_fresh`'s entry, which the push's numeric-scope census asked for: its only
+caller that installed it was `spec_grow_and_rewind_to_checkpoint`, while the worker's
+fresh-cache route and the session gate call it directly. No served cell here took that route (0
+fresh-cache rewinds). Round 3's head is next.
+
+| item | fix | evidence |
+|---|---|---|
+| 1, adoption over budget | the tick-top and retirement reconciles hold the cache to its budget (`reconcile_to_budget`: compaction by the rule, then LRU); on unified memory an adopted plane that holds more than twice its readers' rows compacts at adoption | CPU test, red arm `hold-budget`; the open-output cells below |
+| 2, the insert preflight | `leased_bytes` = the leased entries' bytes + `charges_kept_by_leases` | the reviewer's two cases in the CPU test, red arm `preflight-lease` |
+| 3, the fresh-cache rewind | the worker drives it (`spec_lend_rewind`): the affinity grow's on-demand scope and reclaim retry, sized at the request's target capacity (the session's own on the grid path); the retry decides the route again, so after the reclaim dropped the lends it rewinds in place | CPU test of the out-of-memory route, red arm `rewind-retry`; the session gate with `MEMRA_GATE_LEND_ABOVE=1` on R2c (GB10 u1, `gb10/r2-session-gate-u1/`): both rewinds moved to a fresh cache, the lent rows unchanged, all four turns match |
+| 4, the back-off | the first failed compaction stops the pass; none runs again until the cache freed the bytes it needed (`compaction_may_retry`) | CPU test, red arm `compact-retry`; GPU cell `a_failed_compaction_stops_the_pass_until_bytes_are_freed` |
+| 5, host demotion | `evict_all_demoting` counts `base_bytes()` | code |
+| 6, invariants and /metrics | every reconcile also checks charged == real; `memra_prefix_loan_{lent,adopted,adopted_bytes}` gauges and `{adoptions,compactions,compaction_failures,invariant_breaks}_total` counters | every replay below: 0 breaks |
+| 7, nits | the refusal note's doc (it now fires only when the fresh route failed too), `lent_rows`' doc, the ladder comment, the record's budget line, the FLAGS row, a reconcile before `prepare_snapshot` | review |
+| tests asked for | SF8's skip of parked lenders, `charge_loan`'s two fallbacks | CPU tests |
+
+### CPU (`cpu/r2-*`)
+
+On the CPU build host at R2: fmt, clippy `-D warnings` on all targets, the coalescer contract,
+memra-server 1,243 passed (18 GPU cells ignored), memra-kv 89 (3), memra-engine lib 745 (66),
+memra-gguf 417 (2), the portable suites. At R2c (R2 plus the back-off cell's room guard), fmt and
+clippy `-D warnings` on memra-server's targets are clean (`cpu/r2c-clippy.txt`). Red arms
+(`tools/dd_red_r2.sh`, `cpu/r2-red.txt`), each
+R2 with one fix disarmed, all nine fail as they must. Round 1's `ledger-double`, `ledger-holder`
+and `evictable` fail the book test again on R2. `preflight-lease` (the preflight back on
+`pinned_bytes()` alone) fails it at "budget 1400: the refusal evicted entries". `hold-budget` (no
+hold after the reconcile) fails it at "over budget after the hold: 1350". `compact-retry` (the retry
+gate always open) fails `a_failed_compaction_waits_for_the_bytes_it_needed` at "nothing freed
+since". `rewind-retry` (the retry always takes the fresh cache) fails
+`a_lend_refused_rewind_survives_an_out_of_memory_fresh_cache` at "the retry rewound in place".
+Round 1's `restore-floor` and `publish-copy` fail their censuses.
+
+### Open-output cells, main against the head (u1, `gb10/r2-openout-u1/`)
+
+The round-1 cell (two cold 60,014-token open-output requests after a 1k warm-up,
+`MEMRA_REUSE_POOL=0`), one server each, on one unit: main (B), the head with the default budget
+(T, 50,237 MB) and with `MEMRA_PREFIX_CACHE_MB=8000` (T8, 8,389 MB). MemAvailable from the cell's 1 Hz samples: the
+first at the first request, the lowest while the requests ran, the last after them.
+
+| | B (main) | T (head) | T8 (head, 8 GB) |
+|---|---:|---:|---:|
+| MemAvailable first / min / last, GiB | 95.44 / 82.80 / 83.94 | 95.45 / 83.03 / 84.19 | 95.42 / 83.02 / 83.86 |
+| first boundary stall, open-a / open-b, ms | 26.8 / 14.7 | 4.3 / 0.0 | 3.5 / -4.6 |
+| TTFT open-a / open-b, s | 44.067 / 43.933 | 44.070 / 43.870 | 44.231 / 43.960 |
+| entry, each request | 2,049 MB copied | 1,892 MB lent | 1,892 MB lent |
+| adopted planes compacted at each 60k request's retirement (open-a, open-b) | - | 34 + 34 planes, each 8,270 MB held -> 1,892 MB copied, 0.31 + 0.33 ms | 34 + 34 planes, the same, 0.39 + 0.37 ms |
+| prefix cache at the end, MB (charged; head: charged == real) | 4,286.3 | 4,303.9 | 4,303.9 |
+| budget, MB | 50,238 | 50,237 | 8,389 |
+| invariant breaks | 0 | 0 | 0 |
+
+Every text is equal across the three cells. On unified memory each request's adopted
+262,144-row planes now compact at its retirement (0.3 to 0.4 ms on the scheduler thread; the
+copies are enqueued on the stream). At the end the head's cache holds 4,303.9 MB, charged ==
+real, against main's 4,286.3 MB: the two 60k entries' 1,892 MB of rows plus their 156.9 MB of
+recurrent planes each, plus the 1k warm-up's entry (156.9 MB) and its 48.9 MB of adopted planes.
+Those planes stay adopted because compacting them would copy more than it frees. The round-1
+head, which round 2 reviewed, held 17,062 MB at this point with the default budget and 10,683 MB
+with the 8,389 MB one (`gb10/r1-openout-u1/`). Both head cells end well under their budgets
+(50,237 and 8,389 MB), so no budget hold ran. MemAvailable follows main's within 0.25 GiB at
+every reading (`table.txt`, from `tools/openout_tab.py`; MemAvailable is in GiB, kB / 2^20,
+throughout this README).
+
+### Replays and gates on R2
+
+| | GB10 agentic (u1, `gb10/r2-agentic-u1/`) | GB10 fleet (u1, `gb10/r2-fleet-u1/`) |
+|---|---:|---:|
+| answered | 29/29 | 80/80 |
+| texts equal to main's | 29 of 29 | 80 of 80 |
+| `[prefix-loan] reconcile` lines, charged == real | 113 of 113 | 85 of 85 |
+| adoptions / compactions | 1,904 / 0 | 2,074 / 0 |
+| budget holds at the tick or retirement (LRU after an adoption) | 24 | 9 |
+| rewinds refused below a lend / through a fresh cache | 0 / 0 | 0 / 0 |
+| invariant breaks | 0 | 0 |
+| pool used at boot -> after the trim, MiB | 18,301 -> 18,402 (main's) | 18,301 -> 18,301 |
+
+The agentic replay's prefix budget is 4,000 MB: the retirement reconcile now evicts the oldest
+entries when an adoption tips it over (24 times), where the next insert used to; the replay
+evicts 18 entries at inserts instead of 44, and serves main's texts.
+
+Gates on R2 (`gb10/r2-gates/`, all on u1), all PASS: seeded invariance (54 rows, 26 lent
+`spec-boundary` publications, 6 spec restores), spec burst boundary (229 rows, 80 lent
+publications, 16 spec restores), prefix exact resend (resend 2/2, growth 2/2, identical 9/9, V1 to
+V5) and prefix restore identity (identical 5/5, grid 5/5). No rewind was refused below a lend or
+moved to a fresh cache, no budget hold ran and no invariant broke in any of them.
+
+GPU unit cells. On u2 with R2's binaries (`gb10/r2-unit-u2/`), 11 of 12 passed. The new back-off
+cell `a_failed_compaction_stops_the_pass_until_bytes_are_freed` passed the tiny geometry and failed
+the 27B's with "nothing adopted": its lent 156.9 MB entry and owned 160 MB neighbour do not fit
+the 256 MB test budget, so LRU evicted the lent entry before its lender dropped. This is the
+two-entry cell's round-1 failure. The fix is the same and test-only: the cell grants itself room
+through `KV_FLEX_GRANT` and takes it back at its end (R2c, `4947505535`; production code is R2's).
+On u1 with R2c's server test binary and R2's kv and engine binaries (`gb10/r2-unit-u1/`), all 12
+pass. The back-off cell: one failed allocation stopped the pass (4 planes tiny, 34 on the 27B), a
+second pass with nothing freed tried nothing, every plane compacted after the neighbour's eviction,
+charged == real throughout, and the pool ended at its baseline. The two-entry cell holds
+charged == real at every step in both eviction orders. The copy and lend digests (40 lines) are
+round 1's, byte for byte.
+
+## Review round 3
+
+Round 3 approved with six nits, all folded into the fix and record commits (R3, `7fdf895767`;
+replayed onto main `202e1411fe`, landing 17, as R3b, `d25174f264`, without the gguf test commit,
+which landed there as its own PR):
+
+- **The fresh-cache line.** The worker printed two variants of it ("(grid-rewind)", "(affinity)")
+  that the counters (`tools/agentic_tab.py`, `tools/rewind_cell.py`) and the record's quote no
+  longer matched. Both sites now print one literal through `note_lend_rewind_fresh`
+  (`LEND_REWIND_FRESH_LINE`: "[spec] rewind below a lent prefix row: the session tries a fresh
+  cache (SITE; model M)"), worded as an attempt because the retry can still rewind in place. The
+  counters match the line's prefix, which every form of it starts with. Re-tabulated, the R2
+  agentic and fleet tables are unchanged (`fresh 0`): none of the 56 R2 GB10 logs in the receipts
+  holds the line in either form.
+- **A stuck hold prints once.** A budget hold that can free nothing (every entry left is leased)
+  printed at every tick. It now prints once per (total, budget) and again only when the hold
+  compacts or evicts. The R2 replays' holds all evicted (24 and 9 lines, none with 0 entries).
+- **A census** (`the_tick_and_retirement_reconciles_hold_the_budget`) pins both
+  `reconcile_to_budget` call sites (the tick top, right before the publication sweep, and right
+  after the retire loop) and the fresh-cache literal. Red arm `budget-tick` (the tick top back to
+  a bare `reconcile_loans`) fails it.
+- **Dead code.** `spec_grow_and_rewind_to_checkpoint` had no caller left; it is removed and its
+  doc moved to `spec_rewind_into_fresh`.
+- **Units.** MemAvailable is in GiB (the tabulators divide kB by 2^20); the labels say so.
+
+Evidence:
+
+- **CPU chain** (CPU build host) at R3 (`cpu/r3-full.txt`) and again at R3b (`cpu/r3b-full.txt`):
+  fmt, clippy `-D warnings` on all targets, the coalescer contract, memra-server 1,244 passed
+  (18 GPU cells ignored; the new census is the one more), memra-kv 89, memra-engine lib 745 at R3
+  and 747 at R3b (main's two new tests), memra-gguf 417 and 418 (main's thread test), the
+  portable suites: all green.
+- **Red arms** at R3 (`tools/dd_red_r3.sh`, `cpu/r3-red.txt`), all four fail as they must:
+  `budget-tick` fails the census at the tick-top call site, `hold-stuck` fails the book test at
+  "the stuck state", and the round-2 arms whose code the round touched fail again: `hold-budget`
+  ("over budget after the hold: 1350") and `rewind-retry` ("the retry rewound in place").
+- **Session gate** with `MEMRA_GATE_LEND_ABOVE=1` on GB10 u1, at R3 (`gb10/r3-session-gate-u1/`)
+  and at R3b (`gb10/r3b-session-gate-u1/`): both rewinds took the fresh-cache route, the lent rows
+  were unchanged after each turn, and all four turns match the oracle.
+- **RTX 5090** at R3b (balanced profile, correctness only; binaries built from the R3b tree,
+  `rtx5090/r3-gate/binaries.txt`). The seven server cells pass (`rtx5090/r3-unit/`), with the
+  27B geometry: the two-entry cell's 34 books in both eviction orders, and the back-off cell's 34
+  planes (one failure stopped the pass, no retry with nothing freed, all compacted after a free).
+  The pool ends at its baseline in every cell. The session gate with `MEMRA_GATE_LEND_ABOVE=1` on
+  Qwen3.8-27B (`rtx5090/r3-gate/`): both rewinds took the fresh-cache route, the lent rows were
+  unchanged, and all four turns match the oracle.
+
 ## CPU checks
 
 On a CPU build host (sm_120a build, CUDA 13.1 compiler), the PR's crates (`cpu/full.txt`, the
@@ -508,11 +667,12 @@ now requires VMM instead. The four censuses on main: `cpu/red-census.txt`.
   length writes raise a length or restore it to the committed rows, which are at or past the
   boundary by construction (the invariant the copy already relied on for one burst); they are not
   checked one by one.
-- **Over-hold.** An adopted plane is charged its whole capacity until it is compacted (on memory
-  demand only: an insert over its budget, a partial eviction) or evicted. A bounded request holds a
-  few hundred rows past its entry. On GB10 the default budget is large and admission's reclaim
-  evicts every unleased entry, so an open-output adoption is usually held until the cache or
-  admission evicts it (the open-output cell above).
+- **Over-hold.** An adopted plane is charged its whole capacity until it is compacted or evicted.
+  On a discrete card compaction runs on memory demand (an insert over its budget, a partial
+  eviction, a reconcile that leaves the cache over its budget). On unified memory it also runs at
+  adoption when the plane holds more than twice what its readers read (review round 2), so an
+  open-output adoption is copied down at its retirement (the round-2 open-output cells). A bounded
+  request holds a few hundred rows past its entry and stays lent.
 - **Admission's arrival term.** The partial reclaim on discrete cards still counts the entry an
   arriving request will publish at its full logical bytes (`reclaim_arrival_seed_bytes`); with the
   lend a speculative arrival's entry needs only its recurrent planes at publication, so the term

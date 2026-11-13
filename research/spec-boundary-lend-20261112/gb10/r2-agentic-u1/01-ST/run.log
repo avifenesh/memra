@@ -1,0 +1,8 @@
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 0m50s
+waitfor: grep \[probe-trim\] after trim ~/.cache/memra-1221b/runs/agr2/01-ST/server.log (deadline 3m00s, every 15s)
+waitfor: MET after 0m00s
+waitfor: gone 1023281 (deadline 3m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

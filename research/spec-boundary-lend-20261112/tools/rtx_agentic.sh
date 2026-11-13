@@ -41,7 +41,7 @@ fi
 kill -TERM "$sp" 2>/dev/null
 waitfor --gone "$sp" --timeout 3m >> "$OUT/run.log" 2>&1 || kill -KILL -- -"$sp" 2>/dev/null
 kill "$tp" 2>/dev/null
-{ for pat in 'rewind refused below a lent prefix row' '[prefix-loan] reconcile' '[prefix-loan] compact' \
+{ for pat in 'rewind refused below a lent prefix row' '[spec] rewind below a lent prefix row' '[prefix-loan] reconcile' '[prefix-loan] compact' \
              'insert (spec-boundary)' '[prefix-cache] hit' 'spec restore' 'out of memory' '[probe-trim]'; do
     echo "$pat=$(grep -a -c -F "$pat" "$OUT/server.log")"
   done; grep -a -F '[probe-trim]' "$OUT/server.log" | cut -c1-240; } > "$OUT/summary.txt"
