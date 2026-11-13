@@ -1,0 +1,21 @@
+12a16d6813963683d77886ef7e1d98deaea6188914dcd7acc97fd9acd6fb2249  crates/memra-engine/src/hybrid_forward.rs
+2eeb29579eccd376a7590b015a495de12b5db15b7cba379ec0302268913f8439  crates/memra-engine/src/dflash.rs
+01ac5c3347eb6951597cbba1f6938e7dc56ea302a2d205ade6db9c2f62692098  crates/memra-engine/tests/glm5_prime_capacity.rs
+2344d8286e5d1ef518e875f580c8490ec8c704a5dd613c12d78dd2eb55d4318a  crates/memra-engine/tests/glm5_admission_cost.rs
+schedule+dflash rc=0 test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 788 filtered out; finished in 0.02s
+glm5 host tests rc=0 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s 
+fmt rc=0
+clippy rc=0
+suite rc=101 test result: FAILED. 743 passed; 2 failed; 65 ignored; 0 measured; 0 filtered out; finished in 4.77s
+test argmax_margin::tests::the_tree_floors_table_parses_and_every_row_is_its_receipts_calibration ... FAILED
+test progress::tests::snapshot_is_none_until_the_first_advance_then_counts ... FAILED
+red glm5_prime_capacity on base rc=101 test the_mhc_prime_carries_a_bounded_number_of_rows_at_every_context ... FAILED test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s 
+ctx 1048577: one mHC prime call carries 4097 token rows, above the absolute bound 4096 (the prime chunk cap; a short tail splits off as 16+ rows). The per-call transient is proportional to this, so a 
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+bafb1dcfe72572d45579186a2d4c78145cefe3ca4a7e32a83eaad8e60a6d52ec  /home/avifenesh/.cache/memra-1255/bin/run-gen-1258b-120a
+D1274-DONE rc=0 2026-11-13T05:54:11+01:00
+two rc=0 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 808 filtered out; finished in 0.03s
+suite (receipt present) rc=0 test result: ok. 745 passed; 0 failed; 65 ignored; 0 measured; 0 filtered out; finished in 4.70s
+TWO-DONE 2026-11-13T05:55:27+01:00

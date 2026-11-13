@@ -1,0 +1,173 @@
+seed 61: status 200 prompt 8168
+  [admission] request cost: model="gate" ctx=8296 path=spec = 29696 B/token x ctx + 520MB prefill-workspace + 0MB fixed = 766MB
+  [diag1255] gate-pass id=cmpl-374cec0bf53f526656cf209dbf0288f3 prompt=8168 path=spec cost=891MB draft=160MB reserve=1608MB required=2499MB required_eager=2338MB eager_arm=false booked=0MB limiting_free=4810MB active=0
+  [diag1255] after-admit-trim: driver_free=4727MB pool_res=18656MB pool_used=18573MB pool_unused=82MB eff_free=4810MB
+  [diag1255] after-admit id=cmpl-374cec0bf53f526656cf209dbf0288f3 spec=false dspark_on=true cache=false dspark_sess=false: driver_free=4727MB pool_res=18656MB pool_used=18573MB pool_unused=82MB eff_free=4810MB
+  [diag1255] tick start: driver_free=4727MB pool_res=18656MB pool_used=18573MB eff_free=4810MB (moved 4810MB)
+  [diag1255] trim-before-prime released=0MB
+  [diag1255] dspark-prime-start-before id=cmpl-374cec0bf53f526656cf209dbf0288f3 rows=8168: driver_free=4727MB pool_res=18656MB pool_used=18573MB pool_unused=82MB eff_free=4810MB
+  [dflash-alloc] phase=target-kv-before driver_free_bytes=4956946432 driver_total_bytes=25244663808 pool_reserved_bytes=19562233856 pool_used_bytes=19475431184 graph_pool_bytes=0
+  [dflash-alloc] phase=target-kv-after driver_free_bytes=4453629952 driver_total_bytes=25244663808 pool_reserved_bytes=20065550336 pool_used_bytes=20043308132 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-before driver_free_bytes=4453629952 driver_total_bytes=25244663808 pool_reserved_bytes=20065550336 pool_used_bytes=20043308132 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-after driver_free_bytes=4285857792 driver_total_bytes=25244663808 pool_reserved_bytes=20233322496 pool_used_bytes=20212063332 graph_pool_bytes=0
+  [diag1255] dspark-prime-chunk-before id=cmpl-374cec0bf53f526656cf209dbf0288f3: driver_free=4055MB pool_res=19328MB pool_used=19300MB pool_unused=27MB eff_free=4082MB
+  [prime-yield] count=1 remaining=1 chunks=1 wall_ms=2947.360 max_chunk_ms=2947.360
+  [diag1255] dspark-prime-chunk-after id=cmpl-374cec0bf53f526656cf209dbf0288f3: driver_free=2487MB pool_res=20896MB pool_used=19300MB pool_unused=1595MB eff_free=4082MB
+  [diag1255] tick start: driver_free=2487MB pool_res=20896MB pool_used=19300MB eff_free=4082MB (moved -728MB)
+  [diag1255] dspark-prime-chunk-before id=cmpl-374cec0bf53f526656cf209dbf0288f3: driver_free=2487MB pool_res=20896MB pool_used=19300MB pool_unused=1595MB eff_free=4082MB
+  [dflash-alloc] phase=draft-ingest-after driver_free_bytes=2406809600 driver_total_bytes=25244663808 pool_reserved_bytes=22112370688 pool_used_bytes=20254956644 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-before driver_free_bytes=2406809600 driver_total_bytes=25244663808 pool_reserved_bytes=22112370688 pool_used_bytes=20228742244 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-after driver_free_bytes=2406809600 driver_total_bytes=25244663808 pool_reserved_bytes=22112370688 pool_used_bytes=20228742244 graph_pool_bytes=0
+  [diag1255] dspark-prime-done id=cmpl-374cec0bf53f526656cf209dbf0288f3: driver_free=2295MB pool_res=21088MB pool_used=19291MB pool_unused=1796MB eff_free=4091MB
+  [dflash-alloc] phase=first-burst-before driver_free_bytes=2406809600 driver_total_bytes=25244663808 pool_reserved_bytes=22112370688 pool_used_bytes=20228742244 graph_pool_bytes=0
+  [dflash-alloc] phase=first-burst-after driver_free_bytes=2406809600 driver_total_bytes=25244663808 pool_reserved_bytes=22112370688 pool_used_bytes=20411395676 graph_pool_bytes=0
+  [diag1255] tick start: driver_free=2295MB pool_res=21088MB pool_used=19465MB eff_free=3917MB (moved -166MB)
+seed 67: status 200 prompt 5731
+  [admission] request cost: model="gate" ctx=5859 path=spec = 29696 B/token x ctx + 470MB prefill-workspace + 0MB fixed = 644MB
+  [diag1255] gate-pass id=cmpl-b1238ee1ba71a1d52b164e374744038d prompt=5731 path=spec cost=774MB draft=160MB reserve=1608MB required=2383MB required_eager=2222MB eager_arm=false booked=0MB limiting_free=4769MB active=0
+  [diag1255] after-admit-trim: driver_free=2295MB pool_res=21088MB pool_used=18613MB pool_unused=2474MB eff_free=4769MB
+  [diag1255] after-admit id=cmpl-b1238ee1ba71a1d52b164e374744038d spec=false dspark_on=true cache=false dspark_sess=false: driver_free=2295MB pool_res=21088MB pool_used=18613MB pool_unused=2474MB eff_free=4769MB
+  [diag1255] tick start: driver_free=2295MB pool_res=21088MB pool_used=18613MB eff_free=4769MB (moved 852MB)
+  [diag1255] trim-before-prime released=2272MB
+  [diag1255] dspark-prime-start-before id=cmpl-b1238ee1ba71a1d52b164e374744038d rows=5731: driver_free=4567MB pool_res=18816MB pool_used=18613MB pool_unused=202MB eff_free=4769MB
+  [dflash-alloc] phase=target-kv-before driver_free_bytes=4789174272 driver_total_bytes=25244663808 pool_reserved_bytes=19730006016 pool_used_bytes=19517868808 graph_pool_bytes=0
+  [dflash-alloc] phase=target-kv-after driver_free_bytes=4453629952 driver_total_bytes=25244663808 pool_reserved_bytes=20065550336 pool_used_bytes=20008853532 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-before driver_free_bytes=4453629952 driver_total_bytes=25244663808 pool_reserved_bytes=20065550336 pool_used_bytes=20008853532 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-after driver_free_bytes=4285857792 driver_total_bytes=25244663808 pool_reserved_bytes=20233322496 pool_used_bytes=20177608732 graph_pool_bytes=0
+  [diag1255] dspark-prime-chunk-before id=cmpl-b1238ee1ba71a1d52b164e374744038d: driver_free=4055MB pool_res=19328MB pool_used=19267MB pool_unused=60MB eff_free=4115MB
+  [prime-yield] count=1 remaining=1 chunks=1 wall_ms=2973.504 max_chunk_ms=2973.504
+  [diag1255] dspark-prime-chunk-after id=cmpl-b1238ee1ba71a1d52b164e374744038d: driver_free=2327MB pool_res=21056MB pool_used=19267MB pool_unused=1788MB eff_free=4115MB
+  [diag1255] tick start: driver_free=2327MB pool_res=21056MB pool_used=19267MB eff_free=4115MB (moved -655MB)
+  [diag1255] dspark-prime-chunk-before id=cmpl-b1238ee1ba71a1d52b164e374744038d: driver_free=2327MB pool_res=21056MB pool_used=19267MB pool_unused=1788MB eff_free=4115MB
+  [dflash-alloc] phase=draft-ingest-after driver_free_bytes=2440364032 driver_total_bytes=25244663808 pool_reserved_bytes=22078816256 pool_used_bytes=20203823132 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-before driver_free_bytes=2440364032 driver_total_bytes=25244663808 pool_reserved_bytes=22078816256 pool_used_bytes=20177608732 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-after driver_free_bytes=2440364032 driver_total_bytes=25244663808 pool_reserved_bytes=22078816256 pool_used_bytes=20177608732 graph_pool_bytes=0
+  [diag1255] dspark-prime-done id=cmpl-b1238ee1ba71a1d52b164e374744038d: driver_free=2327MB pool_res=21056MB pool_used=19242MB pool_unused=1813MB eff_free=4140MB
+  [dflash-alloc] phase=first-burst-before driver_free_bytes=2440364032 driver_total_bytes=25244663808 pool_reserved_bytes=22078816256 pool_used_bytes=20177608732 graph_pool_bytes=0
+  [dflash-alloc] phase=first-burst-after driver_free_bytes=2440364032 driver_total_bytes=25244663808 pool_reserved_bytes=22078816256 pool_used_bytes=20334503452 graph_pool_bytes=0
+  [diag1255] tick start: driver_free=2327MB pool_res=21056MB pool_used=19392MB eff_free=3990MB (moved -125MB)
+seed 73: status 200 prompt 4644
+  [admission] request cost: model="gate" ctx=4772 path=spec = 29696 B/token x ctx + 447MB prefill-workspace + 0MB fixed = 589MB
+  [diag1255] gate-pass id=cmpl-a2b30b26462cdc25dbcb100a8f7d813b prompt=4644 path=spec cost=722MB draft=160MB reserve=1608MB required=2331MB required_eager=2170MB eager_arm=false booked=0MB limiting_free=4769MB active=0
+  [diag1255] after-admit-trim: driver_free=2327MB pool_res=21056MB pool_used=18613MB pool_unused=2442MB eff_free=4769MB
+  [diag1255] after-admit id=cmpl-a2b30b26462cdc25dbcb100a8f7d813b spec=false dspark_on=true cache=false dspark_sess=false: driver_free=2327MB pool_res=21056MB pool_used=18613MB pool_unused=2442MB eff_free=4769MB
+  [diag1255] tick start: driver_free=2327MB pool_res=21056MB pool_used=18613MB eff_free=4769MB (moved 778MB)
+  [diag1255] trim-before-prime released=2240MB
+  [diag1255] dspark-prime-start-before id=cmpl-a2b30b26462cdc25dbcb100a8f7d813b rows=4644: driver_free=4567MB pool_res=18816MB pool_used=18613MB pool_unused=202MB eff_free=4769MB
+  [dflash-alloc] phase=target-kv-before driver_free_bytes=4789174272 driver_total_bytes=25244663808 pool_reserved_bytes=19730006016 pool_used_bytes=19517868808 graph_pool_bytes=0
+  [dflash-alloc] phase=target-kv-after driver_free_bytes=4487184384 driver_total_bytes=25244663808 pool_reserved_bytes=20031995904 pool_used_bytes=19974556508 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-before driver_free_bytes=4487184384 driver_total_bytes=25244663808 pool_reserved_bytes=20031995904 pool_used_bytes=19974556508 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-after driver_free_bytes=4319412224 driver_total_bytes=25244663808 pool_reserved_bytes=20199768064 pool_used_bytes=20143311708 graph_pool_bytes=0
+  [diag1255] dspark-prime-chunk-before id=cmpl-a2b30b26462cdc25dbcb100a8f7d813b: driver_free=4087MB pool_res=19296MB pool_used=19235MB pool_unused=60MB eff_free=4148MB
+  [prime-yield] count=1 remaining=1 chunks=1 wall_ms=3030.259 max_chunk_ms=3030.259
+  [diag1255] dspark-prime-chunk-after id=cmpl-a2b30b26462cdc25dbcb100a8f7d813b: driver_free=2551MB pool_res=20832MB pool_used=19235MB pool_unused=1596MB eff_free=4148MB
+  [diag1255] tick start: driver_free=2551MB pool_res=20832MB pool_used=19235MB eff_free=4148MB (moved -622MB)
+  [diag1255] dspark-prime-chunk-before id=cmpl-a2b30b26462cdc25dbcb100a8f7d813b: driver_free=2551MB pool_res=20832MB pool_used=19235MB pool_unused=1596MB eff_free=4148MB
+  [dflash-alloc] phase=draft-ingest-after driver_free_bytes=2675245056 driver_total_bytes=25244663808 pool_reserved_bytes=21843935232 pool_used_bytes=20169526108 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-before driver_free_bytes=2675245056 driver_total_bytes=25244663808 pool_reserved_bytes=21843935232 pool_used_bytes=20143311708 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-after driver_free_bytes=2675245056 driver_total_bytes=25244663808 pool_reserved_bytes=21843935232 pool_used_bytes=20143311708 graph_pool_bytes=0
+  [diag1255] dspark-prime-done id=cmpl-a2b30b26462cdc25dbcb100a8f7d813b: driver_free=2551MB pool_res=20832MB pool_used=19210MB pool_unused=1621MB eff_free=4173MB
+  [dflash-alloc] phase=first-burst-before driver_free_bytes=2675245056 driver_total_bytes=25244663808 pool_reserved_bytes=21843935232 pool_used_bytes=20143311708 graph_pool_bytes=0
+  [dflash-alloc] phase=first-burst-after driver_free_bytes=2675245056 driver_total_bytes=25244663808 pool_reserved_bytes=21843935232 pool_used_bytes=20300206428 graph_pool_bytes=0
+  [diag1255] tick start: driver_free=2551MB pool_res=20832MB pool_used=19359MB eff_free=4023MB (moved -125MB)
+seed 79: status 200 prompt 4153
+  [admission] request cost: model="gate" ctx=4281 path=spec = 29696 B/token x ctx + 437MB prefill-workspace + 0MB fixed = 565MB
+  [diag1255] gate-pass id=cmpl-ee410a949527b6eca2b37f816f28083d prompt=4153 path=spec cost=699MB draft=160MB reserve=1608MB required=2307MB required_eager=2146MB eager_arm=false booked=0MB limiting_free=4769MB active=0
+  [diag1255] after-admit-trim: driver_free=2551MB pool_res=20832MB pool_used=18613MB pool_unused=2218MB eff_free=4769MB
+  [diag1255] after-admit id=cmpl-ee410a949527b6eca2b37f816f28083d spec=false dspark_on=true cache=false dspark_sess=false: driver_free=2551MB pool_res=20832MB pool_used=18613MB pool_unused=2218MB eff_free=4769MB
+  [diag1255] tick start: driver_free=2551MB pool_res=20832MB pool_used=18613MB eff_free=4769MB (moved 746MB)
+  [diag1255] trim-before-prime released=2016MB
+  [diag1255] dspark-prime-start-before id=cmpl-ee410a949527b6eca2b37f816f28083d rows=4153: driver_free=4567MB pool_res=18816MB pool_used=18613MB pool_unused=202MB eff_free=4769MB
+  [dflash-alloc] phase=target-kv-before driver_free_bytes=4789174272 driver_total_bytes=25244663808 pool_reserved_bytes=19730006016 pool_used_bytes=19517868808 graph_pool_bytes=0
+  [dflash-alloc] phase=target-kv-after driver_free_bytes=4487184384 driver_total_bytes=25244663808 pool_reserved_bytes=20031995904 pool_used_bytes=19959064476 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-before driver_free_bytes=4487184384 driver_total_bytes=25244663808 pool_reserved_bytes=20031995904 pool_used_bytes=19959064476 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-after driver_free_bytes=4319412224 driver_total_bytes=25244663808 pool_reserved_bytes=20199768064 pool_used_bytes=20127819676 graph_pool_bytes=0
+  [diag1255] dspark-prime-chunk-before id=cmpl-ee410a949527b6eca2b37f816f28083d: driver_free=4087MB pool_res=19296MB pool_used=19220MB pool_unused=75MB eff_free=4162MB
+  [prime-yield] count=1 remaining=1 chunks=1 wall_ms=3122.816 max_chunk_ms=3122.816
+  [diag1255] dspark-prime-chunk-after id=cmpl-ee410a949527b6eca2b37f816f28083d: driver_free=2551MB pool_res=20832MB pool_used=19220MB pool_unused=1611MB eff_free=4162MB
+  [diag1255] tick start: driver_free=2551MB pool_res=20832MB pool_used=19220MB eff_free=4162MB (moved -607MB)
+  [diag1255] dspark-prime-chunk-before id=cmpl-ee410a949527b6eca2b37f816f28083d: driver_free=2551MB pool_res=20832MB pool_used=19220MB pool_unused=1611MB eff_free=4162MB
+  [dflash-alloc] phase=draft-ingest-after driver_free_bytes=2675245056 driver_total_bytes=25244663808 pool_reserved_bytes=21843935232 pool_used_bytes=20154034076 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-before driver_free_bytes=2675245056 driver_total_bytes=25244663808 pool_reserved_bytes=21843935232 pool_used_bytes=20127819676 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-after driver_free_bytes=2675245056 driver_total_bytes=25244663808 pool_reserved_bytes=21843935232 pool_used_bytes=20127819676 graph_pool_bytes=0
+  [diag1255] dspark-prime-done id=cmpl-ee410a949527b6eca2b37f816f28083d: driver_free=2551MB pool_res=20832MB pool_used=19195MB pool_unused=1636MB eff_free=4187MB
+  [dflash-alloc] phase=first-burst-before driver_free_bytes=2675245056 driver_total_bytes=25244663808 pool_reserved_bytes=21843935232 pool_used_bytes=20127819676 graph_pool_bytes=0
+  [dflash-alloc] phase=first-burst-after driver_free_bytes=2675245056 driver_total_bytes=25244663808 pool_reserved_bytes=21843935232 pool_used_bytes=20284714396 graph_pool_bytes=0
+  [diag1255] tick start: driver_free=2551MB pool_res=20832MB pool_used=19345MB eff_free=4038MB (moved -125MB)
+seed 85: status 200 prompt 4108
+  [admission] request cost: model="gate" ctx=4236 path=spec = 29696 B/token x ctx + 436MB prefill-workspace + 0MB fixed = 562MB
+  [diag1255] gate-pass id=cmpl-dfe296bf97e16548ac242a7831e519f1 prompt=4108 path=spec cost=697MB draft=160MB reserve=1608MB required=2305MB required_eager=2144MB eager_arm=false booked=0MB limiting_free=4767MB active=0
+  [diag1255] after-admit-trim: driver_free=2549MB pool_res=20832MB pool_used=18614MB pool_unused=2217MB eff_free=4767MB
+  [diag1255] after-admit id=cmpl-dfe296bf97e16548ac242a7831e519f1 spec=false dspark_on=true cache=false dspark_sess=false: driver_free=2549MB pool_res=20832MB pool_used=18614MB pool_unused=2217MB eff_free=4767MB
+  [diag1255] tick start: driver_free=2549MB pool_res=20832MB pool_used=18614MB eff_free=4767MB (moved 728MB)
+  [diag1255] trim-before-prime released=2016MB
+  [diag1255] dspark-prime-start-before id=cmpl-dfe296bf97e16548ac242a7831e519f1 rows=4108: driver_free=4565MB pool_res=18816MB pool_used=18614MB pool_unused=201MB eff_free=4767MB
+  [dflash-alloc] phase=target-kv-before driver_free_bytes=4787077120 driver_total_bytes=25244663808 pool_reserved_bytes=19730006016 pool_used_bytes=19518483216 graph_pool_bytes=0
+  [dflash-alloc] phase=target-kv-after driver_free_bytes=4485087232 driver_total_bytes=25244663808 pool_reserved_bytes=20031995904 pool_used_bytes=19958259044 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-before driver_free_bytes=4485087232 driver_total_bytes=25244663808 pool_reserved_bytes=20031995904 pool_used_bytes=19958259044 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-after driver_free_bytes=4317315072 driver_total_bytes=25244663808 pool_reserved_bytes=20199768064 pool_used_bytes=20127014244 graph_pool_bytes=0
+  [diag1255] dspark-prime-chunk-before id=cmpl-dfe296bf97e16548ac242a7831e519f1: driver_free=4085MB pool_res=19296MB pool_used=19219MB pool_unused=76MB eff_free=4161MB
+  [dflash-alloc] phase=draft-ingest-after driver_free_bytes=2337603584 driver_total_bytes=25244663808 pool_reserved_bytes=22179479552 pool_used_bytes=20157455716 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-before driver_free_bytes=2337603584 driver_total_bytes=25244663808 pool_reserved_bytes=22179479552 pool_used_bytes=20131241316 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-after driver_free_bytes=2337603584 driver_total_bytes=25244663808 pool_reserved_bytes=22179479552 pool_used_bytes=20131241316 graph_pool_bytes=0
+  [diag1255] dspark-prime-done id=cmpl-dfe296bf97e16548ac242a7831e519f1: driver_free=2229MB pool_res=21152MB pool_used=19198MB pool_unused=1953MB eff_free=4182MB
+  [dflash-alloc] phase=first-burst-before driver_free_bytes=2337603584 driver_total_bytes=25244663808 pool_reserved_bytes=22179479552 pool_used_bytes=20131241316 graph_pool_bytes=0
+  [dflash-alloc] phase=first-burst-after driver_free_bytes=2337603584 driver_total_bytes=25244663808 pool_reserved_bytes=22179479552 pool_used_bytes=20288136028 graph_pool_bytes=0
+  [diag1255] tick start: driver_free=2229MB pool_res=21152MB pool_used=19348MB eff_free=4033MB (moved -734MB)
+seed 91: status 200 prompt 4088
+  [admission] request cost: model="gate" ctx=4216 path=spec = 29696 B/token x ctx + 435MB prefill-workspace + 0MB fixed = 561MB
+  [diag1255] gate-pass id=cmpl-992a0b88117bbef318fe3d190219ed7d prompt=4088 path=spec cost=695MB draft=160MB reserve=1608MB required=2303MB required_eager=2142MB eager_arm=false booked=0MB limiting_free=4763MB active=0
+  [diag1255] after-admit-trim: driver_free=2229MB pool_res=21152MB pool_used=18618MB pool_unused=2533MB eff_free=4763MB
+  [diag1255] after-admit id=cmpl-992a0b88117bbef318fe3d190219ed7d spec=false dspark_on=true cache=false dspark_sess=false: driver_free=2229MB pool_res=21152MB pool_used=18618MB pool_unused=2533MB eff_free=4763MB
+  [diag1255] tick start: driver_free=2229MB pool_res=21152MB pool_used=18618MB eff_free=4763MB (moved 729MB)
+  [diag1255] trim-before-prime released=2240MB
+  [diag1255] dspark-prime-start-before id=cmpl-992a0b88117bbef318fe3d190219ed7d rows=4088: driver_free=4469MB pool_res=18912MB pool_used=18618MB pool_unused=293MB eff_free=4763MB
+  [dflash-alloc] phase=target-kv-before driver_free_bytes=4686413824 driver_total_bytes=25244663808 pool_reserved_bytes=19830669312 pool_used_bytes=19522710280 graph_pool_bytes=0
+  [dflash-alloc] phase=target-kv-after driver_free_bytes=4417978368 driver_total_bytes=25244663808 pool_reserved_bytes=20099104768 pool_used_bytes=19961855068 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-before driver_free_bytes=4417978368 driver_total_bytes=25244663808 pool_reserved_bytes=20099104768 pool_used_bytes=19961855068 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-after driver_free_bytes=4250206208 driver_total_bytes=25244663808 pool_reserved_bytes=20266876928 pool_used_bytes=20130610268 graph_pool_bytes=0
+  [diag1255] dspark-prime-chunk-before id=cmpl-992a0b88117bbef318fe3d190219ed7d: driver_free=4053MB pool_res=19328MB pool_used=19223MB pool_unused=104MB eff_free=4158MB
+  [dflash-alloc] phase=draft-ingest-after driver_free_bytes=2639593472 driver_total_bytes=25244663808 pool_reserved_bytes=21877489664 pool_used_bytes=20156824668 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-before driver_free_bytes=2639593472 driver_total_bytes=25244663808 pool_reserved_bytes=21877489664 pool_used_bytes=20130610268 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-after driver_free_bytes=2639593472 driver_total_bytes=25244663808 pool_reserved_bytes=21877489664 pool_used_bytes=20130610268 graph_pool_bytes=0
+  [diag1255] dspark-prime-done id=cmpl-992a0b88117bbef318fe3d190219ed7d: driver_free=2517MB pool_res=20864MB pool_used=19198MB pool_unused=1665MB eff_free=4183MB
+  [dflash-alloc] phase=first-burst-before driver_free_bytes=2639593472 driver_total_bytes=25244663808 pool_reserved_bytes=21877489664 pool_used_bytes=20130610268 graph_pool_bytes=0
+  [dflash-alloc] phase=first-burst-after driver_free_bytes=2639593472 driver_total_bytes=25244663808 pool_reserved_bytes=21877489664 pool_used_bytes=20287504988 graph_pool_bytes=0
+  [diag1255] tick start: driver_free=2517MB pool_res=20864MB pool_used=19347MB eff_free=4033MB (moved -730MB)
+seed 97: status 200 prompt 4070
+  [admission] request cost: model="gate" ctx=4198 path=spec = 29696 B/token x ctx + 433MB prefill-workspace + 0MB fixed = 558MB
+  [diag1255] gate-pass id=cmpl-f49b71bfb42e3dc12f8f84e0b384fd6e prompt=4070 path=spec cost=693MB draft=160MB reserve=1608MB required=2301MB required_eager=2140MB eager_arm=false booked=0MB limiting_free=4763MB active=0
+  [diag1255] after-admit-trim: driver_free=2517MB pool_res=20864MB pool_used=18618MB pool_unused=2245MB eff_free=4763MB
+  [diag1255] after-admit id=cmpl-f49b71bfb42e3dc12f8f84e0b384fd6e spec=false dspark_on=true cache=false dspark_sess=false: driver_free=2517MB pool_res=20864MB pool_used=18618MB pool_unused=2245MB eff_free=4763MB
+  [diag1255] tick start: driver_free=2517MB pool_res=20864MB pool_used=18618MB eff_free=4763MB (moved 729MB)
+  [diag1255] trim-before-prime released=1952MB
+  [diag1255] dspark-prime-start-before id=cmpl-f49b71bfb42e3dc12f8f84e0b384fd6e rows=4070: driver_free=4469MB pool_res=18912MB pool_used=18618MB pool_unused=293MB eff_free=4763MB
+  [dflash-alloc] phase=target-kv-before driver_free_bytes=4686413824 driver_total_bytes=25244663808 pool_reserved_bytes=19830669312 pool_used_bytes=19522710280 graph_pool_bytes=0
+  [dflash-alloc] phase=target-kv-after driver_free_bytes=4417978368 driver_total_bytes=25244663808 pool_reserved_bytes=20099104768 pool_used_bytes=19961287132 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-before driver_free_bytes=4417978368 driver_total_bytes=25244663808 pool_reserved_bytes=20099104768 pool_used_bytes=19961287132 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-after driver_free_bytes=4250206208 driver_total_bytes=25244663808 pool_reserved_bytes=20266876928 pool_used_bytes=20130042332 graph_pool_bytes=0
+  [diag1255] dspark-prime-chunk-before id=cmpl-f49b71bfb42e3dc12f8f84e0b384fd6e: driver_free=4053MB pool_res=19328MB pool_used=19222MB pool_unused=105MB eff_free=4158MB
+  [dflash-alloc] phase=draft-ingest-after driver_free_bytes=2639593472 driver_total_bytes=25244663808 pool_reserved_bytes=21877489664 pool_used_bytes=20156256732 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-before driver_free_bytes=2639593472 driver_total_bytes=25244663808 pool_reserved_bytes=21877489664 pool_used_bytes=20130042332 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-after driver_free_bytes=2639593472 driver_total_bytes=25244663808 pool_reserved_bytes=21877489664 pool_used_bytes=20130042332 graph_pool_bytes=0
+  [diag1255] dspark-prime-done id=cmpl-f49b71bfb42e3dc12f8f84e0b384fd6e: driver_free=2517MB pool_res=20864MB pool_used=19197MB pool_unused=1666MB eff_free=4183MB
+  [dflash-alloc] phase=first-burst-before driver_free_bytes=2639593472 driver_total_bytes=25244663808 pool_reserved_bytes=21877489664 pool_used_bytes=20130042332 graph_pool_bytes=0
+  [dflash-alloc] phase=first-burst-after driver_free_bytes=2639593472 driver_total_bytes=25244663808 pool_reserved_bytes=21877489664 pool_used_bytes=20286937052 graph_pool_bytes=0
+  [diag1255] tick start: driver_free=2517MB pool_res=20864MB pool_used=19347MB eff_free=4034MB (moved -729MB)
+boot:
+  [dflash-alloc] phase=draft-weights-before driver_free_bytes=10071900160 driver_total_bytes=25244663808 pool_reserved_bytes=14864613376 pool_used_bytes=14854393856 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-weights-after driver_free_bytes=9065267200 driver_total_bytes=25244663808 pool_reserved_bytes=15871246336 pool_used_bytes=15866274816 graph_pool_bytes=0
+  [dflash-alloc] phase=vision-before driver_free_bytes=9065267200 driver_total_bytes=25244663808 pool_reserved_bytes=15871246336 pool_used_bytes=15866274816 graph_pool_bytes=0
+  [dflash-alloc] phase=vision-after driver_free_bytes=9065267200 driver_total_bytes=25244663808 pool_reserved_bytes=15871246336 pool_used_bytes=15866274816 graph_pool_bytes=0
+  [dflash-alloc] phase=target-kv-before driver_free_bytes=9065267200 driver_total_bytes=25244663808 pool_reserved_bytes=15871246336 pool_used_bytes=15866274816 graph_pool_bytes=0
+  [dflash-alloc] phase=target-kv-after driver_free_bytes=8595505152 driver_total_bytes=25244663808 pool_reserved_bytes=16341008384 pool_used_bytes=16307438932 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-before driver_free_bytes=8595505152 driver_total_bytes=25244663808 pool_reserved_bytes=16341008384 pool_used_bytes=16307438932 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-kv-after driver_free_bytes=8427732992 driver_total_bytes=25244663808 pool_reserved_bytes=16508780544 pool_used_bytes=16476194132 graph_pool_bytes=0
+  [dflash-alloc] phase=draft-ingest-after driver_free_bytes=4266983424 driver_total_bytes=25244663808 pool_reserved_bytes=20669530112 pool_used_bytes=18841486676 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-before driver_free_bytes=4266983424 driver_total_bytes=25244663808 pool_reserved_bytes=20669530112 pool_used_bytes=18815274324 graph_pool_bytes=0
+  [dflash-alloc] phase=prefix-snapshot-after driver_free_bytes=4266983424 driver_total_bytes=25244663808 pool_reserved_bytes=20669530112 pool_used_bytes=18815274324 graph_pool_bytes=0
+  [dflash-alloc] phase=first-burst-before driver_free_bytes=4266983424 driver_total_bytes=25244663808 pool_reserved_bytes=20669530112 pool_used_bytes=18815274324 graph_pool_bytes=0
+  [dflash-alloc] phase=first-burst-after driver_free_bytes=3145007104 driver_total_bytes=25244663808 pool_reserved_bytes=21374173184 pool_used_bytes=20242245220 graph_pool_bytes=0
+  [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1811939328,"still_owned_bytes":19475431184,"pool_reserved_bytes":19562233856,"pool_cached_bytes":86802672,"driver_free_bytes":4956946432,"synchronization_errors":[]}
+  [admit-cal] post-probe pool trim: released 1728MB cached back to the driver
+  [admit-cal] boot calibration done: model="gate" route=dspark transient floor 1608MB (static was 1536MB; measured 1608MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 20384MB rest-mapped 18656MB charged 119MB -> 1608MB]; 3.8s)

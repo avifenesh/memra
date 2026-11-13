@@ -1,0 +1,18 @@
+2026-11-13T06:57:52+02:00
+17d3450cd48ce8d8ea736c43dbea95e99244d4da459ea440d8f5db776b3b5670  /home/avifenesh/.cache/memra-1255/bin/run-gen-1258base-120a
+bafb1dcfe72572d45579186a2d4c78145cefe3ca4a7e32a83eaad8e60a6d52ec  /home/avifenesh/.cache/memra-1255/bin/run-gen-1258b-120a
+NVIDIA GeForce RTX 5090 Laptop GPU, 615.71.09, 57, 180 MHz, 9.87 W, 150.00 W, 31 MiB
+profile=balanced
+p8200: 34849 bytes, last ids [31197, 28005, 293]
+q38 1258base rc=0 prefill argmax=2792  decode argmax=2792  logit maxdiff=2.090e-1  MATCH batched-prime argmax=2792  tokenwise argmax=2792  logit maxdiff=1.973e-1  MATCH 
+q38 1258b rc=0 prefill argmax=2792  decode argmax=2792  logit maxdiff=2.090e-1  MATCH batched-prime argmax=2792  tokenwise argmax=2792  logit maxdiff=1.973e-1  MATCH 
+q38 logits BIT-EQUAL (993280 bytes)
+logit maxdiff main vs head over 248320 logits: 0
+q38 generated tokens EQUAL
+p4106: 17569 bytes, last ids [2176, 90533, 17173]
+q35 1258base rc=0 prefill argmax=12489  decode argmax=12489  logit maxdiff=9.374e-1  MATCH batched-prime argmax=12489  tokenwise argmax=12489  logit maxdiff=9.894e-1  MATCH 
+q35 1258b rc=0 prefill argmax=12489  decode argmax=12489  logit maxdiff=9.374e-1  MATCH batched-prime argmax=12489  tokenwise argmax=12489  logit maxdiff=9.894e-1  MATCH 
+q35 logits BIT-EQUAL (993280 bytes)
+logit maxdiff main vs head over 248320 logits: 0
+q35 generated tokens EQUAL
+EXACT3-DONE rc=0 2026-11-13T07:11:21+02:00

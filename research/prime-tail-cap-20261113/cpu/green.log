@@ -1,0 +1,62 @@
+   Compiling cfg-if v1.0.4
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling serde_core v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling memchr v2.8.2
+   Compiling itoa v1.0.18
+   Compiling zmij v1.0.21
+   Compiling libc v0.2.186
+   Compiling smallvec v1.15.2
+   Compiling regex-syntax v0.8.11
+   Compiling memra-engine v0.141.1 (/home/avifenesh/.cache/memra-1255/tree-1258/crates/memra-engine)
+   Compiling bytemuck v1.25.2
+   Compiling memra-sampling v0.141.1 (/home/avifenesh/.cache/memra-1255/tree-1258/crates/memra-sampling)
+   Compiling sha2 v0.10.9
+   Compiling libloading v0.9.0
+   Compiling crc32fast v1.5.0
+   Compiling memra-validate v0.141.1 (/home/avifenesh/.cache/memra-1255/tree-1258/crates/memra-validate)
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling flate2 v1.1.9
+   Compiling cudarc v0.19.8
+   Compiling png v0.18.1
+   Compiling aho-corasick v1.1.4
+   Compiling syn v2.0.118
+   Compiling memmap2 v0.9.11
+   Compiling image v0.25.10
+   Compiling serde_derive v1.0.228
+   Compiling serde v1.0.228
+   Compiling memra-gguf v0.141.1 (/home/avifenesh/.cache/memra-1255/tree-1258/crates/memra-gguf)
+   Compiling memra-tier v0.141.1 (/home/avifenesh/.cache/memra-1255/tree-1258/crates/memra-tier)
+   Compiling memra-tokenizer v0.141.1 (/home/avifenesh/.cache/memra-1255/tree-1258/crates/memra-tokenizer)
+   Compiling memra-runtime v0.141.1 (/home/avifenesh/.cache/memra-1255/tree-1258/crates/memra-runtime)
+   Compiling memra-kv v0.141.1 (/home/avifenesh/.cache/memra-1255/tree-1258/crates/memra-kv)
+   Compiling memra-reference v0.141.1 (/home/avifenesh/.cache/memra-1255/tree-1258/crates/memra-reference)
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 8m 00s
+     Running unittests src/lib.rs (/home/avifenesh/.cache/memra-1255/target-1258-check/release/deps/memra_engine-0b0c0f668336a10a)
+
+running 20 tests
+test hybrid_forward::prime_chunk_schedule_tests::auto_prime_ranges_align_to_the_gdn_grid ... ok
+test hybrid_forward::prime_chunk_schedule_tests::a_prime_is_charged_what_it_allocates_beside_the_resident_slab ... ok
+test hybrid_forward::prime_chunk_schedule_tests::active_matrix_prefix_scopes_reused_prime_slabs ... ok
+test hybrid_forward::prime_chunk_schedule_tests::capped_monolithic_ranges_are_identical_below_the_wall_and_legal_above ... ok
+test hybrid_forward::prime_chunk_schedule_tests::dynamic_schedule_matches_registered_shapes ... ok
+test hybrid_forward::prime_chunk_schedule_tests::fixed_schedule_retains_measured_geometry ... ok
+test hybrid_forward::prime_chunk_schedule_tests::grid_yz_row_blocks_tile_rows_under_the_cap ... ok
+test hybrid_forward::prime_chunk_schedule_tests::kda_rows_refusal_names_the_kernels_only_past_the_cap ... ok
+test hybrid_forward::prime_chunk_schedule_tests::monolithic_prime_chunk_caps_at_the_cuda_launch_wall ... ok
+test hybrid_forward::prime_chunk_schedule_tests::no_default_prime_call_exceeds_the_chunk_cap ... ok
+test hybrid_forward::prime_chunk_schedule_tests::ppn_prime_cache_partition_moves_and_restores_every_layer ... ok
+test hybrid_forward::prime_chunk_schedule_tests::ppn_prime_wave_credit_requires_the_exact_oldest_wave_and_slot ... ok
+test hybrid_forward::prime_chunk_schedule_tests::ppn_prime_wave_signal_reports_order_error_injected_error_and_closure ... ok
+test hybrid_forward::prime_chunk_schedule_tests::prime_workspace_shape_is_chunk_bounded_and_prompt_scaled_when_monolithic ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_grouped_path_is_eager_single_token_only ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_grouped_prefill_door_is_strict_and_capacity_bounded ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_tp_prefill_door_is_strict_and_default_off ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_tp_prefill_batch_refuses_before_scheduler_fallback ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_tp_prefill_requires_a_qualified_even_rank_shape ... ok
+test hybrid_forward::prime_chunk_schedule_tests::dynamic_schedule_covers_exactly_and_shrinks_after_fill ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 789 filtered out; finished in 0.00s
+
