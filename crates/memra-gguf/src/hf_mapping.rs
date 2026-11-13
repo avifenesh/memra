@@ -2463,8 +2463,21 @@ mod tests {
     /// A minimal qwen35 cfg — `apply_fp8_blk` reads only `cfg.ssm` (via `head_params`), so the rest
     /// of the config is deliberately left at whatever the parser defaults produce.
     fn hybrid_cfg(nk: u32, nv: u32, hd: u32) -> ModelConfig {
-        let dir = std::env::temp_dir().join(format!("memra_hfmap_cfg_{}", std::process::id()));
+        // One directory per call: two tests writing one path at once let a reader see the file
+        // truncated (`EOF while parsing`).
+        static CALL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let call = CALL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir =
+            std::env::temp_dir().join(format!("memra_hfmap_cfg_{}_{call}", std::process::id()));
+        // Removes the call's directory when this function leaves, a panic included.
+        struct RemoveOnDrop(std::path::PathBuf);
+        impl Drop for RemoveOnDrop {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
         std::fs::create_dir_all(&dir).unwrap();
+        let _cleanup = RemoveOnDrop(dir.clone());
         let p = dir.join("config.json");
         std::fs::write(
             &p,
@@ -2484,6 +2497,26 @@ mod tests {
             group_count: nk,
         });
         cfg
+    }
+
+    /// `hybrid_cfg` builds its config in a directory of its own per call: tests that build one
+    /// at once, on the parallel test threads, must never read another's file mid-write (one
+    /// shared path let a reader see it truncated, "EOF while parsing a value").
+    #[test]
+    fn hybrid_cfg_is_safe_from_many_threads_at_once() {
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    for _ in 0..50 {
+                        let _ = hybrid_cfg(2, 4, 128);
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join()
+                .expect("a hybrid_cfg call panicked on a test thread");
+        }
     }
 
     /// THE EXACTNESS GATE for the block-128 V-reorder arm: permuting (codes, grid) together must
