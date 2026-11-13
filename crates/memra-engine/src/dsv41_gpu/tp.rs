@@ -41,8 +41,9 @@
 //! `MEMRA_DSV41_TP_ISSUE`), and nothing waits for a device except the routing read-back (the host
 //! builds the dispatch plan), Engram's staging refill and the head's logits. Buffers go back to
 //! the stream-ordered pool on their own stream; a buffer a peer copied out of is freed only after
-//! the producer's stream waited on that copy's release event. cudarc's per-buffer event tracking
-//! is off on the ranks' contexts for the same reason (`Group::new`).
+//! the producer's stream waited on that copy's release event, and a rank's second stream orders
+//! its buffers with its fork and join events (`Group::new` says how). cudarc's per-buffer event
+//! tracking is off on the ranks' contexts.
 
 // Rank-indexed loops walk several per-rank vectors (contexts, buffers, shares) in step; an index is
 // the clearer shape there, as in `tp_transport.rs`.
@@ -590,11 +591,20 @@ impl Group {
         let mut engines = Vec::with_capacity(n);
         for &d in devices {
             let e = Engine::new(d).map_err(|e| format!("rank on device {d}: {e}"))?;
-            // Every rank buffer lives on its rank's one stream, and the only cross-stream uses
-            // are the gathers, which order themselves with the publication and release events
-            // (the transport laws above). cudarc's per-buffer event tracking would add an event
-            // record and a stream wait to every pointer fetch on the hot path, so the buffers
-            // allocated from here on go untracked.
+            // A rank issues on two streams: its main one and the second stream of a few-row
+            // branch ([`super::Side`]), and its buffers cross between them. The branches order
+            // that themselves: a branch starts behind a fork event of the main stream and the
+            // main stream joins it before it reads what the branch wrote; what a branch appends
+            // to grows on the main stream before the fork ([`super::Ctx::attn_keys`]); a
+            // branch's temporaries go back to the branch's free list, which only a later branch
+            // takes from (behind its own fork); and a branch buffer that leaves the free list is
+            // freed behind an event of the main stream ([`super::Fence`]), because ranks that
+            // share a card share its pool. Between ranks the only uses are the gathers, ordered
+            // by their publication and release events (the transport laws above). cudarc's
+            // per-buffer event tracking would not order any of this (`Buf::p` lets its guard go
+            // before the launch it serves) and would add an event record and a stream wait to
+            // every pointer fetch on the hot path, so the buffers allocated from here on go
+            // untracked.
             unsafe { e.ctx().disable_event_tracking() };
             engines.push(e);
         }

@@ -848,10 +848,29 @@ pub struct Buf {
 enum Home {
     /// back to the device pool
     Free,
+    /// back to the device pool on a card's second stream, after that stream waits for
+    /// everything issued on the main stream so far ([`Fence`])
+    Fenced(Arc<Fence>),
     /// to its stream's free list
     Pool(Arc<TmpPool>),
     /// nowhere: the memory is another buffer's ([`Buf::alias`])
     Alias,
+}
+
+/// The main stream of a card's second stream ([`Side`]), for a buffer of the second stream
+/// that leaves its free list.
+///
+/// A branch's buffer can outlive the branch (the keys side hands its rows to the heads, the
+/// shared expert its output to the combine): the main stream reads it after the join and then
+/// drops it. Freed on the second stream alone, the device pool could hand the memory out once
+/// that stream passed the free, before the main stream's reads ran: to the main stream that is
+/// harmless (its own later work follows its reads), but a second rank on the same card shares
+/// the pool and takes it at once. The free therefore waits for the main stream first. A buffer
+/// that goes back to the branch's own free list needs nothing: the next branch to take it starts
+/// behind a fork from the main stream.
+pub struct Fence {
+    main: Arc<CudaStream>,
+    ev: CudaEvent,
 }
 
 /// Fault injection of a gate (`dsv41-gate decode`'s growth case; no serving path sets it): every
@@ -862,7 +881,8 @@ pub static SIDE_DELAY_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::Atom
 /// as it drops, which is what that stream's next allocation of the memory may do at the
 /// earliest; a second-stream reader not ordered before the drop then reads the fill. (A buffer
 /// of a second stream comes back to that stream only behind a fork from the main one, so its
-/// drop is not filled here.)
+/// drop is not filled here; one that leaves the stream's free list is filled after its [`Fence`],
+/// where the pool could hand it out at the earliest.)
 pub static POISON_FREE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// The second streams alive in the process (`CUstream` handles), for [`POISON_FREE`].
@@ -879,6 +899,12 @@ fn poison_on_drop(s: &CudaSlice<u8>) {
     {
         return;
     }
+    poison_on(s);
+}
+
+/// Fill `s` with 0xFF on its own stream.
+fn poison_on(s: &CudaSlice<u8>) {
+    let st = s.stream();
     let _ = st.context().bind_to_thread();
     let (p, _g) = s.device_ptr(st);
     // SAFETY: the slice's own bytes, on the stream it was allocated on, before it is freed
@@ -889,15 +915,23 @@ impl Drop for Buf {
     fn drop(&mut self) {
         // SAFETY: `s` is taken once, here, and never touched again
         let s = unsafe { ManuallyDrop::take(&mut self.s) };
+        let poison = POISON_FREE.load(std::sync::atomic::Ordering::Relaxed);
+        if let Home::Fenced(f) = &self.home {
+            // errors land in the context's error state, read by its next checked call
+            let _ = f.ev.record(&f.main).and_then(|()| s.stream().wait(&f.ev));
+            if poison {
+                poison_on(&s);
+            }
+            drop(s);
+            return;
+        }
         let capture = matches!(&self.home, Home::Pool(p) if p.capture);
-        if !capture
-            && !matches!(self.home, Home::Alias)
-            && POISON_FREE.load(std::sync::atomic::Ordering::Relaxed)
-        {
+        if poison && !capture && !matches!(self.home, Home::Alias) {
             poison_on_drop(&s);
         }
         match &self.home {
             Home::Free => drop(s),
+            Home::Fenced(_) => unreachable!("freed above"),
             Home::Pool(h) => h.put(s),
             Home::Alias => {
                 let _ = s.leak();
@@ -991,12 +1025,8 @@ impl Buf {
     }
     /// [`Self::zeros`] or [`Self::uninit`] through `pool`: a freed buffer of this size when the
     /// pool has one (zero-filled on the stream when `zero`), and back to the pool on drop.
-    fn pooled(
-        st: &Arc<CudaStream>,
-        pool: &Arc<TmpPool>,
-        len: usize,
-        zero: bool,
-    ) -> Result<Self, String> {
+    fn pooled(ops: &Ops, len: usize, zero: bool) -> Result<Self, String> {
+        let (st, pool) = (&ops.st, &ops.pool);
         let n = len.max(1);
         let s = match pool.take(n) {
             Some(mut s) => {
@@ -1031,6 +1061,8 @@ impl Buf {
         };
         let home = if n <= TMP_POOL_MAX_BUF || pool.capture {
             Home::Pool(pool.clone())
+        } else if let Some(f) = &ops.fence {
+            Home::Fenced(f.clone())
         } else {
             Home::Free
         };
@@ -1138,6 +1170,9 @@ pub struct Ops {
     pub st: Arc<CudaStream>,
     /// this stream's freed small temporaries ([`TmpPool`])
     pool: Arc<TmpPool>,
+    /// a card's second stream: the main stream its buffers wait for before the device pool
+    /// takes them back ([`Fence`]); None on a main stream
+    fence: Option<Arc<Fence>>,
 }
 
 macro_rules! launch {
@@ -1151,6 +1186,7 @@ impl Ops {
         Self {
             st,
             pool: Arc::default(),
+            fence: None,
         }
     }
     /// The stream handle for a launch, with its context made current first: the launchers use the
@@ -1165,11 +1201,30 @@ impl Ops {
         self.st.synchronize().map_err(|e| format!("sync: {e:?}"))
     }
     pub fn buf(&self, len: usize) -> Result<Buf, String> {
-        Buf::pooled(&self.st, &self.pool, len, true)
+        Buf::pooled(self, len, true)
     }
     /// A layer temporary its kernels write in full before reading (no zero-fill memset).
     pub fn tmp(&self, len: usize) -> Result<Buf, String> {
-        Buf::pooled(&self.st, &self.pool, len, false)
+        Buf::pooled(self, len, false)
+    }
+    /// `b` in a buffer of this stream ([`Self::tmp`], copied in on the stream): a buffer a
+    /// second-stream branch fills from the host goes back to the branch's free list or behind
+    /// its [`Fence`], as its temporaries do.
+    pub fn from_bytes(&self, b: &[u8]) -> Result<Buf, String> {
+        let out = self.tmp(b.len())?;
+        if !b.is_empty() {
+            // SAFETY: `b.len()` bytes into a buffer at least that long, on this stream; a
+            // pageable source is staged before the call returns
+            unsafe {
+                cudarc::driver::result::memcpy_htod_async(
+                    out.p(&self.st).addr(),
+                    b,
+                    self.sv() as cudarc::driver::sys::CUstream,
+                )
+            }
+            .map_err(|e| format!("htod {}: {e:?}", b.len()))?;
+        }
+        Ok(out)
     }
 
     /// act_quant(x, 32, "ue8m0") of `rows` bf16 rows of `k` (gathered through `rowidx` when it
@@ -2964,8 +3019,15 @@ impl Side {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(st.cu_stream() as usize);
+        let fence = Fence {
+            main: main.clone(),
+            ev: cx.new_event(None).map_err(|e| format!("event: {e:?}"))?,
+        };
         Ok(Self {
-            ops: Ops::new(st),
+            ops: Ops {
+                fence: Some(Arc::new(fence)),
+                ..Ops::new(st)
+            },
             scr: Scratch::default(),
             fork: cx.new_event(None).map_err(|e| format!("event: {e:?}"))?,
             join: cx.new_event(None).map_err(|e| format!("event: {e:?}"))?,
@@ -3722,6 +3784,11 @@ impl Ctx {
         // (their selections are gathered on the main stream right after) or under a trace.
         let fork = s <= side_limit(0) && !self.trace && self.index_rows.is_none();
         if fork {
+            // what the branch appends to grows first, here: grown inside the branch, the old
+            // buffer would be copied there and dropped by this thread before the copy ran, back
+            // to the main stream's free list or the pool in its order, where the main stream's
+            // next allocation (the heads' `q`, `o`) takes it under the copy
+            self.grow_keys(lw, sp, s, sh)?;
             self.side_begin()?;
         }
         let k = self.attn_keys_rest(lw, x, qr, sp, s, sh, ls, tr);
@@ -3729,6 +3796,52 @@ impl Ctx {
             self.side_end();
         }
         k
+    }
+
+    /// Size the compressed KV and index keys a kv-source call of `s` tokens from `sp` appends
+    /// to, as [`Self::attn_keys_rest`] sizes them (the latent rows a call completes end at
+    /// `(sp + s) / ratio`), on the main stream before a branch starts.
+    fn grow_keys(
+        &mut self,
+        lw: &LayerW,
+        sp: usize,
+        s: usize,
+        sh: &mut Shared,
+    ) -> Result<(), String> {
+        let ratio = lw.ratio;
+        if ratio == 0 || !lw.kv_source {
+            return Ok(());
+        }
+        let n_c = (sp + s) / ratio;
+        if n_c == 0 {
+            return Ok(());
+        }
+        let (hd, idim) = (self.g.head_dim, self.g.index_dim);
+        let hint = self.rows_hint.min(self.max_pos) / ratio;
+        ensure_rows(
+            &self.ops,
+            &mut sh.compress_kv,
+            &mut sh.compress_cap,
+            n_c,
+            hd * 2,
+            hint,
+        )?;
+        let own_keys = lw.index_source
+            && lw
+                .idx
+                .as_ref()
+                .is_some_and(|iw| iw.wk.is_some() && iw.k_norm.is_some());
+        if own_keys {
+            ensure_rows(
+                &self.ops,
+                &mut sh.index_k,
+                &mut sh.index_k_cap,
+                n_c,
+                idim * 2,
+                hint,
+            )?;
+        }
+        Ok(())
     }
 
     /// [`Self::attn_keys`] after `qr`: on the stream the rank issues on.
@@ -3940,10 +4053,10 @@ impl Ctx {
             } else {
                 (ring_dp, win)
             };
-            Some(Buf::from_bytes(
-                &st,
-                &key_refs(&vec![(window.0, comp_dp, window.1); s]),
-            )?)
+            Some(
+                self.ops
+                    .from_bytes(&key_refs(&vec![(window.0, comp_dp, window.1); s]))?,
+            )
         } else {
             None
         };
