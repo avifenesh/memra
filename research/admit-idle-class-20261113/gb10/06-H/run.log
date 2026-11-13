@@ -1,0 +1,25 @@
+2026-11-13T23:35:41+02:00 start, unit idle, arm head, target 2400 MB, mode single, extra 
+MemFree:        120513020 kB
+MemAvailable:   122387492 kB
+Cached:          2722792 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 2m05s
+waitfor: until awk '/^MemAvailable/{exit !($2/1024 < 2400 + 300)}' /proc/meminfo (deadline 2m00s, every 2s)
+waitfor: not yet
+waitfor: MET after 0m24s
+2026-11-13T23:38:25+02:00 before the request:
+MemFree:          817692 kB
+MemAvailable:    2642448 kB
+Cached:         101463212 kB
+{"tag": "06-H", "req": "g1k", "status": 200, "ttft_s": 1.194, "total_s": 5.426, "completion_tokens": 127, "finish": "stop", "text_sha256": "26ca98d4733a9c67f315f2ea1af2ec45ef76cca50999476c62b771813f1ee4ca", "refusal": null}
+2026-11-13T23:38:31+02:00 after the request:
+MemFree:         1372852 kB
+MemAvailable:    2403120 kB
+Cached:         99621824 kB
+waitfor: gone 1684351 (deadline 1m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+waitfor: gone 1631184 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

@@ -115,3 +115,8 @@ research/argmax-no-finite-20261113/*/** -text whitespace=-blank-at-eol,-blank-at
 # Vendored NVIDIA CUTLASS headers (crates/memra-engine/third_party/cutlass/README.md): stored byte
 # for byte as released, never normalized or whitespace-checked.
 crates/memra-engine/third_party/cutlass/** -text -whitespace linguist-vendored
+
+# memra#1304: the idle-refusal receipts keep their tool output whitespace (raw cargo logs end in a
+# blank line, the cell logs end lines in a space); stored byte for byte.
+research/admit-idle-class-20261113/cpu/*.log -text whitespace=-blank-at-eol,-blank-at-eof
+research/admit-idle-class-20261113/gb10/** -text whitespace=-blank-at-eol,-blank-at-eof
