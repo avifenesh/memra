@@ -314,10 +314,11 @@ boundary (`spec-burst-boundary-gate.py`, GB10): PASS for `change`, `change2`, `c
 `change5` and `change6`, 229 rows each over the grid default, 1:2, 3:2, 3:3. Texts: every
 plain text is identical across arms and identical beside the streams and alone, and every
 stream text is a prefix of the longest run of its stream, except the vendor-shape riders noted
-above. CPU checks on the round-2 head (`cpu/checks.log`, 11ae9661d1 on main 11b368f7d7): fmt,
-clippy, the engine (743) and server (1,222) suites and the flags and numeric censuses pass.
-Each of the 18 red arms fails exactly the tests it was built to fail, and the head passes all
-seven (`cpu/redgreen.log`).
+above. CPU checks on the round-3 head (`cpu/checks.log`, 919e1ff2a6 on main 11b368f7d7;
+the round-2 cells and gates ran 11ae9661d1, and round 3 moved only when the dark cadence is
+decided): fmt, clippy, the engine (743) and server (1,222) suites and the flags and numeric
+censuses pass. Each of the 20 red arms fails exactly the tests it was built to fail, and the
+head passes all seven (`cpu/redgreen.log`).
 
 ## Rejected
 
