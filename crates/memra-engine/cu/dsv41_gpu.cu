@@ -4887,6 +4887,23 @@ extern "C" int memra_v41_peak(int kind, int blocks, int threads, int iters, floa
     V41_ERR();
 }
 
+// A gate's fault injection (`SIDE_DELAY_NS` in dsv41_gpu.rs): one thread holds the stream for `ns`
+// nanoseconds of the global timer, so what the stream runs next starts that much later.
+__global__ void v41_sleep_kernel(unsigned long long ns) {
+    unsigned long long t0, t;
+    asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t0));
+    do {
+        __nanosleep(1000);
+        asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t));
+    } while (t - t0 < ns);
+}
+
+extern "C" int memra_v41_sleep(unsigned long long ns, void* stream) {
+    if (ns == 0) return 0;
+    v41_sleep_kernel<<<1, 1, 0, (cudaStream_t)stream>>>(ns);
+    V41_ERR();
+}
+
 // ---------------------------------------------------------------------------------------------
 // Small N-rank gathers inside kernels (the device-push transport). With peer access on the pools a
 // kernel stores straight into another card's memory. A rank's gather kernel packs its region into

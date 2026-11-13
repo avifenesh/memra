@@ -714,6 +714,9 @@ pub mod ffi {
             out: *mut f32,
             stream: *mut c_void,
         ) -> i32;
+        /// One thread that holds the stream for `ns` nanoseconds (a gate's fault injection,
+        /// [`super::SIDE_DELAY_NS`]).
+        pub fn memra_v41_sleep(ns: u64, stream: *mut c_void) -> i32;
     }
 }
 
@@ -851,10 +854,48 @@ enum Home {
     Alias,
 }
 
+/// Fault injection of a gate (`dsv41-gate decode`'s growth case; no serving path sets it): every
+/// branch of the card's second stream ([`Side`]) first holds that stream this many nanoseconds,
+/// so a main-stream write that is not ordered after the branch lands before the branch reads.
+pub static SIDE_DELAY_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Fault injection of a gate: a buffer homed on a main stream is filled with 0xFF on that stream
+/// as it drops, which is what that stream's next allocation of the memory may do at the
+/// earliest; a second-stream reader not ordered before the drop then reads the fill. (A buffer
+/// of a second stream comes back to that stream only behind a fork from the main one, so its
+/// drop is not filled here.)
+pub static POISON_FREE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The second streams alive in the process (`CUstream` handles), for [`POISON_FREE`].
+static SIDE_STREAMS: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+
+/// [`POISON_FREE`] on one dropping buffer.
+fn poison_on_drop(s: &CudaSlice<u8>) {
+    let st = s.stream();
+    let id = st.cu_stream() as usize;
+    if SIDE_STREAMS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(&id)
+    {
+        return;
+    }
+    let _ = st.context().bind_to_thread();
+    let (p, _g) = s.device_ptr(st);
+    // SAFETY: the slice's own bytes, on the stream it was allocated on, before it is freed
+    let _ = unsafe { cudarc::driver::result::memset_d8_async(p, 0xFF, s.len(), st.cu_stream()) };
+}
+
 impl Drop for Buf {
     fn drop(&mut self) {
         // SAFETY: `s` is taken once, here, and never touched again
         let s = unsafe { ManuallyDrop::take(&mut self.s) };
+        let capture = matches!(&self.home, Home::Pool(p) if p.capture);
+        if !capture
+            && !matches!(self.home, Home::Alias)
+            && POISON_FREE.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            poison_on_drop(&s);
+        }
         match &self.home {
             Home::Free => drop(s),
             Home::Pool(h) => h.put(s),
@@ -2919,6 +2960,10 @@ impl Side {
     fn new(main: &Arc<CudaStream>) -> Result<Self, String> {
         let cx = main.context();
         let st = cx.new_stream().map_err(|e| format!("side stream: {e:?}"))?;
+        SIDE_STREAMS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(st.cu_stream() as usize);
         Ok(Self {
             ops: Ops::new(st),
             scr: Scratch::default(),
@@ -2931,7 +2976,12 @@ impl Side {
         self.fork
             .record(main)
             .and_then(|()| self.ops.st.wait(&self.fork))
-            .map_err(|e| format!("side fork: {e:?}"))
+            .map_err(|e| format!("side fork: {e:?}"))?;
+        let ns = SIDE_DELAY_NS.load(std::sync::atomic::Ordering::Relaxed);
+        if ns > 0 {
+            ck("sleep", unsafe { ffi::memra_v41_sleep(ns, self.ops.sv()) })?;
+        }
+        Ok(())
     }
     /// What `main` runs next starts after everything issued on the branch so far.
     fn join(&self, main: &Arc<CudaStream>) -> Result<(), String> {
@@ -2939,6 +2989,16 @@ impl Side {
             .record(&self.ops.st)
             .and_then(|()| main.wait(&self.join))
             .map_err(|e| format!("side join: {e:?}"))
+    }
+}
+
+impl Drop for Side {
+    fn drop(&mut self) {
+        let id = self.ops.st.cu_stream() as usize;
+        SIDE_STREAMS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|&s| s != id);
     }
 }
 

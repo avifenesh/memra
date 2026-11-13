@@ -2813,6 +2813,7 @@ fn decode_gate(
     let mut seq: Vec<u32> = ids.clone();
     seq.extend_from_slice(&fed[..steps]);
     let mut red_layers = Vec::new();
+    let mut grow_layers = Vec::new();
     for &l in layers {
         let lw = LayerW::load(&cx.ops, &stm, &g, l, false)?;
         let engram = lw.engram.is_some();
@@ -2956,12 +2957,129 @@ fn decode_gate(
             );
         }
         eprintln!("layer {l}: {steps} decode steps from position {p}");
+        if lw.kv_source && lw.index_source && ratio > 0 {
+            let h0 = f.bytes(&in_key(0))?;
+            let p0 = f.bytes(&format!("s0/L{l}/in/pre_mix"))?;
+            let cols = |seq: &[u32], from: usize| -> Result<Option<Vec<i64>>, String> {
+                if engram {
+                    cols_of(seq, from, l).map(Some)
+                } else {
+                    Ok(None)
+                }
+            };
+            grow_case(&mut cx, &stm, &lw, &h0, &p0, &ids, &cols, rep)?;
+            grow_layers.push(l);
+        }
     }
     Ok(format!(
-        "\"prompt\": {p}, \"decode_steps\": {steps}, \"positions\": [{}, {}], \"window\": {win}, \"layers\": {layers:?}, \"red_arm_layers\": {red_layers:?}",
+        "\"prompt\": {p}, \"decode_steps\": {steps}, \"positions\": [{}, {}], \"window\": {win}, \"layers\": {layers:?}, \"red_arm_layers\": {red_layers:?}, \"grow_layers\": {grow_layers:?}",
         p,
         p + steps - 1
     ))
+}
+
+/// The Engram hash columns of a layer for positions `from..` of a sequence (None: not an Engram
+/// layer).
+type ColsFn<'a> = dyn Fn(&[u32], usize) -> Result<Option<Vec<i64>>, String> + 'a;
+/// One arm of the growth case: the call's output, the compressed KV rows, the index-key rows, and
+/// the compressed KV's capacity after the prefill and after the call.
+type GrowArm = (Vec<u8>, Vec<u8>, Vec<u8>, usize, usize);
+
+/// The growth case of the decode gate on a layer that owns its compressed KV and index keys: a
+/// prefill of more than [`v::SMALL_M`] rows sizes them for exactly its rows, then a one-token
+/// call (a second-stream branch: at most `SMALL_M` rows, no trace) completes one more compressed
+/// row, so both grow inside the call. The same two calls with room for the row (nothing grows)
+/// are the reference: the call's output and both buffers' rows must be the same bytes.
+///
+/// Both arms run under the second stream's fault injection: every branch the second stream
+/// starts first waits 20 ms ([`v::SIDE_DELAY_NS`]), and a main-stream buffer is filled with 0xFF
+/// as it drops ([`v::POISON_FREE`]). A grown buffer copied on the second stream from a
+/// main-stream buffer the call already let go reads the fill (red: the bytes differ); copied on
+/// the main stream before the branch starts, it reads the rows.
+#[allow(clippy::too_many_arguments)]
+fn grow_case(
+    cx: &mut Ctx,
+    stm: &memra_gguf::safetensors::StModel,
+    lw: &LayerW,
+    h_rows: &[u8],
+    pre_rows: &[u8],
+    ids: &[u32],
+    cols: &ColsFn<'_>,
+    rep: &mut Report,
+) -> Result<(), String> {
+    use std::sync::atomic::Ordering::Relaxed;
+    let g = cx.g.clone();
+    let st = cx.ops.st.clone();
+    let l = lw.id;
+    let ratio = lw.ratio;
+    let row = g.hc * g.dim * 2;
+    let prow = g.hc * 4;
+    let p = h_rows.len() / row;
+    // the prefill's length: more rows than a second-stream call takes, and one the next token
+    // completes a compressed row after (odd at ratio 2: the next token closes a pair)
+    let q = (v::SMALL_M + 1..p)
+        .rev()
+        .find(|&q| (q + 1) % ratio == 0)
+        .ok_or_else(|| {
+            format!("layer {l}: a prompt of {p} tokens is too short for the growth case")
+        })?;
+    let (was_trace, was_hint) = (cx.trace, cx.rows_hint);
+    let arm = |cx: &mut Ctx, hint: usize| -> Result<GrowArm, String> {
+        cx.trace = false;
+        cx.rows_hint = hint;
+        let (mut sh, mut ls) = (Shared::default(), LayerState::default());
+        let h = Buf::from_bytes(&st, &h_rows[..q * row])?;
+        let pre = Buf::from_bytes(&st, &pre_rows[..q * prow])?;
+        if let Some(c) = cols(&ids[..q], 0)? {
+            cx.engram(stm, lw, &h, &c, q, &mut Trace::default())?;
+        }
+        cx.block_forward(lw, &h, &pre, 0, q, &mut sh, &mut ls, &mut Trace::default())?;
+        let cap0 = sh.compress_cap;
+        let hd = Buf::from_bytes(&st, &h_rows[q * row..(q + 1) * row])?;
+        let pd = Buf::from_bytes(&st, &pre_rows[q * prow..(q + 1) * prow])?;
+        if let Some(c) = cols(&ids[..q + 1], q)? {
+            cx.engram(stm, lw, &hd, &c, 1, &mut Trace::default())?;
+        }
+        let (h2, _) =
+            cx.block_forward(lw, &hd, &pd, q, 1, &mut sh, &mut ls, &mut Trace::default())?;
+        let n_c = sh.n_c;
+        let mut kv = sh
+            .compress_kv
+            .as_ref()
+            .ok_or("no compressed KV")?
+            .host(&st)?;
+        kv.truncate(n_c * g.head_dim * 2);
+        let mut ik = sh.index_k.as_ref().ok_or("no index keys")?.host(&st)?;
+        ik.truncate(n_c * g.index_dim * 2);
+        Ok((h2.host(&st)?, kv, ik, cap0, sh.compress_cap))
+    };
+    v::SIDE_DELAY_NS.store(20_000_000, Relaxed);
+    v::POISON_FREE.store(true, Relaxed);
+    let room = cx.max_pos;
+    let tight = arm(cx, q);
+    let roomy = arm(cx, room);
+    v::SIDE_DELAY_NS.store(0, Relaxed);
+    v::POISON_FREE.store(false, Relaxed);
+    cx.trace = was_trace;
+    cx.rows_hint = was_hint;
+    let (th, tkv, tik, cap0, cap1) = tight?;
+    let (rh, rkv, rik, _, _) = roomy?;
+    rep.raw(
+        &format!("layer{l}/grow/rows"),
+        cap1 > cap0 && cap0 == q / ratio,
+        "the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it",
+        format!("prefill {q} tokens, ratio {ratio}: {cap0} rows, then {cap1}"),
+    );
+    same_bytes(rep, &format!("layer{l}/grow/stream"), &th, &rh, "bf16");
+    same_bytes(
+        rep,
+        &format!("layer{l}/grow/compress_kv"),
+        &tkv,
+        &rkv,
+        "bf16",
+    );
+    same_bytes(rep, &format!("layer{l}/grow/index_k"), &tik, &rik, "bf16");
+    Ok(())
 }
 
 fn same_bytes(rep: &mut Report, name: &str, got: &[u8], want: &[u8], dtype: &str) {
