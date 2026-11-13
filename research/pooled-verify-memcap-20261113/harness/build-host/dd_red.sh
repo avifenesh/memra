@@ -30,4 +30,5 @@ run reap-off memra-server vmm_pending_releases_keep_the_idle_wait_polling_and_th
 run fence-funded-off memra-server pre_cohort_reclaim_1266
 run booking-unbounded memra-server pre_cohort_reclaim_1266
 run growth-max-not-sum memra-engine pooled_verify_cap_1266
+run cohort-rows-first-only memra-engine pooled_verify_cap_1266
 echo "RED-DONE $(date -Is)" >> "$O/summary.txt"

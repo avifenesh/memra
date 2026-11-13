@@ -30,6 +30,9 @@ test's panic).
   booking-unbounded the reclaim leaves the whole unbuilt booking out, not just the FA growth: the
                     overlap test fails
   growth-max-not-sum fa_rows_growth keeps the largest grow, not the sum: the two-runs test fails
+ fold check of round 3:
+  cohort-rows-first-only  cohort_verify_rows stacks only the first member: the stacked-cohort
+                    test fails
 """
 import pathlib
 import shutil
@@ -146,6 +149,9 @@ elif arm == "growth-max-not-sum":
     sub(ELIB, """            bytes = bytes.saturating_add(
                 grown""", """            bytes = bytes.max(
                 grown""")
+elif arm == "cohort-rows-first-only":
+    sub(SPEC, "        .iter()\n        .flat_map(|&(k, pos)| (1..=k + 1).map(move |r| pos + r))\n",
+        "        .iter()\n        .take(1)\n        .flat_map(|&(k, pos)| (1..=k + 1).map(move |r| pos + r))\n")
 else:
     raise SystemExit(f"unknown arm {arm}")
 print("arm", arm, "written")
