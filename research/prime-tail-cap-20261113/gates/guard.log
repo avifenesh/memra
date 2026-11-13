@@ -1,0 +1,18 @@
+2026-11-13T03:34:53+02:00
+645070b684a9d9a39c73f8daee908cc0ea30c525cc7106410566597c2eca22dc  /home/avifenesh/.cache/memra-1255/bin/run-gen-1258-120a
+17d3450cd48ce8d8ea736c43dbea95e99244d4da459ea440d8f5db776b3b5670  /home/avifenesh/.cache/memra-1255/bin/run-gen-1258base-120a
+23a26d9a6d023c22ab3bf8de78a8b0e93deca831dde27523907c683400354672  /home/avifenesh/.cache/memra-1255/bin/run-spec-1258-120a
+059c2472eed794b418c43980d15a8fd6e405a20c93f8120bbad8a58ba218848f  /home/avifenesh/.cache/memra-1255/bin/run-spec-1258base-120a
+4d612383f2d23713ae6933e6556d861c5466490a8a457e54a90a04bfeb54d6aa  /home/avifenesh/.cache/memra-1255/bin/dspark-q38-gate-1258-120a
+37371ff4f934d4e05c314b27ebccb928baee07775feaf3ac7394a7249e5208b7  /home/avifenesh/.cache/memra-1255/bin/dspark-q38-gate-1258base-120a
+NVIDIA GeForce RTX 5090 Laptop GPU, 615.71.09, 76, 1590 MHz, 32.46 W, 156.57 W, 31 MiB
+p4100: 17374 bytes, last ids [492, 31197, 34876]
+p4106: 17403 bytes, last ids [9197, 95027, 534]
+p4111: 17428 bytes, last ids [2948, 3045, 9897]
+1258base run-gen rc=0 prefill argmax=72051  decode argmax=72051  logit maxdiff=2.185e-1  MATCH batched-prime argmax=72051  tokenwise argmax=72051  logit maxdiff=2.329e-1  MATCH 
+1258base run-spec rc=0 STEP-IDENTITY: 4 batched plain steps against one 4-column verify, 2 rounds after 211 primed tokens: 0 of 1986560 logits differ (max |diff| 0), 0 argmax differ - === SELF-CONSISTENCY PASS === 
+1258base dspark rc=0 [dspark-q38-gate] p4100.txt: prompt=4100 spec_sha256=834649ca63526d3b2870494dd0553420116f068aaf9b2e5f2cd445225356f1d2 plain_sha256=834649ca63526d3b2870494dd0553420116f068aaf9b2e5f2cd445225356f1d2 spec_len=96 plain_len=96 [dspark-q38-gate] p4106.txt: prompt=4106 spec_sha256=8e287237e913eba89005829847c2437a6afcb4ef622b384e4175e578a64c7816 plain_sha256=8e287237e913eba89005829847c2437a6afcb4ef622b384e4175e578a64c7816 spec_len=96 plain_len=96 [dspark-q38-gate] p4111.txt: prompt=4111 spec_sha256=f7dbf2a857d07dabe364fd0939019c456c63df7975a867a32d240deff06b5d9a plain_sha256=f7dbf2a857d07dabe364fd0939019c456c63df7975a867a32d240deff06b5d9a spec_len=96 plain_len=96 == dspark_q38_gate: ALL EXACT | mean plain 17.5 tok/s | mean spec 121.1 tok/s | 288 tokens == 
+1258 run-gen rc=0 prefill argmax=72051  decode argmax=72051  logit maxdiff=2.185e-1  MATCH batched-prime argmax=72051  tokenwise argmax=72051  logit maxdiff=2.329e-1  MATCH 
+1258 run-spec rc=0 STEP-IDENTITY: 4 batched plain steps against one 4-column verify, 2 rounds after 211 primed tokens: 0 of 1986560 logits differ (max |diff| 0), 0 argmax differ - === SELF-CONSISTENCY PASS === 
+1258 dspark rc=0 [dspark-q38-gate] p4100.txt: prompt=4100 spec_sha256=834649ca63526d3b2870494dd0553420116f068aaf9b2e5f2cd445225356f1d2 plain_sha256=834649ca63526d3b2870494dd0553420116f068aaf9b2e5f2cd445225356f1d2 spec_len=96 plain_len=96 [dspark-q38-gate] p4106.txt: prompt=4106 spec_sha256=8e287237e913eba89005829847c2437a6afcb4ef622b384e4175e578a64c7816 plain_sha256=8e287237e913eba89005829847c2437a6afcb4ef622b384e4175e578a64c7816 spec_len=96 plain_len=96 [dspark-q38-gate] p4111.txt: prompt=4111 spec_sha256=f7dbf2a857d07dabe364fd0939019c456c63df7975a867a32d240deff06b5d9a plain_sha256=f7dbf2a857d07dabe364fd0939019c456c63df7975a867a32d240deff06b5d9a spec_len=96 plain_len=96 == dspark_q38_gate: ALL EXACT | mean plain 17.1 tok/s | mean spec 114.3 tok/s | 288 tokens == 
+EXACT-DONE rc=0 2026-11-13T03:44:05+02:00

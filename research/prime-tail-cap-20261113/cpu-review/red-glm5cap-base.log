@@ -1,0 +1,27 @@
+   Compiling memra-engine v0.141.1 (/home/avifenesh/.cache/memra-1255/tree-1258base/crates/memra-engine)
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 16m 35s
+     Running tests/glm5_prime_capacity.rs (/home/avifenesh/.cache/memra-1255/target-1258base-check/release/deps/glm5_prime_capacity-5902c9329879f2a4)
+
+running 5 tests
+test the_mhc_prime_transient_is_sub_quadratic_in_context ... ok
+test the_mhc_prime_schedule_covers_the_prompt_exactly ... ok
+test the_mhc_prime_carries_a_bounded_number_of_rows_at_every_context ... FAILED
+test the_prime_at_the_native_context_leaves_a_working_expert_residency ... ok
+test report_the_per_call_prime_transient_ladder ... ok
+
+failures:
+
+---- the_mhc_prime_carries_a_bounded_number_of_rows_at_every_context stdout ----
+
+thread 'the_mhc_prime_carries_a_bounded_number_of_rows_at_every_context' (206926) panicked at crates/memra-engine/tests/glm5_prime_capacity.rs:167:9:
+ctx 1048577: one mHC prime call carries 4097 token rows, above the absolute bound 4096 (the prime chunk cap; a short tail splits off as 16+ rows). The per-call transient is proportional to this, so a value that tracks `ctx` makes every transient a function of the CONTEXT.
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    the_mhc_prime_carries_a_bounded_number_of_rows_at_every_context
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-engine --test glm5_prime_capacity`

@@ -1,0 +1,88 @@
+diff --git a/crates/memra-engine/src/dflash.rs b/crates/memra-engine/src/dflash.rs
+index ede01f3dbe..1eacc21904 100644
+--- a/crates/memra-engine/src/dflash.rs
++++ b/crates/memra-engine/src/dflash.rs
+@@ -5591,7 +5591,9 @@ impl crate::prime_walker::PrimeWalker for DflashTapWalker<'_> {
+         *max_chunk = (*max_chunk).max(rows);
+         cache.dflash_taps = Some(DflashTapSink {
+             layer_ids: draft.cfg.target_layer_ids.clone(),
+-            buf: e.uninit(rows * width)?,
++            // memra#1258: sized like the prime slab, so a folded call above the cap reuses the
++            // cap-row sink the pool cached instead of mapping a fresh one beside it.
++            buf: e.uninit(crate::hybrid_forward::prime_call_buffer_rows(rows) * width)?,
+             hidden,
+             t: rows,
+             base: 0,
+diff --git a/crates/memra-engine/src/hybrid_forward.rs b/crates/memra-engine/src/hybrid_forward.rs
+index dd42e72fad..c61441a7f1 100644
+--- a/crates/memra-engine/src/hybrid_forward.rs
++++ b/crates/memra-engine/src/hybrid_forward.rs
+@@ -1600,6 +1600,21 @@ pub fn grid_yz_row_blocks(rows: usize) -> impl Iterator<Item = (usize, usize)> {
+ /// unchanged — only prompts that today CANNOT launch get chunked.
+ pub const PRIME_CHUNK_LAUNCH_CAP: usize = CUDA_GRID_YZ_MAX - (PRIME_MIN_T - 1);
+ 
++/// Rows the resident prime slab (`HybridModel::prime_slabs_get`) and a DFlash prime call's tap
++/// sink are sized for when a call of `t` rows needs them (memra#1258). A call at the chunk cap
++/// takes `PRIME_CHUNK_MAX_TOKENS + PRIME_MIN_T - 1` rows: the widest call the ring-off tail fold of
++/// `fixed_prime_chunk_ranges` makes. A folded call of 4,097 to 4,111 rows (a prompt of that length)
++/// then fits the slab a cap-row call left, instead of allocating a whole new slab beside it, and
++/// its tap sink matches the cap-row sink the pool cached. Any other call keeps its own row count.
++pub fn prime_call_buffer_rows(t: usize) -> usize {
++    let cap = crate::cache::PRIME_CHUNK_MAX_TOKENS;
++    if (cap..cap + PRIME_MIN_T).contains(&t) {
++        cap + PRIME_MIN_T - 1
++    } else {
++        t
++    }
++}
++
+ /// The explicit-`MEMRA_PRIME_CHUNK` chunk width, ring-aware. Extracted pure for tests.
+ /// Ring ON keeps the historical clamp to `PRIME_CHUNK_MAX_TOKENS`. Ring OFF preserves the
+ /// operator's value except at the CUDA launch wall: `0` ("monolithic") now means
+@@ -7156,6 +7171,7 @@ impl HybridModel {
+             Some(sl) => sl.lock().unwrap().t_cap < t,
+         };
+         if need_new {
++            let t = prime_call_buffer_rows(t);
+             slabs.insert(
+                 dev,
+                 std::sync::Arc::new(std::sync::Mutex::new(PrimeSlabs {
+@@ -31338,6 +31354,38 @@ mod prime_chunk_schedule_tests {
+         step_grouped_prefill_shape, step_tp_prefill_shape, validate_step_prime_batch_modes,
+     };
+ 
++    #[test]
++    fn a_cap_row_call_leaves_buffers_every_folded_call_fits() {
++        // memra#1258: a prompt of 4,097 to 4,111 tokens folds its short tail into one call wider
++        // than the cap; the slab and the tap sink a cap-row call sized must hold it, or the call
++        // allocates a whole new slab (and a fresh sink) beside the cached ones.
++        let cap = crate::cache::PRIME_CHUNK_MAX_TOKENS;
++        let held = super::prime_call_buffer_rows(cap);
++        for t in cap..cap + PRIME_MIN_T + 40 {
++            for gdn_grid in [false, true] {
++                let fixed = fixed_prime_chunk_ranges(t, cap, false);
++                let ranges = if gdn_grid {
++                    align_prime_ranges_to_gdn(&fixed, t, 64)
++                } else {
++                    fixed
++                };
++                let widest = ranges.iter().map(|&(s, e)| e - s).max().unwrap();
++                assert!(
++                    widest <= held,
++                    "t={t} gdn_grid={gdn_grid}: widest call {widest} > {held}"
++                );
++            }
++        }
++        assert_eq!(super::prime_call_buffer_rows(cap + PRIME_MIN_T - 1), held);
++        // Shorter and explicit monolithic calls keep their own size.
++        assert_eq!(super::prime_call_buffer_rows(cap - 1), cap - 1);
++        assert_eq!(super::prime_call_buffer_rows(128), 128);
++        assert_eq!(
++            super::prime_call_buffer_rows(cap + PRIME_MIN_T),
++            cap + PRIME_MIN_T
++        );
++    }
++
+     fn sizes(ranges: &[(usize, usize)]) -> Vec<usize> {
+         ranges.iter().map(|(start, end)| end - start).collect()
+     }

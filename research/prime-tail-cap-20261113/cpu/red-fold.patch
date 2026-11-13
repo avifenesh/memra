@@ -1,0 +1,11 @@
+--- /home/avifenesh/.cache/memra-1255/hf-1258.keep	2026-11-13 01:18:42.145382368 +0100
++++ crates/memra-engine/src/hybrid_forward.rs	2026-11-13 01:18:42.166382737 +0100
+@@ -1736,7 +1736,7 @@
+     while start < t {
+         let mut end = (start + chunk).min(t);
+         if t - end > 0 && t - end < PRIME_MIN_T {
+-            if ring_on || t - start > fold_cap {
++            if ring_on || (t - start > fold_cap && false) {
+                 let shifted = t - PRIME_MIN_T;
+                 end = if shifted > start { shifted } else { t };
+             } else {
