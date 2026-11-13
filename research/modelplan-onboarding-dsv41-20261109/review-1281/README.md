@@ -148,8 +148,9 @@ shared scope, made in `04873a7ba9` (engine nits) and `bef6ed28f7` (the route's f
   a router row non-finite, or two allocation failures under a co-tenant, took it down for good. Now a step fault
   fails that step's requests, then every rank is probed (`Runner::probe`: both streams drain and the context holds
   no recorded error), and the route stops only when the engine lost its transport or the probe fails. Call-flag
-  faults, refused allocations and host panics fail their step and nothing else. Tests: two consecutive call-flag
-  faults leave the route serving; a failed probe or a lost transport stops it.
+  faults and refused allocations fail their step and nothing else. Tests: two consecutive call-flag faults leave
+  the route serving; a failed probe or a lost transport stops it. (The final fix check below adds the probe's flag
+  read and stops the route on a caught panic.)
 - **The call flag's lifetime.** Cleared by the read that reported it, a call fault in an all-greedy batched step was
   read (and cleared) by the device pick, which refused; the logits read that `pick_rows` falls back to then found it
   clear and served the step. The flag is now cleared when a step opens (`Runner::begin_step`), so every read in the
@@ -173,11 +174,35 @@ Evidence at `bef6ed28f7` (`receipts/fix-check/`):
   readiness because the page cache of the checkpoint left 1.3 GiB the card could count as free (GB10 memory is the
   host's); the second try drops the checkpoint's cached pages first (`smoke-try1/` keeps the first).
 - **GB10 gates** (`dsv41-gate` at the head, `2d12d171...`): kernels 151 of 151, layer 161 of 161 with the 111 saved
-  tensors byte-identical to the k3 set (the fixes move no byte), tp at 0,0 default (device-push) 480 of 480.
+  tensors byte-identical to the k3 set (the fixes move no byte), tp at 0,0 default (device-push) 480 of 480, decode
+  straddle126 256 of 256, gsm 256 of 256, capital 72 of 72 (with the growth case), the graph door 555 of 555 at one
+  rank and 1,105 of 1,105 at 0,0. The CI `gates` job at `bef6ed28f7`: 45 of 47 steps on the build box, the two
+  bubblewrap steps pass on a machine that has it.
 - **CPU** (the build box, 120a): the workspace's release build with all targets, `cargo clippy --workspace
   --all-targets -- -D warnings` and fmt pass at the head, and clippy over memra-engine and memra-server passes at
   `04873a7ba9` alone; memra-engine's dsv41 lib tests 18 of 18 (the new `hash_after` test), memra-server's lib tests
   1,246 passed, 14 ignored (the new route-death and fault-door tests).
+
+### The final fix check
+
+The final fix check at `f3b58fb8fb` approved both scopes with nits; two are code, in `e6285f9075`:
+
+- `Runner::probe` also reads every rank's route flags after the streams drain and judges the transport word
+  (`Group::route_verdict`), and `route_dies` reads `transport_lost()` after the probe: a step that failed before its
+  logits were read while a gather timed out now loses the group at the probe instead of serving on for one more
+  stalled step (N ranks only).
+- A caught panic (the step, its host half, the admission door) stops the route with its reason: it is a bug in the
+  engine or the route, and a probe of the device cannot clear host state after an unwind. The test covers it.
+
+Per-row attribution of a call flag (it fails every request of the step, not only the one that caused it) is a
+follow-up, #1292.
+
+Evidence at `e6285f9075` (`receipts/final-check/`): the GB10 serve smoke again (`memra-server` `eb00989a...`, the same
+2-layer trunk and faults at steps 1 and 2): requests A and B answer 500 `engine_error`, the ranks probe clean (their
+flags read too) after each, request C answers 200, and the health record reads phase idle, 3 requests, 2 request
+faults, no dead reason. CPU on the build box at the head: the workspace's release build with all targets, `cargo clippy --workspace
+--all-targets -- -D warnings` and fmt pass; memra-engine's dsv41 lib tests 18 of 18, memra-server's lib tests 1,246
+passed, 14 ignored (the route-death test now covers the panic and the probe's lost transport).
 
 ## Not run here
 
