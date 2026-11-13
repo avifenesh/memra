@@ -42,10 +42,15 @@ branch from a buffer the call already let go then reads the fill instead of raci
 
 | binary | capture | decode gate | growth checks |
 |---|---|---|---|
-| before the fix (`05ba46224b`, the case alone) | straddle126 (prefill 125) | 148 of 160 | 0 of 12: every carried row of both buffers differs (62 of 63 rows at ratio 2, 125 of 126 at ratio 1; the call's new row matches), and the call's output differs on all four layers |
+| before the fix (`0f0abcd330`, the case alone) | straddle126 (prefill 125) | 148 of 160 | 0 of 12: every carried row of both buffers differs (62 of 63 rows at ratio 2, 125 of 126 at ratio 1; the call's new row matches), and the call's output differs on all four layers |
 | before the fix | gsm (prefill 41) | 148 of 160 | 0 of 12, the same pattern |
 | the head | straddle126 | 160 of 160 | 12 of 12 |
 | the head | gsm | 160 of 160 | 12 of 12 |
+
+Builds: the GB10 binaries were made from these commits as they stood before the route's last rebase onto main
+`c2d2388bd0` (local build commits `05ba46224b` for `0f0abcd330`, `5e71a5929b` for the head before the control fix
+below, `01cf01f2cf` for the pushed head); the rebase brought only main's own engine changes, none in a dsv41 file, so
+each binary's dsv41 sources are the named commit's. Their sha256 are in `receipts/build/` and in each run's log.
 
 The `grow/rows` check passes in every run: the prefill's compressed KV holds exactly its rows (62 at ratio 2, 125
 at ratio 1) and the call grows it (124, 250). The byte checks print the gate's shared rule text ("byte-identical to
@@ -104,8 +109,8 @@ the next step holds only requests admitted since, and a second fault in a row is
 
 ## Gates
 
-The fixed head's dsv41 gate set on one GB10 (`dsv41-gate` built at `01cf01f2cf`, whose dsv41 sources are the pushed
-head's: the rebase onto main `c2d2388bd0` changed none of them), MEMRA_FULL_PREC=1, `receipts/gates-gb10/`:
+The fixed head's dsv41 gate set on one GB10 (`dsv41-gate` with the pushed head's dsv41 sources, `da710634...`; see
+Builds above), MEMRA_FULL_PREC=1, `receipts/gates-gb10/`:
 
 | gate | checks | note |
 |---|---|---|
@@ -118,7 +123,8 @@ head's: the rebase onto main `c2d2388bd0` changed none of them), MEMRA_FULL_PREC
 | decode capital (layers 1, 2, 3, 14, 20, 21, 24) | 72 of 72 | 60 plus the growth case's 12 (layers 2, 14, 20) |
 | tp with `MEMRA_DSV41_DECODE_GRAPH=1` at 1 rank / at 0,0 (device-push) | 555 of 555, 1,105 of 1,105 | every decode step repeated through the captured spans: 6 captures, 42 replays, 12 self-checked, 0 refused at 0,0 |
 
-The first run of this set, on `5e71a5929b` (the head before the control fix), is kept in
+The first run of this set, on the head before the control fix (`8e9e2c77...` is the red binary, `458a28da...` this
+one), is kept in
 `receipts/first-run-5e71a5929b/`: kernels 151 of 151, layer 161 of 161 with the same saved tensors, tp at 1 rank
 242 of 242, at 0,0,0,0 916 of 916, and at 0,0 479 of 480: with the consumer's new fence after its spin, the
 push-gather control (the producer stores the word before the data) stopped catching anything (0 words differ in
@@ -130,7 +136,8 @@ CPU, at the pushed head's crates (`ab3f3ed3bb`, the build box): the workspace's 
 17 of 17, memra-server's lib tests 1,245 passed (14 ignored). The CI `gates` job, every `run:` step, at the receipts commit
 before this text was final: 47 steps, 45 pass; the two that need bubblewrap, which the build box lacks and the hosted
 runner installs ("Compiler input view and filesystem boundary", "Local development selection and immutable reuse
-controls"), pass on a machine that has it, at `af375e63c2` (the pushed head less these two logs; `receipts/cpu/`).
+controls"), pass on a machine that has it, on this commit's tree less these two logs and this paragraph
+(`receipts/cpu/`).
 
 ## Not run here
 
