@@ -188,7 +188,8 @@ __device__ __forceinline__ void v41_ldsm_b2(uint32_t bf[4], const uint8_t* base,
 // act_quant(x, 32, "ue8m0"): one warp per 32-wide block. q/s may be null (in-place qdq into y);
 // y may alias x. rowidx (nullable) gathers input rows.
 
-__global__ void v41_act_quant_kernel(const v41_bf* __restrict__ x, long ldx, const int* __restrict__ rowidx,
+// x carries no __restrict__: y may be x
+__global__ void v41_act_quant_kernel(const v41_bf* x, long ldx, const int* __restrict__ rowidx,
                                      uint8_t* __restrict__ q, long ldq, uint8_t* __restrict__ s, long lds,
                                      v41_bf* y, long ldy, int rows, int kb) {
     long wid = ((long)blockIdx.x * blockDim.x + threadIdx.x) >> 5;
@@ -917,7 +918,9 @@ __global__ void __launch_bounds__(256, BM <= 64 ? 2 : 1) v41_gemm_f8_pipe_kernel
 // 12). Families: 0 block-scaled dense, 1 bf16, 2 fp32 FMA, 3 the one-pass mHC kernel. Rows are
 // independent in every one of them, so a row's bytes do not depend on the group it runs in. The limits
 // are measured per family and rank count (`wide_rows_for` in src/dsv41_gpu.rs); these are one rank's.
-static int v41_wide[4] = {24, 16, 48, 32};
+// Atomic: a gate or bench thread sets them while rank threads launch.
+static std::atomic<int> v41_wide_rows_a[4] = {24, 16, 48, 32};
+static inline int v41_wide(int family) { return v41_wide_rows_a[family].load(std::memory_order_relaxed); }
 // The fewest rows of a dense call that take the body with K in parts (v41_gemv_f8_rows_kernel); below it
 // the one-pass body runs. Measured with the limit moved (a call of N rows, parts body against one-pass):
 // two ranks on two cards 1.3% slower at one row, 2.0% at 4, level at 5 and 6, 1.4% faster at 7, 2.2% at 8;
@@ -926,7 +929,7 @@ static int v41_wide[4] = {24, 16, 48, 32};
 #define V41_PARTS_MIN 7
 // A group's limits, or a gate's or bench's choice of them.
 extern "C" void memra_v41_wide_rows(int family, int rows) {
-    if (family >= 0 && family < 4) v41_wide[family] = rows;
+    if (family >= 0 && family < 4) v41_wide_rows_a[family].store(rows, std::memory_order_relaxed);
 }
 // SU: the K blocks a warp loads ahead of their MMAs (registers). 8 when a warp's share of K is at
 // most 8 blocks; 10 for a longer K, where it saves a memory round trip per warp (20 blocks: two
@@ -1566,7 +1569,7 @@ static int v41_gemm_f8_tiles_impl(const void* a, long lda, const void* as, long 
                                   int wfmt, void* c, long ldc, int out_f32, int n, int k, int bm, const int* ridx,
                                   void* stream) {
     if (k % 32 || n <= 0 || lda % 16 || max_tiles < 0 || max_tiles > 65535 || proj < 0 || proj > 2) return 41026;
-    if (ldb % 16) return 41026;
+    if (ldb % 16 || (uintptr_t)a % 16) return 41026;
     if (ridx && bm != 64 && bm != 128) return 41026;
     if (max_tiles == 0) return 0;
     cudaStream_t st = (cudaStream_t)stream;
@@ -1660,8 +1663,10 @@ extern "C" int memra_v41_gemm_f8(const void* a, long lda, const void* as, long l
                                  const void* bs, long ldbs, float bscale2, int wfmt, void* c, long ldc, int out_f32,
                                  int m, int n, int k, void* stream) {
     if (k % 32 || m < 0 || n <= 0 || lda % 16 || ldb % 16) return 41005;
+    // every body loads a and b 16 bytes at a time: an unaligned base is refused, not read wrong
+    if (((uintptr_t)a | (uintptr_t)b) % 16) return 41005;
     if (m == 0) return 0;
-    if (m > 32 && m <= v41_wide[0]) {
+    if (m > 32 && m <= v41_wide(0)) {
         // the small-row body, a launch a group of 32 rows
         long ce = out_f32 ? 4 : 2;
         for (int m0 = 0; m0 < m; m0 += 32) {
@@ -1673,7 +1678,7 @@ extern "C" int memra_v41_gemm_f8(const void* a, long lda, const void* as, long l
         }
         return 0;
     }
-    if (m >= V41_PARTS_MIN && m <= 32 && (m <= V41_SM_MAX || m <= v41_wide[0]) && wfmt >= 0 && wfmt <= 2) {
+    if (m >= V41_PARTS_MIN && m <= 32 && (m <= V41_SM_MAX || m <= v41_wide(0)) && wfmt >= 0 && wfmt <= 2) {
         // 7 to 32 rows: K in parts of as many blocks as keep a part's terms within 24 KB (four blocks an
         // SM) and a warp's share within its registers
         int kp = (24576 / (32 * m)) & ~7;
@@ -2027,7 +2032,7 @@ extern "C" int memra_v41_gemm_bf16(const void* a, long lda, long sAz, const void
                                    long ldc, long sCz, int out_f32, int m, int n, int k, int batch, void* stream) {
     if (k % 32 || m < 0 || n <= 0 || batch <= 0 || lda % 8 || ldb % 8 || sAz % 8 || sBz % 8) return 41006;
     if (m == 0) return 0;
-    if (m > 2 * V41_SM_MAX && m <= v41_wide[1]) {
+    if (m > 2 * V41_SM_MAX && m <= v41_wide(1)) {
         // the small-row body, a launch a group of 16 rows (a batch's planes keep their strides)
         long ce = out_f32 ? 4 : 2;
         for (int m0 = 0; m0 < m; m0 += 2 * V41_SM_MAX) {
@@ -2039,7 +2044,7 @@ extern "C" int memra_v41_gemm_bf16(const void* a, long lda, long sAz, const void
         return 0;
     }
     cudaStream_t st = (cudaStream_t)stream;
-    bool r16 = m > V41_SM_MAX && m <= 2 * V41_SM_MAX && m <= v41_wide[1];
+    bool r16 = m > V41_SM_MAX && m <= 2 * V41_SM_MAX && m <= v41_wide(1);
     if (m <= V41_SM_MAX || r16) {
         int su, stages, wpb, smem;
         dim3 grid;
@@ -2339,7 +2344,9 @@ extern "C" int memra_v41_gemm_ffma(const void* a, long lda, const void* b, long 
                                    int k, void* stream) {
     if (k % 32 || m < 0 || n <= 0) return 41023;
     if (m == 0) return 0;
-    if (m > V41_SM_MAX && m <= 32 && m <= v41_wide[2] && n <= 4096 && lda % 8 == 0 && ldb % 8 == 0) {
+    // the row forms load 16 bytes at a time from the rows of a and b: their bases too must be aligned
+    bool al = lda % 8 == 0 && ldb % 8 == 0 && ((uintptr_t)a | (uintptr_t)b) % 16 == 0;
+    if (m > V41_SM_MAX && m <= 32 && m <= v41_wide(2) && n <= 4096 && al) {
         // a narrow output (the router's gate, the compressor) at 9 to 32 rows: the narrow kernel's block is
         // already 4 columns x 32 chains, so the whole call is one launch with K in as many parts as let
         // the block hold the rows (a chain is still its K fmas in K order); else the groups below
@@ -2355,7 +2362,7 @@ extern "C" int memra_v41_gemm_ffma(const void* a, long lda, const void* b, long 
             }
         }
     }
-    if (m > V41_SM_MAX && m <= v41_wide[2] && lda % 8 == 0 && ldb % 8 == 0) {
+    if (m > V41_SM_MAX && m <= v41_wide(2) && al) {
         // the small-row body, a launch a group of rows
         for (int m0 = 0; m0 < m; m0 += V41_SM_MAX) {
             int mm = m - m0 < V41_SM_MAX ? m - m0 : V41_SM_MAX;
@@ -2365,7 +2372,7 @@ extern "C" int memra_v41_gemm_ffma(const void* a, long lda, const void* b, long 
         }
         return 0;
     }
-    if (m <= V41_SM_MAX && lda % 8 == 0 && ldb % 8 == 0) {
+    if (m <= V41_SM_MAX && al) {
         // the narrow form when all of K, or its halves, fit a block with the call's rows; else a block
         // of 32 columns with 4 or 8 rows
         cudaStream_t st = (cudaStream_t)stream;
@@ -2390,7 +2397,7 @@ extern "C" int memra_v41_gemm_ffma(const void* a, long lda, const void* b, long 
         V41_ERR();
     }
     dim3 grid((n + 63) / 64, (m + 63) / 64);
-    if (lda % 8 == 0 && ldb % 8 == 0 && ((uintptr_t)a | (uintptr_t)b) % 16 == 0)
+    if (al)
         v41_gemm_ffma_kernel<true><<<grid, 256, 0, (cudaStream_t)stream>>>((const v41_bf*)a, lda, (const v41_bf*)b, ldb,
                                                                            c, ldc, m, n, k);
     else
@@ -3434,7 +3441,7 @@ __global__ void __launch_bounds__(256) v41_topk_kernel(const v41_bf* __restrict_
 extern "C" int memra_v41_topk(const void* score, long lds, int T, int k, int out_w, int offset, int* out, long ldo,
                               int rows, void* stream) {
     if (rows <= 0) return rows < 0 ? 41010 : 0;
-    if (k > out_w || T < 0) return 41010;
+    if (k < 0 || k > out_w || T < 0) return 41010;
     // A few rows (decode) run the contiguous form: with the card to itself a block reads its row
     // fastest that way (0.040 against 0.062 ms on a 32,768-key row); many rows at once want the
     // strided table form (10.1 against 4.3 ms for 8,192 such rows).
@@ -3452,7 +3459,10 @@ extern "C" int memra_v41_topk(const void* score, long lds, int T, int k, int out
 }
 
 // select_candidate_blocks: block score = max over cb positions, the block holding the row's newest
-// visible position pinned to +inf, top-k blocks kept when finite. keep [rows][nb] u8.
+// visible position pinned to +inf, top-k blocks kept when finite. keep [rows][nb] u8. BIG as in
+// v41_topk_kernel: the instance for emit tables past 48 KB with the static shared memory (rows of
+// more than 128,000 blocks: 1.024M positions at 8 a block), with its own shared-memory limit.
+template <int BIG>
 __global__ void __launch_bounds__(256) v41_candidates_kernel(const v41_bf* __restrict__ score, long lds, int T,
                                                              int cb, int kblocks, int start_pos, int ratio,
                                                              uint8_t* __restrict__ keep, long ldk, int tabs) {
@@ -3473,10 +3483,17 @@ __global__ void __launch_bounds__(256) v41_candidates_kernel(const v41_bf* __res
 extern "C" int memra_v41_candidates(const void* score, long lds, int T, int cb, int kblocks, int start_pos, int ratio,
                                     uint8_t* keep, long ldk, int rows, void* stream) {
     if (rows <= 0) return rows < 0 ? 41011 : 0;
-    if (cb <= 0 || ratio <= 0) return 41011;
+    if (cb <= 0 || ratio <= 0 || kblocks < 0 || T < 0) return 41011;
     int tb = v41_sel_tab_bytes((T + cb - 1) / cb);
-    v41_candidates_kernel<<<rows, 256, tb, (cudaStream_t)stream>>>((const v41_bf*)score, lds, T, cb, kblocks, start_pos,
-                                                                   ratio, keep, ldk, tb > 0);
+    if (tb + V41_SEL_STATIC > 48 * 1024) {
+        V41_SMEM_LIMIT(v41_candidates_kernel<1>, 51200 - V41_SEL_STATIC);
+        V41_CARVE_MAX(v41_candidates_kernel<1>);
+        v41_candidates_kernel<1><<<rows, 256, tb, (cudaStream_t)stream>>>((const v41_bf*)score, lds, T, cb, kblocks,
+                                                                          start_pos, ratio, keep, ldk, tb > 0);
+    } else {
+        v41_candidates_kernel<0><<<rows, 256, tb, (cudaStream_t)stream>>>((const v41_bf*)score, lds, T, cb, kblocks,
+                                                                          start_pos, ratio, keep, ldk, tb > 0);
+    }
     V41_ERR();
 }
 
@@ -3664,7 +3681,7 @@ static int v41_sn_launch(const V41Keys& K, int k, int* ws, int* out, int out_w, 
 // `memra_v41_topk` for one row, over a zeroed int scratch of V41_SN_CNT + 2 x V41_SN_BLOCKS words.
 extern "C" int memra_v41_topk_long(const void* score, int T, int k, int out_w, int offset, int* out, int* ws,
                                    void* stream) {
-    if (k > out_w || T <= 0) return 41010;
+    if (k < 0 || k > out_w || T <= 0) return 41010;
     V41Keys K{(const v41_bf*)score, T, 0, T, -1};
     return v41_sn_launch(K, k, ws, out, out_w, offset, nullptr, (cudaStream_t)stream);
 }
@@ -3672,7 +3689,7 @@ extern "C" int memra_v41_topk_long(const void* score, int T, int k, int out_w, i
 // `memra_v41_candidates` for one row (the query at `start_pos`), over the same scratch.
 extern "C" int memra_v41_candidates_long(const void* score, int T, int cb, int kblocks, int start_pos, int ratio,
                                          uint8_t* keep, int* ws, void* stream) {
-    if (cb <= 0 || ratio <= 0 || T <= 0 || !keep) return 41011;
+    if (cb <= 0 || ratio <= 0 || kblocks < 0 || T <= 0 || !keep) return 41011;
     int visible = (start_pos + 1) / ratio;
     V41Keys K{(const v41_bf*)score, (T + cb - 1) / cb, cb, T, visible > 0 ? (visible - 1) / cb : -1};
     return v41_sn_launch(K, kblocks, ws, nullptr, 0, 0, keep, (cudaStream_t)stream);
@@ -4499,7 +4516,7 @@ extern "C" int memra_v41_hc_mixes(const void* x, const float* fn, const float* s
     if (rows <= 0) return rows < 0 ? 41016 : 0;
     cudaStream_t st = (cudaStream_t)stream;
     int n1 = hc * d, smem1 = ((n1 + 255) / 256) * (64 + 4 * 128);
-    if ((rows <= V41_SM_MAX || rows <= v41_wide[3]) && smem1 <= 99 * 1024 && n1 % 8 == 0 && (uintptr_t)fn % 16 == 0) {
+    if ((rows <= V41_SM_MAX || rows <= v41_wide(3)) && smem1 <= 99 * 1024 && n1 % 8 == 0 && (uintptr_t)fn % 16 == 0) {
         // a few rows: the one-token kernel a row (6.7 us, where the 16-token pass takes 53)
         if (smem1 > 48 * 1024) V41_SMEM_LIMIT(v41_hc_mixes_part1_kernel, 99 * 1024);
         v41_hc_mixes_part1_kernel<<<dim3(rows, 8, (nmix + 4) / 4), 128, smem1, st>>>((const v41_bf*)x, fn, nmix, n1,
@@ -4709,9 +4726,10 @@ extern "C" int memra_v41_engram_dequant(const void* rows, const void* sc, long n
     V41_ERR();
 }
 
-__global__ void v41_engram_gate_kernel(const v41_bf* __restrict__ h, const v41_bf* __restrict__ kv,
+// h and out carry no __restrict__: the layer writes the stream in place (out == h)
+__global__ void v41_engram_gate_kernel(const v41_bf* h, const v41_bf* __restrict__ kv,
                                        const v41_bf* __restrict__ qw, const v41_bf* __restrict__ kw, int hc, int d,
-                                       float eps, float inv_sqrt_d, v41_bf* __restrict__ out) {
+                                       float eps, float inv_sqrt_d, v41_bf* out) {
     __shared__ float red[32];
     int s = blockIdx.x, k = blockIdx.y;
     const v41_bf* hr = h + ((long)s * hc + k) * d;

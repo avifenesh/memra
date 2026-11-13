@@ -455,16 +455,8 @@ impl ExpertCache {
             self.fence.record(&ops.st).map_err(de)?;
             self.copy.wait(&self.fence).map_err(de)?;
             let cs = self.copy.cu_stream();
+            let mut failed = None;
             for (&i, &(_, s)) in miss.iter().zip(&cand) {
-                if self.key[s] != 0 {
-                    self.slot_of.remove(&self.key[s]);
-                    self.stats.evictions += 1;
-                }
-                let key = (layer * ne + experts[i] + 1) as u32;
-                self.key[s] = key;
-                self.stamp[s] = clock;
-                self.slot_of.insert(key, s);
-                slot_at[i] = s;
                 let src = self.host.expert(layer, experts[i]);
                 let rc = unsafe {
                     cudarc::driver::sys::cuMemcpyHtoDAsync_v2(
@@ -475,13 +467,29 @@ impl ExpertCache {
                     )
                 };
                 if rc != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
-                    return Err(format!("expert cache H2D: {rc:?}"));
+                    failed = Some(rc);
+                    break;
                 }
+                // the copy is queued: from here the slot holds this expert (a failed copy
+                // leaves the slot mapped to what it held)
+                if self.key[s] != 0 {
+                    self.slot_of.remove(&self.key[s]);
+                    self.stats.evictions += 1;
+                }
+                let key = (layer * ne + experts[i] + 1) as u32;
+                self.key[s] = key;
+                self.stamp[s] = clock;
+                self.slot_of.insert(key, s);
+                slot_at[i] = s;
                 self.stats.misses += 1;
                 self.stats.h2d_bytes += src.len() as u64;
             }
+            // the copies queued before a failure are mapped: the stream waits for them either way
             self.ready.record(&self.copy).map_err(de)?;
             ops.st.wait(&self.ready).map_err(de)?;
+            if let Some(rc) = failed {
+                return Err(format!("expert cache H2D: {rc:?}"));
+            }
         }
         Ok(slot_at.iter().map(|&s| self.base(ops, s)).collect())
     }

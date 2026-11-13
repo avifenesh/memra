@@ -6235,6 +6235,24 @@ pub fn copy_2d(
     if rows == 0 || width == 0 {
         return Ok(());
     }
+    // the last row's end inside each buffer, and a row inside its pitch
+    let end = |row0: usize, pitch: usize, col: usize| {
+        (row0 + rows - 1)
+            .checked_mul(pitch)
+            .and_then(|b| b.checked_add(col + width))
+    };
+    let (src_end, dst_end) = (end(src_row, spitch, 0), end(0, dpitch, dcol));
+    if width > spitch
+        || dcol + width > dpitch
+        || src_end.is_none_or(|e| e > src.len)
+        || dst_end.is_none_or(|e| e > dst.len)
+    {
+        return Err(format!(
+            "copy_2d: {rows} rows of {width} bytes (source row {src_row}, pitch {spitch}; \
+             destination column {dcol}, pitch {dpitch}) out of range of {} and {} bytes",
+            src.len, dst.len
+        ));
+    }
     use cudarc::driver::sys::*;
     let p = CUDA_MEMCPY2D {
         srcXInBytes: 0,
