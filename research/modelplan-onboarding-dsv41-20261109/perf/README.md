@@ -1295,6 +1295,17 @@ and device-push 1,105 / 0 (6 spans captured, 42 replays, 12 checked); peer-pull 
 door captures no span (`spans=0`), so that run is the eager peer-pull gate. No run flagged for a
 slowdown, no page-cache drop inside a run.
 
+The ring at one and two stages (2026-11-14, one GB10, 121a, `receipts/r2-ring-k256-k512-gb10`, the
+#1283 review's nit): the ring has 4 stages of 256 elements and its prologue lands 3, so at K 256 and
+512 a call holds fewer stages than the prologue lands, and both the prologue's guard and the loop's
+refill guard skip. The kernel gate now runs the ring there beside the (2, 30, 5120) shape: widths 30
+(the last 4-column block partial) and 32 (whole blocks), 2 rows and 8 (every lane of the warp), each
+against the first rows of a 24-row call on the narrow kernel with K in parts (a form that is not the
+ring), and the pair against the 24-row calls on each weight. 202 of 202 built from the change's commit
+(`6b1617fa46`) against 184 of 184 on main at `df1d23a764` (`base-main/`; the change's base, main
+`bbc6f83aea`, has the same gate and kernel sources): the 18 new checks pass, every output byte equal,
+and the existing entries keep their names.
+
 ### A four-card prefill's copies, and the copy call that was slow
 
 On four cards a 4,096-token prefill took 4.0 s (vLLM's: 0.24 s). The night pass's trace
