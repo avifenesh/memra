@@ -1278,9 +1278,13 @@ runs (`receipts/r1-dig/gemm-5090`); at 1 and 4 rows it is faster, and the PRO 60
 The pair's step (cards 2 and 3, 20 layers, kpc A against r2 B, A B B A B A A B, 4 runs an arm,
 steady calls past 0.5 s of load): one-row decode 6.670 -> 6.505 ms (-2.5%; 919 and 912 calls; by run,
 the median of each run's steady calls, kpc 6.664 [6.663, 6.679] against r2 6.499 [6.492, 6.514] over 4 runs an arm,
-the ranges apart; `r2-pair23/per-run.md`),
-4-row block 8.845 -> 8.824 (-0.2%), 8-row block 12.362 -> 12.344 (-0.1%; 36 calls an arm each); no
-run flagged for a slowdown, no page-cache drop inside a run.
+the ranges apart; `r2-pair23/per-run.md`). The 4-row block (8.845 -> 8.824 ms) and the 8-row block
+(12.362 -> 12.344 ms) are level (36 calls an arm each). No run flagged for a slowdown, no page-cache
+drop inside a run.
+
+Pending: the graph door (`MEMRA_DSV41_DECODE_GRAPH=1 dsv41-gate tp`) has not run at a head that holds
+r2 (its gates ran default, peer-pull and host-canonical); it runs on the PRO 6000 pair in the next card
+window.
 
 ### A four-card prefill's copies, and the copy call that was slow
 
