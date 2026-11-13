@@ -39189,13 +39189,21 @@ fn admit_calibrate_on() -> bool {
 /// charges separately (the probe session's context-linear KV and its measured draft-graph
 /// state). What remains is the RECURRING first-burst transient — capture arenas, verify
 /// activations, prime chunk slabs — the reserve exists to hold room for.
+///
+/// `parked` is the prime GDN scan workspace parked on the device when the peak was read
+/// (memra#1258 step 2). It sits in the peak because it stays mapped through the probe's
+/// verify burst, and the post-probe trim frees it, so it is not in the rest either. Admission
+/// counts it as cached (`Engine::pool_cached_bytes`), reclaimable by the same trims, so the
+/// floor leaves it out; charging it here as well counted it twice.
 fn calibration_transient_floor(
     used_high: usize,
     used_rest: usize,
     charged_kv: usize,
     charged_draft: usize,
+    parked: usize,
 ) -> usize {
     used_high
+        .saturating_sub(parked)
         .saturating_sub(used_rest)
         .saturating_sub(charged_kv)
         .saturating_sub(charged_draft)
@@ -39392,10 +39400,11 @@ fn run_boot_calibration(
                 // driver-side graph/cuBLAS allocations the pool never sees), and the
                 // admission gate spends driver-visible free — the floor must be in the same
                 // currency (measured escalation, owner-shape cells).
+                // The parked prime GDN workspace is read here, before the trim frees it.
                 let mut highs: Vec<(usize, usize, usize)> = Vec::new();
                 for_each_device_engine(engine, loaded, &mut |device, dev_engine| {
-                    let (res_high, used_high) = dev_engine.pool_high_water_reset();
-                    highs.push((device, res_high, used_high));
+                    let (res_high, _used_high) = dev_engine.pool_high_water_reset();
+                    highs.push((device, res_high, dev_engine.prime_gdn_ws_parked_bytes()));
                 });
                 // POST-PROBE POOL TRIM (measured on the med-class c=8 cell): the probe's
                 // freed blocks sit CACHED in the async pool where only pool allocations can
@@ -39418,11 +39427,11 @@ fn run_boot_calibration(
                 let mut parts: Vec<String> = Vec::new();
                 for_each_device_engine(engine, loaded, &mut |device, dev_engine| {
                     let (res_rest, _used_rest) = dev_engine.pool_reserved_used();
-                    let res_high = highs
+                    let (res_high, parked) = highs
                         .iter()
                         .find(|(d, _, _)| *d == device)
-                        .map(|(_, r, _)| *r)
-                        .unwrap_or(0);
+                        .map(|(_, r, p)| (*r, *p))
+                        .unwrap_or((0, 0));
                     let mut charged = tp_kv
                         .iter()
                         .find(|charge| charge.device == device)
@@ -39433,10 +39442,13 @@ fn run_boot_calibration(
                             .saturating_add(charged_kv)
                             .saturating_add(charged_draft);
                     }
-                    let dev_floor = calibration_transient_floor(res_high, res_rest, charged, 0);
+                    let dev_floor =
+                        calibration_transient_floor(res_high, res_rest, charged, 0, parked);
                     parts.push(format!(
-                        "dev{device} peak-mapped {}MB rest-mapped {}MB charged {}MB -> {}MB",
+                        "dev{device} peak-mapped {}MB parked-gdn-ws {}MB rest-mapped {}MB \
+                         charged {}MB -> {}MB",
                         res_high / (1 << 20),
+                        parked / (1 << 20),
                         res_rest / (1 << 20),
                         charged / (1 << 20),
                         dev_floor / (1 << 20),
@@ -42386,6 +42398,7 @@ mod tests {
             prompt_row_bytes: 20_480,
             n_layers: 64,
             swa_ring: false,
+            gdn_ws_row_bytes: 0,
             gdn_grid: false,
             step_gemm: false,
         };
@@ -42450,6 +42463,7 @@ mod tests {
             prompt_row_bytes: 20_480,
             n_layers: 64,
             swa_ring: false,
+            gdn_ws_row_bytes: 0,
             gdn_grid: false,
             step_gemm: false,
         };
@@ -42800,12 +42814,51 @@ mod tests {
         let rest = 512usize << 20;
         let peak = rest + kv + draft + transient;
         assert_eq!(
-            calibration_transient_floor(peak, rest, kv, draft),
+            calibration_transient_floor(peak, rest, kv, draft, 0),
             transient
         );
         // Saturating on every term: a probe whose charged state exceeds the dip yields 0
         // (the static lower bound then serves), never an underflow.
-        assert_eq!(calibration_transient_floor(rest, rest, kv, draft), 0);
+        assert_eq!(calibration_transient_floor(rest, rest, kv, draft, 0), 0);
+    }
+
+    #[test]
+    fn calibration_floor_leaves_out_the_parked_gdn_workspace() {
+        // memra#1258 step 2: the prime GDN scan workspace stays parked through the probe's
+        // verify burst, so the peak holds it, and the post-probe trim frees it, so the rest
+        // does not. Admission already counts it as cached; the floor must not charge it too.
+        let kv = 1_200usize << 20;
+        let transient = 1_576usize << 20;
+        let parked = 256usize << 20;
+        let rest = 18_688usize << 20;
+        let peak = rest + kv + transient + parked;
+        assert_eq!(
+            calibration_transient_floor(peak, rest, kv, 0, parked),
+            transient
+        );
+        // Without a parked workspace the floor is the dip as before.
+        assert_eq!(
+            calibration_transient_floor(peak - parked, rest, kv, 0, 0),
+            transient
+        );
+        // A parked workspace larger than the dip saturates to 0.
+        assert_eq!(calibration_transient_floor(rest, rest, 0, 0, parked), 0);
+        // The boot calibration reads the parked bytes before the post-probe trim frees them,
+        // and hands them to the floor.
+        let src = include_str!("worker.rs");
+        let cal = src
+            .find("\nfn run_boot_calibration(")
+            .expect("the calibration");
+        let body = &src[cal..cal + src[cal..].find("\n}\n").expect("its end")];
+        let read = body
+            .find("dev_engine.prime_gdn_ws_parked_bytes()")
+            .expect("the parked read");
+        let trim = body
+            .find("trim_model_device_pools(engine, loaded, \"calibration-complete\")")
+            .expect("the post-probe trim");
+        assert!(read < trim);
+        let flat: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+        assert!(flat.contains("calibration_transient_floor(res_high,res_rest,charged,0,parked)"));
     }
 
     #[test]
@@ -50931,6 +50984,7 @@ mod tests {
                 prompt_row_bytes: 4 * h,
                 n_layers: 64,
                 swa_ring: false,
+                gdn_ws_row_bytes: 0,
                 gdn_grid: false,
                 step_gemm: false,
             }),
@@ -51249,6 +51303,7 @@ mod tests {
                         prompt_row_bytes: 8192,
                         n_layers: 40,
                         swa_ring: false,
+                        gdn_ws_row_bytes: 0,
                         gdn_grid: false,
                         step_gemm: false,
                     }),
@@ -51275,6 +51330,7 @@ mod tests {
                         prompt_row_bytes: 12_288,
                         n_layers: 32,
                         swa_ring: true,
+                        gdn_ws_row_bytes: 0,
                         gdn_grid: false,
                         step_gemm: false,
                     }),
@@ -51419,6 +51475,7 @@ mod tests {
                 prompt_row_bytes: 8192,
                 n_layers: 40,
                 swa_ring: false,
+                gdn_ws_row_bytes: 0,
                 gdn_grid: false,
                 step_gemm: false,
             }),
@@ -52741,6 +52798,7 @@ mod tests {
             prompt_row_bytes: 4 * 2048,
             n_layers: 41,
             swa_ring: false,
+            gdn_ws_row_bytes: 0,
             gdn_grid: false,
             step_gemm: false,
         };
@@ -58108,6 +58166,7 @@ mod tests {
             prompt_row_bytes: 20_480,
             n_layers: 64,
             swa_ring: false,
+            gdn_ws_row_bytes: 0,
             gdn_grid: false,
             step_gemm: false,
         };
