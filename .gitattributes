@@ -98,3 +98,11 @@ research/same-pass-admission-20261112/harness/*.patch -text whitespace=-blank-at
 # memra#1244: the round-yield cells' raw answer texts end lines in a space or end in a blank line; stored byte for byte.
 research/spec-plain-round-yield-20261112/**/texts/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
 research/spec-plain-round-yield-20261112/**/*.log -text whitespace=-blank-at-eol,-blank-at-eof
+
+# memra#1258: the prime tail-cap receipts keep their tool output whitespace (raw cargo logs end in a blank
+# line, the run summaries and guard logs end lines in a space, a variant patch has blank context lines);
+# stored byte for byte.
+research/prime-tail-cap-20261113/cpu*/*.log -text whitespace=-blank-at-eol,-blank-at-eof
+research/prime-tail-cap-20261113/cpu*/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
+research/prime-tail-cap-20261113/gates*/*.log -text whitespace=-blank-at-eol,-blank-at-eof
+research/prime-tail-cap-20261113/variant2/*.patch -text whitespace=-blank-at-eol,-blank-at-eof
