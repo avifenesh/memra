@@ -1,0 +1,18 @@
+# memra#1266 review round 2, GB10 (u2): build F5 (the round-2 head), then agentic c=2 M3 F5 F5 M3,
+# the need-pad door on F5 (the reclaim's ladder on unified memory), and normal cells M3 F5, F5 M3.
+# Correctness cells: OOM counts, texts, capped-forward and reclaim counts.
+g5build1 25 may-fail -- bash box/build_gb10_r3.sh 23
+g5build2 25 -- bash box/build_gb10_r3.sh 23
+gag5-01-M 25 -- bash box/agentic_gb10.sh gag5 01-M M3
+gag5-02-F 25 -- bash box/agentic_gb10.sh gag5 02-F F5
+gpad-01-F 25 -- EXTRA_ADD=MEMRA_SPEC_COHORT_NEED_PAD_MB=1024 bash box/agentic_gb10.sh gpad 01-F F5
+gag5-03-F 25 -- bash box/agentic_gb10.sh gag5 03-F F5
+gag5-04-M 25 -- bash box/agentic_gb10.sh gag5 04-M M3
+gnc5-01-M+02-F 25 -- bash box/normal_gb10.sh gnc5 01-M M3; bash box/normal_gb10.sh gnc5 02-F F5
+gnc5-03-F+04-M 25 -- bash box/normal_gb10.sh gnc5 03-F F5; bash box/normal_gb10.sh gnc5 04-M M3
+# gpad-02-F: unified memory reads about 87 to 91 GiB here, so a 1 GiB pad funds every pass (gpad-01-F: 0 reclaims); 100,000 MiB keeps every pass short: the full ladder and the short count.
+gpad-02-F 30 -- EXTRA_ADD=MEMRA_SPEC_COHORT_NEED_PAD_MB=100000 bash box/agentic_gb10.sh gpad 02-F F5
+# The riders cell on GB10 (riders ride the pooled forward on this card; on the RTX 5090 they step plain inside each round): M3, F5 forced cap, F5.
+griders-01-M 25 -- bash box/riders_gb10.sh griders 01-M M3
+griders-02-S 25 -- bash box/riders_gb10.sh griders 02-S F5 MEMRA_SPEC_POOL_SERIAL=1
+griders-03-F 25 -- bash box/riders_gb10.sh griders 03-F F5

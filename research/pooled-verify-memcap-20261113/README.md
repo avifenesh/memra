@@ -5,15 +5,17 @@ head, the 29-turn agentic replay at c = 2) the pooled MTP verify held every memb
 checkpoint at once (about 1.5 GB for K=5 + K=5) with nothing charging or checking it, and ran
 out at layer 61 of 64 after both streams had sent: main failed requests 19 and 21 in 9 of 9
 boots. A member now joins a pooled verify forward only while the whole forward (its members'
-checkpoint columns and logits, the FA partial pool's growth at the forward's width) and a
-256 MiB margin fit the allocatable memory; the rest verify after it, bitwise the same. Before
-the cohorts step, evictable memory (prefix entries first, then parked sessions) funds the
-largest member's round plus every member's burst snapshot. The fix answered 29 of 29 in every
-boot (round 0: 3 of 3; round 1: 1 of 1; final code: 2 of 2; 23 capped forwards each), texts equal to
-main's and to the memra#1221 part 2 head's; the forced-cap arm (every member alone) writes the
-same 29 texts. GB10 never reaches the cap (0 capped forwards, texts and tok/s unchanged). The
-final-code timed cells (c = 2 and 4 under the take rule, the normal cells, the pooled-vs-serial
-bench) and the gates are queued.
+checkpoint columns and logits, the FA partial pool's growth priced launch by launch, one per
+same-rung run of rows) and a 256 MiB margin fit the allocatable memory; the rest verify after
+it, bitwise the same. Before the cohorts step, evictable memory (prefix entries first, then
+parked sessions, reaping the graveyard after each) funds the largest member's round plus every
+member's burst snapshot, on a reading without the unbuilt sessions' booking. Every fix boot
+answered 29 of 29, texts equal to main's and to the memra#1221 part 2 head's; the forced-cap arm
+writes the same texts. With a test door that pads the need, the reclaim ran on both cards (15
+reclaims on the RTX 5090; 48 reclaims and 240 short passes on GB10) with texts equal to main's.
+The rider cap counted 307 capped rider rows on GB10 in the forced-cap arm with texts equal to
+main's; on the RTX 5090 a rider steps plain inside each round, so that path does not run there.
+GB10 never reaches the cap in serving shape. Pending on the RTX 5090: c = 4 F, S and M, the two gates and the cost bench.
 
 Decision record:
 [`docs/decisions/POOLED-VERIFY-MEMORY-CAP.md`](../../docs/decisions/POOLED-VERIFY-MEMORY-CAP.md).
@@ -26,12 +28,15 @@ Decision record:
 | fix, round 0 | `6433a5a264` on `11b368f7d7` (the first cut) | RTX 5090 (sm_120a) | `8f1b48774396f5ac` | `memra-0.141.1-4e861bdcb961` |
 | fix, round 1 (F2) | the review-round-1 code (`fb417c4643`) on `11b368f7d7` | RTX 5090 (sm_120a) | `d8101f1c793e106f` | |
 | main (M3) | main `a17add18f3`'s crates (built as `7a43ac1e56` with memra#1256's `worker.rs`, byte for byte the crates of `7a32d9b10b` and `a17add18f3`) | RTX 5090 (sm_120a) | `2e04b66a07877895` | |
-| fix (F3) | this branch's head: the final code, the same crates | RTX 5090 (sm_120a) | `4a1abee9fb32937f` | |
+| fix (F3) | the round-1 code on main's crates (`7d7f56b46a`) | RTX 5090 (sm_120a) | `4a1abee9fb32937f` | |
+| fix (F4) | `e8a306389a`: F3 plus the numeric-scope guard in `spec_round_bytes` (it launches nothing); built, superseded by F5 before a cell ran on it | RTX 5090 (sm_120a) | `8cb259d1f85008b5` | |
+| fix (F5) | the review-round-2 code (`0551668a5d`, on `a17add18f3`; rebased onto `202e1411fe` with no change to its files); every cell under "Review round 2" | RTX 5090 (sm_120a) | `6980707df19deedf` | |
 | diagnostic | main + `harness/rig/diag_probe.py` (log lines only) | RTX 5090 (sm_120a) | `8e7abde6637cc294` | `memra-0.141.1-c200db12045d` |
 | main | `11b368f7d7` | GB10 (sm_121a) | `2e1211ff9466a203` | `memra-0.141.1-32737cebc309` |
 | fix, round 0 | as above | GB10 (sm_121a) | `b9c35baaee789aca` | `memra-0.141.1-4e861bdcb961` |
 | M3, F3 | as above (`spec.rs`, `worker.rs` and server `lib.rs` hashed in the build log against the trees) | GB10 (sm_121a) | `4e262794c7bfd775` / `7df050125df70bf1` | |
-| bench | `decode-batch-bench` from the round-0 fix tree (the verify paths it times are unchanged since) | RTX 5090 (sm_120a) | `16903e07c5710f5b` | |
+| F5 | as above (`spec.rs`, engine `lib.rs`, `worker.rs` and server `lib.rs` hashed against the tree) | GB10 (sm_121a) | `065153e432ae8ac8` | |
+| bench | `decode-batch-bench` from the F5 tree | RTX 5090 (sm_120a) | `7df981001fa9f53d` | |
 
 The RTX 5090 binaries were built on the CPU build host (`harness/build-host/dd_build.sh`; M3 by
 `dd_build_m3.sh`), the GB10 ones on the unit (`harness/gb10/build_gb10*.sh`). Card conditions:
@@ -48,6 +53,16 @@ not depend on it. A timed take on the RTX 5090 counts only when no arm shows sof
 slowdown in more than 5% of its 1 Hz samples under load and none starts at 86 C or hotter
 (`harness/rig/take_check.py`); a take that fails is kept as `DIR.takeN`, the card rests 5 minutes
 under the held lease, and the step runs again, up to 3 times (`harness/rig/timed_take.sh`).
+
+The thermal regime, measured: under `--perf` at 175 W a sustained load holds this card at its
+87 C temperature target. The first timed take at c = 4 (`agentic-5090-c4-perf-take/01-F.take1`,
+started at 73 C) reached 86 C within about two minutes and peaked at 89 C; software thermal
+slowdown was active on 352 of its 360 samples under load (98%), hardware thermal slowdown on
+none. No rest brings a sustained cell under the rule's 5%, so the sustained cells here (the
+agentic replays, the normal cells, the gates) run as correctness cells on a balanced lease: OOM
+counts, texts and capped-forward counts, no timing claim. The one timed step is the cost bench
+(short, pooled and serial verify of the same shapes in one process), under `--perf` and the take
+rule.
 
 ## The shape
 
@@ -84,17 +99,145 @@ suspension reads the driver figure alone at the round gate, before the chunk wal
 boots below read the same sum without the suspension), so that column is not an effect of the
 cap.
 
-## Agentic replay, RTX 5090, c = 2
+## Review round 2: the final code (F5)
 
-**Final code (`agentic-5090-c2-final/`):** M3 against F3, and S = F3 with
-`MEMRA_SPEC_POOL_SERIAL=1` (every member verifies alone, no rider joins: the forced-cap arm).
+Correctness cells on a balanced lease (OOM counts, texts and the memory cap's counters; no
+timing claim), F5 against M3, alternating; the one timed step is the cost bench. No prompt of
+these cells is in memra#1274's k x 4,096 + 1 to 15 band (the agentic replays' 29 prompts run
+1,604 to 17,101 tokens; the exact-resend gate's 11,000 and 11,150), so landing 17's prime
+change, which the rebase brings, does not reach them.
 
-| boot | ok | failed | tokens | agg gen tok/s | per-user median tok/s | TTFT p50 s | OOM lines | not parked | capped forwards | pre-cohort reclaims | graph suspended | profile; limit under load W |
+### Agentic replay, RTX 5090, c = 4 (`agentic-5090-c4-r2/`)
+
+F5, F5 forced cap and M3 at c = 4 run in the RTX 5090's first round-2 block; this section is updated when they finish (round 0's main boot at c = 4 answered 29 of 29, below).
+
+### The pre-cohort reclaim on hardware (`pad-5090/`, `pad-gb10/`)
+
+`MEMRA_SPEC_COHORT_NEED_PAD_MB` adds to the need so the ladder runs where the real need is
+funded. RTX 5090, F5 with a 1,024 MiB pad, the agentic replay at c = 2 (also this round's c = 2
+boot of the final code on this card: the earlier rounds' c = 2 boots below hold the 29 of 29
+across every fix boot):
+
+| boot | ok | failed | tokens | OOM lines | not parked | capped forwards | capped rider rows | pre-cohort reclaims | short passes | fence-funded passes | graph suspended | profile; limit under load W |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 01-M | 27 | 19,21 | 8897 | 37.13 | 41.24 | 3.447 | 2 | 2 | n/a | n/a | 2 | balanced; 157 (140 to 160) |
-| 02-F | 29 | - | 9396 | 39.34 | 43.4 | 3.424 | 0 | 0 | 23 | 0 | 0 | balanced; 156 (140 to 160) |
-| 03-S | 29 | - | 9396 | 39.14 | 39.0 | 3.123 | 0 | 0 | 1457 | 0 | 0 | balanced, then performance from 06:41:49; 155 (155 to 175) |
-| 04-F | 29 | - | 9396 | 43.16 | 47.01 | 3.007 | 0 | 0 | 23 | 0 | 0 | performance at start (end not read); 175 (149 to 175) |
+| 01-F | 29 | - | 9396 | 0 | 0 | 0 | 0 | 15 | 0 | 0 | 4 | balanced; 155 (155 to 155) |
+
+- 01-F: 29 answered texts equal 01-F's; differing k: none
+- 01-F against memra#1221 part 2 head rtxag3/02-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
+- 01-F against memra#1221 part 2 head rtxag3/03-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
+- reference <lane>/runs/ag5/01-M: unreadable
+
+The reclaims evicted prefix entries (15 passes, no parked session, no pass left short), and with
+that headroom every pooled forward fit: no capped forward in this boot.
+
+GB10, F5: unified memory reads 87 to 91 GiB here, so a 1,024 MiB pad funds every pass (01-F);
+100,000 MiB keeps every pass short (02-F), and the ladder evicts every prefix entry and parked
+session it can:
+
+| boot | ok | failed | tokens | OOM lines | not parked | capped forwards | capped rider rows | pre-cohort reclaims | short passes | fence-funded passes | graph suspended | profile; limit under load W |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 01-F | 29 | - | 9665 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | n/a |
+| 02-F | 29 | - | 9665 | 0 | 0 | 0 | 0 | 48 | 240 | 0 | 0 | n/a |
+
+- 01-F: 29 answered texts equal 01-F's; differing k: none
+- 02-F: 29 answered texts equal 01-F's; differing k: none
+- reference gag5/01-M: 29 answered texts equal 01-F's; differing k: none; k=19/21 equal: {19: True, 21: True}
+
+### Riders (`riders-5090/`, `riders-gb10/`, `riders-gb10-n6/`)
+
+memra#1244's riders cell (`harness/rig/riders_cell_1266.py`): greedy streams, then
+greedy-with-penalty plain requests. On the RTX 5090 a rider steps plain inside each round (the
+card has no cost table for the model), so no rider reaches the pooled forward and the cap's rider
+path does not run there; the texts still compare (1 stream + 2 riders, 2 + 1):
+
+| boot | cell | streams + riders | rider errors | capped forwards | capped rider rows | pre-cohort reclaims | short passes | OOM lines |
+|---|---|---|---|---|---|---|---|---|
+| 01-M | 0 | 1 + 2 pen | 0 | n/a | n/a | n/a | n/a | 0 |
+| 01-M | 1 | 2 + 1 pen | 0 | n/a | n/a | n/a | n/a | 0 |
+| 02-S | 0 | 1 + 2 pen | 0 | 230 | 0 | 0 | 0 | 0 |
+| 02-S | 1 | 2 + 1 pen | 0 | 230 | 0 | 0 | 0 | 0 |
+| 03-F | 0 | 1 + 2 pen | 0 | 0 | 0 | 0 | 0 | 0 |
+| 03-F | 1 | 2 + 1 pen | 0 | 0 | 0 | 0 | 0 | 0 |
+
+- rider and solo texts: 6 of 6 identical across the 3 boots; differing: none
+- long streams: 3 of 3 prefix-equal across the boots
+
+On GB10 the cost table runs everyone plain from 4 in flight (`riders-gb10-n6/`: 2 streams + 4
+riders, `n=4` and `n=6` priced K = 0), so the cells that reach the forward are 1 + 1, 2 + 1 and
+1 + 2:
+
+| boot | cell | streams + riders | rider errors | capped forwards | capped rider rows | pre-cohort reclaims | short passes | OOM lines |
+|---|---|---|---|---|---|---|---|---|
+| 01-M | 0 | 1 + 1 pen | 0 | n/a | n/a | n/a | n/a | 0 |
+| 01-M | 1 | 2 + 1 pen | 0 | n/a | n/a | n/a | n/a | 0 |
+| 01-M | 2 | 1 + 2 pen | 0 | n/a | n/a | n/a | n/a | 0 |
+| 02-S | 0 | 1 + 1 pen | 0 | 201 | 307 | 0 | 0 | 0 |
+| 02-S | 1 | 2 + 1 pen | 0 | 201 | 307 | 0 | 0 | 0 |
+| 02-S | 2 | 1 + 2 pen | 0 | 201 | 307 | 0 | 0 | 0 |
+| 03-F | 0 | 1 + 1 pen | 0 | 0 | 0 | 0 | 0 | 0 |
+| 03-F | 1 | 2 + 1 pen | 0 | 0 | 0 | 0 | 0 | 0 |
+| 03-F | 2 | 1 + 2 pen | 0 | 0 | 0 | 0 | 0 | 0 |
+
+- rider and solo texts: 8 of 8 identical across the 3 boots; differing: none
+- long streams: 4 of 4 prefix-equal across the boots
+
+### Agentic replay, GB10, c = 2 (`agentic-gb10-c2-r2/`)
+
+| boot | ok | failed | tokens | OOM lines | not parked | capped forwards | capped rider rows | pre-cohort reclaims | short passes | fence-funded passes | graph suspended | profile; limit under load W |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 01-M | 29 | - | 9665 | 0 | 0 | n/a | n/a | n/a | n/a | n/a | 0 | n/a |
+| 02-F | 29 | - | 9665 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | n/a |
+| 03-F | 29 | - | 9665 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | n/a |
+| 04-M | 29 | - | 9665 | 0 | 0 | n/a | n/a | n/a | n/a | n/a | 0 | n/a |
+
+- 01-M: 29 answered texts equal 02-F's; differing k: none
+- 02-F: 29 answered texts equal 02-F's; differing k: none
+- 03-F: 29 answered texts equal 02-F's; differing k: none
+- 04-M: 29 answered texts equal 02-F's; differing k: none
+
+### Normal cells, GB10 (`normal-gb10-r2/`)
+
+M3 F5 then F5 M3 (the RTX 5090's normal cells ran in rounds 0 and below):
+
+| boot | c | requests, errors | completion tokens |
+|---|---|---|---|
+| 01-M | 1 | 6, 0 | 960 |
+| 01-M | 2 | 12, 0 | 1920 |
+| 01-M | 4 | 24, 0 | 3840 |
+| 01-M | 8 | 48, 0 | 7680 |
+| 02-F | 1 | 6, 0 | 960 |
+| 02-F | 2 | 12, 0 | 1920 |
+| 02-F | 4 | 24, 0 | 3840 |
+| 02-F | 8 | 48, 0 | 7680 |
+| 03-F | 1 | 6, 0 | 960 |
+| 03-F | 2 | 12, 0 | 1920 |
+| 03-F | 4 | 24, 0 | 3840 |
+| 03-F | 8 | 48, 0 | 7680 |
+| 04-M | 1 | 6, 0 | 960 |
+| 04-M | 2 | 12, 0 | 1920 |
+| 04-M | 4 | 24, 0 | 3840 |
+| 04-M | 8 | 48, 0 | 7680 |
+
+- c=1: one set of (prompt, text sha) across the boots
+- c=2: one set of (prompt, text sha) across the boots
+- c=4: one set of (prompt, text sha) across the boots
+- c=8: one set of (prompt, text sha) across the boots
+- 01-M: out of memory=0; NOT parked=0; pooled MTP verify capped=0; pre-cohort reclaim=0; spec-pool] pooled MTP cohort engaged=3; profile; limit under load W: n/a
+- 02-F: out of memory=0; NOT parked=0; pooled MTP verify capped=0; pre-cohort reclaim=0; spec-pool] pooled MTP cohort engaged=3; profile; limit under load W: n/a
+- 03-F: out of memory=0; NOT parked=0; pooled MTP verify capped=0; pre-cohort reclaim=0; spec-pool] pooled MTP cohort engaged=3; profile; limit under load W: n/a
+- 04-M: out of memory=0; NOT parked=0; pooled MTP verify capped=0; pre-cohort reclaim=0; spec-pool] pooled MTP cohort engaged=3; profile; limit under load W: n/a
+
+## Agentic replay, RTX 5090, c = 2: earlier rounds
+
+**Round 1 on main's crates (`agentic-5090-c2-f3/`):** M3 against F3, and S = F3 with
+`MEMRA_SPEC_POOL_SERIAL=1`. 03-S changed profile in its last minute and 04-F ran at 87 C.
+
+| boot | ok | failed | tokens | OOM lines | not parked | capped forwards | capped rider rows | pre-cohort reclaims | short passes | fence-funded passes | graph suspended | profile; limit under load W |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 01-M | 27 | 19,21 | 8897 | 2 | 2 | n/a | n/a | n/a | n/a | n/a | 2 | balanced; 157 (140 to 160) |
+| 02-F | 29 | - | 9396 | 0 | 0 | 23 | 0 | 0 | 0 | n/a | 0 | balanced; 156 (140 to 160) |
+| 03-S | 29 | - | 9396 | 0 | 0 | 1457 | 0 | 0 | 0 | n/a | 0 | balanced, then performance from 06:41:49; 155 (155 to 175) |
+| 04-F | 29 | - | 9396 | 0 | 0 | 23 | 0 | 0 | 0 | n/a | 0 | performance at start (end not read); 175 (149 to 175) |
 
 - 01-M: 27 answered texts equal 02-F's; differing k: none
 - 02-F: 29 answered texts equal 02-F's; differing k: none
@@ -113,12 +256,8 @@ Every main boot fails requests 19 and 21 with the step OOM; every fix boot answe
 23 capped forwards and no pre-cohort reclaim, and its texts equal main's 27 and the memra#1221
 part 2 head boots' 29 (k = 19 and 21 included). The forced-cap arm (03-S: every member verifies
 alone, 1,457 capped forwards) writes the same 29 texts as the default arm: a capped request
-writes its uncapped text.
-
-Timing: 01-M and 02-F ran on the balanced profile; 03-S changed profile in its last minute and
-04-F ran at 87 C, so neither counts as a timed take. The timed boots under the take rule (05-M,
-06-F, 07-M, 08-S, 09-F, `gpulock --perf`, alternating) are queued; this section is updated
-when they finish.
+writes its uncapped text. These boots make no timing claim (01-M and 02-F ran balanced, 03-S
+changed profile in its last minute, 04-F ran at 87 C).
 
 **Earlier rounds.** Round 0 (`agentic-5090-c2/`, main against the first cut, M F F M M F) and
 round 1 before memra#1256 landed (`agentic-5090-c2-r1/`, F2; paused for the landing after two
@@ -154,7 +293,7 @@ Round 1 before the pause (`agentic-5090-c2-r1/`):
 - 01-M against memra#1221 part 2 head rtxag3/03-ST: 27 of 27 texts equal; k=19/21 equal: {}
 - 02-F against memra#1221 part 2 head rtxag3/03-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
 
-## Agentic replay, RTX 5090, c = 4 (`agentic-5090-c4/`, `agentic-5090-c4-final/`)
+## Agentic replay, RTX 5090, c = 4: round 0 (`agentic-5090-c4/`)
 
 | boot | ok | failed | tokens | agg gen tok/s | per-user median tok/s | TTFT p50 s | OOM lines | not parked | capped forwards | pre-cohort reclaims | graph suspended | profile; limit under load W |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -167,7 +306,7 @@ Round 0's main boot at c = 4 (`agentic-5090-c4/01-M`) answered all 29 with no OO
 to the head boots'. The final-code boots (`agentic-5090-c4-final/`: F, S, M under `--perf` and
 the take rule) are queued.
 
-## Agentic replay, GB10, c = 2 (`agentic-gb10-c2/`, `agentic-gb10-c2-final/`)
+## Agentic replay, GB10, c = 2: earlier rounds (`agentic-gb10-c2/`, `agentic-gb10-c2-final/`)
 
 Same shape on the GB10 launcher's model files (`harness/gb10/serve.sh`).
 
@@ -196,7 +335,7 @@ GB10 never comes near the cap (unified memory, the allocatable reading counts `M
 boots (gag3 01-M equals round 0's 02-F on all 29). (The GB10 texts differ from the RTX 5090's:
 another build target.)
 
-## Normal-concurrency cells (`normal-5090*/`, `normal-gb10*/`)
+## Normal-concurrency cells, round 0 (`normal-5090/`, `normal-gb10/`)
 
 The cell #1173 and #1255 used (`research/drafter-admission-20261112/harness/normal_cell.py`:
 closed-loop clients at c = 1, 2, 4, 8, 6 requests per client, greedy chat, 160 new tokens,
@@ -277,19 +416,21 @@ Level at every c, one text set per c, 0 capped forwards. The final-code pairs on
 ## What a capped round costs (`bench-5090/`)
 
 `decode-batch-bench --pooled` at the shapes the cap splits (6,6 / 6,3 / 3,3 / 3,3,3,3 / 4,4,4,4 /
-4,4; depth 4,096, 20 reps; pooled and serial verifies bitwise equal first) is queued on the
-RTX 5090 under `--perf` and the take rule; this section is updated when it finishes.
+4,4; depth 4,096, 20 reps; pooled and serial verifies bitwise equal first), from the F5 tree,
+runs on the RTX 5090 under `--perf` and the take rule after the queued jobs; this section is
+updated when it finishes.
 
 ## Gates (`gates-5090/`)
 
-The seeded-invariance and exact-resend gates on F3 are queued on the RTX 5090; this section is
-updated when they finish.
+The seeded-invariance and exact-resend gates on F5 run in the RTX 5090's first round-2 block (with
+the c = 4 cells); this section is updated when they finish.
 
 ## CPU (`cpu/`)
 
-Final head (`cpu/full-chain-final.txt`, `cpu/green-final.txt`, `cpu/red-final/arms.txt`): the
-branch rebased onto `7a32d9b10b` (the crates of main `a17add18f3`), on the CPU build host with
-the whole `research/` tree the suites read at run time.
+Final head (`cpu/full-chain-final.txt`, `cpu/green-final.txt`, `cpu/red-final/arms.txt`):
+`e8a306389a`, the branch on main `a17add18f3` with the numeric-scope guard, on the CPU build host
+with the whole `research/` tree the suites read at run time. `check-numeric-scope` passes on all
+245 entry sites.
 
 Red arms (`harness/build-host/red_arms.py`, `dd_red.sh`): each arm changes one thing and the named
 test fails (cargo exit 101 with the test's own panic). The two census arms use main's files

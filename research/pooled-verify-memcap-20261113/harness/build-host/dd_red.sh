@@ -23,4 +23,9 @@ run snapshots-off memra-server pre_cohort_reclaim_1266
 run parked-first memra-server pre_cohort_reclaim_1266
 run unreadable-acts memra-server pre_cohort_reclaim_1266
 run main-worker memra-server pre_cohort_reclaim_1266
+run fa-deepest-rung memra-engine pooled_verify_cap_1266
+run rider-depth-off memra-engine pooled_verify_cap_1266
+run booking-off memra-server pre_cohort_reclaim_1266
+run reap-off memra-server vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap
+run fence-funded-off memra-server pre_cohort_reclaim_1266
 echo "RED-DONE $(date -Is)" >> "$O/summary.txt"

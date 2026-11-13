@@ -1,0 +1,17 @@
+# memra#1266: steps-ab4c.txt on the rebuilt fix F4 (the head e8a306389a: F3 plus the numeric-scope
+# guard in spec_round_bytes, which launches nothing). Timed cells under --perf and the take rule.
+ag34-01-F 22 perf -- USERS=4 bash <lane>/tools/rtx_cell.sh ag34 01-F <lane>/bins5090/F4/memra-server
+ag34-02-S 22 perf -- USERS=4 bash <lane>/tools/rtx_cell.sh ag34 02-S <lane>/bins5090/F4/memra-server MEMRA_SPEC_POOL_SERIAL=1
+ag34-03-M 22 perf -- USERS=4 bash <lane>/tools/rtx_cell.sh ag34 03-M <lane>/bins5090/M3/memra-server
+bench-pooled 25 perf -- bash <lane>/tools/bench_5090.sh <lane>/runs/bench
+ag3-05-M 20 perf -- bash <lane>/tools/rtx_cell.sh ag3 05-M <lane>/bins5090/M3/memra-server
+ag3-06-F 20 perf -- bash <lane>/tools/rtx_cell.sh ag3 06-F <lane>/bins5090/F4/memra-server
+nc3-01-M+02-F 25 perf -- bash <lane>/tools/normal_5090.sh nc3 01-M <lane>/bins5090/M3/memra-server; bash <lane>/tools/normal_5090.sh nc3 02-F <lane>/bins5090/F4/memra-server
+nc3-03-F+04-M 25 perf -- bash <lane>/tools/normal_5090.sh nc3 03-F <lane>/bins5090/F4/memra-server; bash <lane>/tools/normal_5090.sh nc3 04-M <lane>/bins5090/M3/memra-server
+ag3-07-M 20 perf -- bash <lane>/tools/rtx_cell.sh ag3 07-M <lane>/bins5090/M3/memra-server
+gate-inv-F4 29 -- bash <lane>/tools/gate_5090.sh inv <lane>/bins5090/F4/memra-server inv-F4 27
+gate-resend-F4 29 -- bash <lane>/tools/gate_5090.sh resend <lane>/bins5090/F4/memra-server resend-F4 27
+nc3-05-M+06-F 25 perf -- bash <lane>/tools/normal_5090.sh nc3 05-M <lane>/bins5090/M3/memra-server; bash <lane>/tools/normal_5090.sh nc3 06-F <lane>/bins5090/F4/memra-server
+nc3-07-F+08-M 25 perf -- bash <lane>/tools/normal_5090.sh nc3 07-F <lane>/bins5090/F4/memra-server; bash <lane>/tools/normal_5090.sh nc3 08-M <lane>/bins5090/M3/memra-server
+ag3-08-S 20 perf -- bash <lane>/tools/rtx_cell.sh ag3 08-S <lane>/bins5090/F4/memra-server MEMRA_SPEC_POOL_SERIAL=1
+ag3-09-F 20 perf -- bash <lane>/tools/rtx_cell.sh ag3 09-F <lane>/bins5090/F4/memra-server
