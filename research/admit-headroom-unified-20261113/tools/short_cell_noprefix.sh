@@ -4,16 +4,14 @@
 # (cell h1257s/01-T: available 0MB, HTTP 400) and the driver-headroom rung after it was never
 # reached. With the cache off, admission counts MemAvailable plus the pool's cached blocks and can
 # admit a g1k request, so the rung runs with MemAvailable itself under its floor.
-# Runs ON u1 under the caller's lease: memra#1221's truly-short cell. SIZE=28000: the g28k
-# request is sent first and the holder starts once its prime has begun, so the memory goes short
-# after admission and before the request's draft-graph capture (at a short arrival admission
-# refuses the request outright and the capture guard is never reached). Refuses to start if anything
-# else runs on the unit (GPU processes, containers, ginza/pikadon). A fresh server of the arm's
-# binary (serve_short.sh, memory guard lowered to GUARD_KB=1 GiB for this cell only), then
-# mem_holder.py takes MemAvailable down to TARGET_MB (default 2000; oom_score_adj 1000, exits by
-# itself after 300 s), then one g1k request, then the holder is released, then the server stops.
-# The kernel log of the window goes to the cell (OOM lines, if any).
-# usage: [SIZE=28000] short_cell.sh CAMPAIGN NN-ARM BIN_DIR [TARGET_MB]
+# Runs ON a GB10 unit under the caller's lease. Cells 11-T and 12-B ran the g1k flow
+# (SIZE=1024, the default): a fresh server of the arm's binary (serve_short.sh, memory guard
+# lowered to GUARD_KB=1 GiB, prefix cache off), then mem_holder.py takes MemAvailable down to
+# TARGET_MB (1,800 here; oom_score_adj 1000, exits by itself after 300 s), then one g1k request,
+# then the holder is released, then the server stops. Refuses to start if anything else runs on
+# the unit. The kernel log of the window goes to the cell (OOM lines, if any). The SIZE=28000
+# branch below is memra#1221's and was not run here.
+# usage: [SIZE=28000] short_cell_noprefix.sh CAMPAIGN NN-ARM BIN_DIR [TARGET_MB]
 set -u
 D=$HOME/.cache/memra-1221; cd "$D" || exit 1
 CAMP=$1; NAME=$2; BIN=$D/bins/$3; TGT=${4:-2000}

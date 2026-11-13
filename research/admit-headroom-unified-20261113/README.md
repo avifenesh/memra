@@ -4,7 +4,7 @@ Date: 2026-11-13. Follows `research/spec-capture-headroom-20261112/` (memra#1221
 
 **Verdict: adopted.** Admission's driver-headroom rung runs once per admitted request, before its prime. It compared the raw `cuMemGetInfo` reading with its 2,048 MiB floor and trimmed the pool by the shortfall. On GB10 that reading leaves out page cache, so with the page cache full it trimmed on a host that was not short.
 
-The rung now reads `unified_memory::allocatable_mem_info`: on unified memory the larger of the driver's reading and `MemAvailable`, on a discrete card `cuMemGetInfo` as before. With a full page cache, main's rung fired in all 4 cells and the fix's in none of 4. Every request completed in both arms with identical texts and no OOM line, including a 260k cold prime that started at MemFree 1.6 GB with no trim (main's raw reading in the same state was 1.5-1.9 GB). With `MemAvailable` itself under the floor, the fix's rung still fires (section 3).
+The rung now reads `unified_memory::allocatable_mem_info`: on unified memory the larger of the driver's reading and `MemAvailable`, on a discrete card `cuMemGetInfo` as before. With a full page cache, main's rung fired in all 4 cells and the fix's in none of 4. Every request completed in both arms with identical texts and no OOM line, including a 260k cold prime that started at MemFree 1.6 GB with no trim (main's raw reading in the same state was 1.5-1.9 GB). With `MemAvailable` itself under the floor and the prefix cache off, the fix's rung crosses its threshold on the allocatable reading (section 3). That shows the crossing, not protection: it released nothing in either arm, and with the served prefix cache admission refuses first.
 
 ## Conditions
 
@@ -25,6 +25,7 @@ The rung now reads `unified_memory::allocatable_mem_info`: on unified memory the
 
 | cell | MemFree after the fill (MB) | rung lines | raw reading / released (MiB) | g260k TTFT (s) | g1k TTFT (s) | lowest MemAvailable (MB) |
 |---|---|---|---|---|---|---|
+| 01-B (one-reader fill) | 31,502 | 0 | - | 313.7 | 1.185 | 81,050 |
 | 11-B | 1,912 | 1 | 1,929 / 0, before g1k | 315.7 | 1.180 | 80,953 |
 | 12-T | 2,850 | 0 | - | 314.3 | 1.163 | 81,109 |
 | 21-B | 1,876 | 1 | 1,916 / 0, before g1k | 317.0 | 1.159 | 81,110 |
@@ -41,7 +42,7 @@ The rung now reads `unified_memory::allocatable_mem_info`: on unified memory the
 
 - Main's rung fired in every cell (5 times), at a raw reading of 1,511-1,929 MiB with `MemAvailable` about 100 GB. It released 0-512 MiB.
 - The fix's rung never fired. In `32-T` the 260k prime started right after a fill to MemFree 1,604 MB, so its driver-side allocations (cuBLAS workspaces, graph instantiation and the capture arenas of speculative decoding) ran with MemFree near 1.6 GB, where main's raw reading sat under the floor, and nothing was trimmed. They succeeded: no OOM line, no refused capture, and the same server line classes as main's cells apart from `[admit-trim]`.
-- All 8 cells answered both requests with the same texts (g260k sha256 `5275df37...`, g1k `26ca98d4...`, 134 and 127 tokens, `stop`). The g260k TTFT spread is 313.5-317.0 s across both arms.
+- All 9 page-cache cells, 01-B included, answered both requests with the same texts (g260k sha256 `5275df37...`, g1k `26ca98d4...`, 134 and 127 tokens, `stop`). With the two admitted short cells, all 20 completed requests in this record match by hash (9 g260k, 11 g1k); the two refused ones hash as empty. The g260k TTFT spread is 313.5-317.0 s across both arms.
 
 ## 3. MemAvailable itself short
 
@@ -55,9 +56,11 @@ memra#1221's truly-short cell (`short_cell.sh`, `mem_holder.py`): a fresh server
 | 12-B | off | 2,024 / 789 | admitted | raw 765 MiB, 0 released | 127 tokens, `stop`, same text | 0 |
 
 - With the served prefix cache, admission refuses before the rung in both arms. On unified memory it books the cache's allowed growth as committed, and with `MemAvailable` this low nothing is left (`available 0MB`). So at a short arrival, admission is the guard and the rung is not reached.
-- With the prefix cache off, admission counts `MemAvailable` plus the pool's cached blocks and admits the request. The fix's rung then fires on the allocatable reading, so it still sees the pressure. Main's fires on the raw reading.
-  - Neither released anything: the pool's 149 MB of cached blocks did not trim.
-  - Both requests completed with the same text and no OOM line, in the server or the kernel.
+- With the prefix cache off, admission counts `MemAvailable` plus the pool's cached blocks and admits the request. The fix's rung then crosses its threshold on the allocatable reading (1,993.7 MiB against 2,048), and main's crosses on the raw reading (765 MiB).
+- These cells show the threshold crossing, not protection:
+  - neither arm's rung released anything (the pool's 149 MB of cached blocks did not trim);
+  - `mem_holder.py` gave back 1,024 MB during the g1k request in both 11-T and 12-B (held 96,512 then 95,488 MB, `holder.log`), so the request did not run against the held floor.
+  - Both requests completed with the same text and no OOM line, in the server or the kernel. Whether a request that really needs those bytes ends well when nothing gives memory back is not measured here.
 
 ## Tools
 
