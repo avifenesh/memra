@@ -1,0 +1,14 @@
+   Compiling memra-engine v0.141.1 (<lane>/tree/crates/memra-engine)
+   Compiling memra-server v0.141.1 (<lane>/tree/crates/memra-server)
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 13m 00s
+     Running unittests src/lib.rs (<lane>/target/release/deps/memra_server-0f8e45839166db94)
+
+running 4 tests
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... ok
+test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 0.02s
+

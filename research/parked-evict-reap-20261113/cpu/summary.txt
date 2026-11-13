@@ -1,0 +1,51 @@
+587120d661c80bc4407ae7c7c69236c1473ee24bf9cefdd532344dc3a2149428  <lane>/tree/crates/memra-server/src/worker.rs
+green-1278 parked_evict_reap_1278_tests rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 0.03s
+green-census-1266 worker::tests::vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1283 filtered out; finished in 0.02s
+green-retry worker::tests::cache_alloc_oom_reclaim_retries_exactly_once rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1283 filtered out; finished in 0.00s
+green-lend worker::tests::a_lend_refused_rewind_survives_an_out_of_memory_fresh_cache rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1283 filtered out; finished in 0.00s
+green-lender worker::tests::the_headroom_ladder_skips_a_parked_lender rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1283 filtered out; finished in 0.00s
+green-precohort pre_cohort_reclaim_1266 rc=0 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 1277 filtered out; finished in 0.02s
+green-spare reclaim_spare rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 0.01s
+server suite rc=0 test result: ok. 1266 passed; 0 failed; 18 ignored; 0 measured; 0 filtered out; finished in 14.18s
+clippy rc=0
+      1 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+fmt rc=0
+red ladder-reap-off rc=101 test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 0.03s | thread 'worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds' (3189652) panicked at crates/memra-server/src/worke
+test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... FAILED
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... ok
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... ok
+red climb-reap-off rc=101 test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 0.02s | thread 'worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds' (3209700) panicked at crates/memra-server/src/wo
+test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... FAILED
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... ok
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... ok
+red retry-reap-off rc=101 test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 0.03s | thread 'worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap' (3222874) panicked at crates/memra-server/src/worker.rs:616
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... FAILED
+test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... ok
+red main-worker rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 0.01s | thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (3276666) panicked at crates/memra-server/src/worker.rs
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... FAILED
+red ladder-site-off rc=101 test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 0.01s | thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (265547) panicked at crates/memra-server/src/worker.rs:
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... ok
+test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... FAILED
+red drain-reap-off rc=101 test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 0.02s | thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (276738) panicked at crates/memra-server/src/worker.rs:
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... ok
+test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... FAILED
+red settle-reap-off rc=101 test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 0.03s | thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (398819) panicked at crates/memra-server/src/worker.rs:
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... ok
+test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... FAILED
+red spec-miss-reap-off rc=101 test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 0.03s | thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (464383) panicked at crates/memra-server/src/worker.rs:
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... ok
+test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... FAILED
+restored ok
+DONE 2026-11-13T23:54:45+01:00

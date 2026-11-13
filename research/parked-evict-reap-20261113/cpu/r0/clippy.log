@@ -1,0 +1,22 @@
+   Compiling memra-engine v0.141.1 (<lane>/tree/crates/memra-engine)
+   Compiling memra-server v0.141.1 (<lane>/tree/crates/memra-server)
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+error: unneeded use of `concat!` macro
+     --> crates/memra-server/src/worker.rs:61715:13
+      |
+61715 |             concat!("\"spec grid rewind\", ) }, || vmm_reap_for(\"spec grid rewind\"), )"),
+      |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `"\"spec grid rewind\", ) }, || vmm_reap_for(\"spec grid rewind\"), )"`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_concat
+      = note: `-D clippy::useless-concat` implied by `-D warnings`
+      = help: to override `-D warnings` add `#[allow(clippy::useless_concat)]`
+
+error: unneeded use of `concat!` macro
+     --> crates/memra-server/src/worker.rs:61716:13
+      |
+61716 |             concat!("\"spec-affinity grow\", ) }, || vmm_reap_for(\"spec-affinity grow\"), )"),
+      |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `"\"spec-affinity grow\", ) }, || vmm_reap_for(\"spec-affinity grow\"), )"`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#useless_concat
+
+error: could not compile `memra-server` (lib test) due to 2 previous errors

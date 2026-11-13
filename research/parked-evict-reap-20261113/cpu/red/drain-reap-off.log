@@ -1,0 +1,29 @@
+drain-reap-off: replaced '                        vmm_reap_for("admission-drain");\n' -> ''
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (<lane>/tree/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 3m 59s
+     Running unittests src/lib.rs (<lane>/target/release/deps/memra_server-0f8e45839166db94)
+
+running 4 tests
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... ok
+test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... FAILED
+
+failures:
+
+---- worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first stdout ----
+
+thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (276738) panicked at crates/memra-server/src/worker.rs:61748:13:
+assertion `left == right` failed: lost: oom_teardown_fence(&engine, &loaded); vmm_reap_for("admission-drain"); trim_model_device_pools(&engine, &loaded, "admission-drain");
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `-p memra-server --lib`
