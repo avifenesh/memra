@@ -105,7 +105,7 @@ KEYS = [("stall", "first burst boundary over its rounds, ms"), ("pub", "publishe
         ("gap", "between burst 1 and burst 2, ms"), ("interval", "burst 1 line to burst 2 line, ms"),
         ("b1", "burst 1 wall, ms"), ("b2", "burst 2, ms per round"), ("rest", "later bursts, ms per round"),
         ("round", "ms per round, every burst but the first and last"), ("ttft", "TTFT, s"), ("total", "total, s"),
-        ("memavail_decode_gb", "MemAvailable low after burst 1, GB"), ("memavail_min_gb", "MemAvailable low over the request, GB")]
+        ("memavail_decode_gb", "MemAvailable low after burst 1, GiB"), ("memavail_min_gb", "MemAvailable low over the request, GiB")]
 for name, x in cells.items():
     print(f"{name}: {x['req']} prompt {x['prompt']}, entry {x['entry_tokens']} tokens {x['entry_mb']} MB; "
           f"stall {x['stall']:.1f} pub {x['pub']:.1f} gap {x['gap']:.1f} interval {x['interval']:.1f} ms; "
@@ -116,7 +116,7 @@ for name, x in cells.items():
              if x['cached_entry'] is not None and x['growth'] is not None else "")
           + (f"; lent {x['lend'][0]:.0f} MB in place, publisher {x['lend'][1]:.2f} ms, pool reserved {x['lend'][2]} MiB used {x['lend'][3]} MiB" if x['lend'] else "")
           + f"; allocs {x['alloc_ms']:.1f} ms, slow (ms, MB grown) {x['slow_allocs']}; side-join us {x['join_us']}; "
-          f"MemAvailable min {x['memavail_min_gb']:.1f} GB (decode {x['memavail_decode_gb']:.1f}, after {'n/a' if x['memavail_end_gb'] is None else format(x['memavail_end_gb'], '.1f')})")
+          f"MemAvailable min {x['memavail_min_gb']:.1f} GiB (decode {x['memavail_decode_gb']:.1f}, after {'n/a' if x['memavail_end_gb'] is None else format(x['memavail_end_gb'], '.1f')})")
 arms = sorted({x["arm"] for x in cells.values()})
 
 

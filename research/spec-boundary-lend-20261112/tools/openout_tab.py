@@ -48,5 +48,28 @@ for c in sorted(p for p in d.iterdir() if p.is_dir() and re.match(r"\d\d-[A-Z]$"
               + (f"; {len(fs)} compactions stopped" if fs else "")
               + (f"; last reconcile ({last.group(2)}): books {last.group(3)} adopted {last.group(5)} MB charged {last.group(6)} MB "
                  f"real {last.group(7)} MB pool_used {last.group(10)} MB" if last else ""))
+    # The cache at the end of the run (review round 2): the last reconcile (the head's charge
+    # against what it holds, after the last retirement) and the last insert's resident line
+    # (main has no loans, so its resident bytes are its charge), against the budget.
+    allrec = list(rec.finditer(log))
+    ins = re.findall(r"\[prefix-cache\] insert \([^)]*\): \d+ tokens, [\d.]+MB \(resident ([\d.]+)MB / (\d+)MB", log)
+    allcomp = list(comp.finditer(log))
+    end = (f"last reconcile ({allrec[-1].group(2)}): charged {allrec[-1].group(6)} MB real {allrec[-1].group(7)} MB "
+           f"adopted {allrec[-1].group(5)} MB" if allrec else "no reconcile")
+    print(f"  end of run: {end}; last insert resident {ins[-1][0] if ins else '?'} MB of {ins[-1][1] if ins else '?'} MB; "
+          f"{len(allcomp)} planes compacted in the run")
     breaks = log.count("[prefix-loan] INVARIANT BROKEN")
-    print(f"  invariant breaks {breaks}")
+    holds = log.count("[prefix-loan] over budget after")
+    print(f"  invariant breaks {breaks}, budget holds {holds}")
+    # MemAvailable over the requests (review round 2): the first sample at or after the first
+    # request, the lowest while they ran, and the last sample after the last one.
+    mem = [json.loads(l) for l in (c / "mem.jsonl").read_text().splitlines() if l.strip()] if (c / "mem.jsonl").exists() else []
+    if rows and mem:
+        t0 = rows[0]["send_unix"]
+        t1 = rows[-1]["send_unix"] + rows[-1]["total_s"]
+        inside = [m for m in mem if t0 <= m["t"] <= t1]
+        first = next((m for m in mem if m["t"] >= t0), None)
+        after = [m for m in mem if m["t"] >= t1]
+        gb = lambda m: m["mem_available_kb"] / 2**20  # noqa: E731
+        print(f"  MemAvailable GiB: first {gb(first):.2f}, min {min(gb(m) for m in inside):.2f}, "
+              f"last {gb(after[-1] if after else mem[-1]):.2f}" if first and inside else "  MemAvailable: no samples")
