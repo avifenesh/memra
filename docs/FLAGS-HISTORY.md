@@ -1742,6 +1742,12 @@ The `MEMRA_FP8_BLK_UNIT` row before the 2026-11-12 rewrite (FLAGS.md section "Bu
 
 | `MEMRA_FP8_BLK_UNIT` | set by build.rs | not an operator knob: build.rs exports the unit it compiled for `cu/mmq_fp8_blk.cu` (the real file on the `120a` family, which includes `121a`, and on `100a`; `cu/mmq_fp8_blk_stub.cu` elsewhere), and the `block128_fp8_arms_follow_the_compiled_kernel_unit` unit test checks `fp8_blk_kernels_built()` against it. Absent on the docs-only build |
 
+## MEMRA_CUTLASS_ROOT
+
+The `MEMRA_CUTLASS_ROOT` row before the 2026-11-13 removal of `MEMRA_DSV4_CUTLASS`:
+
+| `MEMRA_CUTLASS_ROOT` | unset: `MEMRA_CUTLASS` uses a flashinfer-venv CUTLASS tree hardcoded in build.rs; `MEMRA_DSV4_CUTLASS` requires it | Root of the CUTLASS header tree (`<root>/include`, `<root>/tools/util/include`) both CUTLASS archives compile against. `MEMRA_DSV4_CUTLASS` panics when it is unset. A change reruns build.rs, so both archives rebuild on the new headers. | [KERNELS.md](KERNELS.md#optional-cutlass-archives) |
+
 ## MEMRA_DSV4_CUTLASS
 
 The `MEMRA_DSV4_CUTLASS` row before the 2026-11-12 rewrite (FLAGS.md section "Build-time (build.rs / nvcc)"):
@@ -2160,6 +2166,10 @@ The `MEMRA_MMQ_ARCHIVE_HASH` row before the 2026-11-12 rewrite (FLAGS.md section
 
 | `MEMRA_MMQ_ARCHIVE_HASH` | **build-time, not a switch** | Set by `crates/memra-engine/build.rs` (never by an operator): the content hash of every host-launcher kernel archive bundled into the engine rlib, `libmemra_mmq.a` plus `libmemra_dsv4_cutlass.a` when `MEMRA_DSV4_CUTLASS` links it (without it the value is the hash of `libmemra_mmq.a` alone, as before), read once by `env!()` into `memra_engine::MMQ_ARCHIVE_HASH`. Its only job is to be a rustc input. Before it (2026-09-06, lane/kpool-select-v2-20260906) a `.cu`-only edit changed no rustc input, so a build under `RUSTC_WRAPPER=sccache` (the rig's `~/.cargo/config.toml` default) got the cached rlib back with the PREVIOUS kernels while every timestamp under `target/` was fresh: three rig timing rounds and one GPU gate ran a kernel two edits old. Setting the variable by hand does nothing useful; build.rs overrides it. |
 
+
+The `MEMRA_MMQ_ARCHIVE_HASH` row before the 2026-11-13 removal of `MEMRA_DSV4_CUTLASS`:
+
+| `MEMRA_MMQ_ARCHIVE_HASH` | set by build.rs | Build-time, not a switch: the content hash of every host-launcher kernel archive in the engine rlib (`libmemra_mmq.a`, plus `libmemra_dsv4_cutlass.a` when `MEMRA_DSV4_CUTLASS` links it), read by `env!()` into `memra_engine::MMQ_ARCHIVE_HASH`. It makes a `.cu`-only edit a rustc input, so a cached build (`RUSTC_WRAPPER=sccache`) cannot hand back an rlib with old kernels. build.rs overrides a hand-set value. | [history](FLAGS-HISTORY.md#memra_mmq_archive_hash) |
 ## MEMRA_GLM5_GRAPH_RECAPTURE
 
 The `MEMRA_GLM5_GRAPH_RECAPTURE` row before the 2026-11-12 rewrite (FLAGS.md section "3. Rollback seams (default ON - `=0`/set reverts to reference path)"):
@@ -4020,7 +4030,9 @@ it waited on (a pinned CUTLASS source plus the served row) was not taken by its 
 
 Removed with it: the build switch and its asserts in `build.rs`, the kernel, the archive and its link, the weak
 declarations and both dispatch branches in `cu/dsv4_gpu.cu` (with the symbol null they never ran in a default
-build, so the shipped program is byte for byte the same), the gate seam in `src/dsv4_gpu.rs`
+build, so a default build behaves the same: its device code differs only in the `assert()` line numbers of four
+`dsv4_c4_*gather*` kernels, which moved with the deleted lines, and its host object loses the three wrappers), the
+gate seam in `src/dsv4_gpu.rs`
 (`arm_dense_cutlass_for_gate`, `dense_cutlass_armed_for_gate`, `dense_cutlass_counts_for_gate`), and the binaries
 `dsv4-dense-arm-ab` (with its CI contract tests) and `dsv4-dense-family-bench`. Their KERNELS.md rows and the
 `dsv4-dense-arm-ab` row of TESTING.md went with them.
