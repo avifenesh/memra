@@ -559,7 +559,8 @@ pub mod ffi {
         /// Bytes of the scale layout of `rows` rows of `k` inputs.
         pub fn memra_v41_sf_bytes(rows: i64, k: i64) -> i64;
         /// c `[m][n]` = a . w^T on CUTLASS's block-scaled kernel; `form` 0 by rows, 1 normal,
-        /// 2 swapped tileN 8, 3 swapped tileN 16.
+        /// 2 swapped tileN 8, 3 swapped tileN 16, 4 the small-row body of `cu/dsv41_gpu.cu` (at
+        /// most 16 rows; form 0 takes it where `memra_v41_dense_small_fits` says so).
         pub fn memra_v41_cutlass_gemm(
             a: *const c_void,
             lda: i64,
@@ -1428,7 +1429,8 @@ impl Ops {
         ))
     }
     /// `out[rows][w.n]` = linear(x, w) for an act-quantized input (`aq`, `as_`: the codes and the
-    /// scale layout [`Self::act_quant`] writes), on CUTLASS's block-scaled kernel. bf16 out only.
+    /// scale layout [`Self::act_quant`] writes), on CUTLASS's block-scaled kernel, or for a few
+    /// rows its small-row body (the same program element for element, [`GEMM_FORM`]). bf16 out only.
     #[allow(clippy::too_many_arguments)]
     pub fn gemm_q(
         &self,
@@ -1444,7 +1446,8 @@ impl Ops {
         self.gemm_q_form(aq, as_, rows, w, out, ldc, out_f32, form)
     }
     /// [`Self::gemm_q`] in a given form (0 by rows, 1 normal, 2 swapped tileN 8, 3 swapped
-    /// tileN 16): the gates' and benches' seam; the bytes do not depend on the form.
+    /// tileN 16, 4 the small-row body, at most 16 rows): the gates' and benches' seam; the bytes
+    /// do not depend on the form.
     #[allow(clippy::too_many_arguments)]
     pub fn gemm_q_form(
         &self,
@@ -2821,9 +2824,11 @@ pub struct MoePlanDev {
     pub ng: usize,
 }
 
-/// The form of the dense CUTLASS GEMMs: 0 by the call's rows (the naked default), 1 normal (rows
-/// on A), 2 swapped tileN 8, 3 swapped tileN 16. The bytes do not depend on it; gates and benches
-/// set it to run every form. The grouped expert GEMMs ([`moe_gemm`]) take the normal form only.
+/// The form of the dense FP8/FP4 GEMMs: 0 by the call's rows (the naked default: the small-row
+/// body of cu/dsv41_gpu.cu where `memra_v41_dense_small_fits` takes the call, else CUTLASS's form
+/// by rows), 1 normal (rows on A), 2 swapped tileN 8, 3 swapped tileN 16, 4 the small-row body (at
+/// most 16 rows). The bytes do not depend on it; gates and benches set it to run every form. The
+/// grouped expert GEMMs ([`moe_gemm`]) take CUTLASS's normal form or their own small-row body.
 pub static GEMM_FORM: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 
 /// The most rows of the padded scale layout of a plan's local experts: each group's rows rounded

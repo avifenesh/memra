@@ -12,6 +12,7 @@
 //!                    [--token-map FILE] [--floor CPU_FLOOR_DIR] [--out RECEIPT.json]
 //!   dsv41-gate decode CKPT_DIR CAPTURE_DIR --layers 1,2,20 --token-map FILE [--out RECEIPT.json]
 //!                    (the decode program's integer outcomes byte for byte, with a re-prefill red arm)
+//!   any of them with --dense-form F: every dense FP8/FP4 GEMM in form F (`dsv41_gpu::GEMM_FORM`)
 
 use memra_engine::dsv41_gpu::{
     self as v, Buf, Ctx, Dp, Geo, LayerState, LayerW, Ops, QFmt, QW, Shared, Trace, bf16_to_f32,
@@ -1509,7 +1510,8 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             1,
         )?;
         let want = want.host(&st)?;
-        for form in [0, 2, 3] {
+        let forms: &[i32] = if m <= 16 { &[0, 2, 3, 4] } else { &[0, 2, 3] };
+        for &form in forms {
             let got = ops.buf(m * n * 2)?;
             dense(
                 a.p(&st),
@@ -1531,6 +1533,80 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 &got.host(&st)?,
                 &want,
             );
+        }
+    }
+
+    // The dense small-row body (form 4) and the by-rows choice (form 0) against every CUTLASS form at
+    // the decode shapes in play, 1 to 16 rows: a rank's share at four ranks (wq_a, wkv, wq_a + wkv
+    // fused, the indexer's wq_b, wq_b, wo_b, the shared expert's w1, w1 + w3 fused, w2) and one
+    // card's (wq_b, wo_b, the shared w1, w1 + w3, w2), FP8, and two FP4 weights (MXFP4, minted).
+    // (n, k, weight format); each shape's weights are drawn once and serve every row count.
+    let decode: [(usize, usize, i32); 16] = [
+        (1280, 5120, 0),
+        (512, 5120, 0),
+        (1792, 5120, 0),
+        (4096, 1280, 0),
+        (8192, 1280, 0),
+        (1280, 8192, 0),
+        (576, 5120, 0),
+        (1152, 5120, 0),
+        (1280, 2304, 0),
+        (32768, 1280, 0),
+        (5120, 8192, 0),
+        (2304, 5120, 0),
+        (4608, 5120, 0),
+        (5120, 2304, 0),
+        (2304, 5120, 1),
+        (576, 5120, 2),
+    ];
+    for &(n, k, wf) in &decode {
+        let kb = k / 32;
+        let (w, ws, ldw) = if wf == 0 {
+            let blk = rng.range(n.div_ceil(32) * kb, 100, 127);
+            (
+                rng.e4m3(n * k),
+                v::sf_pack(n, k, |r, b| blk[r / 32 * kb + b]),
+                k,
+            )
+        } else {
+            (
+                rng.bytes(n * k / 2),
+                sfp(n, k, &rng.range(n * kb, 112, 124)),
+                k / 2,
+            )
+        };
+        let w = Buf::from_bytes(&st, &w)?;
+        let ws = Buf::from_bytes(&st, &ws)?;
+        for m in [1usize, 2, 3, 4, 5, 8, 9, 12, 16] {
+            let a = Buf::from_bytes(&st, &rng.e4m3(m * k))?;
+            let asf = Buf::from_bytes(&st, &sfp(m, k, &rng.range(m * kb, 118, 130)))?;
+            let run = |form: i32| -> Result<Vec<u8>, String> {
+                let c = ops.buf(m * n * 2)?;
+                dense(
+                    a.p(&st),
+                    asf.p(&st),
+                    w.p(&st),
+                    ldw,
+                    ws.p(&st),
+                    wf,
+                    c.p(&st),
+                    n,
+                    m,
+                    n,
+                    k,
+                    form,
+                )?;
+                c.host(&st)
+            };
+            let want = run(1)?;
+            for form in [0, 2, 3, 4] {
+                same(
+                    rep,
+                    &format!("schedule/dense_small/m{m}_n{n}_k{k}_wf{wf}_form{form}"),
+                    &run(form)?,
+                    &want,
+                );
+            }
         }
     }
 
@@ -4294,7 +4370,20 @@ fn idx_gate(
 }
 
 fn main() {
-    let a: Vec<String> = std::env::args().collect();
+    let mut a: Vec<String> = std::env::args().collect();
+    // --dense-form F, anywhere on the line: the form of every dense FP8/FP4 GEMM of the run
+    // (`dsv41_gpu::GEMM_FORM`; 4 runs the small-row body at every call of at most 16 rows, so a card
+    // whose default keeps CUTLASS at those widths gates the body in place). The bytes do not depend on it.
+    if let Some(i) = a.iter().position(|x| x == "--dense-form") {
+        let f: Vec<String> = a.drain(i..(i + 2).min(a.len())).collect();
+        match f.get(1).and_then(|x| x.parse::<i32>().ok()) {
+            Some(form) => v::GEMM_FORM.store(form, std::sync::atomic::Ordering::Relaxed),
+            None => {
+                eprintln!("--dense-form needs a form number");
+                std::process::exit(2);
+            }
+        }
+    }
     let flag = |k: &str| {
         a.iter()
             .position(|x| x == k)
@@ -4343,7 +4432,7 @@ fn main() {
             idx_gate(Path::new(&a[2]), Path::new(&a[3]), layer, &devices, slice, reps, rows, last, &mut rep)
                 .map(|s| format!("\"gate\": \"idx\", \"capture\": {:?}, {s}", a[3]))
         }
-        _ => Err("usage: dsv41-gate kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json] | decode CKPT CAPTURE --layers L,.. --token-map FILE [--out R.json] | tp CKPT CAPTURE --layers L,.. [--devices 0,1] [--token-map FILE] [--decode N] [--chunk N] [--out R.json] | idx CKPT CAPTURE --layer L [--devices 0,1] [--slice N] [--reps N] [--rows N] [--last N] [--out R.json]".into()),
+        _ => Err("usage: dsv41-gate [--dense-form F] kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json] | decode CKPT CAPTURE --layers L,.. --token-map FILE [--out R.json] | tp CKPT CAPTURE --layers L,.. [--devices 0,1] [--token-map FILE] [--decode N] [--chunk N] [--out R.json] | idx CKPT CAPTURE --layer L [--devices 0,1] [--slice N] [--reps N] [--rows N] [--last N] [--out R.json]".into()),
     };
     let header = match r {
         Ok(h) => h,

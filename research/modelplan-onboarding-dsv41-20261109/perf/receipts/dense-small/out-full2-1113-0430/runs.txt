@@ -1,0 +1,26 @@
+check rc 0 # check: 1792 comparisons, 0 differ
+run1 k3 start 04:30:03
+run1 k3 rc 0 end 04:30:07
+run2 cutlass start 04:30:07
+run2 cutlass rc 0 end 04:30:10
+run3 new start 04:30:10
+run3 new rc 0 end 04:30:13
+run4 new start 04:30:13
+run4 new rc 0 end 04:30:16
+run5 cutlass start 04:30:16
+run5 cutlass rc 0 end 04:30:19
+run6 k3 start 04:30:19
+run6 k3 rc 0 end 04:30:23
+run7 k3 start 04:30:23
+run7 k3 rc 0 end 04:30:26
+run8 cutlass start 04:30:26
+run8 cutlass rc 0 end 04:30:29
+run9 new start 04:30:29
+run9 new rc 0 end 04:30:32
+run10 new start 04:30:32
+run10 new rc 0 end 04:30:35
+run11 cutlass start 04:30:35
+run11 cutlass rc 0 end 04:30:38
+run12 k3 start 04:30:38
+run12 k3 rc 0 end 04:30:42
+RUN-DONE /home/avifenesh/.cache/dsv41-memra/cutlass-decode/fix/out-full2-1113-0430

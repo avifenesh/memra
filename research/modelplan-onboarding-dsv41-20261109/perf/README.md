@@ -1637,6 +1637,70 @@ is zero); the tapes are one-card teacher-forced runs, which stay on CUTLASS, so 
 gate's. CheckpointParity on the capital probe passes (max abs 2.938, the same value; the vendor's argmax;
 `receipts/ckpt-cutlass-f4`).
 
+### The dense small-row body: decode-width dense GEMMs at the card's bandwidth
+
+The four-card decode bar failed on CUTLASS: 11.044 / 14.479 / 19.061 ms a step at 1 / 4 / 8 rows against k3's 10.016 /
+12.946 / 17.316 (wrx, four PRO 6000 Max-Q, steady state). The step is device-bound (the host issues about 4 ms ahead
+of the cards in both builds), and about 0.84 ms of the 1-row gap is the dense FP8 GEMMs at a rank's four-rank share:
+CUTLASS's swapped tileN-8 form runs a call on ceil(n / 128) CTAs (4 to 10 for `wkv`, `wq_a`, `wo_b`'s and the shared
+expert's shares on 188 SMs), with no split over K, each CTA near 50 GB/s, where k3's GEMV streams the same weights at
+0.4 to 1.15 TB/s. The rest is the split MoE's extra launches (the section after next).
+
+`v41_dense_small_kernel` (`cu/dsv41_gpu.cu`) is the small-row body of the dense GEMMs, CUTLASS's program element for
+element as the grouped small-row body is: the block-scaled MMA with the weights on A (e4m3, or e2m1 in its 8-bit
+container) and the activations on B, canonical m16n8k32 fragments, one fp32 accumulator chained over the K blocks in
+ascending order, bf16 out, scales read in CUTLASS's layout. A call is spread over its output columns only, never over
+K (that would cut the chain): a block holds an SM's share of the columns (up to four warps of 2 to 16 weight rows,
+each over all of K), copies the call's activation rows once a stage for its warps, and streams each warp's weight rows
+through a four-stage cp.async ring. Three things decided its speed (RTX 5090 Laptop, graph replay):
+- bytes in flight: a stage depth for about 8 KB of weights in flight an SM ran `wq_a` at 0.75 of CUTLASS's speed; 32
+  to 64 KB a SM is level and best, so stages hold about 48 KB a SM (4 to 64 K blocks a stage);
+- one wave: a ring deeper than an SM's shared memory holds for the call's blocks doubles the time, so the launch puts
+  an SM's share of the columns in one block and sizes the stage to what every block resident at once leaves;
+- the activation rows once a block, not once a warp: at 8 rows a warp copying its own was as many bytes from L2 as the
+  weights (`wq_a + wkv` at 8 rows: 19.5 us with per-warp copies, 14.4 with the block's). The chain sets a floor under
+  a narrow call: 16 output columns over K = 8192 (eight warps, each one chain of 256 K blocks) took 10.3 us at one
+  row, for 128 KB of weights.
+
+It writes CUTLASS's bytes: the kernel gate holds it (form 4) and the by-rows choice (form 0) to every CUTLASS form at
+1 to 16 rows on 16 decode shapes (a rank's four-rank shares, one card's, FP8 and both FP4 weights;
+`schedule/dense_small/*`), and the decode-shape probe compared it with the normal, swapped-8 and swapped-16 forms at
+every row count from 1 to 16 on 14 shapes and both weight formats: 1,792 comparisons, 0 differ, on the RTX 5090 Laptop
+(sm_120a) and on GB10 (sm_121a).
+
+Which body runs a call is speed only (`memra_v41_dense_small_fits`). CUTLASS's swapped form is fast when its ceil(n /
+128) CTAs are enough to fill the card's bandwidth, so the line is its CTAs against the card's SMs, and the small-row
+body has a second limit in rows: at 9 to 16 rows (two B fragments a K block) it is behind CUTLASS's tileN-16 form on
+every shape. Small / CUTLASS time, graph replay, medians of four interleaved runs (the RTX 5090 Laptop has 82 SMs; its
+middle column runs each call at a PRO 6000's four-rank share per SM, n x 82 / 188, so CUTLASS gets as few CTAs for the
+card as on a PRO 6000; GB10 has 48 SMs; `receipts/dense-small`):
+
+| call (a rank's share at four ranks, n x K) | CUTLASS CTAs | 5090: 1 / 4 / 8 / 16 rows | the share per SM of a PRO 6000 on the 5090 (CTAs): 1 / 4 / 8 / 16 | GB10: 1 / 4 / 8 / 16 |
+|---|---|---|---|---|
+| `wkv` (512 x 5120) | 4 | 0.90 / 0.92 / 0.95 / 1.32 | 0.76 / 0.79 / 0.87 / 1.17 (2) | 0.99 / 1.01 / 1.01 / 1.01 |
+| `wq_a` (1280 x 5120) | 10 | 0.99 / 1.04 / 1.11 / 1.28 | 0.84 / 0.85 / 0.96 / 1.34 (5) | 1.13 / 1.13 / 1.13 / 1.13 |
+| `wq_a` + `wkv` rows (1792 x 5120) | 14 | 0.99 / 1.02 / 1.05 / 1.25 | 0.84 / 0.87 / 0.93 / 1.27 (6) | 1.15 / 1.14 / 1.15 / 1.16 |
+| `wo_b` (1280 x 8192) | 10 | 1.01 / 1.07 / 1.17 / 1.37 | 0.89 / 0.91 / 0.93 / 1.41 (5) | 1.15 / 1.14 / 1.15 / 1.15 |
+| shared w1 + w3 rows (1152 x 5120) | 9 | 1.01 / 1.07 / 1.13 / 1.27 | 0.83 / 0.85 / 0.89 / 1.29 (4) | 1.12 / 1.12 / 1.13 / 1.11 |
+| shared w2 (1280 x 2304) | 10 | 1.05 / 1.12 / 1.10 / 1.22 | 0.97 / 0.92 / 1.00 / 1.18 (5) | 1.12 / 1.13 / 1.13 / 1.10 |
+| the indexer's `wq_b` (4096 x 1280) | 32 | 0.97 / 0.97 / 0.98 / 1.02 | 0.98 / 0.99 / 1.03 / 1.04 (14) | 1.18 / 1.17 / 1.17 / 1.18 |
+| `wq_b` (8192 x 1280) | 64 | 1.00 / 1.01 / 1.02 / 1.05 | 0.97 / 0.99 / 1.01 / 1.03 (28) | 1.19 / 1.19 / 1.20 / 1.20 |
+
+The rule: at most 8 rows and at most SMs / 12 CTAs, on every card of the 120a family. On a PRO 6000 (188 SMs) that is
+every four-rank dense call but the indexer's `wq_b` and `wq_b` (32 and 64 CTAs, level either way); on the RTX 5090
+Laptop `wkv` and the shared expert's share; on GB10 `wkv` alone. Form 4 runs the body at every call of at most 16 rows
+(the gates' seam: `dsv41-gate --dense-form 4`).
+
+(Below 1 the small-row body is faster. The `wq_a` + `wkv` and shared w1 + w3 rows are the fused weights of a later
+change; the 16-row column is the four-deep ring this commit ships, which the rule keeps off those calls.)
+
+GB10 gates of this tree (121a, `receipts/gates-cutlass-gb10/s1`): kernels 856 checks, 0 failed (576 new
+`schedule/dense_small/*`); layer 161/0 with default routing and with `--dense-form 4`, the 111 saved tensors
+byte-identical to the fa825eee set both times; tp with the small body forced at every call of at most 16 rows: 2 ranks
+peer-pull 478/0, host-canonical 478/0, default 480/0; 4 ranks peer-pull 914/0, host-canonical 914/0, default 916/0.
+Decode, the graph door and the order-gate tapes are queued on GB10 (the Sparks went to a landing record). The sm_120
+kernel gate (RTX 5090 Laptop, the GB10 gate's fixtures): 856/0 (`receipts/kgate-5090/s1`).
+
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
 The order gate above ran on the decode lane's 18 tapes. Its interval was wide, so 35 more vendor

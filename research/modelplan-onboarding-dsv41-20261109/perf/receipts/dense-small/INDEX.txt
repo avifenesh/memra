@@ -1,0 +1,6 @@
+out-c1: the first version (a warp's own ring, 8 KB a SM in flight) against CUTLASS, and its byte check
+out-sweep1, out-sweep2: launch-shape sweeps (in-flight KB a SM x warp columns x warps a block) of the per-warp-ring and
+  the block-shared-activation versions, through a tuning hook since removed
+out-full2-1113-0226: the full proxy under the first rule (small body at <= 16 rows, CTAs <= SMs / 8), the crossover
+out-gb10-p2: GB10 (sm_121a): byte check and dense / set cells, three builds interleaved
+the last out-full2-*: the full proxy of the committed rule (<= 8 rows, CTAs <= SMs / 12)

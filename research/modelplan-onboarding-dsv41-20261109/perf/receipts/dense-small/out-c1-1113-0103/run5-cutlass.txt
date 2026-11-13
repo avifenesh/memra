@@ -1,0 +1,226 @@
+# build cutlass device NVIDIA GeForce RTX 5090 Laptop GPU SMs 82 L2 64 MB
+# mark 1 dense wq_a m1 linear
+cutlass  linear wq_a         n   1280 k  5120 rows   1  eager    12.56 us  host    3.72 us  graph    12.26 us  (a cell = 2 launches)
+# mark 2 dense wq_a m1 gemm
+cutlass  gemm   wq_a         n   1280 k  5120 rows   1  eager    11.42 us  host    2.25 us  graph    11.29 us  (a cell = 1 launches)
+# mark 3 dense wq_a m4 linear
+cutlass  linear wq_a         n   1280 k  5120 rows   4  eager    12.66 us  host    3.75 us  graph    12.29 us  (a cell = 2 launches)
+# mark 4 dense wq_a m4 gemm
+cutlass  gemm   wq_a         n   1280 k  5120 rows   4  eager    11.48 us  host    2.04 us  graph    11.32 us  (a cell = 1 launches)
+# mark 5 dense wq_a m8 linear
+cutlass  linear wq_a         n   1280 k  5120 rows   8  eager    12.77 us  host    3.39 us  graph    12.40 us  (a cell = 2 launches)
+# mark 6 dense wq_a m8 gemm
+cutlass  gemm   wq_a         n   1280 k  5120 rows   8  eager    11.40 us  host    2.02 us  graph    11.32 us  (a cell = 1 launches)
+# mark 7 dense wq_a m16 linear
+cutlass  linear wq_a         n   1280 k  5120 rows  16  eager    14.65 us  host    3.39 us  graph    14.36 us  (a cell = 2 launches)
+# mark 8 dense wq_a m16 gemm
+cutlass  gemm   wq_a         n   1280 k  5120 rows  16  eager    12.80 us  host    2.03 us  graph    12.76 us  (a cell = 1 launches)
+# mark 9 dense wkv m1 linear
+cutlass  linear wkv          n    512 k  5120 rows   1  eager    11.57 us  host    3.39 us  graph    11.35 us  (a cell = 2 launches)
+# mark 10 dense wkv m1 gemm
+cutlass  gemm   wkv          n    512 k  5120 rows   1  eager    10.48 us  host    2.05 us  graph    10.33 us  (a cell = 1 launches)
+# mark 11 dense wkv m4 linear
+cutlass  linear wkv          n    512 k  5120 rows   4  eager    11.60 us  host    3.42 us  graph    11.41 us  (a cell = 2 launches)
+# mark 12 dense wkv m4 gemm
+cutlass  gemm   wkv          n    512 k  5120 rows   4  eager    10.47 us  host    2.04 us  graph    10.36 us  (a cell = 1 launches)
+# mark 13 dense wkv m8 linear
+cutlass  linear wkv          n    512 k  5120 rows   8  eager    11.84 us  host    4.76 us  graph    11.40 us  (a cell = 2 launches)
+# mark 14 dense wkv m8 gemm
+cutlass  gemm   wkv          n    512 k  5120 rows   8  eager    10.52 us  host    2.03 us  graph    10.32 us  (a cell = 1 launches)
+# mark 15 dense wkv m16 linear
+cutlass  linear wkv          n    512 k  5120 rows  16  eager    13.32 us  host    3.39 us  graph    12.92 us  (a cell = 2 launches)
+# mark 16 dense wkv m16 gemm
+cutlass  gemm   wkv          n    512 k  5120 rows  16  eager    11.35 us  host    2.05 us  graph    11.19 us  (a cell = 1 launches)
+# mark 17 dense idx_wq_b m1 linear
+cutlass  linear idx_wq_b     n   4096 k  1280 rows   1  eager     9.42 us  host    3.42 us  graph     9.24 us  (a cell = 2 launches)
+# mark 18 dense idx_wq_b m1 gemm
+cutlass  gemm   idx_wq_b     n   4096 k  1280 rows   1  eager     8.24 us  host    2.04 us  graph     8.28 us  (a cell = 1 launches)
+# mark 19 dense idx_wq_b m4 linear
+cutlass  linear idx_wq_b     n   4096 k  1280 rows   4  eager     9.26 us  host    3.39 us  graph     9.24 us  (a cell = 2 launches)
+# mark 20 dense idx_wq_b m4 gemm
+cutlass  gemm   idx_wq_b     n   4096 k  1280 rows   4  eager     8.21 us  host    2.04 us  graph     8.29 us  (a cell = 1 launches)
+# mark 21 dense idx_wq_b m8 linear
+cutlass  linear idx_wq_b     n   4096 k  1280 rows   8  eager     9.28 us  host    3.39 us  graph     9.24 us  (a cell = 2 launches)
+# mark 22 dense idx_wq_b m8 gemm
+cutlass  gemm   idx_wq_b     n   4096 k  1280 rows   8  eager     8.25 us  host    2.03 us  graph     8.31 us  (a cell = 1 launches)
+# mark 23 dense idx_wq_b m16 linear
+cutlass  linear idx_wq_b     n   4096 k  1280 rows  16  eager     9.46 us  host    3.39 us  graph     9.49 us  (a cell = 2 launches)
+# mark 24 dense idx_wq_b m16 gemm
+cutlass  gemm   idx_wq_b     n   4096 k  1280 rows  16  eager     8.35 us  host    2.03 us  graph     8.41 us  (a cell = 1 launches)
+# mark 25 dense wq_b/4 m1 linear
+cutlass  linear wq_b/4       n   8192 k  1280 rows   1  eager    15.43 us  host    3.39 us  graph    15.41 us  (a cell = 2 launches)
+# mark 26 dense wq_b/4 m1 gemm
+cutlass  gemm   wq_b/4       n   8192 k  1280 rows   1  eager    14.29 us  host    2.03 us  graph    14.52 us  (a cell = 1 launches)
+# mark 27 dense wq_b/4 m4 linear
+cutlass  linear wq_b/4       n   8192 k  1280 rows   4  eager    15.25 us  host    3.41 us  graph    15.49 us  (a cell = 2 launches)
+# mark 28 dense wq_b/4 m4 gemm
+cutlass  gemm   wq_b/4       n   8192 k  1280 rows   4  eager    14.31 us  host    2.02 us  graph    14.55 us  (a cell = 1 launches)
+# mark 29 dense wq_b/4 m8 linear
+cutlass  linear wq_b/4       n   8192 k  1280 rows   8  eager    15.32 us  host    3.39 us  graph    15.51 us  (a cell = 2 launches)
+# mark 30 dense wq_b/4 m8 gemm
+cutlass  gemm   wq_b/4       n   8192 k  1280 rows   8  eager    14.32 us  host    2.01 us  graph    14.53 us  (a cell = 1 launches)
+# mark 31 dense wq_b/4 m16 linear
+cutlass  linear wq_b/4       n   8192 k  1280 rows  16  eager    15.42 us  host    3.40 us  graph    15.68 us  (a cell = 2 launches)
+# mark 32 dense wq_b/4 m16 gemm
+cutlass  gemm   wq_b/4       n   8192 k  1280 rows  16  eager    14.45 us  host    1.98 us  graph    14.67 us  (a cell = 1 launches)
+# mark 33 dense wo_b/4 m1 linear
+cutlass  linear wo_b/4       n   1280 k  8192 rows   1  eager    18.67 us  host    3.37 us  graph    18.24 us  (a cell = 2 launches)
+# mark 34 dense wo_b/4 m1 gemm
+cutlass  gemm   wo_b/4       n   1280 k  8192 rows   1  eager    17.53 us  host    2.02 us  graph    17.30 us  (a cell = 1 launches)
+# mark 35 dense wo_b/4 m4 linear
+cutlass  linear wo_b/4       n   1280 k  8192 rows   4  eager    18.69 us  host    3.37 us  graph    18.34 us  (a cell = 2 launches)
+# mark 36 dense wo_b/4 m4 gemm
+cutlass  gemm   wo_b/4       n   1280 k  8192 rows   4  eager    17.59 us  host    2.01 us  graph    17.05 us  (a cell = 1 launches)
+# mark 37 dense wo_b/4 m8 linear
+cutlass  linear wo_b/4       n   1280 k  8192 rows   8  eager    18.44 us  host    3.35 us  graph    18.23 us  (a cell = 2 launches)
+# mark 38 dense wo_b/4 m8 gemm
+cutlass  gemm   wo_b/4       n   1280 k  8192 rows   8  eager    17.31 us  host    2.01 us  graph    17.01 us  (a cell = 1 launches)
+# mark 39 dense wo_b/4 m16 linear
+cutlass  linear wo_b/4       n   1280 k  8192 rows  16  eager    20.94 us  host    3.37 us  graph    20.79 us  (a cell = 2 launches)
+# mark 40 dense wo_b/4 m16 gemm
+cutlass  gemm   wo_b/4       n   1280 k  8192 rows  16  eager    19.36 us  host    2.02 us  graph    19.06 us  (a cell = 1 launches)
+# mark 41 dense sh_w13/4 m1 linear
+cutlass  linear sh_w13/4     n    576 k  5120 rows   1  eager    11.78 us  host    3.39 us  graph    11.45 us  (a cell = 2 launches)
+# mark 42 dense sh_w13/4 m1 gemm
+cutlass  gemm   sh_w13/4     n    576 k  5120 rows   1  eager    10.65 us  host    2.03 us  graph    10.46 us  (a cell = 1 launches)
+# mark 43 dense sh_w13/4 m4 linear
+cutlass  linear sh_w13/4     n    576 k  5120 rows   4  eager    11.77 us  host    3.40 us  graph    11.44 us  (a cell = 2 launches)
+# mark 44 dense sh_w13/4 m4 gemm
+cutlass  gemm   sh_w13/4     n    576 k  5120 rows   4  eager    10.67 us  host    2.03 us  graph    10.45 us  (a cell = 1 launches)
+# mark 45 dense sh_w13/4 m8 linear
+cutlass  linear sh_w13/4     n    576 k  5120 rows   8  eager    11.81 us  host    3.40 us  graph    11.48 us  (a cell = 2 launches)
+# mark 46 dense sh_w13/4 m8 gemm
+cutlass  gemm   sh_w13/4     n    576 k  5120 rows   8  eager    10.56 us  host    2.03 us  graph    10.42 us  (a cell = 1 launches)
+# mark 47 dense sh_w13/4 m16 linear
+cutlass  linear sh_w13/4     n    576 k  5120 rows  16  eager    13.26 us  host    3.40 us  graph    13.11 us  (a cell = 2 launches)
+# mark 48 dense sh_w13/4 m16 gemm
+cutlass  gemm   sh_w13/4     n    576 k  5120 rows  16  eager    11.39 us  host    2.04 us  graph    11.25 us  (a cell = 1 launches)
+# mark 49 dense sh_w2/4 m1 linear
+cutlass  linear sh_w2/4      n   1280 k  2304 rows   1  eager     7.31 us  host    3.42 us  graph     7.00 us  (a cell = 2 launches)
+# mark 50 dense sh_w2/4 m1 gemm
+cutlass  gemm   sh_w2/4      n   1280 k  2304 rows   1  eager     6.23 us  host    2.05 us  graph     6.07 us  (a cell = 1 launches)
+# mark 51 dense sh_w2/4 m4 linear
+cutlass  linear sh_w2/4      n   1280 k  2304 rows   4  eager     7.31 us  host    3.42 us  graph     7.03 us  (a cell = 2 launches)
+# mark 52 dense sh_w2/4 m4 gemm
+cutlass  gemm   sh_w2/4      n   1280 k  2304 rows   4  eager     6.27 us  host    2.05 us  graph     6.04 us  (a cell = 1 launches)
+# mark 53 dense sh_w2/4 m8 linear
+cutlass  linear sh_w2/4      n   1280 k  2304 rows   8  eager     7.40 us  host    3.42 us  graph     7.03 us  (a cell = 2 launches)
+# mark 54 dense sh_w2/4 m8 gemm
+cutlass  gemm   sh_w2/4      n   1280 k  2304 rows   8  eager     6.28 us  host    2.04 us  graph     6.07 us  (a cell = 1 launches)
+# mark 55 dense sh_w2/4 m16 linear
+cutlass  linear sh_w2/4      n   1280 k  2304 rows  16  eager     8.28 us  host    3.43 us  graph     7.99 us  (a cell = 2 launches)
+# mark 56 dense sh_w2/4 m16 gemm
+cutlass  gemm   sh_w2/4      n   1280 k  2304 rows  16  eager     6.84 us  host    2.03 us  graph     6.68 us  (a cell = 1 launches)
+# mark 57 dense wqkv m1 linear
+cutlass  linear wqkv         n   1792 k  5120 rows   1  eager    14.85 us  host    3.42 us  graph    14.52 us  (a cell = 2 launches)
+# mark 58 dense wqkv m1 gemm
+cutlass  gemm   wqkv         n   1792 k  5120 rows   1  eager    13.78 us  host    1.94 us  graph    13.49 us  (a cell = 1 launches)
+# mark 59 dense wqkv m4 linear
+cutlass  linear wqkv         n   1792 k  5120 rows   4  eager    15.02 us  host    3.14 us  graph    14.67 us  (a cell = 2 launches)
+# mark 60 dense wqkv m4 gemm
+cutlass  gemm   wqkv         n   1792 k  5120 rows   4  eager    13.75 us  host    1.89 us  graph    13.52 us  (a cell = 1 launches)
+# mark 61 dense wqkv m8 linear
+cutlass  linear wqkv         n   1792 k  5120 rows   8  eager    15.07 us  host    3.09 us  graph    14.69 us  (a cell = 2 launches)
+# mark 62 dense wqkv m8 gemm
+cutlass  gemm   wqkv         n   1792 k  5120 rows   8  eager    13.85 us  host    1.93 us  graph    13.61 us  (a cell = 1 launches)
+# mark 63 dense wqkv m16 linear
+cutlass  linear wqkv         n   1792 k  5120 rows  16  eager    15.88 us  host    3.39 us  graph    15.54 us  (a cell = 2 launches)
+# mark 64 dense wqkv m16 gemm
+cutlass  gemm   wqkv         n   1792 k  5120 rows  16  eager    14.57 us  host    2.04 us  graph    14.33 us  (a cell = 1 launches)
+# mark 65 dense sh_w13f/4 m1 linear
+cutlass  linear sh_w13f/4    n   1152 k  5120 rows   1  eager    12.48 us  host    3.42 us  graph    12.15 us  (a cell = 2 launches)
+# mark 66 dense sh_w13f/4 m1 gemm
+cutlass  gemm   sh_w13f/4    n   1152 k  5120 rows   1  eager    11.36 us  host    2.05 us  graph    11.16 us  (a cell = 1 launches)
+# mark 67 dense sh_w13f/4 m4 linear
+cutlass  linear sh_w13f/4    n   1152 k  5120 rows   4  eager    12.48 us  host    3.41 us  graph    12.02 us  (a cell = 2 launches)
+# mark 68 dense sh_w13f/4 m4 gemm
+cutlass  gemm   sh_w13f/4    n   1152 k  5120 rows   4  eager    11.20 us  host    2.02 us  graph    11.06 us  (a cell = 1 launches)
+# mark 69 dense sh_w13f/4 m8 linear
+cutlass  linear sh_w13f/4    n   1152 k  5120 rows   8  eager    12.34 us  host    3.41 us  graph    12.02 us  (a cell = 2 launches)
+# mark 70 dense sh_w13f/4 m8 gemm
+cutlass  gemm   sh_w13f/4    n   1152 k  5120 rows   8  eager    11.19 us  host    2.03 us  graph    11.03 us  (a cell = 1 launches)
+# mark 71 dense sh_w13f/4 m16 linear
+cutlass  linear sh_w13f/4    n   1152 k  5120 rows  16  eager    14.36 us  host    3.39 us  graph    14.10 us  (a cell = 2 launches)
+# mark 72 dense sh_w13f/4 m16 gemm
+cutlass  gemm   sh_w13f/4    n   1152 k  5120 rows  16  eager    12.50 us  host    2.03 us  graph    12.42 us  (a cell = 1 launches)
+# mark 73 dense wq_b m1 linear
+cutlass  linear wq_b         n  32768 k  1280 rows   1  eager    54.26 us  host    3.35 us  graph    53.47 us  (a cell = 2 launches)
+# mark 74 dense wq_b m1 gemm
+cutlass  gemm   wq_b         n  32768 k  1280 rows   1  eager    52.99 us  host    2.01 us  graph    52.66 us  (a cell = 1 launches)
+# mark 75 dense wq_b m4 linear
+cutlass  linear wq_b         n  32768 k  1280 rows   4  eager    54.57 us  host    3.48 us  graph    53.88 us  (a cell = 2 launches)
+# mark 76 dense wq_b m4 gemm
+cutlass  gemm   wq_b         n  32768 k  1280 rows   4  eager    53.20 us  host    1.97 us  graph    52.72 us  (a cell = 1 launches)
+# mark 77 dense wq_b m8 linear
+cutlass  linear wq_b         n  32768 k  1280 rows   8  eager    54.64 us  host    3.36 us  graph    53.81 us  (a cell = 2 launches)
+# mark 78 dense wq_b m8 gemm
+cutlass  gemm   wq_b         n  32768 k  1280 rows   8  eager    53.20 us  host    2.01 us  graph    52.76 us  (a cell = 1 launches)
+# mark 79 dense wq_b m16 linear
+cutlass  linear wq_b         n  32768 k  1280 rows  16  eager    55.20 us  host    3.35 us  graph    54.39 us  (a cell = 2 launches)
+# mark 80 dense wq_b m16 gemm
+cutlass  gemm   wq_b         n  32768 k  1280 rows  16  eager    53.82 us  host    2.01 us  graph    53.37 us  (a cell = 1 launches)
+# mark 81 dense wo_b m1 linear
+cutlass  linear wo_b         n   5120 k  8192 rows   1  eager    56.71 us  host    3.36 us  graph    55.84 us  (a cell = 2 launches)
+# mark 82 dense wo_b m1 gemm
+cutlass  gemm   wo_b         n   5120 k  8192 rows   1  eager    55.11 us  host    2.00 us  graph    54.74 us  (a cell = 1 launches)
+# mark 83 dense wo_b m4 linear
+cutlass  linear wo_b         n   5120 k  8192 rows   4  eager    56.66 us  host    3.34 us  graph    55.77 us  (a cell = 2 launches)
+# mark 84 dense wo_b m4 gemm
+cutlass  gemm   wo_b         n   5120 k  8192 rows   4  eager    55.09 us  host    2.01 us  graph    54.72 us  (a cell = 1 launches)
+# mark 85 dense wo_b m8 linear
+cutlass  linear wo_b         n   5120 k  8192 rows   8  eager    56.73 us  host    3.34 us  graph    56.11 us  (a cell = 2 launches)
+# mark 86 dense wo_b m8 gemm
+cutlass  gemm   wo_b         n   5120 k  8192 rows   8  eager    55.36 us  host    2.01 us  graph    55.03 us  (a cell = 1 launches)
+# mark 87 dense wo_b m16 linear
+cutlass  linear wo_b         n   5120 k  8192 rows  16  eager    62.66 us  host    3.36 us  graph    61.60 us  (a cell = 2 launches)
+# mark 88 dense wo_b m16 gemm
+cutlass  gemm   wo_b         n   5120 k  8192 rows  16  eager    59.52 us  host    2.00 us  graph    58.91 us  (a cell = 1 launches)
+# mark 89 dense sh_w13 m1 linear
+cutlass  linear sh_w13       n   2304 k  5120 rows   1  eager    21.72 us  host    4.07 us  graph    21.19 us  (a cell = 2 launches)
+# mark 90 dense sh_w13 m1 gemm
+cutlass  gemm   sh_w13       n   2304 k  5120 rows   1  eager    21.69 us  host    2.02 us  graph    22.55 us  (a cell = 1 launches)
+# mark 91 dense sh_w13 m4 linear
+cutlass  linear sh_w13       n   2304 k  5120 rows   4  eager    24.89 us  host    3.36 us  graph    24.37 us  (a cell = 2 launches)
+# mark 92 dense sh_w13 m4 gemm
+cutlass  gemm   sh_w13       n   2304 k  5120 rows   4  eager    23.73 us  host    2.04 us  graph    23.68 us  (a cell = 1 launches)
+# mark 93 dense sh_w13 m8 linear
+cutlass  linear sh_w13       n   2304 k  5120 rows   8  eager    26.11 us  host    3.36 us  graph    25.60 us  (a cell = 2 launches)
+# mark 94 dense sh_w13 m8 gemm
+cutlass  gemm   sh_w13       n   2304 k  5120 rows   8  eager    21.81 us  host    2.02 us  graph    21.28 us  (a cell = 1 launches)
+# mark 95 dense sh_w13 m16 linear
+cutlass  linear sh_w13       n   2304 k  5120 rows  16  eager    22.86 us  host    3.32 us  graph    22.14 us  (a cell = 2 launches)
+# mark 96 dense sh_w13 m16 gemm
+cutlass  gemm   sh_w13       n   2304 k  5120 rows  16  eager    20.57 us  host    2.02 us  graph    20.19 us  (a cell = 1 launches)
+# mark 97 dense sh_w2 m1 linear
+cutlass  linear sh_w2        n   5120 k  2304 rows   1  eager    20.61 us  host    3.35 us  graph    20.29 us  (a cell = 2 launches)
+# mark 98 dense sh_w2 m1 gemm
+cutlass  gemm   sh_w2        n   5120 k  2304 rows   1  eager    18.78 us  host    2.01 us  graph    18.87 us  (a cell = 1 launches)
+# mark 99 dense sh_w2 m4 linear
+cutlass  linear sh_w2        n   5120 k  2304 rows   4  eager    20.27 us  host    3.38 us  graph    20.35 us  (a cell = 2 launches)
+# mark 100 dense sh_w2 m4 gemm
+cutlass  gemm   sh_w2        n   5120 k  2304 rows   4  eager    18.79 us  host    2.01 us  graph    18.82 us  (a cell = 1 launches)
+# mark 101 dense sh_w2 m8 linear
+cutlass  linear sh_w2        n   5120 k  2304 rows   8  eager    20.26 us  host    3.35 us  graph    20.35 us  (a cell = 2 launches)
+# mark 102 dense sh_w2 m8 gemm
+cutlass  gemm   sh_w2        n   5120 k  2304 rows   8  eager    18.75 us  host    2.01 us  graph    18.84 us  (a cell = 1 launches)
+# mark 103 dense sh_w2 m16 linear
+cutlass  linear sh_w2        n   5120 k  2304 rows  16  eager    20.59 us  host    3.38 us  graph    20.64 us  (a cell = 2 launches)
+# mark 104 dense sh_w2 m16 gemm
+cutlass  gemm   sh_w2        n   5120 k  2304 rows  16  eager    19.03 us  host    2.02 us  graph    18.97 us  (a cell = 1 launches)
+# mark 105 dense sh_w13f m1 linear
+cutlass  linear sh_w13f      n   4608 k  5120 rows   1  eager    37.65 us  host    3.36 us  graph    36.89 us  (a cell = 2 launches)
+# mark 106 dense sh_w13f m1 gemm
+cutlass  gemm   sh_w13f      n   4608 k  5120 rows   1  eager    34.89 us  host    2.14 us  graph    34.30 us  (a cell = 1 launches)
+# mark 107 dense sh_w13f m4 linear
+cutlass  linear sh_w13f      n   4608 k  5120 rows   4  eager    36.67 us  host    3.33 us  graph    34.69 us  (a cell = 2 launches)
+# mark 108 dense sh_w13f m4 gemm
+cutlass  gemm   sh_w13f      n   4608 k  5120 rows   4  eager    33.74 us  host    2.08 us  graph    32.40 us  (a cell = 1 launches)
+# mark 109 dense sh_w13f m8 linear
+cutlass  linear sh_w13f      n   4608 k  5120 rows   8  eager    34.76 us  host    3.35 us  graph    34.00 us  (a cell = 2 launches)
+# mark 110 dense sh_w13f m8 gemm
+cutlass  gemm   sh_w13f      n   4608 k  5120 rows   8  eager    32.67 us  host    2.01 us  graph    32.15 us  (a cell = 1 launches)
+# mark 111 dense sh_w13f m16 linear
+cutlass  linear sh_w13f      n   4608 k  5120 rows  16  eager    34.94 us  host    3.36 us  graph    33.98 us  (a cell = 2 launches)
+# mark 112 dense sh_w13f m16 gemm
+cutlass  gemm   sh_w13f      n   4608 k  5120 rows  16  eager    32.70 us  host    2.01 us  graph    32.07 us  (a cell = 1 launches)
+# done

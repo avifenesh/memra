@@ -1,0 +1,26 @@
+old gpu rc 0
+new gpu rc 0
+k3 gpu rc 0
+old cutlass rc 0
+new cutlass rc 0
+link k3 rc 0
+link old rc 0
+link new rc 0
+915932b6693b52c9116d91aab8fb5f82f2c974a2a07867fbf86b0d0b1db883c3  bin/probe-cutlass
+bb9518eca6d5402e0747331c60799a12f33842155498da8307f986144f7a441e  bin/probe-k3
+16e81ed65649889cd9745c909db6a837a5790799a475e19093bbdf48820e9a90  bin/probe-new
+NVIDIA GB10, 305 MHz, 54
+check rc 0 # check: 1792 comparisons, 0 differ
+run1 k3 rc 0 01:53:43
+run2 cutlass rc 0 01:53:50
+run3 new rc 0 01:53:58
+run4 new rc 0 01:54:06
+run5 cutlass rc 0 01:54:14
+run6 k3 rc 0 01:54:22
+run7 k3 rc 0 01:54:31
+run8 cutlass rc 0 01:54:38
+run9 new rc 0 01:54:46
+run10 new rc 0 01:54:54
+run11 cutlass rc 0 01:55:02
+run12 k3 rc 0 01:55:10
+PROBE-DONE 01:55:10

@@ -59,7 +59,7 @@ using RowM = cutlass::layout::RowMajor;
 using ColM = cutlass::layout::ColumnMajor;
 
 // the forms
-enum Form { kAuto = 0, kNormal = 1, kSwap8 = 2, kSwap16 = 3 };
+enum Form { kAuto = 0, kNormal = 1, kSwap8 = 2, kSwap16 = 3, kSmall = 4 };
 
 // A kernel's stride and scale-layout types: the ptr-array kernels name them Internal*.
 template <class K, class M, bool Grouped>
@@ -363,16 +363,27 @@ extern "C" long memra_v41_sf_off(long r, long kb, long kbn) {
 // Bytes of the scale layout of `rows` rows of `k` inputs.
 extern "C" long memra_v41_sf_bytes(long rows, long k) { return (rows + 127) / 128 * 128 * (((k / 32) + 3) / 4) * 4; }
 
+// The small-row body of the dense GEMMs (cu/dsv41_gpu.cu): this program element for element, for calls of up to
+// 16 rows, and the rule that picks it for form 0.
+extern "C" int memra_v41_dense_small(const void* a, long lda, const void* asf, const void* w, long ldw,
+                                     const void* wsf, int wfmt, void* c, long ldc, int m, int n, int k, void* stream);
+extern "C" int memra_v41_dense_small_fits(int m, int n, int k);
+
 // c[m][n] (bf16, row pitch ldc) = a . w^T. a: e4m3 codes [m][lda]; asf: their scales in the layout of m rows;
 // w: weight rows [n][ldw bytes] (wfmt 0: e4m3; 1 and 2: e2m1 pairs, low nibble first; a minted NVFP4 weight
-// carries its ue8m0 codes back, see dsv41_gpu.rs); wsf: their scales in the layout of n rows. form: 0 by rows,
-// 1 normal, 2 swapped tileN 8, 3 swapped tileN 16.
+// carries its ue8m0 codes back, see dsv41_gpu.rs); wsf: their scales in the layout of n rows. form: 0 by rows
+// (the small-row body where `memra_v41_dense_small_fits` takes the call, else the CUTLASS form by rows), 1 normal,
+// 2 swapped tileN 8, 3 swapped tileN 16, 4 the small-row body for every call of at most 16 rows and the CUTLASS
+// form by rows above (the gates' seam to run it at every width it serves). The bytes do not depend on it.
 extern "C" int memra_v41_cutlass_gemm(const void* a, long lda, const void* asf, const void* w, long ldw,
                                       const void* wsf, int wfmt, void* c, long ldc, int m, int n, int k, int form,
                                       void* stream) {
     if (m < 0 || n <= 0 || k <= 0 || k % 128 || lda % 16 || ldw % 16 || ldc % 8 || wfmt < 0 || wfmt > 2) return 41040;
-    if (form < 0 || form > 3) return 41040;
+    if (form < 0 || form > 4) return 41040;
     if (m == 0) return 0;
+    if ((form == kSmall && m <= 16) || (form == kAuto && memra_v41_dense_small_fits(m, n, k)))
+        return memra_v41_dense_small(a, lda, asf, w, ldw, wsf, wfmt, c, ldc, m, n, k, stream);
+    if (form == kSmall) form = kAuto;
     cudaStream_t st = (cudaStream_t)stream;
     long ldw_el = wfmt == 0 ? ldw : ldw * 2;
     switch (pick(form, m)) {
