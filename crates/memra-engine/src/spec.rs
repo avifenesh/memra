@@ -8325,20 +8325,28 @@ impl HybridModel {
         )
     }
 
-    /// The device bytes one MTP verify round at draft depth `k` of a session at cache position
-    /// `pos` allocates, the FA partial pool's growth for its rows included (memra#1266):
-    /// [`Self::spec_round_transient_bytes`] plus [`Engine::fa_rows_growth_bytes`] for its `k + 1`
-    /// rows (`pos + 1 ..= pos + k + 1` keys; the serial verify launches once per same-rung run of
-    /// them too) at every full-attention geometry.
-    pub fn spec_round_bytes(&self, e: &Engine, k: usize, pos: usize) -> usize {
+    /// The FA partial pool's growth one MTP verify round at draft depth `k` of a session at cache
+    /// position `pos` can cause (memra#1266): [`Engine::fa_rows_growth_bytes`] for its `k + 1`
+    /// rows (`pos + 1 ..= pos + k + 1` keys) at every full-attention geometry, priced as the
+    /// pooled layer launches them, one launch per same-rung run. For the serial verify that is a
+    /// safe overestimate: its launches never allocate more.
+    pub fn spec_round_fa_growth_bytes(&self, e: &Engine, k: usize, pos: usize) -> usize {
         let _numeric = self.enter_numeric();
         let rows: Vec<usize> = (1..=k + 1).map(|r| pos + r).collect();
-        let fa = e.fa_rows_growth_bytes(
+        e.fa_rows_growth_bytes(
             &rows,
             &self.pooled_fa_geometries(),
             self.cfg.head_dim_k as usize,
-        );
-        self.spec_round_transient_bytes(k).saturating_add(fa)
+        )
+    }
+
+    /// The device bytes one MTP verify round at draft depth `k` of a session at cache position
+    /// `pos` allocates (memra#1266): [`Self::spec_round_transient_bytes`] plus
+    /// [`Self::spec_round_fa_growth_bytes`].
+    pub fn spec_round_bytes(&self, e: &Engine, k: usize, pos: usize) -> usize {
+        let _numeric = self.enter_numeric();
+        self.spec_round_transient_bytes(k)
+            .saturating_add(self.spec_round_fa_growth_bytes(e, k, pos))
     }
 
     /// The device bytes a speculative burst's entry snapshot takes (memra#1266): `spec_burst_begin`
@@ -19241,6 +19249,20 @@ mod pooled_verify_cap_1266_tests {
         assert_eq!(pooled_verify_chunk(&pair, reading, &fa).members, 1);
     }
 
+    /// Two runs that both grow the pool add up (round 3: a max-not-sum price passed every other
+    /// test). From an empty pool, rows 509 to 512 (8-key splits, 64 of them) grow it to 1,572,864
+    /// o floats; rows 16,385 and 16,386 (128-key splits, 129 of them) need 1,585,152 and grow it
+    /// again, to twice its size: 6,340,608 + 12,681,216 B.
+    #[test]
+    fn two_runs_that_both_grow_the_pool_add_up() {
+        let mut stack = rows(508, 4);
+        stack.extend(rows(16_384, 2));
+        let first = (1_572_864 + 2 * 6_144) * 4;
+        let second = (3_145_728 + 2 * 12_288) * 4;
+        assert_eq!(grow(&stack[..4], (0, 0)), first);
+        assert_eq!(grow(&stack, (0, 0)), first + second);
+    }
+
     /// Riders shrink to fit: each holds one logits row and widens the forward.
     #[test]
     fn riders_join_only_within_the_reading() {
@@ -19336,7 +19358,9 @@ mod pooled_verify_cap_1266_tests {
         assert!(reader.contains("crate::unified_memory::allocatable_mem_info(e.ctx())"));
         assert!(reader.contains("e.pool_cached_bytes()"));
         // The pre-cohort reclaim's round prices its own rows run by run too.
-        let round = &production[production.find("pub fn spec_round_bytes(").unwrap()..];
+        let round = &production[production
+            .find("pub fn spec_round_fa_growth_bytes(")
+            .unwrap()..];
         let round = squash(&round[..round.find("\n    }\n").unwrap()]);
         assert!(round.contains(&squash(
             "let rows: Vec<usize> = (1..=k + 1).map(|r| pos + r).collect();"
