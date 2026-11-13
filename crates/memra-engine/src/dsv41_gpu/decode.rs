@@ -140,8 +140,9 @@ pub struct Runner<'a> {
     keep: usize,
     resident: Vec<Option<Vec<LayerW>>>,
     pub(super) head: Option<(Vec<Buf>, Vec<BW>)>,
-    /// each rank's bf16 embedding table `[vocab][dim]` ([`Self::load_embed`])
-    emb: Option<Vec<Buf>>,
+    /// the bf16 embedding table `[vocab][dim]` by rank ([`Self::load_embed`]): one read-only copy a
+    /// card, shared by the ranks on that card
+    emb: Option<Vec<Arc<Buf>>>,
     /// the routed experts in pinned host memory, when they are off the card
     host: Option<Arc<HostExperts>>,
     /// the draft head's target layers: a forward keeps the mean over the stream copies of each
@@ -367,11 +368,20 @@ impl<'a> Runner<'a> {
         // allocation that mapped new memory held its thread 10-18 ms in the 4,096- and
         // 32,768-token prefills' trace). The pool's release threshold is pinned (`Engine::new`),
         // so the freed block stays mapped for the runs' allocations.
+        // A speed step only: if the block cannot be had (the free figure counts the pool's
+        // fragmented slack), the load goes on and the runs grow the pool as before.
         if reserve > 0 {
             for (d, _) in &devs {
                 let ops = &self.grp.cx[first_rank(*d)].ops;
-                drop(Buf::uninit(&ops.st, reserve)?);
-                ops.sync()?;
+                let warm = Buf::uninit(&ops.st, reserve)
+                    .map(drop)
+                    .and_then(|_| ops.sync());
+                if let Err(e) = warm {
+                    eprintln!(
+                        "[dsv41-resident] device {d}: the pool warm-up of {:.2} GiB failed ({e}); the runs grow the pool as they go",
+                        gib(reserve)
+                    );
+                }
             }
         }
         Ok(rep)
@@ -639,10 +649,11 @@ impl<'a> Runner<'a> {
         Ok((hb, pm))
     }
 
-    /// Each rank's copy of the bf16 embedding table, on the card for good (1.32 GB a rank):
-    /// [`Self::forward`] gathers a call's rows there from its token ids instead of gathering them
-    /// on the host and uploading them from pageable memory to every rank (4.6 ms before the first
-    /// layer of the 4,096-token prefill, 35 ms of the 32,768-token one).
+    /// The bf16 embedding table on the card for good, one read-only copy a card (1.32 GB a card;
+    /// the ranks on a card share it): [`Self::forward`] gathers a call's rows there from its token
+    /// ids instead of gathering them on the host and uploading them from pageable memory to every
+    /// rank (4.6 ms before the first layer of the 4,096-token prefill, 35 ms of the 32,768-token
+    /// one).
     pub fn load_embed(&mut self) -> Result<(), String> {
         if self.emb.is_some() {
             return Ok(());
@@ -651,7 +662,21 @@ impl<'a> Runner<'a> {
         if ei.dtype != "BF16" || ei.shape != [self.g.vocab as u64, self.g.dim as u64] {
             return Err(format!("embed.weight: {} {:?}", ei.dtype, ei.shape));
         }
-        let t = self.grp.each(|_, cx| Buf::from_bytes(&cx.ops.st, eb))?;
+        let mut by_rank: Vec<Option<Arc<Buf>>> = vec![None; self.grp.n()];
+        for (_, ranks) in self.device_ranks() {
+            let ops = &self.grp.cx[ranks[0]].ops;
+            let t = Arc::new(Buf::from_bytes(&ops.st, eb)?);
+            // the card's other ranks read it from their own streams
+            ops.sync()?;
+            for r in ranks {
+                by_rank[r] = Some(t.clone());
+            }
+        }
+        let t = by_rank
+            .into_iter()
+            .enumerate()
+            .map(|(r, t)| t.ok_or_else(|| format!("rank {r} has no device")))
+            .collect::<Result<Vec<_>, _>>()?;
         self.emb = Some(t);
         Ok(())
     }
