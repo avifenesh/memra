@@ -1,0 +1,17 @@
+
+running 1 test
+test residual_sample_of_a_row_without_a_finite_value_is_token_none ... 
+thread 'residual_sample_of_a_row_without_a_finite_value_is_token_none' (1399446) panicked at crates/memra-engine/tests/argmax_no_finite_gpu.rs:339:9:
+assertion `left == right` failed: all NaN: residual_sample
+  left: 0
+ right: 2147483647
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    residual_sample_of_a_row_without_a_finite_value_is_token_none
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.23s
+

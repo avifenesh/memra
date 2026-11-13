@@ -61,7 +61,10 @@ row; the residual fallback gives `TOKEN_NONE`), and `compute-sanitizer --tool me
 --report-api-errors no` reports 0 errors. `cpu-old-sampler/`: the new memra-sampling test on
 origin/main 7a43ac1e56 fails (an all-NaN row samples token 0).
 
-The sm_120a and sm_121a battery records are in the evidence commit that follows.
+`gpu-tests-old-round2/`: the two round-2 tests on origin/main fail too (the sampled-spec gather of
+`TOKEN_NONE` faults with `CUDA_ERROR_ILLEGAL_ADDRESS`; the residual fallback returns token 0).
+
+The sm_120a and sm_121a push-gate records are in the evidence commit that follows.
 
 CPU: `cargo clippy` (engine, server, sampling: lib, bins, tests) clean; memra-engine lib 743 passed;
 memra-server, memra-kv, memra-tier 1643 passed; memra-sampling 35 passed. The sampler's frozen

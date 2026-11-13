@@ -36,16 +36,6 @@ fn bits(v: &[f32]) -> Vec<u32> {
     v.iter().map(|x| x.to_bits()).collect()
 }
 
-fn engine() -> Option<Engine> {
-    match Engine::new(0) {
-        Ok(e) => Some(e),
-        Err(_) => {
-            eprintln!("SKIP[CUDA device]: GPU test not run");
-            None
-        }
-    }
-}
-
 /// Rows with no candidate: all NaN, all -inf, a mix.
 fn none_rows() -> Vec<(&'static str, Vec<f32>)> {
     vec![
@@ -95,7 +85,10 @@ fn host_argmax_without_a_finite_logit_is_token_none() {
 
 #[test]
 fn device_argmax_matches_host_and_gives_token_none_without_a_candidate() {
-    let Some(e) = engine() else { return };
+    let Ok(e) = Engine::new(0) else {
+        eprintln!("SKIP[CUDA device]: GPU test not run");
+        return;
+    };
     let device_argmax = |row: &[f32]| -> u32 {
         let d = e.htod(row).unwrap();
         let tok = e.argmax_token_device(&d, row.len()).unwrap();
@@ -135,7 +128,10 @@ fn device_argmax_matches_host_and_gives_token_none_without_a_candidate() {
 
 #[test]
 fn embed_gather_of_an_id_past_the_table_is_a_nan_row() {
-    let Some(e) = engine() else { return };
+    let Ok(e) = Engine::new(0) else {
+        eprintln!("SKIP[CUDA device]: GPU test not run");
+        return;
+    };
     let (n_rows, n_embd) = (1000usize, 96usize);
     let (embd, table) = f32_table(&e, n_rows, n_embd);
     let row_bytes = n_embd * 4;
@@ -178,7 +174,10 @@ fn embed_gather_of_an_id_past_the_table_is_a_nan_row() {
 
 #[test]
 fn embed_gather_rows_keeps_in_table_rows_and_nans_the_rest() {
-    let Some(e) = engine() else { return };
+    let Ok(e) = Engine::new(0) else {
+        eprintln!("SKIP[CUDA device]: GPU test not run");
+        return;
+    };
     let (n_rows, n_embd) = (1000usize, 96usize);
     let (embd, table) = f32_table(&e, n_rows, n_embd);
     let row_bytes = n_embd * 4;
@@ -216,7 +215,10 @@ fn embed_gather_rows_keeps_in_table_rows_and_nans_the_rest() {
 
 #[test]
 fn prob_of_an_id_past_the_row_is_zero() {
-    let Some(e) = engine() else { return };
+    let Ok(e) = Engine::new(0) else {
+        eprintln!("SKIP[CUDA device]: GPU test not run");
+        return;
+    };
     let row = vecf(N_VOCAB, 31);
     let row_d = e.htod(&row).unwrap();
     for (tok, finite) in [
@@ -238,7 +240,10 @@ fn prob_of_an_id_past_the_row_is_zero() {
 
 #[test]
 fn trim_map_keeps_an_id_past_the_map_as_token_none() {
-    let Some(e) = engine() else { return };
+    let Ok(e) = Engine::new(0) else {
+        eprintln!("SKIP[CUDA device]: GPU test not run");
+        return;
+    };
     let map: Vec<u32> = (0..100u32).map(|i| i * 3).collect();
     let map_d = e.htod_u32_v(&map).unwrap();
     let mut buf = e.htod_u32_v(&[5, TOKEN_NONE, 100, 99]).unwrap();
@@ -253,7 +258,10 @@ fn trim_map_keeps_an_id_past_the_map_as_token_none() {
 
 #[test]
 fn bf16_row_gather_of_an_id_past_the_table_is_a_nan_row() {
-    let Some(e) = engine() else { return };
+    let Ok(e) = Engine::new(0) else {
+        eprintln!("SKIP[CUDA device]: GPU test not run");
+        return;
+    };
     let (rows, ncols) = (50usize, 64usize);
     let tbf: Vec<u16> = vecf(rows * ncols, 41)
         .iter()
@@ -285,7 +293,10 @@ fn bf16_row_gather_of_an_id_past_the_table_is_a_nan_row() {
 
 #[test]
 fn sampled_spec_gather_gives_an_id_past_the_row_probability_zero() {
-    let Some(e) = engine() else { return };
+    let Ok(e) = Engine::new(0) else {
+        eprintln!("SKIP[CUDA device]: GPU test not run");
+        return;
+    };
     let n = 1000usize;
     let x_d = e.htod(&vecf(n, 51)).unwrap();
     let ids_d = e.htod_u32_v(&[5, TOKEN_NONE, n as u32]).unwrap();
@@ -308,7 +319,10 @@ fn sampled_spec_gather_gives_an_id_past_the_row_probability_zero() {
 
 #[test]
 fn residual_sample_of_a_row_without_a_finite_value_is_token_none() {
-    let Some(e) = engine() else { return };
+    let Ok(e) = Engine::new(0) else {
+        eprintln!("SKIP[CUDA device]: GPU test not run");
+        return;
+    };
     let n = 4096usize;
     for (name, row) in [
         ("all NaN", vec![f32::NAN; n]),
