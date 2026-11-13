@@ -1236,6 +1236,35 @@ per-card-pair rows. Owed before this lands: the tp gates on one card and the pai
 the pair's prefill and decode A B B A in steady state, and the gather probe's in-kernel against
 kept-block crossing, which alone may move the push limit (in its own commit).
 
+Measured after the fix (2026-11-12 and 13; the cards at their set limits, 250 W on cards 0 and 1,
+280 W on 2 and 3; no run flagged for a slowdown, no page-cache drop inside a run):
+
+- The pair (cards 2 and 3, `receipts/pairgates-kpc-23`): the tp gates pass on every transport,
+  default 480 checks, peer-pull 478, host-canonical 478, the graph door 1,105, 0 failed, with the
+  push-gather stress (20,000 gathers, 0 words differ) and its control.
+- The copy probe on the pair (`receipts/p2p-probe3-pair23`, a 16 MiB gather a rank, median of the
+  probe's runs): 51.4 to 52.3 GB/s a rank for every block kind and call, against 2.5 to 2.9 before;
+  each direction of the pair alone 54.3 to 55.0. A pool block read by device address is 46.3 and a
+  block allocated for each gather 25.2; the engine uses neither now.
+- The gather crossover (`receipts/gather-kpc-pair23`): 1,024 KiB a rank in 8 rows on two ranks
+  takes 46.5 us through kept blocks and 92.6 us inside kernels, so the push limit (inside kernels
+  up to 224 KiB a rank) stays.
+- Four cards, 40 layers, k3 (A) against this build (B), first-token time of a prefill
+  (`receipts/prefillab-kpc-four`, `receipts/prefillab-kpc-four-131k`, the block's tables in
+  `prefillab-kpc-four/block/`): A B B A twice with three rounds a run at 4,096 and 32,768 tokens,
+  A B B A once with two rounds a run at 131,072.
+
+| tokens | n a arm | k3 median [min, max] ms | kpc median [min, max] ms | kpc / k3 |
+|---|---|---|---|---|
+| 4,096 | 12 | 4,006.4 [3,960.3, 4,021.4] | 642.4 [633.6, 652.6] | 0.160 (6.24x) |
+| 32,768 | 12 | 32,247.4 [31,251.8, 32,707.4] | 4,553.6 [4,514.5, 4,588.1] | 0.141 (7.08x) |
+| 131,072 | 4 | 126,661.5 [125,276.4, 127,722.1] | 19,479.2 [19,257.4, 19,692.4] | 0.154 (6.50x) |
+
+The ranges are apart at every length and the token after the prompt is the same on both arms
+(48, 646, 851). The bytes moved are the same (288 gathers, 3,456 copies and 27.3 GB a prefill at
+4,096 tokens); the host's issue time, which waits on the copies, falls from 3.20 to 0.52 s there.
+The 53-tape order gate puts this build in k3's byte family (d = 0, the section below).
+
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
 The order gate above ran on the decode lane's 18 tapes. Its interval was wide, so 35 more vendor
