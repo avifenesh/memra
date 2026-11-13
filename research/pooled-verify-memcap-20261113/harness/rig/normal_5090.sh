@@ -13,9 +13,9 @@ M=<models>/q38-gguf
 for v in $(env | grep -o '^MEMRA_[A-Z0-9_]*'); do unset "$v"; done
 { date -Is; echo "$NAME"; sha256sum "$BIN" | sed "s|$HOME|~|"
   nvidia-smi --query-gpu=name,driver_version,temperature.gpu,clocks.sm,power.draw,enforced.power.limit,memory.used --format=csv,noheader
-  echo "ac=$(cat /sys/class/power_supply/ADP0/online) nv_tgp=$(cat /sys/class/firmware-attributes/asus-armoury/attributes/nv_tgp/current_value) ppt_pl1_spl=$(cat /sys/class/firmware-attributes/asus-armoury/attributes/ppt_pl1_spl/current_value)"
+  echo "ac=$(cat /sys/class/power_supply/ADP0/online) nv_tgp=$(cat /sys/class/firmware-attributes/asus-armoury/attributes/nv_tgp/current_value) ppt_pl1_spl=$(cat /sys/class/firmware-attributes/asus-armoury/attributes/ppt_pl1_spl/current_value) profile=$(cat /sys/firmware/acpi/platform_profile 2>/dev/null || echo unreadable)"
   uptime; } > "$OUT/guard.log"
-nvidia-smi --query-gpu=timestamp,clocks.sm,power.draw,enforced.power.limit,temperature.gpu,utilization.gpu,memory.used --format=csv,noheader -l 1 > "$OUT/telemetry.csv" 2>/dev/null &
+nvidia-smi --query-gpu=timestamp,clocks.sm,power.draw,enforced.power.limit,temperature.gpu,utilization.gpu,memory.used,clocks_event_reasons.sw_thermal_slowdown,clocks_event_reasons.hw_thermal_slowdown --format=csv,noheader -l 1 > "$OUT/telemetry.csv" 2>/dev/null &
 TP=$!
 export CELL_MODEL=$M/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf CELL_PORT=18266
 export PLAN=1,2,4,8 REQS=6 MAXTOK=160 STREAM=1 TAG=$NAME
@@ -29,6 +29,7 @@ fi
 wait "$CP"; rc=$?
 kill "$TP" 2>/dev/null
 echo "cell $NAME rc=$rc $(date -Is)" >> "$OUT/guard.log"
+echo "profile_end=$(cat /sys/firmware/acpi/platform_profile 2>/dev/null || echo unreadable) $(date -Is)" >> "$OUT/guard.log"
 { for pat in 'out of memory' 'NOT parked' 'pooled MTP verify capped' 'pre-cohort reclaim' 'graph replay suspended' 'spec-pool] pooled MTP cohort engaged'; do
     echo "$pat=$(grep -a -c -F "$pat" "$OUT/server-$NAME.log")"; done; } > "$OUT/summary.txt"
 gzip -f "$OUT/server-$NAME.log" "$OUT/telemetry.csv"

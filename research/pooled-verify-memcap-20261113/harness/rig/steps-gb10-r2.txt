@@ -1,0 +1,10 @@
+# memra#1266 after memra#1256's landing, GB10 (u2): build F3 and M3, then agentic c=2 M F F M and
+# normal cells M F, F M (two boots per lease).
+g3build1 25 may-fail -- bash box/build_gb10_r2.sh 23
+g3build2 25 -- bash box/build_gb10_r2.sh 23
+gag3-01-M 25 -- bash box/agentic_gb10.sh gag3 01-M M3
+gag3-02-F 25 -- bash box/agentic_gb10.sh gag3 02-F F3
+gag3-03-F 25 -- bash box/agentic_gb10.sh gag3 03-F F3
+gag3-04-M 25 -- bash box/agentic_gb10.sh gag3 04-M M3
+gnc3-01-M+02-F 25 -- bash box/normal_gb10.sh gnc3 01-M M3; bash box/normal_gb10.sh gnc3 02-F F3
+gnc3-03-F+04-M 25 -- bash box/normal_gb10.sh gnc3 03-F F3; bash box/normal_gb10.sh gnc3 04-M M3

@@ -1,0 +1,21 @@
+# memra#1266 after memra#1256's landing, RTX 5090: fix F3 (the round-1 fix rebased onto main with
+# memra#1256) against main M3 (main with memra#1256); S = F3 + MEMRA_SPEC_POOL_SERIAL=1 (the
+# forced-cap arm). Agentic c=2 M F S F M F M, c=4 F S M, the pooled-vs-serial bench, normal cells
+# in both orders (two boots per lease), the gates on F3.
+ag3-01-M 20 -- bash <lane>/tools/rtx_cell.sh ag3 01-M <lane>/bins5090/M3/memra-server
+ag3-02-F 20 -- bash <lane>/tools/rtx_cell.sh ag3 02-F <lane>/bins5090/F3/memra-server
+ag3-03-S 20 -- bash <lane>/tools/rtx_cell.sh ag3 03-S <lane>/bins5090/F3/memra-server MEMRA_SPEC_POOL_SERIAL=1
+ag3-04-F 20 -- bash <lane>/tools/rtx_cell.sh ag3 04-F <lane>/bins5090/F3/memra-server
+ag34-01-F 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag34 01-F <lane>/bins5090/F3/memra-server
+ag34-02-S 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag34 02-S <lane>/bins5090/F3/memra-server MEMRA_SPEC_POOL_SERIAL=1
+ag34-03-M 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag34 03-M <lane>/bins5090/M3/memra-server
+bench-pooled 25 -- bash <lane>/tools/bench_5090.sh <lane>/runs/bench
+ag3-05-M 20 -- bash <lane>/tools/rtx_cell.sh ag3 05-M <lane>/bins5090/M3/memra-server
+ag3-06-F 20 -- bash <lane>/tools/rtx_cell.sh ag3 06-F <lane>/bins5090/F3/memra-server
+nc3-01-M+02-F 25 -- bash <lane>/tools/normal_5090.sh nc3 01-M <lane>/bins5090/M3/memra-server; bash <lane>/tools/normal_5090.sh nc3 02-F <lane>/bins5090/F3/memra-server
+nc3-03-F+04-M 25 -- bash <lane>/tools/normal_5090.sh nc3 03-F <lane>/bins5090/F3/memra-server; bash <lane>/tools/normal_5090.sh nc3 04-M <lane>/bins5090/M3/memra-server
+ag3-07-M 20 -- bash <lane>/tools/rtx_cell.sh ag3 07-M <lane>/bins5090/M3/memra-server
+gate-inv-F3 29 -- bash <lane>/tools/gate_5090.sh inv <lane>/bins5090/F3/memra-server inv-F3 27
+gate-resend-F3 29 -- bash <lane>/tools/gate_5090.sh resend <lane>/bins5090/F3/memra-server resend-F3 27
+nc3-05-M+06-F 25 -- bash <lane>/tools/normal_5090.sh nc3 05-M <lane>/bins5090/M3/memra-server; bash <lane>/tools/normal_5090.sh nc3 06-F <lane>/bins5090/F3/memra-server
+nc3-07-F+08-M 25 -- bash <lane>/tools/normal_5090.sh nc3 07-F <lane>/bins5090/F3/memra-server; bash <lane>/tools/normal_5090.sh nc3 08-M <lane>/bins5090/M3/memra-server
