@@ -9,8 +9,9 @@ export PATH=$CARGO_HOME/bin:/usr/local/cuda/bin:/usr/bin:/bin
 export MEMRA_NVCC=/usr/local/cuda/bin/nvcc MEMRA_CUDA_ARCH=120a CARGO_TARGET_DIR=$D/target-perf TMPDIR=$D/tmp
 rsync -a --delete $D/src-$TAG/ $D/src-perf/
 cd $D/src-perf || exit 1
-touch crates/memra-engine/cu/dsv41_gpu.cu crates/memra-engine/src/dsv41_gpu.rs crates/memra-engine/src/dsv41_gpu/tp.rs \
-  crates/memra-engine/src/bin/dsv41_gate.rs
+# every source file newer than target-perf's fingerprints: rsync -a keeps the source tree's old mtimes, and the shared
+# target dir last built another tree (2026-11-13: a stale build script looked for that tree's cu/dsv41_cutlass.cu)
+find crates Cargo.toml Cargo.lock -type f -exec touch {} +
 echo "$TAG build start $(date +%H:%M:%S)"
 cargo build --release -p memra-engine --bin dsv41-tpbench --bin dsv41-gate --bin dsv41-bench --bin dsv41-run \
   > $D/build-$TAG.log 2>&1
