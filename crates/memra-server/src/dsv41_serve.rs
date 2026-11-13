@@ -100,8 +100,9 @@ const PREFILL_CHUNK: usize = 8192;
 /// tables, index rows). Every forward logs the pool's high-water mark against the model.
 const MARGIN_BYTES: u64 = 1 << 30;
 
-/// The V4.1 parser-closing stop, kept in the stream like the DSv4 close.
-const DSML_V41_CLOSE: &str = "</\u{ff5c}DSML\u{ff5c} calls>";
+/// The V4.1 parser-closing stop, kept in the stream like the DSv4 close (the tool parser's own
+/// tag).
+const DSML_V41_CLOSE: &str = crate::toolcall::DSML_V41.close;
 
 /// Cheap boot-time probe: the effective `model_type` (text_config over top level, then
 /// `architectures[0]`) maps to the deepseek-v41 architecture. The loader re-validates strictly.
@@ -511,16 +512,18 @@ pub fn spawn(
     tx
 }
 
-/// Latches the route dead when the serving thread ends for any reason.
-struct ExitLatch(Arc<RouteHealth>);
+/// Latches the route dead when the serving thread ends for any reason: the loop's own reason when
+/// it stopped serving on a fault ([`serve_loop`]), else the way the thread ended.
+struct ExitLatch(Arc<RouteHealth>, Option<String>);
 
 impl Drop for ExitLatch {
     fn drop(&mut self) {
-        self.0.mark_dead(if std::thread::panicking() {
-            "deepseek-v4.1 serving thread panicked"
-        } else {
-            "deepseek-v4.1 serving thread exited"
-        });
+        let why = match self.1.take() {
+            Some(why) => why,
+            None if std::thread::panicking() => "deepseek-v4.1 serving thread panicked".into(),
+            None => "deepseek-v4.1 serving thread exited".into(),
+        };
+        self.0.mark_dead(why);
     }
 }
 
@@ -698,6 +701,9 @@ struct Active {
     /// whether the request's drafts pay (it skips the head for a stretch when they do not)
     gate: DraftGate,
     usage: SpecUsage,
+    /// the route failed the request (an engine error answered it): booked as failed, not as a
+    /// client that left
+    fault: bool,
 }
 
 /// A request past rendering, waiting for its memory.
@@ -710,7 +716,6 @@ struct Prepared {
     pen: Option<Dsv4PenaltyCfg>,
 }
 
-/// Render and validate a request for the route (`Err` answers it).
 /// A rendered request's prompt, token budget and sampler.
 struct Rendered {
     prompt: Vec<u32>,
@@ -719,6 +724,7 @@ struct Rendered {
     pen: Option<Dsv4PenaltyCfg>,
 }
 
+/// Render and validate a request for the route (`Err` answers it).
 fn prepare(
     tok: &Arc<Tokenizer>,
     max_seq: usize,
@@ -896,26 +902,34 @@ impl Book {
     }
 }
 
+/// Why the memory door answers the request at the queue head instead of admitting it.
+enum Door {
+    /// no session that size fits the card even with the route idle
+    Never(Admission),
+    /// the cache could not give memory back with nothing running: waiting frees nothing, so the
+    /// engine's error answers the request (waiting spun the serving thread on the same error)
+    Engine(String),
+}
+
 /// The memory door for the request at the queue head: `Ok(true)` admits (the cache has given
-/// back what the step needs), `Ok(false)` waits for running requests to finish, `Err` answers it
-/// (no session that size fits the card even with the route idle).
+/// back what the step needs), `Ok(false)` waits for running requests to finish, `Err` answers it.
 fn admit_dsv41_session(
     rn: &mut Runner,
     book: &Book,
     running: &[usize],
     prompt: usize,
     cap: usize,
-) -> Result<bool, Admission> {
+) -> Result<bool, Door> {
     // alone on the route: what the session costs against what the card offers beside the
     // resident weights and the cache floor
     let alone = book.total(&[], Some((prompt, cap)));
     for (dev, &ceiling) in book.ceiling.iter().enumerate() {
         if alone + book.floor_cache > ceiling {
-            return Err(Admission::NeverFits {
+            return Err(Door::Never(Admission::NeverFits {
                 dev,
                 need: alone,
                 ceiling: ceiling.saturating_sub(book.floor_cache),
-            });
+            }));
         }
     }
     if book.total(running, Some((prompt, cap))) + book.floor_cache
@@ -928,7 +942,11 @@ fn admit_dsv41_session(
         // with nothing running the card holds only the weights and the cache floor: a shortfall
         // there is a co-tenant's, and the step's own error answers the request
         Ok(free) => Ok(free.iter().all(|&f| f >= need) || running.is_empty()),
+        Err(e) if running.is_empty() => Err(Door::Engine(format!(
+            "deepseek-v4.1: make room for a {cap}-token session ({need} bytes): {e}"
+        ))),
         Err(e) => {
+            // the running requests' ends give memory back: the head waits for them
             eprintln!("[dsv41-serve] make room for {need} bytes: {e}");
             Ok(false)
         }
@@ -962,12 +980,22 @@ fn engine_thread(cfg: EngineCfg, ready: Sender<Result<Ready, String>>, start: Re
     let Ok(Start { rx, health, load }) = start.recv() else {
         return;
     };
-    let _latch = ExitLatch(health.clone());
+    let mut latch = ExitLatch(health.clone(), None);
     let sink = health.clone();
     let _progress = memra_engine::progress::ProgressSinkScope::install(Box::new(move |rows| {
         sink.note_rows(rows)
     }));
-    serve_loop(&cfg, &mut up, &rx, &health, &load);
+    let (ptx, prx) = std::sync::mpsc::channel::<Prepared>();
+    let (tok, max_seq) = (cfg.tok.clone(), cfg.max_seq);
+    let (rload, rhealth) = (load.clone(), health.clone());
+    let renderer = std::thread::Builder::new()
+        .name("dsv41-render".into())
+        .spawn(move || render_loop(tok, max_seq, rx, rload, rhealth, ptx));
+    if let Err(e) = renderer {
+        latch.1 = Some(format!("deepseek-v4.1: start the renderer: {e}"));
+        return;
+    }
+    latch.1 = serve_loop(&cfg, &mut up, &prx, &health, &load);
 }
 
 /// The model on the card, ready to serve.
@@ -1458,34 +1486,52 @@ fn pool_used(rn: &Runner) -> u64 {
         .unwrap_or(0)
 }
 
+/// Serve until the queue closes (None) or a fault stops the route (its reason).
 fn serve_loop(
     cfg: &EngineCfg,
     up: &mut Up,
-    rx: &Receiver<Box<Request>>,
+    rx: &Receiver<Prepared>,
     health: &Arc<RouteHealth>,
     load: &Arc<RouteLoad>,
-) {
+) -> Option<String> {
     let mut pending: VecDeque<Prepared> = VecDeque::new();
     let mut act: Vec<Active> = Vec::new();
     let mut seqs: Vec<Seq> = Vec::new();
     let mut closing = false;
     let mut last_step = Instant::now();
+    // the last step faulted ([`route_dies`])
+    let mut faulted = false;
+    // a step fault: fail its requests, then stop the route when [`route_dies`] says so
+    macro_rules! step_fault {
+        ($why:expr) => {{
+            let why: String = $why;
+            fail_all(&mut act, &mut seqs, health, &why);
+            if let Some(dead) = route_dies(up.rn.transport_lost(), faulted, &why) {
+                eprintln!("[dsv41-serve] {dead}");
+                fail_pending(&mut pending, health, &dead);
+                return Some(dead);
+            }
+            faulted = true;
+            continue;
+        }};
+    }
     loop {
         // intake: block only when there is nothing to do
         if act.is_empty() && pending.is_empty() {
             if closing {
-                break;
+                return None;
             }
-            health.set_idle();
-            let Ok(req) = rx.recv() else {
+            // the renderer may hold a request (it counts as in flight)
+            health.set_idle_if_free();
+            let Ok(pr) = rx.recv() else {
                 closing = true;
                 continue;
             };
-            intake(cfg, req, load, health, &mut pending);
+            pending.push_back(pr);
         }
         loop {
             match rx.try_recv() {
-                Ok(req) => intake(cfg, req, load, health, &mut pending),
+                Ok(pr) => pending.push_back(pr),
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     closing = true;
@@ -1524,8 +1570,38 @@ fn serve_loop(
         {
             let running: Vec<usize> = act.iter().map(|a| a.cap).collect();
             let (p, cap) = (head.prompt.len(), head.prompt.len() + head.budget);
-            match admit_dsv41_session(&mut up.rn, &up.book, &running, p, cap) {
-                Ok(true) => {
+            let door = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                admit_dsv41_session(&mut up.rn, &up.book, &running, p, cap).and_then(|ok| {
+                    // the session's state is booked at admission and held from here, so the
+                    // cache's regrowth between steps never takes what its first emissions need
+                    if ok {
+                        up.rn.seq_alloc(cap).map(Some).map_err(|e| {
+                            Door::Engine(format!(
+                                "deepseek-v4.1: the state of a {cap}-token session: {e}"
+                            ))
+                        })
+                    } else {
+                        Ok(None)
+                    }
+                })
+            }));
+            let door = match door {
+                Ok(d) => d,
+                Err(payload) => {
+                    let why = format!(
+                        "deepseek-v4.1 admission panicked: {}",
+                        panic_text(payload.as_ref())
+                    );
+                    let mut pr = pending.pop_front().expect("the head exists");
+                    fail_request(&mut pr.req, EngineError::engine(why.clone()));
+                    health.note_request_fault();
+                    pr.run.fail();
+                    health.end_request();
+                    step_fault!(why);
+                }
+            };
+            match door {
+                Ok(Some(state)) => {
                     let mut pr = pending.pop_front().expect("the head exists");
                     let tok = cfg.tok.clone();
                     let eos = end_ids(&pr.req.params.eos, cfg.eos, pr.req.ignore_eos);
@@ -1553,7 +1629,7 @@ fn serve_loop(
                     } else {
                         Vec::new()
                     };
-                    seqs.push(up.rn.seq_with_capacity(cap));
+                    seqs.push(state);
                     act.push(Active {
                         req: pr.req,
                         run: Some(pr.run),
@@ -1571,11 +1647,20 @@ fn serve_loop(
                         drafted: false,
                         gate: DraftGate::new(),
                         usage: SpecUsage::default(),
+                        fault: false,
                     });
                     new_call = Some((act.len() - 1, pr.prompt));
                 }
-                Ok(false) => {}
-                Err(outcome) => {
+                Ok(None) => {}
+                Err(Door::Engine(why)) => {
+                    let mut pr = pending.pop_front().expect("the head exists");
+                    eprintln!("[dsv41-serve] request_id={:?}: {why}", pr.req.request_id);
+                    fail_request(&mut pr.req, EngineError::engine(why));
+                    health.note_request_fault();
+                    pr.run.fail();
+                    health.end_request();
+                }
+                Err(Door::Never(outcome)) => {
                     let mut pr = pending.pop_front().expect("the head exists");
                     let (answer, _) = admission_answer(&outcome, cap, p, || up.book.largest_fit(p));
                     eprintln!(
@@ -1630,7 +1715,10 @@ fn serve_loop(
                     // a drafted row is worth running only while the budget has room past `t`'s
                     // successor, and the head only while the request's drafts pay
                     let room = a.stream.budget.saturating_sub(a.stream.ids.len() + 1);
-                    if (*depth).min(room) > 0 && a.gate.drafts() {
+                    // the head writes a block of positions from the call's: only inside the
+                    // runner's context (the decode call itself may still reach its last position)
+                    let fits = seqs[i].len() + dw.cfg.block <= up.rn.max_pos;
+                    if (*depth).min(room) > 0 && fits && a.gate.drafts() {
                         let td = Instant::now();
                         let d = up.rn.draft(dw, ds, t, seqs[i].len(), false)?;
                         draft_ms.push(td.elapsed().as_secs_f64() * 1e3);
@@ -1696,30 +1784,11 @@ fn serve_loop(
         }));
         let (outs, rows, bouts, draft_ms, forward_ms) = match stepped {
             Ok(Ok(x)) => x,
-            Ok(Err(e)) => {
-                fail_all(
-                    &mut act,
-                    &mut seqs,
-                    health,
-                    &format!("deepseek-v4.1 step: {e}"),
-                );
-                continue;
-            }
-            Err(payload) => {
-                health.note_request_fault();
-                let why = payload
-                    .downcast_ref::<String>()
-                    .cloned()
-                    .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
-                    .unwrap_or_else(|| "non-string panic payload".into());
-                fail_all(
-                    &mut act,
-                    &mut seqs,
-                    health,
-                    &format!("deepseek-v4.1 step panicked: {why}"),
-                );
-                continue;
-            }
+            Ok(Err(e)) => step_fault!(format!("deepseek-v4.1 step: {e}")),
+            Err(payload) => step_fault!(format!(
+                "deepseek-v4.1 step panicked: {}",
+                panic_text(payload.as_ref())
+            )),
         };
         let step_s = ts.elapsed().as_secs_f64();
         let transient = pool_peak(&up.rn).saturating_sub(used_before);
@@ -1752,154 +1821,201 @@ fn serve_loop(
                 .rows
                 .observe(first.s, forward_ms / outs.len() as f64);
         }
-        // choose, emit, commit, finish
-        let vocab = up.rn.g.vocab;
-        let mut done = Vec::new();
-        // every request's rows with the call that holds them: its own call's from row 0, or its
-        // row of a batched call
-        let mut items: Vec<StepRows<'_>> = rows
-            .into_iter()
-            .zip(&outs)
-            .zip(&who)
-            .map(|((row, o), &i)| (i, row, o, 0, None))
-            .collect();
-        let mut b0 = 0usize;
-        for (o, picked) in &bouts {
-            for r in 0..o.s {
-                let i = batch[b0 + r].0;
-                items.push(match picked {
-                    Picked::Logits(lg) => (i, lg[r * vocab..(r + 1) * vocab].to_vec(), o, r, None),
-                    Picked::Ids(ids) => (i, Vec::new(), o, r, Some(ids[r])),
-                });
+        // choose, emit, commit, finish, and the cache's regrowth: host work of the step, in
+        // the same wrap as its engine calls (a panic fails the step's requests, not the thread)
+        let settled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // choose, emit, commit, finish
+            let vocab = up.rn.g.vocab;
+            let mut done = Vec::new();
+            // every request's rows with the call that holds them: its own call's from row 0, or its
+            // row of a batched call
+            let mut items: Vec<StepRows<'_>> = rows
+                .into_iter()
+                .zip(&outs)
+                .zip(&who)
+                .map(|((row, o), &i)| (i, row, o, 0, None))
+                .collect();
+            let mut b0 = 0usize;
+            for (o, picked) in &bouts {
+                for r in 0..o.s {
+                    let i = batch[b0 + r].0;
+                    items.push(match picked {
+                        Picked::Logits(lg) => {
+                            (i, lg[r * vocab..(r + 1) * vocab].to_vec(), o, r, None)
+                        }
+                        Picked::Ids(ids) => (i, Vec::new(), o, r, Some(ids[r])),
+                    });
+                }
+                b0 += o.s;
             }
-            b0 += o.s;
-        }
-        for (i, row, o, row0, picked) in items {
-            let a = &mut act[i];
-            let fail = |a: &mut Active, what: &str, e: String| {
-                let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
-                    "deepseek-v4.1 {what}: {e}"
-                ))));
-                a.stream.client_gone = true;
-            };
-            // a prompt's taps seed the draft rings
-            if o.sp == 0
-                && let (Some((dw, _)), Some(ds)) = (up.draft.as_ref(), a.ds.as_mut())
-                && let Err(e) = up.rn.draft_commit(dw, ds, o, o.tap_row0, o.tap_rows, false)
-            {
-                fail(a, "draft seed", e);
-                done.push(i);
-                continue;
-            }
-            // Row r is the target's distribution after the call's token r. Each row's token is
-            // chosen as a plain step's (the penalties window and the position-keyed draw see the
-            // tokens emitted so far); a draft stands while it equals that choice, and the first
-            // row whose choice differs from the draft after it ends the block.
-            let n_rows = if picked.is_some() {
-                1
-            } else {
-                row.len() / vocab
-            };
-            let drafted = n_rows - 1;
-            let mut kept = 0usize;
-            let mut live = true;
-            a.steps += 1;
-            for r in 0..n_rows {
-                let pos = a.prompt_len + a.stream.ids.len();
-                let chosen = match picked {
-                    // the device's argmax of the row: a plain greedy step of a batched call
-                    Some(t) => Ok(t),
-                    None => choose(
-                        row[r * vocab..(r + 1) * vocab].to_vec(),
-                        pos,
-                        a.sample.as_ref(),
-                        a.pen.as_ref(),
-                        &a.window,
-                    ),
+            for (i, row, o, row0, picked) in items {
+                let a = &mut act[i];
+                let fail = |a: &mut Active, what: &str, e: String| {
+                    let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
+                        "deepseek-v4.1 {what}: {e}"
+                    ))));
+                    // the answer is the error: nothing more goes to the client
+                    a.stream.client_gone = true;
+                    a.fault = true;
                 };
-                let t = match chosen {
-                    Ok(t) => t,
-                    Err(e) => {
-                        fail(a, "sampler", e);
+                // a prompt's taps seed the draft rings
+                if o.sp == 0
+                    && let (Some((dw, _)), Some(ds)) = (up.draft.as_ref(), a.ds.as_mut())
+                    && let Err(e) = up.rn.draft_commit(dw, ds, o, o.tap_row0, o.tap_rows, false)
+                {
+                    fail(a, "draft seed", e);
+                    done.push(i);
+                    continue;
+                }
+                // Row r is the target's distribution after the call's token r. Each row's token is
+                // chosen as a plain step's (the penalties window and the position-keyed draw see the
+                // tokens emitted so far); a draft stands while it equals that choice, and the first
+                // row whose choice differs from the draft after it ends the block.
+                let n_rows = if picked.is_some() {
+                    1
+                } else {
+                    row.len() / vocab
+                };
+                let drafted = n_rows - 1;
+                let mut kept = 0usize;
+                let mut live = true;
+                a.steps += 1;
+                for r in 0..n_rows {
+                    let pos = a.prompt_len + a.stream.ids.len();
+                    let chosen = match picked {
+                        // the device's argmax of the row: a plain greedy step of a batched call
+                        Some(t) => Ok(t),
+                        None => choose(
+                            row[r * vocab..(r + 1) * vocab].to_vec(),
+                            pos,
+                            a.sample.as_ref(),
+                            a.pen.as_ref(),
+                            &a.window,
+                        ),
+                    };
+                    let t = match chosen {
+                        Ok(t) => t,
+                        Err(e) => {
+                            fail(a, "sampler", e);
+                            live = false;
+                            break;
+                        }
+                    };
+                    kept = r + 1;
+                    if !a.stream.push(t) {
                         live = false;
                         break;
                     }
-                };
-                kept = r + 1;
-                if !a.stream.push(t) {
-                    live = false;
+                    if a.pen.is_some() {
+                        a.window.push(t);
+                    }
+                    if r < drafted && t == a.drafts[r] {
+                        continue;
+                    }
+                    a.next = Some(t);
                     break;
                 }
-                if a.pen.is_some() {
-                    a.window.push(t);
+                if drafted > 0 {
+                    a.usage.rounds += 1;
+                    a.usage.drafted += drafted as u64;
+                    a.usage.accepted += kept.saturating_sub(1) as u64;
                 }
-                if r < drafted && t == a.drafts[r] {
+                // what the drafted step yielded against one-token steps, at the route's prices
+                if a.drafted
+                    && let (Some(call), Some(plain)) =
+                        (up.price.rows.ms(n_rows), up.price.rows.ms(1))
+                {
+                    a.gate.observe(kept, call + up.price.draft_ms, plain);
+                }
+                if !live {
+                    done.push(i);
                     continue;
                 }
-                a.next = Some(t);
-                break;
-            }
-            if drafted > 0 {
-                a.usage.rounds += 1;
-                a.usage.drafted += drafted as u64;
-                a.usage.accepted += kept.saturating_sub(1) as u64;
-            }
-            // what the drafted step yielded against one-token steps, at the route's prices
-            if a.drafted
-                && let (Some(call), Some(plain)) = (up.price.rows.ms(n_rows), up.price.rows.ms(1))
-            {
-                a.gate.observe(kept, call + up.price.draft_ms, plain);
-            }
-            if !live {
-                done.push(i);
-                continue;
-            }
-            // the kept rows become the sequence's state; the rejected ones never reach it
-            if o.sp > 0 {
-                let mut r = Ok(());
-                // a call of its own with several rows is a verification: its kept rows commit (a
-                // batched call's rows are other requests' steps, written as they ran)
-                if o.batch.is_empty() && o.s > 1 {
-                    r = up.rn.commit(&mut seqs[i], kept);
-                }
-                if r.is_ok()
-                    && let (Some((dw, _)), Some(ds)) = (up.draft.as_ref(), a.ds.as_mut())
-                {
-                    r = up.rn.draft_commit(dw, ds, o, row0, kept, false).map(|_| ());
-                }
-                if let Err(e) = r {
-                    fail(a, "commit", e);
-                    done.push(i);
+                // the kept rows become the sequence's state; the rejected ones never reach it
+                if o.sp > 0 {
+                    let mut r = Ok(());
+                    // a call of its own with several rows is a verification: its kept rows commit (a
+                    // batched call's rows are other requests' steps, written as they ran)
+                    if o.batch.is_empty() && o.s > 1 {
+                        r = up.rn.commit(&mut seqs[i], kept);
+                    }
+                    if r.is_ok()
+                        && let (Some((dw, _)), Some(ds)) = (up.draft.as_ref(), a.ds.as_mut())
+                    {
+                        r = up.rn.draft_commit(dw, ds, o, row0, kept, false).map(|_| ());
+                    }
+                    if let Err(e) = r {
+                        fail(a, "commit", e);
+                        done.push(i);
+                    }
                 }
             }
+            drop(outs);
+            drop(bouts);
+            // finish from the back so swap_remove keeps the other indices valid
+            done.sort_unstable();
+            for &i in done.iter().rev() {
+                let a = act.swap_remove(i);
+                seqs.swap_remove(i);
+                finish(a, health);
+            }
+            // the prefill's transient is gone: let the cache take the free memory back
+            if pending.is_empty() && up.rn.offloaded() {
+                let running: Vec<usize> = act.iter().map(|a| a.cap).collect();
+                let reserve = up.book.live_need(&running, None);
+                if let Err(e) = up.rn.grow_caches(reserve, up.max_slots) {
+                    eprintln!("[dsv41-serve] grow the expert cache: {e}");
+                }
+            }
+        }));
+        if let Err(payload) = settled {
+            step_fault!(format!(
+                "deepseek-v4.1 step's host half panicked: {}",
+                panic_text(payload.as_ref())
+            ));
         }
-        drop(outs);
-        drop(bouts);
-        // finish from the back so swap_remove keeps the other indices valid
-        done.sort_unstable();
-        for &i in done.iter().rev() {
-            let a = act.swap_remove(i);
-            seqs.swap_remove(i);
-            finish(a, health);
-        }
-        // the prefill's transient is gone: let the cache take the free memory back
-        if pending.is_empty() && up.rn.offloaded() {
-            let running: Vec<usize> = act.iter().map(|a| a.cap).collect();
-            let reserve = up.book.live_need(&running, None);
-            if let Err(e) = up.rn.grow_caches(reserve, up.max_slots) {
-                eprintln!("[dsv41-serve] grow the expert cache: {e}");
-            }
+        faulted = false;
+    }
+}
+
+/// The route's renderer, on a thread of its own: every request's prompt is rendered and
+/// validated here, so a burst of long prompts never stalls the serving thread's steps. A request
+/// that does not render is answered here; the rest reach the serving thread ready to admit, in
+/// arrival order. It stops when the queue closes or the serving thread is gone; it then drops
+/// the queue, so the HTTP side answers later requests with the route's error.
+fn render_loop(
+    tok: Arc<Tokenizer>,
+    max_seq: usize,
+    rx: Receiver<Box<Request>>,
+    load: Arc<RouteLoad>,
+    health: Arc<RouteHealth>,
+    out: Sender<Prepared>,
+) {
+    while let Ok(req) = rx.recv() {
+        let Some(pr) = intake(&tok, max_seq, req, &load, &health) else {
+            continue;
+        };
+        if let Err(std::sync::mpsc::SendError(mut pr)) = out.send(pr) {
+            fail_request(
+                &mut pr.req,
+                EngineError::engine("the deepseek-v4.1 route stopped serving".to_string()),
+            );
+            pr.run.fail();
+            health.end_request();
+            break;
         }
     }
 }
 
+/// A request off the route's queue: booked, rendered and validated (`None`: answered here, or its
+/// client already left).
 fn intake(
-    cfg: &EngineCfg,
+    tok: &Arc<Tokenizer>,
+    max_seq: usize,
     mut req: Box<Request>,
     load: &Arc<RouteLoad>,
     health: &Arc<RouteHealth>,
-    pending: &mut VecDeque<Prepared>,
-) {
+) -> Option<Prepared> {
     // Occupancy rises before the ticket falls (`RouteLoad::begin`), so an arrival never reads a
     // free route between the two.
     let run = load.begin();
@@ -1909,16 +2025,16 @@ fn intake(
     crate::worker::release_request_reservation(&mut req);
     if req.tx.is_closed() {
         run.cancel();
-        return;
+        return None;
     }
     health.begin_request();
-    match prepare(&cfg.tok, cfg.max_seq, &mut req) {
+    match prepare(tok, max_seq, &mut req) {
         Ok(Rendered {
             prompt,
             budget,
             sample,
             pen,
-        }) => pending.push_back(Prepared {
+        }) => Some(Prepared {
             req,
             run,
             prompt,
@@ -1929,6 +2045,7 @@ fn intake(
         Err(e) => {
             settle(run, &mut req, Err(e));
             health.end_request();
+            None
         }
     }
 }
@@ -1953,8 +2070,13 @@ fn finish(mut a: Active, health: &Arc<RouteHealth>) {
         n_cached: 0,
         rounds: a.steps,
     };
+    if a.fault {
+        health.note_request_fault();
+    }
     if let Some(run) = a.run.take() {
-        if a.stream.client_gone {
+        if a.fault {
+            run.fail();
+        } else if a.stream.client_gone {
             run.cancel();
         } else {
             run.finish(stats);
@@ -1963,21 +2085,72 @@ fn finish(mut a: Active, health: &Arc<RouteHealth>) {
     health.end_request();
 }
 
+/// Answer every running request with the step's error: each is a request the route failed.
 fn fail_all(act: &mut Vec<Active>, seqs: &mut Vec<Seq>, health: &Arc<RouteHealth>, why: &str) {
     eprintln!("[dsv41-serve] {why}; failing {} request(s)", act.len());
     seqs.clear();
     for mut a in act.drain(..) {
         fail_request(&mut a.req, EngineError::engine(why.to_string()));
+        health.note_request_fault();
         if let Some(run) = a.run.take() {
-            run.cancel();
+            run.fail();
         }
         health.end_request();
+    }
+}
+
+/// Answer every request still waiting for memory with `why`: the route stops serving.
+fn fail_pending(pending: &mut VecDeque<Prepared>, health: &Arc<RouteHealth>, why: &str) {
+    for mut pr in pending.drain(..) {
+        fail_request(&mut pr.req, EngineError::engine(why.to_string()));
+        pr.run.fail();
+        health.end_request();
+    }
+}
+
+/// The text of a caught panic's payload.
+fn panic_text(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+        .unwrap_or_else(|| "non-string panic payload".into())
+}
+
+/// Whether a step fault ends the route: the engine lost its transport (every later forward
+/// refuses), or the step before this one faulted too. A fault fails every request in its step,
+/// so the step after it holds only requests admitted since; a second fault in a row is not
+/// theirs but the route's. `Some` is the reason the route stops on.
+fn route_dies(lost: Option<&str>, faulted_before: bool, why: &str) -> Option<String> {
+    match lost {
+        Some(l) => Some(format!("deepseek-v4.1 route stopped: {l}")),
+        None if faulted_before => Some(format!(
+            "deepseek-v4.1 route stopped: two steps in a row faulted (the last: {why})"
+        )),
+        None => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A step fault stops the route when the engine lost its transport, or when the step before
+    /// it faulted too (its requests were all failed, so the second fault is the route's); a lone
+    /// fault fails its step's requests and the route goes on.
+    #[test]
+    fn a_step_fault_stops_the_route_when_lost_or_twice_in_a_row() {
+        assert_eq!(route_dies(None, false, "step: e"), None);
+        let twice = route_dies(None, true, "step: e").expect("two in a row stop it");
+        assert!(twice.contains("two steps in a row") && twice.contains("step: e"));
+        let lost = route_dies(
+            Some("rank 1: a peer's slice of a gather never arrived"),
+            false,
+            "x",
+        )
+        .expect("a lost transport stops it at once");
+        assert!(lost.contains("never arrived"));
+    }
 
     /// Feed a stream's text step the tokens' byte pieces; returns the deltas and the final text.
     fn run_stream(pieces: &[&[u8]], stops: &[String]) -> (Vec<String>, String, bool) {

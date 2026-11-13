@@ -440,6 +440,15 @@ impl RouteRun {
         self.load.refused.fetch_add(1, Ordering::Release);
         self.done = true;
     }
+
+    /// The route failed the request (a device fault, a refused step): booked as failed, as a run
+    /// dropped without an end is, but named where the route decides it.
+    pub(crate) fn fail(mut self) {
+        self.admit();
+        self.leave_running();
+        self.load.failed.fetch_add(1, Ordering::Release);
+        self.done = true;
+    }
 }
 
 impl Drop for RouteRun {
@@ -514,6 +523,10 @@ mod tests {
             (
                 "    pub(crate) fn refuse(mut self) {",
                 "self.load.refused.fetch_add(1, Ordering::Release);",
+            ),
+            (
+                "    pub(crate) fn fail(mut self) {",
+                "self.load.failed.fetch_add(1, Ordering::Release);",
             ),
         ] {
             let b = body(f);

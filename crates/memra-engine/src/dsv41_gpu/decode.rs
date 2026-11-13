@@ -501,6 +501,57 @@ impl<'a> Runner<'a> {
         }
     }
 
+    /// [`Self::seq_with_capacity`] with its state allocated now on every rank, as the forwards
+    /// allocate it at its first use (zeroed, the same sizes): each layer's window ring, a ratio-2
+    /// kv source's open pair, and each kv-source group's compressed KV and its index keys sized
+    /// for `cap` positions. A serving route books a request's state at admission ([`seq_state_bytes`]);
+    /// holding it from there keeps the expert cache's regrowth between steps from taking memory
+    /// the request's first emissions need. The bytes a forward writes are the same either way.
+    pub fn seq_alloc(&self, cap: usize) -> Result<Seq, String> {
+        let mut q = self.seq_with_capacity(cap);
+        let g = &self.g;
+        let (hd, win, idim) = (g.head_dim, g.window, g.index_dim);
+        for (li, per) in q.ls.iter_mut().enumerate() {
+            let k = super::LayerKind::of(g, li);
+            for (ls, c) in per.iter_mut().zip(&self.grp.cx) {
+                ls.ring = Some(c.ops.buf(win * hd * 2)?);
+                if k.ratio == 2 && k.kv_source {
+                    ls.c_kv = Some(c.ops.buf(2 * hd * 4)?);
+                    ls.c_sc = Some(c.ops.buf(2 * hd * 4)?);
+                }
+            }
+        }
+        for (gi, per) in q.store.iter_mut().enumerate() {
+            let src = g.kv_sources[gi];
+            let k = super::LayerKind::of(g, src);
+            let rows = q.cap.checked_div(k.ratio).unwrap_or(0);
+            if src >= self.n_layers || rows == 0 {
+                continue;
+            }
+            for (sh, c) in per.iter_mut().zip(&self.grp.cx) {
+                super::ensure_rows(
+                    &c.ops,
+                    &mut sh.compress_kv,
+                    &mut sh.compress_cap,
+                    rows,
+                    hd * 2,
+                    rows,
+                )?;
+                if k.index_source {
+                    super::ensure_rows(
+                        &c.ops,
+                        &mut sh.index_k,
+                        &mut sh.index_k_cap,
+                        rows,
+                        idim * 2,
+                        rows,
+                    )?;
+                }
+            }
+        }
+        Ok(q)
+    }
+
     /// The kv-source group whose compressed KV and index keys layer `li` reads: the latest kv
     /// source at or below it (vendor: the source that last pointed `shared_attn` at its cache).
     pub fn group_of(g: &Geo, li: usize) -> Option<usize> {
