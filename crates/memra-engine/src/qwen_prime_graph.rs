@@ -71,6 +71,9 @@ struct ChunkGraph {
     rows: usize,
     capacity: usize,
     slab_pointer: u64,
+    /// The prime GDN scan workspace the graph was captured over (0 = none). It is freed between
+    /// primes and may come back elsewhere (memra#1258), so a graph over another address recaptures.
+    gdn_pointer: u64,
     dequant_pointer: u64,
     tap_layers: Vec<usize>,
     attention_fa2: bool,
@@ -211,7 +214,15 @@ pub(crate) fn run(
         .max()
         .unwrap();
     let slab = m.prime_slabs_get(e, rows, hidden, nff)?;
-    let slab_pointer = slab.lock().unwrap().xa.device_ptr(&e.stream()).0;
+    let (slab_pointer, gdn_pointer) = {
+        let s = slab.lock().unwrap();
+        (
+            s.xa.device_ptr(&e.stream()).0,
+            s.gdn
+                .as_ref()
+                .map_or(0, |g| g.gcum.device_ptr(&e.stream()).0),
+        )
+    };
     let dequant_pointer = e
         .prime_deqw_ws
         .lock()
@@ -231,6 +242,7 @@ pub(crate) fn run(
             if p.rows == rows
                 && p.capacity >= seq_end
                 && p.slab_pointer == slab_pointer
+                && p.gdn_pointer == gdn_pointer
                 && p.dequant_pointer == dequant_pointer
                 && p.tap_layers == tap_layers
                 && p.attention_fa2 == e.prime_attn_fa2_enabled() =>
@@ -256,6 +268,7 @@ pub(crate) fn run(
                 rows,
                 capacity: seq_end,
                 slab_pointer,
+                gdn_pointer,
                 tap_layers,
                 attention_fa2: e.prime_attn_fa2_enabled(),
                 dequant_pointer: e

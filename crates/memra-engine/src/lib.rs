@@ -2226,6 +2226,163 @@ pub(crate) enum GdnScanOut<'a, 'z> {
     },
 }
 
+/// The chunked GDN scan's per-call planes on the mma route, resident for a prime walk
+/// (memra#1258 step 2). A prime call allocated them fresh in every GDN layer and freed them in the
+/// same layer: about 520 MB per layer at 4,096 rows on Qwen3.8-27B, the largest of them the 192 MiB
+/// `ssnap16` block whose placement made the first call's pool draw differ from run to run (and
+/// fail under pressure with free bytes inside the pool). `HybridModel::prime_slabs_get` allocates
+/// one with the prime slab (same rows, same growth event) and `prime_layers` lends it to the engine
+/// for its walk (`Engine::prime_gdn_ws_install`); `gdn_scan_chunked_to` draws its planes from it
+/// when it fits the call, and allocates as before otherwise (every caller outside the walk).
+pub struct GdnScanWs {
+    /// Rows the planes hold (the slab's `t_cap`) and the head counts they were sized for.
+    pub t_cap: usize,
+    pub h: usize,
+    pub hk: usize,
+    pub gcum: CudaSlice<f32>,
+    pub a: CudaSlice<f32>,
+    pub p: CudaSlice<f32>,
+    pub u: CudaSlice<f32>,
+    pub wb16: CudaSlice<u8>,
+    pub kb16: CudaSlice<u8>,
+    /// K4's bf16 Y and state snapshots for K5; absent where the fused K4+K5 route keeps them on chip.
+    pub pair: Option<(CudaSlice<u8>, CudaSlice<u8>)>,
+}
+
+// Accessed only by the prime walk that holds the device's slab mutex, on one stream.
+unsafe impl Send for GdnScanWs {}
+
+impl GdnScanWs {
+    /// The mma route's chunk width, the one `GdnScanWs` serves.
+    pub const C: usize = 32;
+    const D: usize = 128;
+
+    /// Bytes per row of `t_cap` (`nc * C` rows): gcum, a and p, u, wb16, kb16, and with `pair` the
+    /// bf16 Y and the state snapshots. The admission shape charges the same figure
+    /// (`HybridModel::prime_workspace_shape`).
+    pub fn row_bytes(h: usize, hk: usize, pair: bool) -> usize {
+        let (c, d) = (Self::C, Self::D);
+        let base = h * 4 + 2 * h * c * 4 + h * d * 4 + h * d * 2 + hk * d * 2;
+        base + if pair {
+            h * d * 2 + h * d * d * 2 / c
+        } else {
+            0
+        }
+    }
+
+    /// Element counts of the planes for `t_cap` rows: gcum, a, p, u (f32), then wb16, kb16, and
+    /// with `pair` y16 and ssnap16 (bytes; 0 without the pair).
+    pub fn plane_lens(t_cap: usize, h: usize, hk: usize, pair: bool) -> [usize; 8] {
+        let (c, d) = (Self::C, Self::D);
+        let nc = t_cap.div_ceil(c);
+        let p = |n: usize| if pair { n } else { 0 };
+        [
+            nc * c * h,
+            nc * h * c * c,
+            nc * h * c * c,
+            nc * h * c * d,
+            nc * h * c * d * 2,
+            nc * c * hk * d * 2,
+            p(nc * h * c * d * 2),
+            p(nc * h * d * d * 2),
+        ]
+    }
+
+    pub fn alloc(
+        e: &Engine,
+        t_cap: usize,
+        h: usize,
+        hk: usize,
+        pair: bool,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let [gcum, a, p, u, wb16, kb16, y16, ssnap16] = Self::plane_lens(t_cap, h, hk, pair);
+        Ok(Self {
+            t_cap,
+            h,
+            hk,
+            gcum: e.uninit(gcum)?,
+            a: e.uninit(a)?,
+            p: e.uninit(p)?,
+            u: e.uninit(u)?,
+            wb16: e.alloc_u8_uninit(wb16)?,
+            kb16: e.alloc_u8_uninit(kb16)?,
+            pair: if pair {
+                Some((e.alloc_u8_uninit(y16)?, e.alloc_u8_uninit(ssnap16)?))
+            } else {
+                None
+            },
+        })
+    }
+
+    pub fn bytes(&self) -> usize {
+        let f32s = self.gcum.len() + self.a.len() + self.p.len() + self.u.len();
+        let pair = self.pair.as_ref().map_or(0, |(y, s)| y.len() + s.len());
+        f32s * 4 + self.wb16.len() + self.kb16.len() + pair
+    }
+
+    /// Whether a scan of `t` rows over `h` value and `hk` key heads at chunk `c` fits (`pair`: the
+    /// scan takes the unfused K4/K5 pair and needs its planes).
+    fn fits(&self, t: usize, h: usize, hk: usize, c: usize, pair: bool) -> bool {
+        c == Self::C
+            && t <= self.t_cap
+            && h <= self.h
+            && hk <= self.hk
+            && (!pair || self.pair.is_some())
+    }
+}
+
+#[cfg(test)]
+mod gdn_scan_ws_tests {
+    use super::GdnScanWs;
+
+    /// memra#1258 step 2: the bytes admission charges per row (`row_bytes`, through the prime
+    /// workspace shape) are the bytes the slab allocates (`plane_lens`), at a whole number of
+    /// chunks, with and without the K4/K5 pair; a partial chunk rounds up.
+    #[test]
+    fn the_admission_row_bytes_are_the_allocated_bytes() {
+        for (h, hk) in [(48usize, 16usize), (48, 48), (32, 16), (64, 64)] {
+            for pair in [true, false] {
+                for t_cap in [32usize, 4096, 4096 + 32 * 3] {
+                    let l = GdnScanWs::plane_lens(t_cap, h, hk, pair);
+                    let bytes = (l[0] + l[1] + l[2] + l[3]) * 4 + l[4] + l[5] + l[6] + l[7];
+                    assert_eq!(
+                        bytes,
+                        GdnScanWs::row_bytes(h, hk, pair) * t_cap,
+                        "h={h} hk={hk} pair={pair} t={t_cap}"
+                    );
+                }
+                let l = GdnScanWs::plane_lens(4100, h, hk, pair);
+                let bytes = (l[0] + l[1] + l[2] + l[3]) * 4 + l[4] + l[5] + l[6] + l[7];
+                assert_eq!(
+                    bytes,
+                    GdnScanWs::row_bytes(h, hk, pair) * 4100usize.div_ceil(32) * 32
+                );
+            }
+        }
+        // Qwen3.8-27B (48 value heads, kb16 sized for 48): 123,072 B/row, 504 MB at 4,096 rows.
+        assert_eq!(GdnScanWs::row_bytes(48, 48, true), 123_072);
+    }
+}
+
+/// The engine's loan of a prime walk's `GdnScanWs` to one scan: taken out of
+/// `Engine::prime_gdn_ws` and put back when the scan returns, on every path.
+struct GdnWsLease<'e> {
+    e: &'e Engine,
+    ws: Option<GdnScanWs>,
+}
+
+impl Drop for GdnWsLease<'_> {
+    fn drop(&mut self) {
+        if let Some(ws) = self.ws.take() {
+            *self
+                .e
+                .prime_gdn_ws
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = Some(ws);
+        }
+    }
+}
+
 /// One quantize-once scope: the activation buffer it covers and, after the first F8F4 weight,
 /// that activation's e4m3 scratch (block_e4m3_mmq, the bytes the quantizer would write again).
 pub(crate) struct F8f4ActGroup {
@@ -2558,6 +2715,13 @@ pub struct Engine {
     /// (t_kv, kv_dim) seen, REUSED across layers/chunks/calls (contents rewritten per launch —
     /// safe because all compute serializes on the one gpu.stream). ~82MB at 40k ctx on the 27B.
     prime_deqw_ws: Mutex<Option<(CudaSlice<u8>, CudaSlice<u8>)>>,
+    /// memra#1258 step 2: the GDN scan workspace a prime walk lends for its duration
+    /// (`prime_gdn_ws_install` / `prime_gdn_ws_take`); None outside a walk.
+    prime_gdn_ws: Mutex<Option<GdnScanWs>>,
+    /// memra#1258 step 2: a prime GDN scan workspace parked between primes. It stays mapped, so
+    /// the next prime takes the same bytes back, and it counts as reclaimable: `pool_cached_bytes`
+    /// includes it and `pool_trim_to` frees it before it trims.
+    prime_gdn_ws_parked: Mutex<Option<GdnScanWs>>,
     /// Quantize-once scope of `matmul_group` (GB10 prefill lane, 2026-11-06): while a group of
     /// weights runs over ONE unmodified activation buffer, the NVFP4 F8F4 entry keeps the e4m3
     /// scratch it quantized for the first weight and hands it to the rest.
@@ -4767,6 +4931,8 @@ impl Engine {
             capture_keep: Mutex::new(Vec::new()),
             argmax_partials: Mutex::new(None),
             prime_deqw_ws: Mutex::new(None),
+            prime_gdn_ws: Mutex::new(None),
+            prime_gdn_ws_parked: Mutex::new(None),
             f8f4_act_group: Mutex::new(None),
             f8f4_act_seed: Mutex::new(None),
             gemm_resid: Mutex::new(None),
@@ -4822,9 +4988,14 @@ impl Engine {
     /// gone is genuinely LIVE (see `pool_reserved_used` for the diagnostic pair).
     ///
     /// Returns 0 if the pool cannot be queried (never a false-positive headroom claim).
+    ///
+    /// A parked prime GDN scan workspace (memra#1258) is live in the pool but reclaimable on
+    /// demand (`pool_trim_to` frees it first), so it counts here too.
     pub fn pool_cached_bytes(&self) -> usize {
         let (reserved, used) = self.pool_reserved_used();
-        reserved.saturating_sub(used)
+        reserved
+            .saturating_sub(used)
+            .saturating_add(self.prime_gdn_ws_parked_bytes())
     }
 
     /// Bytes the driver's per-device CUDA GRAPH memory pool currently holds RESERVED
@@ -4881,19 +5052,39 @@ impl Engine {
     /// the pool and OOMed on the driver side). Returns the bytes released, 0 if the pool
     /// cannot be queried.
     pub fn pool_trim_to(&self, keep: usize) -> usize {
-        use cudarc::driver::sys;
         let (before, _) = self.pool_reserved_used();
+        self.pool_trim_cached_to(keep);
+        // A parked prime GDN scan workspace (memra#1258) is reclaimable memory: when the cached
+        // blocks alone do not bring the pool down to `keep`, free it into the pool (and let the
+        // free complete) and trim again. Otherwise it stays parked, the same bytes for the next
+        // prime.
+        if self.pool_reserved_used().0 > keep
+            && let Some(ws) = self
+                .prime_gdn_ws_parked
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .take()
+        {
+            drop(ws);
+            let _ = self.stream().synchronize();
+            self.pool_trim_cached_to(keep);
+        }
+        let (after, _) = self.pool_reserved_used();
+        before.saturating_sub(after)
+    }
+
+    /// `cuMemPoolTrimTo(keep)` on this device's default pool: releases cached (unused) blocks only.
+    fn pool_trim_cached_to(&self, keep: usize) {
+        use cudarc::driver::sys;
         unsafe {
             let mut pool: sys::CUmemoryPool = std::ptr::null_mut();
             if sys::cuDeviceGetDefaultMemPool(&mut pool, self.gpu.ctx.ordinal() as sys::CUdevice)
                 != sys::CUresult::CUDA_SUCCESS
             {
-                return 0;
+                return;
             }
             let _ = sys::cuMemPoolTrimTo(pool, keep);
         }
-        let (after, _) = self.pool_reserved_used();
-        before.saturating_sub(after)
     }
 
     pub fn pool_reserved_used(&self) -> (usize, usize) {
@@ -29690,6 +29881,85 @@ impl Engine {
         }
     }
 
+    /// Whether a prime's GDN scans at chunk `c` take the mma route `GdnScanWs` serves: the
+    /// conditions `gdn_scan_chunked_to` reads for its pre-work (`gdn_mma_enabled`), without the
+    /// Hopper wgmma pair and with the f32 W store off. Engine-free, so admission's shape and the
+    /// slab agree on whether the workspace exists.
+    pub fn gdn_scan_ws_route(c: usize) -> bool {
+        let mma = !portable_mma_gated()
+            && c == GdnScanWs::C
+            && match std::env::var("MEMRA_GDN_MMA").as_deref() {
+                Ok("1") => true,
+                Ok("0") => false,
+                _ => gdn_mma_default_on(),
+            };
+        let wgmma =
+            cfg!(memra_hopper_mma) && std::env::var("MEMRA_GDN_WGMMA").as_deref() != Ok("0");
+        mma && !wgmma && !Self::gdn_w32_keep()
+    }
+
+    /// Lends a prime walk's GDN scan workspace to this engine for the walk (`prime_layers`), or
+    /// clears it (None). memra#1258 step 2.
+    pub(crate) fn prime_gdn_ws_install(&self, ws: Option<GdnScanWs>) {
+        *self.prime_gdn_ws.lock().unwrap_or_else(|p| p.into_inner()) = ws;
+    }
+
+    /// Parks a prime's GDN scan workspace between primes (memra#1258): it stays mapped for the
+    /// next prime and counts as reclaimable until a trim frees it.
+    pub(crate) fn prime_gdn_ws_park(&self, ws: Option<GdnScanWs>) {
+        if ws.is_some() {
+            *self
+                .prime_gdn_ws_parked
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = ws;
+        }
+    }
+
+    /// Takes the parked workspace back for a prime, when there is one.
+    pub(crate) fn prime_gdn_ws_unpark(&self) -> Option<GdnScanWs> {
+        self.prime_gdn_ws_parked
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take()
+    }
+
+    /// Bytes of the parked workspace (0 when none is parked).
+    pub fn prime_gdn_ws_parked_bytes(&self) -> usize {
+        self.prime_gdn_ws_parked
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .map_or(0, GdnScanWs::bytes)
+    }
+
+    /// Takes the lent GDN scan workspace back at the end of the walk.
+    pub(crate) fn prime_gdn_ws_take(&self) -> Option<GdnScanWs> {
+        self.prime_gdn_ws
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take()
+    }
+
+    /// One scan's loan of the lent workspace, when there is one and it fits the scan.
+    fn prime_gdn_ws_lease(
+        &self,
+        t: usize,
+        h: usize,
+        hk: usize,
+        c: usize,
+        pair: bool,
+    ) -> Option<GdnWsLease<'_>> {
+        let mut slot = self.prime_gdn_ws.lock().unwrap_or_else(|p| p.into_inner());
+        if slot.as_ref().is_some_and(|ws| ws.fits(t, h, hk, c, pair)) {
+            Some(GdnWsLease {
+                e: self,
+                ws: slot.take(),
+            })
+        } else {
+            None
+        }
+    }
+
     /// Grows the prime's dequant-once K/V workspace (`prime_deqw_ws`) to at least `k_bytes` and
     /// `v_bytes` now, the growth a later call of the same prime would make, with the same
     /// grow-only rule (memra#1258: a multi-call prime sized it once per call, each new block a
@@ -34334,7 +34604,6 @@ impl Engine {
         #[allow(clippy::manual_div_ceil)]
         // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
         let nc = (t + c - 1) / c;
-        let (hi, ti, ci) = (h as i32, t as i32, c as i32);
         let mut gcum = self.uninit(t * h)?;
         let mut a = self.uninit(nc * h * c * c)?;
         let mut p = self.uninit(nc * h * c * c)?;
@@ -34345,6 +34614,42 @@ impl Engine {
         // Qwen3.8-27B). `gdn_scan_chunked_to`'s f32 K4, the plane's one reader, refuses it.
         let w_skip = matches!(c, 32 | 64) && wb16.is_some() && !Self::gdn_w32_keep();
         let mut w = self.uninit(if w_skip { 1 } else { nc * h * c * D })?;
+        self.gdn_chunk_k123_into(
+            q, k, v, g, beta, wb16, n_head, t, c, hk, k2w, &mut gcum, &mut a, &mut p, &mut u,
+            &mut w,
+        )?;
+        Ok((gcum, p, u, w))
+    }
+
+    /// `gdn_chunk_k123` into the caller's planes: `gcum` [t, h], `a` and `p` [nc, h, c, c], `u`
+    /// [nc, h, c, D] and `w` (the same plane, or a placeholder where `w_ptr` skips the f32 store).
+    /// The kernels take the call's row and chunk counts, so planes sized for more rows (a prime's
+    /// resident `GdnScanWs`, memra#1258) hold the same values in their leading rows.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_chunk_k123_into(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &CudaSlice<f32>,
+        v: &CudaSlice<f32>,
+        g: &CudaSlice<f32>,
+        beta: &CudaSlice<f32>,
+        wb16: Option<&mut CudaSlice<u8>>,
+        n_head: usize,
+        t: usize,
+        c: usize,
+        hk: usize,
+        k2w: Option<(&CudaSlice<u8>, &CudaSlice<u8>, &mut CudaSlice<u8>)>,
+        gcum: &mut CudaSlice<f32>,
+        a: &mut CudaSlice<f32>,
+        p: &mut CudaSlice<f32>,
+        u: &mut CudaSlice<f32>,
+        w: &mut CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let h = n_head;
+        #[allow(clippy::manual_div_ceil)]
+        // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
+        let nc = (t + c - 1) / c;
+        let (hi, ti, ci) = (h as i32, t as i32, c as i32);
         {
             // K1
             let f = self.func("gdn_chunk_cumgate_f32");
@@ -34355,7 +34660,7 @@ impl Engine {
             };
             let __s_b = self.gpu.stream();
             let mut b = __s_b.launch_builder(&f);
-            b.arg(g).arg(&mut gcum).arg(&hi).arg(&ti).arg(&ci);
+            b.arg(g).arg(&mut *gcum).arg(&hi).arg(&ti).arg(&ci);
             unsafe {
                 b.launch(cfg)?;
             }
@@ -34375,9 +34680,9 @@ impl Engine {
             let mut b = __s_b.launch_builder(&f);
             b.arg(qb)
                 .arg(kb)
-                .arg(&gcum)
+                .arg(&*gcum)
                 .arg(beta)
-                .arg(&mut a)
+                .arg(&mut *a)
                 .arg(&mut *pb)
                 .arg(&hi)
                 .arg(&ti)
@@ -34404,10 +34709,10 @@ impl Engine {
             let mut b = __s_b.launch_builder(&f);
             b.arg(q)
                 .arg(k)
-                .arg(&gcum)
+                .arg(&*gcum)
                 .arg(beta)
-                .arg(&mut a)
-                .arg(&mut p)
+                .arg(&mut *a)
+                .arg(&mut *p)
                 .arg(&hi)
                 .arg(&ti)
                 .arg(&hki)
@@ -34440,10 +34745,10 @@ impl Engine {
             let mut b = __s_b.launch_builder(&f);
             b.arg(q)
                 .arg(k)
-                .arg(&gcum)
+                .arg(&*gcum)
                 .arg(beta)
-                .arg(&mut a)
-                .arg(&mut p)
+                .arg(&mut *a)
+                .arg(&mut *p)
                 .arg(&hi)
                 .arg(&ti)
                 .arg(&ci)
@@ -34468,10 +34773,10 @@ impl Engine {
             let mut b = __s_b.launch_builder(&f);
             b.arg(q)
                 .arg(k)
-                .arg(&gcum)
+                .arg(&*gcum)
                 .arg(beta)
-                .arg(&mut a)
-                .arg(&mut p)
+                .arg(&mut *a)
+                .arg(&mut *p)
                 .arg(&hi)
                 .arg(&ti)
                 .arg(&ci);
@@ -34502,7 +34807,7 @@ impl Engine {
                     let w_ptr: u64 = if wb != 0 && !Self::gdn_w32_keep() {
                         0
                     } else {
-                        self.addr_f32(&w)
+                        self.addr_f32(&*w)
                     };
                     let hfast = Self::gdn_hfast(nc);
                     let cfg = if hfast != 0 {
@@ -34518,9 +34823,9 @@ impl Engine {
                     let mut b = __s_b.launch_builder(&f);
                     b.arg(v)
                         .arg(k)
-                        .arg(&a)
-                        .arg(&gcum)
-                        .arg(&mut u)
+                        .arg(&*a)
+                        .arg(&*gcum)
+                        .arg(&mut *u)
                         .arg(&w_ptr)
                         .arg(&wb)
                         .arg(&hi)
@@ -34538,10 +34843,10 @@ impl Engine {
                     let mut b = __s_b.launch_builder(&f);
                     b.arg(v)
                         .arg(k)
-                        .arg(&a)
-                        .arg(&gcum)
-                        .arg(&mut u)
-                        .arg(&mut w)
+                        .arg(&*a)
+                        .arg(&*gcum)
+                        .arg(&mut *u)
+                        .arg(&mut *w)
                         .arg(&hi)
                         .arg(&ti)
                         .arg(&ci);
@@ -34551,7 +34856,7 @@ impl Engine {
                 }
             }
         }
-        Ok((gcum, p, u, w))
+        Ok(())
     }
 
     /// Whether the K4/K5 mma pair serves at chunk size `c` (mirrors gdn_scan_chunked's
@@ -35294,11 +35599,6 @@ impl Engine {
                 Ok("0") => false,
                 _ => gdn_mma_default_on(),
             };
-        let mut wb16_pre: Option<CudaSlice<u8>> = if gdn_mma_pre {
-            Some(self.alloc_u8_uninit(nc * h * c * D * 2)?)
-        } else {
-            None
-        };
         // K2-wgmma pre-work (MEMRA_GDN_WGMMA): the kb16/qb16 mirrors hoist ABOVE K123 so
         // K2 rides them via cp.async; K2 writes the pre-masked Pb16 directly (the
         // gdn_p_bf16_masked pass and the in-branch mirror builds disappear).
@@ -35306,22 +35606,66 @@ impl Engine {
         let gdn_wgmma_pre = cfg!(memra_hopper_mma)
             && gdn_mma_pre
             && std::env::var("MEMRA_GDN_WGMMA").as_deref() != Ok("0");
+        // memra#1258 step 2: inside a prime walk the mma route's planes come from the walk's
+        // resident GdnScanWs (lent by `prime_layers`) when it fits this scan; the fused K4+K5
+        // route keeps Y and the state snapshots on chip, so it needs no pair planes.
+        let pair_needed = !(self.gdn_k45_on() && crate::qwen_prime_graph::current().is_none());
+        let mut lease = if gdn_mma_pre && !gdn_wgmma_pre && !Self::gdn_w32_keep() {
+            self.prime_gdn_ws_lease(t, h, hk, c, pair_needed)
+        } else {
+            None
+        };
+        let (ws_gcum, ws_a, ws_p, ws_u, mut ws_wb16, ws_kb16, ws_pair) = match lease.as_mut() {
+            Some(GdnWsLease { ws: Some(ws), .. }) => (
+                Some(&mut ws.gcum),
+                Some(&mut ws.a),
+                Some(&mut ws.p),
+                Some(&mut ws.u),
+                Some(&mut ws.wb16),
+                Some(&mut ws.kb16),
+                ws.pair.as_mut(),
+            ),
+            _ => (None, None, None, None, None, None, None),
+        };
+        let mut wb16_pre: Option<CudaSlice<u8>> = if gdn_mma_pre && ws_wb16.is_none() {
+            Some(self.alloc_u8_uninit(nc * h * c * D * 2)?)
+        } else {
+            None
+        };
         let nk = t * hk * D;
         let mut kb16_local: Option<CudaSlice<u8>> = None;
+        let mut kb16_ws: Option<&CudaSlice<u8>> = None;
         if gdn_mma_pre && kb16_pre.is_none() {
-            let mut kb = self.alloc_u8_uninit(nk * 2)?;
             let f = self.func("f32_to_bf16_bulk");
             let n2 = nk as i64;
             let cfg2 = LaunchConfig::for_num_elems((nk as u32).div_ceil(4));
-            let __s_b = self.gpu.stream();
-            let mut b = __s_b.launch_builder(&f);
-            b.arg(k).arg(&mut kb).arg(&n2);
-            unsafe {
-                b.launch(cfg2)?;
+            match ws_kb16 {
+                Some(kb) => {
+                    {
+                        let __s_b = self.gpu.stream();
+                        let mut b = __s_b.launch_builder(&f);
+                        b.arg(k).arg(&mut *kb).arg(&n2);
+                        unsafe {
+                            b.launch(cfg2)?;
+                        }
+                    }
+                    kb16_ws = Some(&*kb);
+                }
+                None => {
+                    let mut kb = self.alloc_u8_uninit(nk * 2)?;
+                    {
+                        let __s_b = self.gpu.stream();
+                        let mut b = __s_b.launch_builder(&f);
+                        b.arg(k).arg(&mut kb).arg(&n2);
+                        unsafe {
+                            b.launch(cfg2)?;
+                        }
+                    }
+                    kb16_local = Some(kb);
+                }
             }
-            kb16_local = Some(kb);
         }
-        let kb16_ref0: Option<&CudaSlice<u8>> = kb16_local.as_ref().or(kb16_pre);
+        let kb16_ref0: Option<&CudaSlice<u8>> = kb16_local.as_ref().or(kb16_ws).or(kb16_pre);
         if let Some(kb) = kb16_pre {
             assert!(kb.len() >= nk * 2, "kb16_pre too small");
         }
@@ -35357,9 +35701,56 @@ impl Engine {
         } else {
             None
         };
-        let (gcum, p, u, w) =
-            self.gdn_chunk_k123(q, k, v, g, beta, wb16_pre.as_mut(), n_head, t, c, hk, k2w)?;
-        let _ = &w;
+        // memra#1258 step 2: K1-K3 write the lent workspace's planes when this scan has one (W's
+        // f32 plane is skipped there: the twin is set and the f32 store is off).
+        let k123_own;
+        let w_placeholder;
+        let (gcum, p, u, w): (
+            &CudaSlice<f32>,
+            &CudaSlice<f32>,
+            &CudaSlice<f32>,
+            &CudaSlice<f32>,
+        ) = match (ws_gcum, ws_a, ws_p, ws_u) {
+            (Some(gc), Some(a), Some(pp), Some(uu)) => {
+                let mut wp = self.uninit(1)?;
+                self.gdn_chunk_k123_into(
+                    q,
+                    k,
+                    v,
+                    g,
+                    beta,
+                    ws_wb16.as_deref_mut(),
+                    n_head,
+                    t,
+                    c,
+                    hk,
+                    k2w,
+                    gc,
+                    a,
+                    pp,
+                    uu,
+                    &mut wp,
+                )?;
+                w_placeholder = wp;
+                (gc, pp, uu, &w_placeholder)
+            }
+            _ => {
+                k123_own = self.gdn_chunk_k123(
+                    q,
+                    k,
+                    v,
+                    g,
+                    beta,
+                    wb16_pre.as_mut(),
+                    n_head,
+                    t,
+                    c,
+                    hk,
+                    k2w,
+                )?;
+                (&k123_own.0, &k123_own.1, &k123_own.2, &k123_own.3)
+            }
+        };
         // K4-MMA seam (MEMRA_GDN_MMA; harness verdict 1.75x — tools/bench_gdn_k4.cu, ledger
         // 2026-07-26): M in mma accumulator fragments, bf16 W/k mirrors through a cp.async
         // ring. C==32 only (the kernel's tile). PROMOTED default-ON on the Hopper lane
@@ -35380,9 +35771,16 @@ impl Engine {
                 _ => gdn_mma_default_on(),
             };
         if gdn_mma {
-            let wb16 = wb16_pre
-                .take()
-                .expect("mma path pre-allocates wb16 (K3 store fold)");
+            let wb16_own;
+            let wb16: &CudaSlice<u8> = match ws_wb16.as_deref() {
+                Some(w16) => w16,
+                None => {
+                    wb16_own = wb16_pre
+                        .take()
+                        .expect("mma path pre-allocates wb16 (K3 store fold)");
+                    &wb16_own
+                }
+            };
             let kb16_ref: &CudaSlice<u8> = kb16_ref0.expect("mma path pre-builds kb16 above K123");
             // K4+K5 FUSED wgmma seam (MEMRA_GDN_WGMMA, task #22; harness verdict
             // tools/bench_gdn_wgmma.cu v5, ledger 1f08b997: in-band Y 1.07e-2 / state
@@ -35413,10 +35811,10 @@ impl Engine {
                     let __s_b = self.gpu.stream();
                     let mut b = __s_b.launch_builder(&f);
                     b.arg(kb16_ref)
-                        .arg(&gcum)
+                        .arg(gcum)
                         .arg(beta)
-                        .arg(&u)
-                        .arg(&wb16)
+                        .arg(u)
+                        .arg(wb16)
                         .arg(qb16)
                         .arg(pb16)
                         .arg(o)
@@ -35473,12 +35871,12 @@ impl Engine {
                         let __s_b = self.gpu.stream();
                         let mut b = __s_b.launch_builder(&f);
                         b.arg(kb16_ref)
-                            .arg(&gcum)
+                            .arg(gcum)
                             .arg(beta)
-                            .arg(&u)
-                            .arg(&wb16)
+                            .arg(u)
+                            .arg(wb16)
                             .arg(q)
-                            .arg(&p)
+                            .arg(p)
                             .arg(z)
                             .arg(w)
                             .arg(vy)
@@ -35516,12 +35914,12 @@ impl Engine {
                     let __s_b = self.gpu.stream();
                     let mut b = __s_b.launch_builder(&f);
                     b.arg(kb16_ref)
-                        .arg(&gcum)
+                        .arg(gcum)
                         .arg(beta)
-                        .arg(&u)
-                        .arg(&wb16)
+                        .arg(u)
+                        .arg(wb16)
                         .arg(q)
-                        .arg(&p)
+                        .arg(p)
                         .arg(&mut *o)
                         .arg(state_in)
                         .arg(&mut *state_out)
@@ -35542,8 +35940,15 @@ impl Engine {
             // COUPLED PAIR: K4-mma writes Y and Ssnap as bf16 (their only consumer is
             // K5-mma, which rounds to bf16 regardless — identical numerics, half the
             // traffic; harness K5 63.0 -> 35.3us). Fresh bf16 buffers replace the f32 ones.
-            let mut y16 = self.alloc_u8_uninit(nc * h * c * D * 2)?;
-            let mut ssnap16 = self.alloc_u8_uninit(nc * h * D * D * 2)?;
+            let (mut y16_own, mut ssnap16_own);
+            let (y16, ssnap16): (&mut CudaSlice<u8>, &mut CudaSlice<u8>) = match ws_pair {
+                Some((y, sn)) => (y, sn),
+                None => {
+                    y16_own = self.alloc_u8_uninit(nc * h * c * D * 2)?;
+                    ssnap16_own = self.alloc_u8_uninit(nc * h * D * D * 2)?;
+                    (&mut y16_own, &mut ssnap16_own)
+                }
+            };
             {
                 let live = crate::qwen_prime_graph::current();
                 let table = live.map_or(0, |a| a.0);
@@ -35562,12 +35967,12 @@ impl Engine {
                 let __s_b = self.gpu.stream();
                 let mut b = __s_b.launch_builder(&f);
                 b.arg(kb16_ref)
-                    .arg(&gcum)
+                    .arg(gcum)
                     .arg(beta)
-                    .arg(&u)
-                    .arg(&wb16)
-                    .arg(&mut y16)
-                    .arg(&mut ssnap16);
+                    .arg(u)
+                    .arg(wb16)
+                    .arg(&mut *y16)
+                    .arg(&mut *ssnap16);
                 if live.is_some() {
                     b.arg(&table).arg(&unused);
                 } else {
@@ -35598,10 +36003,10 @@ impl Engine {
                 let __s_b = self.gpu.stream();
                 let mut b = __s_b.launch_builder(&f);
                 b.arg(q)
-                    .arg(&gcum)
-                    .arg(&p)
-                    .arg(&y16)
-                    .arg(&ssnap16)
+                    .arg(gcum)
+                    .arg(p)
+                    .arg(&*y16)
+                    .arg(&*ssnap16)
                     .arg(o)
                     .arg(&hi)
                     .arg(&ti)
@@ -35635,10 +36040,10 @@ impl Engine {
             let __s_b = self.gpu.stream();
             let mut b = __s_b.launch_builder(&f);
             b.arg(k)
-                .arg(&gcum)
+                .arg(gcum)
                 .arg(beta)
-                .arg(&u)
-                .arg(&w)
+                .arg(u)
+                .arg(w)
                 .arg(&mut y)
                 .arg(&mut ssnap)
                 .arg(state_in)
@@ -35664,8 +36069,8 @@ impl Engine {
             let __s_b = self.gpu.stream();
             let mut b = __s_b.launch_builder(&f);
             b.arg(q)
-                .arg(&gcum)
-                .arg(&p)
+                .arg(gcum)
+                .arg(p)
                 .arg(&y)
                 .arg(&ssnap)
                 .arg(o)
