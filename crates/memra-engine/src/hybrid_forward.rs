@@ -1856,6 +1856,22 @@ fn prime_chunk_work(prefix: usize, total: usize) -> u128 {
     prefix * (prefix + (PRIME_PIPE_LINEAR_WORK as u128) * (total as u128))
 }
 
+/// Splits every range wider than `cap` into equal parts within it (memra#1299). The SWA ring
+/// (`swa_ring_rows`) holds the reader's window plus one prime call of at most
+/// `PRIME_CHUNK_MAX_TOKENS` rows; a wider call fails its append (`SWA ring append does not fit`).
+/// A part is at least `cap / 2` rows, so it clears `PRIME_MIN_T`.
+fn split_ranges_at_cap(ranges: Vec<(usize, usize)>, cap: usize) -> Vec<(usize, usize)> {
+    let mut out = Vec::with_capacity(ranges.len());
+    for (start, end) in ranges {
+        let width = end - start;
+        let parts = width.div_ceil(cap).max(1);
+        out.extend(
+            (0..parts).map(|k| (start + width * k / parts, start + width * (k + 1) / parts)),
+        );
+    }
+    out
+}
+
 fn dynamic_prime_chunk_ranges(
     t: usize,
     fixed_chunk: usize,
@@ -1947,6 +1963,13 @@ pub fn prime_chunk_ranges_under(
                 dynamic_prime_chunk_ranges(t, chunk, &fixed)
             } else {
                 fixed
+            };
+            // memra#1299: the dynamic schedule's calls after its short first one outgrow the
+            // chunk (4,809 rows at t = 32,768), and a ring plan holds one chunk of at most the cap.
+            let ranges = if ring_on {
+                split_ranges_at_cap(ranges, crate::cache::PRIME_CHUNK_MAX_TOKENS)
+            } else {
+                ranges
             };
             match grid {
                 Some(c) => align_prime_ranges_to_gdn(&ranges, t, c),
@@ -32376,6 +32399,51 @@ mod prime_chunk_schedule_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn no_ring_prime_call_exceeds_the_chunk_cap() {
+        // memra#1299: with a ring plan (step35 on PP-2) no call of the pipeline schedules is
+        // wider than the cap the ring holds. The dynamic schedule made 4,097-row calls from
+        // t = 27,916 and 4,809 at t = 32,768; without a ring it keeps them.
+        use super::{PrimeScheduleKind as K, prime_chunk_ranges_under};
+        let cap = crate::cache::PRIME_CHUNK_MAX_TOKENS;
+        let widest = |r: &[(usize, usize)]| r.iter().map(|&(s, e)| e - s).max().unwrap_or(0);
+        for kind in [
+            K::Pipeline { dynamic: true },
+            K::Pipeline { dynamic: false },
+        ] {
+            for t in (PRIME_MIN_T..=70_000).chain((70_001..=262_144).step_by(97)) {
+                let ranges = prime_chunk_ranges_under(t, kind, None, true);
+                assert_eq!(ranges.first().map(|r| r.0), Some(0), "t={t} {kind:?}");
+                assert_eq!(ranges.last().map(|r| r.1), Some(t), "t={t} {kind:?}");
+                assert!(
+                    ranges.windows(2).all(|w| w[0].1 == w[1].0),
+                    "t={t} {kind:?}"
+                );
+                assert!(
+                    ranges
+                        .iter()
+                        .all(|&(s, e)| e - s <= cap && (e - s >= PRIME_MIN_T || t < PRIME_MIN_T)),
+                    "t={t} {kind:?}: {ranges:?}"
+                );
+            }
+        }
+        // The 4,097-row call at t = 27,916 splits in two (2,048 + 2,049); at t = 32,768 the calls
+        // over the cap split (4,809 -> 2,404 + 2,405) and the widest left is 4,026.
+        let pp2 = K::Pipeline { dynamic: true };
+        assert_eq!(
+            widest(&prime_chunk_ranges_under(27_916, pp2, None, true)),
+            3_958
+        );
+        assert_eq!(
+            widest(&prime_chunk_ranges_under(32_768, pp2, None, true)),
+            4_026
+        );
+        assert_eq!(
+            widest(&prime_chunk_ranges_under(32_768, pp2, None, false)),
+            4_809
+        );
     }
 
     #[test]
