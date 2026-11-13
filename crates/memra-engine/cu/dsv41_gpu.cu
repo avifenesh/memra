@@ -724,6 +724,9 @@ extern "C" int memra_v41_moe_small(const void* a, long lda, const void* asf, con
     if (k <= 0 || k % 128 || n <= 0 || lda % 16 || ldb % 16 || ldc <= 0 || bm < 1 || bm > V41_SM_MAX) return 41027;
     if (max_tiles < 0 || max_tiles > 65535 || nproj < 1 || nproj > 2 || p0 < 0 || p0 > 2 || p1 < 0 || p1 > 2)
         return 41027;
+    // the pairs' rows are copied 16 bytes at a time and their scale codes 4 (the weights' bases are the
+    // expert table's, checked at load): an unaligned base is refused, not read wrong
+    if ((uintptr_t)a % 16 || (uintptr_t)asf % 4) return 41027;
     if (max_tiles == 0) return 0;
     cudaStream_t st = (cudaStream_t)stream;
     // a warp's output columns: 16 while that gives at least four warps an SM, else 8, else 4 (a narrow output
@@ -1004,6 +1007,8 @@ extern "C" int memra_v41_dense_small(const void* a, long lda, const void* asf, c
                                      const void* wsf, int wfmt, void* c, long ldc, int m, int n, int k, void* stream) {
     if (m < 0 || m > V41D_MAX_M || n <= 0 || k <= 0 || k % 128 || lda % 16 || ldw % 16 || ldc < n) return 41028;
     if (wfmt < 0 || wfmt > 2 || lda < k || ldw < (wfmt == 0 ? k : k / 2)) return 41028;
+    // the rows are copied 16 bytes at a time and the scale codes 4: an unaligned base is refused, not read wrong
+    if (((uintptr_t)a | (uintptr_t)w) % 16 || ((uintptr_t)asf | (uintptr_t)wsf) % 4) return 41028;
     if (m == 0) return 0;
     cudaStream_t st = (cudaStream_t)stream;
     const int wf = wfmt == 0 ? 0 : 1, wb = wf == 0 ? 32 : 16, kb = k / 32;

@@ -380,6 +380,8 @@ extern "C" int memra_v41_cutlass_gemm(const void* a, long lda, const void* asf, 
                                       void* stream) {
     if (m < 0 || n <= 0 || k <= 0 || k % 128 || lda % 16 || ldw % 16 || ldc % 8 || wfmt < 0 || wfmt > 2) return 41040;
     if (form < 0 || form > 4) return 41040;
+    // TMA (and the small-row body's cp.async) moves 16 bytes at a time: an unaligned base is refused, not read wrong
+    if (((uintptr_t)a | (uintptr_t)asf | (uintptr_t)w | (uintptr_t)wsf | (uintptr_t)c) % 16) return 41040;
     if (m == 0) return 0;
     if ((form == kSmall && m <= 16) || (form == kAuto && memra_v41_dense_small_fits(m, n, k)))
         return memra_v41_dense_small(a, lda, asf, w, ldw, wsf, wfmt, c, ldc, m, n, k, stream);
@@ -424,6 +426,8 @@ extern "C" int memra_v41_cutlass_moe(const int* off, int e0, int ng, int nproj, 
                                      long ldw, int rows, int form, void* blk, long blk_bytes, void* stream) {
     if (ng <= 0 || ng > 1024 || nproj < 1 || nproj > 2 || e0 < 0 || k % 128 || ldc % 8 || ldw % 16) return 41042;
     if (proj0 < 0 || proj0 > 2 || proj1 < 0 || proj1 > 2 || form < 0 || form > 1 || n <= 0) return 41042;
+    // the setup kernel offsets these bases by whole rows and scale blocks; TMA needs each 16-byte aligned
+    if (((uintptr_t)a | (uintptr_t)asf | (uintptr_t)d0 | (uintptr_t)(nproj == 2 ? d1 : d0)) % 16) return 41042;
     if (rows <= 0) return 0;
     return grouped<GN4>(off + e0, ng, nproj, proj0, proj1, ex, a, asf, d0, d1, ldc, n, k, ldw * 2, blk, blk_bytes,
                         (cudaStream_t)stream);
