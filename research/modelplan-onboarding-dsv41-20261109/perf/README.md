@@ -1282,9 +1282,14 @@ the ranges apart; `r2-pair23/per-run.md`). The 4-row block (8.845 -> 8.824 ms) a
 (12.362 -> 12.344 ms) are level (36 calls an arm each). No run flagged for a slowdown, no page-cache
 drop inside a run.
 
-Pending: the graph door (`MEMRA_DSV41_DECODE_GRAPH=1 dsv41-gate tp`) has not run at a head that holds
-r2 (its gates ran default, peer-pull and host-canonical); it runs on the PRO 6000 pair in the next card
-window.
+At r2's pushed head (`1008d7cac5`, on the PRO 6000 pair, 2026-11-13, `receipts/r2-gates-pro6000-eve`):
+the kernel gate 182 / 0 on one card, its partial-block lines included (the ring at 2 rows, n 30
+against the first 2 rows of a 24-row call on the narrow kernel; the pair's two outputs against the
+24-row calls on each weight). The graph door (`MEMRA_DSV41_DECODE_GRAPH=1 dsv41-gate tp`, the needle
+capture, layers 1, 2, 14, 20, 21 and 24, two decode steps, two ranks on the pair): default 1,105 / 0
+and device-push 1,105 / 0 (6 spans captured, 42 replays, 12 checked); peer-pull 478 / 0, where the
+door captures no span (`spans=0`), so that run is the eager peer-pull gate. No run flagged for a
+slowdown, no page-cache drop inside a run.
 
 ### A four-card prefill's copies, and the copy call that was slow
 
