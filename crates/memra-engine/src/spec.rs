@@ -895,6 +895,16 @@ pub(crate) fn pooled_rider_take(
     take
 }
 
+/// The keys each row of a cohort's verify attends when its members stack in one pooled forward
+/// (memra#1266 review 3), in member order: a member's round of `k + 1` rows at cache position
+/// `pos` attends `pos + 1 ..= pos + k + 1`. `rounds` holds each member's `(k, pos)`.
+pub fn cohort_verify_rows(rounds: &[(usize, usize)]) -> Vec<usize> {
+    rounds
+        .iter()
+        .flat_map(|&(k, pos)| (1..=k + 1).map(move |r| pos + r))
+        .collect()
+}
+
 /// Plain rider rows the memory cap left to the plain batched step since process start
 /// (memra#1266).
 static MTP_POOL_RIDERS_CAPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -8338,6 +8348,25 @@ impl HybridModel {
             &self.pooled_fa_geometries(),
             self.cfg.head_dim_k as usize,
         )
+    }
+
+    /// The FA partial pool's growth a cohort's verify can cause (memra#1266 review 3), from each
+    /// member's `(k, pos)` in member order: the larger of the members stacked in one pooled
+    /// forward ([`cohort_verify_rows`], priced launch by launch) and any member's round alone. A
+    /// pooled forward can grow the pool where no single round does (across a split rung), and
+    /// the stack is an upper bound when the cohort's rows pass 16 and split into chunks (a run cut
+    /// at a chunk's end launches smaller).
+    pub fn spec_cohort_fa_growth_bytes(&self, e: &Engine, rounds: &[(usize, usize)]) -> usize {
+        let _numeric = self.enter_numeric();
+        let stacked = e.fa_rows_growth_bytes(
+            &cohort_verify_rows(rounds),
+            &self.pooled_fa_geometries(),
+            self.cfg.head_dim_k as usize,
+        );
+        rounds
+            .iter()
+            .map(|&(k, pos)| self.spec_round_fa_growth_bytes(e, k, pos))
+            .fold(stacked, usize::max)
     }
 
     /// The device bytes one MTP verify round at draft depth `k` of a session at cache position
@@ -19261,6 +19290,26 @@ mod pooled_verify_cap_1266_tests {
         let second = (3_145_728 + 2 * 12_288) * 4;
         assert_eq!(grow(&stack[..4], (0, 0)), first);
         assert_eq!(grow(&stack, (0, 0)), first + second);
+    }
+
+    /// The booking bound prices the cohort stacked (fold check of review 3): in the straddle
+    /// case no member's round alone grows the pool, while the three stacked in one forward grow it
+    /// by 113.9 MB.
+    #[test]
+    fn a_cohort_stacked_grows_the_pool_where_no_round_alone_does() {
+        let rounds = [(5, 15_990), (3, 16_100), (1, 16_500)];
+        let stack = cohort_verify_rows(&rounds);
+        let mut want = rows(15_990, 6);
+        want.extend(rows(16_100, 4));
+        want.extend(rows(16_500, 2));
+        assert_eq!(stack, want);
+        let alone = rounds
+            .iter()
+            .map(|&(k, pos)| grow(&rows(pos, k + 1), POOL))
+            .max()
+            .unwrap();
+        assert_eq!(alone, 0);
+        assert_eq!(grow(&stack, POOL), (2 * 14_131_200 + 2 * 2 * 55_200) * 4);
     }
 
     /// Riders shrink to fit: each holds one logits row and widens the forward.
