@@ -1,0 +1,20 @@
+06:07:04 waiting for CFIX-CHAIN-END
+06:13:04 cfix chain done; pausing ext35 if it still runs
+06:13:04 TERM ext35 group 3858592
+06:13:04 TERM ext35 group 3858593
+06:13:04 cards 2+3: 0 processes
+started
+06:16:06 BUILD-DONE r2 rc 101 06:15:55
+r2 build start 06:13:11
+error: failed to run custom build command for `memra-engine v0.139.0 (/home/access/dsv41/src-perf/crates/memra-engine)`
+
+Caused by:
+  process didn't exit successfully: `/home/access/dsv41/target-perf/release/build/memra-engine-a4e140397d76e7ea/build-script-build` (exit status: 101)
+  --- stdout
+  cargo:rerun-if-env-changed=DOCS_RS
+  cargo:rustc-check-cfg=cfg(memra_env_registry_present)
+  cargo:rerun-if-changed=/home/access/dsv41/src-perf/crates/memra-engine/../../docs/FLAGS.md
+  cargo:rustc-cfg=memra_env_registry_present
+  cargo:rerun-if-env-changed=MEMRA_NVCC
+  cargo:rerun-if-env-changed=CUDA_HOME
+BUILD-DONE r2 rc 101 06:15:55
