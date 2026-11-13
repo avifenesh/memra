@@ -49,47 +49,85 @@ floor of `Cache::rollback`, `Cache::rewind_recurrent_from` (`lib.rs`) and the MT
 - **The lend.** `KvPlane::lend(bytes)` returns a non-owning `CudaSlice<u8>` view of exactly the
   plane's first `bytes` (so the restore's exact-length check, the round-trip digests, the host tier
   and every other reader see the plane they saw), plus an `Arc` of the plane's loan. The MTP
-  publisher (`spec-boundary`) lends every trunk K/V plane and the draft plane at `pos` rows; a plane
-  that does not lend is dropped exactly as a plane whose copy failed (no entry for a trunk plane,
-  trunk-only for the draft plane). Nothing is allocated and nothing is copied.
+  publisher (`spec-boundary`) lends every trunk K/V plane and the draft plane at `pos` rows. Nothing
+  is allocated and nothing is copied. The publication decides once, before its first lend
+  (`spec_publication_planes`): when any plane it would publish cannot lend (`KvPlane::can_lend`: a
+  gate-only fully mapped VMM plane, a suspended plane, a range past the backed bytes) or is ordered
+  on another stream than the engine's, the whole publication copies, as main did. The floor a loan
+  enforces is the longest lend that lives: it falls when that lend goes.
 - **The hand-off.** `KvPlane`'s `Drop` moves the whole plane (pooled operand, or on-demand VMM
   state) into its loan when a lend is alive, instead of freeing it; the loan frees it when its last
   lend goes. Every way a session's planes can go is covered by construction: retirement, a parked
   session's eviction, the grown cache of an affinity grow, the scratch a demotion drops, an OOM
   teardown. An on-demand VMM plane (the RTX PRO 6000 Workstation Edition default) releases every
-  extent past the lent bytes when it is adopted.
+  extent past the lent bytes when it is adopted, and again at a reconcile when its longest lend
+  went. The adoption is reported to the prefix cache's queue (`AdoptionSink`), which the reconcile
+  drains, so a reconcile walks the adopted books only.
 - **Exactness.** The engine already holds a session's rows below its prime boundary append-only for
   the session's life (the doc of `SpecBoundaryCapture`); the copy relied on it for one burst, the
   lend relies on it for as long as the entry lives. It is now structural: every write that could
   start below a live lend refuses before it writes (`Cache::rollback`, `Cache::rewind_recurrent_from`,
-  `MtpScratch::set_len` and `set_plane_len`, `KvPlane::into_pooled`), and `KvPlane::release_beyond`
-  keeps the lent bytes backed. A refused rewind sends the request to the cold path and prints
-  `[spec] rewind refused below a lent prefix row`. A census pins every caller of those functions.
+  `MtpScratch::set_len` and `set_plane_len`, `KvPlane::into_pooled`, `pp::restore_cache_checkpoint`,
+  which checks every layer before its first write, and `prefix_restore_validate`, whose
+  destination must not lend), `KvPlane::release_beyond` keeps the lent bytes backed, and
+  `TierTransfer::take_device` refuses a lent registry plane before it gives up ownership. A census
+  pins every caller of those functions.
+- **A checkpoint under the lend.** The boundary capture can sit above the session's turn
+  checkpoint (the seed at a prompt end on the 32-token grid over a stable stop under it, or a
+  miss-LCP split above the stable point). The speculative checkpoint rewind then checks the
+  trunk's and the draft scratch's lends before it writes anything and, when a lend reads rows past
+  the checkpoint, moves the session into a fresh cache of its own capacity (the route the
+  affinity grow already takes: the checkpoint's rows copied, the lent planes to their entries),
+  so the parked session survives where main rewound in place. It prints `[spec] rewind below a
+  lent prefix row: the session moves to a fresh cache`.
 - **Eviction semantics: charged bytes are real bytes.** An entry is charged the device bytes it
   holds. While the session holds the plane, the entry reads it and is charged nothing for it (the
   bytes are the session's, booked by admission); evicting it frees what it holds (the capture's
   recurrent planes) and nothing more, and the cache reports exactly that. When the session drops
   the plane, the plane is charged to one of the entries that read it at the next reconcile (the
-  tick top, after retirement, and before every insert and eviction decision) and LRU and the budget
-  treat it as any entry; evicting it frees the plane. Two entries reading one plane (the miss-LCP
-  split and the stable boundary of one cold burst) share one book and one charge. Host demotion,
-  the disk handoff and the exports keep the entry's logical bytes.
+  tick top, after retirement, before every insert and eviction decision, and before admission's
+  reclaim) and LRU and the budget treat it as any entry; evicting it frees the plane. Two entries
+  reading one plane (the miss-LCP split and the stable boundary of one cold burst) share one book
+  and one charge. The book lists its readers; its holder is always one of them: when the holder
+  leaves the cache, a reader that stays becomes the holder (with or without a charge), and a
+  charge it carried moves with it, which frees nothing, so the total does not change. Every
+  reconcile checks `total_bytes` against the entries' bytes (printed, counted and resynced when it
+  breaks; a debug build fails). Host demotion, the disk handoff and the exports keep the entry's
+  logical bytes.
 - **Admission counts each byte once.** Memory admission reads the device's free bytes from the
   device and is offered the cache's charged evictable bytes (`evictable_bytes`, exactly what
   `evict_all` frees), so a lent plane is the session's memory while the session holds it and the
-  cache's charge after it drops, never both. Retirement reconciles in the same
-  tick; a lender dropped elsewhere (a parked session reclaimed for an arrival) is charged at the
-  next reconcile, and until then the cache offers less than eviction would free, never more.
+  cache's charge after it drops, never both. A book charged to an unleased holder while another
+  reader is leased is not offered (evicting the holder moves the charge to the leased reader).
+  Retirement reconciles in the same tick, and so does admission's reclaim before it reads the
+  cache or sets the partial pass's target; a lender dropped in between is charged at the next
+  reconcile, and until then the cache offers less than eviction would free, never more. The
+  headroom ladders do not drop a parked session whose rows a surviving entry reads: dropping it
+  would free none of its lent planes.
 - **Over-hold and compaction.** An adopted pooled plane is the session's whole capacity, prompt +
   `max_tokens` + 8 rows. A bounded long-prompt request holds a few hundred rows past its entry; an
   open-output request on a card without memory-shaped admission (GB10: ctx 262,144) can hold many
-  times its entry. At the reconcile with the engine (tick top and after retirement) an adopted plane
-  is compacted, its readers' rows copied into exact planes of their own and the plane freed, exactly
-  when that frees more than it copies (`loan_compaction_frees_more`: held - read > read). The copy
-  is the one main made at the boundary, made after the request and only when it pays.
-- **Scope.** The MTP publisher lends. The DSpark and GLM-5 publishers keep copying
-  (`SpecPlanes::Copy`): their park rewinds are not checked against a lend. PP host-bounce, SWA ring
-  and latent caches already refuse publication. Not keyed on a device: it removes work everywhere.
+  times its entry. Compaction runs on memory demand only: an insert that does not fit its budget,
+  and a partial eviction (the discrete cards' reclaim). There an adopted plane is compacted, its
+  readers' rows copied into exact planes of their own and the plane freed, exactly when that frees
+  more than it copies (`loan_compaction_frees_more`: held - read > read). A compaction whose
+  allocation fails is not tried again until an entry left the cache. Measured on a served
+  open-output cell (GB10, two 60k requests, 8 GB budget): the second request's insert compacted
+  the first session's adopted planes (34 planes, 8,270 MB held, 1,892 MB copied) in 0.4 ms on the
+  scheduler thread, and its first boundary stall was 7.0 ms against main's 18.3 ms.
+- **Scope.** The MTP publisher lends on a plane ordered on the engine's own stream (one device).
+  A lend carries no cross-stream event, so a pipeline-parallel stage's plane copies. The DSpark and
+  GLM-5 publishers keep copying (`SpecPlanes::Copy`): their park rewinds are not checked against a
+  lend. PP host-bounce, SWA ring and latent caches already refuse publication. Not keyed on a
+  device: it removes work everywhere.
+- **Failure isolation.** A lent row is shared with a live session, so a failure in the session
+  must not reach it. The rows `[0, pos)` an entry reads are written once, by the prime, before the
+  publication, and never again (the floors above). A failed wave marks its caches tainted
+  (`CacheTaintGuard`, `PpDecodeWave`, the stage merge in `hybrid_forward.rs`): a tainted cache is
+  never resumed, and the wave wrote only rows at or past the cache's length, which a lend keeps at
+  or past the lent rows. A session torn down after an error or an out-of-memory drops its planes,
+  which move to the entries unchanged. A sticky device error affects every plane on the device,
+  copied entries as much as lent ones.
 
 ## Rejected
 
@@ -149,6 +187,14 @@ floor of `Cache::rollback`, `Cache::rewind_recurrent_from` (`lib.rs`) and the MT
   after dropping every evictable pool the pool's used bytes are main's to the byte, with nothing
   charged. Same texts as main on every request main answered. Compaction: both sides of the rule on
   the GPU, compacted entries' digests equal to the copy's.
+- **Review round 1** (README, "Review round 1"): the books' arithmetic on the CPU with two
+  entries over one plane, the holder leaving before and after the adoption and a leased co-reader
+  (red arms: the double count, the holder kept, the lease offered; each fails it); a GPU cell where
+  one session publishes two entries over the same planes, charged == real at every step and the
+  pool back at its baseline; the live-lend and VMM cells; censuses of the checkpoint restore, the
+  rewind route, `take_device` and the publication's decision (red arms fail them); the replays and
+  the gates rerun on the review head; the open-output compaction cell; the session gate's lend
+  above the checkpoint.
 - **CPU**: fmt, clippy `-D warnings` on all targets, the server, KV, engine and gguf suites, the
   coalescer contract and the portable suites, on a CPU build host.
 
@@ -158,12 +204,15 @@ floor of `Cache::rollback`, `Cache::rewind_recurrent_from` (`lib.rs`) and the MT
   replay and the pair cells. No RTX PRO 6000 cell: its on-demand VMM planes lend and hand off (the
   KV crate's on-demand cell ran on GB10's VMM), not measured served.
 - **Routes.** DSpark and GLM-5 still copy (their park rewinds are not checked against a lend). PP
-  stage-owned caches lend on each plane's own stream; no multi-card cell ran.
+  stage-owned caches copy (their planes are ordered on the stages' streams); no multi-card cell
+  ran.
 - **The floor guards the functions that lower a length**, `into_pooled` and `release_beyond`; the
   spec round loop's own length writes raise a length or restore the committed rows (at or past the
   boundary by construction, the invariant the copy relied on for one burst).
-- **Over-hold.** An adopted plane is charged its capacity until compaction (tick top, after
-  retirement) or eviction; bounded requests hold a few hundred rows past their entry.
+- **Over-hold.** An adopted plane is charged its capacity until compaction (on memory demand) or
+  eviction; bounded requests hold a few hundred rows past their entry. On GB10 the default budget
+  is large and admission's reclaim evicts every unleased entry, so an open-output adoption is
+  usually held until the cache or admission evicts it, not compacted.
 - **Admission's arrival term** in the discrete-card partial reclaim still counts a speculative
   arrival's entry at its logical bytes, though at publication it needs only its recurrent planes:
   conservative, unchanged from main, left for its own item.

@@ -36,6 +36,11 @@ for c in sorted(p for p in d.iterdir() if p.is_dir() and re.match(r"\d\d-", p.na
     a = after.search(text)
     oom = text.count("out of memory")
     refused = text.count("rewind refused below a lent prefix row")
+    # Review round 1: rewinds that moved the session into a fresh cache (the floor kept, the
+    # session kept) and breaks of the cache's total_bytes invariant (must be 0).
+    fresh = text.count("rewind below a lent prefix row: the session moves to a fresh cache")
+    breaks = text.count("[prefix-loan] INVARIANT BROKEN")
+    compacts = text.count("[prefix-loan] compact:")
     cell = None
     if (c / "cells.jsonl").exists():
         cell = json.loads((c / "cells.jsonl").read_text().splitlines()[-1])
@@ -55,7 +60,7 @@ for c in sorted(p for p in d.iterdir() if p.is_dir() and re.match(r"\d\d-", p.na
         ok, toks, ttft, tps = f'{rj.get("requests_ok")}/{rj.get("requests_attempted")}', rj.get("completion_tokens"), "-", "-"
     mib = lambda x: int(x) >> 20  # noqa: E731
     print(f"| {c.name} | {ok} | {toks} | {ttft} | {tps} | {len(recs)} ({eq}) | "
-          f"{(last[6] + ' / ' + last[7]) if last else '-'} | {max((int(r[1]) for r in recs), default=0)} | {refused} | "
+          f"{(last[6] + ' / ' + last[7]) if last else '-'} | {max((int(r[1]) for r in recs), default=0)} | {refused} (fresh {fresh}, invariant breaks {breaks}, compact lines {compacts}) | "
           f"{(str(mib(b.group(2))) if b else '?')} -> {(str(mib(a.group(2))) if a else '?')} | "
           f"{(a.group(3) if a else '?')} | {oom} |")
 names = sorted(texts)

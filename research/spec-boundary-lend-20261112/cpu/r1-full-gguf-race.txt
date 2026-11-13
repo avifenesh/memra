@@ -1,0 +1,23 @@
+# c663509c02 before the gguf fix: memra-gguf 416/1 (fp8_blk_v_reorder_is_exact read a config another test was rewriting)
+# 2026-11-13T02:01:18+01:00 full CPU chain of memra#1221 part 2
+# 2026-11-13T02:01:18+01:00 fmt
+fmt rc=0
+# 2026-11-13T02:01:28+01:00 clippy
+clippy rc=0
+# 2026-11-13T02:02:04+01:00 coalescer
+coalescer rc=0
+# 2026-11-13T02:02:08+01:00 server
+server rc=0
+  passed 1229, failed 0, ignored 17 over 6 binaries
+# 2026-11-13T02:10:17+01:00 kv
+kv rc=0
+  passed 89, failed 0, ignored 3 over 1 binaries
+# 2026-11-13T02:10:17+01:00 engine
+engine rc=0
+  passed 745, failed 0, ignored 66 over 1 binaries
+# 2026-11-13T02:10:23+01:00 gguf
+gguf rc=101
+  passed 416, failed 1, ignored 2 over 1 binaries
+# 2026-11-13T02:10:25+01:00 portable
+portable rc=0
+FULL-DONE

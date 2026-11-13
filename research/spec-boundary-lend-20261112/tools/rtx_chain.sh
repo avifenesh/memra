@@ -14,8 +14,23 @@ export -f quiet; export SEEN
 while IFS= read -r line <&3; do
   [ -z "$line" ] && continue; case $line in \#*) continue ;; esac
   head=${line%% -- *}; cmd=${line#* -- }; set -- $head; name=$1; ttl=$2
-  waitfor --until "bash -c quiet" --every 30s --timeout 300m --quiet >> "$L" 2>&1 || { echo "$(date -Is) $name: never quiet" >> "$L"; exit 1; }
-  gpulock run --ttl "${ttl}m" --for "memra #1221b spec boundary share: 5090 $name (one task per lease)" --wait 240m -- bash -c "$cmd" >> "$L" 2>&1; rc=$?
+  why="memra #1221b spec boundary share: 5090 $name (one task per lease)"
+  # A waiter of ours never sits ahead of a landing's or a release's ticket: while ours is still
+  # waiting and one shows, ours is withdrawn and queued again only after the 3-minute quiet.
+  while :; do
+    waitfor --until "bash -c quiet" --every 30s --timeout 300m --quiet >> "$L" 2>&1 || { echo "$(date -Is) $name: never quiet" >> "$L"; exit 1; }
+    setsid gpulock run --ttl "${ttl}m" --for "$why" --wait 240m -- bash -c "$cmd" >> "$L" 2>&1 &
+    w=$!
+    waitfor --until "bash $H/withdraw_probe.sh $w '$why' gpulock status" --every 15s --timeout 300m --quiet >> "$L" 2>&1
+    if kill -0 "$w" 2>/dev/null && gpulock status 2>/dev/null | grep -i 'waiting:' | grep -qF "$why"; then
+      kill -TERM -"$w" 2>/dev/null; wait "$w" 2>/dev/null
+      echo "$(date -Is) $name: a landing or release ticket showed; our waiter withdrawn" >> "$L"
+      date +%s > "$SEEN"
+      continue
+    fi
+    wait "$w"; rc=$?
+    break
+  done
   echo "$(date -Is) $name rc=$rc" >> "$L"
   [ $rc = 0 ] || exit 1
 done 3< "$1"

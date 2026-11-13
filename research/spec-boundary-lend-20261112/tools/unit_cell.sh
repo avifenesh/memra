@@ -28,7 +28,25 @@ closed() { echo "$(date -Is) $UNIT $NAME: the unit's window closes at ${NOT_AFTE
 waitfor --until "bash $H/landing_quiet.sh $UNIT $SEEN 180" --every 30s --timeout "$(left)s" --quiet >> "$L" 2>&1 \
   || { echo "$(date -Is) $UNIT $NAME: the unit did not go quiet in time" >> "$L"; [ "$(left)" -gt 0 ] && exit 1; closed; }
 [ "$(left)" -gt 0 ] || closed
-id=$(sparklock acquire --unit "$UNIT" --ttl "${TTL}m" --for "$WHY" --wait "$(left)s" 2>>"$L")
+# A ticket of ours never sits ahead of a landing's or a release's: while ours is still waiting and
+# one shows, ours is withdrawn and queued again only after the quiet rule holds again.
+IDF=$(mktemp)
+while :; do
+  : > "$IDF"
+  setsid sparklock acquire --unit "$UNIT" --ttl "${TTL}m" --for "$WHY" --wait "$(left)s" > "$IDF" 2>>"$L" &
+  a=$!
+  waitfor --until "bash $H/withdraw_probe.sh $a '$WHY' sparklock status --unit $UNIT" --every 15s --timeout "$(left)s" --quiet >> "$L" 2>&1
+  if kill -0 "$a" 2>/dev/null && sparklock status --unit "$UNIT" 2>/dev/null | grep -i 'waiting:' | grep -qF "$WHY"; then
+    kill -TERM -"$a" 2>/dev/null; wait "$a" 2>/dev/null
+    echo "$(date -Is) $UNIT $NAME: a landing or release ticket showed; our ticket withdrawn" >> "$L"
+    date +%s > "$SEEN"
+    waitfor --until "bash $H/landing_quiet.sh $UNIT $SEEN 180" --every 30s --timeout "$(left)s" --quiet >> "$L" 2>&1 || closed
+    continue
+  fi
+  wait "$a"
+  break
+done
+id=$(cat "$IDF"); rm -f "$IDF"
 [ -n "$id" ] || { echo "$(date -Is) $UNIT $NAME: no lease" >> "$L"; [ "$(left)" -gt 0 ] && exit 1; closed; }
 echo "$(date -Is) $UNIT $NAME: lease $id" >> "$L"
 PAT='memra landing|release'; [ "${YIELD_ANY:-0}" = 1 ] && PAT='^((?!memra #1221).)*$'
