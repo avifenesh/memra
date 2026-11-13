@@ -764,13 +764,18 @@ class Tree:
         args = ['--literal-pathspecs', 'ls-tree']
         if recursive:
             args.append('-r')
+        # Non-recursive, one ls-tree per path: given a directory and a path inside it in one
+        # call, git ls-tree descends into the directory and lists its children instead of the
+        # directory's own entry, so a nested receipt root read as missing.
+        batches = [prefixes] if recursive else [(prefix,) for prefix in prefixes]
         result = {}
-        for row in git(self.repo, *args, '-z', self.ref, '--', *prefixes).split(b'\0'):
-            if row:
-                metadata, path = row.split(b'\t', 1)
-                name = path.decode()
-                if recursive or name in prefixes:
-                    result[name] = metadata.split()[0].decode()
+        for batch in batches:
+            for row in git(self.repo, *args, '-z', self.ref, '--', *batch).split(b'\0'):
+                if row:
+                    metadata, path = row.split(b'\t', 1)
+                    name = path.decode()
+                    if recursive or name in batch:
+                        result[name] = metadata.split()[0].decode()
         return result
 
     def ignored_paths(self, *prefixes):
