@@ -1,0 +1,26 @@
+build rc 0 01:42:40
+7f7ffd57f6f2ea866e61ed8bb7846b8e99647ee1f2925379e8b718a18926ec27  $RUN/bins/ringgate4/dsv41-gate
+NVIDIA GB10, 305 MHz, 43
+kernels rc 0 202 checks, 0 failed 0 FAIL lines
+PASS schedule/gemm_ffma_ring_partial/m2_n30_k5120: 240 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_partial/m2_n30_k5120/first: 240 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_partial/m2_n30_k5120/second: 240 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_ring_partial/m2_n30_k256: 240 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_partial/m2_n30_k256/first: 240 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_partial/m2_n30_k256/second: 240 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_ring/m2_n32_k256: 256 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_ring/m2_n32_k256/first: 256 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_ring/m2_n32_k256/second: 256 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_ring_partial/m8_n30_k256: 960 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_partial/m8_n30_k256/first: 960 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_partial/m8_n30_k256/second: 960 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_ring_partial/m2_n30_k512: 240 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_partial/m2_n30_k512/first: 240 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_partial/m2_n30_k512/second: 240 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_ring/m2_n32_k512: 256 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_ring/m2_n32_k512/first: 256 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_ring/m2_n32_k512/second: 256 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma_ring_partial/m8_n30_k512: 960 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_partial/m8_n30_k512/first: 960 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_partial/m8_n30_k512/second: 960 bytes, 0 differ [byte-identical to the reference schedule]
+BGATE-DONE 01:42:43
