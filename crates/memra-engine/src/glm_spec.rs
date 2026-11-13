@@ -528,7 +528,7 @@ fn glm5_anchor(
                 &format!("glm5 penalized greedy anchor ({site})"),
             )
         }
-        (None, None) => Ok(argmax(logits) as u32),
+        (None, None) => crate::check_token(argmax(logits) as u32, logits.len()),
     }
 }
 
@@ -3223,6 +3223,7 @@ impl HybridModel {
                     while j < drafts.len() && drafts[j] == vam[j] {
                         j += 1;
                     }
+                    crate::check_tokens(&vam[..=j], n_vocab)?;
                     if knobs.accept_probe {
                         self.glm5_accept_probe(eh, sess.rounds, plogits, &drafts, &vam, j)?;
                     }

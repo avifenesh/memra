@@ -90,7 +90,7 @@ impl GraphSession {
         for kvl in self.cache.kv.iter_mut().filter_map(|k| k.as_mut()) {
             kvl.len += 1;
         }
-        e.dtoh_u32_one(&self.gs.token_d)
+        crate::check_token(e.dtoh_u32_one(&self.gs.token_d)?, self.n_vocab)
     }
 
     /// Profiling decomposition of step() (graph-session-gate MEMRA_GS_PROF): the three
@@ -1160,6 +1160,7 @@ impl HybridModel {
             }
         }
         let hist_h = e.dtoh_u32(hist)?;
+        crate::check_tokens(&hist_h[..k], self.output.out_features())?;
         let logits_h = match last_logits.expect("k >= 2") {
             Some(row) => e.dtoh(&row)?,
             None => self.head_split_logits_dtoh(e)?,
@@ -1943,7 +1944,7 @@ impl HybridModel {
                 &mut cache,
                 /*n_vocab*/ self.output.out_features(),
             )?;
-            next_in = e.dtoh_u32_one(&nt)?;
+            next_in = crate::check_token(e.dtoh_u32_one(&nt)?, self.output.out_features())?;
         }
         // gs.token_d now must hold the first generated INPUT token (= argmax of the last prime step).
         e.set_u32_one(&mut gs.token_d, next_in)?;
@@ -2021,7 +2022,7 @@ impl HybridModel {
         let final_max = cache.pos + max_new + 1;
 
         // first generated token = argmax of the last prime step (emit before replay 1).
-        let first = e.dtoh_u32_one(&gs.token_d)?;
+        let first = crate::check_token(e.dtoh_u32_one(&gs.token_d)?, n_vocab)?;
         if let Some(r) = emit(first) {
             return Ok(r);
         }
@@ -2046,7 +2047,7 @@ impl HybridModel {
                     kvl.len += 1;
                 }
                 // read back the [1] u32 next token (the only D2H in steady state).
-                let tok = e.dtoh_u32_one(&gs.token_d)?;
+                let tok = crate::check_token(e.dtoh_u32_one(&gs.token_d)?, n_vocab)?;
                 done += 1;
                 if let Some(r) = emit(tok) {
                     return Ok(r);
@@ -2118,7 +2119,7 @@ impl HybridModel {
                 &mut cache,
                 n_vocab,
             )?;
-            next_in = e.dtoh_u32_one(&nt)?;
+            next_in = crate::check_token(e.dtoh_u32_one(&nt)?, n_vocab)?;
         }
         e.set_u32_one(&mut gs.token_d, next_in)?;
         self.graph_session_capture(e, cache, gs, embd_gpu, max_new, qt, row_bytes, n_vocab)
@@ -2320,7 +2321,7 @@ impl HybridModel {
         let (graph, plan, seg_end) = self.graph_capture_segment(
             e, &mut cache, &mut gs, &embd_gpu, qt, row_bytes, n_vocab, bucket_max,
         )?;
-        let first = e.dtoh_u32_one(&gs.token_d)?;
+        let first = crate::check_token(e.dtoh_u32_one(&gs.token_d)?, n_vocab)?;
         Ok((
             GraphSession {
                 gs,
@@ -2718,7 +2719,7 @@ impl HybridModel {
                 return Ok(out);
             }
             for _ in 0..max_new {
-                out.push(e.dtoh_u32(&token_d)?[0]);
+                out.push(crate::check_token(e.dtoh_u32(&token_d)?[0], n_vocab)?);
                 token_d = if e4b {
                     self.gemma4_e4b_decode_step_dc(
                         e, &token_d, &mut pos_d, embd_gpu, qt, rb, &mut cache, n_vocab,
@@ -2754,7 +2755,7 @@ impl HybridModel {
             let mut pos_d = e.htod_i32(&[cache.pos as i32])?;
             let mut token_d = e.stream().clone_htod(&[argmax(&last_logits) as u32])?;
             for _ in 0..max_new {
-                out.push(e.dtoh_u32(&token_d)?[0]);
+                out.push(crate::check_token(e.dtoh_u32(&token_d)?[0], n_vocab)?);
                 token_d = self.decode_step_dc(
                     e, &token_d, &mut pos_d, embd_gpu, qt, rb, &mut cache, n_vocab,
                 )?;
@@ -2762,7 +2763,7 @@ impl HybridModel {
             return Ok(out);
         }
         for _ in 0..max_new {
-            let next = argmax(&last_logits) as u32;
+            let next = crate::check_token(argmax(&last_logits) as u32, last_logits.len())?;
             out.push(next);
             last_logits = self.decode_step(e, next, &mut cache)?;
         }
@@ -2803,7 +2804,7 @@ impl HybridModel {
             // =1: exact live bucket per token; =2: the capture's fixed win bucket.
             let mut reason = StopReason::MaxNew;
             for _ in 0..budget {
-                let tok = e.dtoh_u32_one(token_d)?;
+                let tok = crate::check_token(e.dtoh_u32_one(token_d)?, n_vocab)?;
                 if let Some(r) = emit(tok) {
                     reason = r;
                     break;
@@ -2874,7 +2875,7 @@ impl HybridModel {
         );
         for _ in 0..budget {
             let t0 = std::time::Instant::now();
-            let tok = e.dtoh_u32_one(token_d)?;
+            let tok = crate::check_token(e.dtoh_u32_one(token_d)?, n_vocab)?;
             let t1 = std::time::Instant::now();
             if let Some(r) = emit(tok) {
                 reason = r;
@@ -2976,7 +2977,7 @@ impl HybridModel {
             for kvl in cache.kv.iter_mut().flatten() {
                 e.set_i32_one(&mut kvl.len_d, kvl.len as i32)?;
             }
-            let first = crate::forward::argmax(&last_logits) as u32;
+            let first = crate::check_token(crate::forward::argmax(&last_logits) as u32, n_vocab)?;
             let e4b = self.is_gemma4_e4b();
             let mut token_d = e.stream().clone_htod(&[first])?;
             let mut pos_d = e.htod_i32(&[cache.pos as i32])?;
@@ -3049,7 +3050,7 @@ impl HybridModel {
                         e, &token_d, &mut pos_d, embd_gpu, qt, rb, &mut cache, n_vocab, None,
                     )?
                 };
-                next = e.dtoh_u32(&token_d)?[0];
+                next = crate::check_token(e.dtoh_u32(&token_d)?[0], n_vocab)?;
             }
             return Ok(GenOutput {
                 tokens: out,
@@ -3195,7 +3196,7 @@ impl HybridModel {
                     stop_reason: reason,
                 });
             }
-            let mut next = e.dtoh_u32(&token_d)?[0];
+            let mut next = crate::check_token(e.dtoh_u32(&token_d)?[0], n_vocab)?;
             for _ in 0..budget {
                 sampler.accept(next);
                 out.push(next);
@@ -3214,7 +3215,7 @@ impl HybridModel {
                 token_d = self.decode_step_dc(
                     e, &token_d, &mut pos_d, embd_gpu, qt, rb, &mut cache, n_vocab,
                 )?;
-                next = e.dtoh_u32(&token_d)?[0];
+                next = crate::check_token(e.dtoh_u32(&token_d)?[0], n_vocab)?;
             }
             return Ok(GenOutput {
                 tokens: out,
@@ -3222,7 +3223,7 @@ impl HybridModel {
             });
         }
         for _ in 0..budget {
-            let next = sampler.sample(&last_logits);
+            let next = crate::check_token(sampler.sample(&last_logits), last_logits.len())?;
             sampler.accept(next);
             out.push(next);
             if params.eos.contains(&next) {

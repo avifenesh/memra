@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let nan = logits.iter().filter(|v| !v.is_finite()).count();
     println!(
         "argmax token = {am}  logit = {:.4}  non-finite={nan}/{}",
-        logits[am],
+        logits.get(am).copied().unwrap_or(f32::NAN),
         logits.len()
     );
     println!(

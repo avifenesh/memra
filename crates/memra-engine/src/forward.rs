@@ -166,9 +166,11 @@ impl Model {
     }
 }
 
-/// argmax helper.
+/// argmax helper: the first index of the largest value, NaN skipped. A row with no candidate
+/// (every value NaN or -inf, or no value) has no argmax and gives `TOKEN_NONE`, the id the
+/// device argmax writes for it, so `check_token` refuses both the same way.
 pub fn argmax(logits: &[f32]) -> usize {
-    let mut best = 0;
+    let mut best = crate::TOKEN_NONE as usize;
     let mut bv = f32::NEG_INFINITY;
     for (i, &v) in logits.iter().enumerate() {
         if v > bv {

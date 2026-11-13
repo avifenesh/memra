@@ -719,7 +719,7 @@ impl HybridModel {
         let (hn, h_next) = self.gemma4_draft_trunk(e, d, token, h, pos, cache)?;
         let ld = e.matmul(&d.head, &hn, 1)?;
         let tok_d = e.argmax_token_device(&ld, d.head.out_features())?;
-        let idx = e.dtoh_u32(&tok_d)?[0];
+        let idx = crate::check_token(e.dtoh_u32(&tok_d)?[0], d.head.out_features())?;
         let tok = match &d.d2t {
             Some(map) => map[idx as usize],
             None => idx,
@@ -813,7 +813,10 @@ impl HybridModel {
             h_seed
         };
 
-        let mut last = crate::forward::argmax(&pl) as u32;
+        let mut last = crate::check_token(
+            crate::forward::argmax(&pl) as u32,
+            self.output.out_features(),
+        )?;
         // MEMRA_PROFILE_SPEC=2: capture starts at the ROUND LOOP (prime excluded) — pair
         // with `nsys -c cudaProfilerApi` (the qwen loop's pattern, spec.rs).
         if std::env::var("MEMRA_PROFILE_SPEC").as_deref() == Ok("2") {
@@ -1254,6 +1257,7 @@ impl HybridModel {
                 }
                 // drain: ONE host sync per iteration (warmup rounds included on capture).
                 let toks = bufs.drain_ring(e)?;
+                crate::check_tokens(&toks, self.output.out_features())?;
                 let posh = e.dtoh_i32(&bufs.pos_ctr)?[0] as usize;
                 if std::env::var("MEMRA_DEBUG_SPEC").as_deref() == Ok("1") {
                     eprintln!(
@@ -1437,6 +1441,9 @@ impl HybridModel {
                     break;
                 }
             }
+            // the walk read vam[..=m]: each must be a token (a NaN draft row poisons only
+            // the verify rows after it, which the walk never reads)
+            crate::check_tokens(&vam[..=m], self.output.out_features())?;
             prev_full = m == k; // feeds the self-keyed in-round cut (miss → next round cuts)
             if std::env::var("MEMRA_DEBUG_SPEC").as_deref() == Ok("1") {
                 let l0 = cache
@@ -1982,6 +1989,7 @@ impl HybridModel {
                     break;
                 }
             }
+            crate::check_tokens(&vam[..=m], self.output.out_features())?;
             prev_full = m == kr;
             accepted += m;
             // ---- ROUND COMPLETES UNCONDITIONALLY (the boundary law) ----
@@ -2208,6 +2216,7 @@ impl HybridModel {
                 n_vocab,
                 &format!("gemma sampled verify at round {} j={m}", sess.rounds),
             )?;
+            crate::check_tokens(&cand[1..=m], n_vocab)?;
             accepted += m;
             // ---- ROUND COMPLETES UNCONDITIONALLY (the boundary law), greedy arm verbatim ----
             let keep = m + 1;
@@ -2418,7 +2427,7 @@ impl HybridModel {
             let ringh = e.dtoh_u32(&ring)?;
             let total = cache.pos - ring_base;
             while drained < total && out.len() < max_new {
-                let t = ringh[drained % ring_cap];
+                let t = crate::check_token(ringh[drained % ring_cap], self.output.out_features())?;
                 out.push(t);
                 drained += 1;
                 if eos.contains(&t) {

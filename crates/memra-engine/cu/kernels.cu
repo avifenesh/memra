@@ -29,10 +29,17 @@
 // logits[tok] (tok = the argmax token, already on device). p(tok) = 1 / sum. Feeds the
 // spec-decode p-min confidence gate (stop drafting when the head is unsure — the mechanism
 // behind the serve script's --spec-draft-p-min): one extra ~1-4MB logits read per draft token.
+// A tok at or past n_vocab (the argmax's no-candidate id) reads nothing and gives p = 0: every
+// partial is +inf, so 1 / sum is 0 and a p-min gate cuts the draft there.
 extern "C" __global__ void prob_of_token_partial_f32(
         const float* __restrict__ logits, const uint32_t* __restrict__ tok,
         float* __restrict__ part_s, int n_vocab) {
-    const float mx = logits[tok[0]];
+    const uint32_t t0 = tok[0];
+    if (t0 >= (uint32_t)n_vocab) {
+        if (threadIdx.x == 0) part_s[blockIdx.x] = __int_as_float(0x7f800000);
+        return;
+    }
+    const float mx = logits[t0];
     int tid = threadIdx.x;
     int gtid = blockIdx.x * blockDim.x + tid;
     int gstride = gridDim.x * blockDim.x;
@@ -1955,9 +1962,11 @@ extern "C" __global__ void u32_set_k(unsigned int* __restrict__ dst, unsigned in
 
 // FR-Spec trim id translate (gemma async draft round): buf[idx] holds a TRIM-space argmax --
 // map it to the full-vocab token id in place (d2t = ranked-id table). Single-slot, async.
+// An id at or past the table (the argmax's no-candidate id) maps to that id, 0x7fffffff.
 extern "C" __global__ void u32_map_k(unsigned int* __restrict__ buf,
-                                     const unsigned int* __restrict__ map, int idx) {
-    buf[idx] = map[buf[idx]];
+                                     const unsigned int* __restrict__ map, int idx, int map_len) {
+    const unsigned int v = buf[idx];
+    buf[idx] = v < (unsigned int)map_len ? map[v] : 0x7fffffffu;
 }
 
 // pos-row fill from a device counter: dst[i] = ctr[0] + i (verify-stream rope positions —
@@ -3015,13 +3024,19 @@ extern "C" __global__ void rows_permute_f32(const float* __restrict__ src,
 
 // DSpark semi-AR markov head (dflash lane, 2026-07-13): gather ONE bf16 row of
 // markov_w1 [V, rank] by a DEVICE token id into f32 (the rank-256 step vector). The
-// sequential draft chain stays on-device (no per-position dtoh).
+// sequential draft chain stays on-device (no per-position dtoh). A token at or past the
+// table's n_rows (the argmax's no-candidate id) gathers a NaN row and reads nothing.
 extern "C" __global__ void gather_row_bf16_f32(const unsigned short* __restrict__ table,
                                                const unsigned int* __restrict__ tok, int idx,
-                                               float* __restrict__ dst, int ncols) {
+                                               float* __restrict__ dst, int ncols, long n_rows) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < ncols) {
-        unsigned short h = table[(size_t)tok[idx] * ncols + i];
+        const unsigned int t = tok[idx];
+        if ((long)t >= n_rows) {
+            dst[i] = __int_as_float(0x7fc00000);
+            return;
+        }
+        unsigned short h = table[(size_t)t * ncols + i];
         dst[i] = __uint_as_float(((unsigned int)h) << 16);
     }
 }

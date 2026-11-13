@@ -537,10 +537,18 @@ __device__ __forceinline__ float deq(int qtype, const uint8_t* row, int j) {
 // in a device u32 buffer (the argmax output), so the token never round-trips to host in steady
 // state. x_out[j] = deq(qtype, embd_row(token_d[0]), j) for j in [0,n_embd). Bit-identical to host
 // EmbedHost::gather (same per-dtype deq path). Single token (decode T=1). row_bytes = bytes/embed-row.
+// An id at or past the table's n_rows (the argmax's no-candidate id MEMRA_TOKEN_NONE, written when a
+// logits row has no finite value) gathers a NaN row instead of reading past the table, so the next
+// forward stays non-finite until the host reads the id and refuses it.
 extern "C" __global__ void embed_gather_u32(
         const unsigned char* __restrict__ embd, const unsigned int* __restrict__ token_d,
-        float* __restrict__ x_out, int n_embd, int qtype, long row_bytes) {
+        float* __restrict__ x_out, int n_embd, int qtype, long row_bytes, long n_rows) {
     unsigned int tok = token_d[0];
+    if ((long)tok >= n_rows) {
+        for (int j = blockIdx.x * blockDim.x + threadIdx.x; j < n_embd; j += gridDim.x * blockDim.x)
+            x_out[j] = __int_as_float(0x7fc00000);
+        return;
+    }
     const unsigned char* row = embd + (size_t)tok * row_bytes;
     for (int j = blockIdx.x * blockDim.x + threadIdx.x; j < n_embd; j += gridDim.x * blockDim.x)
         x_out[j] = deq(qtype, row, j);
@@ -548,14 +556,20 @@ extern "C" __global__ void embed_gather_u32(
 // T-token variant (spec verify/replay): tokens_d[T] device ids -> x_out[T, n_embd]. grid.y = t.
 // Replaces the host-side per-row dequant + ~T*14KB HtoD of EmbedHost::gather on the spec hot loop
 // (nsys: cuMemcpyHtoDAsync was 84% of spec API time). Same per-dtype deq -> bit-identical rows.
+// Same out-of-table rule as embed_gather_u32: such a row is NaN, the others are untouched.
 extern "C" __global__ void embed_gather_u32_t(
         const unsigned char* __restrict__ embd, const unsigned int* __restrict__ tokens_d,
-        float* __restrict__ x_out, int n_embd, int qtype, long row_bytes, int t) {
+        float* __restrict__ x_out, int n_embd, int qtype, long row_bytes, int t, long n_rows) {
     int ti = blockIdx.y;
     if (ti >= t) return;
     unsigned int tok = tokens_d[ti];
-    const unsigned char* row = embd + (size_t)tok * row_bytes;
     float* xr = x_out + (size_t)ti * n_embd;
+    if ((long)tok >= n_rows) {
+        for (int j = blockIdx.x * blockDim.x + threadIdx.x; j < n_embd; j += gridDim.x * blockDim.x)
+            xr[j] = __int_as_float(0x7fc00000);
+        return;
+    }
+    const unsigned char* row = embd + (size_t)tok * row_bytes;
     for (int j = blockIdx.x * blockDim.x + threadIdx.x; j < n_embd; j += gridDim.x * blockDim.x)
         xr[j] = deq(qtype, row, j);
 }

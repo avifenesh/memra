@@ -10,6 +10,11 @@ use std::collections::HashMap;
 
 pub mod spec_stop;
 
+/// The id for a logits row with no candidate (every value NaN or -inf): never a vocabulary id.
+/// The device argmax writes it and the samplers return it, so the caller refuses the row
+/// (`memra_engine::check_token`) instead of emitting a token it did not choose.
+pub const TOKEN_NONE: u32 = 0x7fff_ffff;
+
 /// Sampler configuration. Defaults = greedy (temp 0). Order of application matches llama.cpp.
 #[derive(Clone, Debug)]
 pub struct SamplerConfig {
@@ -362,15 +367,21 @@ impl Sampler {
         // `apply_penalties_dense`.
         self.apply_penalties_dense(&mut cand);
 
-        // Greedy-with-penalties: argmax after penalties, no sampling.
+        // Greedy-with-penalties: argmax after penalties, no sampling. NaN never wins; a row
+        // with no value above -inf has no argmax.
         if self.is_greedy() {
-            let mut best = cand[0];
-            for &c in &cand[1..] {
+            let mut best = (TOKEN_NONE, f32::NEG_INFINITY);
+            for &c in &cand {
                 if c.1 > best.1 {
                     best = c;
                 }
             }
             return best.0;
+        }
+
+        // A row with no candidate cannot be sampled: the softmax below would be NaN.
+        if !cand.iter().any(|c| c.1 > f32::NEG_INFINITY) {
+            return TOKEN_NONE;
         }
 
         // 2. Temperature scale.
@@ -581,8 +592,9 @@ impl Sampler {
     }
 }
 
+/// The first index of the largest value, NaN skipped; `TOKEN_NONE` when no value is above -inf.
 fn argmax_u32(logits: &[f32]) -> u32 {
-    let mut best = 0u32;
+    let mut best = TOKEN_NONE;
     let mut bv = f32::NEG_INFINITY;
     for (i, &v) in logits.iter().enumerate() {
         if v > bv {
@@ -790,6 +802,47 @@ mod tests {
     /// produce exactly `-0.0`. The inputs deliberately include negative logits (the repeat rule
     /// branches on sign), repeated tokens (frequency count > 1), a token never generated (must be
     /// untouched), and the three penalty coefficients both neutral and active.
+    /// A row with no candidate (every logit NaN or -inf) has no token: greedy, greedy with
+    /// penalties and sampled draws all return `TOKEN_NONE` (they returned 0, a real token).
+    /// Rows with a candidate keep their id; a NaN never wins, even in slot 0.
+    #[test]
+    fn a_row_without_a_finite_logit_samples_token_none() {
+        let greedy = SamplerConfig::default();
+        let penalized = SamplerConfig {
+            penalty_last_n: 4,
+            penalty_repeat: 1.1,
+            ..SamplerConfig::default()
+        };
+        let sampled = SamplerConfig {
+            temperature: 0.8,
+            top_k: 5,
+            top_p: 0.9,
+            seed: 7,
+            ..SamplerConfig::default()
+        };
+        let none_rows = [
+            vec![f32::NAN; 9],
+            vec![f32::NEG_INFINITY; 9],
+            vec![f32::NAN, f32::NEG_INFINITY, f32::NAN],
+        ];
+        for cfg in [&greedy, &penalized, &sampled] {
+            for row in &none_rows {
+                assert_eq!(
+                    Sampler::new(cfg.clone()).sample(row),
+                    TOKEN_NONE,
+                    "{cfg:?} {row:?}"
+                );
+            }
+        }
+        for cfg in [&greedy, &penalized] {
+            let mut s = Sampler::new(cfg.clone());
+            assert_eq!(s.sample(&[1.0, 3.0, f32::NAN, 3.0]), 1);
+            assert_eq!(s.sample(&[f32::NAN, -2.0, f32::NEG_INFINITY]), 1);
+        }
+        let only = [f32::NEG_INFINITY, f32::NEG_INFINITY, 0.5, f32::NEG_INFINITY];
+        assert_eq!(Sampler::new(sampled.clone()).sample(&only), 2);
+    }
+
     #[test]
     fn dense_penalties_match_the_scan_reference_bitwise() {
         // A small deterministic LCG: this gate must not depend on a dev-dependency.

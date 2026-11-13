@@ -403,15 +403,22 @@ fn reference_sample(s: &mut Sampler, logits: &[f32]) -> u32 {
     // `apply_penalties_dense`.
     s.apply_penalties_dense(&mut cand);
 
-    // Greedy-with-penalties: argmax after penalties, no sampling.
+    // Greedy-with-penalties: argmax after penalties, no sampling (the sampler's no-candidate
+    // contract: NaN never wins, no value above -inf gives TOKEN_NONE).
     if s.is_greedy() {
-        let mut best = cand[0];
-        for &c in &cand[1..] {
+        let mut best = (TOKEN_NONE, f32::NEG_INFINITY);
+        for &c in &cand {
             if c.1 > best.1 {
                 best = c;
             }
         }
         return best.0;
+    }
+
+    // A row with no candidate has no token: the sampler's contract since the no-finite-logit
+    // fix (it drew the last candidate, a token nothing chose). The oracle follows it.
+    if !cand.iter().any(|c| c.1 > f32::NEG_INFINITY) {
+        return TOKEN_NONE;
     }
 
     // 2. Temperature scale.

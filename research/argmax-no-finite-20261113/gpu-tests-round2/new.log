@@ -1,0 +1,14 @@
+
+running 9 tests
+test bf16_row_gather_of_an_id_past_the_table_is_a_nan_row ... ok
+test device_argmax_matches_host_and_gives_token_none_without_a_candidate ... ok
+test embed_gather_of_an_id_past_the_table_is_a_nan_row ... ok
+test embed_gather_rows_keeps_in_table_rows_and_nans_the_rest ... ok
+test host_argmax_without_a_finite_logit_is_token_none ... ok
+test prob_of_an_id_past_the_row_is_zero ... ok
+test residual_sample_of_a_row_without_a_finite_value_is_token_none ... ok
+test sampled_spec_gather_gives_an_id_past_the_row_probability_zero ... ok
+test trim_map_keeps_an_id_past_the_map_as_token_none ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+

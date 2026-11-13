@@ -950,15 +950,8 @@ pub(crate) fn guard_vocab_token(
     n_vocab: usize,
     what: &str,
 ) -> Result<u32, Box<dyn std::error::Error>> {
-    if (tok as usize) >= n_vocab {
-        return Err(format!(
-            "{what}: token id 0x{tok:08x} >= n_vocab {n_vocab} — an all-NaN logits row left \
-             the device argmax's init sentinel in place; refusing to dereference the embed \
-             row (#87 trap)"
-        )
-        .into());
-    }
-    Ok(tok)
+    // one bound and one message for every host read of a device id (`crate::check_token`)
+    crate::check_token(tok, n_vocab).map_err(|e| format!("{what}: {e} (#87 trap)").into())
 }
 
 /// SPEC NaN-ORIGIN SCAN (`MEMRA_SPEC_NAN_SCAN=1`, DEFAULT OFF, diagnostic only).
@@ -2299,7 +2292,7 @@ pub fn greedy_penalized_boundary_token(
     }
     let mut am_d = e.stream().alloc_zeros::<u32>(1)?;
     e.argmax_token_device_col(&col, 0, n_vocab, &mut am_d, 0)?;
-    Ok(e.dtoh_u32(&am_d)?[0])
+    crate::check_token(e.dtoh_u32(&am_d)?[0], n_vocab)
 }
 
 pub fn sample_boundary_token(
@@ -11556,7 +11549,10 @@ impl HybridModel {
                     }
                 }
             } else {
-                argmax(&feed_logits) as u32
+                match crate::check_token(argmax(&feed_logits) as u32, self.output.out_features()) {
+                    Ok(t) => t,
+                    Err(err) => return dirty(format!("boundary token: {err}")),
+                }
             });
             let mut lh = match e.uninit(n_embd) {
                 Ok(b) => b,
@@ -11602,7 +11598,11 @@ impl HybridModel {
                     }
                 }
             } else {
-                argmax(boundary_logits) as u32
+                match crate::check_token(argmax(boundary_logits) as u32, self.output.out_features())
+                {
+                    Ok(t) => t,
+                    Err(err) => return fail(cache, format!("boundary token: {err}")),
+                }
             });
         }
         Ok(SpecSession {
@@ -11890,7 +11890,7 @@ impl HybridModel {
                 let hist = pen_window_seed(&sess.committed, &[b], sp.penalty_last_n);
                 sample_boundary_token(e, &lg_b, &sp, &hist, &mut sess.sctr, "flush-pending")?
             }
-            _ => argmax(&lg_b) as u32,
+            _ => crate::check_token(argmax(&lg_b) as u32, self.output.out_features())?,
         });
         let anchor = sess
             .last_h
@@ -13937,7 +13937,7 @@ impl HybridModel {
             // greedy (byte contract), the rollback door, or constrained (masked-argmax
             // identity — the worker routes sampled+constrained to the plain path, and this
             // function refuses the combination outright above).
-            argmax(&prime_logits) as u32
+            crate::check_token(argmax(&prime_logits) as u32, self.output.out_features())?
         };
         if pen_on {
             // The boundary token is a GENERATED token: the plain sampler `accept()`s every
@@ -14108,7 +14108,8 @@ impl HybridModel {
                     .ok_or("prepared MTP init already consumed")?,
                 None => self.spec_target_step_h(e, last_token, &mut *cache)?,
             };
-            last_pred = argmax(&init_logits) as u32;
+            last_pred =
+                crate::check_token(argmax(&init_logits) as u32, self.output.out_features())?;
             if constraint.is_some() {
                 init_logits_host = Some(init_logits.clone());
             }
@@ -14850,7 +14851,7 @@ impl HybridModel {
                             "burst-tail-commit",
                         )?
                     } else {
-                        argmax(&lg_b) as u32
+                        crate::check_token(argmax(&lg_b) as u32, self.output.out_features())?
                     });
                     self.mtp_kv_fill_all(e, &[b], &fill_prev, pos_b, &mut *scratch, embd_dev)?;
                     *last_h = Some(hb);
@@ -17420,7 +17421,7 @@ impl HybridModel {
                         )?
                     };
                     let tok_d = e.argmax_token_device(&dl_d, d_vocab)?;
-                    let idx = e.dtoh_u32_one(&tok_d)?;
+                    let idx = crate::check_token(e.dtoh_u32_one(&tok_d)?, d_vocab)?;
                     let d = match &mtp.d2t {
                         Some(map) => map[idx as usize],
                         None => idx,

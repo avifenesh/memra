@@ -43,7 +43,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // top-5
     let mut idx: Vec<usize> = (0..logits.len()).collect();
     idx.sort_unstable_by(|&a, &b| logits[b].partial_cmp(&logits[a]).unwrap());
-    println!("argmax token = {am}  logit = {:.4}", logits[am]);
+    // a row with no finite value has no argmax (TOKEN_NONE): print NaN, not an index panic
+    let top = logits.get(am).copied().unwrap_or(f32::NAN);
+    println!("argmax token = {am}  logit = {top:.4}");
     println!(
         "top-5: {:?}",
         idx[..5].iter().map(|&i| (i, logits[i])).collect::<Vec<_>>()

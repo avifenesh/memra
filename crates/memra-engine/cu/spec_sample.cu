@@ -108,7 +108,9 @@ extern "C" __global__ void softmax_gather_f32(
     __syncthreads();
     if (tid == 0) {
         for (int w = 1; w < (nth + 31) / 32; ++w) s += red[w];
-        out[pair] = __expf((xr[ids[pair]] - m) / temp) / s;
+        // an id past the row (a draft argmax with no finite logit, TOKEN_NONE) has probability 0
+        const uint32_t id = ids[pair];
+        out[pair] = id < (uint32_t) n ? __expf((xr[id] - m) / temp) / s : 0.0f;
     }
 }
 
@@ -172,8 +174,9 @@ extern "C" __global__ void residual_sample_f32(
     float total = 0.0f;
     for (int t = 0; t < nth; ++t) total += chunk_sum[t];
     if (total <= 0.0f) {                                 // p==q everywhere (or temp==0 exact match)
-        // fall back to argmax of p (deterministic, matches greedy limit)
-        float m = -3.4e38f; int am = 0;
+        // fall back to argmax of p (deterministic, matches greedy limit); a row with no value
+        // above -3.4e38 (all NaN, -inf or banned) has none: 0x7fffffff, the argmax's TOKEN_NONE
+        float m = -3.4e38f; int am = 0x7fffffff;
         for (int i = 0; i < n; ++i) if (p[i] > m) { m = p[i]; am = i; }
         *out_tok = (uint32_t) am; return;
     }
@@ -307,7 +310,10 @@ extern "C" __global__ void softmax_gather_filtered_f32(
     __syncthreads();
     if (tid == 0) {
         for (int w = 1; w < (nth + 31) / 32; ++w) m = fmaxf(m, sred[w]);
-        const float e0 = __expf((xr[ids[pair]] - m) * invT);
+        // an id past the row (TOKEN_NONE) has probability 0 and reads nothing
+        const uint32_t id = ids[pair];
+        if (id >= (uint32_t) n) { out[pair] = 0.0f; return; }
+        const float e0 = __expf((xr[id] - m) * invT);
         out[pair] = (e0 >= th[pair]) ? e0 / z[pair] : 0.0f;
     }
 }
@@ -342,7 +348,7 @@ extern "C" __global__ void residual_sample_filtered_f32(
     float total = 0.0f;
     for (int t = 0; t < nth; ++t) total += chunk_sum[t];
     if (total <= 0.0f) {
-        float m2 = -3.4e38f; int am = 0;
+        float m2 = -3.4e38f; int am = 0x7fffffff;  // no value above -3.4e38: TOKEN_NONE
         for (int i = 0; i < n; ++i) if (p[i] > m2) { m2 = p[i]; am = i; }
         *out_tok = (uint32_t) am; return;
     }
@@ -396,7 +402,7 @@ extern "C" __global__ void residual_sample_sparse_q_f32(
     float total = 0.0f;
     for (int t = 0; t < nth; ++t) total += chunk_sum[t];
     if (total <= 0.0f) {
-        float m2 = -3.4e38f; int am = 0;
+        float m2 = -3.4e38f; int am = 0x7fffffff;  // no value above -3.4e38: TOKEN_NONE
         for (int i = 0; i < n; ++i) if (p[i] > m2) { m2 = p[i]; am = i; }
         *out_tok = (uint32_t) am; return;
     }

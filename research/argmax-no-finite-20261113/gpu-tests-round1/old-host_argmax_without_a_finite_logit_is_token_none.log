@@ -1,0 +1,17 @@
+
+running 1 test
+test host_argmax_without_a_finite_logit_is_token_none ... 
+thread 'host_argmax_without_a_finite_logit_is_token_none' (1084336) panicked at crates/memra-engine/tests/argmax_no_finite_gpu.rs:94:9:
+assertion `left == right` failed: all NaN
+  left: 0
+ right: 2147483647
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    host_argmax_without_a_finite_logit_is_token_none
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.01s
+

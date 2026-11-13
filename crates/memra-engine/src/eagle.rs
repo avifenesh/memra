@@ -514,7 +514,7 @@ impl HybridModel {
             .ok()
             .map(|s| s != "0")
             .unwrap_or(true);
-        let mut last_token = argmax(&prime_logits) as u32;
+        let mut last_token = crate::check_token(argmax(&prime_logits) as u32, n_vocab)?;
         out.push(last_token);
         // prev_aux = aux of the token at the position whose forward predicted `last_token`
         // (= the prompt's last token for round 1). g_aux = aux of `last_token` itself.
@@ -537,7 +537,12 @@ impl HybridModel {
             let mut g = g0;
             for j in 0..k {
                 let (dl, g_next) = draft.draft_token(e, self, prev, &g, &mut scratch, pos + j)?;
-                let d_draft = argmax(&dl) as u32;
+                // a draft row with no finite value proposes id 0: any proposal is safe, the
+                // target's verify decides, so a broken draft head costs a rejected draft only
+                let d_draft = match argmax(&dl) as u32 {
+                    t if (t as usize) < draft.draft_vocab => t,
+                    _ => 0,
+                };
                 let d_target = draft.d2t_map(d_draft); // map draft-vocab id -> target-vocab id
                 draft_toks.push(d_target);
                 prev = d_target;
@@ -565,7 +570,7 @@ impl HybridModel {
                     break;
                 }
             }
-            let bonus = t_pred(n_acc);
+            let bonus = crate::check_token(t_pred(n_acc), n_vocab)?;
             total_drafted += k;
             total_accepted += n_acc;
 

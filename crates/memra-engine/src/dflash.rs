@@ -1232,6 +1232,7 @@ pub(crate) fn dspark_accept_greedy_penalized(
     }
     let vam = e.dtoh_u32(&am_d)?;
     let m = dspark_accept_prefix(cand, &vam, vt);
+    crate::check_tokens(&vam[..=m], n_vocab)?;
     Ok((m, vam[m]))
 }
 
@@ -1323,7 +1324,7 @@ pub(crate) fn dspark_accept_sampled(
         )?;
         *sctr = sctr.wrapping_add(1);
         let td = e.argmax_token_device(&pb, n_vocab)?;
-        e.dtoh_u32_one(&td)?
+        crate::check_token(e.dtoh_u32_one(&td)?, n_vocab)?
     } else {
         // REJECT at slot m: token ~ norm(max(0, p_m - q_m)); p row m's stats come from the
         // gathered set (rows 0..nq-1 cover every reject slot). Under penalties the column
@@ -1375,7 +1376,8 @@ pub(crate) fn dspark_accept_sampled(
                 )?;
             }
         }
-        e.dtoh_u32(&tok_d)?[0]
+        // the residual's fallback gives TOKEN_NONE for a row with no finite value
+        crate::check_token(e.dtoh_u32(&tok_d)?[0], n_vocab)?
     };
     Ok((m, next))
 }
@@ -3945,6 +3947,7 @@ impl crate::hybrid::HybridModel {
             while m < vt - 1 && block[m + 1] as usize == vam[m] as usize {
                 m += 1;
             }
+            crate::check_tokens(&vam[..=m], n_vocab)?;
             attempted += vt - 1;
             accepted += m;
             out.push(last);
@@ -4635,6 +4638,7 @@ impl crate::hybrid::HybridModel {
                 }
                 _ => {
                     let m = dspark_accept_prefix(&cand, &vam, vt);
+                    crate::check_tokens(&vam[..=m], n_vocab)?;
                     (m, vam[m])
                 }
             };
@@ -7071,6 +7075,7 @@ impl crate::hybrid::HybridModel {
             }
             _ => {
                 let m = dspark_accept_prefix(&cand, &vam, vt);
+                crate::check_tokens(&vam[..=m], n_vocab)?;
                 (m, vam[m])
             }
         };

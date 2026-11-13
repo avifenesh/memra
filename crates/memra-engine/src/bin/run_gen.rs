@@ -677,7 +677,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 // Keep the ordinary host argmax cost inside teacher-forced A/B windows; only the
                 // token fed into the next decode step changes.
-                let greedy = argmax(&logits) as u32;
+                let greedy = memra_engine::check_token(argmax(&logits) as u32, logits.len())?;
                 // SAMPLED CHAIN: the chunk's LAST id was drawn on device, and re-deriving it
                 // here with argmax would silently make one token in every chunk greedy — a
                 // mixed stream that still calls itself sampled. Take the chain's own id.

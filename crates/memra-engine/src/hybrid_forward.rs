@@ -26430,7 +26430,7 @@ impl HybridModel {
             g.launch()?;
             e.stream().synchronize()?;
             let ringh = e.dtoh_u32(&ring)?;
-            next = ringh[(cache.pos - ring_base) % RING];
+            next = crate::check_token(ringh[(cache.pos - ring_base) % RING], n_vocab)?;
             cache.pos += 1;
             for kvl in cache.kv.iter_mut().filter_map(|k| k.as_mut()) {
                 kvl.len += 1;

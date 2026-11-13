@@ -33386,6 +33386,14 @@ fn advance_sample_emit(
             }
         },
     };
+    // A row with no finite logit has no token (memra_engine::TOKEN_NONE): this request fails
+    // with that reason, its batch peers go on.
+    if let Err(err) = memra_engine::check_token(next, lm.model.output.out_features()) {
+        s.errored = true;
+        let _ =
+            s.tx.send(Event::Error(EngineError::engine(err.to_string())));
+        return (false, None);
+    }
     if let Some(reason) = stop_token_reason(next, &s.stop_token_ids) {
         finish(s, reason);
         return (false, None);
@@ -35765,6 +35773,7 @@ fn step_session(
         }
         (None, None) => sample_glm5_tp_plain(engine, s)?,
     };
+    memra_engine::check_token(next, lm.model.output.out_features())?;
     if let Some(reason) = stop_token_reason(next, &s.stop_token_ids) {
         finish(s, reason);
         return Ok(false);

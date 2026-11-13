@@ -1,0 +1,130 @@
+========= COMPUTE-SANITIZER
+
+running 7 tests
+test bf16_row_gather_of_an_id_past_the_table_is_a_nan_row ... ok
+test device_argmax_matches_host_and_gives_token_none_without_a_candidate ... ok
+test embed_gather_of_an_id_past_the_table_is_a_nan_row ... ========= Program hit CUDA_ERROR_NOT_FOUND (error 500) due to "named symbol not found" on CUDA API call to cuModuleGetFunction.
+=========     Saved host backtrace up to driver entry point at error
+=========         Host Frame: _RNvNtNtCs3ZuWBeofeYY_6cudarc6driver3sys19cuModuleGetFunction in mod.rs:14073 [0x1c46042] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvNtNtNtCs3ZuWBeofeYY_6cudarc6driver6result6module12get_function in result.rs:1181 [0x1c55d4d] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMs1s_NtNtNtCs3ZuWBeofeYY_6cudarc6driver4safe4coreNtB6_10CudaModule13load_function in core.rs:2217 [0x1c57ef5] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB5_6Engine4func in lib.rs:4994 [0x1af711c] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB5_6Engine19embed_gather_device in lib.rs:14851 [0x1aee16e] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvCs48TRCW7kgTh_20argmax_no_finite_gpus_49embed_gather_of_an_id_past_the_table_is_a_nan_row in argmax_no_finite_gpu.rs:149 [0x1aa6005] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvCs48TRCW7kgTh_20argmax_no_finite_gpu49embed_gather_of_an_id_past_the_table_is_a_nan_row0B3_ in argmax_no_finite_gpu.rs:134 [0x1aa2516] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvYNCNvCs48TRCW7kgTh_20argmax_no_finite_gpu49embed_gather_of_an_id_past_the_table_is_a_nan_row0INtNtNtCs4NRVxsYgnAr_4core3ops8function6FnOnceuE9call_onceB6_ in function.rs:250 [0x1aa2095] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvCs6jw1aKtzRha_4test28___rust_begin_short_backtraceINtNtCs4NRVxsYgnAr_4core6result6ResultuNtNtCscdodAO9FK5_5alloc6string6StringEFEBQ_EB2_ in lib.rs:724 [0x1aa9d3a] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvCs6jw1aKtzRha_4test8run_test0B3_ in lib.rs:668 [0x1ab75b4] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvNtNtCs2AWtUsOyxgP_3std3sys9backtrace28___rust_begin_short_backtraceNCNvCs6jw1aKtzRha_4test8run_tests_0uEB1b_ in backtrace.rs:166 [0x1ab0ec3] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNSNvYNCINvNtNtCs2AWtUsOyxgP_3std6thread9lifecycle15spawn_uncheckedNCNvCs6jw1aKtzRha_4test8run_tests_0uEs_0INtNtNtCs4NRVxsYgnAr_4core3ops8function6FnOnceuE9call_once6vtableB17_ in function.rs:250 [0x1aba631] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvNvMs0_NtNtNtCs2AWtUsOyxgP_3std3sys6thread4unixNtB7_6Thread3new12thread_start in unix.rs:118 [0x1c9345e] in argmax_no_finite_gpu-new
+=========         Host Frame: start_thread in pthread_create.c:454 [0xa3df9] in libc.so.6
+=========         Host Frame: __clone3 in clone3.S:78 [0x1375cb] in libc.so.6
+========= 
+========= Program hit CUDA_ERROR_NOT_FOUND (error 500) due to "named symbol not found" on CUDA API call to cuModuleGetFunction.
+=========     Saved host backtrace up to driver entry point at error
+=========         Host Frame: _RNvNtNtCs3ZuWBeofeYY_6cudarc6driver3sys19cuModuleGetFunction in mod.rs:14073 [0x1c46042] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvNtNtNtCs3ZuWBeofeYY_6cudarc6driver6result6module12get_function in result.rs:1181 [0x1c55d4d] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMs1s_NtNtNtCs3ZuWBeofeYY_6cudarc6driver4safe4coreNtB6_10CudaModule13load_function in core.rs:2217 [0x1c57ef5] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB7_6Engine4func0B7_ in lib.rs:4995 [0x1b1b4a7] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvMNtCs4NRVxsYgnAr_4core6resultINtB3_6ResultNtNtNtNtCs3ZuWBeofeYY_6cudarc6driver4safe4core12CudaFunctionNtNtBO_6result11DriverErrorE7or_elseB1G_NCNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB2s_6Engine4func0EB2s_ in result.rs:1565 [0x1b1904b] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB5_6Engine4func in lib.rs:4995 [0x1af716f] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB5_6Engine19embed_gather_device in lib.rs:14851 [0x1aee16e] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvCs48TRCW7kgTh_20argmax_no_finite_gpus_49embed_gather_of_an_id_past_the_table_is_a_nan_row in argmax_no_finite_gpu.rs:149 [0x1aa6005] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvCs48TRCW7kgTh_20argmax_no_finite_gpu49embed_gather_of_an_id_past_the_table_is_a_nan_row0B3_ in argmax_no_finite_gpu.rs:134 [0x1aa2516] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvYNCNvCs48TRCW7kgTh_20argmax_no_finite_gpu49embed_gather_of_an_id_past_the_table_is_a_nan_row0INtNtNtCs4NRVxsYgnAr_4core3ops8function6FnOnceuE9call_onceB6_ in function.rs:250 [0x1aa2095] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvCs6jw1aKtzRha_4test28___rust_begin_short_backtraceINtNtCs4NRVxsYgnAr_4core6result6ResultuNtNtCscdodAO9FK5_5alloc6string6StringEFEBQ_EB2_ in lib.rs:724 [0x1aa9d3a] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvCs6jw1aKtzRha_4test8run_test0B3_ in lib.rs:668 [0x1ab75b4] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvNtNtCs2AWtUsOyxgP_3std3sys9backtrace28___rust_begin_short_backtraceNCNvCs6jw1aKtzRha_4test8run_tests_0uEB1b_ in backtrace.rs:166 [0x1ab0ec3] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNSNvYNCINvNtNtCs2AWtUsOyxgP_3std6thread9lifecycle15spawn_uncheckedNCNvCs6jw1aKtzRha_4test8run_tests_0uEs_0INtNtNtCs4NRVxsYgnAr_4core3ops8function6FnOnceuE9call_once6vtableB17_ in function.rs:250 [0x1aba631] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvNvMs0_NtNtNtCs2AWtUsOyxgP_3std3sys6thread4unixNtB7_6Thread3new12thread_start in unix.rs:118 [0x1c9345e] in argmax_no_finite_gpu-new
+=========         Host Frame: start_thread in pthread_create.c:454 [0xa3df9] in libc.so.6
+=========         Host Frame: __clone3 in clone3.S:78 [0x1375cb] in libc.so.6
+========= 
+========= Program hit CUDA_ERROR_NOT_FOUND (error 500) due to "named symbol not found" on CUDA API call to cuModuleGetFunction.
+=========     Saved host backtrace up to driver entry point at error
+=========         Host Frame: _RNvNtNtCs3ZuWBeofeYY_6cudarc6driver3sys19cuModuleGetFunction in mod.rs:14073 [0x1c46042] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvNtNtNtCs3ZuWBeofeYY_6cudarc6driver6result6module12get_function in result.rs:1181 [0x1c55d4d] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMs1s_NtNtNtCs3ZuWBeofeYY_6cudarc6driver4safe4coreNtB6_10CudaModule13load_function in core.rs:2217 [0x1c57ef5] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB7_6Engine4funcs_0B7_ in lib.rs:4996 [0x1b1b687] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvMNtCs4NRVxsYgnAr_4core6resultINtB3_6ResultNtNtNtNtCs3ZuWBeofeYY_6cudarc6driver4safe4core12CudaFunctionNtNtBO_6result11DriverErrorE7or_elseB1G_NCNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB2s_6Engine4funcs_0EB2s_ in result.rs:1565 [0x1b1940b] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB5_6Engine4func in lib.rs:4996 [0x1af71c2] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB5_6Engine19embed_gather_device in lib.rs:14851 [0x1aee16e] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvCs48TRCW7kgTh_20argmax_no_finite_gpus_49embed_gather_of_an_id_past_the_table_is_a_nan_row in argmax_no_finite_gpu.rs:149 [0x1aa6005] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvCs48TRCW7kgTh_20argmax_no_finite_gpu49embed_gather_of_an_id_past_the_table_is_a_nan_row0B3_ in argmax_no_finite_gpu.rs:134 [0x1aa2516] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvYNCNvCs48TRCW7kgTh_20argmax_no_finite_gpu49embed_gather_of_an_id_past_the_table_is_a_nan_row0INtNtNtCs4NRVxsYgnAr_4core3ops8function6FnOnceuE9call_onceB6_ in function.rs:250 [0x1aa2095] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvCs6jw1aKtzRha_4test28___rust_begin_short_backtraceINtNtCs4NRVxsYgnAr_4core6result6ResultuNtNtCscdodAO9FK5_5alloc6string6StringEFEBQ_EB2_ in lib.rs:724 [0x1aa9d3a] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvCs6jw1aKtzRha_4test8run_test0B3_ in lib.rs:668 [0x1ab75b4] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvNtNtCs2AWtUsOyxgP_3std3sys9backtrace28___rust_begin_short_backtraceNCNvCs6jw1aKtzRha_4test8run_tests_0uEB1b_ in backtrace.rs:166 [0x1ab0ec3] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNSNvYNCINvNtNtCs2AWtUsOyxgP_3std6thread9lifecycle15spawn_uncheckedNCNvCs6jw1aKtzRha_4test8run_tests_0uEs_0INtNtNtCs4NRVxsYgnAr_4core3ops8function6FnOnceuE9call_once6vtableB17_ in function.rs:250 [0x1aba631] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvNvMs0_NtNtNtCs2AWtUsOyxgP_3std3sys6thread4unixNtB7_6Thread3new12thread_start in unix.rs:118 [0x1c9345e] in argmax_no_finite_gpu-new
+=========         Host Frame: start_thread in pthread_create.c:454 [0xa3df9] in libc.so.6
+=========         Host Frame: __clone3 in clone3.S:78 [0x1375cb] in libc.so.6
+========= 
+ok
+test embed_gather_rows_keeps_in_table_rows_and_nans_the_rest ... ========= Program hit CUDA_ERROR_NOT_FOUND (error 500) due to "named symbol not found" on CUDA API call to cuModuleGetFunction.
+=========     Saved host backtrace up to driver entry point at error
+=========         Host Frame: _RNvNtNtCs3ZuWBeofeYY_6cudarc6driver3sys19cuModuleGetFunction in mod.rs:14073 [0x1c46042] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvNtNtNtCs3ZuWBeofeYY_6cudarc6driver6result6module12get_function in result.rs:1181 [0x1c55d4d] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMs1s_NtNtNtCs3ZuWBeofeYY_6cudarc6driver4safe4coreNtB6_10CudaModule13load_function in core.rs:2217 [0x1c57ef5] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB5_6Engine4func in lib.rs:4994 [0x1af711c] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB5_6Engine17embed_gather_rows in lib.rs:14977 [0x1aec85b] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvCs48TRCW7kgTh_20argmax_no_finite_gpus_55embed_gather_rows_keeps_in_table_rows_and_nans_the_rest in argmax_no_finite_gpu.rs:185 [0x1aa7b8d] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvCs48TRCW7kgTh_20argmax_no_finite_gpu55embed_gather_rows_keeps_in_table_rows_and_nans_the_rest0B3_ in argmax_no_finite_gpu.rs:177 [0x1aa2616] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvYNCNvCs48TRCW7kgTh_20argmax_no_finite_gpu55embed_gather_rows_keeps_in_table_rows_and_nans_the_rest0INtNtNtCs4NRVxsYgnAr_4core3ops8function6FnOnceuE9call_onceB6_ in function.rs:250 [0x1aa2115] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvCs6jw1aKtzRha_4test28___rust_begin_short_backtraceINtNtCs4NRVxsYgnAr_4core6result6ResultuNtNtCscdodAO9FK5_5alloc6string6StringEFEBQ_EB2_ in lib.rs:724 [0x1aa9d3a] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvCs6jw1aKtzRha_4test8run_test0B3_ in lib.rs:668 [0x1ab75b4] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvNtNtCs2AWtUsOyxgP_3std3sys9backtrace28___rust_begin_short_backtraceNCNvCs6jw1aKtzRha_4test8run_tests_0uEB1b_ in backtrace.rs:166 [0x1ab0ec3] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNSNvYNCINvNtNtCs2AWtUsOyxgP_3std6thread9lifecycle15spawn_uncheckedNCNvCs6jw1aKtzRha_4test8run_tests_0uEs_0INtNtNtCs4NRVxsYgnAr_4core3ops8function6FnOnceuE9call_once6vtableB17_ in function.rs:250 [0x1aba631] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvNvMs0_NtNtNtCs2AWtUsOyxgP_3std3sys6thread4unixNtB7_6Thread3new12thread_start in unix.rs:118 [0x1c9345e] in argmax_no_finite_gpu-new
+=========         Host Frame: start_thread in pthread_create.c:454 [0xa3df9] in libc.so.6
+=========         Host Frame: __clone3 in clone3.S:78 [0x1375cb] in libc.so.6
+========= 
+========= Program hit CUDA_ERROR_NOT_FOUND (error 500) due to "named symbol not found" on CUDA API call to cuModuleGetFunction.
+=========     Saved host backtrace up to driver entry point at error
+=========         Host Frame: _RNvNtNtCs3ZuWBeofeYY_6cudarc6driver3sys19cuModuleGetFunction in mod.rs:14073 [0x1c46042] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvNtNtNtCs3ZuWBeofeYY_6cudarc6driver6result6module12get_function in result.rs:1181 [0x1c55d4d] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMs1s_NtNtNtCs3ZuWBeofeYY_6cudarc6driver4safe4coreNtB6_10CudaModule13load_function in core.rs:2217 [0x1c57ef5] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB7_6Engine4func0B7_ in lib.rs:4995 [0x1b1b4a7] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvMNtCs4NRVxsYgnAr_4core6resultINtB3_6ResultNtNtNtNtCs3ZuWBeofeYY_6cudarc6driver4safe4core12CudaFunctionNtNtBO_6result11DriverErrorE7or_elseB1G_NCNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB2s_6Engine4func0EB2s_ in result.rs:1565 [0x1b1904b] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB5_6Engine4func in lib.rs:4995 [0x1af716f] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB5_6Engine17embed_gather_rows in lib.rs:14977 [0x1aec85b] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvCs48TRCW7kgTh_20argmax_no_finite_gpus_55embed_gather_rows_keeps_in_table_rows_and_nans_the_rest in argmax_no_finite_gpu.rs:185 [0x1aa7b8d] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvCs48TRCW7kgTh_20argmax_no_finite_gpu55embed_gather_rows_keeps_in_table_rows_and_nans_the_rest0B3_ in argmax_no_finite_gpu.rs:177 [0x1aa2616] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvYNCNvCs48TRCW7kgTh_20argmax_no_finite_gpu55embed_gather_rows_keeps_in_table_rows_and_nans_the_rest0INtNtNtCs4NRVxsYgnAr_4core3ops8function6FnOnceuE9call_onceB6_ in function.rs:250 [0x1aa2115] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvCs6jw1aKtzRha_4test28___rust_begin_short_backtraceINtNtCs4NRVxsYgnAr_4core6result6ResultuNtNtCscdodAO9FK5_5alloc6string6StringEFEBQ_EB2_ in lib.rs:724 [0x1aa9d3a] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvCs6jw1aKtzRha_4test8run_test0B3_ in lib.rs:668 [0x1ab75b4] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvNtNtCs2AWtUsOyxgP_3std3sys9backtrace28___rust_begin_short_backtraceNCNvCs6jw1aKtzRha_4test8run_tests_0uEB1b_ in backtrace.rs:166 [0x1ab0ec3] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNSNvYNCINvNtNtCs2AWtUsOyxgP_3std6thread9lifecycle15spawn_uncheckedNCNvCs6jw1aKtzRha_4test8run_tests_0uEs_0INtNtNtCs4NRVxsYgnAr_4core3ops8function6FnOnceuE9call_once6vtableB17_ in function.rs:250 [0x1aba631] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvNvMs0_NtNtNtCs2AWtUsOyxgP_3std3sys6thread4unixNtB7_6Thread3new12thread_start in unix.rs:118 [0x1c9345e] in argmax_no_finite_gpu-new
+=========         Host Frame: start_thread in pthread_create.c:454 [0xa3df9] in libc.so.6
+=========         Host Frame: __clone3 in clone3.S:78 [0x1375cb] in libc.so.6
+========= 
+========= Program hit CUDA_ERROR_NOT_FOUND (error 500) due to "named symbol not found" on CUDA API call to cuModuleGetFunction.
+=========     Saved host backtrace up to driver entry point at error
+=========         Host Frame: _RNvNtNtCs3ZuWBeofeYY_6cudarc6driver3sys19cuModuleGetFunction in mod.rs:14073 [0x1c46042] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvNtNtNtCs3ZuWBeofeYY_6cudarc6driver6result6module12get_function in result.rs:1181 [0x1c55d4d] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMs1s_NtNtNtCs3ZuWBeofeYY_6cudarc6driver4safe4coreNtB6_10CudaModule13load_function in core.rs:2217 [0x1c57ef5] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB7_6Engine4funcs_0B7_ in lib.rs:4996 [0x1b1b687] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvMNtCs4NRVxsYgnAr_4core6resultINtB3_6ResultNtNtNtNtCs3ZuWBeofeYY_6cudarc6driver4safe4core12CudaFunctionNtNtBO_6result11DriverErrorE7or_elseB1G_NCNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB2s_6Engine4funcs_0EB2s_ in result.rs:1565 [0x1b1940b] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB5_6Engine4func in lib.rs:4996 [0x1af71c2] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvMsg_Cs8zvP8RVA9RS_12memra_engineNtB5_6Engine17embed_gather_rows in lib.rs:14977 [0x1aec85b] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvCs48TRCW7kgTh_20argmax_no_finite_gpus_55embed_gather_rows_keeps_in_table_rows_and_nans_the_rest in argmax_no_finite_gpu.rs:185 [0x1aa7b8d] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvCs48TRCW7kgTh_20argmax_no_finite_gpu55embed_gather_rows_keeps_in_table_rows_and_nans_the_rest0B3_ in argmax_no_finite_gpu.rs:177 [0x1aa2616] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvYNCNvCs48TRCW7kgTh_20argmax_no_finite_gpu55embed_gather_rows_keeps_in_table_rows_and_nans_the_rest0INtNtNtCs4NRVxsYgnAr_4core3ops8function6FnOnceuE9call_onceB6_ in function.rs:250 [0x1aa2115] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvCs6jw1aKtzRha_4test28___rust_begin_short_backtraceINtNtCs4NRVxsYgnAr_4core6result6ResultuNtNtCscdodAO9FK5_5alloc6string6StringEFEBQ_EB2_ in lib.rs:724 [0x1aa9d3a] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNCNvCs6jw1aKtzRha_4test8run_test0B3_ in lib.rs:668 [0x1ab75b4] in argmax_no_finite_gpu-new
+=========         Host Frame: _RINvNtNtCs2AWtUsOyxgP_3std3sys9backtrace28___rust_begin_short_backtraceNCNvCs6jw1aKtzRha_4test8run_tests_0uEB1b_ in backtrace.rs:166 [0x1ab0ec3] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNSNvYNCINvNtNtCs2AWtUsOyxgP_3std6thread9lifecycle15spawn_uncheckedNCNvCs6jw1aKtzRha_4test8run_tests_0uEs_0INtNtNtCs4NRVxsYgnAr_4core3ops8function6FnOnceuE9call_once6vtableB17_ in function.rs:250 [0x1aba631] in argmax_no_finite_gpu-new
+=========         Host Frame: _RNvNvMs0_NtNtNtCs2AWtUsOyxgP_3std3sys6thread4unixNtB7_6Thread3new12thread_start in unix.rs:118 [0x1c9345e] in argmax_no_finite_gpu-new
+=========         Host Frame: start_thread in pthread_create.c:454 [0xa3df9] in libc.so.6
+=========         Host Frame: __clone3 in clone3.S:78 [0x1375cb] in libc.so.6
+========= 
+ok
+test host_argmax_without_a_finite_logit_is_token_none ... ok
+test prob_of_an_id_past_the_row_is_nan ... ok
+test trim_map_keeps_an_id_past_the_map_as_token_none ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.48s
+
+========= ERROR SUMMARY: 6 errors

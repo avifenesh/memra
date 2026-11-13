@@ -1,0 +1,15 @@
+
+running 1 test
+test bf16_row_gather_of_an_id_past_the_table_is_a_nan_row ... 
+thread 'bf16_row_gather_of_an_id_past_the_table_is_a_nan_row' (1085397) panicked at crates/memra-engine/tests/argmax_no_finite_gpu.rs:284:32:
+called `Result::unwrap()` on an `Err` value: DriverError(CUDA_ERROR_ILLEGAL_ADDRESS, "an illegal memory access was encountered")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    bf16_row_gather_of_an_id_past_the_table_is_a_nan_row
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.25s
+

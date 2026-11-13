@@ -106,3 +106,6 @@ research/prime-tail-cap-20261113/cpu*/*.log -text whitespace=-blank-at-eol,-blan
 research/prime-tail-cap-20261113/cpu*/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
 research/prime-tail-cap-20261113/gates*/*.log -text whitespace=-blank-at-eol,-blank-at-eof
 research/prime-tail-cap-20261113/variant2/*.patch -text whitespace=-blank-at-eol,-blank-at-eof
+
+# Raw GPU test transcripts (libtest and compute-sanitizer output whitespace) of the no-finite-logit fix.
+research/argmax-no-finite-20261113/*/** -text whitespace=-blank-at-eol,-blank-at-eof

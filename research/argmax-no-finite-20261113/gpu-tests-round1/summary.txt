@@ -1,0 +1,10 @@
+old  host_argmax_without_a_finite_logit_is_token_none rc=101
+old  device_argmax_matches_host_and_gives_token_none_without_a_candidate rc=0
+old  embed_gather_of_an_id_past_the_table_is_a_nan_row rc=101
+old  embed_gather_rows_keeps_in_table_rows_and_nans_the_rest rc=101
+old  prob_of_an_id_past_the_row_is_nan rc=101
+old  trim_map_keeps_an_id_past_the_map_as_token_none rc=101
+old  bf16_row_gather_of_an_id_past_the_table_is_a_nan_row rc=101
+new  all rc=0
+new  memcheck rc=99
+========= ERROR SUMMARY: 6 errors

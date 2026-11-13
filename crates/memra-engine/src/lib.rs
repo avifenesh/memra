@@ -2992,6 +2992,41 @@ pub use pinned_host::{PinnedHostArena, PinnedHostBuf};
 /// x 256 threads = 65536 threads covering the 248K-vocab scan in ~4 strided loads/thread.
 pub const ARGMAX_NB: usize = 256;
 
+/// The id the device argmax (`argmax_partial_f32` + `argmax_final_f32`) writes when a logits row
+/// has no candidate: every value is NaN or -inf. It is never a vocabulary id. The device embed
+/// gather turns it (and any id past its table) into a NaN row instead of reading past the table,
+/// and `check_token` turns it into an error where the host reads the id.
+pub const TOKEN_NONE: u32 = memra_sampling::TOKEN_NONE;
+
+/// A token id read back from the device, refused when it is not a vocabulary id: the argmax found
+/// no finite logit (`TOKEN_NONE`), or an id at or past `n_vocab`.
+pub fn check_token(tok: u32, n_vocab: usize) -> Result<u32, Box<dyn std::error::Error>> {
+    if (tok as usize) < n_vocab {
+        return Ok(tok);
+    }
+    if tok == TOKEN_NONE {
+        return Err(format!(
+            "argmax found no finite logit (every one of {n_vocab} is NaN or -inf): the forward \
+             produced non-finite logits"
+        )
+        .into());
+    }
+    Err(format!("token id {tok} is outside the vocabulary of {n_vocab}").into())
+}
+
+/// `check_token` over every id of a slice.
+pub fn check_tokens(toks: &[u32], n_vocab: usize) -> Result<(), Box<dyn std::error::Error>> {
+    for &t in toks {
+        check_token(t, n_vocab)?;
+    }
+    Ok(())
+}
+
+/// Rows of a resident embed table: the device gather's bound.
+fn embed_table_rows(embd: &CudaSlice<u8>, row_bytes: usize) -> i64 {
+    (embd.len() / row_bytes.max(1)) as i64
+}
+
 unsafe extern "C" {
     /// FA3 v10 shim (cu/fa3_prefill.cu): TMA-swizzled wgmma FA, fresh causal hd256.
     fn memra_fa3_prefill(
@@ -6164,9 +6199,11 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let (nc, ix) = (ncols as i32, idx as i32);
+        // bf16 rows of `ncols`: the kernel's bound on the token id
+        let nr = (table.len() / (2 * ncols).max(1)) as i64;
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
-        b.arg(table).arg(tok).arg(&ix).arg(dst).arg(&nc);
+        b.arg(table).arg(tok).arg(&ix).arg(dst).arg(&nc).arg(&nr);
         unsafe {
             b.launch(cfg)?;
         }
@@ -11039,9 +11076,10 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let ii = idx as i32;
+        let ml = map.len() as i32;
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
-        b.arg(buf).arg(map).arg(&ii);
+        b.arg(buf).arg(map).arg(&ii).arg(&ml);
         unsafe {
             b.launch(cfg)?;
         }
@@ -14718,6 +14756,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let (ne, qt, rb) = (n_embd as i32, qtype, row_bytes as i64);
+        let nr = embed_table_rows(embd, row_bytes);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(embd)
@@ -14725,7 +14764,8 @@ impl Engine {
             .arg(x_out)
             .arg(&ne)
             .arg(&qt)
-            .arg(&rb);
+            .arg(&rb)
+            .arg(&nr);
         unsafe {
             b.launch(cfg)?;
         }
@@ -14816,6 +14856,7 @@ impl Engine {
             shared_mem_bytes: 0,
         };
         let (ne, qt, rb) = (n_embd as i32, qtype, row_bytes as i64);
+        let nr = embed_table_rows(embd, row_bytes);
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(embd)
@@ -14823,7 +14864,8 @@ impl Engine {
             .arg(&mut x)
             .arg(&ne)
             .arg(&qt)
-            .arg(&rb);
+            .arg(&rb)
+            .arg(&nr);
         unsafe {
             b.launch(cfg)?;
         }
@@ -14934,6 +14976,7 @@ impl Engine {
         }
         let f = self.func("embed_gather_u32_t");
         let (ne, qt, rb) = (n_embd as i32, qtype, row_bytes as i64);
+        let nr = embed_table_rows(embd, row_bytes);
         let __s_b = self.gpu.stream();
         for (row0, rows) in crate::hybrid_forward::grid_yz_row_blocks(t) {
             let cfg = LaunchConfig {
@@ -14951,7 +14994,8 @@ impl Engine {
                 .arg(&ne)
                 .arg(&qt)
                 .arg(&rb)
-                .arg(&ti);
+                .arg(&ti)
+                .arg(&nr);
             unsafe {
                 b.launch(cfg)?;
             }
