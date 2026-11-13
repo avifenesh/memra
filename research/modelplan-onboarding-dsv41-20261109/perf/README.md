@@ -1235,9 +1235,14 @@ to 8 rows stays inside kernels at two and at four ranks (the push limit above), 
 of up to 8 rows never calls `copy_peer` and runs the build's decode as before. The large gathers
 of a prefill (and of wider calls) go through it, as does every gather under
 `MEMRA_TP_TRANSPORT=peer-pull`. So the pair's decode A B B A has nothing to measure; the prefill
-is measured below. The byte gates below cover the pair (the copy crossing cards) and one GB10
-card (four ranks, no copy crossing cards); the four-card byte gate (`dsv41-gate tp --devices
-0,1,2,3`, default and peer-pull) runs in the next four-card window.
+is measured below. The byte gates below cover the pair (the copy crossing cards), one GB10 card
+(four ranks, no copy crossing cards) and four cards. The four-card byte gate (`dsv41-gate tp
+--devices 0,1,2,3`, the needle capture, layers 1, 2, 14, 20, 21 and 24, two decode steps;
+2026-11-13, the cards held 15:36:05 to 15:37:35, `receipts/gate4-kpc-seam`) passes on two builds:
+`seam-kpc` (`4eb63a1052`, the branch as pushed then) and `seam-kpcR` (kpc on the route's review fix
+`5e71a5929b`, whose `tp.rs` is the pushed route's), default 916 / 0 and peer-pull 914 / 0 each. In
+those runs the push-gather stress finds 0 words differing over 20,000 gathers, and its word-first
+control is caught.
 
 Measured after the fix (2026-11-12 and 13; the cards at their set limits, 250 W on cards 0 and 1,
 280 W on 2 and 3; no run flagged for a slowdown, no page-cache drop inside a run):
