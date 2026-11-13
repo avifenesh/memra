@@ -2434,6 +2434,9 @@ __global__ void __launch_bounds__(32) v41_gemv_ffma_ring_kernel(const v41_bf* __
 }
 
 // the ring kernel takes the call: up to 8 rows, outputs up to 4096 wide, K whole stages, 16-byte rows
+// The ring kernel is one warp a block: lane = row x V41_SMF_NC + column, so every row the dispatch admits
+// (m <= V41_SM_MAX) must fit the 32 lanes.
+static_assert(V41_SM_MAX * V41_SMF_NC <= 32, "v41_gemv_ffma_ring_kernel maps rows x columns onto one warp");
 static bool v41_ring_fits(const void* a, long lda, const void* b, long ldb, int m, int n, int k) {
     return m >= 1 && m <= V41_SM_MAX && n <= 4096 && k % V41_RING_KC == 0 && lda % 8 == 0 && ldb % 8 == 0 &&
            ((uintptr_t)a | (uintptr_t)b) % 16 == 0;
