@@ -1832,23 +1832,13 @@ pub(crate) fn single_device_prime_ranges(
     }
 }
 
-/// The step35 batched GEMM prime's schedule (`prime_cache_overlaid_inner`'s GEMM entry): ranges
-/// of `PRIME_CHUNK_MAX_TOKENS` rows whatever the chunk geometry, with a trailing remainder shorter
-/// than `PRIME_MIN_T` folded into the last range whatever its width (memra#1275 tracks that
-/// overrun). Admission reads the same schedule (`PrimeWorkspaceShape::call_rows`).
-pub(crate) fn step_gemm_prime_ranges(t: usize) -> Vec<(usize, usize)> {
-    let width = crate::cache::PRIME_CHUNK_MAX_TOKENS;
-    let mut ranges = Vec::with_capacity(t.div_ceil(width));
-    let mut start = 0usize;
-    while start < t {
-        let mut end = (start + width).min(t);
-        if t - end > 0 && t - end < PRIME_MIN_T {
-            end = t;
-        }
-        ranges.push((start, end));
-        start = end;
-    }
-    ranges
+/// The step35 batched GEMM prime's schedule (`prime_cache_overlaid_inner`'s GEMM entry): fixed
+/// ranges at `PRIME_CHUNK_MAX_TOKENS` under the model's ring contract, whatever the chunk
+/// geometry. It used to fold a tail shorter than `PRIME_MIN_T` into the last call whatever its
+/// width, so a cold prompt of k * 4,096 + 1 to 15 tokens made a last call of up to 4,111 rows
+/// (memra#1275, the class of memra#1258).
+pub(crate) fn step_gemm_prime_ranges(t: usize, ring_on: bool) -> Vec<(usize, usize)> {
+    fixed_prime_chunk_ranges(t, crate::cache::PRIME_CHUNK_MAX_TOKENS, ring_on)
 }
 
 fn prime_chunk_work(prefix: usize, total: usize) -> u128 {
@@ -1970,8 +1960,8 @@ fn widest_prime_call(ranges: &[(usize, usize)]) -> usize {
 enum CallRowsSchedule {
     /// [`prime_chunk_ranges_under`] with this kind, GDN grid and ring contract.
     Prime(PrimeScheduleKind, Option<usize>, bool),
-    /// [`step_gemm_prime_ranges`].
-    StepGemm,
+    /// [`step_gemm_prime_ranges`] under this ring contract.
+    StepGemm(bool),
 }
 
 impl CallRowsSchedule {
@@ -1985,7 +1975,7 @@ impl CallRowsSchedule {
             Self::Prime(kind, grid, ring_on) => {
                 widest_prime_call(&prime_chunk_ranges_under(t, kind, grid, ring_on))
             }
-            Self::StepGemm => widest_prime_call(&step_gemm_prime_ranges(t)),
+            Self::StepGemm(ring_on) => widest_prime_call(&step_gemm_prime_ranges(t, ring_on)),
         }
     }
 
@@ -2007,7 +1997,7 @@ impl CallRowsSchedule {
             Self::Prime(PrimeScheduleKind::Explicit(parsed), _, ring_on) => {
                 explicit_prime_chunk(parsed, ring_on) + PRIME_MIN_T
             }
-            Self::Prime(PrimeScheduleKind::SingleDevice, _, _) | Self::StepGemm => {
+            Self::Prime(PrimeScheduleKind::SingleDevice, _, _) | Self::StepGemm(_) => {
                 cap + PRIME_MIN_T
             }
         }
@@ -2070,8 +2060,8 @@ pub fn prime_call_rows_max(t: usize, n_layers: usize, gdn_grid: bool, ring_on: b
 }
 
 /// The running maximum of [`step_gemm_prime_ranges`]' widest call.
-pub(crate) fn step_gemm_call_rows_max(t: usize) -> usize {
-    running_widest_call(t, CallRowsSchedule::StepGemm)
+pub(crate) fn step_gemm_call_rows_max(t: usize, ring_on: bool) -> usize {
+    running_widest_call(t, CallRowsSchedule::StepGemm(ring_on))
 }
 
 /// The mHC prime schedule: how `prime_cache_hyper` SPLITS one prompt into calls.
@@ -2228,7 +2218,7 @@ impl PrimeWorkspaceShape {
         let grid = self.gdn_grid.then(Engine::gdn_chunk_size);
         let mut rows = prime_call_rows_max_under(prompt_rows, kind, grid, self.swa_ring);
         if self.step_gemm {
-            rows = rows.max(step_gemm_call_rows_max(prompt_rows));
+            rows = rows.max(step_gemm_call_rows_max(prompt_rows, self.swa_ring));
         }
         rows
     }
@@ -6490,9 +6480,11 @@ impl HybridModel {
             let width = crate::cache::PRIME_CHUNK_MAX_TOKENS;
             let mut hiddens = e.uninit(t * n_embd)?;
             let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
-            // A trailing chunk below the walk floor folds into the previous one; every chunk
-            // this entry sees must clear PRIME_MIN_T on its own.
-            for (chunk_idx, (start, end)) in step_gemm_prime_ranges(t).into_iter().enumerate() {
+            // Every chunk clears PRIME_MIN_T and none is wider than the cap (memra#1275).
+            for (chunk_idx, (start, end)) in step_gemm_prime_ranges(t, self.swa_ring_on())
+                .into_iter()
+                .enumerate()
+            {
                 let mut out = self.step35_prime_cache_batch(
                     e,
                     &[&tokens[start..end]],
@@ -32239,6 +32231,53 @@ mod prime_chunk_schedule_tests {
         );
     }
 
+    /// Every call of a schedule: in order, covering 0..t, within `cap` rows, and (when there is
+    /// more than one) at least `PRIME_MIN_T` rows.
+    fn assert_calls_within(ranges: &[(usize, usize)], t: usize, cap: usize, what: &str) {
+        let mut at = 0usize;
+        for &(s, e) in ranges {
+            assert_eq!(s, at, "{what}: {ranges:?}");
+            assert!(e > s && e - s <= cap, "{what}: {ranges:?}");
+            assert!(
+                e - s >= PRIME_MIN_T || ranges.len() == 1,
+                "{what}: {ranges:?}"
+            );
+            at = e;
+        }
+        assert_eq!(at, t, "{what}: {ranges:?}");
+    }
+
+    #[test]
+    fn no_step_gemm_prime_call_exceeds_the_chunk_cap() {
+        // memra#1275: the step35 batched GEMM prime folded a sub-PRIME_MIN_T tail into its last
+        // call whatever its width, so a cold prompt of k * cap + 1 to 15 tokens made a call of up
+        // to cap + 15 rows. Its schedule now splits that tail like every other prime, with the
+        // ring on and off.
+        let cap = crate::cache::PRIME_CHUNK_MAX_TOKENS;
+        for ring_on in [false, true] {
+            for t in PRIME_MIN_T..=4 * cap + 64 {
+                let ranges = super::step_gemm_prime_ranges(t, ring_on);
+                assert_calls_within(&ranges, t, cap, &format!("t={t} ring={ring_on}"));
+                assert_eq!(ranges, fixed_prime_chunk_ranges(t, cap, ring_on));
+            }
+        }
+        // Ring on, the shape of step-3.7's plan: 4,100 tokens prime as 4,084 + 16 rows.
+        assert_eq!(
+            sizes(&super::step_gemm_prime_ranges(4100, true)),
+            vec![4084, 16]
+        );
+        // The GEMM entry walks this schedule, not a loop of its own (the old loop's fold set
+        // `end` to `t`). Needles are built so this test's own text cannot match them.
+        let src = include_str!("hybrid_forward.rs");
+        let open = concat!("if gemm_entry && ", "!tp_prefill {");
+        let close = concat!("[gemm-prime] ", "ENGAGED");
+        let at = src.find(open).expect("the GEMM entry");
+        let body = &src[at..at + src[at..].find(close).expect("its receipt")];
+        assert!(body.contains(concat!("step_gemm_prime_", "ranges(t, self.swa_ring_on())")));
+        assert!(!body.contains(concat!("end = ", "t;")), "{body}");
+        assert!(!body.contains(concat!("while start ", "< t")), "{body}");
+    }
+
     #[test]
     fn prime_admission_charges_the_widest_call() {
         // memra#1276: the admission charge's call rows were `min(prompt, chunk)`, but several
@@ -32289,7 +32328,8 @@ mod prime_chunk_schedule_tests {
                                 widest(&prime_chunk_ranges_under(t, kind, grid, swa_ring))
                             };
                             if step_gemm && t >= PRIME_MIN_T {
-                                calls = calls.max(widest(&super::step_gemm_prime_ranges(t)));
+                                calls =
+                                    calls.max(widest(&super::step_gemm_prime_ranges(t, swa_ring)));
                             }
                             running = running.max(calls);
                             let rows = s.call_rows_under(t, kind);
@@ -32334,16 +32374,13 @@ mod prime_chunk_schedule_tests {
                 }
             }
         }
-        // The step35 GEMM prime's fold: a 4,100-token prompt makes one 4,100-row call
-        // (memra#1275), and on a pipeline placement its calls are 4,096 rows.
+        // The step35 GEMM prime splits its tail (memra#1275): no call is wider than the cap, on
+        // one device or a pipeline placement.
         assert_eq!(
             shape(false, true, true).call_rows_under(4_100, K::SingleDevice),
-            4_100
+            cap
         );
-        assert_eq!(
-            shape(false, true, true).call_rows_under(16_384, pp2),
-            cap + PRIME_MIN_T - 1
-        );
+        assert_eq!(shape(false, true, true).call_rows_under(16_384, pp2), cap);
     }
 
     #[test]
