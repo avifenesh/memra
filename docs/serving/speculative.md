@@ -283,13 +283,15 @@ session. Cost on Qwen3.5-9B NVFP4 + MTP, one RTX 5090, 256-token greedy, N=3 (20
   ([POOLED-MEMBER-CLOSE.md](../decisions/POOLED-MEMBER-CLOSE.md)).
 - **A pooled verify fits the device** (memra#1266). Each member's verify holds its replay-free
   checkpoint (about 157 MB per draft column on Qwen3.8-27B) until its round finishes, so a pooled
-  forward holds all of them at once. A member joins a forward only while the whole forward fits the
-  allocatable memory (driver or unified-allocatable free plus the pool's cached blocks) less the
-  256 MiB launch floor; the rest verify after it, bitwise the same tokens. Before the cohorts step,
-  when that reading cannot fund the largest member's round, unleased prefix entries and then parked
-  sessions are evicted. `/metrics` counts both (`spec_pool_capped_forwards_total`,
-  `spec_cohort_reclaims_total`); the lines are `[spec-pool] pooled MTP verify capped by memory` and
-  `[spec-pool] pre-cohort reclaim`
+  forward holds all of them at once. A member joins a forward only while the whole forward, the
+  FA partial pool's growth at its width and a 256 MiB margin fit the allocatable memory (driver
+  or unified-allocatable free plus the pool's cached blocks); the rest verify after it, bitwise
+  the same tokens, and plain riders join within the same reading. Before the cohorts step, when
+  that reading cannot fund the largest member's round on top of every member's burst-entry
+  snapshot, unleased prefix entries and then parked sessions are evicted. `/metrics` counts the
+  capped forwards and rider rows (`spec_pool_capped_forwards_total`,
+  `spec_pool_capped_rider_rows_total`), the reclaims (`spec_cohort_reclaims_total`) and the
+  passes that stayed short (`spec_cohort_short_total`)
   ([POOLED-VERIFY-MEMORY-CAP.md](../decisions/POOLED-VERIFY-MEMORY-CAP.md)).
 
 The burst size stays 32. `128` measured 8.4% more throughput at c=1 and trails 32 by one round
