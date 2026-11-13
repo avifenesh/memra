@@ -8880,13 +8880,23 @@ fn pp_boundary_slot_token_cap(
     }
     // The widest call of any prime up to the context cap (memra#1276): a prime of a shorter
     // stretch can make a wider call than the whole context's schedule does.
-    let single = memra_engine::hybrid_forward::prime_call_rows_max(
+    let mut single = memra_engine::hybrid_forward::prime_call_rows_max(
         context_cap,
         n_trunk,
         model.gdn_prime_grid_on(),
         model.swa_ring_on(),
     )
     .max(decode_wave_cap);
+    // The step35 GEMM prime walks its own schedule (`step_gemm_prime_ranges`): calls of the cap
+    // from a prompt of one chunk on (memra#1275). The pipeline schedule above makes narrower
+    // calls until the context is about 28k tokens (2,405 rows at a 16,384-token context), and
+    // with a ring plan it never passes the cap (memra#1299), so the slot takes both.
+    if model.uses_sliding_gated_moe_program() {
+        single = single.max(memra_engine::hybrid_forward::step_gemm_call_rows_max(
+            context_cap,
+            model.swa_ring_on(),
+        ));
+    }
     // Concat-prime transports the sum of all selected rows through one boundary payload. The
     // scheduler caps each member by PRIME_BATCH_MAX_T and the group by PRIME_BATCH.
     let batch_members = std::env::var("MEMRA_PRIME_BATCH")
@@ -41654,6 +41664,22 @@ mod tests {
             !r(120, 100, true, true),
             "an entry longer than the prompt is not a prefix"
         );
+    }
+
+    #[test]
+    fn pp_boundary_slot_covers_the_step35_gemm_prime() {
+        // memra#1299 review: the step35 GEMM prime walks its own schedule, whose calls are the
+        // cap wide, while the pipeline schedule's are narrower at a short context and at most
+        // the cap with a ring plan, so the slot reads both.
+        let src = include_str!("worker.rs");
+        let at = src
+            .find("\nfn pp_boundary_slot_token_cap(")
+            .expect("the slot cap");
+        let body = &src[at..at + src[at..].find("\n}\n").expect("its end")];
+        let flat: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+        assert!(flat.contains(
+            "ifmodel.uses_sliding_gated_moe_program(){single=single.max(memra_engine::hybrid_forward::step_gemm_call_rows_max(context_cap"
+        ));
     }
 
     #[test]
