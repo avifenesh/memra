@@ -1,0 +1,96 @@
+{
+ "start_temp_c": 61,
+ "arms": {
+  "A": {
+   "samples": 236,
+   "sw_thermal": 2,
+   "share": 0.0085
+  },
+  "B": {
+   "samples": 220,
+   "sw_thermal": 2,
+   "share": 0.0091
+  }
+ },
+ "worst_arm_share": 0.0091,
+ "power": {
+  "profile": "performance",
+  "off_ac_or_profile_seconds": 0,
+  "first": []
+ },
+ "bankable": true,
+ "runs": [
+  {
+   "run": "01-A-ornith-ai_ornith-1.5-35b-a3b.log",
+   "samples": 60,
+   "sw_thermal": 0,
+   "temp_max": 75
+  },
+  {
+   "run": "02-B-ornith-ai_ornith-1.5-35b-a3b.log",
+   "samples": 42,
+   "sw_thermal": 0,
+   "temp_max": 76
+  },
+  {
+   "run": "03-B-ornith-ai_ornith-1.5-35b-a3b.log",
+   "samples": 43,
+   "sw_thermal": 0,
+   "temp_max": 75
+  },
+  {
+   "run": "04-A-ornith-ai_ornith-1.5-35b-a3b.log",
+   "samples": 43,
+   "sw_thermal": 0,
+   "temp_max": 77
+  },
+  {
+   "run": "05-A-ornith-ai_ornith-1.5-35b-a3b.log",
+   "samples": 39,
+   "sw_thermal": 0,
+   "temp_max": 77
+  },
+  {
+   "run": "06-B-ornith-ai_ornith-1.5-35b-a3b.log",
+   "samples": 30,
+   "sw_thermal": 0,
+   "temp_max": 77
+  },
+  {
+   "run": "07-A-qwen_qwen3.8-27b.log",
+   "samples": 38,
+   "sw_thermal": 0,
+   "temp_max": 84
+  },
+  {
+   "run": "08-B-qwen_qwen3.8-27b.log",
+   "samples": 41,
+   "sw_thermal": 0,
+   "temp_max": 85
+  },
+  {
+   "run": "09-B-qwen_qwen3.8-27b.log",
+   "samples": 42,
+   "sw_thermal": 0,
+   "temp_max": 84
+  },
+  {
+   "run": "10-A-qwen_qwen3.8-27b.log",
+   "samples": 32,
+   "sw_thermal": 0,
+   "temp_max": 87
+  },
+  {
+   "run": "11-A-qwen_qwen3.8-27b.log",
+   "samples": 24,
+   "sw_thermal": 2,
+   "temp_max": 87
+  },
+  {
+   "run": "12-B-qwen_qwen3.8-27b.log",
+   "samples": 22,
+   "sw_thermal": 2,
+   "temp_max": 87
+  }
+ ]
+}

@@ -1,0 +1,102 @@
+{
+ "start_temp_c": 54,
+ "arms": {
+  "A": {
+   "samples": 198,
+   "sw_thermal": 0,
+   "share": 0.0
+  },
+  "B": {
+   "samples": 177,
+   "sw_thermal": 0,
+   "share": 0.0
+  }
+ },
+ "worst_arm_share": 0.0,
+ "power": {
+  "profile": "performance",
+  "off_ac_or_profile_seconds": 19,
+  "first": [
+   "08:29:31\t0\tperformance",
+   "08:29:32\t1\tbalanced",
+   "08:29:33\t1\tquiet",
+   "08:29:34\t1\tbalanced",
+   "08:29:35\t1\tbalanced"
+  ]
+ },
+ "bankable": false,
+ "runs": [
+  {
+   "run": "01-A-ornith-ai_ornith-1.5-35b-a3b.log",
+   "samples": 52,
+   "sw_thermal": 0,
+   "temp_max": 70
+  },
+  {
+   "run": "02-B-ornith-ai_ornith-1.5-35b-a3b.log",
+   "samples": 34,
+   "sw_thermal": 0,
+   "temp_max": 72
+  },
+  {
+   "run": "03-B-ornith-ai_ornith-1.5-35b-a3b.log",
+   "samples": 31,
+   "sw_thermal": 0,
+   "temp_max": 71
+  },
+  {
+   "run": "04-A-ornith-ai_ornith-1.5-35b-a3b.log",
+   "samples": 36,
+   "sw_thermal": 0,
+   "temp_max": 73
+  },
+  {
+   "run": "05-A-ornith-ai_ornith-1.5-35b-a3b.log",
+   "samples": 30,
+   "sw_thermal": 0,
+   "temp_max": 74
+  },
+  {
+   "run": "06-B-ornith-ai_ornith-1.5-35b-a3b.log",
+   "samples": 31,
+   "sw_thermal": 0,
+   "temp_max": 75
+  },
+  {
+   "run": "07-A-qwen_qwen3.8-27b.log",
+   "samples": 36,
+   "sw_thermal": 0,
+   "temp_max": 82
+  },
+  {
+   "run": "08-B-qwen_qwen3.8-27b.log",
+   "samples": 34,
+   "sw_thermal": 0,
+   "temp_max": 83
+  },
+  {
+   "run": "09-B-qwen_qwen3.8-27b.log",
+   "samples": 23,
+   "sw_thermal": 0,
+   "temp_max": 82
+  },
+  {
+   "run": "10-A-qwen_qwen3.8-27b.log",
+   "samples": 20,
+   "sw_thermal": 0,
+   "temp_max": 86
+  },
+  {
+   "run": "11-A-qwen_qwen3.8-27b.log",
+   "samples": 24,
+   "sw_thermal": 0,
+   "temp_max": 85
+  },
+  {
+   "run": "12-B-qwen_qwen3.8-27b.log",
+   "samples": 24,
+   "sw_thermal": 0,
+   "temp_max": 84
+  }
+ ]
+}

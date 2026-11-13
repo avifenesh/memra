@@ -64,7 +64,14 @@ origin/main 7a43ac1e56 fails (an all-NaN row samples token 0).
 `gpu-tests-old-round2/`: the two round-2 tests on origin/main fail too (the sampled-spec gather of
 `TOKEN_NONE` faults with `CUDA_ERROR_ILLEGAL_ADDRESS`; the residual fallback returns token 0).
 
-The sm_120a and sm_121a push-gate records are in the evidence commit that follows.
+Push-gate records (tested commit 2342f0de3e37 on 202e1411fe, in
+`research/release-qualification/cells/`):
+
+| record | result |
+|---|---|
+| `2342f0de3e37-gb10-battery-perf-serving` (b23d) | pass; perf flat: Ornith -0.15%, Qwen3.8-27B 0.00% |
+| `2342f0de3e37-rtx5090-battery-serving` | pass (profile=performance) |
+| `2342f0de3e37-rtx5090-perf` | pass; perf flat: Ornith +0.01%, Qwen3.8-27B -0.04% (profile=performance, CPU cap 100/110 W, sw thermal slowdown 0.9% per arm; the takes that did not count are in its `-perf-conditions` README) |
 
 CPU: `cargo clippy` (engine, server, sampling: lib, bins, tests) clean; memra-engine lib 743 passed;
 memra-server, memra-kv, memra-tier 1643 passed; memra-sampling 35 passed. The sampler's frozen
