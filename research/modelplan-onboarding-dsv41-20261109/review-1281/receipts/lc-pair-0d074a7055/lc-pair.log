@@ -1,0 +1,7 @@
+[dsv41-tp] ranks=2 devices=[0, 1] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+dsv41-run: 1 sequence(s), longest prompt 128745, 40 layers, chunk 8192, 2 rank(s) on devices [0, 1], 0 resident, transport device-push
+dsv41-run: pass 0: 1 calls in 41.8s (weights 40.8s, 40 layer loads)
+dsv41-run: decode forward 1: 1 sequence(s), 12.3s (weights 12.2s)
+dsv41-run: decode forward 2: 1 sequence(s), 12.2s (weights 12.1s)
+needle8400: greedy, 3 steps, done
+dsv41-run: 3 forwards, 3 calls, 120 layer loads (65.1s), blocks 0.7s, total 67.8s

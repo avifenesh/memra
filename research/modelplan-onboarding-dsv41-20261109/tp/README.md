@@ -79,9 +79,12 @@ selection rows 2 KiB x (N-1)/N at prefill; summed over the ranks, each term time
 > bit-for-bit trunk run included. The route's default at two to eight ranks is now `device-push`
 > (gathers inside kernels below the push limit, kept blocks stored by the producer above it,
 > `../perf/`), and the per-layer gates on that program run at short context only
-> (`perf/receipts/gates-n3`, `gates-k3`). No current gate covers long context on the pair. The
-> command for one, on the head's default program, is at the end of [Commands](#commands); it has
-> not run. Until it does, the 128,745-token row below is evidence for the peer-pull program only.
+> (`perf/receipts/gates-n3`, `gates-k3`). The 128,745-token row below is evidence for the peer-pull
+> program. The long-context pair gate on the head's own program has since run (2026-11-13, the
+> landing head `0d074a7055`, the command at the end of [Commands](#commands)): `dsv41-run` on the
+> 128,745-token needle, one rank against two ranks on the pair (`transport=device-push`, issue
+> parallel), greedy to the end id at step 3; all 6 value files (tokens, top-32 ids and values, lse,
+> argmax, full logits) byte-identical (`../review-1281/receipts/lc-pair-0d074a7055`).
 
 The route takes the fleet flag `MEMRA_TP_TRANSPORT` (`tp_transport.rs`) and follows its laws:
 `peer-pull` copies on the consumer's stream after the producer's publication event, the producer
@@ -227,7 +230,7 @@ python3 ../gpu/trunk_vs_tape.py TAPES/needle1200.pt trunk2-needle1200.f32 --json
 dsv41-gate idx CKPT captures/needle4800 --layer 20 --devices 0,1 --slice 2048 --reps 3
 dsv41-gate idx CKPT captures/needle4800 --layer 20 --devices 0,1 --last 1 --reps 5
 python3 rank_bytes.py CKPT 1 2 4
-# NOT RUN YET (2026-11-13): the long-context pair gate on the head's default program (device-push
+# Ran 2026-11-13 at 0d074a7055 (../review-1281/receipts/lc-pair-0d074a7055): the long-context pair gate on the head's default program (device-push
 # at two ranks, nothing named): the 128,745-token prompt, then 8 greedy decode steps, one card
 # against the pair, every step file byte for byte. One two-card lease (both cards, both box locks).
 echo "needle8400 IDS/needle8400.prompt.i32" > lc-cases.txt

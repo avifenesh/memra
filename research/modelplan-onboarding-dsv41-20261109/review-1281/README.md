@@ -2,7 +2,7 @@
 
 Verdict: every finding of both independent reviews of #1281 is fixed on the route branch, rebased onto main
 `c2d2388bd0`, except the re-verification of the support record on one RTX PRO 6000 (M1) and a long-context gate on
-the pair, which need wrx cards and are written down below, not run. The cross-stream use-after-free in
+the pair, which needed wrx cards; both ran on 2026-11-13 at the landing head `0d074a7055` ([At the landing head](#at-the-landing-head)). The cross-stream use-after-free in
 `ensure_rows` was real and deterministic under a fault injection: the gate case below fails 12 of its 12 byte
 checks on the tree before the fix (every carried row of the grown buffers is the injected fill) and passes all 12
 after it, on two captures. The GB10 gate set of the fixed head is in [Gates](#gates).
@@ -204,10 +204,14 @@ faults, no dead reason. CPU on the build box at the head: the workspace's releas
 --all-targets -- -D warnings` and fmt pass; memra-engine's dsv41 lib tests 18 of 18, memra-server's lib tests 1,246
 passed, 14 ignored (the route-death test now covers the panic and the probe's lost transport).
 
-## Not run here
+## At the landing head
 
-- M1, the support record on one RTX PRO 6000: it pins `87bbe3bfc8`, before batched decode, device argmax and k3's
-  kernels. It needs `memra model verify serve --against deepseek_v41` (and CheckpointParity on the residency) on one
-  PRO 6000 at the landing head, then the record's commit, evidence and notes re-pinned; it runs in a wrx window.
-- A long-context gate on the pair: every two-card long-context result ran the peer-pull program (`tp/README.md`
-  carries the banner and the command, not run).
+Both items this review left for wrx cards ran on 2026-11-13 at the landing head `0d074a7055` (the route, kpc, r2 and emb,
+with main `d6ae4e525d` merged):
+
+- M1, the support record on one RTX PRO 6000 (before: pinned `87bbe3bfc8`, before batched decode, device argmax and
+  k3's kernels): `memra model verify checkpoint` and `verify serve --against deepseek_v41` on one card at the head,
+  `verified=Checkpoint` and `verified=Serve` (`../serve/receipts/verify-0d074a7055/`); the record now pins `0d074a7055`.
+- The long-context gate on the pair, on the head's own program (`transport=device-push`): `dsv41-run` on the
+  128,745-token needle, one rank against two, greedy to the end id at step 3, all 6 value files byte-identical
+  (`receipts/lc-pair-0d074a7055`; `../tp/README.md` carries the command and the banner).
