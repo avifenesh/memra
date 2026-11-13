@@ -10198,6 +10198,45 @@ pub fn spec_cohort_short_total() -> u64 {
     SPEC_COHORT_SHORT.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Phase (a) passes whose first reading was short of `pre_cohort_need` and whose reading after
+/// the fence (the in-flight frees settled) funded it, so nothing was evicted (memra#1266).
+static SPEC_COHORT_FENCE_FUNDED: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+pub fn spec_cohort_fence_funded_total() -> u64 {
+    SPEC_COHORT_FENCE_FUNDED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// MEMRA_SPEC_COHORT_NEED_PAD_MB=N (diagnostic door, test use only): adds N MiB to every
+/// `pre_cohort_need`, so the pre-cohort reclaim's ladder runs on hardware where the cohort's
+/// real need is funded (memra#1266 review 2: the receipts exercise its rungs and its short
+/// count). Unset or unparsable: 0, the default and the only serving setting. One line names it
+/// at the first padded need.
+fn spec_cohort_need_pad_bytes() -> usize {
+    static PAD: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *PAD.get_or_init(|| {
+        let mb = std::env::var("MEMRA_SPEC_COHORT_NEED_PAD_MB")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(0);
+        if mb > 0 {
+            eprintln!(
+                "[spec-pool] MEMRA_SPEC_COHORT_NEED_PAD_MB={mb}: every pre-cohort need is {mb} MiB \
+                 higher (test door, never a serving setting)"
+            );
+        }
+        mb << 20
+    })
+}
+
+/// The pre-cohort reclaim's reading (memra#1266 review 2): the allocatable reading less the
+/// admitted sessions' unbuilt booking (memra#1255's `unbuilt_session_booking`, 0 where it does
+/// not apply). Those sessions build their state in this tick, so the bytes they were admitted on
+/// are not the cohort's.
+fn reclaim_reading(raw: Option<usize>, booked: usize) -> Option<usize> {
+    raw.map(|r| r.saturating_sub(booked))
+}
+
 /// What the cohort's verify needs funded before the cohorts step (memra#1266), from each
 /// member's `(verify round bytes, burst-entry snapshot bytes)`: the largest member's round (the
 /// memory cap verifies the others after it), every member's snapshot (each burst takes its own
@@ -10222,6 +10261,8 @@ struct SpecRoundReclaim {
     parked_sessions: usize,
     /// Short of the need after both rungs.
     still_short: bool,
+    /// Short on the first reading, funded on the reading after the fence: nothing evicted.
+    fence_funded: bool,
     /// The device could not be read: the ladder did nothing.
     unreadable: bool,
 }
@@ -10261,6 +10302,7 @@ fn spec_round_reclaim_ladder(
         }
         Some(r) if r >= need => {
             out.after = r;
+            out.fence_funded = true;
             return out;
         }
         Some(r) => r,
@@ -10287,8 +10329,12 @@ fn spec_round_reclaim_ladder(
 /// 2,226 MiB of unleased prefix entries and two parked sessions stayed resident until the
 /// teardown. The ladder (`spec_round_reclaim_ladder`): unleased prefix entries first, oldest
 /// first, on unified memory too (`prefix_yield_to_reserve`), then parked sessions, globally
-/// oldest first. One receipt line per reclaim; a reclaim that stays short prints its line (the
-/// first 16, then every 256th) and counts it. An unreadable device does nothing.
+/// oldest first; under on-demand KV planes each parked eviction reaps the graveyard before the
+/// next reading, or the evicted planes would not show. The reading leaves out the admitted
+/// sessions' unbuilt booking (`booked`, `reclaim_reading`), and the prefix rung, which reads the
+/// device itself, covers the need on top of it. One receipt line per reclaim; a reclaim that
+/// stays short prints its line (the first 16, then every 256th) and counts it; a pass the fence
+/// alone funded counts too. An unreadable device does nothing.
 #[allow(clippy::too_many_arguments)]
 fn reclaim_for_spec_round<P: ParkedEntryAge, S: ParkedEntryAge, D: ParkedEntryAge>(
     engine: &Engine,
@@ -10299,22 +10345,32 @@ fn reclaim_for_spec_round<P: ParkedEntryAge, S: ParkedEntryAge, D: ParkedEntryAg
     dspark_reuse: &mut HashMap<PoolKey, Vec<D>>,
     metrics: &mut ReuseMetrics,
     need: usize,
+    booked: usize,
 ) -> SpecRoundReclaim {
     let out = spec_round_reclaim_ladder(
         need,
-        &mut || memra_engine::spec::pooled_verify_reading(engine),
+        &mut || reclaim_reading(memra_engine::spec::pooled_verify_reading(engine), booked),
         &mut || synchronize_model_devices(engine, loaded, "pre-cohort reclaim"),
         &mut |need| {
             prefix_yield_to_reserve(
                 engine,
                 loaded,
                 px,
-                need,
+                need.saturating_add(booked),
                 "verify round of the cohort (pre-cohort reclaim)",
             )
         },
-        &mut || evict_oldest_parked(reuse, spec_reuse, dspark_reuse, metrics).is_some(),
+        &mut || {
+            let evicted = evict_oldest_parked(reuse, spec_reuse, dspark_reuse, metrics).is_some();
+            if evicted {
+                vmm_reap_for("pre-cohort reclaim");
+            }
+            evicted
+        },
     );
+    if out.fence_funded {
+        SPEC_COHORT_FENCE_FUNDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
     let Some(before) = out.before else {
         return out;
     };
@@ -25374,6 +25430,14 @@ pub fn run(
                     if let Some(need) =
                         pre_cohort_need(&members, memra_engine::spec::POOLED_VERIFY_MARGIN)
                     {
+                        // The admitted sessions that build their state in this tick hold their
+                        // charge on the reading until they do (memra#1255's booking, single
+                        // device only); the cohort cannot spend it.
+                        let booked = if is_multi_device_deployment(&loaded) {
+                            0
+                        } else {
+                            unbuilt_session_booking(&active, admit_memory_cfg.armed)
+                        };
                         let reclaim = reclaim_for_spec_round(
                             &engine,
                             &loaded,
@@ -25382,7 +25446,8 @@ pub fn run(
                             &mut spec_reuse,
                             &mut dspark_reuse,
                             &mut reuse_metrics,
-                            need,
+                            need.saturating_add(spec_cohort_need_pad_bytes()),
+                            booked,
                         );
                         n_prefix_headroom_evictions += reclaim.prefix_entries as u64;
                     }
@@ -57467,11 +57532,17 @@ mod tests {
         assert!(live.contains(
             "vmm_reap_for(\"batch-oom\"); let reports = trim_model_device_pools(engine, loaded, \"batch-oom\");"
         ));
-        // Every pool trim on a reclaim path follows its reap.
+        // memra#1266 review 2: the pre-cohort reclaim's parked rung reaps after each eviction,
+        // so the next reading sees the evicted planes.
+        assert!(live.contains(
+            "let evicted = evict_oldest_parked(reuse, spec_reuse, dspark_reuse, metrics).is_some(); if evicted { vmm_reap_for(\"pre-cohort reclaim\"); } evicted"
+        ));
+        // Every pool trim on a reclaim path follows its reap; the pre-cohort reclaim reaps
+        // between its evictions and trims nothing.
         assert_eq!(
             live.matches("vmm_reap_for(\"").count(),
-            3,
-            "the three reclaim paths"
+            4,
+            "the three reclaim paths and the pre-cohort reclaim"
         );
     }
 
@@ -61050,15 +61121,29 @@ mod pre_cohort_reclaim_1266_tests {
         parked: Vec<usize>,
         log: Vec<&'static str>,
         fences: usize,
+        /// What the fence settles: bytes in flight that the reading shows after it.
+        in_flight: usize,
     }
 
     fn run(f: &mut Fake, need: usize) -> SpecRoundReclaim {
+        run_booked(f, need, 0)
+    }
+
+    /// The ladder as `reclaim_for_spec_round` drives it: the reading less `booked`, and the
+    /// prefix rung (which reads the device itself) covering the need on top of the booking.
+    fn run_booked(f: &mut Fake, need: usize, booked: usize) -> SpecRoundReclaim {
         let f = std::cell::RefCell::new(f);
         spec_round_reclaim_ladder(
             need,
-            &mut || f.borrow().reading,
-            &mut || f.borrow_mut().fences += 1,
+            &mut || reclaim_reading(f.borrow().reading, booked),
+            &mut || {
+                let mut f = f.borrow_mut();
+                f.fences += 1;
+                let settled = std::mem::take(&mut f.in_flight);
+                f.reading = f.reading.map(|r| r + settled);
+            },
             &mut |need| {
+                let need = need + booked;
                 let mut f = f.borrow_mut();
                 f.log.push("prefix");
                 let r = f.reading.unwrap_or(0);
@@ -61088,6 +61173,7 @@ mod pre_cohort_reclaim_1266_tests {
             parked: parked.to_vec(),
             log: Vec::new(),
             fences: 0,
+            in_flight: 0,
         }
     }
 
@@ -61100,10 +61186,6 @@ mod pre_cohort_reclaim_1266_tests {
             (r.before, r.after, f.fences, f.log.len()),
             (None, 1_200, 0, 0)
         );
-        // Unreadable: nothing runs; the device's parked sessions stay.
-        let mut f = fake(None, 500, &[300]);
-        let r = run(&mut f, 1_000);
-        assert!(r.unreadable && f.log.is_empty() && f.parked.len() == 1);
         // The prefix rung covers the shortfall: no parked session goes.
         let mut f = fake(Some(700), 500, &[300]);
         let r = run(&mut f, 1_000);
@@ -61121,6 +61203,51 @@ mod pre_cohort_reclaim_1266_tests {
         let mut f = fake(Some(700), 0, &[]);
         let r = run(&mut f, 1_000);
         assert_eq!((r.before, r.after, r.still_short), (Some(700), 700, true));
+    }
+
+    /// An unreadable device does nothing: no fence, no rung, its parked sessions stay.
+    #[test]
+    fn an_unreadable_device_does_nothing() {
+        let mut f = fake(None, 500, &[300]);
+        let r = run(&mut f, 1_000);
+        assert!(r.unreadable);
+        assert_eq!((f.fences, f.log.len(), f.parked.len()), (0, 0, 1));
+    }
+
+    /// A first reading short of the need that the fence funds (the in-flight frees settle)
+    /// evicts nothing and says so (round 2's counter).
+    #[test]
+    fn a_reading_the_fence_funds_evicts_nothing() {
+        let mut f = fake(Some(900), 500, &[300]);
+        f.in_flight = 200;
+        let r = run(&mut f, 1_000);
+        assert!(r.fence_funded);
+        assert_eq!(
+            (r.before, r.after, f.fences, f.log.len()),
+            (None, 1_100, 1, 0)
+        );
+        // Funded on the first reading: not a fence-funded pass.
+        let mut f = fake(Some(1_100), 500, &[300]);
+        assert!(!run(&mut f, 1_000).fence_funded);
+    }
+
+    /// The reclaim reads without the admitted sessions' unbuilt booking (memra#1255): a device
+    /// reading 2,000 that owes 900 to a session the tick has not built funds 1,100, short of a
+    /// 1,300 need, and the prefix rung frees the rest on top of the booking.
+    #[test]
+    fn the_reclaim_reads_without_the_unbuilt_booking() {
+        assert_eq!(reclaim_reading(Some(2_000), 900), Some(1_100));
+        assert_eq!(reclaim_reading(Some(500), 900), Some(0));
+        assert_eq!(reclaim_reading(None, 900), None);
+        let mut f = fake(Some(2_000), 500, &[]);
+        assert_eq!(run(&mut f, 1_300).before, None, "unbooked, it is funded");
+        let mut f = fake(Some(2_000), 500, &[]);
+        let r = run_booked(&mut f, 1_300, 900);
+        assert_eq!(f.log, ["prefix"]);
+        assert_eq!(
+            (r.before, r.prefix_bytes, r.after, r.still_short),
+            (Some(1_100), 200, 1_300, false)
+        );
     }
 
     /// The census: the Cohorts pass funds the cohort's need before it forms the cohorts (after
@@ -61168,12 +61295,24 @@ mod pre_cohort_reclaim_1266_tests {
         ] {
             assert_eq!(count(needle), 1, "the Cohorts pass lost: {needle}");
         }
+        // The reading leaves out the unbuilt booking where it applies; the test door pads the
+        // need.
+        for needle in [
+            concat!(
+                "let booked = if is_multi_device_deployment(&loaded) { 0 } else { ",
+                "unbuilt_session_booking(&active, admit_memory_cfg.armed) };"
+            ),
+            "need.saturating_add(spec_cohort_need_pad_bytes()), booked, );",
+        ] {
+            assert_eq!(count(needle), 1, "the Cohorts pass lost: {needle}");
+        }
         let raw = &src[src.find("fn reclaim_for_spec_round<").expect("the reclaim")..];
         let body = squash(&raw[..raw.find("\n}\n").unwrap()]);
         let ladder = body.find("spec_round_reclaim_ladder(").unwrap();
         let read = body
-            .find("memra_engine::spec::pooled_verify_reading(engine)")
-            .expect("the allocatable reading");
+            .find("reclaim_reading(memra_engine::spec::pooled_verify_reading(engine), booked)")
+            .expect("the allocatable reading, less the booking");
+        assert!(body.contains("need.saturating_add(booked),"));
         let prefix = body.find("prefix_yield_to_reserve(").unwrap();
         let parked = body.find("evict_oldest_parked(").unwrap();
         assert!(ladder < read && read < prefix && prefix < parked);

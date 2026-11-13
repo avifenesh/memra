@@ -7752,6 +7752,11 @@ fn render_prometheus_metrics(
                 worker::spec_cohort_short_total(),
                 "Phase (a) passes that stayed short of the cohort's verify with nothing evictable left.",
             ),
+            (
+                "memra_spec_cohort_fence_funded_total",
+                worker::spec_cohort_fence_funded_total(),
+                "Phase (a) passes the fence alone funded: short on the first reading, funded once in-flight frees settled.",
+            ),
         ] {
             prometheus_header(&mut out, name, "counter", help);
             out.push_str(&format!("{name} {value}\n"));
@@ -8106,6 +8111,7 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
             json!(memra_engine::spec::mtp_pool_capped_rider_rows_total());
         body["spec_cohort_reclaims_total"] = json!(worker::spec_cohort_reclaims_total());
         body["spec_cohort_short_total"] = json!(worker::spec_cohort_short_total());
+        body["spec_cohort_fence_funded_total"] = json!(worker::spec_cohort_fence_funded_total());
         body["prefix_cache_seed_grid_refusals"] = json!(m.prefix_seed_grid_refusals);
         body["prefix_cache_restore_grid_refusals"] = json!(m.prefix_restore_grid_refusals);
         body["prefix_cache_tail_attaches"] = json!(m.prefix_tail_attaches);
