@@ -1,0 +1,16 @@
+1794595552.460756 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":20624703488,"synchronization_errors":[]}
+1794595552.721087 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794595602.952194 [spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794595618.830202 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":21027811328,"synchronization_errors":[]}
+1794595623.939754 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":20239273984,"synchronization_errors":[]}
+1794595623.939791 [admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+1794595623.939793 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 1536MB (static was 1536MB; measured 1214MB; probe kv charge 127MB, draft-state 34MB, drafted 87 accepted 34; [dev0 peak-mapped 19808MB rest-mapped 18432MB charged 161MB -> 1214MB]; 5.1s)
+1794595623.939797 [admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1794595623.939817 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794595623.939819 [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+1794595679.383087 [admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+1794595679.383116 [admission] request cost: model="q38" ctx=1607 path=spec = 31552 B/token x ctx + 473MB prefill-workspace + 0MB fixed = 524MB
+1794595679.401666 [admission] fixed residual high-water: model="q38" 314MB (observed 363MB at ctx 1551 path=spec)
+1794595685.029138 [admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+1794595685.029174 [admission] request cost: model="q38" ctx=260522 path=spec = 31552 B/token x ctx + 7119MB prefill-workspace + 314MB fixed = 15653MB
+1794595685.659617 [admission] fixed residual high-water: model="q38" 1021MB (observed 9239MB at ctx 260466 path=spec)

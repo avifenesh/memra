@@ -1,0 +1,9 @@
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 2m05s
+2026-11-13T21:00:12+02:00 fill2: before MemFree: 19815568 kB;MemAvailable: 100214352 kB;Cached: 81334688 kB;
+2026-11-13T21:00:28+02:00 fill2 done: MemFree: 1921168 kB;MemAvailable: 101072044 kB;Cached: 99308008 kB;
+2026-11-13T21:00:28+02:00 fill3: background reader 2439898 follows memra-server 2435945 (at most 900s)
+waitfor: gone 2435938 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
