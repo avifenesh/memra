@@ -2289,7 +2289,8 @@ pub enum ErrClass {
     /// peers. Only a driver error or a failed post-panic probe reaches the supervisor's
     /// respawn/exit ladder. -> 500 + `code: worker_fault`.
     WorkerFault,
-    /// The BOX is out of capacity (VRAM exhausted, step OOM past its park budget). -> 503,
+    /// The BOX is out of capacity (VRAM exhausted, step OOM past its park budget, an idle box
+    /// short of free memory for a request its post-load capacity holds, memra#1304). -> 503,
     /// not 429: "a 429 that a client cannot fix by waiting should not be a 429", and OpenAI
     /// itself serves overload as 503. This one honestly counts against uptime, because it is
     /// a request we failed to serve.
@@ -9242,8 +9243,22 @@ fn device_is_unified(engine: &Engine) -> bool {
 /// cache's allowed growth (budget minus resident) as committed, so overload queues or refuses
 /// instead of running the host out of memory. Discrete cards book nothing here (their separate
 /// pending-seed booking is unchanged).
-fn unified_prefix_growth_booking(unified: bool, budget: usize, resident: usize) -> usize {
-    if unified {
+///
+/// IDLE BOX (memra#1304): with no session active the booking is 0. It protects admitted sessions
+/// from the cache growing underneath them, and an idle box has none. Until the next admission
+/// decision the cache can grow only by the arrival's own entries, and every insert is clamped to
+/// live free memory less the driver headroom and the transient reserve (`unified_insert_budget`),
+/// the reserve admission charges the arrival itself; the next arrival finds a session active and
+/// books the whole growth again. Booking it on an idle box with an empty cache refused a 1k
+/// request at `MemAvailable` 1.8-2.0 GB (`available 0MB` against a half-pool budget) that the
+/// same box served with the cache off.
+fn unified_prefix_growth_booking(
+    unified: bool,
+    idle: bool,
+    budget: usize,
+    resident: usize,
+) -> usize {
+    if unified && !idle {
         budget.saturating_sub(resident)
     } else {
         0
@@ -21787,6 +21802,22 @@ pub fn run(
         &mut admission_costs,
         &health,
     );
+    // IDLE CAPACITY (memra#1304): the box at rest, read once the probe has trimmed its pools and
+    // before the first request. An idle box refuses with a 400 only a request this cannot hold.
+    let idle_capacity = read_idle_capacity(&engine, &loaded);
+    eprintln!(
+        "[admission] idle capacity (post-load, cache empty): {}",
+        idle_capacity
+            .iter()
+            .map(|c| format!(
+                "dev{} free {:.0}MB (pool used {:.0}MB)",
+                c.device,
+                c.free_bytes as f64 / 1e6,
+                c.pool_used_bytes as f64 / 1e6,
+            ))
+            .collect::<Vec<_>>()
+            .join("; "),
+    );
     let mut prime_policy = crate::prime_fairness::PrimePolicy::default();
 
     // ---- serving counters + engine-truth step stats (30s percentile window) ----
@@ -23253,10 +23284,12 @@ pub fn run(
                     0
                 };
                 let primary_device = engine.ctx().ordinal();
-                // On unified memory the cache's whole allowed growth is booked (it covers any
-                // pending seed, which can only grow the cache inside that budget).
+                // On unified memory the cache's whole allowed growth is booked while a session
+                // is active (it covers any pending seed, which can only grow the cache inside
+                // that budget); an idle box books none (memra#1304).
                 let unified_growth = unified_prefix_growth_booking(
                     device_is_unified(&engine),
+                    active.is_empty(),
                     prefix_cache_budget_bytes(),
                     px.total_bytes,
                 );
@@ -24113,6 +24146,9 @@ pub fn run(
                         active.is_empty(),
                         fundable,
                     );
+                    // A drained refusal's reading at the box's post-load capacity (memra#1304):
+                    // whether the request fits it, and its limiting free bytes.
+                    let mut idle_capacity_fit: Option<(bool, usize)> = None;
                     let drained = verdict == GateVerdict::Drain;
                     if drained {
                         // STALE-READ HONESTY (measured on the med-class cell): the
@@ -24168,6 +24204,31 @@ pub fn run(
                                 .map(book)
                                 .is_some_and(|h| h.sufficient(required_eager));
                         verdict = vram_gate_drained(captured_ok, eager_ok, draft_arm);
+                        if verdict == GateVerdict::Reject {
+                            // The same plans at the box's post-load capacity, unbooked: the cache
+                            // at zero, nothing else holding memory.
+                            let pool_used = engine.pool_reserved_used().1;
+                            let at_capacity = |h: AdmissionHeadroom| {
+                                h.at_idle_capacity(&idle_capacity, primary_device, pool_used)
+                            };
+                            let capacity = admission_headroom(
+                                &engine,
+                                &loaded,
+                                device_requirements.as_deref(),
+                            )
+                            .map(at_capacity);
+                            // It classifies the refusal only: the verdict stays Reject either way.
+                            let fits = capacity.as_ref().is_some_and(|c| c.sufficient(required))
+                                || (draft_arm == Some(DraftStateArm::EagerCapture)
+                                    && admission_headroom(
+                                        &engine,
+                                        &loaded,
+                                        requirements_eager.as_deref(),
+                                    )
+                                    .map(at_capacity)
+                                    .is_some_and(|c| c.sufficient(required_eager)));
+                            idle_capacity_fit = capacity.map(|c| (fits, c.limiting_free_bytes()));
+                        }
                         if matches!(verdict, GateVerdict::Admit | GateVerdict::AdmitEager) {
                             eprintln!(
                                 "[admission] reject averted: model={model_key:?} \
@@ -24195,8 +24256,9 @@ pub fn run(
                         );
                     } else if matches!(verdict, GateVerdict::Reject | GateVerdict::Defer) {
                         if verdict == GateVerdict::Reject {
-                            // NOTHING ELSE IS RUNNING, so this request does not fit the box at
-                            // ANY arrival rate, and its class is ContextLength, not RateLimit.
+                            // NOTHING ELSE IS RUNNING. A request that does not fit the box even at
+                            // its post-load capacity (the cache at zero, the full pool) does not
+                            // fit at ANY arrival rate: its class is ContextLength, not RateLimit.
                             // This branch used to answer `rate_limit_error` /
                             // `rate_limit_exceeded`, which tells a caller to back off and retry
                             // when backing off can never help: measured 2026-09-10 on a 5090,
@@ -24205,6 +24267,11 @@ pub fn run(
                             // doc above already draws this line ("a 429 that a client cannot fix
                             // by waiting should not be a 429"), and ContextLength is the
                             // machine-readable form clients branch on to summarize and retry.
+                            // A request that fits that capacity but not the reading now is short
+                            // of the moment's memory (host memory on unified memory, another
+                            // process on the card), which changes while the server sits idle:
+                            // a retryable 503 `overloaded` with Retry-After (memra#1304; on GB10
+                            // the 400 told a 1k request at MemAvailable 1.8 GB to shorten).
                             // The DEFER path below keeps RateLimit, correctly: there the box is
                             // busy and a later arrival really does fit.
                             // NAME THE LIMIT, from the admission model's own arithmetic and
@@ -24212,46 +24279,46 @@ pub fn run(
                             // could disagree with the one that just refused. The charge is
                             // linear in context at `bytes_per_token + ring_bytes_per_token`, so
                             // the largest admissible context is this request's context less the
-                            // overshoot divided by that slope. Stated as the model's own
-                            // estimate, which is what admission actually enforces.
+                            // overshoot of the post-load capacity divided by that slope. Stated
+                            // as the model's own estimate, which is what admission enforces.
+                            let available = headroom.limiting_free_bytes();
+                            let (fits_capacity, capacity) =
+                                idle_capacity_fit.unwrap_or((false, available));
                             let per_token = (bytes_per_token as u64)
                                 .saturating_add(ring_bytes_per_token as u64);
-                            let available = headroom.limiting_free_bytes() as u64;
-                            let fits = if per_token == 0 {
+                            let largest = if per_token == 0 {
                                 None
                             } else {
-                                let over = (required as u64).saturating_sub(available);
+                                let over = (required as u64).saturating_sub(capacity as u64);
                                 let shed = over.div_ceil(per_token);
                                 (admission_cap as u64).checked_sub(shed).map(|n| n as usize)
                             };
-                            eprintln!(
-                                "[admit-oom] capacity reject: model={model_key:?} ctx={} does not \
-                                 fit an IDLE box (available {:.0}MB{}) — HTTP 400 \
-                                 context_length_exceeded",
-                                admission_cap,
-                                headroom.limiting_free_bytes() as f64 / 1e6,
-                                match fits {
-                                    Some(n) => format!(", largest admissible context {n}"),
-                                    None => String::new(),
-                                },
-                            );
-                            fail_request(
-                                req,
-                                EngineError::context_length(match fits {
-                                    Some(n) => format!(
-                                        "request context {admission_cap} does not fit this \
-                                         model's available KV capacity on an idle server; the \
-                                         largest admissible context is {n} tokens. Retrying will \
-                                         not help: send a shorter prompt or a smaller max_tokens"
-                                    ),
-                                    None => format!(
-                                        "request context {admission_cap} does not fit this \
-                                         model's available KV capacity on an idle server. \
-                                         Retrying will not help: send a shorter prompt or a \
-                                         smaller max_tokens"
-                                    ),
-                                }),
-                            );
+                            if fits_capacity {
+                                eprintln!(
+                                    "[admit-oom] idle memory short: model={model_key:?} ctx={} \
+                                     fits the post-load capacity ({:.0}MB) but not an IDLE box's \
+                                     free memory now (available {:.0}MB, required {:.0}MB) — \
+                                     HTTP 503 overloaded, Retry-After",
+                                    admission_cap,
+                                    capacity as f64 / 1e6,
+                                    available as f64 / 1e6,
+                                    required as f64 / 1e6,
+                                );
+                            } else {
+                                eprintln!(
+                                    "[admit-oom] capacity reject: model={model_key:?} ctx={} does \
+                                     not fit an IDLE box (available {:.0}MB, post-load capacity \
+                                     {:.0}MB{}) — HTTP 400 context_length_exceeded",
+                                    admission_cap,
+                                    available as f64 / 1e6,
+                                    capacity as f64 / 1e6,
+                                    match largest {
+                                        Some(n) => format!(", largest admissible context {n}"),
+                                        None => String::new(),
+                                    },
+                                );
+                            }
+                            fail_request(req, idle_refusal(admission_cap, fits_capacity, largest));
                             continue;
                         }
                         // Pacing receipt: the defer path used to be SILENT, which is why the
@@ -29678,6 +29745,114 @@ impl AdmissionHeadroom {
             Self::Devices(_) => 0,
         }
     }
+
+    /// This reading with each device's free memory at its post-load capacity
+    /// (`idle_capacity_free`, memra#1304). `primary_pool_used` is the primary device's pool
+    /// reading now: a primary reading carries none of its own.
+    fn at_idle_capacity(
+        self,
+        capacity: &[IdleCapacityDevice],
+        primary_device: usize,
+        primary_pool_used: usize,
+    ) -> Self {
+        let boot = |device: usize| capacity.iter().find(|c| c.device == device);
+        match self {
+            Self::Primary {
+                free_bytes,
+                pool_cached_bytes,
+            } => Self::Primary {
+                free_bytes: idle_capacity_free(free_bytes, primary_pool_used, boot(primary_device)),
+                pool_cached_bytes,
+            },
+            Self::Devices(mut devices) => {
+                for device in &mut devices {
+                    device.free_bytes = idle_capacity_free(
+                        device.free_bytes,
+                        device.pool_used_bytes,
+                        boot(device.requirement.device),
+                    );
+                }
+                Self::Devices(devices)
+            }
+        }
+    }
+}
+
+/// IDLE CAPACITY (memra#1304): one model-owned device as the worker found it when its boot
+/// calibration finished: weights loaded, no session, the prefix cache empty, the pools trimmed.
+/// An idle box's refusal is a 400 `context_length_exceeded` only when the request does not fit
+/// this; otherwise the shortfall is the moment's (host memory, other processes, booked growth)
+/// and the refusal is a retryable 503.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IdleCapacityDevice {
+    device: usize,
+    /// The reading admission takes (`effective_free_bytes`: allocatable free plus the pool's
+    /// cached blocks).
+    free_bytes: usize,
+    /// The pool's live bytes then: what memra itself held at rest.
+    pool_used_bytes: usize,
+}
+
+/// Every model-owned device's idle capacity, read once after the boot calibration. A device
+/// whose reading fails is left out, and its refusals are judged on the reading at the time.
+fn read_idle_capacity(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+) -> Vec<IdleCapacityDevice> {
+    let mut devices = Vec::new();
+    for_each_device_engine(engine, loaded, &mut |device, owner| {
+        if let Some((free_bytes, _)) = effective_free_bytes(owner) {
+            devices.push(IdleCapacityDevice {
+                device,
+                free_bytes,
+                pool_used_bytes: owner.pool_reserved_used().1,
+            });
+        }
+    });
+    devices
+}
+
+/// One device's free memory at its post-load capacity (memra#1304): the boot reading less what
+/// memra itself has come to hold at rest since (pool bytes still live on an idle, drained box:
+/// graphs, learned state, a leased entry), and never below the reading now. With no boot reading
+/// it is the reading now.
+fn idle_capacity_free(
+    now_free: usize,
+    now_pool_used: usize,
+    boot: Option<&IdleCapacityDevice>,
+) -> usize {
+    boot.map_or(now_free, |boot| {
+        now_free.max(
+            boot.free_bytes
+                .saturating_sub(now_pool_used.saturating_sub(boot.pool_used_bytes)),
+        )
+    })
+}
+
+/// The refusal an idle, drained box gives a request it cannot hold now (memra#1304).
+/// `fits_capacity` says whether the request fits the box at its post-load capacity
+/// (`at_idle_capacity`); `largest` is the largest context that does, when the charge has a
+/// per-token slope. A request that fits is short only of the moment's memory, so it gets a
+/// retryable 503 (`Overloaded`, `Retry-After`); one that does not fit gets the 400
+/// `context_length_exceeded` naming the largest admissible context.
+fn idle_refusal(admission_cap: usize, fits_capacity: bool, largest: Option<usize>) -> EngineError {
+    if fits_capacity {
+        return EngineError::overloaded(format!(
+            "request context {admission_cap} fits this model's KV capacity but not the server's \
+             free memory right now; retry after the Retry-After delay"
+        ));
+    }
+    EngineError::context_length(match largest {
+        Some(n) => format!(
+            "request context {admission_cap} does not fit this model's KV capacity on an idle \
+             server; the largest admissible context is {n} tokens. Retrying will not help: send \
+             a shorter prompt or a smaller max_tokens"
+        ),
+        None => format!(
+            "request context {admission_cap} does not fit this model's KV capacity on an idle \
+             server. Retrying will not help: send a shorter prompt or a smaller max_tokens"
+        ),
+    })
 }
 
 /// FIRST-MESSAGE BOUNDARY (lane/moebatch-q35moe, 2026-08-21): the render-stable insert point
@@ -42179,15 +42354,20 @@ mod tests {
         // Unified memory: the cache may grow from resident up to its budget after admission, in
         // the same DRAM the sessions use, so that growth is booked as committed.
         use super::unified_prefix_growth_booking;
+        // A session active (the overload guard: the panel's eight sessions under a growing cache).
         assert_eq!(
-            unified_prefix_growth_booking(true, 52_253, 47_268),
+            unified_prefix_growth_booking(true, false, 52_253, 47_268),
             52_253 - 47_268
         );
-        assert_eq!(unified_prefix_growth_booking(true, 52_253, 0), 52_253);
+        assert_eq!(
+            unified_prefix_growth_booking(true, false, 52_253, 0),
+            52_253
+        );
         // A cache above its budget (a budget shrink) books nothing, never underflows.
-        assert_eq!(unified_prefix_growth_booking(true, 100, 150), 0);
+        assert_eq!(unified_prefix_growth_booking(true, false, 100, 150), 0);
         // Discrete cards book nothing here: their pending-seed booking is unchanged.
-        assert_eq!(unified_prefix_growth_booking(false, 52_253, 0), 0);
+        assert_eq!(unified_prefix_growth_booking(false, false, 52_253, 0), 0);
+        assert_eq!(unified_prefix_growth_booking(false, true, 52_253, 0), 0);
         // The admission site books pending seed plus the growth above it (= the larger of the two): a seed can only grow the cache
         // inside its budget, so on unified memory the growth covers it.
         let worker = include_str!("worker.rs");
@@ -42196,6 +42376,11 @@ mod tests {
         assert!(squashed.contains(
             "let pending_booked = pending_booked.saturating_add(unified_growth.saturating_sub(pending_seed));"
         ));
+        // The site passes the gate's own idle test (the one `vram_gate_first_read` drains on).
+        assert!(squashed.contains(
+            "let unified_growth = unified_prefix_growth_booking( device_is_unified(&engine), \
+             active.is_empty(), prefix_cache_budget_bytes(), px.total_bytes, );"
+        ));
         // Every production insert path takes the unified guard (the prompt-end tail attach,
         // memra#1233, included).
         assert_eq!(
@@ -42203,6 +42388,161 @@ mod tests {
                 + squashed.matches("prefix_insert_budget(engine,").count(),
             4
         );
+    }
+
+    #[test]
+    fn an_idle_unified_box_books_no_prefix_growth() {
+        // memra#1304, GB10 cell 02-B of `research/admit-headroom-unified-20261113/gb10/short/`:
+        // a fresh server, MemAvailable 2,022 MB plus the pool's 149 MB of cached blocks, the
+        // cache empty with a half-pool budget, one g1k arrival. Booking the cache's whole growth
+        // took the reading to 0 and refused it; with the cache off the same box served it.
+        use super::{AdmissionHeadroom, unified_prefix_growth_booking};
+        const MB: usize = 1_000_000;
+        let budget = 52_411 * MB;
+        let reading = AdmissionHeadroom::Primary {
+            free_bytes: 2_171 * MB,
+            pool_cached_bytes: 149 * MB,
+        };
+        let required = 2_100 * MB;
+        // Idle: nothing to protect from the cache's growth, nothing booked, the arrival fits.
+        let idle = unified_prefix_growth_booking(true, true, budget, 0);
+        assert_eq!(idle, 0);
+        assert!(reading.clone().less_pending(idle, 0).sufficient(required));
+        // A session active: the whole growth stays booked, and the same arrival does not fit.
+        let busy = unified_prefix_growth_booking(true, false, budget, 0);
+        assert_eq!(busy, budget);
+        assert!(!reading.less_pending(busy, 0).sufficient(required));
+    }
+
+    #[test]
+    fn an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity() {
+        // memra#1304. The idle, drained refusal used to be a 400 `context_length_exceeded`
+        // whatever the shortfall's cause. It is one only when the request does not fit the box at
+        // its post-load capacity; short of the moment's memory, it is a retryable 503.
+        use super::{
+            AdmissionHeadroom, ErrClass, IdleCapacityDevice, idle_capacity_free, idle_refusal,
+        };
+        const MB: usize = 1_000_000;
+        // GB10 cell 01-T: the box after its boot calibration (MemAvailable about 100 GB, the pool
+        // holding the weights), then MemAvailable 1,790 MB plus 149 MB cached at the arrival.
+        let boot = IdleCapacityDevice {
+            device: 0,
+            free_bytes: 100_000 * MB,
+            pool_used_bytes: 19_178 * MB,
+        };
+        let now = AdmissionHeadroom::Primary {
+            free_bytes: 1_939 * MB,
+            pool_cached_bytes: 149 * MB,
+        };
+        let required = 2_135 * MB;
+        assert!(!now.sufficient(required));
+        let at_capacity = now.clone().at_idle_capacity(&[boot], 0, 19_178 * MB);
+        assert!(at_capacity.sufficient(required));
+        let err = idle_refusal(1_607, true, Some(262_144));
+        assert_eq!(err.class, ErrClass::Overloaded, "{}", err.message);
+        assert!(err.message.contains("retry"), "{}", err.message);
+        assert!(
+            !err.message.contains("Retrying will not help"),
+            "{}",
+            err.message
+        );
+        // memra 2026-09-10 on a 24 GB RTX 5090: a 185,055-token request on an idle card. Its
+        // charge exceeds the card's post-load capacity, so it stays a 400 naming the largest
+        // context that fits.
+        let card = IdleCapacityDevice {
+            device: 0,
+            free_bytes: 6_000 * MB,
+            pool_used_bytes: 17_000 * MB,
+        };
+        let idle_card = AdmissionHeadroom::Primary {
+            free_bytes: 6_000 * MB,
+            pool_cached_bytes: 0,
+        };
+        let big = 185_055 * 31_552 + 2_100 * MB;
+        assert!(
+            !idle_card
+                .at_idle_capacity(&[card], 0, 17_000 * MB)
+                .sufficient(big)
+        );
+        let err = idle_refusal(185_055, false, Some(123_456));
+        assert_eq!(err.class, ErrClass::ContextLength);
+        assert!(
+            err.message
+                .contains("largest admissible context is 123456 tokens")
+        );
+        assert!(err.message.contains("Retrying will not help"));
+        let err = idle_refusal(185_055, false, None);
+        assert_eq!(err.class, ErrClass::ContextLength);
+        // The capacity is the boot reading less what memra itself has come to hold at rest
+        // since; never below the reading now; the reading now when the boot read failed.
+        assert_eq!(
+            idle_capacity_free(1_000, 17_000 * MB + 500, Some(&card)),
+            6_000 * MB - 500
+        );
+        assert_eq!(
+            idle_capacity_free(1_000 * MB, 17_000 * MB + 5_500 * MB, Some(&card)),
+            1_000 * MB
+        );
+        assert_eq!(idle_capacity_free(1_939 * MB, 0, None), 1_939 * MB);
+        // A per-device reading takes each device's own boot reading.
+        let devices = AdmissionHeadroom::Devices(vec![super::AdmissionDeviceHeadroom {
+            requirement: super::AdmissionDeviceRequirement {
+                device: 1,
+                session_bytes: 0,
+                state_bytes: 0,
+                pending_state_bytes: 0,
+                workspace_bytes: 0,
+                reserve_bytes: 0,
+                boundary_bytes: 0,
+            },
+            free_bytes: 10 * MB,
+            pool_cached_bytes: 0,
+            pool_reserved_bytes: 0,
+            pool_used_bytes: 0,
+        }]);
+        let other = IdleCapacityDevice { device: 1, ..card };
+        assert_eq!(
+            devices
+                .at_idle_capacity(&[boot, other], 0, 19_178 * MB)
+                .limiting_free_bytes(),
+            6_000 * MB
+        );
+    }
+
+    #[test]
+    fn the_idle_refusal_is_classified_against_the_post_load_capacity() {
+        // memra#1304: the wiring. The capacity is read once after the boot calibration, the
+        // drained refusal reads the same plans at it (unbooked), and the reject branch answers
+        // through `idle_refusal` with the largest context computed from that capacity.
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
+        let calibration = squashed
+            .find("run_boot_calibration( &engine, &loaded, &dspark_drafts, &mut admission_costs, &health, );")
+            .expect("the boot calibration");
+        let read = squashed
+            .find("let idle_capacity = read_idle_capacity(&engine, &loaded);")
+            .expect("the capacity read");
+        assert!(calibration < read);
+        let drained = squashed
+            .find("verdict = vram_gate_drained(captured_ok, eager_ok, draft_arm);")
+            .unwrap();
+        let classify = squashed
+            .find("idle_capacity_fit = capacity.map(|c| (fits, c.limiting_free_bytes()));")
+            .expect("the classification");
+        assert!(drained < classify);
+        let reject = &squashed[squashed
+            .find("} else if matches!(verdict, GateVerdict::Reject | GateVerdict::Defer) {")
+            .unwrap()..];
+        let reject = &reject[..reject.find("continue; }").unwrap()];
+        assert!(reject.contains("idle_capacity_fit.unwrap_or((false, available));"));
+        assert!(reject.contains("(required as u64).saturating_sub(capacity as u64);"));
+        assert!(
+            reject.contains(
+                "fail_request(req, idle_refusal(admission_cap, fits_capacity, largest));"
+            )
+        );
+        assert!(!reject.contains("EngineError::context_length("));
     }
 
     #[test]
