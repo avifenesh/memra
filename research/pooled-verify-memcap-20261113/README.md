@@ -9,7 +9,7 @@ checkpoint columns and logits, the FA partial pool's growth at the forward's wid
 256 MiB margin fit the allocatable memory; the rest verify after it, bitwise the same. Before
 the cohorts step, evictable memory (prefix entries first, then parked sessions) funds the
 largest member's round plus every member's burst snapshot. The fix answered 29 of 29 in every
-boot (round 0: 3 of 3; final code: 2 of 2, with 23 capped forwards each), texts equal to
+boot (round 0: 3 of 3; round 1: 1 of 1; final code: 2 of 2; 23 capped forwards each), texts equal to
 main's and to the memra#1221 part 2 head's; the forced-cap arm (every member alone) writes the
 same 29 texts. GB10 never reaches the cap (0 capped forwards, texts and tok/s unchanged). The
 final-code timed cells (c = 2 and 4 under the take rule, the normal cells, the pooled-vs-serial
