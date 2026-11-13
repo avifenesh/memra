@@ -9994,16 +9994,29 @@ fn driver_headroom_trim_keep(
 
 /// The driver-headroom rung: on every device this stack owns, if driver free is under the
 /// floor and the pool holds cached blocks, trim just enough. One receipt line per trim.
+///
+/// The free reading is [`memra_engine::unified_memory::allocatable_mem_info`]: `cuMemGetInfo` on
+/// a discrete card, and on a unified-memory device the larger of that and `MemAvailable`
+/// (memra#1257). There the driver's reading leaves out page cache the kernel hands to the
+/// driver's allocations on demand. With the page cache full it sat at 1.9-2.0 GiB while
+/// `MemAvailable` was about 100 GB, so the rung trimmed the pool before nearly every prime on a
+/// host that was not short. `MemAvailable` already leaves out the kernel's reserve, so the
+/// 2 GiB floor still sits on top of the OS's own, and a host that is really short still trims.
 fn ensure_driver_headroom(engine: &Engine, loaded: &HashMap<String, LoadedModel>, why: &str) {
     let floor = admit_driver_headroom_bytes();
     if floor == 0 {
         return;
     }
+    fn free_reading(ctx: &cudarc::driver::CudaContext) -> Option<usize> {
+        memra_engine::unified_memory::allocatable_mem_info(ctx)
+            .ok()
+            .map(|(free, _)| free)
+    }
     let owners = model_device_engines(engine, loaded);
     let tight_devices: std::collections::HashSet<_> = owners
         .iter()
         .filter_map(|owner| {
-            let (free, _) = owner.ctx().mem_get_info().ok()?;
+            let free = free_reading(owner.ctx())?;
             // Pending frees can still read as used until every owning stream is drained.
             (free < floor).then(|| owner.ctx().ordinal())
         })
@@ -10020,7 +10033,7 @@ fn ensure_driver_headroom(engine: &Engine, loaded: &HashMap<String, LoadedModel>
             for err in errors {
                 eprintln!("[admit-trim] dev{device} synchronization failed before {why}: {err}");
             }
-            let Ok((driver_free, _)) = dev_engine.ctx().mem_get_info() else {
+            let Some(driver_free) = free_reading(dev_engine.ctx()) else {
                 return;
             };
             let (reserved, used) = dev_engine.pool_reserved_used();
@@ -10029,15 +10042,17 @@ fn ensure_driver_headroom(engine: &Engine, loaded: &HashMap<String, LoadedModel>
             };
             let released = dev_engine.pool_trim_to(keep);
             let (still_reserved, still_owned) = dev_engine.pool_reserved_used();
-            let after = dev_engine
-                .ctx()
-                .mem_get_info()
-                .map(|(f, _)| f)
-                .unwrap_or(driver_free);
+            let after = free_reading(dev_engine.ctx()).unwrap_or(driver_free);
+            let reading = if memra_engine::unified_memory::is_unified(dev_engine.ctx()) {
+                "allocatable"
+            } else {
+                "driver"
+            };
             eprintln!(
                 "[admit-trim] dev{device} driver_free_bytes={driver_free} floor_bytes={floor} \
                  reclaimed_bytes={released} still_owned_bytes={still_owned} \
-                 pool_reserved_bytes={still_reserved} driver_free_after={after} before {why}",
+                 pool_reserved_bytes={still_reserved} driver_free_after={after} \
+                 reading={reading} before {why}",
             );
         },
     );
@@ -40458,6 +40473,38 @@ mod tests {
             super::driver_headroom_trim_keep(mib(10), mib(9000), mib(1000), 0),
             None
         );
+    }
+
+    /// memra#1257: on unified memory the rung reads the allocatable free memory (the larger of
+    /// the driver's reading and `MemAvailable`), as admission's effective free and the
+    /// pre-capture guard do. The readings are memra#1221's GB10 cells: a full page cache left the
+    /// raw reading at 1,882-2,002 MiB with `MemAvailable` about 100 GB, and the rung trimmed
+    /// before 8 of 14 primes.
+    #[test]
+    fn driver_headroom_rung_reads_the_allocatable_free_memory() {
+        use memra_engine::unified_memory::unified_free_bytes;
+        let mib = |n: usize| n << 20;
+        let (reserved, used, floor) = (mib(36_440), mib(34_000), mib(2048));
+        // Full page cache: the host is not short, nothing is trimmed.
+        let full_cache = unified_free_bytes(mib(1_882), Some(mib(100 * 1024)));
+        assert_eq!(
+            super::driver_headroom_trim_keep(full_cache, reserved, used, floor),
+            None
+        );
+        // MemAvailable itself short: the rung still trims the shortfall against it.
+        let short = unified_free_bytes(mib(1_200), Some(mib(1_500)));
+        assert_eq!(
+            super::driver_headroom_trim_keep(short, reserved, used, floor),
+            Some(reserved - mib(548))
+        );
+        // The rung takes that reading for both its decision and its trim, and never the raw
+        // driver reading.
+        let src = include_str!("worker.rs");
+        let at = src.find("\nfn ensure_driver_headroom(").expect("the rung");
+        let body = &src[at..at + src[at..].find("\n}\n").expect("its end")];
+        assert!(body.contains("memra_engine::unified_memory::allocatable_mem_info(ctx)"));
+        assert_eq!(body.matches("free_reading(").count(), 4, "{body}");
+        assert!(!body.contains(".mem_get_info()"), "{body}");
     }
 
     #[test]

@@ -13,16 +13,17 @@
 //! size. `MemAvailable` already subtracts the kernel's own watermark reserve, so a floor kept
 //! on top of it (the admission driver-headroom rung, the transient reserve) stays a floor.
 //!
-//! SIZING reads (prefix-cache budget, admission's effective free, the MoE residency decision)
-//! and the pre-capture headroom guard take [`allocatable_mem_info`]. The guard moved in
-//! memra#1221: with a full page cache the raw reading sat at 2-3 GB while `MemAvailable` was
-//! near 100 GB, so the guard trimmed the pool (a 260k prompt's publication then grew it back on
-//! the scheduler thread) and refused 1k requests' captures, while a capture with the trim
-//! skipped at that reading succeeded. The graph-launch floor and admission's driver-headroom
-//! trim keep the raw reading: on unified memory it can only be lower, so they stay on the
-//! conservative side. A capture admitted on `MemAvailable` therefore still runs eagerly in any
-//! round where the raw reading falls under the 256 MiB launch floor (memra#1221's cells kept it
-//! at 1.1 GB or more).
+//! SIZING reads (prefix-cache budget, admission's effective free, the MoE residency decision),
+//! the pre-capture headroom guard and admission's driver-headroom rung take
+//! [`allocatable_mem_info`]. The guard moved in memra#1221: with a full page cache the raw
+//! reading sat at 2-3 GB while `MemAvailable` was near 100 GB, so the guard trimmed the pool (a
+//! 260k prompt's publication then grew it back on the scheduler thread) and refused 1k requests'
+//! captures, while a capture with the trim skipped at that reading succeeded. The rung moved in
+//! memra#1257 for the same reason: at that reading it trimmed the pool before nearly every prime.
+//! The graph-launch floor keeps the raw reading: on unified memory it can only be lower, so it
+//! stays on the conservative side. A capture admitted on `MemAvailable` therefore still runs
+//! eagerly in any round where the raw reading falls under the 256 MiB launch floor (memra#1221's
+//! cells kept it at 1.1 GB or more).
 
 use cudarc::driver::{CudaContext, DriverError};
 
