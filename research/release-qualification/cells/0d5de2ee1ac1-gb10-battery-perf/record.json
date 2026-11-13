@@ -1,0 +1,210 @@
+{
+ "build": {
+  "binaries": {
+   "argmax-margin-probe": {
+    "bytes": 38571616,
+    "sha256": "b1ba6a88b0f8909c00b69cb88e3e09d91f26461e122c0ad4eafc0cc60cb53560"
+   },
+   "kernel-check": {
+    "bytes": 33102768,
+    "sha256": "beff33601c76d9e49f8e9d02e5ece0488f9895d4f9a598eefde0624dcd60f574"
+   },
+   "memra-server": {
+    "bytes": 56550472,
+    "sha256": "a80ca6db4238fd53ea23317e67c04a518d15bbf0909d203f1fbe36bcc0633a27"
+   },
+   "run-gen": {
+    "bytes": 40305016,
+    "sha256": "b77563284990c466fadc8ce55fe2d2070337fe44f68d962f8c548aeef60df1ef"
+   },
+   "run-spec": {
+    "bytes": 40316328,
+    "sha256": "0a6d6e9b579b8a659c674b73e2a9c898475430a5198f6683eecf654b5fd630ca"
+   },
+   "tok-parity": {
+    "bytes": 1354960,
+    "sha256": "d7b5c9c5fdd4bd57e15b483c2c1b4a6593b66b7a82b95bd98b7182a460426240"
+   }
+  },
+  "env": {
+   "CARGO_BUILD_JOBS": "2",
+   "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1",
+   "CARGO_PROFILE_RELEASE_LTO": "fat"
+  },
+  "target": "121a",
+  "toolchain": {
+   "nvcc": "Build cuda_13.0.r13.0/compiler.36424714_0",
+   "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+  }
+ },
+ "device": {
+  "class": "gb10",
+  "compute_cap": "12.1",
+  "driver": "580.178.04",
+  "name": "NVIDIA GB10",
+  "uuid_sha256": "52defc0298fb7b575230fc88f2e745d05e9728a3bbdbcfdb9e55e65567a04bcf"
+ },
+ "failures": [],
+ "finished": "2026-11-13T08:42:00.966816+00:00",
+ "inputs_sha256": "69d93738befbeb7e39d450a80bb31b9c8f497f3e48fb3368127179e9d0383aa9",
+ "kinds": {
+  "battery": {
+   "exit_code": 0,
+   "roster": "roster.tsv",
+   "runs": "battery/runs.tsv",
+   "verdicts": [
+    {
+     "kind": "kernel",
+     "model": "kernel",
+     "verdict": "ALL GREEN (139 cells, 134 executed, 10 required, 5 skipped; budget 11)\nSKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)\nSKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf; 6 candidates tried; set MEMRA_KC_MODELS_DIR)\nSKIP nvfp4-27b-shape (missing model Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)\nSKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf; 3 candidates tried; set MEMRA_KC_MODELS_DIR)\nSKIP sigrouter-served-replay (MEMRA_SIG_ROUTER_REPLAY is not set to a run-gen capture)"
+    },
+    {
+     "kind": "argmax",
+     "model": "ornith-ai/ornith-1.5-35b-a3b",
+     "verdict": "calibrated argmax PASS"
+    },
+    {
+     "kind": "argmax-batch",
+     "model": "ornith-ai/ornith-1.5-35b-a3b",
+     "verdict": "calibrated served-batch argmax PASS"
+    },
+    {
+     "kind": "spec",
+     "model": "ornith-ai/ornith-1.5-35b-a3b",
+     "verdict": "K=1..8 self-consistency, identical to plain target (8/8)"
+    },
+    {
+     "kind": "argmax",
+     "model": "qwen/qwen3.8-27b",
+     "verdict": "calibrated argmax PASS"
+    },
+    {
+     "kind": "argmax-batch",
+     "model": "qwen/qwen3.8-27b",
+     "verdict": "calibrated served-batch argmax PASS"
+    },
+    {
+     "kind": "spec",
+     "model": "qwen/qwen3.8-27b",
+     "verdict": "K=1..8 self-consistency, identical to plain target (8/8)"
+    }
+   ]
+  },
+  "perf": {
+   "accepted_regression": null,
+   "base_commit": "a17add18f3888e81c97b1222f668b29ce21efa43",
+   "baseline": "interleaved",
+   "runs": [
+    {
+     "arm": "A",
+     "log": "perf/01-A-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/02-B-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/03-B-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/04-A-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/05-A-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/06-B-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/07-A-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/08-B-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/09-B-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/10-A-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/11-A-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/12-B-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    }
+   ],
+   "verdicts": {
+    "ornith-ai/ornith-1.5-35b-a3b": {
+     "base_median": 81.18,
+     "candidate_median": 81.17,
+     "delta_pct": -0.01,
+     "regressed": false
+    },
+    "qwen/qwen3.8-27b": {
+     "base_median": 13.78,
+     "candidate_median": 13.77,
+     "delta_pct": -0.07,
+     "regressed": false
+    }
+   }
+  }
+ },
+ "payloads": {
+  "battery.log": "c0603982e6fb3410809774694d7e361f765edeaf15e5fd96cbb82a1fde3ae46d",
+  "battery/1-kernel.log": "69e75e51e70d7e5b3b62b7125d5250ebc74d221cf6209888cbe32cd70ff1b47d",
+  "battery/2-argmax.log": "cbe1ae1e6faa22a698b0d872f02fb1eaac9edffb07b9aa5ff90838f77d18e631",
+  "battery/3-argmax-batch.log": "728988aa3783a60761122887925d7fe15a6c6dc15291d229e6a78feefed3fad8",
+  "battery/4-spec.log": "805699b7ba8ae35e482cbb10470b2b3f802cda877bbe7c9374ef2e6ade542c7f",
+  "battery/5-argmax.log": "5c3e5f24daa8805dacab55ebcf29761276240ee77cfb0e24df633c677b89c237",
+  "battery/6-argmax-batch.log": "23ed30e9ca75839dc63e828c12a64108b56e206aaf9907834875fdc5c5fb2ed1",
+  "battery/7-spec.log": "6ec41b06e4baf955cdf2c746f7df3d82b6f724b61cb87c7f19c3a2e1b30d7cd0",
+  "battery/argmax-1/gate-Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp-board-2048.log": "c7033225bb48d31ba665a31bdda339fbe9b7040e45097a31f0f8ae786e28b5fd",
+  "battery/argmax-4/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-board-2048.log": "f903b8df144de8a9bd60adac6702b21cd46675eac79f0efd809012a891fc2aeb",
+  "battery/argmax-batch-2/gate-Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp-board-2048.batch.log": "dc1580a85bf032e5b1520e395fbdab5036081897c45c48f971ade18e93cf3d78",
+  "battery/argmax-batch-5/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-board-2048.batch.log": "4e8b1d4fc8ca965645c7c35a7e65ec3eed29abe38a6e3d09fb9477775a6560d2",
+  "battery/runs.tsv": "55ea5db0aea32016b59cd49a306fd169b122265a8a6cd426242f322dff88741f",
+  "build.log": "0dce5001884957f4a2cb4e808f7115134b74b5ef7337f2e4b61ae846e3d5d5c0",
+  "perf/01-A-ornith-ai_ornith-1.5-35b-a3b.log": "f427fb48772a9b65df906414afe2ee450b5955abdbf5c4d48a6b1035131f1269",
+  "perf/02-B-ornith-ai_ornith-1.5-35b-a3b.log": "1ced0743f124e0aa3bdf178469b2132c98d821fc3ef8e13ac3c37fcb74ed3c8b",
+  "perf/03-B-ornith-ai_ornith-1.5-35b-a3b.log": "b22051dc4029aa47388284ac42e8bb5fef7bb1ecf89ec1aa1f45b4ac52c883cf",
+  "perf/04-A-ornith-ai_ornith-1.5-35b-a3b.log": "3d5bfe248ccb040584c354342f4bcd047599380d5acdc9c7f3d699583e11ded8",
+  "perf/05-A-ornith-ai_ornith-1.5-35b-a3b.log": "8982b422cfbaae0ab542f383733be73b0088dcff4ef4c916e005c55eeee6e30e",
+  "perf/06-B-ornith-ai_ornith-1.5-35b-a3b.log": "0eab114d4c6e5a809fcee6111f7b141da4cbb4a1400c2b49a7812d3336d3f4d5",
+  "perf/07-A-qwen_qwen3.8-27b.log": "e6fab1cf41c07eee69d298e673906bc384e38a54bfc218225c614453232a78e3",
+  "perf/08-B-qwen_qwen3.8-27b.log": "4739e2c66525836bcb45ed3047c97d01b9c190b59879be7ff5d6f89577cfcfa0",
+  "perf/09-B-qwen_qwen3.8-27b.log": "7c979b8a780364c94bd9a274611261a76d8458aeee3e0fa2079393e18deafa58",
+  "perf/10-A-qwen_qwen3.8-27b.log": "f9583abfacc7687142dc9ae9c66b7bfe65867f55a0ee04984ad7382e9e27ed1e",
+  "perf/11-A-qwen_qwen3.8-27b.log": "bc1f52a8fb47b2164536a714a540bcd0b1ea149f98ff4491e6115cda5bd2e79d",
+  "perf/12-B-qwen_qwen3.8-27b.log": "c6e95cdf85c7d040c04e5cd4b0090b481b3e992d5796bc9ccec18ac911049e4f",
+  "perf/prompt.txt": "a56691ecf645da1b1f582426fde6a81d7655b0a00d789bc619c233e26499438c",
+  "roster.tsv": "c61fd59845e5ee4e67fb10300e22268e441c610151f84651a35dbf0fc04a135f"
+ },
+ "schema": "memra-cell-evidence-v1",
+ "started": "2026-11-13T08:08:50.568831+00:00",
+ "status": "pass",
+ "target": "121a",
+ "tested_commit": "0d5de2ee1ac1916adfac2213a455c7e808263b8e"
+}
