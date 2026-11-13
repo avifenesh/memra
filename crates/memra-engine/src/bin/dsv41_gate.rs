@@ -13,8 +13,11 @@
 //!   dsv41-gate decode CKPT_DIR CAPTURE_DIR --layers 1,2,20 --token-map FILE [--out RECEIPT.json]
 //!                    (the decode program's integer outcomes byte for byte, with a re-prefill red arm)
 //!   dsv41-gate tp CKPT_DIR CAPTURE_DIR --layers 1,2 [--devices 0,1] [--decode N] [--reps N]
+//!                    [--side-delay NS] [--poison-free]
 //!                    (N ranks against the single card; --reps N runs the 12/16/32-row passes N
-//!                    rounds, round r > 0 on the prompt rows from 7r: the race harness)
+//!                    rounds, round r > 0 on the prompt rows from 7r: the race harness;
+//!                    --side-delay and --poison-free arm `SIDE_DELAY_NS` and `POISON_FREE` for the
+//!                    run, the decode gate's ordering faults)
 //!   any of them with --dense-form F: every dense FP8/FP4 GEMM in form F (`dsv41_gpu::GEMM_FORM`)
 
 use memra_engine::dsv41_gpu::{
@@ -4632,8 +4635,14 @@ fn main() {
             let decode = flag("--decode").and_then(|x| x.parse().ok()).unwrap_or(0);
             let chunk = flag("--chunk").and_then(|x| x.parse().ok());
             let reps = flag("--reps").and_then(|x| x.parse().ok()).unwrap_or(1);
+            // the decode gate's fault injection for the whole run: every second-stream branch held
+            // this many ns before it starts, and main-stream buffers filled with 0xFF as they drop
+            let side_delay: u64 = flag("--side-delay").and_then(|x| x.parse().ok()).unwrap_or(0);
+            let poison = has("--poison-free");
+            v::SIDE_DELAY_NS.store(side_delay, std::sync::atomic::Ordering::Relaxed);
+            v::POISON_FREE.store(poison, std::sync::atomic::Ordering::Relaxed);
             tp_gate(Path::new(&a[2]), Path::new(&a[3]), &layers, &devices, token_map.as_deref(), decode, chunk, reps, &mut rep)
-                .map(|s| format!("\"gate\": \"tp\", \"capture\": {:?}, {s}", a[3]))
+                .map(|s| format!("\"gate\": \"tp\", \"capture\": {:?}, \"side_delay_ns\": {side_delay}, \"poison_free\": {poison}, {s}", a[3]))
         }
         Some("idx") if a.len() > 3 => {
             let layer = flag("--layer").and_then(|x| x.parse().ok()).unwrap_or(20);
@@ -4645,7 +4654,7 @@ fn main() {
             idx_gate(Path::new(&a[2]), Path::new(&a[3]), layer, &devices, slice, reps, rows, last, &mut rep)
                 .map(|s| format!("\"gate\": \"idx\", \"capture\": {:?}, {s}", a[3]))
         }
-        _ => Err("usage: dsv41-gate [--dense-form F] kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json] | decode CKPT CAPTURE --layers L,.. --token-map FILE [--out R.json] | tp CKPT CAPTURE --layers L,.. [--devices 0,1] [--token-map FILE] [--decode N] [--chunk N] [--reps N] [--out R.json] | idx CKPT CAPTURE --layer L [--devices 0,1] [--slice N] [--reps N] [--rows N] [--last N] [--out R.json]".into()),
+        _ => Err("usage: dsv41-gate [--dense-form F] kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json] | decode CKPT CAPTURE --layers L,.. --token-map FILE [--out R.json] | tp CKPT CAPTURE --layers L,.. [--devices 0,1] [--token-map FILE] [--decode N] [--chunk N] [--reps N] [--side-delay NS] [--poison-free] [--out R.json] | idx CKPT CAPTURE --layer L [--devices 0,1] [--slice N] [--reps N] [--rows N] [--last N] [--out R.json]".into()),
     };
     let header = match r {
         Ok(h) => h,
