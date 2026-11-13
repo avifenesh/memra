@@ -156,6 +156,21 @@ pub struct Runner<'a> {
     pub stats: Stats,
 }
 
+/// The embedding table is one copy a card, read from every rank's stream and freed on its card's
+/// first rank's stream: every rank's work finishes before it goes.
+impl Drop for Runner<'_> {
+    fn drop(&mut self) {
+        if self.emb.is_some() {
+            if let Err(e) = self.grp.sync_all() {
+                eprintln!(
+                    "[dsv41] teardown: the ranks' sync before the embedding table is freed failed: {e}"
+                );
+            }
+            self.emb = None;
+        }
+    }
+}
+
 impl<'a> Runner<'a> {
     /// Ranks on `devices` covering positions below `max_pos`, running the first `n_layers` trunk
     /// layers with prefill slices of `chunk` rows. `ec` is required when an Engram layer runs.
@@ -373,14 +388,16 @@ impl<'a> Runner<'a> {
         if reserve > 0 {
             for (d, _) in &devs {
                 let ops = &self.grp.cx[first_rank(*d)].ops;
-                let warm = Buf::uninit(&ops.st, reserve)
-                    .map(drop)
-                    .and_then(|_| ops.sync());
-                if let Err(e) = warm {
-                    eprintln!(
-                        "[dsv41-resident] device {d}: the pool warm-up of {:.2} GiB failed ({e}); the runs grow the pool as they go",
+                // only the allocation may fail: a sync error is the device's, and the load stops
+                match Buf::uninit(&ops.st, reserve) {
+                    Ok(b) => {
+                        drop(b);
+                        ops.sync()?;
+                    }
+                    Err(e) => eprintln!(
+                        "[dsv41-resident] device {d}: the pool warm-up of {:.2} GiB could not allocate ({e}); the runs grow the pool as they go",
                         gib(reserve)
-                    );
+                    ),
                 }
             }
         }
