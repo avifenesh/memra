@@ -1144,6 +1144,12 @@ expand to all jobs. Build-generated flag data is explicitly registered below.
         for contract in pins:
             reader_pins[contract['sha256']].append(contract)
     for path in matches:
+        # A vendored upstream tree (a crate's third_party/, such as the CUTLASS headers) holds C
+        # and C++ sources, whose nested-looking comments Rust's lexer reads as unterminated. Only
+        # Rust can hold an include macro or a path attribute, so its non-Rust files are skipped;
+        # a Rust file there is scanned like any other.
+        if '/third_party/' in path and not path.endswith('.rs'):
+            continue
         package = owner(path, owners)
         if package is None:
             raise Refused('include has no package owner')

@@ -812,6 +812,23 @@ class ValidationPlanTests(unittest.TestCase):
                 self.commit()
                 self.assertEqual(self.plan(['README.md'])['mode'], 'scoped')
 
+    def test_vendored_c_sources_are_not_read_as_rust(self):
+        # A vendored C/C++ header nests comments Rust's lexer reads as unterminated: under a
+        # crate's third_party tree it holds no Rust include and the census leaves it alone.
+        header = '/* outer /* not nested in C */\n#include "cute/tensor.hpp"\n'
+        self.put('crates/memra-engine/third_party/cutlass/include/x.h', header)
+        self.commit()
+        self.assertFalse(any(self.plan(['README.md'])['jobs'].values()))
+        # The same bytes in the crate's own sources still refuse, and a Rust file under
+        # third_party is still scanned.
+        self.put('crates/memra-engine/cu/x.h', header)
+        self.commit()
+        self.assertEqual(self.plan(['README.md'])['mode'], 'full')
+        self.g('rm', '-q', 'crates/memra-engine/cu/x.h')
+        self.put('crates/memra-engine/third_party/cutlass/x.rs', 'include_str!(env!("UNREGISTERED_PATH"));')
+        self.commit()
+        self.assertEqual(self.plan(['README.md'])['mode'], 'full')
+
     def test_unterminated_conditional_attribute_expands(self):
         self.put('crates/memra-server/src/lib.rs', '#[cfg_attr(all(), path="outer.rs") mod outer;')
         self.commit()
