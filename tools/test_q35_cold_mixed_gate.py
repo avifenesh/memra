@@ -15,6 +15,8 @@ import importlib.util
 import json
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -236,6 +238,114 @@ class SeedJudge(unittest.TestCase):
         failures = HARNESS.judge_seed("q35", 0, row, 4860, 32, {})
         self.assertEqual(len(failures), 1)
         self.assertIn(HARNESS.FAIL_USAGE, failures[0])
+
+
+class FakeServer:
+    """A /metrics counter set and a completion route, for run_cell offline.
+
+    `busy` names what still holds the server when the first scrape lands: "active" a session
+    whose stream already ended (as the last hot-set seed of the GB10 record of 2026-11-13 did
+    inside that cell's window), "queued" a queued request, "route" a dedicated route's running
+    request (memra#501: its counters fold into the totals, not into the worker gauges). On the
+    second scrape it finishes: completed +1, its last 4 tokens_out, the gauge back to 0. "never"
+    keeps a live session forever."""
+
+    def __init__(self, busy: str | None = None) -> None:
+        self.lock = threading.Lock()
+        self.scrapes = 0
+        self.busy = busy
+        self.m: dict = {key: 0 for key in HARNESS.COUNTERS}
+        pending = busy in ("active", "queued", "route")
+        self.m.update({"admitted": 8, "completed": 7 if pending else 8, "tokens_out": 476 if pending else 480})
+        self.m["active_sessions"] = 1 if busy in ("active", "never") else 0
+        self.m["queued_requests"] = 1 if busy == "queued" else 0
+        self.m["routes"] = [{"name": "dsv4", "running": 1 if busy == "route" else 0, "waiting": 0}]
+
+    def scrape(self, endpoint, timeout):
+        with self.lock:
+            self.scrapes += 1
+            if self.busy in ("active", "queued", "route") and self.scrapes == 2:
+                self.m["completed"] += 1
+                self.m["tokens_out"] += 4
+                self.m["active_sessions"] = self.m["queued_requests"] = 0
+                self.m["routes"] = [{"name": "dsv4", "running": 0, "waiting": 0}]
+                self.busy = None
+            return json.loads(json.dumps(self.m))
+
+    def request(self, endpoint, prompt, salt, workload, timeout, barrier=None, go=None, trace_id=None):
+        if barrier is not None:
+            barrier.wait(timeout=60)
+        if go is not None:
+            go.wait(timeout=60)
+        hit = "-hot-" in salt
+        cached = HARNESS.expected_hit_cached(len(prompt), 32) if hit else 0
+        tokens = int(workload["completion_tokens"])
+        with self.lock:
+            for key, add in (("admitted", 1), ("completed", 1), ("tokens_out", tokens),
+                             ("prompt_tokens_in", len(prompt)), ("cached_tokens_in", cached),
+                             ("prefix_cache_hit_tokens", cached),
+                             ("prefix_cache_hits" if hit else "prefix_cache_misses", 1)):
+                self.m[key] += add
+        now = time.monotonic()
+        return {"ok": True, "prompt_tokens": len(prompt), "cached_tokens": cached,
+                "completion_tokens": tokens, "ttft_ms": 1.0, "latency_ms": 2.0,
+                "inter_token_ms": 1.0, "_started": now, "_ended": now}
+
+
+class IdleWindow(unittest.TestCase):
+    """The cell window opens on an idle server (wait_idle before run_cell's `before` scrape)."""
+
+    ENDPOINT = HARNESS.Endpoint(label="q35", base="http://fake", model="q35-coldfix")
+
+    def _cell(self, server: FakeServer, timeout: float = 600.0) -> dict:
+        judged = {"response_ok": True, "usage_ok": True, "golden_ok": True, "golden_required": False}
+        with mock.patch.object(HARNESS, "scrape", server.scrape), \
+                mock.patch.object(HARNESS, "request", server.request), \
+                mock.patch.object(HARNESS, "judge_request", return_value=judged):
+            _, _, cells = HARNESS.run_cell(
+                [self.ENDPOINT], WORKLOAD, "test", "mixed90", 1, 4, timeout, {}, 32
+            )
+        return cells[0]
+
+    def _clean(self, cell: dict) -> None:
+        self.assertEqual(cell["counter_deltas"]["completed"], cell["requests_n"])
+        self.assertEqual(cell["counter_deltas"]["tokens_out"], cell["completion_tokens"])
+        self.assertEqual(cell["integrity_failures"], [])
+
+    def test_a_session_live_at_the_window_start_stays_out_of_the_cell(self) -> None:
+        self._clean(self._cell(FakeServer("active")))
+
+    def test_a_queued_request_at_the_window_start_stays_out_of_the_cell(self) -> None:
+        self._clean(self._cell(FakeServer("queued")))
+
+    def test_a_busy_route_at_the_window_start_stays_out_of_the_cell(self) -> None:
+        self._clean(self._cell(FakeServer("route")))
+
+    def test_a_server_that_never_idles_fails_the_cell(self) -> None:
+        with self.assertRaisesRegex(HARNESS.NotIdle, r"not idle before the cell window after 0\.3 s"):
+            self._cell(FakeServer("never"), timeout=0.3)
+
+    def test_metrics_without_the_idle_counters_fail_the_cell(self) -> None:
+        server = FakeServer()
+        del server.m["queued_requests"]
+        with self.assertRaisesRegex(HARNESS.NotIdle, "no integer queued_requests"):
+            self._cell(server)
+
+    def test_the_seed_retention_check_waits_for_idle(self) -> None:
+        server = FakeServer("never")
+        server.m["prefix_cache_entries"] = int(WORKLOAD["hot_cache_entries"])
+        with mock.patch.object(HARNESS, "scrape", server.scrape), \
+                mock.patch.object(HARNESS, "request", server.request), \
+                mock.patch.object(HARNESS, "judge_seed", return_value=[]), \
+                self.assertRaisesRegex(HARNESS.NotIdle, "not idle before the hot-set retention check"):
+            HARNESS.seed_hot_set([self.ENDPOINT], WORKLOAD, "test", 0.3, {}, 32)
+
+    def test_a_not_idle_run_fails_the_gate_with_its_own_line(self) -> None:
+        summary = GATE.gate_summary(HARNESS, WORKLOAD, 32, [], [], [], ["q35: server not idle"])
+        self.assertEqual(summary["verdict"], "FAIL")
+        self.assertEqual(summary["failure_classes"], ["not_idle"])
+        self.assertEqual(summary["fail_lines"], [GATE.FAIL_LINES["not_idle"]])
+        self.assertEqual(summary["not_idle"], ["q35: server not idle"])
 
 
 class FailLines(unittest.TestCase):

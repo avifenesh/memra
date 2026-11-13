@@ -210,8 +210,8 @@ jobs:
       - name: Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)
         run: tools/unittest-floor.sh tools test_cache_qualification.py 15
 
-      - name: Q35 cold-mixed gate grid law and banked replay (unittest floor 13; 13 measured 2026-09-27, memra#777)
-        run: tools/unittest-floor.sh tools test_q35_cold_mixed_gate.py 13
+      - name: Q35 cold-mixed gate grid law, banked replay and idle window (unittest floor 22; 22 measured 2026-11-13, memra#777 and the sellgate idle window)
+        run: tools/unittest-floor.sh tools test_q35_cold_mixed_gate.py 22
 
       - name: CPU-only artifact path safety tests
         run: python3 tools/test_nvme_builder_safety.py

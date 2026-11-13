@@ -11,6 +11,9 @@ A FAIL names its class (memra#777), and each class is a different finding:
   cell_accounting   a /metrics counter disagrees with the per-request usage
   seed_failure      the hot-set seeding failed or drifted
   shape             the cell did not carry 20 requests, 18 hits and 2 cold misses
+  not_idle          the server still held a session, a queued request or a busy route 120 s
+                    into the wait before a /metrics window (the hot-set retention check or the
+                    cell's `before`), or /metrics did not report those gauges; nothing after it ran
 
 --replay LOG re-judges a banked gate log offline through the same judging code (CPU only): the
 requests, the seeds and the cell's /metrics deltas come from the log, the expectation from the
@@ -97,6 +100,7 @@ def assert_identity(base: str, model: str, timeout: float) -> None:
 TOKEN_REGRESSION = "token_regression"
 SEED_FAILURE = "seed_failure"
 SHAPE = "shape"
+NOT_IDLE = "not_idle"
 # Order of the classes in the summary and in serve-smoke's FAIL lines.
 CLASS_ORDER = (
     TOKEN_REGRESSION,
@@ -106,6 +110,7 @@ CLASS_ORDER = (
     "cell_accounting",
     SEED_FAILURE,
     SHAPE,
+    NOT_IDLE,
 )
 # serve-smoke section 12 prints one FAIL line per class, in CLASS_ORDER.
 FAIL_LINES = {
@@ -119,6 +124,7 @@ FAIL_LINES = {
     "cell_accounting": "Q35 mixed c=4 /metrics accounting drift",
     SEED_FAILURE: "Q35 mixed c=4 hot-set seeding failed",
     SHAPE: "Q35 mixed c=4 cell shape moved (requests, hits, misses)",
+    NOT_IDLE: "Q35 mixed c=4 server not idle before a /metrics window",
 }
 EXPECTED_SHAPE = {
     "prompt_tokens": 4860,
@@ -146,7 +152,9 @@ def gate_summary(
     seed_failures: list[str],
     requests: list[dict[str, Any]],
     cells: list[dict[str, Any]],
+    not_idle: list[str] | None = None,
 ) -> dict[str, Any]:
+    not_idle = not_idle or []
     hits = [row for row in requests if row.get("cache_role") == "hit"]
     misses = [row for row in requests if row.get("cache_role") == "miss"]
     completion_n = int(workload["completion_tokens"])
@@ -176,6 +184,10 @@ def gate_summary(
     if not shape_ok or len(cells) != 1:
         classes.add(SHAPE)
     verdict = "PASS" if shape_ok and cell_ok and not seed_failures and not short else "FAIL"
+    if not_idle:
+        # The wait stopped the run before (or instead of) the cell: what did not run is not a
+        # shape or token finding.
+        classes, verdict = {NOT_IDLE}, "FAIL"
     ordered = [name for name in CLASS_ORDER if name in classes] + sorted(
         classes - set(CLASS_ORDER)
     )
@@ -195,6 +207,7 @@ def gate_summary(
         ),
         "short_or_non_length": short,
         "seed_failures": seed_failures,
+        "not_idle": not_idle,
         "cell_clean": cell_ok,
         "cell_integrity_failures": [
             line for cell in cells for line in (cell.get("integrity_failures") or [])
@@ -309,19 +322,26 @@ def main() -> int:
 
     endpoint = harness.Endpoint(label="q35", base=args.base.rstrip("/"), model=args.model)
     goldens: dict[tuple[str, int], str] = {}
-    seed_rows, seed_failures = harness.seed_hot_set(
-        [endpoint], workload, args.namespace, args.timeout, goldens, grid
-    )
-    for row in seed_rows:
-        print(json.dumps(public(row), sort_keys=True), flush=True)
+    seed_failures: list[str] = []
+    requests: list[dict[str, Any]] = []
+    cells: list[dict[str, Any]] = []
+    not_idle: list[str] = []
+    try:
+        seed_rows, seed_failures = harness.seed_hot_set(
+            [endpoint], workload, args.namespace, args.timeout, goldens, grid
+        )
+        for row in seed_rows:
+            print(json.dumps(public(row), sort_keys=True), flush=True)
 
-    requests, samples, cells = harness.run_cell(
-        [endpoint], workload, args.namespace, "mixed90", 1, 4, args.timeout, goldens, grid
-    )
-    for row in [*samples, *requests, *cells]:
-        print(json.dumps(row, sort_keys=True), flush=True)
+        requests, samples, cells = harness.run_cell(
+            [endpoint], workload, args.namespace, "mixed90", 1, 4, args.timeout, goldens, grid
+        )
+        for row in [*samples, *requests, *cells]:
+            print(json.dumps(row, sort_keys=True), flush=True)
+    except harness.NotIdle as error:
+        not_idle.append(str(error))
 
-    summary = gate_summary(harness, workload, grid, seed_failures, requests, cells)
+    summary = gate_summary(harness, workload, grid, seed_failures, requests, cells, not_idle)
     print(json.dumps(summary, sort_keys=True), flush=True)
     return 0 if summary["verdict"] == "PASS" else 1
 

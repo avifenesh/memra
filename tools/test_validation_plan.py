@@ -141,7 +141,7 @@ class ValidationPlanTests(unittest.TestCase):
                 self.assertEqual(plan['packages'], [])
                 self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['q35-cache'])
                 self.assertEqual(plan['cpu_contracts'][0]['cpu'],
-                                 ['tools/unittest-floor.sh', 'tools', 'test_q35_cold_mixed_gate.py', '13'])
+                                 ['tools/unittest-floor.sh', 'tools', 'test_q35_cold_mixed_gate.py', '22'])
                 self.assertIn('Qwen3.6 MoE mixed c=4 cache/usage/golden gate on the pinned artifact',
                               plan['native']['requirements'])
                 self.assertFalse(plan['native']['qualification'])

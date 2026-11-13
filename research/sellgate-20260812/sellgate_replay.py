@@ -568,6 +568,66 @@ def wait_settled(
     return current
 
 
+IDLE_KEYS = ("active_sessions", "queued_requests")
+ROUTE_IDLE_KEYS = ("running", "waiting")
+
+
+class NotIdle(RuntimeError):
+    """The server never reached idle before a window (or /metrics cannot show that it did)."""
+
+
+def busy_state(current: dict[str, Any]) -> dict[str, int]:
+    """What keeps a /metrics snapshot from being idle: the central worker's live sessions and queue,
+    and each dedicated route's running and waiting requests (memra#501; a route folds its served
+    counters into `admitted`, `completed` and `tokens_out` but not into the worker gauges)."""
+    missing = [key for key in IDLE_KEYS if not isinstance(current.get(key), int)]
+    routes = current.get("routes") or []
+    if not isinstance(routes, list):
+        missing.append("routes")
+        routes = []
+    for index, row in enumerate(routes):
+        for key in ROUTE_IDLE_KEYS:
+            if not isinstance(row, dict) or not isinstance(row.get(key), int):
+                missing.append(f"routes[{index}].{key}")
+    if missing:
+        raise NotIdle(f"/metrics has no integer {', '.join(missing)}; cannot prove an idle server")
+    busy = {key: current[key] for key in IDLE_KEYS if current[key] != 0}
+    for row in routes:
+        for key in ROUTE_IDLE_KEYS:
+            if row[key] != 0:
+                busy[f"route {row.get('name', '?')} {key}"] = row[key]
+    return busy
+
+
+def wait_idle(endpoint: Endpoint, timeout: float, before: str = "the cell window") -> dict[str, Any]:
+    """The /metrics snapshot a window opens on: no live session, no queued request, no busy route.
+
+    A streamed request reads `[DONE]` before the worker retires its session, and the retirement
+    is where `completed` and the session's last `tokens_out` land. A window that scrapes its
+    `before` right after the previous request (the last hot-set seed, a previous cell) can open
+    while that session is still live, and its completion then counts inside the window as a
+    counter drift of the cell. Poll until the server is idle, bounded like wait_settled (each
+    poll bounded like the in-window sampler), and raise NotIdle when it never is or when /metrics
+    does not report the idle gauges."""
+    bound = min(timeout, 120.0)
+    deadline = time.monotonic() + bound
+    while True:
+        current = scrape(endpoint, min(timeout, 10.0))
+        try:
+            busy = busy_state(current)
+        except NotIdle as error:
+            raise NotIdle(f"{endpoint.label}: {error} before {before}") from None
+        if not busy:
+            return current
+        if time.monotonic() >= deadline:
+            state = ", ".join(f"{key}={value}" for key, value in busy.items())
+            raise NotIdle(
+                f"{endpoint.label}: server not idle before {before} after {bound:g} s ({state}); "
+                "the window's /metrics deltas would count earlier requests"
+            )
+        time.sleep(0.1)
+
+
 def cell_request_count(workload: dict[str, Any], concurrency: int) -> int:
     cycle = int(workload["hit_requests_per_cycle"]) + int(workload["miss_requests_per_cycle"])
     floor = max(int(workload["minimum_requests_per_cell"]), concurrency)
@@ -623,7 +683,7 @@ def seed_hot_set(
             rows.extend(endpoint_rows)
             failures.extend(endpoint_failures)
     for endpoint in endpoints:
-        snapshot = scrape(endpoint, timeout)
+        snapshot = wait_idle(endpoint, timeout, "the hot-set retention check")
         entries = metric_value(snapshot, "prefix_cache_entries")
         if entries < entry_n:
             failures.append(
@@ -698,7 +758,7 @@ def run_cell(
         endpoint.label: make_jobs(endpoint, workload, namespace, arm, rep, concurrency, grid)
         for endpoint in endpoints
     }
-    before = {endpoint.label: scrape(endpoint, timeout) for endpoint in endpoints}
+    before = {endpoint.label: wait_idle(endpoint, timeout) for endpoint in endpoints}
     barrier = threading.Barrier(concurrency * len(endpoints) + 1)
     go = threading.Event()
     release_box: list[float | None] = [None]
