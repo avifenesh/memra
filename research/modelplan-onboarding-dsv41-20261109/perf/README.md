@@ -1230,11 +1230,14 @@ plain device addresses, which is what every large gather did. The fix keeps the 
 order and the events and changes the call: every copy between two ranks' cards is
 `cuMemcpyPeerAsync` naming both contexts (`copy_peer` in `tp.rs`: the packed gather, both
 peer-pull branches, and the bench's copy probe). Pure movement, so the bytes are unchanged.
-Expected at four cards: 4,096 tokens from 4.0 s to about 0.6 to 0.7 s (40 layers x (11.4 ms of
-kernels + 170 MB at 31 to 50 GB/s)), to be measured in the next four-card window with the probe's
-per-card-pair rows. Owed before this lands: the tp gates on one card and the pair (20 layers),
-the pair's prefill and decode A B B A in steady state, and the gather probe's in-kernel against
-kept-block crossing, which alone may move the push limit (in its own commit).
+Where it reaches: under the default transport (device-push) every gather of a decode call of up
+to 8 rows stays inside kernels at two and at four ranks (the push limit above), so a decode step
+of up to 8 rows never calls `copy_peer` and runs the build's decode as before. The large gathers
+of a prefill (and of wider calls) go through it, as does every gather under
+`MEMRA_TP_TRANSPORT=peer-pull`. So the pair's decode A B B A has nothing to measure; the prefill
+is measured below. The byte gates below cover the pair (the copy crossing cards) and one GB10
+card (four ranks, no copy crossing cards); the four-card byte gate (`dsv41-gate tp --devices
+0,1,2,3`, default and peer-pull) runs in the next four-card window.
 
 Measured after the fix (2026-11-12 and 13; the cards at their set limits, 250 W on cards 0 and 1,
 280 W on 2 and 3; no run flagged for a slowdown, no page-cache drop inside a run):
@@ -1242,17 +1245,20 @@ Measured after the fix (2026-11-12 and 13; the cards at their set limits, 250 W 
 - The pair (cards 2 and 3, `receipts/pairgates-kpc-23`): the tp gates pass on every transport,
   default 480 checks, peer-pull 478, host-canonical 478, the graph door 1,105, 0 failed, with the
   push-gather stress (20,000 gathers, 0 words differ) and its control.
-- The copy probe on the pair (`receipts/p2p-probe3-pair23`, a 16 MiB gather a rank, median of the
-  probe's runs): 51.4 to 52.3 GB/s a rank for every block kind and call, against 2.5 to 2.9 before;
-  each direction of the pair alone 54.3 to 55.0. A pool block read by device address is 46.3 and a
-  block allocated for each gather 25.2; the engine uses neither now.
+- The copy probe on the pair (`receipts/p2p-probe3-pair23`, median of the probe's runs): at 16 MiB a
+  rank 51.4 to 52.3 GB/s for every block kind through the peer call (and cudaMalloc blocks by device
+  address), each direction alone 54.3 to 55.0; the old call, a pool block read by device address,
+  runs at 46.3 at 16 MiB and 30.25 at 1 MiB on the pair (36.9 through the peer call at 1 MiB), and a
+  block allocated for each gather at 25.2. The 2.5 to 2.9 GB/s of the old call is the four-card
+  figure (`receipts/p2p-probe2`), where it was slow.
 - The gather crossover (`receipts/gather-kpc-pair23`): 1,024 KiB a rank in 8 rows on two ranks
   takes 46.5 us through kept blocks and 92.6 us inside kernels, so the push limit (inside kernels
   up to 224 KiB a rank) stays.
 - Four cards, 40 layers, k3 (A) against this build (B), first-token time of a prefill
   (`receipts/prefillab-kpc-four`, `receipts/prefillab-kpc-four-131k`, the block's tables in
-  `prefillab-kpc-four/block/`): A B B A twice with three rounds a run at 4,096 and 32,768 tokens,
-  A B B A once with two rounds a run at 131,072.
+  `prefillab-kpc-four/block/`): A B B A twice at 4,096 and 32,768 tokens, so 4 runs (processes) an
+  arm with three rounds each, n 12 an arm; A B B A once at 131,072, 2 runs an arm with two rounds
+  each, n 4 an arm. The telemetry is gzipped (`lease.telemetry.csv.gz`).
 
 | tokens | n a arm | k3 median [min, max] ms | kpc median [min, max] ms | kpc / k3 |
 |---|---|---|---|---|
