@@ -1540,6 +1540,8 @@ fn serve_loop(
             let panic = $panicked.then_some(why.as_str());
             if let Some(dead) = route_dies(up.rn.transport_lost(), probe, panic) {
                 eprintln!("[dsv41-serve] {dead}");
+                // the renderer's finished requests get the route's reason too, and their end
+                drain_into(rx, &mut pending);
                 fail_pending(&mut pending, health, &dead);
                 return Some(dead);
             }
@@ -1561,15 +1563,8 @@ fn serve_loop(
             };
             pending.push_back(pr);
         }
-        loop {
-            match rx.try_recv() {
-                Ok(pr) => pending.push_back(pr),
-                Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    closing = true;
-                    break;
-                }
-            }
+        if drain_into(rx, &mut pending) {
+            closing = true;
         }
         // clients that left: their requests end at this step boundary
         let mut i = 0;
@@ -2143,6 +2138,18 @@ fn fail_all(act: &mut Vec<Active>, seqs: &mut Vec<Seq>, health: &Arc<RouteHealth
     }
 }
 
+/// Move what `rx` holds now into `pending`, in arrival order, without waiting; true once the
+/// sender is gone.
+fn drain_into<T>(rx: &Receiver<T>, pending: &mut VecDeque<T>) -> bool {
+    loop {
+        match rx.try_recv() {
+            Ok(x) => pending.push_back(x),
+            Err(std::sync::mpsc::TryRecvError::Empty) => return false,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => return true,
+        }
+    }
+}
+
 /// Answer every request still waiting for memory with `why`: the route stops serving.
 fn fail_pending(pending: &mut VecDeque<Prepared>, health: &Arc<RouteHealth>, why: &str) {
     for mut pr in pending.drain(..) {
@@ -2218,6 +2225,22 @@ mod tests {
         let panic = route_dies(None, Ok(()), Some("deepseek-v4.1 step panicked: index"))
             .expect("a caught panic stops it");
         assert!(panic.contains("panic"));
+    }
+
+    /// A stop drains what the renderer already handed over, in order, without waiting, and
+    /// says when the renderer is gone.
+    #[test]
+    fn drain_into_takes_every_finished_request_in_order() {
+        let (tx, rx) = std::sync::mpsc::channel::<u32>();
+        let mut pending: VecDeque<u32> = VecDeque::from([1]);
+        tx.send(2).unwrap();
+        tx.send(3).unwrap();
+        assert!(!drain_into(&rx, &mut pending));
+        assert_eq!(pending, VecDeque::from([1, 2, 3]));
+        tx.send(4).unwrap();
+        drop(tx);
+        assert!(drain_into(&rx, &mut pending));
+        assert_eq!(pending, VecDeque::from([1, 2, 3, 4]));
     }
 
     #[test]
