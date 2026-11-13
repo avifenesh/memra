@@ -1610,6 +1610,76 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         }
     }
 
+    // Weights concatenated by rows at load (`load_fp8_cat`: wq_a + wkv, the shared expert's w1 + w3 at
+    // one, two and four ranks): one call over the concatenation against the two calls over the parts,
+    // every element byte for byte, at decode and prefill widths, in every form a width takes.
+    // (rows of the first part, of the second, k)
+    for &(n1, n2, k) in &[
+        (1280usize, 512usize, 5120usize),
+        (576, 576, 5120),
+        (1152, 1152, 5120),
+        (2304, 2304, 5120),
+    ] {
+        let kb = k / 32;
+        let n = n1 + n2;
+        let (w, blk) = (
+            rng.e4m3(n * k),
+            rng.range(n1.div_ceil(32) * kb + n2.div_ceil(32) * kb, 100, 127),
+        );
+        // each part's checkpoint codes: one per 32 x 32 block of its own rows
+        let code = |r: usize, b: usize| {
+            if r < n1 {
+                blk[r / 32 * kb + b]
+            } else {
+                blk[n1.div_ceil(32) * kb + (r - n1) / 32 * kb + b]
+            }
+        };
+        let wc = Buf::from_bytes(&st, &w)?;
+        let sc = Buf::from_bytes(&st, &v::sf_pack(n, k, code))?;
+        let w1 = Buf::from_bytes(&st, &w[..n1 * k])?;
+        let s1 = Buf::from_bytes(&st, &v::sf_pack(n1, k, code))?;
+        let w2 = Buf::from_bytes(&st, &w[n1 * k..])?;
+        let s2 = Buf::from_bytes(&st, &v::sf_pack(n2, k, |r, b| code(n1 + r, b)))?;
+        for m in [1usize, 3, 8, 16, 64, 300] {
+            let a = Buf::from_bytes(&st, &rng.e4m3(m * k))?;
+            let asf = Buf::from_bytes(&st, &sfp(m, k, &rng.range(m * kb, 118, 130)))?;
+            let forms: &[i32] = if m <= 16 { &[0, 1, 2, 3, 4] } else { &[0, 1] };
+            for &form in forms {
+                let run = |wd: &Buf, sd: &Buf, nn: usize| -> Result<Vec<u8>, String> {
+                    let c = ops.buf(m * nn * 2)?;
+                    dense(
+                        a.p(&st),
+                        asf.p(&st),
+                        wd.p(&st),
+                        k,
+                        sd.p(&st),
+                        0,
+                        c.p(&st),
+                        nn,
+                        m,
+                        nn,
+                        k,
+                        form,
+                    )?;
+                    c.host(&st)
+                };
+                let cat = run(&wc, &sc, n)?;
+                let (p1, p2) = (run(&w1, &s1, n1)?, run(&w2, &s2, n2)?);
+                let mut parts = Vec::with_capacity(cat.len());
+                for r in 0..m {
+                    parts.extend_from_slice(&p1[r * n1 * 2..(r + 1) * n1 * 2]);
+                    parts.extend_from_slice(&p2[r * n2 * 2..(r + 1) * n2 * 2]);
+                }
+                same(
+                    rep,
+                    &format!("schedule/fused_rows/{n1}+{n2}_k{k}_m{m}_form{form}"),
+                    &cat,
+                    &parts,
+                );
+            }
+        }
+    }
+
     // The split MoE's small-row quantization: `np + rows` hidden rows into two scale layouts in one
     // launch (the pairs' rows a layout of np rows, the shared expert's rows their own at the next
     // 128-row block) == act_quant's row-major codes and scales placed through sf_place twice.

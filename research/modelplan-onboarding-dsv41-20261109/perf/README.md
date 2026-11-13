@@ -1756,6 +1756,48 @@ GB10 gates of this tree are queued (kernels, tp at 2 and 4 ranks on every transp
 Sparks went to a landing record). The new checks pass in the final tree's kernel gates on GB10 and on sm_120 (972
 checks, 0 failed each; `receipts/gates-cutlass-gb10/s4`, `receipts/kgate-5090/s4`).
 
+### wq_a + wkv and the shared expert's w1 + w3 as one weight each
+
+`wq_a` (the query latent, 1,280 rows) and `wkv` (the single KV head, 512 rows) read the same act-quantized attention
+input, and so do the shared expert's w1 and w3. Each pair is now one weight, loaded once as the two parts' rows in
+order (`load_fp8_cat`: the codes concatenated, each row's scale codes the checkpoint's, repacked into the layout of
+the whole), and one call computes both: one act_quant and one GEMM where there were two of each (two GEMMs for the
+shared expert). An element is one chain over K of its weight row against its input row wherever the row sits, so the
+fused call writes, element for element, the bytes of the two calls: the kernel gate holds the call over the
+concatenation to the two calls over the parts in every form a width takes (`schedule/fused_rows/*`: 1,280 + 512, 576 +
+576, 1,152 + 1,152 and 2,304 + 2,304 rows, K 5120, 1 to 300 rows).
+
+`q_lora` is a multiple of 128, so `wq_a` and `wkv` stay weights of their own as views of the fused rows (`QW::
+view_rows`: the scale layout keeps 128-row blocks whole), for the one caller that projects the KV head alone (the
+draft stages' ring seeding). The shared expert's halves are 576 rows a rank at four ranks, which cuts a 128-row block,
+so the shared expert holds only the fused weight (`shared13`) and w2 (`shared2`). The query latent's and the window
+KV's norms read their halves of the fused output (the norm kernels take any row pitch) into buffers of their own.
+
+The keys side no longer starts with `wkv`: the fused call runs on the main stream before the fork, and the second
+stream's branch starts at the KV norm (the fused output lives in `AttnKeys` until the heads join the branch).
+
+One four-rank decode layer's dense FP8 linears on one rank (act_quant and GEMM a linear; `wq_a`, `wkv`, the query's
+`wq_b`, the indexer's `wq_b`, `wo_b`, the shared expert's w1 and w3; the fused tree issues 10 launches for the CUTLASS
+tree's 13), RTX 5090 Laptop, probe, graph replay, medians of four interleaved runs, us
+(`receipts/dense-small/out-full2-1113-0430`; the second block runs each call at a PRO 6000's four-rank share per SM):
+
+| rows | k3 | CUTLASS tree | this tree | this / CUTLASS | this / k3 |
+|---|---|---|---|---|---|
+| 1 | 92.9 | 89.7 | 69.4 | 0.77 | 0.75 |
+| 4 | 108.9 | 89.4 | 69.8 | 0.78 | 0.64 |
+| 8 | 127.7 | 90.0 | 70.4 | 0.78 | 0.55 |
+| 16 | 157.7 | 97.7 | 76.0 | 0.78 | 0.48 |
+| 1, a PRO 6000's share per SM | 60.1 | 75.2 | 49.3 | 0.66 | 0.82 |
+| 4, the same | 64.3 | 75.7 | 50.0 | 0.66 | 0.78 |
+| 8, the same | 77.6 | 76.3 | 52.2 | 0.68 | 0.67 |
+| 16, the same | 93.7 | 83.0 | 60.5 | 0.73 | 0.65 |
+
+GB10 gates of this tree (cb33, `receipts/gates-cutlass-gb10/s4`): kernels 972 checks, 0 failed (96
+`schedule/fused_rows/*`, 20 split-path checks); layer 161/0 with default routing and with `--dense-form 4`, the 111
+saved tensors byte-identical to the fa825eee set both times (the fused weights in place); tp at 2 ranks peer-pull
+478/0. The other transports, 4 ranks, decode, the graph door and the tapes are queued. sm_120 kernel gate (RTX 5090
+Laptop): 972/0 (`receipts/kgate-5090/s4`).
+
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
 The order gate above ran on the decode lane's 18 tapes. Its interval was wide, so 35 more vendor

@@ -2339,7 +2339,7 @@ impl Group {
             .iter()
             .map(|w| Blk {
                 off: r0 * d * 2 + w.dim0 * 2,
-                width: w.shared[1].n * 2,
+                width: w.shared2.n * 2,
                 pitch: d * 2,
                 rows,
             })
@@ -2931,7 +2931,7 @@ impl Ctx {
         out: Dp,
     ) -> Result<(), String> {
         let st = self.ops.st.clone();
-        let (inter, n, np, dn) = (self.g.moe_inter, plan.np + rows, plan.np, lw.shared[1].n);
+        let (inter, n, np, dn) = (self.g.moe_inter, plan.np + rows, plan.np, lw.shared2.n);
         if super::moe_small_takes(plan, dn, 1) {
             // the small-row body: the pairs' and the shared expert's rows quantized straight into
             // two scale layouts in one launch (pair p at scale row p; the shared rows a layout of
@@ -2982,7 +2982,7 @@ impl Ctx {
                 q.at(&st, np * inter),
                 asf.at(&st, s_np),
                 rows,
-                &lw.shared[1],
+                &lw.shared2,
                 o.at(&st, np * dn * 2),
                 dn,
                 false,
@@ -3055,7 +3055,7 @@ impl Ctx {
         out: Dp,
     ) -> Result<(), String> {
         let st = self.ops.st.clone();
-        let (inter, np, dn) = (self.g.moe_inter, plan.np, lw.shared[1].n);
+        let (inter, np, dn) = (self.g.moe_inter, plan.np, lw.shared2.n);
         let o = self.ops.tmp((np + rows) * dn * 2)?;
         // the row-major scales into the GEMMs' layout: the pairs' at their rows of the experts'
         // padded layout, the shared expert's rows as a call of their own
@@ -3099,7 +3099,7 @@ impl Ctx {
             q.at(&st, np * inter),
             ssf.p(&st),
             rows,
-            &lw.shared[1],
+            &lw.shared2,
             o.at(&st, np * dn * 2),
             dn,
             false,
@@ -3119,7 +3119,7 @@ impl Ctx {
     ) -> Result<(), String> {
         let g = &self.g;
         let st = self.ops.st.clone();
-        let (d, np, dn) = (g.dim, plan.np, lw.shared[1].n);
+        let (d, np, dn) = (g.dim, plan.np, lw.shared2.n);
         ck("moe_combine", unsafe {
             ffi::memra_v41_moe_combine(
                 o.p(&st).c(),
@@ -3178,8 +3178,9 @@ impl Ctx {
     }
 }
 
-/// [`Ctx::shared_expert`] on `ops`'s stream with `scr` as its activation scratch. `w1` and `w3`
-/// read the same rows, so the rows are quantized once for both.
+/// [`Ctx::shared_expert`] on `ops`'s stream with `scr` as its activation scratch: the rows
+/// quantized once, w1 and w3 in one call over their fused rows (`shared13`), the SwiGLU over its
+/// two halves, w2.
 pub fn shared_expert_on(
     ops: &super::Ops,
     scr: &mut super::Scratch,
@@ -3189,21 +3190,18 @@ pub fn shared_expert_on(
     rows: usize,
 ) -> Result<Buf, String> {
     let st = ops.st.clone();
-    let (d, inter) = (g.dim, g.moe_inter);
-    let [s1, s2, s3] = &lw.shared;
-    let gb = ops.tmp(rows * inter * 2)?;
-    let ub = ops.tmp(rows * inter * 2)?;
+    let (d, inter) = (g.dim, lw.shared13.n / 2);
+    let gu = ops.tmp(rows * 2 * inter * 2)?;
     let hb = ops.tmp(rows * inter * 2)?;
     let out = ops.tmp(rows * d * 2)?;
     let (q, qs) = scr.actq(ops, rows, d)?;
     ops.act_quant(x, d, Dp::NULL, rows, d, q, qs)?;
-    ops.gemm_q(q, qs, rows, s1, gb.p(&st), inter, false)?;
-    ops.gemm_q(q, qs, rows, s3, ub.p(&st), inter, false)?;
+    ops.gemm_q(q, qs, rows, &lw.shared13, gu.p(&st), 2 * inter, false)?;
     ck("swiglu", unsafe {
         ffi::memra_v41_swiglu(
-            gb.p(&st).m(),
-            ub.p(&st).m(),
-            inter as i64,
+            gu.p(&st).c(),
+            gu.at(&st, inter * 2).c(),
+            (2 * inter) as i64,
             std::ptr::null(),
             g.swiglu_limit,
             hb.p(&st).m(),
@@ -3213,7 +3211,16 @@ pub fn shared_expert_on(
             ops.sv(),
         )
     })?;
-    ops.linear_q(hb.p(&st), inter, rows, s2, out.p(&st), d, false, scr)?;
+    ops.linear_q(
+        hb.p(&st),
+        inter,
+        rows,
+        &lw.shared2,
+        out.p(&st),
+        d,
+        false,
+        scr,
+    )?;
     Ok(out)
 }
 
@@ -3242,15 +3249,14 @@ pub fn split_hidden_shared(
     let (d, inter, hn, h0) = (g.dim, g.moe_inter, lw.hid_l, lw.hid0);
     let (q, qs) = scr.actq(ops, rows, d)?;
     ops.act_quant(x, d, Dp::NULL, rows, d, q, qs)?;
-    let gs = ops.tmp(rows * hn * 2)?;
-    let us = ops.tmp(rows * hn * 2)?;
-    ops.gemm_q(q, qs, rows, &lw.shared[0], gs.p(&st), hn, false)?;
-    ops.gemm_q(q, qs, rows, &lw.shared[2], us.p(&st), hn, false)?;
+    // w1 and w3 of the rank's hidden rows in one call over their fused rows
+    let gu = ops.tmp(rows * 2 * hn * 2)?;
+    ops.gemm_q(q, qs, rows, &lw.shared13, gu.p(&st), 2 * hn, false)?;
     ck("swiglu", unsafe {
         ffi::memra_v41_swiglu(
-            gs.p(&st).m(),
-            us.p(&st).m(),
-            hn as i64,
+            gu.p(&st).c(),
+            gu.at(&st, hn * 2).c(),
+            (2 * hn) as i64,
             std::ptr::null(),
             g.swiglu_limit,
             hb.at(&st, np * inter * 2 + h0 * 2).m(),

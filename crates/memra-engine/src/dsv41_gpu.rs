@@ -1156,6 +1156,17 @@ impl Buf {
         let s = unsafe { st.upgrade_device_ptr::<u8>(self.p(st).addr(), self.s.len()) };
         Self::own(s, self.len, Home::Alias)
     }
+    /// A second handle on bytes `[off, off + len)` of this buffer that frees nothing when it drops.
+    ///
+    /// # Safety
+    /// As [`Self::alias`]: the caller keeps the buffer alive, and its bytes meaningful, for as long as
+    /// the handle is read.
+    pub unsafe fn alias_range(&self, st: &Arc<CudaStream>, off: usize, len: usize) -> Self {
+        assert!(off + len <= self.len, "Buf::alias_range past the end");
+        // SAFETY: a range inside a live allocation; `Home::Alias` never frees it
+        let s = unsafe { st.upgrade_device_ptr::<u8>(self.p(st).addr() + off as u64, len.max(1)) };
+        Self::own(s, len, Home::Alias)
+    }
     /// Device address `off` bytes in.
     pub fn at(&self, st: &Arc<CudaStream>, off: usize) -> Dp {
         assert!(off <= self.len, "Buf::at past the end");
@@ -1797,6 +1808,39 @@ pub struct QW {
     pub fmt: QFmt,
 }
 
+impl QW {
+    /// Rows `[r0, r0 + n)` of this weight as a weight of its own on the same memory: the codes and
+    /// their scales in the layout of `n` rows (the layout keeps 128-row blocks whole, so `r0` starts
+    /// one and the rows end on one or at the weight's end).
+    ///
+    /// # Safety
+    /// The caller keeps `self` alive for as long as the view is read (a layer holds both).
+    pub unsafe fn view_rows(&self, ops: &Ops, r0: usize, n: usize) -> Result<QW, String> {
+        let end = r0 + n;
+        if !r0.is_multiple_of(128) || end > self.n || (!n.is_multiple_of(128) && end != self.n) {
+            return Err(format!(
+                "rows {r0}..{end} of {} cut a 128-row block of the scale layout",
+                self.n
+            ));
+        }
+        let row = match self.fmt {
+            QFmt::Fp8Block32 => self.k,
+            _ => self.k / 2,
+        };
+        let (s0, sl) = (sf_bytes(r0, self.k), sf_bytes(n, self.k));
+        // SAFETY: both ranges lie inside the weight's buffers, which the caller keeps alive
+        unsafe {
+            Ok(QW {
+                w: self.w.alias_range(&ops.st, r0 * row, n * row),
+                s: self.s.alias_range(&ops.st, s0, sl),
+                n,
+                k: self.k,
+                fmt: self.fmt,
+            })
+        }
+    }
+}
+
 /// A bf16 weight `[n][k]` on the device.
 pub struct BW {
     pub w: Buf,
@@ -1966,6 +2010,43 @@ pub fn load_fp8(ops: &Ops, stm: &StModel, p: &str, n: usize, k: usize) -> Result
         w: Buf::from_bytes(&ops.st, bw)?,
         s: Buf::from_bytes(&ops.st, &sf_pack(n, k, |r, b| bs[r / 32 * kb + b]))?,
         n,
+        k,
+        fmt: QFmt::Fp8Block32,
+    })
+}
+
+/// FP8 32x32 dense weights read from the same input as one weight: `parts` lists `(name, n, rows)`,
+/// rows `rows` of `{name}` (`[n][k]` in the checkpoint), and the weight is their rows in that order,
+/// each row's codes and scale codes the checkpoint's (one call over the concatenation writes, for
+/// every element, the bytes of the call over its own weight: an output element is one chain over K
+/// of its row against the input row, wherever the row sits).
+pub fn load_fp8_cat(
+    ops: &Ops,
+    stm: &StModel,
+    parts: &[(String, usize, std::ops::Range<usize>)],
+    k: usize,
+) -> Result<QW, String> {
+    let kb = k.div_ceil(32);
+    let total: usize = parts.iter().map(|p| p.2.len()).sum();
+    let mut w = Vec::with_capacity(total * k);
+    let mut codes = Vec::with_capacity(total * kb);
+    for (p, n, rows) in parts {
+        let (iw, bw) = raw(stm, &format!("{p}.weight"))?;
+        want(iw, p, "F8_E4M3", &[*n as u64, k as u64])?;
+        let (is, bs) = raw(stm, &format!("{p}.scale"))?;
+        want(is, p, "F8_E8M0", &[n.div_ceil(32) as u64, kb as u64])?;
+        if rows.end > *n {
+            return Err(format!("{p}: rows {rows:?} of {n}"));
+        }
+        w.extend_from_slice(&bw[rows.start * k..rows.end * k]);
+        for r in rows.clone() {
+            codes.extend_from_slice(&bs[r / 32 * kb..r / 32 * kb + kb]);
+        }
+    }
+    Ok(QW {
+        w: Buf::from_bytes(&ops.st, &w)?,
+        s: Buf::from_bytes(&ops.st, &sf_pack(total, k, |r, b| codes[r * kb + b]))?,
+        n: total,
         k,
         fmt: QFmt::Fp8Block32,
     })
@@ -2445,6 +2526,10 @@ pub struct LayerW {
     pub hc_ffn_scale: Buf,
     pub attn_norm: Buf,
     pub ffn_norm: Buf,
+    /// `wq_a`'s rows then `wkv`'s, one weight: both read the attention input, so one call computes
+    /// the query latent and the window KV row (each element the bytes of its own weight's call)
+    pub wqkv: QW,
+    /// views of `wqkv`'s rows (`q_lora` is a multiple of 128, so each is a weight of its own)
     pub wq_a: QW,
     pub q_norm: Buf,
     pub wq_b: QW,
@@ -2461,7 +2546,10 @@ pub struct LayerW {
     /// the routed experts' weight table for the device-planned dispatch (`V41ExpW` per expert:
     /// w1, w2, w3 weight and scale pointers and minted scale2)
     pub exp_tab: Buf,
-    pub shared: [QW; 3],
+    /// the shared expert: w1's rows then w3's rows of this rank's hidden share in one weight (one
+    /// call, the SwiGLU reads its two halves), and w2 (this rank's output rows when split)
+    pub shared13: QW,
+    pub shared2: QW,
     pub engram: Option<EngramW>,
 }
 
@@ -2630,18 +2718,36 @@ impl LayerW {
         }
         let exp_tab = Buf::from_bytes(&ops.st, &expert_table(ops, &experts_w))?;
         let sp = format!("{p}.ffn.shared_experts");
-        let shared = if split {
-            [
-                load_fp8_rows(ops, stm, &format!("{sp}.w1"), inter, dim, hid.clone())?,
-                load_fp8_rows(ops, stm, &format!("{sp}.w2"), dim, inter, dims.clone())?,
-                load_fp8_rows(ops, stm, &format!("{sp}.w3"), inter, dim, hid.clone())?,
-            ]
+        let srows = if split { hid.clone() } else { 0..inter };
+        let shared13 = load_fp8_cat(
+            ops,
+            stm,
+            &[
+                (format!("{sp}.w1"), inter, srows.clone()),
+                (format!("{sp}.w3"), inter, srows),
+            ],
+            dim,
+        )?;
+        let shared2 = if split {
+            load_fp8_rows(ops, stm, &format!("{sp}.w2"), dim, inter, dims.clone())?
         } else {
-            [
-                load_fp8(ops, stm, &format!("{sp}.w1"), inter, dim)?,
-                load_fp8(ops, stm, &format!("{sp}.w2"), dim, inter)?,
-                load_fp8(ops, stm, &format!("{sp}.w3"), inter, dim)?,
-            ]
+            load_fp8(ops, stm, &format!("{sp}.w2"), dim, inter)?
+        };
+        let wqkv = load_fp8_cat(
+            ops,
+            stm,
+            &[
+                (format!("{p}.attn.wq_a"), g.q_lora, 0..g.q_lora),
+                (format!("{p}.attn.wkv"), g.head_dim, 0..g.head_dim),
+            ],
+            g.dim,
+        )?;
+        // SAFETY: the layer holds `wqkv` with its two views
+        let (wq_a, wkv) = unsafe {
+            (
+                wqkv.view_rows(ops, 0, g.q_lora)?,
+                wqkv.view_rows(ops, g.q_lora, g.head_dim)?,
+            )
         };
         let engram = if let Some(ei) = g.engram_layers.iter().position(|&l| l == id) {
             let cols = g.engram_cols();
@@ -2702,7 +2808,8 @@ impl LayerW {
             hc_ffn_scale: load_vec_f32(ops, stm, &format!("{p}.hc_ffn_scale"), 3)?,
             attn_norm: load_vec_bf16(ops, stm, &format!("{p}.attn_norm.weight"), g.dim)?,
             ffn_norm: load_vec_bf16(ops, stm, &format!("{p}.ffn_norm.weight"), g.dim)?,
-            wq_a: load_fp8(ops, stm, &format!("{p}.attn.wq_a"), g.q_lora, g.dim)?,
+            wqkv,
+            wq_a,
             q_norm: load_vec_bf16(ops, stm, &format!("{p}.attn.q_norm.weight"), g.q_lora)?,
             wq_b: load_fp8_rows(
                 ops,
@@ -2712,7 +2819,7 @@ impl LayerW {
                 g.q_lora,
                 heads.start * hd..heads.end * hd,
             )?,
-            wkv: load_fp8(ops, stm, &format!("{p}.attn.wkv"), g.head_dim, g.dim)?,
+            wkv,
             kv_norm: load_vec_bf16(ops, stm, &format!("{p}.attn.kv_norm.weight"), g.head_dim)?,
             wo_a: load_wo_a_rows(
                 ops,
@@ -2743,7 +2850,8 @@ impl LayerW {
             gate_b: load_vec_f32(ops, stm, &format!("{p}.ffn.gate.bias"), g.n_experts)?,
             experts: experts_w,
             exp_tab,
-            shared,
+            shared13,
+            shared2,
             engram,
         })
     }
@@ -3069,6 +3177,9 @@ pub struct Trace {
 /// the [`Shared`] state the keys side wrote.
 pub struct AttnKeys {
     pub qr: Buf,
+    /// the fused `wqkv` call's output ([`Ctx::qkv`]), held until the heads have joined the keys
+    /// side, which reads its KV half on the second stream
+    pub qkv: Option<Buf>,
     pub kv_all: Buf,
     pub ww: usize,
     pub tw: usize,
@@ -4061,30 +4172,9 @@ impl Ctx {
         ls: &mut LayerState,
         tr: &mut Trace,
     ) -> Result<AttnKeys, String> {
-        let g = self.g.clone();
         let st = self.ops.st.clone();
         self.nv(c"qr");
-        let qr = self.ops.tmp(s * g.q_lora * 2)?;
-        self.ops.linear_q(
-            x.p(&st),
-            g.dim,
-            s,
-            &lw.wq_a,
-            qr.p(&st),
-            g.q_lora,
-            false,
-            &mut self.scr,
-        )?;
-        self.ops.rmsnorm(
-            qr.p(&st),
-            g.q_lora,
-            &lw.q_norm,
-            qr.p(&st),
-            g.q_lora,
-            s,
-            g.q_lora,
-            g.norm_eps,
-        )?;
+        let (qr, qkv) = self.qkv(lw, x.p(&st), s)?;
         self.nv_end();
         // Everything else of the keys side reads `x` and `qr` and nothing the heads' query
         // projection writes. On a few rows it runs on the second stream, under wq_b and its
@@ -4100,11 +4190,64 @@ impl Ctx {
             self.grow_keys(lw, sp, s, sh)?;
             self.side_begin()?;
         }
-        let k = self.attn_keys_rest(lw, x, qr, sp, s, sh, ls, tr);
+        let k = self.attn_keys_rest(lw, x, qr, &qkv, sp, s, sh, ls, tr);
         if fork {
             self.side_end();
         }
-        k
+        let mut k = k?;
+        k.qkv = Some(qkv);
+        Ok(k)
+    }
+
+    /// The attention input's query latent and window KV rows in one call over the fused weight
+    /// (`wqkv`: one act_quant, one GEMM): `(qr, qkv)`, `qr` `[s][q_lora]` after q_norm, and the
+    /// call's output `qkv` `[s][q_lora + head_dim]`, whose columns from `q_lora` are `wkv(x)`
+    /// ([`Self::kv_norm_of`] reads them). Each element is the bytes of its own weight's call.
+    fn qkv(&mut self, lw: &LayerW, x: Dp, s: usize) -> Result<(Buf, Buf), String> {
+        let st = self.ops.st.clone();
+        let (q, w) = (self.g.q_lora, self.g.q_lora + self.g.head_dim);
+        let qkv = self.ops.tmp(s * w * 2)?;
+        let qr = self.ops.tmp(s * q * 2)?;
+        self.ops.linear_q(
+            x,
+            self.g.dim,
+            s,
+            &lw.wqkv,
+            qkv.p(&st),
+            w,
+            false,
+            &mut self.scr,
+        )?;
+        self.ops.rmsnorm(
+            qkv.p(&st),
+            w,
+            &lw.q_norm,
+            qr.p(&st),
+            q,
+            s,
+            q,
+            self.g.norm_eps,
+        )?;
+        Ok((qr, qkv))
+    }
+
+    /// kv_norm of the window KV rows in a [`Self::qkv`] output, into a buffer of their own
+    /// `[s][head_dim]` (on the stream the rank issues on).
+    fn kv_norm_of(&mut self, lw: &LayerW, qkv: &Buf, s: usize) -> Result<Buf, String> {
+        let st = self.ops.st.clone();
+        let (q, hd) = (self.g.q_lora, self.g.head_dim);
+        let kvw = self.ops.tmp(s * hd * 2)?;
+        self.ops.rmsnorm(
+            qkv.at(&st, q * 2),
+            q + hd,
+            &lw.kv_norm,
+            kvw.p(&st),
+            hd,
+            s,
+            hd,
+            self.g.norm_eps,
+        )?;
+        Ok(kvw)
     }
 
     /// Size the compressed KV and index keys a kv-source call of `s` tokens from `sp` appends
@@ -4160,6 +4303,7 @@ impl Ctx {
         lw: &LayerW,
         x: &Buf,
         qr: Buf,
+        qkv: &Buf,
         sp: usize,
         s: usize,
         sh: &mut Shared,
@@ -4175,29 +4319,10 @@ impl Ctx {
         // several decode tokens in one forward (a drafted block's verification): each row runs
         // the one-token program against the ring as it stood plus the rows before it
         let dec_rows = sp > 0 && s > 1;
-        // this call's window KV: kv_norm(wkv(x)), RoPE, fp8 per-32 quant-dequant
+        // this call's window KV: kv_norm(wkv(x)) (wkv(x) from the fused call), RoPE, fp8 per-32
+        // quant-dequant
         self.nv(c"kv_window");
-        let kvw = self.ops.tmp(s * hd * 2)?;
-        self.ops.linear_q(
-            x.p(&st),
-            g.dim,
-            s,
-            &lw.wkv,
-            kvw.p(&st),
-            hd,
-            false,
-            &mut self.scr,
-        )?;
-        self.ops.rmsnorm(
-            kvw.p(&st),
-            hd,
-            &lw.kv_norm,
-            kvw.p(&st),
-            hd,
-            s,
-            hd,
-            g.norm_eps,
-        )?;
+        let kvw = self.kv_norm_of(lw, qkv, s)?;
         self.ops.rope(
             kvw.p(&st),
             hd,
@@ -4376,6 +4501,7 @@ impl Ctx {
         }
         Ok(AttnKeys {
             qr,
+            qkv: None,
             kv_all,
             ww,
             tw,
@@ -4413,49 +4539,10 @@ impl Ctx {
         if n == 0 || rows.iter().any(|r| r.pos == 0 || r.pos >= self.max_pos) {
             return Err("a batched decode row is one token past its sequence's prefill".into());
         }
-        let qr = self.ops.tmp(n * g.q_lora * 2)?;
-        self.ops.linear_q(
-            x.p(&st),
-            g.dim,
-            n,
-            &lw.wq_a,
-            qr.p(&st),
-            g.q_lora,
-            false,
-            &mut self.scr,
-        )?;
-        self.ops.rmsnorm(
-            qr.p(&st),
-            g.q_lora,
-            &lw.q_norm,
-            qr.p(&st),
-            g.q_lora,
-            n,
-            g.q_lora,
-            g.norm_eps,
-        )?;
-        // every row's window KV: kv_norm(wkv(x)), RoPE at its position, fp8 per-32 quant-dequant
-        let kvw = self.ops.tmp(n * hd * 2)?;
-        self.ops.linear_q(
-            x.p(&st),
-            g.dim,
-            n,
-            &lw.wkv,
-            kvw.p(&st),
-            hd,
-            false,
-            &mut self.scr,
-        )?;
-        self.ops.rmsnorm(
-            kvw.p(&st),
-            hd,
-            &lw.kv_norm,
-            kvw.p(&st),
-            hd,
-            n,
-            hd,
-            g.norm_eps,
-        )?;
+        // the query latent and every row's window KV in one call ([`Self::qkv`]); the KV rows:
+        // kv_norm(wkv(x)), RoPE at its position, fp8 per-32 quant-dequant
+        let (qr, qkv) = self.qkv(lw, x.p(&st), n)?;
+        let kvw = self.kv_norm_of(lw, &qkv, n)?;
         self.ops.rope_pos(
             kvw.p(&st),
             hd,
@@ -4875,6 +4962,7 @@ impl Ctx {
         })?;
         Ok(AttnKeys {
             qr,
+            qkv: None,
             kv_all,
             ww: win,
             tw,
@@ -5077,41 +5165,22 @@ impl Ctx {
         rows: &mut [BatchRow<'_>],
         sel: &mut BatchSel,
     ) -> Result<AttnKeys, String> {
-        let g = self.g.clone();
         let st = self.ops.st.clone();
         let n = rows.len();
-        let qr = self.ops.tmp(n * g.q_lora * 2)?;
-        self.ops.linear_q(
-            x.p(&st),
-            g.dim,
-            n,
-            &lw.wq_a,
-            qr.p(&st),
-            g.q_lora,
-            false,
-            &mut self.scr,
-        )?;
-        self.ops.rmsnorm(
-            qr.p(&st),
-            g.q_lora,
-            &lw.q_norm,
-            qr.p(&st),
-            g.q_lora,
-            n,
-            g.q_lora,
-            g.norm_eps,
-        )?;
+        let (qr, qkv) = self.qkv(lw, x.p(&st), n)?;
         // the rest of the keys side on the second stream, under the heads' wq_b
         // (see [`Self::attn_keys`])
         let fork = n <= side_limit(0);
         if fork {
             self.side_begin()?;
         }
-        let k = self.attn_keys_step_rest(lw, x, qr, pos, step, rows, sel);
+        let k = self.attn_keys_step_rest(lw, x, qr, &qkv, pos, step, rows, sel);
         if fork {
             self.side_end();
         }
-        k
+        let mut k = k?;
+        k.qkv = Some(qkv);
+        Ok(k)
     }
 
     /// [`Self::attn_keys_step`] after `qr`: on the stream the rank issues on.
@@ -5121,6 +5190,7 @@ impl Ctx {
         lw: &LayerW,
         x: &Buf,
         qr: Buf,
+        qkv: &Buf,
         pos: Dp,
         step: StepRef<'_>,
         rows: &mut [BatchRow<'_>],
@@ -5135,28 +5205,8 @@ impl Ctx {
         // the layer's tables: byte offsets a row (see `step_layer_bytes`)
         let (t_ring, t_ckv, t_csc, t_pkv, t_psc, t_ik, t_ca, t_epos, t_base, t_nsel) =
             (24, 32, 40, 48, 56, 64, 72, 80, 84, 88);
-        // every row's window KV into its ring slot
-        let kvw = self.ops.tmp(n * hd * 2)?;
-        self.ops.linear_q(
-            x.p(&st),
-            g.dim,
-            n,
-            &lw.wkv,
-            kvw.p(&st),
-            hd,
-            false,
-            &mut self.scr,
-        )?;
-        self.ops.rmsnorm(
-            kvw.p(&st),
-            hd,
-            &lw.kv_norm,
-            kvw.p(&st),
-            hd,
-            n,
-            hd,
-            g.norm_eps,
-        )?;
+        // every row's window KV into its ring slot (wkv(x) from the fused call)
+        let kvw = self.kv_norm_of(lw, qkv, n)?;
         let table = if comp {
             &self.rope_comp
         } else {
@@ -5429,6 +5479,7 @@ impl Ctx {
         })?;
         Ok(AttnKeys {
             qr,
+            qkv: None,
             kv_all: self.ops.tmp(1)?,
             ww: win,
             tw,

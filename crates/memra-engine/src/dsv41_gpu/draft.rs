@@ -266,35 +266,22 @@ impl Ctx {
         if filled > win {
             return Err(format!("draft: {filled} ring slots of a {win}-slot window"));
         }
-        let qr = self.ops.tmp(b * g.q_lora * 2)?;
-        self.ops.linear_q(
-            x.p(&st),
-            g.dim,
-            b,
-            &lw.wq_a,
-            qr.p(&st),
-            g.q_lora,
-            false,
-            &mut self.scr,
-        )?;
-        self.ops.rmsnorm(
-            qr.p(&st),
-            g.q_lora,
-            &lw.q_norm,
-            qr.p(&st),
-            g.q_lora,
-            b,
-            g.q_lora,
-            g.norm_eps,
-        )?;
+        // the query latent and the block's window KV rows in one call over the fused weight
+        let (qr, qkv) = self.qkv(lw, x.p(&st), b)?;
         let ring = ls.ring.as_ref().ok_or("draft: the stage's ring is empty")?;
         let kv_all = self.ops.tmp((win + b) * hd * 2)?;
         copy_d2d(&self.ops, ring, 0, &kv_all, 0, win * hd * 2)?;
         let kv = kv_all.at(&st, win * hd * 2);
-        self.ops
-            .linear_q(x.p(&st), g.dim, b, &lw.wkv, kv, hd, false, &mut self.scr)?;
-        self.ops
-            .rmsnorm(kv, hd, &lw.kv_norm, kv, hd, b, hd, g.norm_eps)?;
+        self.ops.rmsnorm(
+            qkv.at(&st, g.q_lora * 2),
+            g.q_lora + hd,
+            &lw.kv_norm,
+            kv,
+            hd,
+            b,
+            hd,
+            g.norm_eps,
+        )?;
         self.ops
             .rope(kv, hd, b, 1, hd, &self.rope_base, pos, 1, false)?;
         self.ops.fp8_qdq(kv, hd, b, hd)?;
@@ -305,6 +292,7 @@ impl Ctx {
         }
         Ok(AttnKeys {
             qr,
+            qkv: Some(qkv),
             kv_all,
             ww: tot,
             tw: 0,
