@@ -281,6 +281,16 @@ session. Cost on Qwen3.5-9B NVFP4 + MTP, one RTX 5090, 256-token greedy, N=3 (20
 - **A pooled member closes at its round.** A cohort member whose stream ended gets its usage and
   end of stream at that round, not when the whole cohort returns
   ([POOLED-MEMBER-CLOSE.md](../decisions/POOLED-MEMBER-CLOSE.md)).
+- **A pooled verify fits the device** (memra#1266). Each member's verify holds its replay-free
+  checkpoint (about 157 MB per draft column on Qwen3.8-27B) until its round finishes, so a pooled
+  forward holds all of them at once. A member joins a forward only while the whole forward fits the
+  allocatable memory (driver or unified-allocatable free plus the pool's cached blocks) less the
+  256 MiB launch floor; the rest verify after it, bitwise the same tokens. Before the cohorts step,
+  when that reading cannot fund the largest member's round, unleased prefix entries and then parked
+  sessions are evicted. `/metrics` counts both (`spec_pool_capped_forwards_total`,
+  `spec_cohort_reclaims_total`); the lines are `[spec-pool] pooled MTP verify capped by memory` and
+  `[spec-pool] pre-cohort reclaim`
+  ([POOLED-VERIFY-MEMORY-CAP.md](../decisions/POOLED-VERIFY-MEMORY-CAP.md)).
 
 The burst size stays 32. `128` measured 8.4% more throughput at c=1 and trails 32 by one round
 (about 29 ms) of contended first text; the trade is in the `MEMRA_SPEC_BURST` row of
@@ -295,6 +305,7 @@ Decisions: [SPEC-ADMISSION-GATE](../decisions/SPEC-ADMISSION-GATE.md),
 [SAMPLED-PENDING-CARRY](../decisions/SAMPLED-PENDING-CARRY.md),
 [SPEC-ENTRY-YIELD-BOUND](../decisions/SPEC-ENTRY-YIELD-BOUND.md),
 [SPEC-COHORT-NEWCOMER](../decisions/SPEC-COHORT-NEWCOMER.md),
-[POOLED-MEMBER-CLOSE](../decisions/POOLED-MEMBER-CLOSE.md). Per-request `usage.spec` and the
+[POOLED-MEMBER-CLOSE](../decisions/POOLED-MEMBER-CLOSE.md),
+[POOLED-VERIFY-MEMORY-CAP](../decisions/POOLED-VERIFY-MEMORY-CAP.md). Per-request `usage.spec` and the
 acceptance counters: [metrics.md](metrics.md#speculative-decoding). The dated history is in the
 [archived serving reference](../archive/SERVING-2026-11-12.md#streaming-cadence--admission-latency--the-felt-ttft-arc-lanes-sse-cadence-2026-08-05-admission-latency-2026-08-06).
