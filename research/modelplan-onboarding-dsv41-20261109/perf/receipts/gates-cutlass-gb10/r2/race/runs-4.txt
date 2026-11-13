@@ -1,0 +1,18 @@
+part 4: bins 551698781ff86260 t2, control e91de33033f46c4c d6; 2 ranks on one card, peer-pull, layers 2,24, dense form default, --reps 160, side delay 2000000 ns; NVIDIA GB10, 60
+4-1-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 18 failed FAIL lines 18 passes 480 secs 61 18:06:08
+FAIL layer2/rows12/rep17/rank0/out_stream: 2247 of 491520 bytes differ (rel_l2 4.388e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep17/rank1/out_stream: 2247 of 491520 bytes differ (rel_l2 4.388e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep21/pipelined/rank0/out_stream: 2370 of 491520 bytes differ (rel_l2 5.997e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep21/pipelined/rank1/out_stream: 2370 of 491520 bytes differ (rel_l2 5.997e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+4-1-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 164 18:08:52
+4-1-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 160 18:11:32
+4-1-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 154 18:14:06
+4-2-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 32 failed FAIL lines 32 passes 480 secs 67 18:15:13
+FAIL layer2/rows12/rep7/rank0/out_stream: 5593 of 491520 bytes differ (rel_l2 6.379e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep7/rank1/out_stream: 5593 of 491520 bytes differ (rel_l2 6.379e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep21/rank0/out_stream: 4388 of 491520 bytes differ (rel_l2 2.174e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep21/rank1/out_stream: 4388 of 491520 bytes differ (rel_l2 2.174e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+4-2-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 159 18:17:52
+4-2-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 155 18:20:27
+4-2-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 156 18:23:03
+RACE2-4-DONE 18:23:03

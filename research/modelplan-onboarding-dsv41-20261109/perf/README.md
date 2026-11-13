@@ -2107,6 +2107,45 @@ compared passes a run. The arms were interleaved run by run in one lease.
   forms run the plain kernel, not that path. Neither form showed a corrupt pass under the harness that finds the
   grouped one at 1.5e-2.
 
+The race harness at 30,000 passes an arm (`receipts/gates-cutlass-gb10/r2`). This ran after a second look at the
+review: 1,440 clean passes bound the per-pass rate at 2.1e-3. That is only seven times under the control, and at 40
+layers it would still allow a corrupt step about 8% of the time.
+
+- **Setup.** The shipping default form, two ranks on one card, peer-pull, layers 2 and 24, `--reps 160` (1,920
+  passes a run).
+- **Three arms in triples, run interleaved:**
+  - plain;
+  - `--side-delay 2000000`: every second-stream branch held 2 ms before it starts, so a main-stream write not ordered
+    after the branch lands before it reads;
+  - `--poison-free`: main-stream buffers filled with 0xFF as they drop.
+
+  The ordering arms follow from the debug build's GSYNC arm: syncing every rank around each gather removed the race,
+  which points at ordering.
+- **Positive control.** The race's debug build d6 ran one run before every triple.
+- **Leases.** Sixteen triples in eight 30-minute leases on both Sparks.
+- **Binaries.** cfix on #1281 at `bef6ed28f7`. That build's crates equal those of #1281's `f3b58fb8fb`, which the
+  restack sits on (`7450e9f065` since then changes only `dsv41_gpu/decode.rs`'s probe and the server). The kernel,
+  layer and tape reruns of that build are in the same directory:
+  - kernels 974 / 0;
+  - layer 161 / 0, saved tensors `fa825eee`;
+  - the chat tapes byte-identical to the CUTLASS set, 82 files.
+
+Per arm (`r2/race/summary.md`; a corrupt pass is two failed checks, one per rank; the bound is the one-sided
+95% Clopper-Pearson):
+
+| arm | runs | compared passes | corrupt passes | runs with a corrupt pass | per-pass rate | 95% upper bound |
+|---|---|---|---|---|---|---|
+| control | 16 | 7,680 | 154 | 16 | 2.01e-02 | 2.29e-02 |
+| plain | 16 | 30,720 | 0 | 0 | 0.00e+00 | 9.75e-05 |
+| delay | 16 | 30,720 | 0 | 0 | 0.00e+00 | 9.75e-05 |
+| poison | 16 | 30,720 | 0 | 0 | 0.00e+00 | 9.75e-05 |
+
+No arm of this head wrote a corrupt pass. - Each arm of this head: 0 corrupt passes in 30,720 compared passes, so the per-pass rate is below 9.8e-5 (95%).
+- At 40 layers that bounds a step at 0.39%.
+- The control ran in the same leases, between the triples, and wrote 154 corrupt passes in 7,680: a rate of 2.0e-2, with every one of its 16 runs hit.
+
+The fault inside CUTLASS's swapped ptr-array path stays unlocated. The shipped forms showed no corrupt pass under the harness, the 2 ms side-stream delay or the poisoned frees.
+
 Queued for a wrx window (`receipts/cfix-pro6000/window/win.sh` and its phase scripts):
 - the four-card decode A/B against the base route at 40 layers: four runs an arm, the kernel and tp gates first;
 - the prefill A/B on the pair and on four cards;

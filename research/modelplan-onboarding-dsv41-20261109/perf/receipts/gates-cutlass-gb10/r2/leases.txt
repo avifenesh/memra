@@ -1,0 +1,355 @@
+== lease-b23d-gb.sh-143502.log
+14:35:03 queueing on b23d: t44f gates B1 (tp 2 ranks x3 transports, default form)
+14:35:04 lease claude-code-20261113T143503-2319169
+started pgid 1766193
+93034f57ac466d67c711098d7c9aaca2e097510ca4c98dab5437276a8ed986e8  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-gate
+tp 0,0 peer-pull, dense form default rc 0 478 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank1/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank1/moe_out f3cf05d6209a3893
+tp 0,0 host-canonical, dense form default rc 0 478 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank1/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank1/moe_out f3cf05d6209a3893
+tp 0,0 default, dense form default rc 0 480 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank1/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank1/moe_out f3cf05d6209a3893
+GATES-B1-DONE 14:50:44
+b23d: released
+14:50:57 released; LEASE-DONE
+== lease-b23d-gb.sh-145057.log
+14:50:58 queueing on b23d: t44f gates B2 (tp 4 ranks peer-pull, host-canonical, default form)
+14:50:59 lease claude-code-20261113T145058-2600414
+started pgid 1834028
+93034f57ac466d67c711098d7c9aaca2e097510ca4c98dab5437276a8ed986e8  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-gate
+tp 0,0,0,0 peer-pull, dense form default rc 0 914 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+tp 0,0,0,0 host-canonical, dense form default rc 0 914 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+GATES-B2-DONE 15:01:38
+b23d: released
+15:01:55 released; LEASE-DONE
+== lease-b23d-gb.sh-150155.log
+15:01:55 queueing on b23d: t44f gates B3 (tp 4 ranks default, default form)
+15:01:57 lease claude-code-20261113T150155-2796638
+started pgid 1847203
+93034f57ac466d67c711098d7c9aaca2e097510ca4c98dab5437276a8ed986e8  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-gate
+tp 0,0,0,0 default, dense form default rc 0 916 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+GATES-B3-DONE 15:07:32
+b23d: released
+15:07:44 released; LEASE-DONE
+== lease-b23d-race2.sh-162254.log
+16:22:57 queueing on b23d: t2 race harness part 5 (default form; plain, side delay, poison free; d6 control)
+16:23:04 lease claude-code-20261113T162257-3665267
+started pgid 1986867
+part 5: bins 551698781ff86260 t2, control e91de33033f46c4c d6; 2 ranks on one card, peer-pull, layers 2,24, dense form default, --reps 160, side delay 2000000 ns; NVIDIA GB10, 43
+5-1-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 12 failed FAIL lines 12 passes 480 secs 74 16:24:19
+FAIL layer2/rows12/rep8/rank0/out_stream: 1902 of 491520 bytes differ (rel_l2 3.576e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep8/rank1/out_stream: 1902 of 491520 bytes differ (rel_l2 3.576e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep28/rank0/out_stream: 2969 of 655360 bytes differ (rel_l2 6.041e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep28/rank1/out_stream: 2969 of 655360 bytes differ (rel_l2 6.041e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+5-1-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 152 16:26:51
+5-1-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 150 16:29:21
+5-1-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 160 16:32:01
+5-2-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 14 failed FAIL lines 14 passes 480 secs 65 16:33:06
+FAIL layer2/rows16/rep14/rank0/out_stream: 1197 of 655360 bytes differ (rel_l2 9.960e-5, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep14/rank1/out_stream: 1197 of 655360 bytes differ (rel_l2 9.960e-5, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep20/rank0/out_stream: 1552 of 491520 bytes differ (rel_l2 4.371e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep20/rank1/out_stream: 1552 of 491520 bytes differ (rel_l2 4.371e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+5-2-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 154 16:35:40
+5-2-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 163 16:38:23
+5-2-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 161 16:41:04
+RACE2-5-DONE 16:41:04
+b23d: released
+16:41:18 released; LEASE-DONE
+== lease-b23d-race2.sh-164118.log
+16:41:18 queueing on b23d: t2 race harness part 6 (default form; plain, side delay, poison free; d6 control)
+16:41:20 lease claude-code-20261113T164118-3854159
+started pgid 2052021
+part 6: bins 551698781ff86260 t2, control e91de33033f46c4c d6; 2 ranks on one card, peer-pull, layers 2,24, dense form default, --reps 160, side delay 2000000 ns; NVIDIA GB10, 51
+6-1-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 16 failed FAIL lines 16 passes 480 secs 69 16:42:29
+FAIL layer2/rows12/rep1/rank0/out_stream: 637 of 491520 bytes differ (rel_l2 2.186e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep1/rank1/out_stream: 637 of 491520 bytes differ (rel_l2 2.186e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep3/pipelined/rank0/out_stream: 8309 of 655360 bytes differ (rel_l2 8.053e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep3/pipelined/rank1/out_stream: 8309 of 655360 bytes differ (rel_l2 8.053e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+6-1-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 161 16:45:10
+6-1-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 175 16:48:05
+6-1-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 161 16:50:46
+6-2-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 18 failed FAIL lines 18 passes 480 secs 63 16:51:49
+FAIL layer2/rows12/rep14/pipelined/rank0/out_stream: 1061 of 491520 bytes differ (rel_l2 9.293e-5, max_abs 4.883e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep14/pipelined/rank1/out_stream: 1061 of 491520 bytes differ (rel_l2 9.293e-5, max_abs 4.883e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep15/pipelined/rank0/out_stream: 1694 of 655360 bytes differ (rel_l2 3.729e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep15/pipelined/rank1/out_stream: 1694 of 655360 bytes differ (rel_l2 3.729e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+6-2-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 165 16:54:34
+6-2-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 165 16:57:19
+6-2-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 168 17:00:07
+RACE2-6-DONE 17:00:07
+b23d: released
+17:00:22 released; LEASE-DONE
+== lease-b23d-race2.sh-170022.log
+17:00:25 queueing on b23d: t2 race harness part 7 (default form; plain, side delay, poison free; d6 control)
+17:00:30 lease claude-code-20261113T170025-4051063
+started pgid 2071360
+part 7: bins 551698781ff86260 t2, control e91de33033f46c4c d6; 2 ranks on one card, peer-pull, layers 2,24, dense form default, --reps 160, side delay 2000000 ns; NVIDIA GB10, 50
+7-1-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 22 failed FAIL lines 22 passes 480 secs 71 17:01:43
+FAIL layer2/rows16/rep2/rank0/out_stream: 1908 of 655360 bytes differ (rel_l2 3.719e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep2/rank1/out_stream: 1908 of 655360 bytes differ (rel_l2 3.719e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep11/pipelined/rank0/out_stream: 1204 of 491520 bytes differ (rel_l2 1.320e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep11/pipelined/rank1/out_stream: 1204 of 491520 bytes differ (rel_l2 1.320e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+7-1-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 165 17:04:28
+7-1-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 166 17:07:14
+7-1-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 165 17:09:59
+7-2-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 18 failed FAIL lines 18 passes 480 secs 67 17:11:06
+FAIL layer2/rows12/rep7/pipelined/rank0/out_stream: 1010 of 491520 bytes differ (rel_l2 9.632e-5, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep7/pipelined/rank1/out_stream: 1010 of 491520 bytes differ (rel_l2 9.632e-5, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep23/pipelined/rank0/out_stream: 1611 of 491520 bytes differ (rel_l2 3.798e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep23/pipelined/rank1/out_stream: 1611 of 491520 bytes differ (rel_l2 3.798e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+7-2-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 149 17:13:35
+7-2-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 162 17:16:17
+7-2-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 164 17:19:01
+RACE2-7-DONE 17:19:01
+b23d: released
+17:19:17 released; LEASE-DONE
+== lease-b23d-race2.sh-171917.log
+17:19:18 queueing on b23d: t2 race harness part 8 (default form; plain, side delay, poison free; d6 control)
+17:19:20 lease claude-code-20261113T171918-176600
+started pgid 2090706
+part 8: bins 551698781ff86260 t2, control e91de33033f46c4c d6; 2 ranks on one card, peer-pull, layers 2,24, dense form default, --reps 160, side delay 2000000 ns; NVIDIA GB10, 51
+8-1-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 12 failed FAIL lines 12 passes 480 secs 69 17:20:29
+FAIL layer2/rows16/rep6/rank0/out_stream: 2830 of 655360 bytes differ (rel_l2 4.042e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep6/rank1/out_stream: 2830 of 655360 bytes differ (rel_l2 4.042e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep17/pipelined/rank0/out_stream: 3370 of 655360 bytes differ (rel_l2 3.208e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep17/pipelined/rank1/out_stream: 3370 of 655360 bytes differ (rel_l2 3.208e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+8-1-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 162 17:23:11
+8-1-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 166 17:25:57
+8-1-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 154 17:28:31
+8-2-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 16 failed FAIL lines 16 passes 480 secs 64 17:29:35
+FAIL layer2/rows16/pipelined/rank0/out_stream: 883 of 655360 bytes differ (rel_l2 1.629e-5, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/pipelined/rank1/out_stream: 883 of 655360 bytes differ (rel_l2 1.629e-5, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep3/pipelined/rank0/out_stream: 1058 of 491520 bytes differ (rel_l2 1.106e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep3/pipelined/rank1/out_stream: 1058 of 491520 bytes differ (rel_l2 1.106e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+8-2-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 167 17:32:22
+8-2-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 167 17:35:09
+8-2-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 157 17:37:46
+RACE2-8-DONE 17:37:46
+b23d: released
+17:37:52 released; LEASE-DONE
+== lease-b23d-race.sh-150744.log
+15:07:45 queueing on b23d: t44f race harness (reps 40, forms 2, 3, default; d6 control)
+15:07:46 lease claude-code-20261113T150745-2840381
+started pgid 1854280
+bins 93034f57ac466d67 /home/avifenesh/.cache/dsv41-cfix2/bins/t44f; 2 ranks on one card (--devices 0,0), peer-pull, layers 2,24, --reps 40
+control d6 (the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 14 failed FAIL lines 14 passes 480 secs 65 15:08:52
+FAIL layer2/rows16/rep3/pipelined/rank0/out_stream: 5575 of 655360 bytes differ (rel_l2 5.500e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep3/pipelined/rank1/out_stream: 5575 of 655360 bytes differ (rel_l2 5.500e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep9/pipelined/rank0/out_stream: 1292 of 491520 bytes differ (rel_l2 9.541e-5, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep9/pipelined/rank1/out_stream: 1292 of 491520 bytes differ (rel_l2 9.541e-5, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+form-2-1 (dense form 2) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 61 15:09:53
+form-3-1 (dense form 3) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 60 15:10:53
+form-d-1 (dense form default) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 59 15:11:52
+form-2-2 (dense form 2) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 61 15:12:53
+form-3-2 (dense form 3) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 59 15:13:52
+form-d-2 (dense form default) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 57 15:14:49
+form-2-3 (dense form 2) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 55 15:15:44
+form-3-3 (dense form 3) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 62 15:16:46
+form-d-3 (dense form default) rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 60 15:17:46
+RACE-DONE 15:17:46
+b23d: released
+15:17:57 released; LEASE-DONE
+== lease-cb33-build.sh-142946.log
+14:29:47 queueing on cb33: build t44f (121a)
+14:29:49 lease claude-code-20261113T142947-2270029
+started pgid 3969863
+build t44f start 14:29:50
+t44f engine build rc 0 14:34:37
+d3f09ac7cdd40ec504194e84f49c30f09cf202bdfe99fbfcc1d0778eeae01e06  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-bench
+93034f57ac466d67c711098d7c9aaca2e097510ca4c98dab5437276a8ed986e8  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-gate
+7ec6746865e4aa4ee118344b45f0891c013093bef736b4e2e11a8f99aedf20d6  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-run
+e1b67aba7fb065f9c109e4309988a9397dfed16645822d616071999f5f11a57c  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-tpbench
+BUILD-DONE 14:34:37
+cb33: released
+14:34:42 released; LEASE-DONE
+== lease-cb33-build.sh-154428.log
+15:44:30 queueing on cb33: build t2 (121a)
+16:15:01 lease claude-code-20261113T154430-3193508
+started pgid 298809
+build t2 start 16:15:02
+t2 engine build rc 0 16:19:50
+06dcbe8fd9460b96a2f6022cb5f371f31089d18c84e38e0cfa58dc8973e6e001  /home/avifenesh/.cache/dsv41-cfix2/bins/t2/dsv41-bench
+551698781ff86260c7a07bde21693034fb8f61e9ac2a0b628e33cd85b38098c8  /home/avifenesh/.cache/dsv41-cfix2/bins/t2/dsv41-gate
+434af641940fffcd6d4c4767cb08c3c57d8a10cfe9e4ebdd0ae4cbe2368490a9  /home/avifenesh/.cache/dsv41-cfix2/bins/t2/dsv41-run
+2d64242f5b2bc8005a707843a72e1c4ce5caa5482008f840c75a4d61d27e2b2f  /home/avifenesh/.cache/dsv41-cfix2/bins/t2/dsv41-tpbench
+BUILD-DONE 16:19:50
+cb33: released
+16:20:05 released; LEASE-DONE
+== lease-cb33-ga.sh-143443.log
+14:34:43 queueing on cb33: t44f gates A (kernels, layer default form)
+14:37:43 lease claude-code-20261113T143443-2316322
+started pgid 4037600
+NVIDIA GB10, 208 MHz, 59
+93034f57ac466d67c711098d7c9aaca2e097510ca4c98dab5437276a8ed986e8  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-gate
+kernels (every form, by construction) rc 0 974 checks, 0 failed 0 FAIL lines
+kernels: 576 dense_small PASS, 20 split-path PASS, 96 fused PASS
+layer, dense form default rc 0 161 checks, 0 failed 0 FAIL lines
+fa825eeaa1bc5b0f98f0c957120022ce863718fc81b72d2495b899ce23ebf161  /home/avifenesh/.cache/dsv41-cfix2/out/gates-t44f/save.sha256
+layer, dense form default, saved tensors against the CUTLASS set: IDENTICAL (111 files; ref sha fa825eeaa1bc5b0f)
+GATES-A-DONE 14:41:53
+cb33: released
+14:42:06 released; LEASE-DONE
+== lease-cb33-ga.sh-162010.log
+16:20:34 queueing on cb33: t2 gates A (kernels, layer default form)
+16:23:33 lease claude-code-20261113T162034-3655360
+started pgid 334868
+NVIDIA GB10, 305 MHz, 46
+551698781ff86260c7a07bde21693034fb8f61e9ac2a0b628e33cd85b38098c8  /home/avifenesh/.cache/dsv41-cfix2/bins/t2/dsv41-gate
+kernels (every form, by construction) rc 0 974 checks, 0 failed 0 FAIL lines
+kernels: 576 dense_small PASS, 20 split-path PASS, 96 fused PASS
+layer, dense form default rc 0 161 checks, 0 failed 0 FAIL lines
+fa825eeaa1bc5b0f98f0c957120022ce863718fc81b72d2495b899ce23ebf161  /home/avifenesh/.cache/dsv41-cfix2/out/gates-t2/save.sha256
+layer, dense form default, saved tensors against the CUTLASS set: IDENTICAL (111 files; ref sha fa825eeaa1bc5b0f)
+GATES-A-DONE 16:27:56
+cb33: released
+16:28:11 released; LEASE-DONE
+== lease-cb33-gc.sh-144206.log
+14:42:06 queueing on cb33: t44f gates C (decode, graph door, default form)
+14:45:51 lease claude-code-20261113T144206-2406640
+started pgid 4080775
+93034f57ac466d67c711098d7c9aaca2e097510ca4c98dab5437276a8ed986e8  /home/avifenesh/.cache/dsv41-cfix2/bins/t44f/dsv41-gate
+decode straddle126, dense form default rc 0 256 checks, 0 failed 0 FAIL lines
+decode gsm, dense form default rc 0 256 checks, 0 failed 0 FAIL lines
+decode capital, dense form default rc 0 72 checks, 0 failed 0 FAIL lines
+tp graph 0, dense form default rc 0 555 checks, 0 failed 0 FAIL lines
+tp graph 0,0, dense form default rc 0 1105 checks, 0 failed 0 FAIL lines
+GATES-C-DONE 15:10:03
+cb33: released
+15:10:10 released; LEASE-DONE
+== lease-cb33-race2.sh-165013.log
+16:50:13 queueing on cb33: t2 race harness part 1 (default form; plain, side delay, poison free; d6 control)
+16:55:26 lease claude-code-20261113T165013-3924795
+started pgid 508742
+part 1: bins 551698781ff86260 t2, control e91de33033f46c4c d6; 2 ranks on one card, peer-pull, layers 2,24, dense form default, --reps 160, side delay 2000000 ns; NVIDIA GB10, 58
+1-1-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 24 failed FAIL lines 24 passes 480 secs 68 16:56:36
+FAIL layer2/rows16/rep1/rank0/out_stream: 2553 of 655360 bytes differ (rel_l2 2.021e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep1/rank1/out_stream: 2553 of 655360 bytes differ (rel_l2 2.021e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep4/rank0/out_stream: 1321 of 655360 bytes differ (rel_l2 3.489e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep4/rank1/out_stream: 1321 of 655360 bytes differ (rel_l2 3.489e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+1-1-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 148 16:59:04
+1-1-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 169 17:01:53
+1-1-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 161 17:04:34
+1-2-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 20 failed FAIL lines 20 passes 480 secs 68 17:05:42
+FAIL layer2/rows16/rep22/rank0/out_stream: 2051 of 655360 bytes differ (rel_l2 1.142e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep22/rank1/out_stream: 2051 of 655360 bytes differ (rel_l2 1.142e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep34/rank0/out_stream: 1398 of 655360 bytes differ (rel_l2 2.550e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep34/rank1/out_stream: 1398 of 655360 bytes differ (rel_l2 2.550e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+1-2-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 152 17:08:14
+1-2-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 158 17:10:52
+1-2-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 156 17:13:28
+RACE2-1-DONE 17:13:28
+cb33: released
+17:13:35 released; LEASE-DONE
+== lease-cb33-race2.sh-171335.log
+17:13:36 queueing on cb33: t2 race harness part 2 (default form; plain, side delay, poison free; d6 control)
+17:18:25 lease claude-code-20261113T171336-67997
+started pgid 606938
+part 2: bins 551698781ff86260 t2, control e91de33033f46c4c d6; 2 ranks on one card, peer-pull, layers 2,24, dense form default, --reps 160, side delay 2000000 ns; NVIDIA GB10, 64
+2-1-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 16 failed FAIL lines 16 passes 480 secs 69 17:19:35
+FAIL layer2/rows12/rep3/rank0/out_stream: 906 of 491520 bytes differ (rel_l2 2.399e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep3/rank1/out_stream: 906 of 491520 bytes differ (rel_l2 2.399e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep33/rank0/out_stream: 1023 of 655360 bytes differ (rel_l2 2.025e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep33/rank1/out_stream: 1023 of 655360 bytes differ (rel_l2 2.025e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+2-1-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 154 17:22:09
+2-1-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 176 17:25:05
+2-1-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 155 17:27:40
+2-2-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 26 failed FAIL lines 26 passes 480 secs 64 17:28:44
+FAIL layer2/rows16/rep7/pipelined/rank0/out_stream: 718 of 655360 bytes differ (rel_l2 2.375e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep7/pipelined/rank1/out_stream: 718 of 655360 bytes differ (rel_l2 2.375e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep9/pipelined/rank0/out_stream: 1085 of 655360 bytes differ (rel_l2 1.106e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep9/pipelined/rank1/out_stream: 1085 of 655360 bytes differ (rel_l2 1.106e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+2-2-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 162 17:31:26
+2-2-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 163 17:34:09
+2-2-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 156 17:36:45
+RACE2-2-DONE 17:36:45
+cb33: released
+17:36:50 released; LEASE-DONE
+== lease-cb33-race2.sh-173650.log
+17:36:51 queueing on cb33: t2 race harness part 3 (default form; plain, side delay, poison free; d6 control)
+17:41:44 lease claude-code-20261113T173651-612926
+started pgid 753165
+part 3: bins 551698781ff86260 t2, control e91de33033f46c4c d6; 2 ranks on one card, peer-pull, layers 2,24, dense form default, --reps 160, side delay 2000000 ns; NVIDIA GB10, 59
+3-1-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 22 failed FAIL lines 22 passes 480 secs 64 17:42:49
+FAIL layer2/rows16/rep2/rank0/out_stream: 7077 of 655360 bytes differ (rel_l2 6.769e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep2/rank1/out_stream: 7077 of 655360 bytes differ (rel_l2 6.769e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep10/pipelined/rank0/out_stream: 3655 of 655360 bytes differ (rel_l2 3.567e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep10/pipelined/rank1/out_stream: 3655 of 655360 bytes differ (rel_l2 3.567e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+3-1-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 163 17:45:32
+3-1-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 165 17:48:17
+3-1-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 152 17:50:49
+3-2-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 22 failed FAIL lines 22 passes 480 secs 68 17:51:57
+FAIL layer2/rows16/pipelined/rank0/out_stream: 85 of 655360 bytes differ (rel_l2 1.556e-4, max_abs 6.250e-2) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/pipelined/rank1/out_stream: 85 of 655360 bytes differ (rel_l2 1.556e-4, max_abs 6.250e-2) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep1/pipelined/rank0/out_stream: 6238 of 655360 bytes differ (rel_l2 8.389e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows16/rep1/pipelined/rank1/out_stream: 6238 of 655360 bytes differ (rel_l2 8.389e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+3-2-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 158 17:54:35
+3-2-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 167 17:57:22
+3-2-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 163 18:00:05
+RACE2-3-DONE 18:00:05
+cb33: released
+18:00:13 released; LEASE-DONE
+== lease-cb33-race2.sh-180013.log
+18:00:14 queueing on cb33: t2 race harness part 4 (default form; plain, side delay, poison free; d6 control)
+18:05:06 lease claude-code-20261113T180014-946109
+started pgid 854374
+part 4: bins 551698781ff86260 t2, control e91de33033f46c4c d6; 2 ranks on one card, peer-pull, layers 2,24, dense form default, --reps 160, side delay 2000000 ns; NVIDIA GB10, 60
+4-1-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 18 failed FAIL lines 18 passes 480 secs 61 18:06:08
+FAIL layer2/rows12/rep17/rank0/out_stream: 2247 of 491520 bytes differ (rel_l2 4.388e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep17/rank1/out_stream: 2247 of 491520 bytes differ (rel_l2 4.388e-4, max_abs 1.953e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep21/pipelined/rank0/out_stream: 2370 of 491520 bytes differ (rel_l2 5.997e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep21/pipelined/rank1/out_stream: 2370 of 491520 bytes differ (rel_l2 5.997e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+4-1-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 164 18:08:52
+4-1-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 160 18:11:32
+4-1-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 154 18:14:06
+4-2-control (d6, the unfixed grouped forms, V41DBG_REPS=40) rc 1 1964 checks, 32 failed FAIL lines 32 passes 480 secs 67 18:15:13
+FAIL layer2/rows12/rep7/rank0/out_stream: 5593 of 491520 bytes differ (rel_l2 6.379e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep7/rank1/out_stream: 5593 of 491520 bytes differ (rel_l2 6.379e-4, max_abs 3.906e-3) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep21/rank0/out_stream: 4388 of 491520 bytes differ (rel_l2 2.174e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+FAIL layer2/rows12/rep21/rank1/out_stream: 4388 of 491520 bytes differ (rel_l2 2.174e-4, max_abs 9.766e-4) [byte-identical to the single-card block_forward]
+4-2-plain (dense form default) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 159 18:17:52
+4-2-delay (dense form default, --side-delay 2000000) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 155 18:20:27
+4-2-poison (dense form default, --poison-free) rc 0 7724 checks, 0 failed FAIL lines 0 passes 1920 secs 156 18:23:03
+RACE2-4-DONE 18:23:03
+cb33: released
+18:23:14 released; LEASE-DONE
+== lease-cb33-tapes.sh-151010.log
+15:10:12 queueing on cb33: t44f order-gate tapes chat
+15:13:09 lease claude-code-20261113T151012-2869961
+started pgid 4180172
+chat start 15:13:10, 116 GB available, dense form default, 7ec6746865e4aa4e
+chat rc 0 dsv41-run: 1 forwards, 517 calls, 40 layer loads (1056.1s), blocks 67.1s, total 1130.9s dsv41-run: route log: 20680 blocks, 918920 routed rows  end 15:32:02, 116 GB available
+chat tapes: 82 files (the route log and meta.json included), ref 82 files, 0 diff lines against the CUTLASS set (BYTE-IDENTICAL)
+TAPES-chat-DONE 15:32:03
+cb33: released
+15:32:13 released; LEASE-DONE
+== lease-cb33-tapes.sh-162811.log
+16:28:14 queueing on cb33: t2 order-gate tapes chat
+16:31:02 lease claude-code-20261113T162814-3694071
+started pgid 358440
+chat start 16:31:04, 116 GB available, dense form default, 434af641940fffcd
+chat rc 0 dsv41-run: 1 forwards, 517 calls, 40 layer loads (1070.2s), blocks 66.2s, total 1143.9s dsv41-run: route log: 20680 blocks, 918920 routed rows  end 16:50:10, 116 GB available
+chat tapes: 82 files (the route log and meta.json included), ref 82 files, 0 diff lines against the CUTLASS set (BYTE-IDENTICAL)
+TAPES-chat-DONE 16:50:10
+cb33: released
+16:50:13 released; LEASE-DONE
