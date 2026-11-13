@@ -15,7 +15,7 @@ PORT=8266
 if ss -ltn | grep -q ":$PORT "; then echo "$(date -Is) $NAME port $PORT busy; refusing" >> "$CD/campaign.log"; exit 4; fi
 { date -Is; echo "$NAME extra: $*"; sha256sum "$BIN" "$D/box/ab-workload.json" | sed "s|$HOME|~|";
   nvidia-smi --query-gpu=name,driver_version,enforced.power.limit,temperature.gpu,memory.used --format=csv,noheader
-  echo "ac=$(cat /sys/class/power_supply/ADP0/online) nv_tgp=$(cat /sys/class/firmware-attributes/asus-armoury/attributes/nv_tgp/current_value) ppt_pl1_spl=$(cat /sys/class/firmware-attributes/asus-armoury/attributes/ppt_pl1_spl/current_value)"
+  echo "ac=$(cat /sys/class/power_supply/ADP0/online) nv_tgp=$(cat /sys/class/firmware-attributes/asus-armoury/attributes/nv_tgp/current_value) ppt_pl1_spl=$(cat /sys/class/firmware-attributes/asus-armoury/attributes/ppt_pl1_spl/current_value) profile=$(cat /sys/firmware/acpi/platform_profile 2>/dev/null || echo unreadable)"
   uptime; } > "$OUT/guard.log"
 for v in $(env | grep -o '^MEMRA_[A-Z0-9_]*'); do unset "$v"; done
 env MEMRA_COMPAT=openai MEMRA_ADDR=127.0.0.1:$PORT MEMRA_CTX=32768 MEMRA_MAX_SESSIONS=8 MEMRA_KV_HOST_MB=0 \
@@ -23,7 +23,7 @@ env MEMRA_COMPAT=openai MEMRA_ADDR=127.0.0.1:$PORT MEMRA_CTX=32768 MEMRA_MAX_SES
   MEMRA_MTP_DRAFT="$M/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf" MEMRA_PREFIX_STABLE_BOUNDARY=1 MEMRA_TICK_TRACE=1 \
   "$@" setsid python3 "$D/box/tsrun.py" "$BIN" > "$OUT/server.log" 2>&1 &
 sp=$!
-nvidia-smi --query-gpu=timestamp,temperature.gpu,clocks.sm,power.draw,enforced.power.limit,utilization.gpu,memory.used \
+nvidia-smi --query-gpu=timestamp,temperature.gpu,clocks.sm,power.draw,enforced.power.limit,utilization.gpu,memory.used,clocks_event_reasons.sw_thermal_slowdown,clocks_event_reasons.hw_thermal_slowdown \
   --format=csv,noheader -l 1 > "$OUT/telemetry.csv" 2>/dev/null &
 tp=$!
 rc=0
@@ -44,6 +44,7 @@ kill "$tp" 2>/dev/null
     echo "$pat=$(grep -a -c -F "$pat" "$OUT/server.log")"
   done; } > "$OUT/summary.txt"
 tail -n 1 "$OUT/cells.log" | cut -c1-400 | sed "s/^/$NAME /" >> "$CD/campaign.log"
+echo "profile_end=$(cat /sys/firmware/acpi/platform_profile 2>/dev/null || echo unreadable) $(date -Is)" >> "$OUT/guard.log"
 gzip -f "$OUT/server.log" "$OUT/telemetry.csv"
 [ $rc = 0 ] && echo "$(date -Is) CELL-DONE $NAME" >> "$CD/campaign.log"
 exit $rc

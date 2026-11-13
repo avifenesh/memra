@@ -1,0 +1,32 @@
+# head 7d7f56b46a (the branch rebased onto 7a32d9b10b, the landing of memra#1244 + #1256 + #1272)
+# 2026-11-13T04:36:33+01:00 full CPU chain of memra#1266
+# 2026-11-13T04:36:33+01:00 fmt
+fmt rc=0
+# 2026-11-13T04:36:40+01:00 clippy
+clippy rc=0
+# 2026-11-13T04:42:06+01:00 coalescer
+coalescer rc=0
+# 2026-11-13T04:42:08+01:00 server
+server rc=0
+  passed 1239, failed 0, ignored 14 over 6 binaries
+# 2026-11-13T04:56:48+01:00 kv
+kv rc=0
+  passed 87, failed 0, ignored 0 over 1 binaries
+# 2026-11-13T04:56:48+01:00 engine
+engine rc=0
+  passed 750, failed 0, ignored 65 over 1 binaries
+# 2026-11-13T04:59:56+01:00 gguf
+gguf rc=0
+  passed 417, failed 0, ignored 2 over 1 binaries
+# 2026-11-13T04:59:59+01:00 portable
+portable rc=0
+FULL-DONE
+skip-census: memra-engine: 27 protocol skip row(s), 0 unstructured
+skip-census: memra-gguf: 15 protocol skip row(s), 0 unstructured
+skip-census: memra-reference: 3 protocol skip row(s), 0 unstructured
+skip-census: memra-server: 2 protocol skip row(s), 0 unstructured
+skip-census: memra-tokenizer: 7 protocol skip row(s), 0 unstructured
+skip-census: VERIFY OK (54 declared skip row(s) across 14 crate(s))
+skip-census: running: cargo test -p memra-tier -p memra-kv -p memra-cli --offline --locked --no-fail-fast -- --test-threads=1 --nocapture
+skip-census: output banked at <lane>/src/target/portable-suites.log
+skip-census: 448 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 17 binaries

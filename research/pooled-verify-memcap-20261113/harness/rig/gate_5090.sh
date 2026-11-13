@@ -19,7 +19,7 @@ case $KIND in
   *) echo "unknown kind $KIND"; exit 2 ;;
 esac
 { date -Is; sha256sum "$BIN" | sed "s|$HOME|~|"; nvidia-smi --query-gpu=name,driver_version,enforced.power.limit,temperature.gpu --format=csv,noheader
-  echo "ac=$(cat /sys/class/power_supply/ADP0/online) nv_tgp=$(cat /sys/class/firmware-attributes/asus-armoury/attributes/nv_tgp/current_value) ppt_pl1_spl=$(cat /sys/class/firmware-attributes/asus-armoury/attributes/ppt_pl1_spl/current_value)"; uptime; } > "$OUT.guard"
+  echo "ac=$(cat /sys/class/power_supply/ADP0/online) nv_tgp=$(cat /sys/class/firmware-attributes/asus-armoury/attributes/nv_tgp/current_value) ppt_pl1_spl=$(cat /sys/class/firmware-attributes/asus-armoury/attributes/ppt_pl1_spl/current_value) profile=$(cat /sys/firmware/acpi/platform_profile 2>/dev/null || echo unreadable)"; uptime; } > "$OUT.guard"
 setsid "$@" > "$OUT.log" 2>&1 < /dev/null &
 p=$!
 if ! waitfor --gone "$p" --timeout "${CAP}m" --quiet; then
@@ -27,4 +27,5 @@ if ! waitfor --gone "$p" --timeout "${CAP}m" --quiet; then
   kill -TERM -- -"$p"; waitfor --gone "$p" --timeout 1m --quiet || kill -KILL -- -"$p"
 fi
 wait "$p"
+echo "profile_end=$(cat /sys/firmware/acpi/platform_profile 2>/dev/null || echo unreadable) $(date -Is)" >> "$OUT.guard"
 grep -q -- "$PASS" "$OUT.log"

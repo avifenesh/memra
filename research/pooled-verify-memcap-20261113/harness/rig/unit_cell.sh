@@ -28,8 +28,38 @@ closed() { echo "$(date -Is) $UNIT $NAME: the unit's window closes at ${NOT_AFTE
 waitfor --until "bash $H/landing_quiet.sh $UNIT $SEEN 180" --every 30s --timeout "$(left)s" --quiet >> "$L" 2>&1 \
   || { echo "$(date -Is) $UNIT $NAME: the unit did not go quiet in time" >> "$L"; [ "$(left)" -gt 0 ] && exit 1; closed; }
 [ "$(left)" -gt 0 ] || closed
-id=$(sparklock acquire --unit "$UNIT" --ttl "${TTL}m" --for "$WHY" --wait "$(left)s" 2>>"$L")
-[ -n "$id" ] || { echo "$(date -Is) $UNIT $NAME: no lease" >> "$L"; [ "$(left)" -gt 0 ] && exit 1; closed; }
+# A waiting ticket of ours never stays ahead of a landing or release: while it waits, the unit is
+# checked every 15 s and the ticket is withdrawn (its acquire stopped; sparklock withdraws a
+# stopped waiter's ticket) as soon as a landing or release lease or ticket shows. The cell then
+# waits for the unit to go quiet again and queues behind it.
+landing_any() { sparklock status --unit "$UNIT" 2>/dev/null | grep -qiE 'memra landing|release'; }
+acquire_watching() {
+  local out ap
+  while :; do
+    waitfor --until "bash $H/landing_quiet.sh $UNIT $SEEN 180" --every 30s --timeout "$(left)s" --quiet >> "$L" 2>&1 || return 1
+    [ "$(left)" -gt 0 ] || return 1
+    out=$(mktemp)
+    sparklock acquire --unit "$UNIT" --ttl "${TTL}m" --for "$WHY" --wait "$(left)s" > "$out" 2>>"$L" &
+    ap=$!
+    while kill -0 "$ap" 2>/dev/null; do
+      if landing_any; then
+        kill -TERM "$ap" 2>/dev/null; wait "$ap" 2>/dev/null
+        id=$(cat "$out"); rm -f "$out"
+        # An acquire that won the lease just before the stop gives it back.
+        [ -n "$id" ] && sparklock release "$id" --unit "$UNIT" >> "$L" 2>&1
+        echo "$(date -Is) $UNIT $NAME: a landing or release ticket appeared while ours waited; withdrew" >> "$L"
+        date +%s > "$SEEN"
+        continue 2
+      fi
+      waitfor --gone "$ap" --timeout 15s --quiet > /dev/null 2>&1
+    done
+    wait "$ap"; id=$(cat "$out"); rm -f "$out"
+    [ -n "$id" ]
+    return
+  done
+}
+id=""
+acquire_watching || { echo "$(date -Is) $UNIT $NAME: no lease" >> "$L"; [ "$(left)" -gt 0 ] && exit 1; closed; }
 echo "$(date -Is) $UNIT $NAME: lease $id" >> "$L"
 PAT='memra landing|release'; [ "${YIELD_ANY:-0}" = 1 ] && PAT='^((?!memra #1266).)*$'
 landing() { sparklock status --unit "$UNIT" | grep -i 'waiting:' | grep -qiP "$PAT"; }
@@ -39,8 +69,7 @@ while landing; do
   waitfor --until "! sparklock status --unit $UNIT | grep -i 'waiting:' | grep -qiP '$PAT'" --every 30s --timeout 120m --quiet >> "$L" 2>&1
   waitfor --until "bash $H/landing_quiet.sh $UNIT $SEEN 180" --every 30s --timeout 240m --quiet >> "$L" 2>&1
   [ "$(left)" -gt 0 ] || closed
-  id=$(sparklock acquire --unit "$UNIT" --ttl "${TTL}m" --for "$WHY" --wait "$(left)s" 2>>"$L")
-  [ -n "$id" ] || { echo "$(date -Is) $UNIT $NAME: no lease after yielding" >> "$L"; [ "$(left)" -gt 0 ] && exit 1; closed; }
+  acquire_watching || { echo "$(date -Is) $UNIT $NAME: no lease after yielding" >> "$L"; [ "$(left)" -gt 0 ] && exit 1; closed; }
   echo "$(date -Is) $UNIT $NAME: lease $id" >> "$L"
 done
 [ "$(left)" -gt 0 ] || { sparklock release "$id" --unit "$UNIT" >> "$L" 2>&1; closed; }

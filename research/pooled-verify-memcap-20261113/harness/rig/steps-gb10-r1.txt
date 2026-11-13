@@ -1,0 +1,10 @@
+# memra#1266 review round 1, GB10 (u2): build the round-1 fix (F2), then agentic c=2 M F F M and
+# normal cells M F, F M (two boots per lease).
+gbuild1 25 may-fail -- bash box/build_gb10_f2.sh 23
+gbuild2 25 -- bash box/build_gb10_f2.sh 23
+gag2b-01-M 25 -- bash box/agentic_gb10.sh gag2b 01-M M
+gag2b-02-F 25 -- bash box/agentic_gb10.sh gag2b 02-F F2
+gag2b-03-F 25 -- bash box/agentic_gb10.sh gag2b 03-F F2
+gag2b-04-M 25 -- bash box/agentic_gb10.sh gag2b 04-M M
+gnc2-01-M+02-F 25 -- bash box/normal_gb10.sh gnc2 01-M M; bash box/normal_gb10.sh gnc2 02-F F2
+gnc2-03-F+04-M 25 -- bash box/normal_gb10.sh gnc2 03-F F2; bash box/normal_gb10.sh gnc2 04-M M

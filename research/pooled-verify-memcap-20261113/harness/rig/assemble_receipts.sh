@@ -7,7 +7,7 @@ L=<lane>
 R=$L/wt/research/pooled-verify-memcap-20261113
 mkdir -p "$R/harness/rig" "$R/harness/gb10" "$R/harness/build-host"
 # 5090 runs (diag, agentic c=2 and c=4, normal cells, gates, bench), each kept whole (small).
-for pair in "diag1:diag-5090" "ag2:agentic-5090-c2" "ag4:agentic-5090-c4" "nc:normal-5090" "bench:bench-5090"; do
+for pair in "diag1:diag-5090" "ag2:agentic-5090-c2" "ag2b:agentic-5090-c2-r1" "ag4:agentic-5090-c4" "ag3:agentic-5090-c2-final" "ag34:agentic-5090-c4-final" "nc:normal-5090" "nc2:normal-5090-r1" "nc3:normal-5090-final" "bench:bench-5090"; do
   src=${pair%%:*}; dst=${pair#*:}
   [ -d "$L/runs/$src" ] || continue
   rm -rf "${R:?}/$dst"; mkdir -p "$R/$dst"
@@ -20,21 +20,22 @@ if [ -d "$L/runs/gates" ]; then
   done
 fi
 # GB10 runs, pulled from the unit.
-for pair in "gag2:agentic-gb10-c2" "gnc:normal-gb10"; do
+for pair in "gag2:agentic-gb10-c2" "gag2b:agentic-gb10-c2-r1" "gnc:normal-gb10" "gnc2:normal-gb10-r1" "gag3:agentic-gb10-c2-final" "gnc3:normal-gb10-final"; do
   src=${pair%%:*}; dst=${pair#*:}
   [ -d "$L/gb10-runs/$src" ] || continue
   rm -rf "${R:?}/$dst"; mkdir -p "$R/$dst"
   cp -a "$L/gb10-runs/$src/." "$R/$dst/"
 done
 cp -a "$L/runs/diag1/tl-01-D.txt" "$R/diag-5090/" 2>/dev/null
+cp -a "$L/ref-1221b-head-texts.jsonl" "$R/"
 # CPU receipts.
 mkdir -p "$R/cpu"
 cp -a "$L/cpu/." "$R/cpu/" 2>/dev/null
 # Harness: rig, GB10 and build-host scripts, the step files.
-cp -a "$L"/tools/{diag_probe.py,rtx_cell.sh,rtx_chain.sh,normal_5090.sh,gate_5090.sh,bench_5090.sh,timeline.py,agentic_table.py,normal_table.py,round_cost.py,chain.sh,unit_cell.sh,landing_quiet.sh,sanitize_receipts.py,assemble_receipts.sh} "$R/harness/rig/"
+cp -a "$L"/tools/{diag_probe.py,rtx_cell.sh,rtx_chain.sh,normal_5090.sh,gate_5090.sh,bench_5090.sh,timeline.py,agentic_table.py,normal_table.py,round_cost.py,chain.sh,unit_cell.sh,landing_quiet.sh,withdraw_probe.sh,take_check.py,timed_take.sh,sanitize_receipts.py,assemble_receipts.sh} "$R/harness/rig/"
 cp -a "$L"/steps-*.txt "$R/harness/rig/"
-cp -a "$L"/gb10/box/{build_gb10.sh,agentic_gb10.sh,normal_gb10.sh,serve.sh} "$R/harness/gb10/"
-cp -a "$L"/tools/{dd_build.sh,dd_check.sh,red_arms.py} "$R/harness/build-host/"
-for f in dd_red.sh dd_full.sh dd_bench.sh; do scp -q "build-host:.cache/memra-1266/$f" "$R/harness/build-host/$f"; done
+cp -a "$L"/gb10/box/{build_gb10.sh,build_gb10_f2.sh,build_gb10_r2.sh,agentic_gb10.sh,normal_gb10.sh,serve.sh} "$R/harness/gb10/"
+cp -a "$L"/tools/{dd_build.sh,dd_build_m3.sh,dd_check.sh,red_arms.py,dd_red.sh,dd_red_one.sh,dd_final.sh,union_resolve.py} "$R/harness/build-host/"
+for f in dd_full.sh dd_bench.sh; do scp -q "build-host:.cache/memra-1266/$f" "$R/harness/build-host/$f"; done
 python3 "$L/tools/sanitize_receipts.py" "$R" > "$L/sanitize.log"
 du -sh "$R"

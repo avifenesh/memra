@@ -1,0 +1,20 @@
+# memra#1266 review round 1, RTX 5090, fix F2 (round-1 code) against main M: agentic c=2 M F F M M F
+# plus the forced-cap arm S (F2 + MEMRA_SPEC_POOL_SERIAL=1); agentic c=4 F S M (01-M ran before);
+# normal cells M F, F M, M F, F M (two boots per lease); gates on F2; the pooled-vs-serial bench.
+ag2b-01-M 20 -- bash <lane>/tools/rtx_cell.sh ag2b 01-M <lane>/bins5090/M/memra-server
+ag2b-02-F 20 -- bash <lane>/tools/rtx_cell.sh ag2b 02-F <lane>/bins5090/F2/memra-server
+ag2b-03-S 20 -- bash <lane>/tools/rtx_cell.sh ag2b 03-S <lane>/bins5090/F2/memra-server MEMRA_SPEC_POOL_SERIAL=1
+ag4-02-F 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag4 02-F <lane>/bins5090/F2/memra-server
+ag4-03-S 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag4 03-S <lane>/bins5090/F2/memra-server MEMRA_SPEC_POOL_SERIAL=1
+bench-pooled 25 -- bash <lane>/tools/bench_5090.sh <lane>/runs/bench
+ag2b-04-F 20 -- bash <lane>/tools/rtx_cell.sh ag2b 04-F <lane>/bins5090/F2/memra-server
+nc2-01-M+02-F 25 -- bash <lane>/tools/normal_5090.sh nc2 01-M <lane>/bins5090/M/memra-server; bash <lane>/tools/normal_5090.sh nc2 02-F <lane>/bins5090/F2/memra-server
+nc2-03-F+04-M 25 -- bash <lane>/tools/normal_5090.sh nc2 03-F <lane>/bins5090/F2/memra-server; bash <lane>/tools/normal_5090.sh nc2 04-M <lane>/bins5090/M/memra-server
+ag2b-05-M 20 -- bash <lane>/tools/rtx_cell.sh ag2b 05-M <lane>/bins5090/M/memra-server
+ag2b-07-F 20 -- bash <lane>/tools/rtx_cell.sh ag2b 07-F <lane>/bins5090/F2/memra-server
+gate-inv-F2 29 -- bash <lane>/tools/gate_5090.sh inv <lane>/bins5090/F2/memra-server inv-F2 27
+gate-resend-F2 29 -- bash <lane>/tools/gate_5090.sh resend <lane>/bins5090/F2/memra-server resend-F2 27
+nc2-05-M+06-F 25 -- bash <lane>/tools/normal_5090.sh nc2 05-M <lane>/bins5090/M/memra-server; bash <lane>/tools/normal_5090.sh nc2 06-F <lane>/bins5090/F2/memra-server
+nc2-07-F+08-M 25 -- bash <lane>/tools/normal_5090.sh nc2 07-F <lane>/bins5090/F2/memra-server; bash <lane>/tools/normal_5090.sh nc2 08-M <lane>/bins5090/M/memra-server
+ag4-04-M 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag4 04-M <lane>/bins5090/M/memra-server
+ag2b-06-M 20 -- bash <lane>/tools/rtx_cell.sh ag2b 06-M <lane>/bins5090/M/memra-server
