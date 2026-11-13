@@ -32,11 +32,35 @@ pub struct PrimeSlabs {
     pub gate: CudaSlice<f32>, // t * n_ff_max
     pub up: CudaSlice<f32>,      // t * n_ff_max
     pub ffn_out: CudaSlice<f32>, // t * n_embd
+    /// memra#1258 step 2: the GDN chunk scan's planes for `t_cap` rows, allocated with the slab
+    /// (`HybridModel::prime_gdn_ws_dims`); lent to the engine for each walk.
+    pub gdn: Option<crate::GdnScanWs>,
 }
 
 // Every slab access is serialized by its device mutex after binding that device's CUDA
 // context on the thread.
 unsafe impl Send for PrimeSlabs {}
+
+/// memra#1258 step 2: a prime walk's loan of its slab's `GdnScanWs` to the engine
+/// (`Engine::prime_gdn_ws_install`). Dropping it, when the walk ends or returns early, takes the
+/// workspace back into the slab, so no GDN scan outside a walk can borrow it.
+struct GdnWsLoan<'a> {
+    e: &'a Engine,
+    home: &'a mut Option<crate::GdnScanWs>,
+}
+
+impl<'a> GdnWsLoan<'a> {
+    fn lend(e: &'a Engine, home: &'a mut Option<crate::GdnScanWs>) -> Self {
+        e.prime_gdn_ws_install(home.take());
+        Self { e, home }
+    }
+}
+
+impl Drop for GdnWsLoan<'_> {
+    fn drop(&mut self) {
+        *self.home = self.e.prime_gdn_ws_take();
+    }
+}
 
 /// Shared-expert gate+up at t==1: NVFP4 fused2 (the ornith15/qwen35moe NVFP4 mints keep
 /// gate/up_shexp uniformly NVFP4, so the Q8-only fused2 never fired there and the pair fell
@@ -2907,7 +2931,14 @@ impl HybridModel {
             (6 + 2) * h * f32b + (2 + 1) * h * 2 + 3 * n_ff_max * f32b + n_ff_max * 2;
         // The slab's share (`prime_slabs_get`): six f32 and two f16 `[t, n_embd]` planes and three
         // f32 `[t, n_ff_max]` planes.
-        let slab_row_bytes = 6 * h * f32b + 2 * h * 2 + 3 * n_ff_max * f32b;
+        let mut slab_row_bytes = 6 * h * f32b + 2 * h * 2 + 3 * n_ff_max * f32b;
+        // memra#1258 step 2: the GDN scan workspace the slab carries (`PrimeSlabs::gdn`), which
+        // also bounds what one call's scans hold.
+        if let Some((gh, ghk)) = self.prime_gdn_ws_dims() {
+            let ws = crate::GdnScanWs::row_bytes(gh, ghk, true);
+            slab_row_bytes += ws;
+            call_row_bytes += ws;
+        }
         // Routed-expert staging per row (the grouped f16 GEMM path in `moe_ffn_inner`): the
         // gathered inputs, three projection planes with f16 mirrors, the down output and
         // the scatter/partial planes, all sized by the USED expert count and the expert FFN
@@ -7207,8 +7238,30 @@ impl HybridModel {
                 + s.gate.len()
                 + s.up.len()
                 + s.ffn_out.len();
-            f32s * 4 + s.h16.len() + s.z16.len()
+            f32s * 4 + s.h16.len() + s.z16.len() + s.gdn.as_ref().map_or(0, |g| g.bytes())
         })
+    }
+
+    /// memra#1258 step 2: the head counts a prime's `GdnScanWs` is sized for, or None when the
+    /// model has no GDN layer or its GDN scans do not take the route the workspace serves
+    /// (`Engine::gdn_scan_ws_route`, a d_state other than 128). The key-head count is the
+    /// value-head count, the bound `gdn_hk` never exceeds; the K4/K5 pair planes are always
+    /// allocated (a device on the fused route leaves them unused), so admission's shape needs no
+    /// device.
+    pub fn prime_gdn_ws_dims(&self) -> Option<(usize, usize)> {
+        if !Engine::gdn_scan_ws_route(Engine::gdn_chunk_size()) {
+            return None;
+        }
+        let mut h = 0usize;
+        for layer in &self.layers {
+            if let Mixer::Linear(la) = &layer.mixer {
+                if la.geometry.key_head_dim != 128 {
+                    return None;
+                }
+                h = h.max(la.geometry.value_heads as usize);
+            }
+        }
+        (h > 0).then_some((h, h))
     }
 
     pub fn prime_slabs_get(
@@ -7241,6 +7294,10 @@ impl HybridModel {
                     gate: e.uninit(t * n_ff_max)?,
                     up: e.uninit(t * n_ff_max)?,
                     ffn_out: e.uninit(t * n_embd)?,
+                    gdn: match self.prime_gdn_ws_dims() {
+                        Some((h, hk)) => Some(crate::GdnScanWs::alloc(e, t, h, hk, true)?),
+                        None => None,
+                    },
                 })),
             );
         }
@@ -7443,6 +7500,9 @@ impl HybridModel {
             Option<SlabRefs>,
         );
         let mut x_own2;
+        // memra#1258 step 2: the slab's GDN scan workspace is lent to the engine for this walk
+        // and returned to the slab when the walk ends, on every path.
+        let mut gdn_loan: Option<GdnWsLoan> = None;
         match slab_guard.as_mut() {
             Some(g) => {
                 let slabs = &mut **g;
@@ -7462,8 +7522,10 @@ impl HybridModel {
                     gate,
                     up,
                     ffn_out,
+                    gdn,
                     ..
                 } = slabs;
+                gdn_loan = Some(GdnWsLoan::lend(e, gdn));
                 x_cur = xa;
                 x_nxt = xb;
                 sl = Some((h, x1, z, act, h16, z16, gate, up, ffn_out));
@@ -7971,6 +8033,8 @@ impl HybridModel {
         // hidden-stack return: clone the final x out of the slab
         let mut x = e.uninit(t * n_embd)?;
         e.copy_into(&mut x, 0, x_cur, t * n_embd)?;
+        // The workspace goes back into the slab before the slab's lock is released.
+        drop(gdn_loan);
         drop(slab_guard);
         Ok(x)
     }
@@ -32560,5 +32624,58 @@ mod prime_slab_into_census_tests {
             in_prime, 5,
             "prime_layers' calls of the slab-writing GEMM form"
         );
+    }
+
+    /// The source line index of the `fn` item enclosing line `i` of `text`.
+    fn enclosing_fn(text: &str, i: usize) -> Option<String> {
+        text.lines()
+            .take(i)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .find(|l| l.trim_start().starts_with("fn ") || l.trim_start().starts_with("pub"))
+            .map(|l| l.trim().to_string())
+    }
+
+    /// memra#1258 step 2: only the prime walk lends its GDN scan workspace to the engine (a lent
+    /// workspace is what `gdn_scan_chunked_to` draws planes from), through the loan whose drop
+    /// takes it back; nothing else installs one.
+    #[test]
+    fn only_prime_layers_lends_the_gdn_scan_workspace() {
+        let lend = format!("{}(", ["GdnWsLoan", "::lend"].concat());
+        let install = format!("{}(", ["prime_gdn_ws", "_install"].concat());
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        rust_files(&src, &mut files);
+        let (mut lends, mut installs) = (0, 0);
+        for path in &files {
+            let text = std::fs::read_to_string(path).expect("source");
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            for (i, line) in text.lines().enumerate() {
+                let code = line.trim_start();
+                if code.starts_with("//") || code.starts_with("fn ") || code.starts_with("pub") {
+                    continue;
+                }
+                if code.contains(&lend) {
+                    let f = enclosing_fn(&text, i).unwrap_or_default();
+                    assert!(
+                        name == "hybrid_forward.rs" && f.starts_with("pub(crate) fn prime_layers("),
+                        "{name}:{}: `{code}` lends the GDN scan workspace in `{f}`",
+                        i + 1
+                    );
+                    lends += 1;
+                }
+                if code.contains(&install) {
+                    let f = enclosing_fn(&text, i).unwrap_or_default();
+                    assert!(
+                        name == "hybrid_forward.rs" && f.starts_with("fn lend("),
+                        "{name}:{}: `{code}` installs a GDN scan workspace in `{f}`",
+                        i + 1
+                    );
+                    installs += 1;
+                }
+            }
+        }
+        assert_eq!((lends, installs), (1, 1));
     }
 }
