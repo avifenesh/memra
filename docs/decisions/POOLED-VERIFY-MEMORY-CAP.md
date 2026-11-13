@@ -46,22 +46,41 @@ poolable and runs the eager pooled verify whether or not replay is suspended; th
 
 - **The memory cap.** The lockstep's verify chunk walk reads the allocatable memory once per
   forward (`pooled_verify_allocatable`: the driver's free bytes, or on unified memory the larger
-  of them and `MemAvailable`, plus the async pool's cached blocks) and joins a member only while
-  the whole forward fits it less the 256 MiB graph-launch floor (`pooled_verify_admits`). A
-  member's need is its checkpoint columns plus two logits stacks (`pooled_verify_round_bytes`);
-  plain riders join within the same cap. The first member always joins: alone it is the serial
-  round. The rest verify in the next chunk, after this one's rounds have finished and freed
-  their checkpoints, so the checkpoints live at once never exceed what the device holds. Pooled
-  and serial verifies are bitwise equal (`decode-batch-bench --pooled`), so the cap moves no
-  token. `[spec-pool] pooled MTP verify capped by memory: ...` (the first 16, then every 256th);
-  `/metrics` `spec_pool_capped_forwards_total`.
-- **The pre-cohort reclaim.** After the newcomers primed and before the cohorts form, when the
-  allocatable reading cannot fund the largest cohort member's verify round
-  (`spec_round_transient_bytes(k)`, about 790 MB at K=5) plus the floor, read again after a
-  fence, unleased prefix entries go first, oldest first, until the shortfall is freed and
-  settled (`prefix_yield_transient_reserve`), then parked sessions, globally oldest first.
-  `[spec-pool] pre-cohort reclaim: ...`; `/metrics` `spec_cohort_reclaims_total`; the prefix
-  evictions also count in `prefix_headroom_evictions`.
+  of them and `MemAvailable`, plus the async pool's cached blocks; an unreadable device reads 0,
+  so nothing pools) and takes its members from a pure function, `pooled_verify_chunk`. A round
+  after the first joins only while the forward's members (`pooled_verify_round_bytes`: each
+  member's checkpoint columns plus two logits stacks), the FA partial pool's growth at the
+  forward's width and deepest row (`fa_part_growth_bytes`, read from the pool's current lengths:
+  a pooled forward is wider than any member's serial verify, and the pool grows to twice its
+  size, keeping the old buffers) and the verify margin fit the reading. The first round always
+  joins: alone it is the serial round. The walk stops at the first round that does not fit and
+  tries no smaller later one; that round leads the next chunk, after this one's rounds have
+  finished and freed their checkpoints. Plain riders join within the same reading
+  (`pooled_rider_take`). Pooled and serial verifies are bitwise equal (`decode-batch-bench
+  --pooled`), so the cap moves no token. `[spec-pool] pooled MTP verify capped by memory: ...`
+  (the first 16, then every 256th); `/metrics` `spec_pool_capped_forwards_total` and
+  `spec_pool_capped_rider_rows_total`.
+- **The verify margin** (`POOLED_VERIFY_MARGIN`, 256 MiB) is its own constant: the part of the
+  reading the pool could not deliver at the failure (195 MiB: 67 MiB driver free and 128 MiB of
+  cached fragments could not serve a 15 MiB slab, after the pool had grown in one 64 MiB step),
+  rounded up to whole 64 MiB steps. A test pins it above the measurement.
+- **The pre-cohort reclaim.** After the newcomers primed and before the cohorts form, the
+  reading must fund the cohort's first verify (`pre_cohort_need`): the largest member's round
+  (`spec_round_bytes`: its checkpoint columns, logits and the FA pool's growth for its rows),
+  every member's burst-entry snapshot (`spec_burst_snapshot_bytes`: each burst takes a fresh copy
+  of the session's GDN state at its start and holds it to its end, one column, 149.6 MiB here;
+  the diagnostic boot's reading fell from 1,915 to 1,616 MiB between the cohort's entry and its
+  first verify, two members' snapshots) and the margin. When it cannot, read again after a fence,
+  the ladder (`spec_round_reclaim_ladder`, a pure function over injected readings and rungs)
+  evicts unleased prefix entries first, oldest first, until the shortfall is freed and settled
+  (`prefix_yield_to_reserve`, on unified memory too), then parked sessions, globally oldest
+  first, one at a time. An unreadable device does nothing. `[spec-pool] pre-cohort reclaim: ...`;
+  a pass that stays short with nothing evictable prints `[spec-pool] pre-cohort reclaim still
+  short: ...` (the first 16, then every 256th); `/metrics` `spec_cohort_reclaims_total` and
+  `spec_cohort_short_total`; the prefix evictions also count in `prefix_headroom_evictions`.
+- **The forced-cap arm.** `MEMRA_SPEC_POOL_SERIAL=1`, a test door, reads the allocatable memory
+  as 0 on every forward, so every member verifies alone and no rider joins. The receipts compare
+  it text for text with the default arm, which proves a capped request writes its uncapped text.
 - **A mid-forward OOM still takes the honest error.** By then the forward has appended KV rows
   and advanced each member's GDN state in place for the layers it ran, so the round cannot be
   run again on that state, and a streamed session cannot replay. The fix keeps the forward from
@@ -71,12 +90,14 @@ poolable and runs the eager pooled verify whether or not replay is suspended; th
 
 - **DFlash2's rule for the MTP cohort** (`pooled_verify_headroom`: the extra members fit the
   reading less the 1,536 MiB transient floor, `sum - max <= free + cached - floor`). It keeps the
-  floor unspent during the forward, but nothing else allocates during the forward: the newcomers
-  primed before it and the prefix publications run after the tick's serving work. In this
+  floor unspent during the forward, but the forward's own allocations are all the cap prices:
+  the newcomers primed before it and the prefix publications run after the tick's serving work,
+  and the FA pool's growth inside the forward is part of the need. In this
   replay's two-member pooled rounds the allocatable reading was median 2,135, 10th percentile
   1,723 and minimum 1,294 MiB (578 rounds); at 1,723 MiB the DFlash2 rule would serialize a
   K=5 + K=2 round (extra about 320 MB against 187 MiB above the floor) that fits with about
-  600 MiB to spare. The DFlash2 cohort keeps its rule; whether it should read the allocatable
+  600 MiB to spare. It is also short of what the cohort holds besides its checkpoints (the burst
+  snapshots and the FA pool's growth, above). The DFlash2 cohort keeps its rule; whether it should read the allocatable
   figure on unified memory and drop the floor is that route's call.
 - **A per-session admission charge for the pooled transient.** The checkpoint of a pooled
   forward is a per-forward transient, not a per-session resident; charging each MTP session
