@@ -462,50 +462,11 @@ fn de(e: impl std::fmt::Debug) -> String {
     format!("{e:?}")
 }
 
-/// Device-to-device copy of region `b` from base address `src` into the same region at `dst`,
-/// on `ops`'s stream, by plain device addresses (a strided region as one 2D copy).
-fn copy_addr(ops: &super::Ops, src: u64, dst: u64, b: Blk) -> Result<(), String> {
-    use cudarc::driver::sys::*;
-    if b.bytes() == 0 {
-        return Ok(());
-    }
-    let s0 = src + b.off as u64;
-    let d0 = dst + b.off as u64;
-    let st = ops.sv() as CUstream;
-    let r = if b.rows == 1 {
-        unsafe { cuMemcpyDtoDAsync_v2(d0, s0, b.width, st) }
-    } else {
-        let p = CUDA_MEMCPY2D {
-            srcXInBytes: 0,
-            srcY: 0,
-            srcMemoryType: CUmemorytype::CU_MEMORYTYPE_DEVICE,
-            srcHost: std::ptr::null(),
-            srcDevice: s0,
-            srcArray: std::ptr::null_mut(),
-            srcPitch: b.pitch,
-            dstXInBytes: 0,
-            dstY: 0,
-            dstMemoryType: CUmemorytype::CU_MEMORYTYPE_DEVICE,
-            dstHost: std::ptr::null_mut(),
-            dstDevice: d0,
-            dstArray: std::ptr::null_mut(),
-            dstPitch: b.pitch,
-            WidthInBytes: b.width,
-            Height: b.rows,
-        };
-        unsafe { cuMemcpy2DAsync_v2(&p, st) }
-    };
-    if r != CUresult::CUDA_SUCCESS {
-        return Err(format!("dsv41 tp copy: {r:?}"));
-    }
-    Ok(())
-}
-
 /// A copy between two ranks' cards: region `b` of the rank buffer at `src` (on the card of
 /// context `src_ctx`) into the same region at `dst`, on `ops`'s stream (the destination's),
 /// through the peer copy call that names both contexts. A contiguous region (one row, or rows
 /// with no gap) is one call; a strided one never reaches here (the packed gather moves it
-/// through contiguous blocks) and keeps [`copy_addr`]. WHY: on four cards a copy by plain device
+/// through contiguous blocks), and one that did is refused rather than copied another way. WHY: on four cards a copy by plain device
 /// address out of a peer's stream-ordered pool block, issued on the consumer's stream, runs at
 /// 2.5-2.9 GB/s a rank where the peer call between the same blocks runs at about 50; cudaMalloc
 /// blocks or a copy issued by the producer run at 50 too (p2p-probe2 in the perf receipts).
@@ -516,7 +477,11 @@ fn copy_peer(ops: &super::Ops, dst: u64, src_ctx: usize, src: u64, b: Blk) -> Re
         return Ok(());
     }
     if b.rows > 1 && b.width < b.pitch {
-        return copy_addr(ops, src, dst, b);
+        return Err(format!(
+            "dsv41 tp copy_peer: a strided region ({} rows of {} bytes, pitch {}) has no peer path; \
+             the packed gather moves strided regions through contiguous blocks",
+            b.rows, b.width, b.pitch
+        ));
     }
     let r = unsafe {
         cuMemcpyPeerAsync(
