@@ -6,7 +6,8 @@ ranks; everything else replicated. Every cross-rank step is a gather and no sum 
 N-rank program writes the one-card bytes. On two RTX PRO 6000 cards every checked tensor of six
 real layers (Engram, ratio-2 source, ratio-1 source with the candidate pool, Reuse, Reindex) is
 byte-identical to the one-card `block_forward` at prefill and at two decode steps, and the whole
-trunk on two cards gives the one-card logits bit for bit at 16, 18,343, 73,520 and 128,745 tokens.
+trunk on two cards gives the one-card logits bit for bit at 16, 18,343, 73,520 and 128,745 tokens
+(on the peer-pull program; see the banner under [Transport](#transport)).
 The same partition at N=4 (four ranks on one card) is byte-identical too. The 4-card stage changes N
 and keeps the shares resident; the program stays the same. The support state stays as it is: this
 is a multi-card surface, not a qualified serving path.
@@ -72,6 +73,15 @@ selection rows 2 KiB x (N-1)/N at prefill; summed over the ranks, each term time
 3,761-token layer moved 331 to 341 MB in total at N=2.
 
 ## Transport
+
+> **Banner (2026-11-13).** Every two-card result in this file ran the peer-pull program
+> (`MEMRA_TP_TRANSPORT=peer-pull`: copy-engine gathers ordered by events), the 128,745-token
+> bit-for-bit trunk run included. The route's default at two to eight ranks is now `device-push`
+> (gathers inside kernels below the push limit, kept blocks stored by the producer above it,
+> `../perf/`), and the per-layer gates on that program run at short context only
+> (`perf/receipts/gates-n3`, `gates-k3`). No current gate covers long context on the pair. The
+> command for one, on the head's default program, is at the end of [Commands](#commands); it has
+> not run. Until it does, the 128,745-token row below is evidence for the peer-pull program only.
 
 The route takes the fleet flag `MEMRA_TP_TRANSPORT` (`tp_transport.rs`) and follows its laws:
 `peer-pull` copies on the consumer's stream after the producer's publication event, the producer
@@ -217,6 +227,17 @@ python3 ../gpu/trunk_vs_tape.py TAPES/needle1200.pt trunk2-needle1200.f32 --json
 dsv41-gate idx CKPT captures/needle4800 --layer 20 --devices 0,1 --slice 2048 --reps 3
 dsv41-gate idx CKPT captures/needle4800 --layer 20 --devices 0,1 --last 1 --reps 5
 python3 rank_bytes.py CKPT 1 2 4
+# NOT RUN YET (2026-11-13): the long-context pair gate on the head's default program (device-push
+# at two ranks, nothing named): the 128,745-token prompt, then 8 greedy decode steps, one card
+# against the pair, every step file byte for byte. One two-card lease (both cards, both box locks).
+echo "needle8400 IDS/needle8400.prompt.i32" > lc-cases.txt
+MEMRA_FULL_PREC=1 dsv41-run CKPT --token-map TOKEN_MAP --cases lc-cases.txt --gen 8 --devices 0 \
+  --out lc-one > lc-one.log 2>&1
+MEMRA_FULL_PREC=1 dsv41-run CKPT --token-map TOKEN_MAP --cases lc-cases.txt --gen 8 --devices 0,1 \
+  --out lc-pair > lc-pair.log 2>&1
+grep -h 'transport=' lc-pair.log   # transport=device-push
+for f in gen.i32 top_ids.i32 top_vals.f32 lse.f64 argmax.i32 full.f32; do
+  cmp lc-one/needle8400/$f lc-pair/needle8400/$f || echo "DIFFERS $f"; done
 ```
 
 Every GPU step ran as one lease per run through `memra-gpu-run` holding both cards and both box
