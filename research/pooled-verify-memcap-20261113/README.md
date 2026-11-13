@@ -30,13 +30,14 @@ Decision record:
 | main (M3) | main `a17add18f3`'s crates (built as `7a43ac1e56` with memra#1256's `worker.rs`, byte for byte the crates of `7a32d9b10b` and `a17add18f3`) | RTX 5090 (sm_120a) | `2e04b66a07877895` | |
 | fix (F3) | the round-1 code on main's crates (`7d7f56b46a`) | RTX 5090 (sm_120a) | `4a1abee9fb32937f` | |
 | fix (F4) | `e8a306389a`: F3 plus the numeric-scope guard in `spec_round_bytes` (it launches nothing); built, superseded by F5 before a cell ran on it | RTX 5090 (sm_120a) | `8cb259d1f85008b5` | |
-| fix (F5) | the review-round-2 code (`0551668a5d`, on `a17add18f3`; rebased onto `202e1411fe` with no change to its files); every cell under "Review round 2" | RTX 5090 (sm_120a) | `6980707df19deedf` | |
+| fix (F5) | the review-round-2 code (`0551668a5d`, on `a17add18f3`) | RTX 5090 (sm_120a) | `6980707df19deedf` | |
+| fix (F6) | the head: F5 plus review round 3 (the unbuilt booking bounded to the FA growth, a test), rebased onto `202e1411fe` with no change to this PR's files; the RTX 5090's c = 4 cells and gates | RTX 5090 (sm_120a) | `4006b4aa92925f8e` | |
 | diagnostic | main + `harness/rig/diag_probe.py` (log lines only) | RTX 5090 (sm_120a) | `8e7abde6637cc294` | `memra-0.141.1-c200db12045d` |
 | main | `11b368f7d7` | GB10 (sm_121a) | `2e1211ff9466a203` | `memra-0.141.1-32737cebc309` |
 | fix, round 0 | as above | GB10 (sm_121a) | `b9c35baaee789aca` | `memra-0.141.1-4e861bdcb961` |
 | M3, F3 | as above (`spec.rs`, `worker.rs` and server `lib.rs` hashed in the build log against the trees) | GB10 (sm_121a) | `4e262794c7bfd775` / `7df050125df70bf1` | |
-| F5 | as above (`spec.rs`, engine `lib.rs`, `worker.rs` and server `lib.rs` hashed against the tree) | GB10 (sm_121a) | `065153e432ae8ac8` | |
-| bench | `decode-batch-bench` from the F5 tree | RTX 5090 (sm_120a) | `7df981001fa9f53d` | |
+| F5 | as above (`spec.rs`, engine `lib.rs`, `worker.rs` and server `lib.rs` hashed against the tree); F6 differs only in the booking bound, which reaches no session in these cells (none builds its state in the tick), and a test | GB10 (sm_121a) | `065153e432ae8ac8` | |
+| bench | `decode-batch-bench` from the F6 tree | RTX 5090 (sm_120a) | `c6d6f98e4f9ca48d` | |
 
 The RTX 5090 binaries were built on the CPU build host (`harness/build-host/dd_build.sh`; M3 by
 `dd_build_m3.sh`), the GB10 ones on the unit (`harness/gb10/build_gb10*.sh`). Card conditions:
@@ -102,14 +103,15 @@ cap.
 ## Review round 2: the final code (F5)
 
 Correctness cells on a balanced lease (OOM counts, texts and the memory cap's counters; no
-timing claim), F5 against M3, alternating; the one timed step is the cost bench. No prompt of
+timing claim), the final code (F5, then F6 for the RTX 5090's c = 4 cells and gates) against M3,
+alternating; the one timed step is the cost bench. No prompt of
 these cells is in memra#1274's k x 4,096 + 1 to 15 band (the agentic replays' 29 prompts run
 1,604 to 17,101 tokens; the exact-resend gate's 11,000 and 11,150), so landing 17's prime
 change, which the rebase brings, does not reach them.
 
 ### Agentic replay, RTX 5090, c = 4 (`agentic-5090-c4-r2/`)
 
-F5, F5 forced cap and M3 at c = 4 run in the RTX 5090's first round-2 block; this section is updated when they finish (round 0's main boot at c = 4 answered 29 of 29, below).
+F6, F6 forced cap and M3 at c = 4 run in the RTX 5090's first round-2 block; this section is updated when they finish (round 0's main boot at c = 4 answered 29 of 29, below).
 
 ### The pre-cohort reclaim on hardware (`pad-5090/`, `pad-gb10/`)
 
@@ -125,7 +127,7 @@ across every fix boot):
 - 01-F: 29 answered texts equal 01-F's; differing k: none
 - 01-F against memra#1221 part 2 head rtxag3/02-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
 - 01-F against memra#1221 part 2 head rtxag3/03-ST: 29 of 29 texts equal; k=19/21 equal: {19: True, 21: True}
-- reference <lane>/runs/ag5/01-M: unreadable
+- reference ag3/01-M: 27 answered texts equal 01-F's; differing k: none; k=19/21 equal: {}
 
 The reclaims evicted prefix entries (15 passes, no parked session, no pass left short), and with
 that headroom every pooled forward fit: no capped forward in this boot.
@@ -380,10 +382,13 @@ profile):
 
 One text set per c across the four boots, no OOM, no capped forward and no reclaim in any boot.
 c = 1 to 4 are level. At c = 8 the first cut read 149.49 and 146.50 tok/s against main's 152.18
-and 150.53 in both orders; the plain c = 8 path runs the same code in both binaries (no cohort
-wider than the cap's reading, 0 capped forwards), and the fix boots drew about 140 W against 150 W
-at the same limit. The final-code pairs (`normal-5090-final/`: four pairs, M F and F M, under
-`--perf` and the take rule) are queued and decide the c = 8 question.
+and 150.53, 1.8% and 2.7% lower, one pair in each order (balanced profile). The plain c = 8 path
+runs the same code in both binaries (no forward was capped in either boot), and the fix boots drew
+about 140 W against 150 W at the same limit. Unresolved: the pairs that would settle it were
+dropped, because a sustained cell on this card cannot meet the take rule (under `--perf` a
+sustained load holds the card at its 87 C target with software thermal slowdown on 98% of the
+samples), and balanced-profile timings on this card move with the draw. The cost bench below
+prices a capped round directly.
 
 **GB10, round 0** (`normal-gb10/`):
 
@@ -410,64 +415,66 @@ at the same limit. The final-code pairs (`normal-5090-final/`: four pairs, M F a
 - c=4 agg tok/s: F 61.73 (61.73), M 61.62 (61.62)
 - c=8 agg tok/s: F 79.90 (79.9), M 79.98 (79.98)
 
-Level at every c, one text set per c, 0 capped forwards. The final-code pairs on GB10
-(`normal-gb10-final/`) are queued.
+Level at every c, one text set per c, 0 capped forwards. The final code's pairs on GB10 are under
+"Review round 2" (`normal-gb10-r2/`).
 
-## What a capped round costs (`bench-5090/`)
+## What a capped round costs
 
 `decode-batch-bench --pooled` at the shapes the cap splits (6,6 / 6,3 / 3,3 / 3,3,3,3 / 4,4,4,4 /
-4,4; depth 4,096, 20 reps; pooled and serial verifies bitwise equal first), from the F5 tree,
+4,4; depth 4,096, 20 reps; pooled and serial verifies bitwise equal first), from the F6 tree,
 runs on the RTX 5090 under `--perf` and the take rule after the queued jobs; this section is
 updated when it finishes.
 
-## Gates (`gates-5090/`)
+## Gates
 
-The seeded-invariance and exact-resend gates on F5 run in the RTX 5090's first round-2 block (with
+The seeded-invariance and exact-resend gates on F6 run in the RTX 5090's first round-2 block (with
 the c = 4 cells); this section is updated when they finish.
 
 ## CPU (`cpu/`)
 
-Final head (`cpu/full-chain-final.txt`, `cpu/green-final.txt`, `cpu/red-final/arms.txt`):
-`e8a306389a`, the branch on main `a17add18f3` with the numeric-scope guard, on the CPU build host
-with the whole `research/` tree the suites read at run time. `check-numeric-scope` passes on all
-245 entry sites.
+The head (`cpu/full-chain-head.txt`, `cpu/green-head.txt`, `cpu/red-head/arms.txt`): the review-round-3
+code on main `202e1411fe`, on the CPU build host with the whole `research/` tree the suites read at
+run time. `cargo fmt --check`, `cargo clippy --release --all-targets -D warnings`, the coalescer
+contract, memra-server 1,243 passed / 0 failed, memra-kv 87 / 0, memra-engine lib 756 / 0,
+memra-gguf lib 418 / 0, the portable suites 448 passed / 0 skipped / 0 failed;
+`check-numeric-scope` passes on every entry site.
 
 Red arms (`harness/build-host/red_arms.py`, `dd_red.sh`): each arm changes one thing and the named
-test fails (cargo exit 101 with the test's own panic). The two census arms use main's files
-(`7a32d9b10b`).
+test fails (cargo exit 101 with the test's own panic). The census arms use main's files
+(`7a32d9b10b`, the crates of `202e1411fe` for these files).
 
 | arm | what it changes | the test that fails |
 |---|---|---|
 | `accumulation-off` | `pooled_verify_chunk` forgets the members it took (`out.held += c.need` deleted) | `the_walk_joins_members_only_within_the_reading` (K=5 + K=5 at 1,616 MiB pools again), with the FA, rider and readiness tests |
 | `fa-growth-off` | the walk leaves the FA partial pool's growth out | `the_fa_pool_growth_counts_in_the_forward` |
+| `fa-deepest-rung` | `fa_rows_growth` prices one launch of every row at the deepest row's rung (round 1's price) | the straddle tests at 16,384 and 512 |
+| `growth-max-not-sum` | `fa_rows_growth` keeps the largest grow, not the sum | `two_runs_that_both_grow_the_pool_add_up` |
 | `rider-cap-off` | `pooled_rider_take` takes every rider | `riders_join_only_within_the_reading` |
+| `rider-depth-off` | riders priced at the chunk's deepest row | `a_rider_is_priced_at_its_own_depth` |
 | `margin-low` | `POOLED_VERIFY_MARGIN` at 128 MiB, under the measured 195 MiB | `the_margin_exceeds_what_the_pool_could_not_deliver` |
 | `main-engine` | main's `spec.rs` with the lockstep census appended | `the_mtp_lockstep_chunk_walk_applies_the_memory_cap` |
 | `snapshots-off` | `pre_cohort_need` leaves the burst snapshots out | `the_need_covers_the_round_and_every_burst_snapshot` |
 | `parked-first` | the ladder runs the parked rung before the prefix rung | `the_ladder_evicts_prefix_first_then_parked_sessions` |
-| `unreadable-acts` | the ladder reads an unreadable device as 0 and evicts | `the_ladder_evicts_prefix_first_then_parked_sessions` |
+| `unreadable-acts` | the ladder reads an unreadable device as 0 | `an_unreadable_device_does_nothing` |
+| `fence-funded-off` | the ladder does not mark a pass the fence funded | `a_reading_the_fence_funds_evicts_nothing` |
+| `booking-off` | the reclaim's reading keeps the unbuilt booking | `the_reclaim_reads_without_the_unbuilt_booking` |
+| `booking-unbounded` | the reclaim leaves the whole unbuilt booking out, not just the FA growth it overlaps | `only_the_fa_growth_overlaps_the_unbuilt_booking` |
+| `reap-off` | the parked rung does not reap after an eviction | `vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap` (a census: the reap does work only under on-demand KV planes, the RTX PRO 6000 default) |
 | `main-worker` | main's `worker.rs`, server `lib.rs` and engine `spec.rs` with the Cohorts-pass census appended | `the_cohorts_pass_reclaims_before_it_forms_cohorts` |
 
-Green: the seven engine tests, the three worker tests and the memra#1227 phase (a) census
-(`spec_newcomers_prime_before_cohorts_is_wired`, which now pins the reclaim between the prime
-quantum and the cohorts) pass in the full chain's suites.
-
-Full CPU chain: `cargo fmt --check`, `cargo clippy --release --all-targets -D warnings`, the
-coalescer contract, memra-server 1,239 passed / 0 failed, memra-kv 87 / 0, memra-engine lib
-750 / 0, memra-gguf lib 417 / 0, the portable suites 448 passed / 0 skipped / 0 failed.
-
-Earlier rounds' arms and chains: `cpu/red/` (round 0), `cpu/red-r1/` (round 1 before the
-rebase), `cpu/full-chain.txt`.
+Earlier heads: `cpu/full-chain-final.txt` and `cpu/red-final/` (the review-round-2 code at
+`0551668a5d`: 14 arms; one memra-gguf failure there, the per-process temp-config race main
+fixed in landing 17, passed three reruns), `cpu/full-chain-rebased.txt` (it rebased onto
+`202e1411fe`), `cpu/red/` (round 0), `cpu/red-r1/` (round 1), `cpu/full-chain.txt` (round 0).
 
 ## What is here
 
 | path | what |
 |---|---|
 | `diag-5090/01-D/`, `diag-5090/tl-01-D.txt` | the diagnostic boot (server log with the `[p1266]` lines, per-request rows, telemetry, `guard.log`) and its timeline |
-| `agentic-5090-c2*/<boot>/`, `agentic-5090-c4*/<boot>/`, `agentic-gb10-c2*/<boot>/` | `cells.jsonl`, per-request rows, `summary.txt` (line counts), `/metrics`, the server log, telemetry, `guard.log`, `run.log` |
+| `agentic-5090-c2*/<boot>/`, `agentic-5090-c4*/<boot>/`, `agentic-gb10-c2*/<boot>/`, `pad-5090/<boot>/`, `pad-gb10/<boot>/` | `cells.jsonl`, per-request rows, `summary.txt` (line counts), `/metrics`, the server log, telemetry, `guard.log`, `run.log` (`take.json`: the take rule's verdict, `agentic-5090-c4-perf-take/`) |
+| `riders-5090/<boot>/`, `riders-gb10/<boot>/`, `riders-gb10-n6/<boot>/` | the riders cell: `riders.jsonl` (per rider, solo re-run and stream: tokens, gaps, text sha), `texts/`, `metrics-<boot>.json`, the server log, `guard.log`, `summary.txt` |
 | `normal-5090*/<boot>/`, `normal-gb10*/<boot>/` | `normal.jsonl` (per request: tokens, TTFT, inter-token gaps, text sha), the server log, telemetry, `guard.log`, `summary.txt` |
 | `ref-1221b-head-texts.jsonl` | the memra#1221 part 2 head boots' text hashes |
-| `bench-5090/` | `decode-batch-bench --pooled` output |
-| `gates-5090/` | the seeded-invariance and exact-resend gate runs (logs, guard, each run's directory as a tarball) |
-| `cpu/` | the red arms (`red/` round 0, `red-r1/` round 1), the new tests' green runs, the full CPU chains |
+| `cpu/` | the red arms (`red/` round 0, `red-r1/` round 1, `red-final/` the head's 16), the new tests' green runs, the full CPU chains (`full-chain-final.txt` on the review-round-2 code, `full-chain-rebased.txt` on it rebased onto `202e1411fe`) |
 | `harness/rig/`, `harness/gb10/`, `harness/build-host/` | the scripts that ran all of it, with the step files; paths and hosts are written generically (`harness/rig/sanitize_receipts.py`) |

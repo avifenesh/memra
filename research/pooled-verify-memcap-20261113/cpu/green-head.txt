@@ -1,0 +1,21 @@
+# head deb6114414 (the review-round-3 code on main 202e1411fe): the memra#1266 tests in the full chain's suites (release)
+engine: test spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth ... ok
+engine: test spec::pooled_verify_cap_1266_tests::a_round_needs_its_checkpoint_columns_and_two_logits_stacks ... ok
+engine: test spec::pooled_verify_cap_1266_tests::riders_join_only_within_the_reading ... ok
+engine: test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384 ... ok
+engine: test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_512 ... ok
+engine: test spec::pooled_verify_cap_1266_tests::the_fa_pool_growth_counts_in_the_forward ... ok
+engine: test spec::pooled_verify_cap_1266_tests::the_margin_exceeds_what_the_pool_could_not_deliver ... ok
+engine: test spec::pooled_verify_cap_1266_tests::the_mtp_lockstep_chunk_walk_applies_the_memory_cap ... ok
+engine: test spec::pooled_verify_cap_1266_tests::the_walk_joins_members_only_within_the_reading ... ok
+engine: test spec::pooled_verify_cap_1266_tests::the_walk_keeps_the_row_and_readiness_stops ... ok
+engine: test spec::pooled_verify_cap_1266_tests::two_runs_that_both_grow_the_pool_add_up ... ok
+server: test worker::pre_cohort_reclaim_1266_tests::a_reading_the_fence_funds_evicts_nothing ... ok
+server: test worker::pre_cohort_reclaim_1266_tests::an_unreadable_device_does_nothing ... ok
+server: test worker::pre_cohort_reclaim_1266_tests::only_the_fa_growth_overlaps_the_unbuilt_booking ... ok
+server: test worker::pre_cohort_reclaim_1266_tests::the_cohorts_pass_reclaims_before_it_forms_cohorts ... ok
+server: test worker::pre_cohort_reclaim_1266_tests::the_ladder_evicts_prefix_first_then_parked_sessions ... ok
+server: test worker::pre_cohort_reclaim_1266_tests::the_need_covers_the_round_and_every_burst_snapshot ... ok
+server: test worker::pre_cohort_reclaim_1266_tests::the_reclaim_reads_without_the_unbuilt_booking ... ok
+server: test worker::tests::spec_newcomers_prime_before_cohorts_is_wired ... ok
+server: test worker::tests::vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap ... ok

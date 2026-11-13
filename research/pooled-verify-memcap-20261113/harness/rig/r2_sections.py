@@ -28,9 +28,11 @@ def agentic(camp, *refs):
 
 
 out = {}
-out["ag5"] = agentic("runs/ag5", REF)
-out["ag35"] = agentic("runs/ag35", REF, L / "runs/ag5/01-M")
-out["pad"] = agentic("runs/pad", REF, L / "runs/ag5/01-M")
+out["ag35"] = agentic("runs/ag35", REF)
+if out["ag35"] == "(not run)":
+    out["ag35"] = ("F6, F6 forced cap and M3 at c = 4 run in the RTX 5090's first round-2 block; this section is "
+                   "updated when they finish (round 0's main boot at c = 4 answered 29 of 29, below).")
+out["pad"] = agentic("runs/pad", REF, L / "runs/ag3/01-M")
 out["gpad"] = agentic("gb10-runs/gpad", L / "gb10-runs/gag5/01-M")
 out["gag5"] = agentic("gb10-runs/gag5")
 d = L / "runs/riders"
