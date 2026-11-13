@@ -1,0 +1,15 @@
+05:57:02 queueing on cb33: s5 gates A (kernels, layer default + dense form 4)
+06:25:45 lease claude-code-20261113T055702-2950471
+started pgid 1600813
+NVIDIA GB10, 305 MHz, 47
+kernels rc 0 972 checks, 0 failed 0 FAIL lines
+kernels: 576 dense_small PASS, 20 split-path PASS, 96 fused PASS
+layer form d rc 0 161 checks, 0 failed 0 FAIL lines
+fa825eeaa1bc5b0f98f0c957120022ce863718fc81b72d2495b899ce23ebf161  /home/avifenesh/.cache/dsv41-cfix/out/gates-s5/save-d.sha256
+layer form d saved tensors against /home/avifenesh/.cache/dsv41-cutlass/out/gates-f1/save-c.sha256: IDENTICAL (111 files; ref sha fa825eeaa1bc5b0f)
+layer form 4 rc 0 161 checks, 0 failed 0 FAIL lines
+fa825eeaa1bc5b0f98f0c957120022ce863718fc81b72d2495b899ce23ebf161  /home/avifenesh/.cache/dsv41-cfix/out/gates-s5/save-4.sha256
+layer form 4 saved tensors against /home/avifenesh/.cache/dsv41-cutlass/out/gates-f1/save-c.sha256: IDENTICAL (111 files; ref sha fa825eeaa1bc5b0f)
+GATES-A-DONE 06:34:04
+cb33: released
+06:34:08 released; LEASE-DONE

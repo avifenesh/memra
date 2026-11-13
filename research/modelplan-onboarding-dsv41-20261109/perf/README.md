@@ -1877,8 +1877,13 @@ tokens differ at 20 layers on two cards, as the CUTLASS tree's did: the CUTLASS 
 one token tape (`cfix-tok23`), so the fix keeps CUTLASS's bytes, and the 53-tape order gate judges that byte family
 against the vendor (below). Another job ran on the box's other two cards during these runs; the arms are interleaved,
 so the ratios hold. No run flagged for a slowdown, no page-cache drop inside a run. Owed: the four-card confirm (40
-layers), the keys side's overlap A/B on four cards, and the GB10 gates of the last commit (s5: queued; s1 and s4 in
-`gates-cutlass-gb10/`).
+layers) and the keys side's overlap A/B on four cards.
+
+GB10 (121a) gates of this tree (`receipts/gates-cutlass-gb10/s5`, the lease summaries; s1 and s4 beside it): the kernel
+gate 972 checks (576 dense small-row, 20 split-path, 96 fused), 0 failed; the layer gate 161 / 0 on the default form and
+on `--dense-form 4`, the saved tensors the CUTLASS tree's set (`fa825eee`); tp at 2 ranks 478 (peer-pull), 478
+(host-canonical), 480 (default), at 4 ranks 914 / 914 / 916; decode 240 / 240 / 60; the graph door 555 (one rank)
+and 1,105 (two); 0 failed anywhere. The order-gate tapes of this tree on GB10 are queued.
 
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
