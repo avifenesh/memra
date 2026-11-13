@@ -1293,8 +1293,23 @@ at every length. No run flagged for a slowdown, no page-cache drop inside a run.
 (`receipts/pre-trace-emb-pair23`, `serial.md`): the host's serial part before a prompt's first
 launch is 0.76 ms at 4,096 tokens and 6.20 ms at 32,768, nearly all of it Engram's hashing (0.69
 and 6.14 ms); no pinned allocation and no pool allocation of 1 ms or more inside a cell. The
-53-tape order gate puts this build in k3's byte family (d = 0). Owed: the same A B B A on four
-cards.
+53-tape order gate puts this build in k3's byte family (d = 0).
+
+Read with the A/B's limits: 2 runs an arm with a cold first A run, measured on kpc plus this change.
+At 32,768 and 131,072 tokens the second-round ranges are apart (-1.9%, -2.1%); at 4,096 they touch
+(485.6 against 485.8 ms), so 4,096 tokens reads as -1.0% with the ranges touching. Owed: A B B A
+blocks to five runs an arm on the route alone, and the four-card A B B A.
+
+The memory the table costs: one copy a card, 129,280 x 5,120 bf16 = 1.32 GB (1.23 GiB). On the pair
+the peak a rank rose 1.23 to 1.26 GiB (71.08 -> 72.34 GiB at 4,096 tokens, 83.39 -> 84.62 at
+131,072), room the server's memory book no longer has for requests. Ranks on one card share the
+copy (the review's fix; before it, four ranks on one GB10 kept 5.3 GB). The pool warm-up at the
+load is a speed step only: when its block cannot be had it logs and the load goes on.
+
+`dsv41-tpbench` did not run on GB10 for either build (`emb-gates-gb10/gates-b.txt`, `tpbench rc 1`:
+with the checkpoint in the page cache the card had about 2.2 GiB free for the 5.2 GiB reserve, does
+not fit), so the changed load path has no GB10 run; a serve smoke on the pair (load and one
+request) is owed with the five-run A/B.
 
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
