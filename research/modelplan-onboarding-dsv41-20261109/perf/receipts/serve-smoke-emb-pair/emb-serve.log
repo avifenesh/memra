@@ -1,0 +1,12 @@
+server ready after 9 s
+[dsv41-serve] v41: MEMRA_DSV41_TRUNK_LAYERS: 9 of the 40 trunk layers run. The answers are NOT the checkpoint's; this is a rehearsal of the route's memory and serving loop
+[dsv41-serve] v41: card 0 ranks [0]: weights 33.21 GiB resident (33.21 GiB a rank) in 4.8s, 61.18 GiB of 95.06 GiB left for requests (61.18 GiB a rank)
+[dsv41-serve] v41: card 1 ranks [1]: weights 33.21 GiB resident (33.21 GiB a rank) in 4.8s, 61.21 GiB of 95.06 GiB left for requests (61.21 GiB a rank)
+[dsv41-serve] v41: warm-up in 0.0s; one-token call 3.4 ms
+[dsv41-serve] v41: 2 rank(s) on devices [0, 1]; routed experts on the cards; resident weights [35656309912, 35656309912] bytes per rank; ceiling [65690787164, 65724341596] bytes; expert cache [] slots of 18800640 bytes (floor 0 slots, all 0); max_seq 8192; 8 session(s); prefill slices of 8192 rows
+[dsv41-serve] v41: capacity: the longest session with the route idle is 8192 positions (max_seq 8192); at once: 4096 sessions of 1,536 positions (1,024-token prompts), 4096 of 4,608 (4,096-token prompts), 4096 of 32,768, 4096 of 131,072; MEMRA_MAX_SESSIONS 8
+[dsv41-serve] v41: up in 5.6s
+18:57:23 label land1113/emb-serve engine memra model v41 seed 1440197058 plan ['decode_c1']
+18:57:26 decode_c1 0 {'prompt_tokens': 2048, 'completion_tokens': 512, 'cached_tokens': 0, 'ttft_s': 0.1125, 'decode_tok_s': 282.68, 'tok_per_chunk': 1.008, 'spec_accept_length': None} None 
+18:57:26 DONE land1113/emb-serve elapsed 4 s quality pass: None
+serve_bench land1113/emb-serve rc 0

@@ -1295,10 +1295,21 @@ launch is 0.76 ms at 4,096 tokens and 6.20 ms at 32,768, nearly all of it Engram
 and 6.14 ms); no pinned allocation and no pool allocation of 1 ms or more inside a cell. The
 53-tape order gate puts this build in k3's byte family (d = 0).
 
-Read with the A/B's limits: 2 runs an arm with a cold first A run, measured on kpc plus this change.
-At 32,768 and 131,072 tokens the second-round ranges are apart (-1.9%, -2.1%); at 4,096 they touch
-(485.6 against 485.8 ms), so 4,096 tokens reads as -1.0% with the ranges touching. Owed: A B B A
-blocks to five runs an arm on the route alone, and the four-card A B B A.
+That first A/B had 2 runs an arm with a cold first A run, measured on kpc plus this change; at 4,096
+tokens its second-round ranges touched. The A/B on this change's own base, at the pushed heads
+(2026-11-13, cards 2 and 3, 20 layers, `receipts/prefillab-emb-route-pair23`, `per-run.md` there):
+the route `7450e9f065` (A) against emb `21bb0500b3` on it (B), A B B A in three blocks, 6 runs an arm,
+3 rounds a run, first-token time:
+
+| tokens | A, each run's median (n 6): median [min, max] ms | B, same | best B / A | median B / A (every round, n 18) |
+|---|---|---|---|---|
+| 4,096 | 490.2 [488.0, 492.1] | 483.8 [480.6, 484.4] | 0.987 | 0.989 |
+| 32,768 | 3,317.3 [3,304.8, 3,327.5] | 3,243.1 [3,226.2, 3,246.6] | 0.989 | 0.978 |
+| 131,072 | 13,753.8 [13,545.5, 13,783.4] | 13,397.4 [13,313.6, 13,415.3] | 0.983 | 0.974 |
+
+The per-run ranges are apart at every length: -1.3% at 4,096 tokens, -2.2% at 32,768 and -2.6% at
+131,072 (the per-run medians' medians). No run flagged for a slowdown, no page-cache drop inside a run.
+Owed: the four-card A B B A (40 layers).
 
 The memory the table costs: one copy a card, 129,280 x 5,120 bf16 = 1.32 GB (1.23 GiB). On the pair
 the peak a rank rose 1.23 to 1.26 GiB (71.08 -> 72.34 GiB at 4,096 tokens, 83.39 -> 84.62 at
@@ -1313,8 +1324,12 @@ and both equal the build before the fix (a table a rank). The build's source is 
 
 `dsv41-tpbench` did not run on GB10 for either build (`emb-gates-gb10/gates-b.txt`, `tpbench rc 1`:
 with the checkpoint in the page cache the card had about 2.2 GiB free for the 5.2 GiB reserve, does
-not fit), so the changed load path has no GB10 run; a serve smoke on the pair (load and one
-request) is owed with the five-run A/B.
+not fit), so the changed load path has no GB10 run. The serve smoke on the pair (2026-11-13, emb
+`21bb0500b3`, `receipts/serve-smoke-emb-pair`): `memra-server` on two ranks, a rank a card, device-push,
+`MEMRA_CTX=8192`, up in 5.6 s with the table and the pool warm-up in the load; one `decode_c1`
+request (2,048 prompt tokens, 512 out) answered, rc 0, TTFT 0.11 s. The run set
+`MEMRA_DSV41_TRUNK_LAYERS=9` (9 of the 40 trunk layers: a rehearsal of the load and the serving loop,
+whose answers are not the checkpoint's), so its 283 tokens a second is not a model figure.
 
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 

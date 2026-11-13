@@ -1,0 +1,76 @@
+{
+ "label": "land1113/emb-serve",
+ "engine": "memra",
+ "url": "http://127.0.0.1:18361",
+ "seed": 1440197058,
+ "workloads_sha256": "995eaba4a656af90b52129b98939b585dcad79edbc06d2b8e3047b8fa12ae291",
+ "elapsed_s": 3.8,
+ "workloads": {
+  "decode_c1": {
+   "kind": "single",
+   "n_ok": 1,
+   "n_err": 0,
+   "ttft_s": {
+    "n": 1,
+    "median": 0.1125,
+    "min": 0.1125,
+    "max": 0.1125
+   },
+   "decode_tok_s": {
+    "n": 1,
+    "median": 282.68,
+    "min": 282.68,
+    "max": 282.68
+   },
+   "prefill_tok_s": {
+    "n": 1,
+    "median": 18204.4444,
+    "min": 18204.4444,
+    "max": 18204.4444
+   },
+   "prompt_tokens": {
+    "n": 1,
+    "median": 2048,
+    "min": 2048,
+    "max": 2048
+   },
+   "completion_tokens": {
+    "n": 1,
+    "median": 512,
+    "min": 512,
+    "max": 512
+   },
+   "cached_tokens": {
+    "n": 1,
+    "median": 0,
+    "min": 0,
+    "max": 0
+   },
+   "tok_per_chunk": {
+    "n": 1,
+    "median": 1.008,
+    "min": 1.008,
+    "max": 1.008
+   },
+   "accept_len_server": null,
+   "gpu_power_mean_w": {
+    "n": 1,
+    "median": 275.5,
+    "min": 275.5,
+    "max": 275.5
+   },
+   "gpu_sm_mean_mhz": {
+    "n": 1,
+    "median": 2248,
+    "min": 2248,
+    "max": 2248
+   },
+   "gpu_temp_max_c": {
+    "n": 1,
+    "median": 76.0,
+    "min": 76.0,
+    "max": 76.0
+   }
+  }
+ }
+}
