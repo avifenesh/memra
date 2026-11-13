@@ -10237,6 +10237,15 @@ fn reclaim_reading(raw: Option<usize>, booked: usize) -> Option<usize> {
     raw.map(|r| r.saturating_sub(booked))
 }
 
+/// The part of the unbuilt booking the cohort's reading must leave out (memra#1266 review 3): the
+/// unbuilt sessions build their state after the cohorts step, once the rounds' checkpoints and
+/// the burst snapshots are freed, so the only part of the cohort's need still live beside them is
+/// the FA partial pool's growth (the pool is grow-only and keeps it). Leaving the whole booking
+/// out would evict up to one need per pass for bytes the cohort never shares.
+fn booking_overlap(booked: usize, fa_growth: usize) -> usize {
+    booked.min(fa_growth)
+}
+
 /// What the cohort's verify needs funded before the cohorts step (memra#1266), from each
 /// member's `(verify round bytes, burst-entry snapshot bytes)`: the largest member's round (the
 /// memory cap verifies the others after it), every member's snapshot (each burst takes its own
@@ -25412,13 +25421,17 @@ pub fn run(
                     // round (the memory cap verifies the others after it) on top of every member's
                     // burst-entry snapshot; when the reading cannot fund that, evictable memory
                     // goes before the step, not after it fails (`reclaim_for_spec_round`).
-                    let members: Vec<(usize, usize)> = active
+                    let candidates: Vec<&Session> = active
                         .iter()
                         .enumerate()
                         .filter(|&(i, s)| {
                             !finished.contains(&i) && spec_pool_candidate(s, &loaded[&s.model])
                         })
-                        .map(|(_, s)| {
+                        .map(|(_, s)| s)
+                        .collect();
+                    let members: Vec<(usize, usize)> = candidates
+                        .iter()
+                        .map(|s| {
                             let model = &loaded[&s.model].model;
                             let pos = s.spec.as_ref().map_or(0, |sp| sp.kv_position());
                             (
@@ -25432,11 +25445,25 @@ pub fn run(
                     {
                         // The admitted sessions that build their state in this tick hold their
                         // charge on the reading until they do (memra#1255's booking, single
-                        // device only); the cohort cannot spend it.
+                        // device only). They build after the cohorts step, so only the FA pool's
+                        // growth overlaps them (`booking_overlap`).
+                        let fa_growth = candidates
+                            .iter()
+                            .map(|s| {
+                                let pos = s.spec.as_ref().map_or(0, |sp| sp.kv_position());
+                                loaded[&s.model]
+                                    .model
+                                    .spec_round_fa_growth_bytes(&engine, s.spec_k, pos)
+                            })
+                            .max()
+                            .unwrap_or(0);
                         let booked = if is_multi_device_deployment(&loaded) {
                             0
                         } else {
-                            unbuilt_session_booking(&active, admit_memory_cfg.armed)
+                            booking_overlap(
+                                unbuilt_session_booking(&active, admit_memory_cfg.armed),
+                                fa_growth,
+                            )
                         };
                         let reclaim = reclaim_for_spec_round(
                             &engine,
@@ -61231,6 +61258,20 @@ mod pre_cohort_reclaim_1266_tests {
         assert!(!run(&mut f, 1_000).fence_funded);
     }
 
+    /// Only the FA pool's growth overlaps the unbuilt booking (review 3): those sessions build
+    /// after the cohorts free their checkpoints and snapshots. A device reading 2,000 with 900
+    /// booked and a 100 FA growth funds a 1,300 need (2,000 - 100); left out whole, the booking
+    /// would have it evict 200.
+    #[test]
+    fn only_the_fa_growth_overlaps_the_unbuilt_booking() {
+        assert_eq!(booking_overlap(900, 100), 100);
+        assert_eq!(booking_overlap(50, 100), 50);
+        assert_eq!(booking_overlap(900, 0), 0);
+        let mut f = fake(Some(2_000), 500, &[]);
+        let r = run_booked(&mut f, 1_300, booking_overlap(900, 100));
+        assert_eq!((r.before, r.after, f.log.len()), (None, 1_900, 0));
+    }
+
     /// The reclaim reads without the admitted sessions' unbuilt booking (memra#1255): a device
     /// reading 2,000 that owes 900 to a session the tick has not built funds 1,100, short of a
     /// 1,300 need, and the prefix rung frees the rest on top of the booking.
@@ -61299,9 +61340,10 @@ mod pre_cohort_reclaim_1266_tests {
         // need.
         for needle in [
             concat!(
-                "let booked = if is_multi_device_deployment(&loaded) { 0 } else { ",
-                "unbuilt_session_booking(&active, admit_memory_cfg.armed) };"
+                "let booked = if is_multi_device_deployment(&loaded) { 0 } else { booking_overlap( ",
+                "unbuilt_session_booking(&active, admit_memory_cfg.armed), fa_growth, ) };"
             ),
+            "loaded[&s.model] .model .spec_round_fa_growth_bytes(&engine, s.spec_k, pos)",
             "need.saturating_add(spec_cohort_need_pad_bytes()), booked, );",
         ] {
             assert_eq!(count(needle), 1, "the Cohorts pass lost: {needle}");
