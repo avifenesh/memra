@@ -167,7 +167,7 @@ fn latent_plan_layers_charge_the_cache_they_allocate() {
 /// growing with the request (the whole point of the ppN chunk walk this lane ports), while
 /// the ctx-coupled score plane and the prompt-long hiddens keep scaling — exactly the terms
 /// that stay per-request by design. Naked schedule (no MEMRA_PRIME_CHUNK / PP env in CI):
-/// fixed 4096-token ranges with a sub-PRIME_MIN_T tail merged.
+/// fixed 4096-token ranges, a sub-PRIME_MIN_T tail merged only within the cap (memra#1258).
 #[test]
 fn the_admission_workspace_charge_is_chunk_bounded() {
     let shape = HyperPrimeWorkspaceShape {
@@ -181,8 +181,8 @@ fn the_admission_workspace_charge_is_chunk_bounded() {
     let rows_16k = hyper_prime_call_rows(16_384, 45, false, false);
     let rows_262k = hyper_prime_call_rows(262_144, 45, false, false);
     assert!(
-        rows_16k <= 4096 + 16 && rows_262k <= 4096 + 16,
-        "the naked schedule bounds every call at one chunk (+ tail merge): got {rows_16k} / {rows_262k}"
+        rows_16k <= 4096 && rows_262k <= 4096,
+        "the naked schedule bounds every call at one chunk: got {rows_16k} / {rows_262k}"
     );
     let at_16k = shape.admission_bytes(16_384);
     let at_262k = shape.admission_bytes(262_144);

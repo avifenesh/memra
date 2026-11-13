@@ -141,23 +141,23 @@ fn the_mhc_prime_schedule_covers_the_prompt_exactly() {
 
 /// THE RULE. One prime call must carry a bounded working set, not the context.
 ///
-/// The bound is `PRIME_CHUNK_MAX_TOKENS + PRIME_MIN_T`, not the chunk alone, and the extra term
-/// is the TAIL-MERGE rule, not slack: `fixed_prime_chunk_ranges` folds a remainder shorter than
-/// `PRIME_MIN_T` into the call before it rather than emitting a call the batched path cannot
-/// serve. What matters is that the bound is an ABSOLUTE CONSTANT — independent of `ctx` — which
-/// is the whole claim.
+/// The bound is `PRIME_CHUNK_MAX_TOKENS` itself: `fixed_prime_chunk_ranges` folds a remainder
+/// shorter than `PRIME_MIN_T` into the call before it only while the merged call stays within the
+/// cap, and otherwise moves the last boundary back so the tail call is `PRIME_MIN_T` rows or more
+/// (memra#1258; the fold used to widen a call to the cap plus 15 rows). What matters is that the
+/// bound is an ABSOLUTE CONSTANT, independent of `ctx`, which is the whole claim.
 ///
-/// The awkward contexts below are the ones that actually exercise that merge: every value on
+/// The awkward contexts below are the ones that actually exercise the tail rule: every value on
 /// LADDER is a multiple of the 4096 chunk and would never produce a short tail, so a bound that
-/// was wrong by the merge term would pass on the ladder alone.
+/// the tail broke would pass on the ladder alone.
 #[test]
 fn the_mhc_prime_carries_a_bounded_number_of_rows_at_every_context() {
     let (cfg, _) = glm5_config();
     let n_layers = cfg.n_layer as usize;
-    const BOUND: usize = PRIME_CHUNK_MAX_TOKENS + PRIME_MIN_T;
+    const BOUND: usize = PRIME_CHUNK_MAX_TOKENS;
     let awkward = [
         LADDER[LADDER.len() - 1] - 1, // 1M minus one: a 4095-row tail
-        LADDER[LADDER.len() - 1] + 1, // one row past a whole number of chunks: merges
+        LADDER[LADDER.len() - 1] + 1, // one row past whole chunks: a 16-row tail splits off
         PRIME_CHUNK_MAX_TOKENS + 1,
         PRIME_CHUNK_MAX_TOKENS + PRIME_MIN_T - 1,
         999_983, // prime number, no relationship to any chunk size
@@ -167,7 +167,7 @@ fn the_mhc_prime_carries_a_bounded_number_of_rows_at_every_context() {
         assert!(
             rows <= BOUND,
             "ctx {ctx}: one mHC prime call carries {rows} token rows, above the absolute bound \
-             {BOUND} (prime chunk {PRIME_CHUNK_MAX_TOKENS} + tail merge {PRIME_MIN_T}). The \
+             {BOUND} (the prime chunk cap; a short tail splits off as {PRIME_MIN_T}+ rows). The \
              per-call transient is proportional to this, so a value that tracks `ctx` makes \
              every transient a function of the CONTEXT."
         );
