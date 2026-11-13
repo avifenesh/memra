@@ -7640,6 +7640,9 @@ impl HybridModel {
             Some(g) => {
                 let slabs = &mut **g;
                 e.copy_into(&mut slabs.xa, 0, &x_in, t * n_embd)?;
+                // The walk reads xa from here on: the embedding goes back to the pool now rather
+                // than holding [t, n_embd] f32 through every layer (memra#1258).
+                drop(x_in);
                 let PrimeSlabs {
                     xa,
                     xb,
@@ -7916,6 +7919,25 @@ impl HybridModel {
                         into_ok = e.try_f16_gemm_pre_into_prefill(ffn_gate, xh, t, sl_gate)?
                             && e.try_f16_gemm_pre_into_prefill(ffn_up, xh, t, sl_up)?;
                     }
+                    // memra#1258: on the W4A8 MMQ arm the group's two GEMMs write into the same
+                    // slabs (the launch `matmul_group` would issue, to a resident address), so the
+                    // layer draws no fresh [t, n_ff] outputs from the pool. A written z only: an
+                    // unwritten one is read through the F8F4 seed the group adopts below.
+                    if !into_ok
+                        && zx16.is_none()
+                        && z_written
+                        && e.mmq_w4a8_into_route(ffn_gate, t)
+                        && e.mmq_w4a8_into_route(ffn_up, t)
+                    {
+                        let _act_window = e.mmq_act_begin();
+                        into_ok = e.matmul_prefill_w4a8_into(ffn_gate, z, t, sl_gate)?
+                            && e.matmul_prefill_w4a8_into(ffn_up, z, t, sl_up)?;
+                        if !into_ok {
+                            return Err(
+                                "prime: the W4A8 GEMM route changed inside the FFN group".into()
+                            );
+                        }
+                    }
                     let g2_owned: Vec<CudaSlice<f32>>;
                     let (gate_src, up_src): (&CudaSlice<f32>, &CudaSlice<f32>) = if into_ok {
                         (&*sl_gate, &*sl_up)
@@ -7997,7 +8019,9 @@ impl HybridModel {
                         } else {
                             false
                         };
-                        if !f16_used {
+                        // memra#1258: on the W4A8 MMQ arm the down GEMM writes the ffn_out slab,
+                        // which the add-norm below reads when `fo_owned` is empty.
+                        if !f16_used && !e.matmul_prefill_w4a8_into(ffn_down, &*act, t, sl_fo)? {
                             // `act` already carries the AWQ scale (applied above), so both the f16
                             // GEMM and this fallback see the same, scaled input.
                             let y = e.matmul_prefill(ffn_down, &*act, t)?;
@@ -9709,6 +9733,20 @@ impl HybridModel {
         // this single-seq path composes proj+core identically (byte-for-byte the old body).
         // task #14: `hx` = the norm-fused fp16 twin of `h` (skips the convert launch).
         let g3 = e.matmul_group_prefill_xh(&[&fa.wq, &fa.wk, &fa.wv], h, hx, t)?;
+        // memra#1258: the dequant-once workspace `full_attn_prime_fa_dispatch` uses grows to the
+        // prompt's end at its first call, not by one call's rows at every call of the prime.
+        let geometry = self.cfg.full_attention_geometry_at(il as u32);
+        let head_dim = geometry.head_dim_k as usize;
+        if seq_end > t
+            && (head_dim == 256 || head_dim == 128)
+            && std::env::var("MEMRA_NOFA").is_err()
+            && std::env::var("MEMRA_PRIME_DEQW")
+                .map(|v| v != "0")
+                .unwrap_or(true)
+        {
+            let kv_bytes = seq_end * geometry.n_head_kv as usize * head_dim * 2;
+            e.prime_deqw_reserve(kv_bytes, kv_bytes)?;
+        }
         self.full_attn_prime_core(e, fa, g3, pos_d, t, cache, il)
     }
 
@@ -32787,5 +32825,76 @@ mod hyper_pipe_tap_tests {
         let mut consumer = HcTapSink::new(vec![3, 7], 4, 16);
         consumer.ingest_state = Some(Box::new(()));
         assert!(hyper_pipe_tap_refusal(Some(&consumer)).is_some());
+    }
+}
+
+#[cfg(test)]
+mod prime_slab_into_census_tests {
+    fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("src dir") {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                rust_files(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    /// memra#1258: the `_into` GEMM form writes a caller's buffer, and the only caller that owns
+    /// such a buffer for a whole prime call is the prime walk (the resident prime slabs). Every
+    /// call of the form and of its route predicate outside their definitions sits inside
+    /// `HybridModel::prime_layers`; decode, verify and every other caller keep the allocating
+    /// `matmul` / `matmul_prefill`.
+    #[test]
+    fn only_prime_layers_writes_gemm_outputs_into_slabs() {
+        let into = format!("{}(", ["matmul_prefill", "_w4a8_into"].concat());
+        let route = format!("{}(", ["mmq_w4a8", "_into_route"].concat());
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        rust_files(&src, &mut files);
+        let hf = include_str!("hybrid_forward.rs");
+        let lines: Vec<&str> = hf.lines().collect();
+        let start = lines
+            .iter()
+            .position(|l| l.starts_with("    pub(crate) fn prime_layers("))
+            .expect("prime_layers");
+        let end = start
+            + 1
+            + lines[start + 1..]
+                .iter()
+                .position(|l| l.starts_with("    pub") || l.starts_with("    fn "))
+                .expect("the item after prime_layers");
+        let mut in_prime = 0;
+        for path in &files {
+            let text = std::fs::read_to_string(path).expect("source");
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            for (i, line) in text.lines().enumerate() {
+                let code = line.trim_start();
+                if code.starts_with("//") || !(code.contains(&into) || code.contains(&route)) {
+                    continue;
+                }
+                if code.contains("fn matmul_prefill_w4a8_into")
+                    || code.contains("fn mmq_w4a8_into_route")
+                {
+                    continue;
+                }
+                // The form checks its own predicate.
+                if name == "mmq_ffi.rs" && code == format!("if !self.{route}w, m) {{") {
+                    continue;
+                }
+                assert!(
+                    name == "hybrid_forward.rs" && (start..end).contains(&i),
+                    "{name}:{}: `{code}` calls the slab-writing GEMM form outside prime_layers",
+                    i + 1
+                );
+                in_prime += 1;
+            }
+        }
+        // gate and up (route and write each) and down: the census sees the walk's own calls.
+        assert_eq!(
+            in_prime, 5,
+            "prime_layers' calls of the slab-writing GEMM form"
+        );
     }
 }
