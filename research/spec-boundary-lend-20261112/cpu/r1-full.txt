@@ -1,0 +1,23 @@
+# tree: the review head's code (ef234add65 + the gguf fix eaf958263c)
+# 2026-11-13T04:40:48+01:00 full CPU chain of memra#1221 part 2
+# 2026-11-13T04:40:48+01:00 fmt
+fmt rc=0
+# 2026-11-13T04:40:55+01:00 clippy
+clippy rc=0
+# 2026-11-13T04:47:39+01:00 coalescer
+coalescer rc=0
+# 2026-11-13T04:47:42+01:00 server
+server rc=0
+  passed 1229, failed 0, ignored 17 over 6 binaries
+# 2026-11-13T05:02:34+01:00 kv
+kv rc=0
+  passed 89, failed 0, ignored 3 over 1 binaries
+# 2026-11-13T05:03:16+01:00 engine
+engine rc=0
+  passed 745, failed 0, ignored 66 over 1 binaries
+# 2026-11-13T05:06:47+01:00 gguf
+gguf rc=0
+  passed 417, failed 0, ignored 2 over 1 binaries
+# 2026-11-13T05:06:51+01:00 portable
+portable rc=0
+FULL-DONE

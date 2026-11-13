@@ -1,0 +1,12 @@
+# 2026-11-13T01:12:12+01:00 review round 1 red arms (each must FAIL)
+red arm ledger-double applied
+ledger-double memra-server::loan_books_move_a_charge_once_and_always_to_a_reader rc=101 FAILS (as it must) | thread 'worker::tests::loan_books_move_a_charge_once_and_always_to_a_reader' (2524) panicked at crates/memra-server/src/worker.rs:52814:9:
+red arm ledger-holder applied
+ledger-holder memra-server::loan_books_move_a_charge_once_and_always_to_a_reader rc=101 FAILS (as it must) | thread 'worker::tests::loan_books_move_a_charge_once_and_always_to_a_reader' (45662) panicked at crates/memra-server/src/worker.rs:52835:9:
+red arm evictable applied
+evictable memra-server::loan_books_move_a_charge_once_and_always_to_a_reader rc=101 FAILS (as it must) | thread 'worker::tests::loan_books_move_a_charge_once_and_always_to_a_reader' (72354) panicked at crates/memra-server/src/worker.rs:52855:9:
+red arm restore-floor applied
+restore-floor memra-engine::checkpoint_rewinds_check_the_lends_before_writing rc=101 FAILS (as it must) | thread 'spec::lend_floor_tests::checkpoint_rewinds_check_the_lends_before_writing' (82487) panicked at crates/memra-engine/src/spec.rs:18624:14:
+red arm publish-copy applied
+publish-copy memra-server::spec_boundary_publish_lends_on_the_mtp_path rc=101 FAILS (as it must) | thread 'worker::tests::spec_boundary_publish_lends_on_the_mtp_path' (149048) panicked at crates/memra-server/src/worker.rs:52591:14:
+RED-R1-DONE

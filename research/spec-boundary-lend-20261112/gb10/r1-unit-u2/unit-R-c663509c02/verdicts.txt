@@ -1,0 +1,17 @@
+2026-11-13T03:07:47+02:00
+4114649897478a6c4facc7774837b53626ecaf7b4e8431112d2cd196f7de1de9  ~/.cache/memra-1221b/bins/R-c663509c02/engine-lib-test
+d477d5a4c8123649ddd783517753f132fea26ce6513d117e80366fc084687129  ~/.cache/memra-1221b/bins/R-c663509c02/kv-lib-test
+6a310f398d504b85e837fef098f6253d57ba172c360bfb5c71195452b9cda6ab  ~/.cache/memra-1221b/bins/R-c663509c02/server-lib-test
+NVIDIA GB10, 580.178.04
+lend_gpu_tests::writes_below_a_live_lend_refuse_and_the_lender_hands_its_plane_on rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 91 filtered out; finished in 0.39s
+lend_gpu_tests::a_release_keeps_the_lent_bytes_of_an_on_demand_plane rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 91 filtered out; finished in 0.25s
+lend_gpu_tests::the_floor_follows_the_live_lends_and_the_adoption_is_reported rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 91 filtered out; finished in 0.34s
+spec::lend_floor_tests::the_mtp_scratch_refuses_a_length_below_its_lend rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 810 filtered out; finished in 0.28s
+worker::tests::spec_boundary_publish_is_the_copy_program rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 8.75s
+worker::tests::spec_boundary_publish_drops_a_plane_whose_copy_failed rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.62s
+worker::tests::a_lent_plane_outlives_its_lender_and_its_last_reader_frees_it rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.53s
+worker::tests::two_entries_of_one_session_share_their_books rc=101 fail (want pass) test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.41s
+worker::tests::adopted_planes_compact_only_when_that_frees_more_than_it_copies rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 1.74s
+worker::tests::b1_snapshot_and_restore_are_the_copy_program rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.71s
+worker::tests::an_unwritten_plane_is_charged_to_the_insert_budget_reading rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1235 filtered out; finished in 0.37s
+UNIT-CELLS-DONE R-c663509c02 rc=1

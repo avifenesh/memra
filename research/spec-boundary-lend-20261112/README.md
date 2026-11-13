@@ -26,6 +26,7 @@ no-regression and agentic cells. Date: 2026-11-12 and 13. Page cache unfilled in
 | O | `O-dae162ddef` | B with the copies on the engine's copy stream after an event (the allocations unchanged), joined at the next tick top |
 | S | `S-dd9437e445` | the head: the lending publisher. Its production code is the PR's (the commits after it change tests and docs only) |
 | BT, ST | `BT-dae162ddef`, `ST-S-6fd1564e74` | B and S with the leak-check probe (`tools/trim_probe.py`: a file drives the stock trim path and prints the pool's used bytes and the cache's charges) |
+| R, ST-R | `R-c663509c02`, `ST-R-c663509c02` | the review head (round 1 of the independent review, below) and it with the leak-check probe |
 
 ## Measure first: where the boundary's time and memory go
 
@@ -322,6 +323,157 @@ when the pool evicts a lender, and evicted by LRU under the cache budget.
 All 80 texts equal across the arms. The head evicts two entries fewer and serves one more hit: a
 borrowed entry is charged only its own planes while its lender is parked.
 
+## Review round 1
+
+The independent review (PR #1267) found that the cache's books broke when two entries read one
+plane, which one cold burst's miss-LCP split and stable boundary do, and that no receipt above
+exercised that case. It also listed seven more items. The fixes are in the record; this section
+is their evidence, on the review head R.
+
+| item | fix (record: `docs/decisions/SPEC-BOUNDARY-LEND.md`) | evidence |
+|---|---|---|
+| MF1, a moved charge counted twice | the move frees nothing: the leaving entry's bytes drop by it, the reader's rise, `total_bytes` stays; every reconcile checks `total_bytes` against the entries (`check_total`) | CPU test, red arm `ledger-double`; GPU two-entry cell |
+| MF2, a holder gone before the adoption | the book lists its readers; the holder is always one of them and moves to a remaining reader with or without a charge; `charge_loan` falls back to a present reader | CPU test, red arm `ledger-holder`; GPU two-entry cell |
+| SF3, a lease-kept charge offered | `evictable_bytes` leaves out `charges_kept_by_leases` | CPU test, red arm `evictable` |
+| SF4, the in-place checkpoint restore | `restore_cache_checkpoint` checks every layer's lends before its first write; `prefix_restore_validate` refuses a lending destination; `take_device` checks before `take_plane`; the caller census pins the restores | census, red arm `restore-floor`; KV cell `the_floor_follows_the_live_lends_and_the_adoption_is_reported` |
+| SF5, a checkpoint under the lend | the speculative checkpoint rewind checks the trunk's and the scratch's lends first and takes the fresh-cache route at the session's own capacity | census; the rewind cell below |
+| SF6, PP ordering | a publication lends only planes on the engine's own stream that can lend (`spec_publication_planes`), else it copies all | census, red arm `publish-copy` |
+| SF7, compaction at retirement | compaction on memory demand only (an insert over its budget, a partial eviction), with a back-off after a failed allocation | the open-output cells below; unit compaction cell |
+| SF8, reclaim and parked lenders | reconcile before admission's reclaim (and the OOM teardowns' half); the headroom ladders skip a parked session a surviving entry reads | CPU suite (the shed and wiring censuses unchanged) |
+| nits | live-lend floor; adoption queue (`AdoptionSink`); `charge_loan` prints; per-publication copy fallback; the failure-isolation argument (record); the MemAvailable after-reading | KV cells (pooled and VMM); tables regenerated |
+
+### CPU (`cpu/r1-*`)
+
+On the CPU build host at the review head: fmt, clippy `-D warnings` on all targets, the coalescer
+contract, memra-server 1,229 passed (17 GPU cells ignored), memra-kv 89 (3), memra-engine lib 745
+(66), the portable suites. memra-gguf passed 416 of 417 in one run: `fp8_blk_v_reorder_is_exact`
+read a config file another test was rewriting at the same path (`hybrid_cfg` wrote one path per
+process); it now writes one directory per call (417 of 417, its own commit).
+
+`loan_books_move_a_charge_once_and_always_to_a_reader` runs the books over (loan id, readers'
+lengths, held bytes) with no device: two entries read one plane (100 and 200 own bytes, 1,000
+held), a third entry (50) reads nothing. The holder leaves after the adoption (total 1,250 = 200 +
+50 + 1,000), before it (the reader that stays is charged once, one adoption counted), and a leased
+co-reader keeps the charge out of the offer (`evict_all` frees exactly the 150 offered). Every
+step asserts `total_bytes` against the entries' bytes and charged against real. The red arms
+(`tools/dd_red_r1.sh`, `box/red_patch.py`, `cpu/r1-red.txt`), each the review head with one fix
+disarmed, all fail:
+
+| arm | fails at |
+|---|---|
+| `ledger-double` (the old `+=`) | "a moved charge counted once": 2,250 against 1,250 (b + c + 2C) |
+| `ledger-holder` (re-point only with a charge) | "the holder moved to the reader that stays" |
+| `evictable` (no lease exclusion) | "the leased reader keeps the charge out of the offer" |
+| `restore-floor` (no check in the checkpoint restore) | the checkpoint census |
+| `publish-copy` (no decision before the first lend) | the publisher census: "the publication decides its planes" |
+
+### GPU unit cells (u2, `gb10/r1-unit-u2/`)
+
+Every earlier cell passes at the review head: the copying publication's 18 round-trip digests are
+the same lines as before (and main's), every lending twin equals its copy, the adoption, compaction,
+fault and KV cells as before. New:
+
+- `the_floor_follows_the_live_lends_and_the_adoption_is_reported` (KV): two lends of 32 and 16 rows;
+  an in-place checkpoint restore under 32 refuses, at 32 passes, a restore from a source refuses;
+  the 32-row lend gone, the floor is 16 and a rollback to 16 lands; the cache dropped, the adoption
+  is reported to the lend's sink once.
+- The VMM cell with a second, shorter lend: the adopted plane holds 8,388,608 bytes, then 4,194,304
+  once the longer lend went (released at the reconcile's reap).
+- `two_entries_of_one_session_share_their_books`: one session publishes 64- and 97-row entries over the same planes
+  of a 131-row session, so every book has two readers; the holder (the 64-row entry) is evicted
+  before the lender goes, and again after. On the tiny geometry both orders hold charged == real
+  at every step (published 36,928; holder evicted first: 18,464, then the lender gone: 48,176;
+  lender gone first: 66,640, then the holder evicted: 48,176), the 97-row entry restores the
+  session's rows, and the pool ends at its baseline (33,554,432). On the 27B geometry the first
+  run stopped before the books: two 156.9 MB entries do not fit the cell's 256 MB test budget,
+  so the second insert evicted the first. The cell now grants the cache room for its own run
+  (`KV_FLEX_GRANT`, taken back at its end); its rerun at the review head on the RTX 5090 (`rtx5090/r1-unit/`, with
+  the other server cells, all passing): 34 books of two readers; published 313,786,432 bytes,
+  charged == real; holder evicted first: 156,893,216, then the lender gone: 164,970,784; lender
+  gone first: 321,864,000, then the holder evicted: 164,970,784; the pool at its baseline after
+  each order.
+
+### Replays on the review head
+
+| | GB10 agentic (u1, `gb10/r1-agentic-u1/`) | RTX 5090 agentic, 150 W, balanced profile, two boots (`rtx5090/r1-agentic/`) | GB10 fleet (u1, `gb10/r1-fleet-u1/`) |
+|---|---:|---:|---:|
+| answered | 29/29 | 29/29, 29/29 | 80/80 |
+| texts equal to main's | 29 of 29 (both main boots on u1) | 27 of the 27 main answered; 29 of 29 against the first head and between the boots | 80 of 80 |
+| `[prefix-loan] reconcile` lines, charged == real | 89 of 89 | 86 of 86, 86 of 86 | 77 of 77 |
+| adoptions / compactions | 1,904 / 0 | 1,394 / 0 each | 2,074 / 0 |
+| rewinds refused below a lend / through a fresh cache | 0 / 0 | 0 / 0 | 0 / 0 |
+| `INVARIANT BROKEN` lines | 0 | 0 | 0 |
+| pool used at boot -> after the trim, MiB | 18,301 -> 18,402 (main's) | 16,529 -> 16,661 (main's) | 18,301 -> 18,301 |
+| charged bytes after the trim | 0 | 0 | 0 |
+| CUDA out of memory | 0 | 0 | 0 |
+
+Adoptions are now counted once each, when the reconcile drains the queue.
+
+The repo's four exactness gates on the review head (`gb10/r1-gates/`), all PASS: seeded invariance
+(u2; 54 rows, 26 lent `spec-boundary` publications, 6 spec restores), spec burst boundary (u1; 229
+rows, 80 lent publications, 16 spec restores), prefix exact resend (u1; resend 2/2, growth 2/2,
+identical 9/9, V1 to V5) and prefix restore identity (u1; identical 5/5, grid 5/5). No rewind was
+refused below a lend and no invariant broke in any of them.
+
+### Compaction on memory demand: served open-output cells (u1, `gb10/r1-openout-u1/`)
+
+Two cold open-output requests of 60,014 tokens on one server (no `max_tokens`: each session's
+planes are the served context's 262,144 rows), with their own nonces, after a 1k warm-up;
+`MEMRA_REUSE_POOL=0`, so the first session does not park and its planes move to its entry at
+retirement (`tools/openout_cell.sh`, `tools/openout_ab.py`, `tools/openout_tab.py`). Main (B) and
+the head with an 8,000 MB cache budget (T8), so that the second request's insert needs room.
+
+| | B: open-a | B: open-b | T8: open-a | T8: open-b |
+|---|---:|---:|---:|---:|
+| first burst boundary stall, ms | 27.1 | 18.3 | 7.2 | 7.0 |
+| publisher on the scheduler thread, ms | 0.6 | 0.8 | 0.09 | 0.65 |
+| entry | 2,049 MB copied | 2,049 MB copied | 1,892 MB lent | 1,892 MB lent |
+| compaction at this insert | - | - | - | 34 planes: 8,270 MB held, 1,892 MB copied, 0.4 ms |
+| TTFT, s | 44.107 | 43.837 | 44.142 | 44.975 |
+| text | e2acce15ddd6 | 24d1edde1c7d | e2acce15ddd6 | 24d1edde1c7d |
+
+open-a's session retired with its planes adopted (8,270 MB, the 262,144-row capacity under a
+59,968-row entry). open-b's publication was the next insert; it did not fit the 8,389 MB budget,
+so the reconcile compacted the adopted planes first: their rows copied into exact planes of the
+entry's own and the capacity freed, 0.4 ms on the scheduler thread (the 34 copies are enqueued on
+the stream), inside open-b's publisher's 0.65 ms; open-b's first boundary stall is 7.0 ms against
+main's 18.3. Charged == real after it (2,411.8 MB), no invariant break. On main at 60k the pool
+already held cached blocks for the copies (no growth), so its publisher is under 1 ms here; its
+stall still pays the copies.
+
+With the default budget (49,993 MB, cell 03-T, same unit) nothing compacts: open-b's publisher
+takes 0.07 ms and its stall is 0.0 ms (open-a's 1.8), and open-a's adopted capacity stays charged
+(8,320 MB adopted, charged == real at 8,790.8 MB), so the pool holds 37.4 GB against 31.0 GB
+after the compaction. That is the over-hold the record names, held until the cache or admission
+evicts it. Texts are equal on all three cells.
+
+### A checkpoint under the lend (should-fix 5)
+
+Two served cells on the RTX 5090 (`tools/rewind_cell.py`, `rtx5090/r1-rewind/`, answers bounded
+at 64 and at 512 tokens), a chat conversation whose first prompt is padded onto the 32-token grid
+(1,024 tokens), did not reach the case on either the first head or the review head: the speculative publication sat at the stable
+boundary (992 of 1,024, the turn checkpoint's own stop), the next turns hit that entry from the
+prefix cache, and no rewind ran (0 refused, 0 through a fresh cache). Chat prompts put both stops on
+one grid point, as the review says. The case is therefore built in the engine's own session gate:
+`session-gate` with `MEMRA_GATE_LEND_ABOVE=1` lends every trunk layer's rows `[0, committed)`
+before each checkpoint rewind, holds the lends through the turn, and checks that their bytes did
+not change and that the turn still emits the oracle's tokens. On the RTX 5090
+(`rtx5090/r1-gate/`, Qwen3.8-27B, the gate built at the first head 0952fd4474 and at the review
+head with the same gate patch, under the rig's balanced platform profile, before 06:42):
+
+| | first head | review head |
+|---|---|---|
+| turn 2: lent rows `[0, 151)`, checkpoint 96 | rewound in place; the lent rows CHANGED | the session moved to a fresh cache; the lent rows unchanged |
+| turn 3: lent rows `[0, 241)`, checkpoint 192 | rewound in place; the lent rows CHANGED | the session moved to a fresh cache; the lent rows unchanged |
+| tokens against the oracle | every turn MATCH | every turn MATCH |
+| verdict | SESSION GATE: FAIL | SESSION GATE: ALL TURNS MATCH |
+
+The first head rewound the parked session in place below the lend: `restore_cache_checkpoint`'s
+in-place arm had no floor (should-fix 4), and the next turn's prime wrote over rows an entry
+read. At the review head the rewind refuses in place and takes the fresh-cache route, the parked
+session survives (both turns rewound, none primed cold), and the lent rows keep their bytes.
+
+
 ## CPU checks
 
 On a CPU build host (sm_120a build, CUDA 13.1 compiler), the PR's crates (`cpu/full.txt`, the
@@ -338,19 +490,21 @@ now requires VMM instead. The four censuses on main: `cpu/red-census.txt`.
   Workstation Edition the session planes are on-demand VMM planes: the lend and the hand-off cover
   them (the KV crate's on-demand cell ran on GB10's VMM), and an adopted plane keeps only its lent
   extents, but no served cell ran there.
-- **Routes.** The MTP publisher lends; DSpark and GLM-5 keep copying, and their parks' rewinds are
-  not checked against a lend. Pipeline-parallel stage-owned caches lend on each plane's own stream;
-  no multi-card cell ran.
+- **Routes.** The MTP publisher lends on the engine's own stream; DSpark and GLM-5 keep copying,
+  and their parks' rewinds are not checked against a lend. Pipeline-parallel stage-owned caches
+  copy (their planes are on the stages' streams); no multi-card cell ran.
 - **The write floor is on the functions that lower a length** (`Cache::rollback`,
-  `Cache::rewind_recurrent_from`, the MTP scratch's `set_len` and `set_plane_len`), on
-  `into_pooled` and on `release_beyond`; the census pins every caller. The spec round loop's own
+  `Cache::rewind_recurrent_from`, the MTP scratch's `set_len` and `set_plane_len`, the checkpoint
+  restore), on the prefix restores' destination, on `into_pooled`, `take_device` and on
+  `release_beyond`; the census pins every caller. The spec round loop's own
   length writes raise a length or restore it to the committed rows, which are at or past the
   boundary by construction (the invariant the copy already relied on for one burst); they are not
   checked one by one.
-- **Over-hold.** An adopted plane is charged its whole capacity until it is compacted (only at the
-  tick top and after retirement, with the engine) or evicted. A bounded request holds a few hundred
-  rows past its entry; the compaction rule keeps an open-output session from holding more than
-  twice its entry.
+- **Over-hold.** An adopted plane is charged its whole capacity until it is compacted (on memory
+  demand only: an insert over its budget, a partial eviction) or evicted. A bounded request holds a
+  few hundred rows past its entry. On GB10 the default budget is large and admission's reclaim
+  evicts every unleased entry, so an open-output adoption is usually held until the cache or
+  admission evicts it (the open-output cell above).
 - **Admission's arrival term.** The partial reclaim on discrete cards still counts the entry an
   arriving request will publish at its full logical bytes (`reclaim_arrival_seed_bytes`); with the
   lend a speculative arrival's entry needs only its recurrent planes at publication, so the term

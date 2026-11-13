@@ -96,7 +96,9 @@ for c in sorted(p for p in d.iterdir() if p.is_dir() and re.match(r"\d\d-[A-Z]$"
         "lend": next(((x[1], x[2] / 1000, x[3] >> 20, x[4] >> 20) for x in lends if b1[0] <= x[0] <= b2[0]), None),
         "memavail_min_gb": min((m["mem_available_kb"] for m in mem if t0 <= m["t"] <= t1), default=0) / 2**20,
         "memavail_decode_gb": min((m["mem_available_kb"] for m in mem if b2[0] <= m["t"] <= t1), default=0) / 2**20,
-        "memavail_end_gb": next((m["mem_available_kb"] for m in mem if m["t"] >= t1), 0) / 2**20,
+        # The first sample after the request; None when the server stopped before one landed
+        # (the 1 Hz sampler ends with the server; a 0 here was a missing sample, not a reading).
+        "memavail_end_gb": next((m["mem_available_kb"] / 2**20 for m in mem if m["t"] >= t1), None),
     }
 
 KEYS = [("stall", "first burst boundary over its rounds, ms"), ("pub", "publisher on the scheduler thread, ms"),
@@ -114,7 +116,7 @@ for name, x in cells.items():
              if x['cached_entry'] is not None and x['growth'] is not None else "")
           + (f"; lent {x['lend'][0]:.0f} MB in place, publisher {x['lend'][1]:.2f} ms, pool reserved {x['lend'][2]} MiB used {x['lend'][3]} MiB" if x['lend'] else "")
           + f"; allocs {x['alloc_ms']:.1f} ms, slow (ms, MB grown) {x['slow_allocs']}; side-join us {x['join_us']}; "
-          f"MemAvailable min {x['memavail_min_gb']:.1f} GB (decode {x['memavail_decode_gb']:.1f}, after {x['memavail_end_gb']:.1f})")
+          f"MemAvailable min {x['memavail_min_gb']:.1f} GB (decode {x['memavail_decode_gb']:.1f}, after {'n/a' if x['memavail_end_gb'] is None else format(x['memavail_end_gb'], '.1f')})")
 arms = sorted({x["arm"] for x in cells.values()})
 
 

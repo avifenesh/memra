@@ -1,0 +1,96 @@
+{
+ "name": "S-6fd1564e74",
+ "binary": "bins5090/ST/memra-server",
+ "env": {},
+ "turn1_prompt_tokens": 1024,
+ "pad_words": 24,
+ "texts": {
+  "2": {
+   "warm": "adff1bec8b8fc24c",
+   "cold": "adff1bec8b8fc24c",
+   "equal": true
+  },
+  "3": {
+   "warm": "a7ce17965b1abb79",
+   "cold": "a7ce17965b1abb79",
+   "equal": true
+  }
+ },
+ "turn1": "32ff2f0a98d00b13",
+ "refused_below_lend": 0,
+ "fresh_cache_rewinds": 0,
+ "affinity_rewinds": 0,
+ "affinity_failed": 0,
+ "grid_rewinds": 0,
+ "inserts": [
+  [
+   "spec-boundary",
+   "992"
+  ],
+  [
+   "spec-boundary",
+   "1088"
+  ],
+  [
+   "spec-boundary",
+   "1152"
+  ]
+ ],
+ "hits": [
+  [
+   "992",
+   "1106"
+  ],
+  [
+   "1088",
+   "1194"
+  ]
+ ],
+ "usage": {
+  "warm-t1": {
+   "prompt_tokens": 1024,
+   "completion_tokens": 64,
+   "total_tokens": 1088,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 1.5022874339999999,
+   "spec": {
+    "rounds": 24,
+    "drafted": 48,
+    "accepted": 39,
+    "acceptance_rate": 0.8125
+   }
+  },
+  "warm-t2": {
+   "prompt_tokens": 1106,
+   "completion_tokens": 64,
+   "total_tokens": 1170,
+   "prompt_tokens_details": {
+    "cached_tokens": 992
+   },
+   "elapsed_s": 1.092072114,
+   "spec": {
+    "rounds": 27,
+    "drafted": 54,
+    "accepted": 36,
+    "acceptance_rate": 0.6666666666666666
+   }
+  },
+  "warm-t3": {
+   "prompt_tokens": 1194,
+   "completion_tokens": 64,
+   "total_tokens": 1258,
+   "prompt_tokens_details": {
+    "cached_tokens": 1088
+   },
+   "elapsed_s": 0.931650539,
+   "spec": {
+    "rounds": 22,
+    "drafted": 44,
+    "accepted": 42,
+    "acceptance_rate": 0.9545454545454546
+   }
+  }
+ }
+}
