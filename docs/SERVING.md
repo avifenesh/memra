@@ -532,7 +532,7 @@ unified arm; discrete cards read none of them. GB10 values and the measurements 
 
 | Default | Discrete card | Unified memory |
 |---|---|---|
-| free memory for sizing (admission, prefix-cache boot budget, MoE residency) | `cuMemGetInfo` free | the larger of `cuMemGetInfo` free and `/proc/meminfo` MemAvailable |
+| free memory for sizing (admission and its driver-headroom rung, prefix-cache boot budget, MoE residency) | `cuMemGetInfo` free | the larger of `cuMemGetInfo` free and `/proc/meminfo` MemAvailable |
 | `MEMRA_PREFIX_CACHE_MB` | the larger of two full-context entries and boot free less the 1.5 GiB reserve, the driver headroom and the session peak, clamped to boot free less the reserve | the larger of two entries and half of (boot free less the reserve, the driver headroom and any host KV tier) |
 | `MEMRA_STREAM_TTFT_MS_MAX` | 90,000 ms | one full served context at the derived prefill rate, at least 90,000 ms |
 | `MEMRA_SSE_PREFILL_COMMIT_MS` | off | 60,000 ms |
@@ -540,7 +540,7 @@ unified arm; discrete cards read none of them. GB10 values and the measurements 
 | prefix-cache insert budget | the configured budget | clamped on every insert to what the cache holds plus allocatable free memory less the driver headroom and the reserve |
 | admission booking of cache growth | none, except after a partial admission reclaim | the cache's allowed growth is booked as committed |
 
-The driver headroom, the crash guards, the async pool's release threshold, the host KV tier (it
+The driver headroom's 2 GiB floor, the crash guards, the async pool's release threshold, the host KV tier (it
 adds copies, not capacity, on shared DRAM; armed, the derived device share subtracts it), the
 pinned spill budget and the MoE slot cache keep their discrete values. Rollback: an explicit
 `MEMRA_PREFIX_CACHE_MB` is authoritative; `MEMRA_SSE_PREFILL_COMMIT_MS=0` restores the 90 s
