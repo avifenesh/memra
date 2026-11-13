@@ -12,6 +12,9 @@
 //!                    [--token-map FILE] [--floor CPU_FLOOR_DIR] [--out RECEIPT.json]
 //!   dsv41-gate decode CKPT_DIR CAPTURE_DIR --layers 1,2,20 --token-map FILE [--out RECEIPT.json]
 //!                    (the decode program's integer outcomes byte for byte, with a re-prefill red arm)
+//!   dsv41-gate tp CKPT_DIR CAPTURE_DIR --layers 1,2 [--devices 0,1] [--decode N] [--reps N]
+//!                    (N ranks against the single card; --reps N runs the 12/16/32-row passes N
+//!                    rounds, round r > 0 on the prompt rows from 7r: the race harness)
 //!   any of them with --dense-form F: every dense FP8/FP4 GEMM in form F (`dsv41_gpu::GEMM_FORM`)
 
 use memra_engine::dsv41_gpu::{
@@ -4028,6 +4031,7 @@ fn tp_gate(
     token_map: Option<&Path>,
     decode: usize,
     chunk: Option<usize>,
+    reps: usize,
     rep: &mut Report,
 ) -> Result<String, String> {
     let mc = memra_gguf::config::ModelConfig::from_config_json(&ckpt.join("config.json"))
@@ -4163,86 +4167,101 @@ fn tp_gate(
         // limits at 32 and the second stream's own limits, on the single card and on every
         // rank; each output of the second against the first. Not on a layer that
         // reads another layer's selection: the capture's selection rows index the full prompt's
-        // key rows, not a shorter call's.
+        // key rows, not a shorter call's. With --reps N the passes run N rounds, round r > 0 on
+        // the prompt rows from 7r (so a stale or wrong read returns other bytes): the race
+        // harness of the CUTLASS lane, which put 11 to 28 corrupt passes in a 40-round run on a
+        // swapped grouped form that one round showed in 15 to 20% of the runs.
         if lw.ratio == 0 || lw.index_source {
             let (hb, pb) = (h.host(&cx.ops.st)?, pre.host(&cx.ops.st)?);
             let (rh, rp) = (g.hc * g.dim * 2, g.hc * 4);
-            for rows in [12usize, 16, 32] {
-                if rows >= s {
-                    continue;
-                }
-                let tag = format!("layer{l}/rows{rows}");
-                let mut want: Option<(Vec<u8>, Vec<u8>)> = None;
-                let side: Vec<usize> = v::SIDE_LIMITS
-                    .iter()
-                    .map(|x| x.load(std::sync::atomic::Ordering::Relaxed))
-                    .collect();
-                for wide in [false, true] {
-                    // every family through its groups up to 32 rows, whatever the defaults are
-                    if wide {
-                        v::set_wide_rows(32, 32, 32, 32, 32);
+            for round in 0..reps.max(1) {
+                for rows in [12usize, 16, 32] {
+                    if rows >= s {
+                        continue;
+                    }
+                    let off = if round == 0 {
+                        0
                     } else {
-                        v::set_wide_rows(0, 0, 0, 0, 0);
-                    }
-                    for (x, &was) in v::SIDE_LIMITS.iter().zip(&side) {
-                        x.store(
-                            if wide { was } else { 0 },
-                            std::sync::atomic::Ordering::Relaxed,
-                        );
-                    }
-                    let mut sh1 = Shared::default();
-                    load_shared(&f, &pfx, l, &g, s, &mut sh1, &cx.ops)?;
-                    let (mut ls1, mut tr1) = (LayerState::default(), Trace::default());
-                    let h1 = Buf::from_bytes(&cx.ops.st, &hb[..rows * rh])?;
-                    let p1 = Buf::from_bytes(&cx.ops.st, &pb[..rows * rp])?;
-                    let (o, op) =
-                        cx.block_forward(&lw, &h1, &p1, 0, rows, &mut sh1, &mut ls1, &mut tr1)?;
-                    let (o, op) = (o.host(&cx.ops.st)?, op.host(&cx.ops.st)?);
-                    let mut shn: Vec<Shared> = (0..n).map(|_| Shared::default()).collect();
-                    let (mut hn, mut pn) = (Vec::with_capacity(n), Vec::with_capacity(n));
-                    for r in 0..n {
-                        let ops = &grp.cx[r].ops;
-                        load_shared(&f, &pfx, l, &g, s, &mut shn[r], ops)?;
-                        hn.push(Buf::from_bytes(&ops.st, &hb[..rows * rh])?);
-                        pn.push(Buf::from_bytes(&ops.st, &pb[..rows * rp])?);
-                    }
-                    let mut lsn: Vec<LayerState> = (0..n).map(|_| LayerState::default()).collect();
-                    let mut trn: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
-                    let (on, opn) =
-                        grp.block_forward(&lws, &hn, &pn, 0, rows, &mut shn, &mut lsn, &mut trn)?;
-                    let Some((wh, wp)) = want.as_ref() else {
-                        // the reference pass: the ranks against the single card, as everywhere
+                        (round * 7) % (s - rows)
+                    };
+                    let tag = if round == 0 {
+                        format!("layer{l}/rows{rows}")
+                    } else {
+                        format!("layer{l}/rows{rows}/rep{round}")
+                    };
+                    let mut want: Option<(Vec<u8>, Vec<u8>)> = None;
+                    let side: Vec<usize> = v::SIDE_LIMITS
+                        .iter()
+                        .map(|x| x.load(std::sync::atomic::Ordering::Relaxed))
+                        .collect();
+                    for wide in [false, true] {
+                        // every family through its groups up to 32 rows, whatever the defaults are
+                        if wide {
+                            v::set_wide_rows(32, 32, 32, 32, 32);
+                        } else {
+                            v::set_wide_rows(0, 0, 0, 0, 0);
+                        }
+                        for (x, &was) in v::SIDE_LIMITS.iter().zip(&side) {
+                            x.store(
+                                if wide { was } else { 0 },
+                                std::sync::atomic::Ordering::Relaxed,
+                            );
+                        }
+                        let mut sh1 = Shared::default();
+                        load_shared(&f, &pfx, l, &g, s, &mut sh1, &cx.ops)?;
+                        let (mut ls1, mut tr1) = (LayerState::default(), Trace::default());
+                        let h1 = Buf::from_bytes(&cx.ops.st, &hb[off * rh..(off + rows) * rh])?;
+                        let p1 = Buf::from_bytes(&cx.ops.st, &pb[off * rp..(off + rows) * rp])?;
+                        let (o, op) =
+                            cx.block_forward(&lw, &h1, &p1, 0, rows, &mut sh1, &mut ls1, &mut tr1)?;
+                        let (o, op) = (o.host(&cx.ops.st)?, op.host(&cx.ops.st)?);
+                        let mut shn: Vec<Shared> = (0..n).map(|_| Shared::default()).collect();
+                        let (mut hn, mut pn) = (Vec::with_capacity(n), Vec::with_capacity(n));
+                        for r in 0..n {
+                            let ops = &grp.cx[r].ops;
+                            load_shared(&f, &pfx, l, &g, s, &mut shn[r], ops)?;
+                            hn.push(Buf::from_bytes(&ops.st, &hb[off * rh..(off + rows) * rh])?);
+                            pn.push(Buf::from_bytes(&ops.st, &pb[off * rp..(off + rows) * rp])?);
+                        }
+                        let mut lsn: Vec<LayerState> =
+                            (0..n).map(|_| LayerState::default()).collect();
+                        let mut trn: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
+                        let (on, opn) = grp
+                            .block_forward(&lws, &hn, &pn, 0, rows, &mut shn, &mut lsn, &mut trn)?;
+                        let Some((wh, wp)) = want.as_ref() else {
+                            // the reference pass: the ranks against the single card, as everywhere
+                            for r in 0..n {
+                                let st = &grp.cx[r].ops.st;
+                                same_bytes(
+                                    rep,
+                                    &format!("{tag}/pipelined/rank{r}/out_stream"),
+                                    &on[r].host(st)?,
+                                    &o,
+                                    "bf16",
+                                );
+                            }
+                            want = Some((o, op));
+                            continue;
+                        };
+                        same_bytes(rep, &format!("{tag}/single/out_stream"), &o, wh, "bf16");
+                        same_bytes(rep, &format!("{tag}/single/out_pre_mix"), &op, wp, "f32");
                         for r in 0..n {
                             let st = &grp.cx[r].ops.st;
                             same_bytes(
                                 rep,
-                                &format!("{tag}/pipelined/rank{r}/out_stream"),
+                                &format!("{tag}/rank{r}/out_stream"),
                                 &on[r].host(st)?,
-                                &o,
+                                wh,
                                 "bf16",
                             );
+                            same_bytes(
+                                rep,
+                                &format!("{tag}/rank{r}/out_pre_mix"),
+                                &opn[r].host(st)?,
+                                wp,
+                                "f32",
+                            );
                         }
-                        want = Some((o, op));
-                        continue;
-                    };
-                    same_bytes(rep, &format!("{tag}/single/out_stream"), &o, wh, "bf16");
-                    same_bytes(rep, &format!("{tag}/single/out_pre_mix"), &op, wp, "f32");
-                    for r in 0..n {
-                        let st = &grp.cx[r].ops.st;
-                        same_bytes(
-                            rep,
-                            &format!("{tag}/rank{r}/out_stream"),
-                            &on[r].host(st)?,
-                            wh,
-                            "bf16",
-                        );
-                        same_bytes(
-                            rep,
-                            &format!("{tag}/rank{r}/out_pre_mix"),
-                            &opn[r].host(st)?,
-                            wp,
-                            "f32",
-                        );
                     }
                 }
             }
@@ -4355,8 +4374,9 @@ fn tp_gate(
         );
     }
     Ok(format!(
-        "\"tokens\": {s}, \"ranks\": {n}, \"devices\": {devices:?}, \"transport\": {:?}, \"layers\": [{}]",
+        "\"tokens\": {s}, \"ranks\": {n}, \"devices\": {devices:?}, \"transport\": {:?}, \"reps\": {}, \"layers\": [{}]",
         grp.transport.name(),
+        reps.max(1),
         summary.join(", ")
     ))
 }
@@ -4611,7 +4631,8 @@ fn main() {
             let token_map = flag("--token-map").map(PathBuf::from);
             let decode = flag("--decode").and_then(|x| x.parse().ok()).unwrap_or(0);
             let chunk = flag("--chunk").and_then(|x| x.parse().ok());
-            tp_gate(Path::new(&a[2]), Path::new(&a[3]), &layers, &devices, token_map.as_deref(), decode, chunk, &mut rep)
+            let reps = flag("--reps").and_then(|x| x.parse().ok()).unwrap_or(1);
+            tp_gate(Path::new(&a[2]), Path::new(&a[3]), &layers, &devices, token_map.as_deref(), decode, chunk, reps, &mut rep)
                 .map(|s| format!("\"gate\": \"tp\", \"capture\": {:?}, {s}", a[3]))
         }
         Some("idx") if a.len() > 3 => {
@@ -4624,7 +4645,7 @@ fn main() {
             idx_gate(Path::new(&a[2]), Path::new(&a[3]), layer, &devices, slice, reps, rows, last, &mut rep)
                 .map(|s| format!("\"gate\": \"idx\", \"capture\": {:?}, {s}", a[3]))
         }
-        _ => Err("usage: dsv41-gate [--dense-form F] kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json] | decode CKPT CAPTURE --layers L,.. --token-map FILE [--out R.json] | tp CKPT CAPTURE --layers L,.. [--devices 0,1] [--token-map FILE] [--decode N] [--chunk N] [--out R.json] | idx CKPT CAPTURE --layer L [--devices 0,1] [--slice N] [--reps N] [--rows N] [--last N] [--out R.json]".into()),
+        _ => Err("usage: dsv41-gate [--dense-form F] kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json] | decode CKPT CAPTURE --layers L,.. --token-map FILE [--out R.json] | tp CKPT CAPTURE --layers L,.. [--devices 0,1] [--token-map FILE] [--decode N] [--chunk N] [--reps N] [--out R.json] | idx CKPT CAPTURE --layer L [--devices 0,1] [--slice N] [--reps N] [--rows N] [--last N] [--out R.json]".into()),
     };
     let header = match r {
         Ok(h) => h,
