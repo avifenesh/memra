@@ -1,0 +1,10 @@
+# 2026-11-13T10:04:22+01:00 review round 3 red arms at 7fdf895767 (each must FAIL)
+red arm budget-tick applied
+budget-tick memra-server::the_tick_and_retirement_reconciles_hold_the_budget rc=101 FAILS (as it must) | assertion `left == right` failed: px.reconcile_to_budget(&engine, "tick");
+red arm hold-stuck applied
+hold-stuck memra-server::loan_books_move_a_charge_once_and_always_to_a_reader rc=101 FAILS (as it must) | assertion `left == right` failed: the stuck state
+red arm hold-budget applied
+hold-budget memra-server::loan_books_move_a_charge_once_and_always_to_a_reader rc=101 FAILS (as it must) | over budget after the hold: 1350
+red arm rewind-retry applied
+rewind-retry memra-server::a_lend_refused_rewind_survives_an_out_of_memory_fresh_cache rc=101 FAILS (as it must) | assertion `left == right` failed: the retry rewound in place
+RED-R3-DONE

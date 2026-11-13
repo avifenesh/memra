@@ -9,8 +9,9 @@
 
 pub mod plane;
 pub use plane::{
-    GrowEvent, KvAllocator, KvPlane, KvWrite, VmmFaults, VmmGrowPlacement, note_on_demand_plane,
-    on_demand_initial_rows, on_demand_pays, vmm_counters, vmm_granularity_for, vmm_graveyard_bytes,
+    AdoptionSink, GrowEvent, KvAllocator, KvLend, KvLoan, KvPlane, KvWrite, VmmFaults,
+    VmmGrowPlacement, lend_floor_refusal, note_on_demand_plane, on_demand_initial_rows,
+    on_demand_pays, release_keep_bytes, vmm_counters, vmm_granularity_for, vmm_graveyard_bytes,
     vmm_grow_placement, vmm_quarantined_bytes, vmm_reap_graveyard, vmm_reap_graveyard_blocking,
     vmm_set_faults, vmm_set_grow_placement, with_on_demand_kv,
 };
@@ -616,6 +617,21 @@ impl KvLayer {
             .fold((0, 0), |(u, s), (_, tok)| {
                 (u + self.len * tok, s + rows * tok)
             })
+    }
+
+    /// Rows a live lend of either plane reads ([`KvPlane::lend`], memra#1221): the layer's
+    /// length must never go below them while the lend lives.
+    pub fn lent_rows(&self) -> usize {
+        let rows = |p: &KvPlane, tok: usize| p.lent_bytes().div_ceil(tok.max(1));
+        rows(&self.k, self.k_tok_bytes).max(rows(&self.v, self.v_tok_bytes))
+    }
+
+    /// The refusal of setting this layer's length to `rows` while a lend reads rows past them.
+    pub fn lend_floor_refusal(&self, what: &str, rows: usize) -> Option<String> {
+        let lent = self.lent_rows();
+        (rows < lent).then(|| {
+            format!("REFUSED: {what} to row {rows} is below the {lent} rows lent to a prefix entry")
+        })
     }
 
     /// The rows consumers may touch on both planes (capacity rows for pooled planes).
@@ -2871,6 +2887,37 @@ impl Cache {
         Ok(())
     }
 
+    /// The most rows a live lend reads on any KV layer (memra#1221 part 2): 0 when no prefix entry
+    /// reads this cache in place. Dropping a cache that lends frees none of its lent planes.
+    pub fn lent_rows(&self) -> usize {
+        self.kv
+            .iter()
+            .flatten()
+            .map(KvLayer::lent_rows)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// The refusal of restoring `snap` into this cache in place or from a source (memra#1221
+    /// review): every KV layer the restore sets to `snap.kv_len` rows is checked against its live
+    /// lends before the first write. A restore from a source writes a layer from row 0, so any
+    /// lend refuses it (`from_source`).
+    pub fn checkpoint_lend_refusal(
+        &self,
+        snap: &CacheSnapshot,
+        from_source: bool,
+    ) -> Option<String> {
+        self.kv
+            .iter()
+            .zip(snap.kv_len.iter())
+            .find_map(|(layer, len)| match (layer, len) {
+                (Some(kvl), Some(len)) => {
+                    kvl.lend_floor_refusal("checkpoint restore", if from_source { 0 } else { *len })
+                }
+                _ => None,
+            })
+    }
+
     /// WP-B day 37: on-demand VMM planes in this cache (0 for a pooled cache).
     pub fn on_demand_planes(&self) -> usize {
         self.kv
@@ -3497,6 +3544,19 @@ impl Cache {
                 "SWA ring rewind checkpoint has been lapped; full re-prime required".into(),
             );
         }
+        // A lent layer's rows below its lend are a published prefix entry's (memra#1221): the
+        // rollback refuses before any write rather than let the next append overwrite them.
+        for (il, kvl) in self.kv.iter().enumerate() {
+            let why = match (kvl.as_ref(), snap.kv_len.get(il).copied().flatten()) {
+                (Some(kvl), Some(saved)) => {
+                    kvl.lend_floor_refusal("cache rollback", saved + accept_len)
+                }
+                _ => None,
+            };
+            if let Some(why) = why {
+                return Err(format!("layer {il}: {why}").into());
+            }
+        }
         for il in 0..self.kv.len() {
             if let (Some(kvl), Some(saved)) = (self.kv[il].as_mut(), snap.kv_len[il]) {
                 kvl.len = saved + accept_len;
@@ -3557,6 +3617,15 @@ impl Cache {
             return Err(
                 "recurrent rewind: TP or latent planes are not carried by the entry".into(),
             );
+        }
+        // The rewind's appends start at `pos`: rows a live lend reads must be at or below it.
+        for (il, kvl) in self.kv.iter().enumerate() {
+            if let Some(why) = kvl
+                .as_ref()
+                .and_then(|kvl| kvl.lend_floor_refusal("recurrent rewind", pos))
+            {
+                return Err(format!("layer {il}: {why}").into());
+            }
         }
         if pos > self.pos {
             return Err(format!(
@@ -4476,5 +4545,308 @@ mod continuation_gate_tests {
             .filter(|&l| l == 1)
             .collect();
         assert_eq!(stage, c.suspended);
+    }
+}
+
+/// GPU cells of the lend floor (memra#1221 part 2), on the crate's own device seam: a minimal
+/// `KvDev` over one cudarc stream, so each guard's red arm rebuilds this crate only.
+#[cfg(test)]
+mod lend_gpu_tests {
+    use super::*;
+    use cudarc::driver::{CudaContext, CudaStream};
+    use std::sync::Arc;
+
+    struct Dev(Arc<CudaStream>);
+
+    impl KvDev for Dev {
+        fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+            Ok(self.0.alloc_zeros(n.max(1))?)
+        }
+        fn uninit(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+            Ok(self.0.alloc_zeros(n.max(1))?)
+        }
+        fn alloc_u8(&self, n: usize) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+            Ok(self.0.alloc_zeros(n.max(1))?)
+        }
+        fn kv_vmm_granularity(&self) -> Option<usize> {
+            vmm_granularity_for(&self.0).ok()
+        }
+        fn alloc_vmm_on_demand_u8(
+            &self,
+            capacity: usize,
+            initial: usize,
+        ) -> Result<KvPlane, Box<dyn std::error::Error>> {
+            KvPlane::vmm_on_demand(self.0.clone(), capacity, initial)
+        }
+        fn htod_i32(&self, v: &[i32]) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>> {
+            Ok(self.0.clone_htod(v)?)
+        }
+        fn clone_dtod(
+            &self,
+            src: &CudaSlice<f32>,
+        ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+            Ok(self.0.clone_dtod(src)?)
+        }
+        fn copy_into(
+            &self,
+            dst: &mut CudaSlice<f32>,
+            off: usize,
+            src: &CudaSlice<f32>,
+            len: usize,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let mut view = dst.slice_mut(off..off + len);
+            Ok(self.0.memcpy_dtod(&src.slice(0..len), &mut view)?)
+        }
+        fn copy_range_into(
+            &self,
+            dst: &mut CudaSlice<f32>,
+            dst_off: usize,
+            src: &CudaSlice<f32>,
+            src_off: usize,
+            len: usize,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let mut view = dst.slice_mut(dst_off..dst_off + len);
+            Ok(self
+                .0
+                .memcpy_dtod(&src.slice(src_off..src_off + len), &mut view)?)
+        }
+        fn set_i32_one(
+            &self,
+            d: &mut CudaSlice<i32>,
+            v: i32,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            Ok(self.0.memcpy_htod(&[v], d)?)
+        }
+    }
+
+    fn tiny() -> ModelConfig {
+        ModelConfig::from_hf(&memra_gguf::config::HfConfig::parse(
+            r#"{"model_type":"qwen3_5","num_hidden_layers":4,"hidden_size":64,
+            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+            "intermediate_size":128,"vocab_size":16,"max_position_embeddings":256,
+            "full_attention_interval":2,"linear_conv_kernel_dim":3,
+            "linear_key_head_dim":32,"linear_value_head_dim":32,
+            "linear_num_key_heads":1,"linear_num_value_heads":2}"#,
+        ))
+    }
+
+    /// A pooled cache with 40 rows written in every attention layer, rows [0, 32) of the first
+    /// layer's K and V lent: the cache's rollback and recurrent rewind refuse a target under 32
+    /// and leave every length alone, 32 passes; `into_pooled` of a lent plane refuses and the
+    /// plane moves to its loan, which still reads the written bytes; the cache dropped, its lent
+    /// planes are the loans' (held at their capacity) and still read the written bytes.
+    #[test]
+    #[ignore = "requires a CUDA GPU"]
+    fn writes_below_a_live_lend_refuse_and_the_lender_hands_its_plane_on() {
+        let dev = Dev(CudaContext::new(0).unwrap().default_stream());
+        let s = dev.0.clone();
+        let mut cache = Cache::new(&dev, &tiny(), 64).unwrap();
+        let first = cache.kv.iter().position(Option::is_some).unwrap();
+        let mut written = Vec::new();
+        for l in cache.kv.iter_mut().flatten() {
+            let bytes: Vec<u8> = (0..40 * l.k_tok_bytes).map(|i| (i * 7 + 3) as u8).collect();
+            s.memcpy_htod(&bytes, &mut l.k.slice_mut(0..bytes.len()))
+                .unwrap();
+            l.len = 40;
+            written.push(bytes);
+        }
+        cache.pos = 40;
+        let l = cache.kv[first].as_ref().unwrap();
+        let (kb, vb) = (32 * l.k_tok_bytes, 32 * l.v_tok_bytes);
+        let (lend_k, lend_v) = (l.k.lend(kb).unwrap(), l.v.lend(vb).unwrap());
+        assert_eq!(l.lent_rows(), 32);
+        let n = cache.kv.len();
+        let lens = |c: &Cache| {
+            c.kv.iter()
+                .map(|l| l.as_ref().map(|l| l.len))
+                .collect::<Vec<_>>()
+        };
+        let before = lens(&cache);
+        let snap = |rows: usize| CacheSnapshot {
+            kv_len: before.iter().map(|l| l.map(|_| rows)).collect(),
+            tp_kv_len: vec![None; n],
+            conv: vec![None; n],
+            ssm: vec![None; n],
+            pos: rows,
+        };
+        for rows in [0usize, 31] {
+            let err = cache
+                .rollback(&dev, &snap(rows), 0)
+                .expect_err("rollback below the lend");
+            assert!(err.to_string().contains("lent to a prefix entry"), "{err}");
+            // Planes of the cache's own recurrent shapes: without the lend floor this rewind would
+            // pass every other check and land.
+            let planes = |ssm: bool| -> Vec<Option<CudaSlice<f32>>> {
+                cache
+                    .recur
+                    .iter()
+                    .map(|r| {
+                        r.as_ref().map(|r| {
+                            let n = if ssm {
+                                r.ssm_state.len()
+                            } else {
+                                r.conv_state.len()
+                            };
+                            s.alloc_zeros::<f32>(n).unwrap()
+                        })
+                    })
+                    .collect()
+            };
+            let (conv, ssm) = (planes(false), planes(true));
+            let err = cache
+                .rewind_recurrent_from(&dev, rows, &conv, &ssm)
+                .expect_err("recurrent rewind below the lend");
+            assert!(err.to_string().contains("lent to a prefix entry"), "{err}");
+            assert_eq!(lens(&cache), before, "a refused rewind moved a length");
+        }
+        cache
+            .rollback(&dev, &snap(32), 0)
+            .expect("a rollback to the lent rows");
+        // into_pooled of a lent plane refuses; the plane moves to its loan.
+        let plane: KvPlane = s.clone_htod(&written[0][..kb]).unwrap().into();
+        let lend = plane.lend(kb / 2).unwrap();
+        let err = plane
+            .into_pooled()
+            .expect_err("into_pooled of a lent plane");
+        assert!(err.to_string().contains("lent to a prefix entry"), "{err}");
+        assert_eq!(lend.held_bytes(), kb, "the refused plane is the loan's");
+        assert_eq!(s.clone_dtoh(&*lend).unwrap(), written[0][..kb / 2]);
+        // The cache goes: its lent planes are the loans'.
+        let cap_k = cache.kv[first].as_ref().unwrap().k.capacity_bytes();
+        drop(cache);
+        assert_eq!(
+            lend_k.held_bytes(),
+            cap_k,
+            "the lent K plane was not handed on"
+        );
+        assert!(
+            lend_v.held_bytes() > 0,
+            "the lent V plane was not handed on"
+        );
+        assert_eq!(
+            s.clone_dtoh(&*lend_k).unwrap(),
+            written[0][..kb],
+            "lent K after its lender"
+        );
+        eprintln!(
+            "[lend floor cell] pooled: rewinds to 0 and 31 refused under a 32-row lend, \
+                   into_pooled refused, both lent planes handed on ({cap_k} bytes each K)"
+        );
+    }
+
+    /// An on-demand VMM plane (where the device has VMM), backed in four extents of 4, 4, 8 and 16
+    /// MiB: with its first 8 MiB lent, a release of everything past 0 keeps the two lent extents
+    /// backed (the other two go); dropped while the lend lives, the plane is the loan's and holds
+    /// the lent extents only. A release frees whole extents, so the lent bytes stay backed exactly
+    /// when the clamp keeps the release at or past them.
+    #[test]
+    #[ignore = "requires a CUDA GPU with VMM"]
+    fn a_release_keeps_the_lent_bytes_of_an_on_demand_plane() {
+        let dev = Dev(CudaContext::new(0).unwrap().default_stream());
+        let g = dev
+            .kv_vmm_granularity()
+            .expect("this cell needs a device with CUDA VMM");
+        let mib = 1usize << 20;
+        let (cap, lent) = (64 * mib, 8 * mib);
+        let mut plane = dev.alloc_vmm_on_demand_u8(cap, 4 * mib).unwrap();
+        for upto in [8 * mib, 16 * mib, 32 * mib] {
+            plane.ensure_mapped(upto).unwrap();
+        }
+        assert!(plane.mapped_bytes() >= 32 * mib);
+        let lend = plane.lend(lent).unwrap();
+        let short = plane.lend(lent / 2).unwrap();
+        plane.release_beyond(0);
+        dev.0.synchronize().unwrap();
+        plane.reap();
+        assert!(
+            plane.mapped_bytes() >= lent,
+            "a release took lent bytes: {} mapped of {lent} lent",
+            plane.mapped_bytes()
+        );
+        assert!(
+            plane.physical_bytes() < 32 * mib,
+            "the release kept every extent"
+        );
+        drop(plane);
+        dev.0.synchronize().unwrap();
+        lend.loan().upgrade().expect("the loan").reap();
+        assert!(
+            lend.held_bytes() >= lent && lend.held_bytes() <= lent + g,
+            "the adopted plane holds {} bytes for a {lent}-byte lend",
+            lend.held_bytes()
+        );
+        let adopted = lend.held_bytes();
+        // The longer lend goes: the adopted plane releases down to the lend that lives.
+        let loan = lend.loan();
+        drop(lend);
+        let loan = loan.upgrade().expect("the shorter lend keeps the loan");
+        loan.reap();
+        dev.0.synchronize().unwrap();
+        loan.reap();
+        assert!(
+            short.held_bytes() >= lent / 2 && short.held_bytes() <= lent / 2 + g,
+            "the adopted plane holds {} bytes for the {}-byte lend left",
+            short.held_bytes(),
+            lent / 2
+        );
+        eprintln!(
+            "[lend floor cell] on-demand: a release past 0 kept the {lent} lent bytes of 32 MiB \
+             backed; the adopted plane holds {adopted}, then {} once the longer lend went",
+            short.held_bytes()
+        );
+    }
+
+    /// memra#1221 review: the floor follows the lends that live. Two lends of the first layer's
+    /// K plane, 32 and 16 rows: a checkpoint restore in place under 32 rows refuses, at 32 it
+    /// passes, and any restore from a source (written from row 0) refuses; the 32-row lend gone,
+    /// the floor is 16 and a rollback to 16 lands. The cache dropped, the plane's adoption is
+    /// reported to the sink its lend named, once.
+    #[test]
+    #[ignore = "requires a CUDA GPU"]
+    fn the_floor_follows_the_live_lends_and_the_adoption_is_reported() {
+        let dev = Dev(CudaContext::new(0).unwrap().default_stream());
+        let mut cache = Cache::new(&dev, &tiny(), 64).unwrap();
+        let first = cache.kv.iter().position(Option::is_some).unwrap();
+        for l in cache.kv.iter_mut().flatten() {
+            l.len = 40;
+        }
+        cache.pos = 40;
+        let sink = Arc::new(AdoptionSink::default());
+        let l = cache.kv[first].as_ref().unwrap();
+        let tok = l.k_tok_bytes;
+        let long = l.k.lend_into(32 * tok, Some(&sink)).unwrap();
+        let short = l.k.lend_into(16 * tok, Some(&sink)).unwrap();
+        assert_eq!(cache.lent_rows(), 32);
+        let n = cache.kv.len();
+        let rowed: Vec<bool> = cache.kv.iter().map(Option::is_some).collect();
+        let snap = |rows: usize| CacheSnapshot {
+            kv_len: rowed.iter().map(|&r| r.then_some(rows)).collect(),
+            tp_kv_len: vec![None; n],
+            conv: vec![None; n],
+            ssm: vec![None; n],
+            pos: rows,
+        };
+        assert!(cache.checkpoint_lend_refusal(&snap(31), false).is_some());
+        assert!(cache.checkpoint_lend_refusal(&snap(32), false).is_none());
+        assert!(cache.checkpoint_lend_refusal(&snap(40), true).is_some());
+        drop(long);
+        assert_eq!(
+            cache.lent_rows(),
+            16,
+            "the floor falls with the longer lend"
+        );
+        assert!(cache.checkpoint_lend_refusal(&snap(16), false).is_none());
+        cache
+            .rollback(&dev, &snap(16), 0)
+            .expect("a rollback to the live lend");
+        assert!(
+            sink.drain().is_empty(),
+            "nothing adopted while the owner holds it"
+        );
+        let id = short.loan_id();
+        drop(cache);
+        assert_eq!(sink.drain(), vec![id], "the adoption reported once");
+        assert!(short.held_bytes() > 0);
+        eprintln!("[lend floor cell] live lends: floor 32 -> 16 rows, adoption reported");
     }
 }

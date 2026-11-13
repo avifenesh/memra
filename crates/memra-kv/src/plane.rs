@@ -2,10 +2,11 @@
 use cudarc::driver::{CudaEvent, CudaSlice, CudaStream, CudaViewMut, sys};
 use std::{
     cell::Cell,
+    mem::ManuallyDrop,
     ops::{Deref, Range},
     sync::{
-        Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::Instant,
 };
@@ -982,6 +983,23 @@ pub fn note_on_demand_plane() {
     });
 }
 
+/// The bytes a release must keep: never fewer than a live lend reads (memra#1221).
+pub fn release_keep_bytes(keep_bytes: usize, lent_bytes: usize) -> usize {
+    keep_bytes.max(lent_bytes)
+}
+
+/// The refusal of a write that would start below the bytes a live lend reads (memra#1221): the
+/// lend reads them in place, so writing them would change a published prefix entry. `None` when
+/// `target_bytes` is at or past them (or nothing is lent).
+pub fn lend_floor_refusal(what: &str, target_bytes: usize, lent_bytes: usize) -> Option<String> {
+    (target_bytes < lent_bytes).then(|| {
+        format!(
+            "REFUSED: {what} to byte {target_bytes} is below the {lent_bytes} bytes lent to a \
+             prefix entry"
+        )
+    })
+}
+
 pub struct KvPlane {
     operand: Option<CudaSlice<u8>>,
     mapping: Option<Mapping>,
@@ -990,6 +1008,169 @@ pub struct KvPlane {
     /// `mapping`; the gate-only demote/restore arms refuse it.
     on_demand: Option<OnDemand>,
     suspended: Option<Range<usize>>,
+    /// The plane's loan once it lent its leading bytes ([`KvPlane::lend`], memra#1221): set on
+    /// the first lend, taken by `Drop`, which hands the plane to the loan while a lend lives.
+    loan: OnceLock<Arc<KvLoan>>,
+}
+
+/// A plane's leading bytes lent to readers that may outlive the plane's owner (memra#1221 part
+/// 2): the speculative prime boundary's prefix entry reads rows `[0, pos)` of the session's own
+/// K/V planes instead of a copy of them. The owner keeps writing past the lent bytes and never
+/// below them while a lend lives (every rewind below [`KvPlane::lent_bytes`] refuses, the
+/// release of a lent extent is clamped and `into_pooled` refuses). When the owner drops the plane
+/// while a lend lives, the plane moves here (adoption) instead of being freed, and it is freed
+/// when the last lend drops.
+pub struct KvLoan {
+    id: u64,
+    /// The largest number of leading bytes a LIVE lend of this loan covers (0 when none lives).
+    lent: AtomicUsize,
+    /// The live lends' lengths: the floor follows the lends that live, so it falls when the
+    /// longest one goes (memra#1221 review).
+    live: Mutex<Vec<usize>>,
+    /// The owner's plane after adoption; `None` while the owner holds it.
+    adopted: Mutex<Option<KvPlane>>,
+    /// Device bytes the adopted plane holds (0 while the owner holds it).
+    held: AtomicUsize,
+    /// The lent bytes the adopted plane was last released down to (an on-demand plane releases
+    /// again at `reap` when the floor fell below it).
+    kept: AtomicUsize,
+    /// Where the loan reports its adoption (the prefix cache's queue), when a lend named one.
+    sink: OnceLock<Arc<AdoptionSink>>,
+}
+
+/// The ids of loans whose owner dropped its plane (memra#1221 review): `KvPlane`'s `Drop` pushes
+/// the id at adoption, so the prefix cache charges adopted planes by draining this queue instead
+/// of walking every book.
+#[derive(Default)]
+pub struct AdoptionSink(Mutex<Vec<u64>>);
+
+impl AdoptionSink {
+    /// Report the adoption of loan `id`.
+    pub fn push(&self, id: u64) {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).push(id);
+    }
+    /// The loans adopted since the last drain.
+    pub fn drain(&self) -> Vec<u64> {
+        std::mem::take(&mut *self.0.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+}
+
+static NEXT_LOAN_ID: AtomicU64 = AtomicU64::new(1);
+
+impl KvLoan {
+    /// The loan's identity: every lend of one plane shares it.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+    /// Device bytes the loan holds for its lends: 0 while the owner holds the plane, the
+    /// adopted plane's backed bytes once the owner dropped it.
+    pub fn held_bytes(&self) -> usize {
+        self.held.load(Ordering::Acquire)
+    }
+    /// The leading bytes the live lends read (the largest; 0 when none lives).
+    pub fn lent_bytes(&self) -> usize {
+        self.lent.load(Ordering::Acquire)
+    }
+    /// The adopted on-demand plane releases every extent past the live lends (again, when the
+    /// longest lend went since its adoption), its released tails whose events completed are
+    /// unmapped, and the held bytes follow. Returns the bytes released (0 while the owner holds
+    /// the plane, and on a pooled plane).
+    pub fn reap(&self) -> usize {
+        let mut slot = self.adopted.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(plane) = slot.as_mut() else {
+            return 0;
+        };
+        let lent = self.lent.load(Ordering::Acquire);
+        if lent < self.kept.load(Ordering::Acquire) {
+            plane.release_beyond(lent);
+            self.kept.store(lent, Ordering::Release);
+        }
+        let freed = plane.reap();
+        self.held.store(plane.physical_bytes(), Ordering::Release);
+        freed
+    }
+    fn new() -> Self {
+        Self {
+            id: NEXT_LOAN_ID.fetch_add(1, Ordering::Relaxed),
+            lent: AtomicUsize::new(0),
+            live: Mutex::new(Vec::new()),
+            adopted: Mutex::new(None),
+            held: AtomicUsize::new(0),
+            kept: AtomicUsize::new(0),
+            sink: OnceLock::new(),
+        }
+    }
+    /// A lend of `bytes` starts: the floor is the largest live lend.
+    fn add_lend(&self, bytes: usize) {
+        let mut live = self.live.lock().unwrap_or_else(|e| e.into_inner());
+        live.push(bytes);
+        self.lent
+            .store(live.iter().copied().max().unwrap_or(0), Ordering::Release);
+    }
+    /// A lend of `bytes` ends: the floor falls to the largest lend still live.
+    fn end_lend(&self, bytes: usize) {
+        let mut live = self.live.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(i) = live.iter().position(|&b| b == bytes) {
+            live.swap_remove(i);
+        }
+        self.lent
+            .store(live.iter().copied().max().unwrap_or(0), Ordering::Release);
+    }
+    /// Take the owner's plane (its `Drop`, while a lend lives). An on-demand plane releases
+    /// every extent past the lent bytes; the held bytes are what stays backed. The adoption is
+    /// reported to the loan's sink.
+    fn adopt(&self, mut plane: KvPlane) {
+        let lent = self.lent.load(Ordering::Acquire);
+        plane.release_beyond(lent);
+        self.kept.store(lent, Ordering::Release);
+        self.held.store(plane.physical_bytes(), Ordering::Release);
+        *self.adopted.lock().unwrap_or_else(|e| e.into_inner()) = Some(plane);
+        if let Some(sink) = self.sink.get() {
+            sink.push(self.id);
+        }
+    }
+}
+
+/// One lend of a plane's leading bytes ([`KvPlane::lend`]): a non-owning view of exactly the lent
+/// bytes, dereferencing to a `CudaSlice<u8>` of that length, and the loan that keeps the plane
+/// alive past its owner. Dropping it never frees device memory itself; the last lend of an
+/// adopted plane frees the plane.
+pub struct KvLend {
+    alias: ManuallyDrop<CudaSlice<u8>>,
+    loan: Arc<KvLoan>,
+}
+
+impl Deref for KvLend {
+    type Target = CudaSlice<u8>;
+    fn deref(&self) -> &CudaSlice<u8> {
+        &self.alias
+    }
+}
+
+impl Drop for KvLend {
+    fn drop(&mut self) {
+        // SAFETY: taken exactly once, here. The alias never owned its memory: the plane (or the
+        // loan holding the adopted plane) does, so it is leaked, never freed.
+        let alias = unsafe { ManuallyDrop::take(&mut self.alias) };
+        self.loan.end_lend(alias.len());
+        alias.leak();
+    }
+}
+
+impl KvLend {
+    /// The loan this lend reads through (a weak handle: holding it keeps nothing alive and
+    /// counts as no lend).
+    pub fn loan(&self) -> std::sync::Weak<KvLoan> {
+        Arc::downgrade(&self.loan)
+    }
+    /// The loan's identity: lends of one plane share it.
+    pub fn loan_id(&self) -> u64 {
+        self.loan.id
+    }
+    /// See [`KvLoan::held_bytes`].
+    pub fn held_bytes(&self) -> usize {
+        self.loan.held_bytes()
+    }
 }
 impl From<CudaSlice<u8>> for KvPlane {
     fn from(operand: CudaSlice<u8>) -> Self {
@@ -998,6 +1179,7 @@ impl From<CudaSlice<u8>> for KvPlane {
             mapping: None,
             on_demand: None,
             suspended: None,
+            loan: OnceLock::new(),
         }
     }
 }
@@ -1092,9 +1274,11 @@ impl KvPlane {
     /// released at a later `reap`, once a fence the plane records now, under its lock, completes.
     /// Returns the bytes scheduled.
     pub fn release_beyond(&mut self, keep_bytes: usize) -> usize {
+        // A live lend reads the plane's leading bytes: they stay backed (memra#1221).
+        let keep = release_keep_bytes(keep_bytes, self.lent_bytes());
         self.on_demand
             .as_mut()
-            .map_or(0, |o| o.request_release_beyond(keep_bytes))
+            .map_or(0, |o| o.request_release_beyond(keep))
     }
     /// On-demand planes: backed bytes scheduled for release and not yet reaped (DAY37 addendum
     /// D: the run loop keeps polling while any are, so they land at idle).
@@ -1147,6 +1331,7 @@ impl KvPlane {
             mapping: None,
             on_demand: Some(od),
             suspended: None,
+            loan: OnceLock::new(),
         };
         if initial > 0 {
             if let Some(o) = plane.on_demand.as_mut() {
@@ -1160,7 +1345,68 @@ impl KvPlane {
         if self.is_vmm() {
             return Err("REFUSED: VMM operand ownership cannot escape".into());
         }
+        // A live lend reads this plane: its storage may move only to the loan (memra#1221).
+        if let Some(why) = lend_floor_refusal("into_pooled", 0, self.lent_bytes()) {
+            return Err(why.into());
+        }
         Ok(self.operand.take().expect("owned operand"))
+    }
+    /// Lend the plane's first `bytes` to a reader that may outlive this owner (memra#1221 part
+    /// 2): the returned [`KvLend`] reads exactly those bytes in place. While any lend lives, no
+    /// rewind below them is allowed (the callers check [`KvPlane::lent_bytes`]), the release of
+    /// a lent extent is clamped, `into_pooled` refuses, and dropping the plane hands it to the
+    /// loan instead of freeing it. Pooled and on-demand planes lend; the gate-only fully mapped
+    /// VMM planes and a suspended plane refuse, as does a range past the backed bytes.
+    pub fn lend(&self, bytes: usize) -> Result<KvLend> {
+        self.lend_into(bytes, None)
+    }
+    /// [`KvPlane::lend`], with the sink the loan reports its adoption to (the prefix cache's
+    /// queue; the first lend that names one sets it).
+    pub fn lend_into(&self, bytes: usize, sink: Option<&Arc<AdoptionSink>>) -> Result<KvLend> {
+        use cudarc::driver::DevicePtr;
+        self.can_lend(bytes)?;
+        let operand = self.operand.as_ref().expect("owned operand");
+        let stream = operand.stream().clone();
+        let (ptr, _sync) = operand.device_ptr(&stream);
+        let loan = self.loan.get_or_init(|| Arc::new(KvLoan::new())).clone();
+        if let Some(sink) = sink {
+            let _ = loan.sink.get_or_init(|| sink.clone());
+        }
+        loan.add_lend(bytes);
+        // SAFETY: `ptr` is the start of this plane's operand of at least `bytes` backed bytes. The
+        // alias is wrapped so it is never freed (`KvLend::drop` leaks it), and the loan keeps the
+        // plane alive for as long as the alias exists, past this owner (adoption in `Drop`).
+        let alias = unsafe { stream.upgrade_device_ptr::<u8>(ptr, bytes) };
+        Ok(KvLend {
+            alias: ManuallyDrop::new(alias),
+            loan,
+        })
+    }
+    /// Whether [`KvPlane::lend`] of `bytes` would succeed: pooled and on-demand planes lend a
+    /// nonzero range within their backed bytes; the gate-only fully mapped VMM planes and a
+    /// suspended plane refuse.
+    pub fn can_lend(&self, bytes: usize) -> Result<()> {
+        if self.mapping.is_some() || self.suspended.is_some() {
+            return Err("REFUSED: only pooled and on-demand KV planes lend".into());
+        }
+        if bytes == 0 || bytes > self.mapped_bytes() {
+            return Err(format!(
+                "REFUSED: lend of {bytes} bytes from a plane with {} backed bytes",
+                self.mapped_bytes()
+            )
+            .into());
+        }
+        Ok(())
+    }
+    /// The stream the plane's operand is ordered on (a lend's readers run on it: a lend carries
+    /// no cross-stream event, memra#1221 review).
+    pub fn stream(&self) -> &Arc<CudaStream> {
+        self.operand.as_ref().expect("owned operand").stream()
+    }
+    /// Leading bytes a live lend reads (0 when none lives): nothing below them may be written
+    /// again while the plane is lent.
+    pub fn lent_bytes(&self) -> usize {
+        self.loan.get().map_or(0, |loan| loan.lent_bytes())
     }
     pub fn vmm(stream: Arc<CudaStream>, bytes: usize) -> Result<Self> {
         stream.context().bind_to_thread()?;
@@ -1222,6 +1468,7 @@ impl KvPlane {
             mapping: Some(mapping),
             on_demand: None,
             suspended: None,
+            loan: OnceLock::new(),
         };
         stream.memset_zeros(&mut plane.kv_view_mut())?;
         stream.synchronize()?;
@@ -1319,6 +1566,20 @@ impl KvPlane {
 }
 impl Drop for KvPlane {
     fn drop(&mut self) {
+        // ADOPTION (memra#1221): a lend still reads this plane, so its storage moves to the loan
+        // instead of being freed, and it is freed when the last lend drops.
+        if let Some(loan) = self.loan.take() {
+            if Arc::strong_count(&loan) > 1 {
+                loan.adopt(KvPlane {
+                    operand: self.operand.take(),
+                    mapping: self.mapping.take(),
+                    on_demand: self.on_demand.take(),
+                    suspended: self.suspended.take(),
+                    loan: OnceLock::new(),
+                });
+                return;
+            }
+        }
         if self.mapping.is_some() || self.on_demand.is_some() {
             if let Some(operand) = self.operand.take() {
                 operand.leak();
@@ -1334,6 +1595,82 @@ impl Drop for KvPlane {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// memra#1221 part 2: a release keeps every lent byte; a write target below a live lend
+    /// refuses and one at or past it passes.
+    #[test]
+    fn a_lend_floor_keeps_its_bytes() {
+        assert_eq!(release_keep_bytes(0, 4096), 4096);
+        assert_eq!(release_keep_bytes(8192, 4096), 8192);
+        assert_eq!(release_keep_bytes(100, 0), 100);
+        assert!(lend_floor_refusal("x", 99, 100).is_some());
+        assert!(lend_floor_refusal("x", 0, 1).is_some());
+        assert!(lend_floor_refusal("x", 100, 100).is_none());
+        assert!(lend_floor_refusal("x", 0, 0).is_none());
+    }
+
+    /// memra#1221 part 2: every write that could start below a live lend checks it first —
+    /// `release_beyond` keeps the lent bytes, `into_pooled` refuses a lent plane, `Drop` hands a
+    /// lent plane to its loan, and the cache's `rollback` and `rewind_recurrent_from` refuse a
+    /// target below a layer's lent rows before their first write.
+    #[test]
+    fn every_write_below_a_lend_checks_it() {
+        let plane = include_str!("plane.rs");
+        let plane = &plane[..plane.find("\n#[cfg(test)]\nmod tests {").unwrap()];
+        let body = |src: &'static str, start: &str| -> String {
+            let a = src.find(start).unwrap_or_else(|| panic!("{start}"));
+            src[a..a + src[a..].find("\n    }\n").expect("the function ends")]
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let plane: &'static str = Box::leak(plane.to_string().into_boxed_str());
+        let release = body(
+            plane,
+            "    pub fn release_beyond(&mut self, keep_bytes: usize)",
+        );
+        assert!(
+            release.contains(
+                "let keep = release_keep_bytes(keep_bytes, self.lent_bytes()); self.on_demand \
+             .as_mut() .map_or(0, |o| o.request_release_beyond(keep))"
+            ),
+            "{release}"
+        );
+        let pooled = body(plane, "    pub fn into_pooled(mut self)");
+        let guard = pooled
+            .find("lend_floor_refusal(\"into_pooled\", 0, self.lent_bytes())")
+            .unwrap();
+        assert!(
+            guard < pooled.find("self.operand.take()").unwrap(),
+            "{pooled}"
+        );
+        let drop = body(plane, "impl Drop for KvPlane {\n    fn drop(&mut self) {");
+        assert!(drop.contains(
+            "if let Some(loan) = self.loan.take() { if Arc::strong_count(&loan) > 1 { loan.adopt("
+        ), "{drop}");
+        let lib = include_str!("lib.rs");
+        let lib: &'static str = Box::leak(
+            lib[..lib.find("\nmod rewind_layer_tests").unwrap()]
+                .to_string()
+                .into_boxed_str(),
+        );
+        let rollback = body(lib, "    pub fn rollback(\n        &mut self,");
+        let guard = rollback
+            .find("kvl.lend_floor_refusal(\"cache rollback\", saved + accept_len)")
+            .unwrap();
+        assert!(
+            guard < rollback.find("kvl.len = saved + accept_len;").unwrap(),
+            "{rollback}"
+        );
+        let rewind = body(lib, "    pub fn rewind_recurrent_from(");
+        let guard = rewind
+            .find("kvl.lend_floor_refusal(\"recurrent rewind\", pos)")
+            .unwrap();
+        assert!(
+            guard < rewind.find("e.copy_into(").unwrap_or(usize::MAX),
+            "{rewind}"
+        );
+    }
     #[test]
     fn allocator_dispatch_has_no_bootstrap_or_fallback() {
         assert_eq!(KvAllocator::default(), KvAllocator::Pooled);

@@ -1,0 +1,20 @@
+# 2026-11-13T07:32:17+01:00 review round 2 red arms (each must FAIL)
+red arm ledger-double applied
+ledger-double memra-server::loan_books_move_a_charge_once_and_always_to_a_reader rc=101 FAILS (as it must) | thread 'worker::tests::loan_books_move_a_charge_once_and_always_to_a_reader' (1375298) panicked at crates/memra-server/src/worker.rs:54673:9:
+red arm ledger-holder applied
+ledger-holder memra-server::loan_books_move_a_charge_once_and_always_to_a_reader rc=101 FAILS (as it must) | thread 'worker::tests::loan_books_move_a_charge_once_and_always_to_a_reader' (1565348) panicked at crates/memra-server/src/worker.rs:54694:9:
+red arm evictable applied
+evictable memra-server::loan_books_move_a_charge_once_and_always_to_a_reader rc=101 FAILS (as it must) | thread 'worker::tests::loan_books_move_a_charge_once_and_always_to_a_reader' (1719662) panicked at crates/memra-server/src/worker.rs:54714:9:
+red arm preflight-lease applied
+preflight-lease memra-server::loan_books_move_a_charge_once_and_always_to_a_reader rc=101 FAILS (as it must) | thread 'worker::tests::loan_books_move_a_charge_once_and_always_to_a_reader' (2107624) panicked at crates/memra-server/src/worker.rs:54751:13:
+red arm hold-budget applied
+hold-budget memra-server::loan_books_move_a_charge_once_and_always_to_a_reader rc=101 FAILS (as it must) | thread 'worker::tests::loan_books_move_a_charge_once_and_always_to_a_reader' (2433744) panicked at crates/memra-server/src/worker.rs:54770:9:
+red arm compact-retry applied
+compact-retry memra-server::a_failed_compaction_waits_for_the_bytes_it_needed rc=101 FAILS (as it must) | thread 'worker::tests::a_failed_compaction_waits_for_the_bytes_it_needed' (2552664) panicked at crates/memra-server/src/worker.rs:54814:9:
+red arm rewind-retry applied
+rewind-retry memra-server::a_lend_refused_rewind_survives_an_out_of_memory_fresh_cache rc=101 FAILS (as it must) | thread 'worker::tests::a_lend_refused_rewind_survives_an_out_of_memory_fresh_cache' (2129570) panicked at crates/memra-server/src/worker.rs:54857:17:
+red arm restore-floor applied
+restore-floor memra-engine::checkpoint_rewinds_check_the_lends_before_writing rc=101 FAILS (as it must) | thread 'spec::lend_floor_tests::checkpoint_rewinds_check_the_lends_before_writing' (3473146) panicked at crates/memra-engine/src/spec.rs:18626:14:
+red arm publish-copy applied
+publish-copy memra-server::spec_boundary_publish_lends_on_the_mtp_path rc=101 FAILS (as it must) | thread 'worker::tests::spec_boundary_publish_lends_on_the_mtp_path' (3532457) panicked at crates/memra-server/src/worker.rs:54450:14:
+RED-R2-DONE

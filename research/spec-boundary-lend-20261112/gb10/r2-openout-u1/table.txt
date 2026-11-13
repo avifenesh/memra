@@ -1,0 +1,28 @@
+01-B: open-a prompt 60014, entry 59968 tokens 2049.0 MB; stall 26.8 pub 0.2 gap 0.3 interval 1657.8 ms; burst 2 110.50 ms per round over 15, later 108.73 over 19, round 109.50; TTFT 44.067 s, total 49.093 s, 107 tok stop, text e2acce15ddd6; burst 1 1316.4 ms; trims []; publisher entry cached 2030 MB, pool growth 0 MB; allocs 0.1 ms, slow (ms, MB grown) []; side-join us []; MemAvailable min 84.7 Gi
+02-T: open-a prompt 60014, entry 59968 tokens 156.9 MB; stall 4.3 pub 0.0 gap 0.2 interval 1640.2 ms; burst 2 109.34 ms per round over 15, later 109.06 over 19, round 109.20; TTFT 44.070 s, total 49.084 s, 107 tok stop, text e2acce15ddd6; burst 1 1316.5 ms; trims []; lent 1892 MB in place, publisher 0.07 ms, pool reserved 29728 MiB used 27651 MiB; allocs 0.0 ms, slow (ms, MB grown) []; side-join u
+03-T: open-a prompt 60014, entry 59968 tokens 156.9 MB; stall 3.5 pub 0.2 gap 0.4 interval 1638.8 ms; burst 2 109.23 ms per round over 15, later 109.02 over 19, round 109.06; TTFT 44.231 s, total 49.240 s, 107 tok stop, text e2acce15ddd6; burst 1 1313.8 ms; trims []; lent 1892 MB in place, publisher 0.09 ms, pool reserved 29728 MiB used 27651 MiB; allocs 0.0 ms, slow (ms, MB grown) []; side-join u
+01-B: open-b prompt 60014, entry 59968 tokens 2049.0 MB; stall 14.7 pub 0.6 gap 1.1 interval 1208.0 ms; burst 2 109.72 ms per round over 11, later 108.48 over 16, round 108.96; TTFT 43.933 s, total 48.061 s, 100 tok stop, text 24d1edde1c7d; burst 1 1200.8 ms; trims []; publisher entry cached 2092 MB, pool growth 0 MB; allocs 0.1 ms, slow (ms, MB grown) []; side-join us []; MemAvailable min 82.8 Gi
+02-T: open-b prompt 60014, entry 59968 tokens 156.9 MB; stall 0.0 pub 0.2 gap 0.3 interval 1196.9 ms; burst 2 108.78 ms per round over 11, later 108.81 over 16, round 108.76; TTFT 43.870 s, total 47.997 s, 100 tok stop, text 24d1edde1c7d; burst 1 1206.3 ms; trims []; lent 1892 MB in place, publisher 0.07 ms, pool reserved 31808 MiB used 29605 MiB; allocs 0.0 ms, slow (ms, MB grown) []; side-join u
+03-T: open-b prompt 60014, entry 59968 tokens 156.9 MB; stall -4.6 pub 0.2 gap 0.3 interval 1191.3 ms; burst 2 108.27 ms per round over 11, later 108.72 over 16, round 108.52; TTFT 43.960 s, total 48.083 s, 100 tok stop, text 24d1edde1c7d; burst 1 1208.6 ms; trims []; lent 1892 MB in place, publisher 0.09 ms, pool reserved 31808 MiB used 29605 MiB; allocs 0.0 ms, slow (ms, MB grown) []; side-join
+
+01-B [MEMRA_REUSE_POOL=0] budget 50238 MB
+  g1k: prompt 1031 tok 127 stop TTFT 1.134 s total 5.350 s text 26ca98d4733a
+  open-a: prompt 60014 tok 107 stop TTFT 44.067 s total 49.093 s text e2acce15ddd6
+  open-b: prompt 60014 tok 100 stop TTFT 43.933 s total 48.061 s text 24d1edde1c7d
+  end of run: no reconcile; last insert resident 4286.3 MB of 50238 MB; 0 planes compacted in the run
+  invariant breaks 0, budget holds 0
+  MemAvailable GiB: first 95.44, min 82.80, last 83.94
+02-T [MEMRA_REUSE_POOL=0] budget 50237 MB
+  g1k: prompt 1031 tok 127 stop TTFT 1.123 s total 5.346 s text 26ca98d4733a; publication Lend lent 31.3 MB us 68 pool_used 18934 MiB; last reconcile (retire): books 34 adopted 0.0 MB charged 156.9 MB real 156.9 MB pool_used 19853.6 MB
+  open-a: prompt 60014 tok 107 stop TTFT 44.070 s total 49.084 s text e2acce15ddd6; publication Lend lent 1892.1 MB us 68 pool_used 27651 MiB; last reconcile (retire): books 68 adopted 48.9 MB charged 362.8 MB real 362.8 MB pool_used 28994.4 MB
+  open-b: prompt 60014 tok 100 stop TTFT 43.870 s total 47.997 s text 24d1edde1c7d; publication Lend lent 1892.1 MB us 73 pool_used 29605 MiB; compacted 34 planes: held 8270 MB, copied 1892 MB, 0.3 ms; last reconcile (retire): books 68 adopted 48.9 MB charged 2411.8 MB real 2411.8 MB pool_used 31043.4 MB
+  end of run: last reconcile (retire): charged 4303.9 MB real 4303.9 MB adopted 48.9 MB; last insert resident 2411.8 MB of 50237 MB; 68 planes compacted in the run
+  invariant breaks 0, budget holds 0
+  MemAvailable GiB: first 95.45, min 83.03, last 84.19
+03-T [MEMRA_PREFIX_CACHE_MB=8000 MEMRA_REUSE_POOL=0] budget 8389 MB
+  g1k: prompt 1031 tok 127 stop TTFT 1.123 s total 5.346 s text 26ca98d4733a; publication Lend lent 31.3 MB us 67 pool_used 18934 MiB; last reconcile (retire): books 34 adopted 0.0 MB charged 156.9 MB real 156.9 MB pool_used 19853.6 MB
+  open-a: prompt 60014 tok 107 stop TTFT 44.231 s total 49.240 s text e2acce15ddd6; publication Lend lent 1892.1 MB us 87 pool_used 27651 MiB; last reconcile (retire): books 68 adopted 48.9 MB charged 362.8 MB real 362.8 MB pool_used 28994.4 MB
+  open-b: prompt 60014 tok 100 stop TTFT 43.960 s total 48.083 s text 24d1edde1c7d; publication Lend lent 1892.1 MB us 90 pool_used 29605 MiB; compacted 34 planes: held 8270 MB, copied 1892 MB, 0.4 ms; last reconcile (retire): books 68 adopted 48.9 MB charged 2411.8 MB real 2411.8 MB pool_used 31043.4 MB
+  end of run: last reconcile (retire): charged 4303.9 MB real 4303.9 MB adopted 48.9 MB; last insert resident 2411.8 MB of 8389 MB; 68 planes compacted in the run
+  invariant breaks 0, budget holds 0
+  MemAvailable GiB: first 95.42, min 83.02, last 83.86

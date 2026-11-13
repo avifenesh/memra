@@ -1,0 +1,15 @@
+2026-11-12T22:20:09+02:00
+853c5623fe5eb9057bb376e2c3428ecb2314c7877a6f754c703387d0adfe3ac7  ~/.cache/memra-1221b/bins/S-dd9437e445/engine-lib-test
+a0a593fb7f6c8385e177db4ad484c5ff4585a6ba8c96fe0ff39573ba9544917a  ~/.cache/memra-1221b/bins/S-dd9437e445/kv-lib-test
+8a2c222ab44b30baff441c97e3094c3852e68b1dc1969347089ee0149460a359  ~/.cache/memra-1221b/bins/S-dd9437e445/server-lib-test
+NVIDIA GB10, 580.178.04
+lend_gpu_tests::writes_below_a_live_lend_refuse_and_the_lender_hands_its_plane_on rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 90 filtered out; finished in 0.39s
+lend_gpu_tests::a_release_keeps_the_lent_bytes_of_an_on_demand_plane rc=101 fail (want pass) test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 90 filtered out; finished in 0.26s
+spec::lend_floor_tests::the_mtp_scratch_refuses_a_length_below_its_lend rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 809 filtered out; finished in 0.29s
+worker::tests::spec_boundary_publish_is_the_copy_program rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1232 filtered out; finished in 8.78s
+worker::tests::spec_boundary_publish_drops_a_plane_whose_copy_failed rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1232 filtered out; finished in 0.62s
+worker::tests::a_lent_plane_outlives_its_lender_and_its_last_reader_frees_it rc=101 fail (want pass) test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1232 filtered out; finished in 0.32s
+worker::tests::adopted_planes_compact_only_when_that_frees_more_than_it_copies rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1232 filtered out; finished in 1.74s
+worker::tests::b1_snapshot_and_restore_are_the_copy_program rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1232 filtered out; finished in 0.70s
+worker::tests::an_unwritten_plane_is_charged_to_the_insert_budget_reading rc=0 pass (want pass) test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1232 filtered out; finished in 0.36s
+UNIT-CELLS-DONE S-dd9437e445 rc=1

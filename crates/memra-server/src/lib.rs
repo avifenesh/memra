@@ -7736,6 +7736,26 @@ fn render_prometheus_metrics(
                 "Tokens restored by prefix-cache hits since process start.",
             ),
             (
+                "memra_prefix_loan_adoptions_total",
+                m.prefix_loan_adoptions,
+                "Lent prefix planes whose owning session dropped them while an entry read them.",
+            ),
+            (
+                "memra_prefix_loan_compactions_total",
+                m.prefix_loan_compactions,
+                "Adopted prefix planes copied into exact planes and freed.",
+            ),
+            (
+                "memra_prefix_loan_compaction_failures_total",
+                m.prefix_loan_compaction_failures,
+                "Compactions of adopted prefix planes stopped by a failed allocation or copy.",
+            ),
+            (
+                "memra_prefix_loan_invariant_breaks_total",
+                m.prefix_loan_invariant_breaks,
+                "Prefix-cache reconciles that found total bytes or charged bytes out of step.",
+            ),
+            (
                 "memra_request_faults_total",
                 worker::request_faults_total(),
                 "Guarded worker calls that failed with a request-scoped fault.",
@@ -7773,6 +7793,26 @@ fn render_prometheus_metrics(
             "Current device prefix-cache bytes.",
         );
         out.push_str(&format!("memra_prefix_cache_bytes {}\n", m.prefix_bytes));
+        for (name, value, help) in [
+            (
+                "memra_prefix_loan_lent",
+                m.prefix_loan_lent,
+                "Prefix-entry planes read in place from a live session's plane.",
+            ),
+            (
+                "memra_prefix_loan_adopted",
+                m.prefix_loan_adopted,
+                "Prefix-entry planes whose session dropped them, now held by the cache.",
+            ),
+            (
+                "memra_prefix_loan_adopted_bytes",
+                m.prefix_loan_adopted_bytes,
+                "Device bytes the adopted prefix planes hold.",
+            ),
+        ] {
+            prometheus_header(&mut out, name, "gauge", help);
+            out.push_str(&format!("{name} {value}\n"));
+        }
 
         // The Prometheus text format (0.0.4) requires every line of one metric family to
         // appear together, after that family's one `# TYPE` line (revuto finding on PR #908,
@@ -8084,6 +8124,13 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         body["prefix_cache_tail_hits"] = json!(m.prefix_tail_hits);
         body["prefix_cache_tail_skips"] = json!(m.prefix_tail_skips);
         body["prefix_cache_hit_tokens"] = json!(m.prefix_hit_tokens);
+        body["prefix_loan_lent"] = json!(m.prefix_loan_lent);
+        body["prefix_loan_adopted"] = json!(m.prefix_loan_adopted);
+        body["prefix_loan_adopted_bytes"] = json!(m.prefix_loan_adopted_bytes);
+        body["prefix_loan_adoptions"] = json!(m.prefix_loan_adoptions);
+        body["prefix_loan_compactions"] = json!(m.prefix_loan_compactions);
+        body["prefix_loan_compaction_failures"] = json!(m.prefix_loan_compaction_failures);
+        body["prefix_loan_invariant_breaks"] = json!(m.prefix_loan_invariant_breaks);
         // Pinned-host spill tier behind the prefix cache (lane/kv-host-spill-20260830;
         // MEMRA_KV_HOST_MB, default 0 = off). *_ms are cumulative copy wall-time: the
         // tick-stall receipt for the pod battery.

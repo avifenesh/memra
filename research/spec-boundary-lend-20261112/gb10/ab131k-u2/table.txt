@@ -1,0 +1,38 @@
+01-B: g131k prompt 131046, entry 131008 tokens 4290.5 MB; stall 63.6 pub 51.4 gap 51.6 interval 1986.3 ms; burst 2 138.19 ms per round over 14, later 137.33 over 11, round 138.19; TTFT 117.648 s, total 122.655 s, 95 tok stop, text e3b0c1e81f9a; burst 1 1532.5 ms; trims []; publisher entry cached 3626 MB, pool growth 544 MB; allocs 50.5 ms, slow (ms, MB grown) [(2, 0), (6, 0), (15, 96), (12, 128), (2, 64), (7, 160), (3, 96)]; side-join us []; MemAvailable min 86.5 GB (decode 86.5, after 87.0)
+02-S: g131k prompt 131046, entry 131008 tokens 156.9 MB; stall 2.6 pub 0.0 gap 0.5 interval 1928.6 ms; burst 2 137.72 ms per round over 14, later 137.57 over 11, round 137.72; TTFT 117.605 s, total 122.551 s, 95 tok stop, text e3b0c1e81f9a; burst 1 1527.4 ms; trims []; lent 4134 MB in place, publisher 0.07 ms, pool reserved 27808 MiB used 24216 MiB; allocs 0.0 ms, slow (ms, MB grown) []; side-join us []; MemAvailable min 87.5 GB (decode 87.5, after 88.7)
+03-S: g131k prompt 131046, entry 131008 tokens 156.9 MB; stall 8.2 pub 0.0 gap 0.3 interval 1936.1 ms; burst 2 138.27 ms per round over 14, later 137.71 over 11, round 138.27; TTFT 117.897 s, total 122.863 s, 95 tok stop, text e3b0c1e81f9a; burst 1 1538.4 ms; trims []; lent 4134 MB in place, publisher 0.07 ms, pool reserved 27808 MiB used 24216 MiB; allocs 0.0 ms, slow (ms, MB grown) []; side-join us []; MemAvailable min 87.5 GB (decode 87.5, after n/a)
+04-B: g131k prompt 131046, entry 131008 tokens 4290.5 MB; stall 59.1 pub 51.8 gap 51.9 interval 1988.9 ms; burst 2 138.35 ms per round over 14, later 137.84 over 11, round 138.35; TTFT 117.539 s, total 122.555 s, 95 tok stop, text e3b0c1e81f9a; burst 1 1534.9 ms; trims []; publisher entry cached 3626 MB, pool growth 544 MB; allocs 50.9 ms, slow (ms, MB grown) [(2, 0), (6, 0), (16, 96), (11, 128), (2, 64), (7, 160), (3, 96)]; side-join us []; MemAvailable min 86.5 GB (decode 86.5, after 87.4)
+05-B: g131k prompt 131046, entry 131008 tokens 4290.5 MB; stall 55.7 pub 51.6 gap 51.8 interval 1987.2 ms; burst 2 138.24 ms per round over 14, later 137.96 over 11, round 138.24; TTFT 117.543 s, total 122.557 s, 95 tok stop, text e3b0c1e81f9a; burst 1 1534.5 ms; trims []; publisher entry cached 3626 MB, pool growth 544 MB; allocs 50.8 ms, slow (ms, MB grown) [(2, 0), (5, 0), (16, 96), (11, 128), (2, 64), (8, 160), (3, 96)]; side-join us []; MemAvailable min 86.5 GB (decode 86.5, after 87.7)
+06-S: g131k prompt 131046, entry 131008 tokens 156.9 MB; stall 7.9 pub 0.0 gap 0.1 interval 1936.5 ms; burst 2 138.31 ms per round over 14, later 137.76 over 11, round 138.31; TTFT 117.559 s, total 122.521 s, 95 tok stop, text e3b0c1e81f9a; burst 1 1534.9 ms; trims []; lent 4134 MB in place, publisher 0.08 ms, pool reserved 27808 MiB used 24216 MiB; allocs 0.0 ms, slow (ms, MB grown) []; side-join us []; MemAvailable min 87.5 GB (decode 87.5, after 88.7)
+
+| | B median (spread) | S median (spread) |
+|---|---:|---:|
+| first burst boundary over its rounds, ms | 59.1 (7.9) | 7.9 (5.6) |
+| publisher on the scheduler thread, ms | 51.6 (0.4) | 0.0 (0.0) |
+| between burst 1 and burst 2, ms | 51.8 (0.3) | 0.3 (0.4) |
+| burst 1 line to burst 2 line, ms | 1987.2 (2.6) | 1936.1 (8.0) |
+| burst 1 wall, ms | 1534.5 (2.4) | 1534.9 (11.1) |
+| burst 2, ms per round | 138.24 (0.16) | 138.27 (0.60) |
+| later bursts, ms per round | 137.84 (0.63) | 137.71 (0.19) |
+| ms per round, every burst but the first and last | 138.24 (0.16) | 138.27 (0.60) |
+| TTFT, s | 117.543 (0.109) | 117.605 (0.338) |
+| total, s | 122.557 (0.100) | 122.551 (0.342) |
+| MemAvailable low after burst 1, GB | 86.51 (0.02) | 87.52 (0.01) |
+| MemAvailable low over the request, GB | 86.51 (0.02) | 87.51 (0.01) |
+
+| S against B | S - B | every S cell under every B cell |
+|---|---:|---|
+| first burst boundary over its rounds, ms | -51.2 (-86.6%) | yes |
+| publisher on the scheduler thread, ms | -51.5 (-100.0%) | yes |
+| between burst 1 and burst 2, ms | -51.5 (-99.4%) | yes |
+| burst 1 line to burst 2 line, ms | -51.1 (-2.6%) | yes |
+| burst 1 wall, ms | 0.5 (+0.0%) | no, ranges overlap |
+| burst 2, ms per round | 0.03 (+0.0%) | no, ranges overlap |
+| later bursts, ms per round | -0.13 (-0.1%) | no, ranges overlap |
+| ms per round, every burst but the first and last | 0.03 (+0.0%) | no, ranges overlap |
+| TTFT, s | 0.062 (+0.1%) | no, ranges overlap |
+| total, s | -0.006 (-0.0%) | no, ranges overlap |
+| MemAvailable low after burst 1, GB | 1.01 (+1.2%) | no, every S over every B |
+| MemAvailable low over the request, GB | 1.00 (+1.2%) | no, every S over every B |
+
+cells: 3 B, 3 S; texts: 1 distinct sha256 (e3b0c1e81f9a); burst structure (generated, rounds, drafted, accepted): 1 distinct; published entry (tokens, MB): [(131008, 156.9), (131008, 4290.5)]

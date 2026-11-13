@@ -1,0 +1,6 @@
+| boot | turns ok | tokens | TTFT median s | agg tok/s | reconcile lines (charged == real) | adoptions / compactions at the end | max books | refused rewinds | pool used: baseline -> after trim (MiB) | charged after trim | out of memory |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 02-ST | 29/29 | 9396 | 3.334 | 38.57 | 86 (86) | 1394 / 0 | 340 | 0 (fresh 0, invariant breaks 0, compact lines 0) | 16529 -> 16661 | 0 | 0 |
+| 03-ST | 29/29 | 9396 | 3.192 | 40.38 | 86 (86) | 1394 / 0 | 374 | 0 (fresh 0, invariant breaks 0, compact lines 0) | 16529 -> 16661 | 0 | 0 |
+
+texts 03-ST vs 02-ST: 29/29 requests equal
