@@ -1,0 +1,9 @@
+arm shortfall-off written
+test worker::pre_cohort_reclaim_1266_tests::the_reclaim_fires_only_when_the_reading_cannot_fund_the_round ... FAILED
+test worker::pre_cohort_reclaim_1266_tests::the_cohorts_pass_reclaims_before_it_forms_cohorts ... ok
+thread 'worker::pre_cohort_reclaim_1266_tests::the_reclaim_fires_only_when_the_reading_cannot_fund_the_round' (1147911) panicked at crates/memra-server/src/worker.rs:57011:9:
+assertion `left == right` failed
+  left: None
+ right: Some(1)
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1229 filtered out; finished in 0.16s
+arm restore written

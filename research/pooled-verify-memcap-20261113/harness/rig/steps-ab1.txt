@@ -1,0 +1,15 @@
+# memra#1266 RTX 5090: agentic c=2 main (M) vs fix (F) interleaved M F F M M F, then normal cells
+# M F F M (two boots per lease), agentic c=4 M F, then the fix's seeded-invariance and exact-resend gates.
+ag2-01-M 20 -- bash <lane>/tools/rtx_cell.sh ag2 01-M <lane>/bins5090/M/memra-server
+ag2-02-F 20 -- bash <lane>/tools/rtx_cell.sh ag2 02-F <lane>/bins5090/F/memra-server
+ag2-03-F 20 -- bash <lane>/tools/rtx_cell.sh ag2 03-F <lane>/bins5090/F/memra-server
+ag2-04-M 20 -- bash <lane>/tools/rtx_cell.sh ag2 04-M <lane>/bins5090/M/memra-server
+ag2-05-M 20 -- bash <lane>/tools/rtx_cell.sh ag2 05-M <lane>/bins5090/M/memra-server
+ag2-06-F 20 -- bash <lane>/tools/rtx_cell.sh ag2 06-F <lane>/bins5090/F/memra-server
+nc-01-M+02-F 25 -- bash <lane>/tools/normal_5090.sh nc 01-M <lane>/bins5090/M/memra-server; bash <lane>/tools/normal_5090.sh nc 02-F <lane>/bins5090/F/memra-server
+nc-03-F+04-M 25 -- bash <lane>/tools/normal_5090.sh nc 03-F <lane>/bins5090/F/memra-server; bash <lane>/tools/normal_5090.sh nc 04-M <lane>/bins5090/M/memra-server
+ag4-01-M 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag4 01-M <lane>/bins5090/M/memra-server
+ag4-02-F 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag4 02-F <lane>/bins5090/F/memra-server
+gate-inv-F 29 -- bash <lane>/tools/gate_5090.sh inv <lane>/bins5090/F/memra-server inv-F 27
+gate-resend-F 29 -- bash <lane>/tools/gate_5090.sh resend <lane>/bins5090/F/memra-server resend-F 27
+bench-pooled 25 -- bash <lane>/tools/bench_5090.sh <lane>/runs/bench

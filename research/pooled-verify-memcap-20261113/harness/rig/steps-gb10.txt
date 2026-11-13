@@ -1,0 +1,11 @@
+# memra#1266 GB10 (u2): sm_121a builds (resumable, one lease each), then agentic c=2 M F F M and
+# normal cells M F F M (two boots per lease).
+build1 25 may-fail -- bash box/build_gb10.sh 23 F M
+build2 25 may-fail -- bash box/build_gb10.sh 23 F M
+build3 25 -- bash box/build_gb10.sh 23 F M
+gag2-01-M 25 -- bash box/agentic_gb10.sh gag2 01-M M
+gag2-02-F 25 -- bash box/agentic_gb10.sh gag2 02-F F
+gag2-03-F 25 -- bash box/agentic_gb10.sh gag2 03-F F
+gag2-04-M 25 -- bash box/agentic_gb10.sh gag2 04-M M
+gnc-01-M+02-F 25 -- bash box/normal_gb10.sh gnc 01-M M; bash box/normal_gb10.sh gnc 02-F F
+gnc-03-F+04-M 25 -- bash box/normal_gb10.sh gnc 03-F F; bash box/normal_gb10.sh gnc 04-M M
