@@ -149,6 +149,15 @@ fn cname(s: String) -> &'static std::ffi::CStr {
     Box::leak(std::ffi::CString::new(s).unwrap().into_boxed_c_str())
 }
 
+/// `len` bf16 values in a small range for the fp32 FMA linears: raw bits with the exponent held near 1.0.
+fn rand_bf16_near_one(rng: &mut Lcg, len: usize) -> Vec<u8> {
+    let mut v = rng.bytes(len * 2);
+    for c in v.chunks_exact_mut(2) {
+        c[1] = (c[1] & 0x80) | 0x3F;
+    }
+    v
+}
+
 fn median(v: &[f64]) -> f64 {
     if v.is_empty() {
         return f64::NAN;
@@ -768,21 +777,13 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
     // the fp32 FMA linear at the head's and the router's shapes (bf16 weights, fp32 out), by rows
     for &(name, n, k) in &[("head", 129_280usize, 5120usize), ("router", 384, 5120)] {
         let mut rng = Lcg(0x5eed_d541 ^ ((n * 31 + k) as u64));
-        // bf16 values in a small range: raw bits with the exponent held near 1.0
-        let rand_bf16 = |rng: &mut Lcg, len: usize| -> Vec<u8> {
-            let mut v = rng.bytes(len * 2);
-            for c in v.chunks_exact_mut(2) {
-                c[1] = (c[1] & 0x80) | 0x3F;
-            }
-            v
-        };
         let w = v::BW {
-            w: Buf::from_bytes(&st, &rand_bf16(&mut rng, n * k))?,
+            w: Buf::from_bytes(&st, &rand_bf16_near_one(&mut rng, n * k))?,
             n,
             k,
         };
         for m in [1usize, 4, 5, 8] {
-            let x = Buf::from_bytes(&st, &rand_bf16(&mut rng, m * k))?;
+            let x = Buf::from_bytes(&st, &rand_bf16_near_one(&mut rng, m * k))?;
             let c = ops.buf(m * n * 4)?;
             let ms = time_ms(&ops, reps, || {
                 ops.linear_bf16(x.p(&st), k, m, &w, c.p(&st), n, true)
@@ -805,25 +806,18 @@ fn gemm_bench(a: &[String]) -> Result<String, String> {
     {
         let (n, k) = (512usize, 5120usize);
         let mut rng = Lcg(0x5eed_d542);
-        let rand_bf16 = |rng: &mut Lcg, len: usize| -> Vec<u8> {
-            let mut v = rng.bytes(len * 2);
-            for c in v.chunks_exact_mut(2) {
-                c[1] = (c[1] & 0x80) | 0x3F;
-            }
-            v
-        };
         let w0 = v::BW {
-            w: Buf::from_bytes(&st, &rand_bf16(&mut rng, n * k))?,
+            w: Buf::from_bytes(&st, &rand_bf16_near_one(&mut rng, n * k))?,
             n,
             k,
         };
         let w1 = v::BW {
-            w: Buf::from_bytes(&st, &rand_bf16(&mut rng, n * k))?,
+            w: Buf::from_bytes(&st, &rand_bf16_near_one(&mut rng, n * k))?,
             n,
             k,
         };
         for m in [1usize, 4, 8] {
-            let x = Buf::from_bytes(&st, &rand_bf16(&mut rng, m * k))?;
+            let x = Buf::from_bytes(&st, &rand_bf16_near_one(&mut rng, m * k))?;
             let (c0, c1) = (ops.buf(m * n * 4)?, ops.buf(m * n * 4)?);
             let two = median(&time_ms(&ops, reps, || {
                 ops.linear_bf16(x.p(&st), k, m, &w0, c0.p(&st), n, true)?;

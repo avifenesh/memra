@@ -1942,6 +1942,77 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             }
         }
     }
+    // the ring kernel on a narrow output whose width is not a multiple of its 4-column blocks (the
+    // last block partial): rows 0..m of the 8-row call, and the pair against two single calls
+    {
+        let (m, n, k) = (2usize, 30usize, 5120usize);
+        let a8 = Buf::from_bytes(&st, &rng.bf16(8 * k))?;
+        let b0 = Buf::from_bytes(&st, &rng.bf16(n * k))?;
+        let b1 = Buf::from_bytes(&st, &rng.bf16(n * k))?;
+        let ffma = |a: &Buf, b: &Buf, c: &Buf, rows: usize| {
+            ck("gemm_ffma", unsafe {
+                ffi::memra_v41_gemm_ffma(
+                    a.p(&st).c(),
+                    k as i64,
+                    b.p(&st).c(),
+                    k as i64,
+                    c.p(&st).fm(),
+                    n as i64,
+                    rows as i32,
+                    n as i32,
+                    k as i32,
+                    sv,
+                )
+            })
+        };
+        let (small, full, one) = (
+            ops.buf(m * n * 4)?,
+            ops.buf(8 * n * 4)?,
+            ops.buf(m * n * 4)?,
+        );
+        ffma(&a8, &b0, &small, m)?;
+        ffma(&a8, &b0, &full, 8)?;
+        ffma(&a8, &b1, &one, m)?;
+        let fh = full.host(&st)?;
+        same(
+            rep,
+            &format!("schedule/gemm_ffma_ring_partial/m{m}_n{n}_k{k}"),
+            &small.host(&st)?,
+            &fh[..m * n * 4],
+        );
+        let (p0, p1) = (ops.buf(m * n * 4)?, ops.buf(m * n * 4)?);
+        ck("gemm_ffma2", unsafe {
+            ffi::memra_v41_gemm_ffma2(
+                a8.p(&st).c(),
+                k as i64,
+                b0.p(&st).c(),
+                k as i64,
+                p0.p(&st).fm(),
+                n as i64,
+                n as i32,
+                b1.p(&st).c(),
+                k as i64,
+                p1.p(&st).fm(),
+                n as i64,
+                n as i32,
+                m as i32,
+                k as i32,
+                sv,
+            )
+        })?;
+        same(
+            rep,
+            &format!("schedule/gemm_ffma2_partial/m{m}_n{n}_k{k}/first"),
+            &p0.host(&st)?,
+            &fh[..m * n * 4],
+        );
+        same(
+            rep,
+            &format!("schedule/gemm_ffma2_partial/m{m}_n{n}_k{k}/second"),
+            &p1.host(&st)?,
+            &one.host(&st)?,
+        );
+    }
     // the one-row selects over a long row cut into blocks against the one-block forms: a row of few
     // distinct scores (so the threshold has many ties) with some -inf
     for &t in &[20_000usize, 131_072, 262_144] {
