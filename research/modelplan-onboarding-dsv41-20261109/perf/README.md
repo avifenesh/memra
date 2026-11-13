@@ -1190,6 +1190,33 @@ Prefill on one rank (`prefillab-k3-prefill-n1`): 4,096 tokens level (median 0.99
 thread, so fewer blocks fit a multiprocessor; that cost is open (a narrower tile keeps every
 element's program).
 
+### The order gate on 53 tapes: the four speed changes of 2026-11-13
+
+The order gate above ran on the decode lane's 18 tapes. Its interval was wide, so 35 more vendor
+tapes (`ext35`: chat and prose, English and Hebrew, 3,011 steps) joined it, and the route and the
+four speed changes after it ran all 53 on one RTX PRO 6000 each (`dsv41-run --cases`,
+`MEMRA_FULL_PREC=1`, as `ordertapes-k1` ran; `receipts/ext35-gate/`, the by-tape `order_gate.py` on
+a CPU box, the current route `cur` = k3).
+
+The builds fall into two byte families on every tape, the gate's files (top ids, top values, lse,
+argmax) and the full fp32 rows alike (`receipts/ext35-gate/wrx/families.txt`):
+
+- A: k3 (this route), kpc (the peer copy call), emb (a prefill's host work at load) and r2 (the fp32
+  FMA family's narrow chain streamed) write k3's bytes, so d = 0 exactly on all 53 tapes;
+- B: the CUTLASS GEMMs and their small-row fix (cfix) write one set of bytes between them, a new
+  one, judged against the vendor:
+
+| tapes, family B against k3 | steps | KL cur | KL new | d [by-tape 95%] | top-1 cur / new / vendor's second program | verdict |
+|---|---|---|---|---|---|---|
+| the 18 decode-lane tapes | 714 | 1.745e-02 | 1.913e-02 | +1.68e-03 [-8.39e-04, +5.21e-03] | 96.6% / 96.1% / 97.2% | pass |
+| ext35 (35 tapes) | 3,011 | 1.967e-02 | 1.870e-02 | -9.76e-04 [-4.70e-03, +2.34e-03] | 97.4% / 97.7% / 97.8% | pass |
+| all 53 | 3,725 | 1.925e-02 | 1.878e-02 | -4.68e-04 [-3.54e-03, +2.34e-03] | 97.2% / 97.4% / 97.7% | pass |
+
+The 257k needle alone (one tape, 3 steps) has d +8.90e-04 above zero, read by d alone as before.
+The interval did not narrow (width 6.05e-03 on 18 tapes, 5.88e-03 on 53): the prose tapes spread
+more by tape (sd of the per-tape d 9.8e-03 against 4.0e-03 on the 13 chat tapes). Card time 34.9
+minutes on two cards; no thermal stop.
+
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
 Every change in this lane keeps the bytes of the one-card route. At one row on four ranks three
