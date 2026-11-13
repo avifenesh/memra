@@ -286,8 +286,9 @@ session. Cost on Qwen3.5-9B NVFP4 + MTP, one RTX 5090, 256-token greedy, N=3 (20
   forward holds all of them at once. A member joins a forward only while the whole forward, the
   FA partial pool's growth (priced per launch: one per run of rows on one split rung) and a
   256 MiB margin fit the allocatable memory (driver
-  or unified-allocatable free plus the pool's cached blocks); the rest verify after it, bitwise
-  the same tokens, and plain riders join within the same reading. Before the cohorts step, when
+  or unified-allocatable free plus the pool's cached blocks); the rest verify after it, the same
+  tokens (the forced-cap arm's texts equal the default arm's), and plain riders join within the
+  same reading. Before the cohorts step, when
   that reading cannot fund the largest member's round on top of every member's burst-entry
   snapshot, unleased prefix entries and then parked sessions are evicted. `/metrics` counts the
   capped forwards and rider rows (`spec_pool_capped_forwards_total`,
