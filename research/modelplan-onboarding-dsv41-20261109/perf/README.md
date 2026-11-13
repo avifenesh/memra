@@ -1701,6 +1701,22 @@ peer-pull 478/0, host-canonical 478/0, default 480/0; 4 ranks peer-pull 914/0, h
 Decode, the graph door and the order-gate tapes are queued on GB10 (the Sparks went to a landing record). The sm_120
 kernel gate (RTX 5090 Laptop, the GB10 gate's fixtures): 856/0 (`receipts/kgate-5090/s1`).
 
+### The grouped small-row body to tiles of 8 rows on sm_120
+
+The PRO 6000 crossover above put the small-row body at 0.61 of CUTLASS's time at 1 row an expert, 0.73 at 4 and level
+at 8 (median 1.01, 0.95-1.02 over the shapes). sm_120 now takes it at tiles of up to 8 rows
+(`memra_v41_moe_small_fits`, was 4): level where the bench was level, and a decode call of 5 to 8 rows (whose experts
+mostly hold one or two of its rows inside 8-row tiles) no longer goes to the 128 x 128 normal form. On the RTX 5090
+Laptop (sm_120, the same rule) the split MoE of one four-rank layer at 8 rows (probe, graph replay, medians of four
+interleaved runs) takes 490.7 us against the previous tree's 602.0 (0.82; k3 521.3): the hidden half 349.9 against
+408.0, the output half 176.9 against 220.1 (`receipts/dense-small/out-full2-1113-0430`, a run of the final tree, whose
+launch cuts of the next commit are a few us at this width). sm_121 keeps its block line; the bytes do not depend on
+the body (`schedule/moe_small*`, unchanged).
+
+GB10 runs the same code as the previous commit (the rule is keyed on sm_120); its kernel gate there is queued. The
+sm_120 kernel gate of this tree (RTX 5090 Laptop, the GB10 gate's fixtures): 856 checks, 0 failed
+(`receipts/kgate-5090/s2`).
+
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
 The order gate above ran on the decode lane's 18 tapes. Its interval was wide, so 35 more vendor
