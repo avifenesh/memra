@@ -451,12 +451,18 @@ impl<'a> Runner<'a> {
 
     /// Whether every rank's device still runs after a failed call ([`super::Ctx::probe`]): `Err`
     /// is a fault the device keeps (a serving route stops on it), `Ok` one that ended with its
-    /// call (a route flag, a refused allocation).
-    pub fn probe(&self) -> Result<(), String> {
+    /// call (a route flag, a refused allocation). The ranks' route flags are read too, after the
+    /// streams drain: a gather whose peer never arrived in a step that failed before its logits
+    /// were read loses the group here ([`super::tp::Group::route_verdict`]); the call word
+    /// belongs to the failed step and is not judged.
+    pub fn probe(&mut self) -> Result<(), String> {
+        let mut flags = Vec::with_capacity(self.grp.n());
         for (r, c) in self.grp.cx.iter().enumerate() {
             c.probe().map_err(|e| format!("rank {r}: {e}"))?;
+            let (_, transport) = c.route_flags().map_err(|e| format!("rank {r}: {e}"))?;
+            flags.push((0, transport));
         }
-        Ok(())
+        self.grp.route_verdict(&flags)
     }
 
     /// Open a step: every rank's call flag cleared ([`super::Ctx::clear_call_flag`]), so the

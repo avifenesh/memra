@@ -1530,13 +1530,15 @@ fn serve_loop(
     let mut seqs: Vec<Seq> = Vec::new();
     let mut closing = false;
     let mut last_step = Instant::now();
-    // a step fault: fail its requests, probe the ranks, and stop the route when [`route_dies`]
-    // says so
+    // a step fault: fail its requests, probe the ranks (their device state and route flags),
+    // and stop the route when [`route_dies`] says so; `panicked`: the fault is a caught panic
     macro_rules! step_fault {
-        ($why:expr) => {{
+        ($why:expr, $panicked:expr) => {{
             let why: String = $why;
             fail_all(&mut act, &mut seqs, health, &why);
-            if let Some(dead) = route_dies(up.rn.transport_lost(), up.rn.probe()) {
+            let probe = up.rn.probe();
+            let panic = $panicked.then_some(why.as_str());
+            if let Some(dead) = route_dies(up.rn.transport_lost(), probe, panic) {
                 eprintln!("[dsv41-serve] {dead}");
                 fail_pending(&mut pending, health, &dead);
                 return Some(dead);
@@ -1627,7 +1629,7 @@ fn serve_loop(
                     health.note_request_fault();
                     pr.run.fail();
                     health.end_request();
-                    step_fault!(why);
+                    step_fault!(why, true);
                 }
             };
             match door {
@@ -1821,11 +1823,14 @@ fn serve_loop(
         }));
         let (outs, rows, bouts, draft_ms, forward_ms) = match stepped {
             Ok(Ok(x)) => x,
-            Ok(Err(e)) => step_fault!(format!("deepseek-v4.1 step: {e}")),
-            Err(payload) => step_fault!(format!(
-                "deepseek-v4.1 step panicked: {}",
-                panic_text(payload.as_ref())
-            )),
+            Ok(Err(e)) => step_fault!(format!("deepseek-v4.1 step: {e}"), false),
+            Err(payload) => step_fault!(
+                format!(
+                    "deepseek-v4.1 step panicked: {}",
+                    panic_text(payload.as_ref())
+                ),
+                true
+            ),
         };
         let step_s = ts.elapsed().as_secs_f64();
         let transient = pool_peak(&up.rn).saturating_sub(used_before);
@@ -1859,7 +1864,7 @@ fn serve_loop(
                 .observe(first.s, forward_ms / outs.len() as f64);
         }
         // choose, emit, commit, finish, and the cache's regrowth: host work of the step, in
-        // the same wrap as its engine calls (a panic fails the step's requests, not the thread)
+        // the same wrap as its engine calls (a panic fails the step and stops the route)
         let settled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             // choose, emit, commit, finish
             let vocab = up.rn.g.vocab;
@@ -2006,10 +2011,13 @@ fn serve_loop(
             }
         }));
         if let Err(payload) = settled {
-            step_fault!(format!(
-                "deepseek-v4.1 step's host half panicked: {}",
-                panic_text(payload.as_ref())
-            ));
+            step_fault!(
+                format!(
+                    "deepseek-v4.1 step's host half panicked: {}",
+                    panic_text(payload.as_ref())
+                ),
+                true
+            );
         }
     }
 }
@@ -2153,19 +2161,28 @@ fn panic_text(payload: &(dyn std::any::Any + Send)) -> String {
         .unwrap_or_else(|| "non-string panic payload".into())
 }
 
-/// Whether a step fault ends the route, after the step's requests were failed: only when the
-/// engine lost its transport (every later forward refuses) or the probe of the ranks after the
-/// fault fails (a fault the device keeps). A fault that ended with its call (a route flag from a
-/// non-finite router row, an allocation the pool refused, a panic on the host) fails that step's
+/// Whether a step fault ends the route, after the step's requests were failed and the ranks
+/// probed (`probe`: their device state and route flags; read before `lost`, which the probe can
+/// set): when the engine lost its transport (every later forward refuses), when the probe fails
+/// (a fault the device keeps), or when the fault is a caught panic (`panic`: a bug in the engine
+/// or the route, which a probe of the device cannot clear). A fault that ended with its call (a
+/// route flag from a non-finite router row, an allocation the pool refused) fails that step's
 /// requests and nothing else, however many steps in a row it hits: one request's data can do it.
 /// `Some` is the reason the route stops on.
-fn route_dies(lost: Option<&str>, probe: Result<(), String>) -> Option<String> {
+fn route_dies(
+    lost: Option<&str>,
+    probe: Result<(), String>,
+    panic: Option<&str>,
+) -> Option<String> {
     if let Some(l) = lost {
         return Some(format!("deepseek-v4.1 route stopped: {l}"));
     }
-    probe
-        .err()
-        .map(|e| format!("deepseek-v4.1 route stopped: the probe after a step fault failed: {e}"))
+    if let Err(e) = probe {
+        return Some(format!(
+            "deepseek-v4.1 route stopped: the probe after a step fault failed: {e}"
+        ));
+    }
+    panic.map(|p| format!("deepseek-v4.1 route stopped on a panic: {p}"))
 }
 
 #[cfg(test)]
@@ -2173,25 +2190,34 @@ mod tests {
     use super::*;
 
     /// Call-flag faults in consecutive steps leave the route serving while the ranks probe
-    /// clean; a failed probe or a lost transport stops it.
+    /// clean; a failed probe, a lost transport (the probe's flag read can be what loses it) or a
+    /// caught panic stops it.
     #[test]
-    fn a_step_fault_stops_the_route_only_on_a_lost_transport_or_a_failed_probe() {
+    fn a_step_fault_stops_the_route_only_on_a_lost_transport_a_failed_probe_or_a_panic() {
         for step in 0..2 {
             assert_eq!(
-                route_dies(None, Ok(())),
+                route_dies(None, Ok(()), None),
                 None,
                 "call-flag fault in step {step}"
             );
         }
-        let probe = route_dies(None, Err("rank 0: sync: CUDA_ERROR_ILLEGAL_ADDRESS".into()))
-            .expect("a failed probe stops it");
+        let probe = route_dies(
+            None,
+            Err("rank 0: sync: CUDA_ERROR_ILLEGAL_ADDRESS".into()),
+            None,
+        )
+        .expect("a failed probe stops it");
         assert!(probe.contains("probe") && probe.contains("ILLEGAL_ADDRESS"));
         let lost = route_dies(
             Some("rank 1: a peer's slice of a gather never arrived"),
-            Ok(()),
+            Err("rank 1: a peer's slice of a gather never arrived".into()),
+            None,
         )
         .expect("a lost transport stops it at once");
         assert!(lost.contains("never arrived"));
+        let panic = route_dies(None, Ok(()), Some("deepseek-v4.1 step panicked: index"))
+            .expect("a caught panic stops it");
+        assert!(panic.contains("panic"));
     }
 
     #[test]
