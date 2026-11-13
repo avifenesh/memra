@@ -10000,8 +10000,10 @@ fn driver_headroom_trim_keep(
 /// (memra#1257). There the driver's reading leaves out page cache the kernel hands to the
 /// driver's allocations on demand. With the page cache full it sat at 1.9-2.0 GiB while
 /// `MemAvailable` was about 100 GB, so the rung trimmed the pool before nearly every prime on a
-/// host that was not short. `MemAvailable` already leaves out the kernel's reserve, so the
-/// 2 GiB floor still sits on top of the OS's own, and a host that is really short still trims.
+/// host that was not short. While `MemAvailable` is the larger reading, the 2 GiB floor sits on
+/// top of the kernel's reserve, which `MemAvailable` already leaves out; once the page cache is
+/// gone the raw reading is the larger one and the floor is the raw reading's again. A host whose
+/// `MemAvailable` is short still trims.
 fn ensure_driver_headroom(engine: &Engine, loaded: &HashMap<String, LoadedModel>, why: &str) {
     let floor = admit_driver_headroom_bytes();
     if floor == 0 {
