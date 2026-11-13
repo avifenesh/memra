@@ -306,11 +306,11 @@ id = "deepseek_v41-gpu-1x-pro6000"
 pack = "deepseek_v41"
 state = "NativeQualified"
 artifact = "deepseek-ai/DeepSeek-V4.1-Flash-1017@1bae0e1088993b9b82de08f59de5be5a34e42170"
-numeric_program = "the checkpoint's own program (deepseek-v41-source-program): bf16 activations, FP8 32x32 dense and MXFP4 expert weights as stored, per-32 activation quantization, fp32 accumulation; a prefill call per prompt, then the vendor's decode program one token per call"
+numeric_program = "the checkpoint's own program (deepseek-v41-source-program): bf16 activations, FP8 32x32 dense and MXFP4 expert weights as stored, per-32 activation quantization, fp32 accumulation; a prefill call per prompt, then the vendor's decode program one token per call. The running requests' one-token calls go through the trunk together, up to 8 rows a call (MEMRA_DSV41_BATCH_ROWS), each row the bytes of its own call run alone; when every row of a call is a plain greedy pick the card returns each row's argmax (Runner::argmax_rows: the host argmax's token, lowest id among equal maxima) and no logits are downloaded"
 topology = "1x RTX PRO 6000 Blackwell Max-Q (sm_120a, 96 GB); every layer's own weights and the head on the card, the 15,360 routed experts in pinned host memory behind a device LRU cache"
 route = "memra-server deepseek-v4.1 route (dsv41_serve) over dsv41_gpu::decode"
-memra_commit = "87bbe3bfc87f98a6f39116870a327244c704c6ca"
-notes = "CheckpointParity passed twice on the pack's capital probe inside the class band: on the streamed one-card runner (research/modelplan-onboarding-dsv41-20261109/gpu) and with the native side on this residency (dsv41-run --experts-host). The residency writes the streamed runner's step files byte for byte (95 of 95 on the decode lane's chat tapes, a 3,904-slot cache and the 384-slot floor). Serve passed through memra model verify serve on this commit's memra-server; served greedy answers equal dsv41-run --gen on seven chat and needle tapes, five requests at once answer byte for byte as alone, and stop strings, the token budget, penalties and the numeric budget pass the chat gate (research/modelplan-onboarding-dsv41-20261109/serve). A correctness route: 7.5 tokens per second for one request. No rewrite is qualified (RewriteParity pending); DSpark drafts, CUDA graphs, response_format and image parts are not served. Other topologies carry no evidence here: the route picks a fully resident trunk where every rank's routed experts fit its card (four ranks on four cards), and that arm ran on no hardware in this record."
+memra_commit = "0d074a7055afb4c60c1f69909dd5fd1f03ec60b6"
+notes = "Re-pinned 2026-11-13 from 87bbe3bfc8 (bundle serve/receipts/verify-res, kept with a banner) to 0d074a7055, the dsv41 landing head: the route with its two reviews' fixes, the peer copy call (kpc), the fp32 FMA family's streamed narrow outputs (r2), the embedding table and the pool reserve at the load (emb), and main d6ae4e525d merged. At the pin, on one RTX PRO 6000 Max-Q, memra model verify checkpoint (native side dsv41-run on this residency) and verify serve (this commit's memra-server) passed: verified=Checkpoint and verified=Serve; Config, TokenizerTemplate, TensorCensus, CheckpointParity (argmax 51119 on both sides, max abs 2.91 inside the class band) and Serve passed (research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-0d074a7055/gates.txt; the binaries' sha256 in bins.sha256, the run in run.txt). TinyParity ran at the pin too, on 0d074a7055's exact tree: memra model verify tiny --against deepseek_v41 (verified=Tiny against the pinned oracle, research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-0d074a7055/tiny/) and ci:verify-tiny's test, memra-cli supported_packs_write_deterministic_native_oracles, 1 passed (research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-0d074a7055/tiny-gate-0d074a7055.log.gz); the bundle's top gates.txt lists TinyParity pending because the checkpoint and serve recipe does not run the tiny gate. RewriteParity stays pending: no rewrite is qualified. DSpark drafts (MEMRA_DSV41_DRAFT, off by default), CUDA graphs, response_format and image parts are not served. Commits between the pin and the landing head, each docs or research only: 7da3b13270 (r2's PRO 6000 gate receipts), a27a01282a (emb's A/B and serve smoke receipts), 8dd08d9c59 (the long-context pair gate's receipts), and the commit that writes this record (this record, the verify bundle, the docs that cite it). The decode rate of 7.5 tokens per second for one request was measured at 87bbe3bfc8 and is not remeasured here. Other topologies carry no evidence here: the route picks a fully resident trunk where every rank's routed experts fit its card (four ranks on four cards), and that arm ran on no hardware in this record."
 [record.gates]
 Config = "passed"
 TokenizerTemplate = "passed"
@@ -320,12 +320,12 @@ CheckpointParity = "passed"
 RewriteParity = "pending"
 Serve = "passed"
 [record.evidence]
-Config = ["research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-res/gates.txt", "ci:verify-tiny"]
-TokenizerTemplate = ["research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-res/gates.txt"]
-TensorCensus = ["research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-res/gates.txt"]
-TinyParity = ["ci:verify-tiny"]
-CheckpointParity = ["research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-res/gates.txt", "research/modelplan-onboarding-dsv41-20261109/gpu/receipts/checkpoint/verify-capital-rel/gates.txt"]
-Serve = ["research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-res/gates.txt"]
+Config = ["research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-0d074a7055/gates.txt", "ci:verify-tiny"]
+TokenizerTemplate = ["research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-0d074a7055/gates.txt"]
+TensorCensus = ["research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-0d074a7055/gates.txt"]
+TinyParity = ["research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-0d074a7055/tiny/gates.txt", "ci:verify-tiny"]
+CheckpointParity = ["research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-0d074a7055/gates.txt"]
+Serve = ["research/modelplan-onboarding-dsv41-20261109/serve/receipts/verify-0d074a7055/gates.txt"]
 
 [[record]]
 id = "deepseek_v4_dspark-reference"

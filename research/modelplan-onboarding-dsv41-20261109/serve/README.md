@@ -16,6 +16,17 @@ per decode forward: a correctness route, not a fast one. The lane's shared bench
 against it unchanged. The pack is `NativeQualified` <!-- support: deepseek_v41-gpu-1x-pro6000 --> on this
 topology (record `deepseek_v41-gpu-1x-pro6000`).
 
+> **Re-pinned (2026-11-13).** The record `deepseek_v41-gpu-1x-pro6000` now pins `0d074a7055`, the dsv41 landing
+> head (the route with its two reviews' fixes, the peer copy call, the fp32 FMA family's streamed narrow outputs, the
+> embedding table and the pool reserve at the load, main `d6ae4e525d` merged). At that head the route batches the
+> running requests' one-token calls up to 8 rows a call (each row the bytes of its call alone) and takes a greedy
+> pick as the card's argmax of the row. On one RTX PRO 6000 Max-Q, `verify checkpoint` and `verify serve` pass again
+> (`verified=Checkpoint`, `verified=Serve`; Config, TokenizerTemplate, TensorCensus, CheckpointParity with argmax
+> 51119 on both sides and max abs 2.91, and Serve passed), and `ci:verify-tiny`'s test and `memra model verify tiny`
+> ran at the same tree: `receipts/verify-0d074a7055/` (the run, the binaries' sha256, the tiny gate). RewriteParity
+> stays pending. The text below is the first run, at `87bbe3bfc8` (`receipts/verify-res/`, kept); its 7.5 tokens a
+> second for one request is not remeasured at the new pin.
+
 Hardware: one RTX PRO 6000 Blackwell Max-Q at a time (sm_120a, 96 GB, 250 W cap; the residency
 gate ran on one card of the box and the final gates on its twin, while other work used the box's
 other cards), CUDA 13.4, rustc 1.97.1, 1 TB host memory shared with other work, 16 host cores.
@@ -276,8 +287,9 @@ Every script reads the run box's paths, card and lease wrapper from the file `LA
   `dsv41-run-experts-host` (the checkpoint gate's runner wrapper), `test_serve.sh`, `rates.py`,
   `bank.sh`, `final_all.sh`, `pin_probe.py`.
 - `receipts/`: `pin_probe.out`; `residency/` (the gate's output, both runs' logs, sha256 of every
-  compared file on both sides); `verify-res/` (the checkpoint and serve gates' bundle: lock, parity
-  receipt, gates, serve receipt and response, logs); `serve_gate_all.out` (the binaries' sha256
+  compared file on both sides); `verify-res/` (the checkpoint and serve gates' bundle of `87bbe3bfc8`: lock, parity
+  receipt, gates, serve receipt and response, logs); `verify-0d074a7055/` (the same gates at `0d074a7055`, with the
+  run, the binaries' sha256, the plan, the census and the tiny gate, the large tables gzipped); `serve_gate_all.out` (the binaries' sha256
   and the three gate steps); `chat/` (`chat-gate.json`, the client and server logs, `rates.json`);
   `bench-client/` and `bench-client-native/` (the client's samples, summary and logs, the server
   log, for the OpenAI and memra's own stream shape); `tests/` (suite summaries); `leases.tsv` (one line per lease of the lane, the failed

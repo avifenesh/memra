@@ -1,0 +1,26 @@
+[server] build: memra-0.141.1-af286329d4ad (id: source-tree, git: unknown)
+[server] starting; models config = [("verify", "DeepSeek-V4.1-Flash-1017", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "verify" <- DeepSeek-V4.1-Flash-1017
+[dsv41-serve] verify: rewrite bundle /home/access/dsv41/m1/verify-0d074a7055 installed for plan c4d9ad3bfdeac3d8152963b4c8449080b4e8a6024e2fdf7c1f67799764a31b8c; the route runs the plan's own eager decode loop, no rewrite
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+[dsv41-serve] verify: routed experts of 40 layers in pinned host memory: 288777830400 bytes, filled and locked in 14.6s on 16 threads
+[dsv41-serve] verify: 1 rank(s) on devices [0]; routed experts in pinned host memory; resident weights [11187553768] bytes per rank; ceiling [89069025296] bytes; expert cache [4672] slots of 18800640 bytes (floor 384 slots, all 15360); max_seq 1048576; 64 session(s); prefill slices of 8192 rows
+[dsv41-serve] verify: warm-up in 0.3s; one-token call 75.4 ms
+[dsv41-serve] verify: capacity: the longest session with the route idle is 326414 positions (max_seq 1048576); at once: 4096 sessions of 1,536 positions (1,024-token prompts), 3833 of 4,608 (4,096-token prompts), 641 of 32,768, 117 of 131,072; MEMRA_MAX_SESSIONS 64
+[dsv41-serve] verify: up in 23.1s
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[route-contract] model="verify" route=dsv41-thread capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,service-metrics] refused=[prime-fairness: a prompt's prefill is one call of one runner forward; it does not yield, and the running requests' decode calls ride the same forward]
+[prefix-cache] WARNING: derived budget is 0 B after the boot free-VRAM reserve clamp; prefix caching disabled
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["verify"]
+[server] listening on http://127.0.0.1:34785
+[meter] admit id=cmpl-d9b8f66d61b37398d99a9de5a2fb4fde tenant=default lane=interactive model="verify"
+[dsv41-step] calls=1 prefill=1 decode_rows=0 step_s=0.093 transient_peak=24584 predicted_live_need=1080064262 cache_slots=[4672] hits=164 misses=839 h2d_bytes=15773736960
