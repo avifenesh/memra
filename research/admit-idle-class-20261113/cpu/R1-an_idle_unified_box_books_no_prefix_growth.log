@@ -1,0 +1,25 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (~/.cache/memra-1304/tree/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 5m 16s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::an_idle_unified_box_books_no_prefix_growth ... FAILED
+
+failures:
+
+---- worker::tests::an_idle_unified_box_books_no_prefix_growth stdout ----
+
+thread 'worker::tests::an_idle_unified_box_books_no_prefix_growth' (2529085) panicked at crates/memra-server/src/worker.rs:42131:9:
+assertion `left == right` failed
+  left: 52411000000
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::an_idle_unified_box_books_no_prefix_growth
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1282 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

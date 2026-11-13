@@ -1,0 +1,32 @@
+1a16a3113316ffb83ec77a4a219e3ba8e84110e6d8dcd35ac5ee9bc24a8d8c29  ~/.cache/memra-1304/tree/crates/memra-server/src/worker.rs
+green an_idle_unified_box_books_no_prefix_growth rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1282 filtered out; finished in 0.00s
+green an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1282 filtered out; finished in 0.00s
+green the_idle_refusal_is_classified_against_the_post_load_capacity rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1282 filtered out; finished in 0.01s
+green unified_memory_admission_books_the_prefix_caches_allowed_growth rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1282 filtered out; finished in 0.01s
+green the_drafter_refusal_is_wired_from_the_gate_to_every_dflash_route rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1282 filtered out; finished in 0.02s
+server suite rc=0 test result: ok. 1265 passed; 0 failed; 18 ignored; 0 measured; 0 filtered out; finished in 14.18s
+clippy rc=0
+      1 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+fmt rc=0
+R1 an_idle_unified_box_books_no_prefix_growth rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1282 filtered out; finished in 0.00s
+thread 'worker::tests::an_idle_unified_box_books_no_prefix_growth' (2529085) panicked at crates/memra-server/src/worker.rs:42131:9:
+assertion `left == right` failed
+  left: 52411000000
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+R1 restored
+R2 an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1282 filtered out; finished in 0.00s
+thread 'worker::tests::an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity' (2768809) panicked at crates/memra-server/src/worker.rs:42163:9:
+assertion `left == right` failed: request context 1607 does not fit this model's KV capacity on an idle server; the largest admissible context is 262144 tokens. Retrying will not help: send a shorter prompt or a smaller max_tokens
+  left: ContextLength
+ right: Overloaded
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+R2 restored
+R3 the_idle_refusal_is_classified_against_the_post_load_capacity rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1282 filtered out; finished in 0.01s
+thread 'worker::tests::the_idle_refusal_is_classified_against_the_post_load_capacity' (2796499) panicked at crates/memra-server/src/worker.rs:42262:9:
+assertion failed: reject.contains("fail_request(req, idle_refusal(admission_cap, fits_capacity, largest));")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+R3 restored
+1304-CHECKS-DONE 2026-11-13T23:08:42+01:00

@@ -1,0 +1,25 @@
+2026-11-13T23:22:33+02:00 start, unit idle, arm head, target 1800 MB, mode single, extra 
+MemFree:        121292472 kB
+MemAvailable:   122329020 kB
+Cached:          1804564 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 2m05s
+waitfor: until awk '/^MemAvailable/{exit !($2/1024 < 1800 + 300)}' /proc/meminfo (deadline 2m00s, every 2s)
+waitfor: not yet
+waitfor: MET after 0m26s
+2026-11-13T23:25:20+02:00 before the request:
+MemFree:          859524 kB
+MemAvailable:    1848748 kB
+Cached:         101358392 kB
+{"tag": "02-H", "req": "g1k", "status": 503, "ttft_s": 0.037, "total_s": 0.037, "completion_tokens": null, "finish": null, "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "refusal": {"status": 503, "retry_after": "5", "retry_after_ms": "5000", "x_should_retry": null, "body": {"error": {"message": "request context 1607 fits this model's KV capacity but not the server's free memory right now; retry after the Retry-After delay", "type": "server_error", "param": null, "code": "overloaded"}}}}
+2026-11-13T23:25:20+02:00 after the request:
+MemFree:          832564 kB
+MemAvailable:    1832328 kB
+Cached:         101368904 kB
+waitfor: gone 1606761 (deadline 1m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+waitfor: gone 1602156 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

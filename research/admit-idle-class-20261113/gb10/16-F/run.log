@@ -1,0 +1,35 @@
+2026-11-14T00:08:15+02:00 start, unit idle, arm final, target 20000 MB, mode pair, extra 
+MemFree:        106370468 kB
+MemAvailable:   122346448 kB
+Cached:         16833332 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 1m56s
+waitfor: until awk '/^MemAvailable/{exit !($2/1024 < 20000 + 300)}' /proc/meminfo (deadline 2m00s, every 2s)
+waitfor: not yet
+waitfor: MET after 0m22s
+2026-11-14T00:10:48+02:00 before the request:
+MemFree:         4638292 kB
+MemAvailable:   20668700 kB
+Cached:         97618616 kB
+waitfor: until [ $(grep -c prime-chunk ~/.cache/memra-1304/runs/c1304/16-F/server.log) -gt 6 ] (deadline 1m00s, every 1s)
+waitfor: not yet
+waitfor: MET after 0m03s
+2026-11-14T00:10:51+02:00 first request priming, second sent:
+MemFree:         4437516 kB
+MemAvailable:   20465172 kB
+Cached:         94997184 kB
+{"tag": "16-F-a", "req": "g28k", "status": 200, "ttft_s": 18.505, "total_s": 22.906, "completion_tokens": 120, "finish": "stop", "text_sha256": "0b725b4c9fadb0d0025cebb09d1dcac8924de4f8b14eca7c81f0df5bdc535d17", "refusal": null}
+{"tag": "16-F-b", "req": "g1k", "status": 200, "ttft_s": 21.037, "total_s": 25.241, "completion_tokens": 127, "finish": "stop", "text_sha256": "26ca98d4733a9c67f315f2ea1af2ec45ef76cca50999476c62b771813f1ee4ca", "refusal": null}
+waitfor: gone 1782895 (deadline 8m00s, every 15s)
+waitfor: MET after 0m00s
+2026-11-14T00:11:16+02:00 after the request:
+MemFree:         4449216 kB
+MemAvailable:   20477780 kB
+Cached:         94998036 kB
+waitfor: gone 1781115 (deadline 1m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+waitfor: gone 1772190 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
