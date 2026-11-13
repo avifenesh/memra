@@ -1,0 +1,81 @@
+== red straddle126
+8e9e2c77a887e5feee0c898a094fa4272595de887aae3e687632afd8edfcefa6  $RUN/bins/red/dsv41-gate
+NVIDIA GB10, 208 MHz, 44
+decode straddle126 rc 1 160 checks, 12 failed
+PASS layer2/grow/rows: prefill 125 tokens, ratio 2: 62 rows, then 124 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+FAIL layer2/grow/stream: 25154 of 40960 bytes differ (rel_l2 3.236e-1, max_abs 3.594e-1) [byte-identical to the single-card block_forward]
+FAIL layer2/grow/compress_kv: 63488 of 64512 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+FAIL layer2/grow/index_k: 15872 of 16128 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+PASS layer8/grow/rows: prefill 125 tokens, ratio 2: 62 rows, then 124 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+FAIL layer8/grow/stream: 25732 of 40960 bytes differ (rel_l2 2.585e-1, max_abs 5.195e-1) [byte-identical to the single-card block_forward]
+FAIL layer8/grow/compress_kv: 63488 of 64512 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+FAIL layer8/grow/index_k: 15872 of 16128 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+PASS layer14/grow/rows: prefill 125 tokens, ratio 2: 62 rows, then 124 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+FAIL layer14/grow/stream: 25758 of 40960 bytes differ (rel_l2 3.151e-1, max_abs 2.641e0) [byte-identical to the single-card block_forward]
+FAIL layer14/grow/compress_kv: 63488 of 64512 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+FAIL layer14/grow/index_k: 15872 of 16128 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+PASS layer20/grow/rows: prefill 125 tokens, ratio 1: 125 rows, then 250 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+FAIL layer20/grow/stream: 25635 of 40960 bytes differ (rel_l2 2.199e-1, max_abs 1.917e0) [byte-identical to the single-card block_forward]
+FAIL layer20/grow/compress_kv: 128000 of 129024 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+FAIL layer20/grow/index_k: 32000 of 32256 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+== red gsm
+8e9e2c77a887e5feee0c898a094fa4272595de887aae3e687632afd8edfcefa6  $RUN/bins/red/dsv41-gate
+NVIDIA GB10, 2190 MHz, 47
+decode gsm rc 1 160 checks, 12 failed
+PASS layer2/grow/rows: prefill 41 tokens, ratio 2: 20 rows, then 40 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+FAIL layer2/grow/stream: 26616 of 40960 bytes differ (rel_l2 4.206e-1, max_abs 5.586e-1) [byte-identical to the single-card block_forward]
+FAIL layer2/grow/compress_kv: 20480 of 21504 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+FAIL layer2/grow/index_k: 5120 of 5376 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+PASS layer8/grow/rows: prefill 41 tokens, ratio 2: 20 rows, then 40 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+FAIL layer8/grow/stream: 24150 of 40960 bytes differ (rel_l2 2.291e-1, max_abs 2.387e-1) [byte-identical to the single-card block_forward]
+FAIL layer8/grow/compress_kv: 20480 of 21504 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+FAIL layer8/grow/index_k: 5120 of 5376 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+PASS layer14/grow/rows: prefill 41 tokens, ratio 2: 20 rows, then 40 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+FAIL layer14/grow/stream: 24079 of 40960 bytes differ (rel_l2 3.195e-1, max_abs 2.445e0) [byte-identical to the single-card block_forward]
+FAIL layer14/grow/compress_kv: 20480 of 21504 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+FAIL layer14/grow/index_k: 5120 of 5376 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+PASS layer20/grow/rows: prefill 41 tokens, ratio 1: 41 rows, then 82 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+FAIL layer20/grow/stream: 23057 of 40960 bytes differ (rel_l2 1.007e-1, max_abs 7.554e-1) [byte-identical to the single-card block_forward]
+FAIL layer20/grow/compress_kv: 41984 of 43008 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+FAIL layer20/grow/index_k: 10496 of 10752 bytes differ (rel_l2 0.000e0, max_abs 0.000e0) [byte-identical to the single-card block_forward]
+== green straddle126
+458a28da4532514fe220e7c9a6c759f50869c2071e107313c12af613f97d3825  $RUN/bins/green/dsv41-gate
+NVIDIA GB10, 2190 MHz, 49
+decode straddle126 rc 0 160 checks, 0 failed
+PASS layer2/grow/rows: prefill 125 tokens, ratio 2: 62 rows, then 124 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+PASS layer2/grow/stream: 40960 bytes identical [byte-identical to the single-card block_forward]
+PASS layer2/grow/compress_kv: 64512 bytes identical [byte-identical to the single-card block_forward]
+PASS layer2/grow/index_k: 16128 bytes identical [byte-identical to the single-card block_forward]
+PASS layer8/grow/rows: prefill 125 tokens, ratio 2: 62 rows, then 124 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+PASS layer8/grow/stream: 40960 bytes identical [byte-identical to the single-card block_forward]
+PASS layer8/grow/compress_kv: 64512 bytes identical [byte-identical to the single-card block_forward]
+PASS layer8/grow/index_k: 16128 bytes identical [byte-identical to the single-card block_forward]
+PASS layer14/grow/rows: prefill 125 tokens, ratio 2: 62 rows, then 124 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+PASS layer14/grow/stream: 40960 bytes identical [byte-identical to the single-card block_forward]
+PASS layer14/grow/compress_kv: 64512 bytes identical [byte-identical to the single-card block_forward]
+PASS layer14/grow/index_k: 16128 bytes identical [byte-identical to the single-card block_forward]
+PASS layer20/grow/rows: prefill 125 tokens, ratio 1: 125 rows, then 250 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+PASS layer20/grow/stream: 40960 bytes identical [byte-identical to the single-card block_forward]
+PASS layer20/grow/compress_kv: 129024 bytes identical [byte-identical to the single-card block_forward]
+PASS layer20/grow/index_k: 32256 bytes identical [byte-identical to the single-card block_forward]
+== green gsm
+458a28da4532514fe220e7c9a6c759f50869c2071e107313c12af613f97d3825  $RUN/bins/green/dsv41-gate
+NVIDIA GB10, 2190 MHz, 49
+decode gsm rc 0 160 checks, 0 failed
+PASS layer2/grow/rows: prefill 41 tokens, ratio 2: 20 rows, then 40 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+PASS layer2/grow/stream: 40960 bytes identical [byte-identical to the single-card block_forward]
+PASS layer2/grow/compress_kv: 21504 bytes identical [byte-identical to the single-card block_forward]
+PASS layer2/grow/index_k: 5376 bytes identical [byte-identical to the single-card block_forward]
+PASS layer8/grow/rows: prefill 41 tokens, ratio 2: 20 rows, then 40 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+PASS layer8/grow/stream: 40960 bytes identical [byte-identical to the single-card block_forward]
+PASS layer8/grow/compress_kv: 21504 bytes identical [byte-identical to the single-card block_forward]
+PASS layer8/grow/index_k: 5376 bytes identical [byte-identical to the single-card block_forward]
+PASS layer14/grow/rows: prefill 41 tokens, ratio 2: 20 rows, then 40 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+PASS layer14/grow/stream: 40960 bytes identical [byte-identical to the single-card block_forward]
+PASS layer14/grow/compress_kv: 21504 bytes identical [byte-identical to the single-card block_forward]
+PASS layer14/grow/index_k: 5376 bytes identical [byte-identical to the single-card block_forward]
+PASS layer20/grow/rows: prefill 41 tokens, ratio 1: 41 rows, then 82 [the case grows: the prefill's compressed KV holds exactly its rows and the one-token call that completes the next row grows it]
+PASS layer20/grow/stream: 40960 bytes identical [byte-identical to the single-card block_forward]
+PASS layer20/grow/compress_kv: 43008 bytes identical [byte-identical to the single-card block_forward]
+PASS layer20/grow/index_k: 10752 bytes identical [byte-identical to the single-card block_forward]
+REDARM-DONE 12:38:40

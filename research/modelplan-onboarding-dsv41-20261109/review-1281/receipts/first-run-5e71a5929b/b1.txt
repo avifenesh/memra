@@ -1,0 +1,7 @@
+tp 0 default rc 0 242 checks, 0 failed 0 FAIL lines
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+tp 0,0 default rc 1 480 checks, 1 failed 1 FAIL lines
+FAIL stress/push_gather_control_word_first: 2000 gathers on devices [0, 0]: 0 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+[dsv41-tp] ranks=2 devices=[0, 0] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+tp 0,0,0,0 default rc 0 916 checks, 0 failed 0 FAIL lines
+[dsv41-tp] ranks=4 devices=[0, 0, 0, 0] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true

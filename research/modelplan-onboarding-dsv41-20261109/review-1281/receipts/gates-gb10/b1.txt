@@ -1,0 +1,19 @@
+tp 0 default rc 0 242 checks, 0 failed 0 FAIL lines
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+tp 0,0 default rc 0 480 checks, 0 failed 0 FAIL lines
+[dsv41-tp] ranks=2 devices=[0, 0] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+tp 0,0,0,0 default rc 0 916 checks, 0 failed 0 FAIL lines
+[dsv41-tp] ranks=4 devices=[0, 0, 0, 0] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+tp 0 peer-pull rc 0 242 checks, 0 failed 0 FAIL lines
+[dsv41-tp] ranks=1 devices=[0] transport=peer-pull (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+tp 0,0 peer-pull rc 0 478 checks, 0 failed 0 FAIL lines
+[dsv41-tp] ranks=2 devices=[0, 0] transport=peer-pull (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+tp 0,0,0,0 peer-pull rc 0 914 checks, 0 failed 0 FAIL lines
+[dsv41-tp] ranks=4 devices=[0, 0, 0, 0] transport=peer-pull (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+tp 0 host-canonical rc 0 242 checks, 0 failed 0 FAIL lines
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+tp 0,0 host-canonical rc 0 478 checks, 0 failed 0 FAIL lines
+[dsv41-tp] ranks=2 devices=[0, 0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+tp 0,0,0,0 host-canonical rc 0 914 checks, 0 failed 0 FAIL lines
+[dsv41-tp] ranks=4 devices=[0, 0, 0, 0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+GATES-B1-DONE 14:07:57

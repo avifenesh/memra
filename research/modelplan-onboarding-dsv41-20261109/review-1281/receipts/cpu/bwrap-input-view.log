@@ -1,0 +1,56 @@
+.Cloning into '~/.cache/tmp/memra-input-view-l4jarjf6/include_str-value.txt/provenance'...
+done.
+HEAD is now at 75fe945 direct compiler read
+Cloning into '~/.cache/tmp/memra-input-view-l4jarjf6/include_str-INDEX.md/provenance'...
+done.
+HEAD is now at b93dc0d direct compiler read
+Cloning into '~/.cache/tmp/memra-input-view-l4jarjf6/include_bytes-value.txt/provenance'...
+done.
+HEAD is now at a09d804 direct compiler read
+Cloning into '~/.cache/tmp/memra-input-view-l4jarjf6/include_bytes-INDEX.md/provenance'...
+done.
+HEAD is now at 39dbd9b direct compiler read
+.Cloning into '~/.cache/tmp/memra-input-view-lrb4tvfi/cargo-before/provenance'...
+done.
+HEAD is now at 27e5bae tiny CPU workspace
+Cloning into '~/.cache/tmp/memra-input-view-lrb4tvfi/cargo-after/provenance'...
+done.
+HEAD is now at 60434ef metadata-only publication
+Cloning into '~/.cache/tmp/memra-input-view-lrb4tvfi/cargo-forbidden/provenance'...
+done.
+HEAD is now at 91ec3ed build script provenance read
+CPU fixture ~/.cache/tmp/memra-input-view-lrb4tvfi/cargo-forbidden/fetch.log:
+
+CPU fixture ~/.cache/tmp/memra-input-view-lrb4tvfi/cargo-forbidden/build.log:
+error: failed to run custom build command for `memra-engine v0.0.0 (/source/crates/memra-engine)`
+
+Caused by:
+  process didn't exit successfully: `/target/release/build/memra-engine-4d90642097de2b23/build-script-build` (exit status: 101)
+  --- stderr
+
+  thread 'main' (41) panicked at crates/memra-engine/build.rs:1:116:
+  CPU fixture forbidden provenance read: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+.Cloning into '~/.cache/tmp/memra-input-view-tnhzfnf_/sandbox/provenance'...
+done.
+HEAD is now at 0076cc4 metadata fixture
+.Cloning into '~/.cache/tmp/memra-input-view-_g1swlr9/identity/provenance'...
+done.
+HEAD is now at 13d14cf metadata fixture
+.Cloning into '~/.cache/tmp/memra-input-view-edgknjbp/before/provenance'...
+done.
+HEAD is now at 9010de6 ordinary compiled program
+Cloning into '~/.cache/tmp/memra-input-view-edgknjbp/after/provenance'...
+done.
+HEAD is now at 39ef254 metadata-only publication
+.Cloning into '~/.cache/tmp/memra-input-view-axshvkqi/tamper/provenance'...
+done.
+HEAD is now at e9a34f3 metadata fixture
+.
+----------------------------------------------------------------------
+Ran 7 tests in 2.001s
+
+OK
+BUILT (not GPU-qualified): ~/.cache/tmp/memra-input-view-lrb4tvfi/cargo-before/build.json
+BUILT (not GPU-qualified): ~/.cache/tmp/memra-input-view-lrb4tvfi/cargo-after/build.json

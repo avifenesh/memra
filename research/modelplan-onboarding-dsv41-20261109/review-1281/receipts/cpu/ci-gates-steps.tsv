@@ -1,0 +1,52 @@
+gates	1	Runner disk	SKIP-env	0
+gates	2	actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1	SKIP-uses	0
+gates	3	Isolate the gates toolchain from runner component files	PASS	0
+gates	4	dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c	SKIP-uses	0
+gates	5	Verify the pinned compiler and components	PASS	0
+gates	6	Immutable GitHub Action pin census	PASS	0
+gates	7	Change selection and edge coverage refusal controls	PASS	55
+gates	8	Ensure ripgrep for source admission censuses	PASS	0
+gates	9	Public CPU CI event, source and result integration	PASS	507
+gates	10	Declared changed-input CPU contracts (missing selection runs all available)	PASS	74
+gates	11	Expert-tier plan self-test assertion admission (CPU-only)	PASS	16
+gates	12	SFT generator CPU control admission	PASS	27
+gates	13	Score-shard self-test assertion admission (CPU-only)	PASS	17
+gates	14	Agreement-summary self-test assertion admission (CPU-only)	PASS	17
+gates	15	Exact-source coalescer membership and wait contracts (CPU-only)	PASS	2
+gates	16	Workflow files carry no duplicate mapping key (stdlib walker; safe_load would pass)	PASS	1
+gates	17	Tracked source, docs and data carry no merge-conflict marker line	PASS	7
+gates	18	Content-bound release qualification controls (CPU-only)	PASS	49
+gates	19	Prepare compiler input isolation	SKIP-env	0
+gates	20	Compiler input view and filesystem boundary (CPU-only)	FAIL(1)	1
+gates	21	Local development selection and immutable reuse controls (CPU-only)	FAIL(1)	15
+gates	22	Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)	PASS	8
+gates	23	Q35 cold-mixed gate grid law, banked replay and idle window (unittest floor 22; 22 measured 2026-11-13, memra#777 and the sellgate idle window)	PASS	1
+gates	24	CPU-only artifact path safety tests	PASS	0
+gates	25	Chain-launched kernels open with the PDL entry	PASS	0
+gates	26	Per-card native qualification runner controls	PASS	0
+gates	27	Flags census self-test	PASS	5
+gates	28	Gate remove_var lint & self-test	PASS	1
+gates	29	Docs-registry census	PASS	1
+gates	30	Support-state census	PASS	3
+gates	31	Flags-guard pre-push teeth fixture	PASS	3
+gates	32	Gate-integrity teeth fixture (round 2)	PASS	10
+gates	33	Push-range fixture (round 1)	PASS	23
+gates	34	Gate-template teeth fixture (round 3)	PASS	34
+gates	35	Release-guard teeth fixture	PASS	0
+gates	36	Release-battery coverage fixtures (CPU only)	PASS	8
+gates	37	Argmax floors census (CPU only)	PASS	1
+gates	38	Physical GPU resolution fixtures (CPU only)	PASS	0
+gates	39	Changelog teeth fixture	PASS	4
+gates	40	Releasability — workspace publish census (members vs publish.yml list)	PASS	0
+gates	41	Releasability — stub ABI census (portable-arch stub .cu vs their real twins)	PASS	0
+gates	42	Releasability — arch matrix census (ci compiles every arch release builds)	PASS	0
+gates	43	Releasability census teeth (all three proven able to fail)	PASS	1
+gates	44	Releasability, crates.io publish order and index wait (fake registry)	PASS	20
+gates	45	Fatbin-lookup census teeth	PASS	1
+gates	46	Skip census negative controls (memra	PASS	6
+gates	47	Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6	SKIP-uses	0
+gates	48	Unit suites (CUDA-free crates) + skip census	PASS	89
+gates	49	Canonical config and shared JSON feature-unification contracts	PASS	4
+gates	50	Network guard address classification contracts (CPU-only, no skips or ignores)	PASS	6
+gates	51	Indexed MLA and KDA memory fixture contracts (CPU-only)	PASS	3
+gates	52	Unit suite (memra-lanes — lane admission + streaming-audio scheduler)	PASS	1

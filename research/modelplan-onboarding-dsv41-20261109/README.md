@@ -381,8 +381,10 @@ Single-card kernels for every V4.1 operation and real-checkpoint layers on one c
 The V4.1 layer split across N ranks (heads, output groups, `wo_b` rows, routed experts, head rows;
 gathers only, so the N-rank program writes the one-card bytes): byte-identical to the one-card
 `block_forward` on six real layers at prefill and decode on two cards, the whole trunk on two cards
-gives the one-card logits bit for bit up to 128,745 tokens, the indexer splits its query rows at
-prefill (measured against a head split), and the list of what the 4-card stage adds: `tp/README.md`.
+gives the one-card logits bit for bit up to 128,745 tokens (on the peer-pull program: the route's
+default at two ranks is now device-push, gated at short context only; `tp/README.md` carries the
+banner), the indexer splits its query rows at prefill (measured against a head split), and the list of
+what the 4-card stage adds: `tp/README.md`.
 
 # Step 6 (GPU): the decode loop, gated against the vendor's generations (2026-11-09)
 
@@ -400,3 +402,11 @@ routed experts in pinned host memory behind a device LRU cache that writes the s
 CheckpointParity again on that residency, `memra model verify serve` passing, served greedy answers
 equal to the native runner's, batched equal to solo, the decode rate, and the support record that makes
 the pack NativeQualified on this topology: `serve/README.md`.
+
+# Step 8: the fixes of PR #1281's two reviews (2026-11-13)
+
+A cross-stream use-after-free when a few-row call grew its compressed KV on the second stream (red
+under a fault injection before the fix, green after), a route flag that belongs to its calls and a
+lost gather that stops the route, the server booking device faults as failures, and the reviews'
+other findings; the GB10 gate set of the fixed head and what still needs wrx cards (the support
+record's re-verification, a long-context gate on the pair): `review-1281/README.md`.
