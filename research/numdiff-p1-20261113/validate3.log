@@ -1,0 +1,43 @@
+CAUGHT         negative-incident  zq8v1-crossfile-fmad  (3.4s, size x3.48): dsv4_hc_pre_zq8_kernel vs rms_norm_zq8_f32_v2 [dsv CHANGED approximation,build-flag,data,fp-ops,precision,reduction
+MISSED-PROOF   positive-twin      v4z-pinned-norm-twin  (3.4s, size x1.48): dsv4_hc_pre_v4z_e16_kernel vs rms_norm_zq8_f32_v2  CHANGED approximation,build-flag,data,fp-ops,precision,reduction
+CAUGHT-CAUSE   negative-incident  tpwalk9-hcpost-crossfile-fmad  (2.0s, size x1.05): _Z32memra_tp_ar_1stage_hcpost_kernelPKfS0_S0_S0_S0 CHANGED approximation,build-flag,data,fma-contraction,precision
+CAUGHT-CAUSE   negative-incident  tpwalk10-hcpost-nonfma-pin CHANGED (0.9s): _Z32memra_tp_ar_1stage_hcpost_kernelPKfS0_S0_S0_S0 CHANGED fma-contraction  [host: 2 files]
+MISSED-PROOF   positive-twin      tpwalk11-hcpost-pinned-twin  (2.1s, size x1.32): _Z32memra_tp_ar_1stage_hcpost_kernelPKfS0_S0_S0_S0 CHANGED approximation,build-flag,data,fp-ops,precision
+MISSED-PROOF   positive-refactor  moe-expert-core-rn-pin CHANGED (13.5s): moe_gate_up_preclamp8_q8 CHANGED fp-ops,precision; moe_down8_fma_q8 CHANGED fp-ops,precision; moe_gate_up_preclamp8_q8_w4 CHANGED fp-ops,precision; moe_down8_fma_q8_w4 CHANGED fp-ops,precision  [host: 4 files]
+CAUGHT         negative-incident  hcpre-normfold-tp-tape-move  (3.4s, size x1.29): dsv4_hc_pre_v4_e16_norm_zq8_kernel vs rms_norm_zq8 CHANGED approximation,build-flag,data,fma-contraction,fp-ops,precision,reduction
+MISSED-PROOF   positive-twin      fa-verify-rows-vs-seqs  (362.0s, size x1.23): fa_verify_rows_v4_deep vs fa_decode_vec_q_seqs_v4_ CHANGED approximation,fp-ops,precision,reduction; fa_verify_rows_v4_deep vs fa_decode_vec_q_seqs_v4_ CHANGED approximation,fp-ops,precision,reduction
+MISSED-PROOF   positive-twin      nvfp4-b32-tensorcore-vs-dp4a  (317.0s, size x1.54): qmatvec_nvfp4_mmvq_b32_tc vs qmatvec_nvfp4_mmvq_b3 CHANGED fp-ops,precision,reduction,tensor-core
+MISSED-PROOF   positive-twin      nvfp4-b16-rpscx-vs-rpsc  (285.3s, size x1.06): qmatvec_nvfp4_mmvq_b16_rpscx vs qmatvec_nvfp4_mmvq CHANGED same-fp-ops
+MISSED-PROOF   positive-twin      nvfp4-b16-rpsc-splitplane-vs-interleaved-mmvq  (288.0s, size x7.03): qmatvec_nvfp4_mmvq_b16_rpsc vs qmatvec_nvfp4_mmvq CHANGED fp-ops,precision,reduction
+MISSED-PROOF   positive-twin      rms-norm-zq8-ilp-v2  (9.5s, size x2.84): rms_norm_zq8_f32_v2 vs rms_norm_zq8_f32 CHANGED approximation,fp-ops,precision,reduction
+MISSED-PROOF   positive-twin      moe-gateup-rows-ilp  (56.0s, size x1.37): moe_gate_up_preclamp8_q8_rows_ilp vs moe_gate_up_p CHANGED fp-ops,precision
+MISSED-PROOF   positive-twin      moe-down-rows-ilp2  (342.6s, size x2.87): moe_down8_fma_q8_rows_ilp2 vs moe_down8_fma_q8_row CHANGED fp-ops,precision,reduction
+MISSED-PROOF   positive-twin      nvfp4-trunk-mr2-rp-ilp  (63.2s, size x3.9): qmatvec_nvfp4_mmvq_mr2_rp_ilp vs qmatvec_nvfp4_mmv CHANGED fp-ops,precision
+MISSED-PROOF   positive-twin      q8-0-rp-v2-ilp  (53.0s, size x1.18): qmatvec_q8_0_mmvq_rp_v2_ilp vs qmatvec_q8_0_mmvq_r CHANGED fp-ops,precision
+CAUGHT         negative-incident  kda6-bf16-v2-y5-unwritten  (46.7s, size x1.58): qmatvec_kda6_bf16f32_v2 vs qmatvec_kda6_bf16f32 CHANGED approximation,fma-contraction,precision,reduction
+MISSED-PROOF   positive-twin      kda6-bf16-v2-fixed  (48.2s, size x1.58): qmatvec_kda6_bf16f32_v2 vs qmatvec_kda6_bf16f32 CHANGED approximation,fma-contraction,precision,reduction
+MISSED-PROOF   positive-twin      moe-down8-v2-b200  (12.7s, size x2.93): moe_down8_fma_q8_v2 vs moe_down8_fma_q8 CHANGED fp-ops,precision,reduction
+MISSED-PROOF   positive-refactor  gdn-packed-seam-copy-indirect-delete CHANGED (12.8s): copy_indirect_src_f32 REMOVED ; copy_batch_uniform_f32 IDENTICAL ; copy_batch_uniform_kv_u8_set_len IDENTICAL ; gdn_scan_step_f32 IDENTICAL   [host: 4 files]
+MISSED-PROOF   positive-refactor  f8f4v3-half-height-pbm-template CHANGED (1834.6s): _Z15mul_mat_f8f4v3tILi128ELi128ELi4ELi2ELi64ELi3EL RENAMED ; _Z15mul_mat_f8f4v3tILi128ELi128ELi4ELi2ELi64ELi3EL RENAMED ; _Z15mul_mat_f8f4v3tILi128ELi128ELi4ELi2ELi64ELi3EL RENAMED ; _Z15mul_mat_f8f4v3tILi128ELi128ELi4ELi2ELi64ELi3EL RENAMED   [host: 2 files]
+PROVEN-KERNELS positive-refactor  dsv4-shared-array-linkage-rename KERNELS-IDENTICAL (412.8s): _Z33dsv4_topk_idx_numeric_rows_kernelPKfliiPiiPKii IDENTICAL ; dsv4_indexer_score_f32acc_kernel IDENTICAL ; _Z37dsv4_indexer_score_f32acc_rows_kernelPKf11Dsv4 IDENTICAL ; _Z25dsv4_dots_f32_mrow_kernelILi10EEvPKfPKviPfii IDENTICAL   [host: 1 files]
+MISSED-PROOF   positive-refactor  prime-kv-t3-door-delete CHANGED (630.8s): fa_prefill_qw_t3 REMOVED ; fa_prefill_qw_t3 REMOVED ; fa_prefill_qw_t3_prime_table REMOVED ; fa_prefill_qw_t3_prime_table REMOVED   [host: 3 files]
+PROVEN         positive-refactor  pdl-entry-guard-portable-90a IDENTICAL (176.2s): rms_norm_f32 IDENTICAL ; add_rms_norm_f32_v2 IDENTICAL ; rms_norm_qkv_rope_append_f32 IDENTICAL ; rms_norm_qkv_rope_append_f32 IDENTICAL 
+MISSED-PROOF   positive-refactor  dsv4-qlora-normpack-headrms-registers CHANGED (260.9s): dsv4_small_norm_pack_f32_fixed_order_kernel CHANGED approximation,fp-ops,precision,reduction; dsv4_headrms_f32acc_kernel CHANGED approximation,fp-ops,precision,reduction  [host: 1 files]
+MISSED-PROOF   positive-refactor  prime-kv-dequant-ws-vec8 CHANGED (85.6s): fa_dequant_kv_ws_bf16 CHANGED approximation,fp-ops,precision; fa_dequant_kv_ws_bf16 CHANGED approximation,precision; fa_dequant_kv_ws_bf16_prime_table CHANGED approximation,fp-ops,precision; fa_dequant_kv_ws_bf16_prime_table CHANGED approximation,precision  [host: 1 files]
+MISSED-PROOF   positive-refactor  f8f4v2-shared-stage-cta-copies CHANGED (25.8s): _Z14mul_mat_f8f4v2ILi256ELi128ELi8ELi2ELi64ELi3ELi CHANGED data; _Z14mul_mat_f8f4v2ILi256ELi128ELi8ELi2ELi64ELi3ELi CHANGED data,same-fp-ops; _Z14mul_mat_f8f4v2ILi256ELi128ELi8ELi2ELi64ELi3ELi CHANGED data; _Z14mul_mat_f8f4v3ILi256ELi128ELi8ELi2ELi64ELi3ELi CHANGED data,same-fp-ops  [host: 2 files]  [cu/mmq_nvfp4_w4a8_stub.cu: not compiled for sm_121a on either side]
+NO-DATA        negative-rounding  dsa-score-tc-bf16  (203.1s):   [error: capture build failed in ~/.cache/engineagent/numdiff/work/trees/d220be49d9e9 (exit 101):
+error[E0425]: cannot find function `glm5_tp_symmetric_on` in module `crate::glm5_tp`
+    --> crates/memra-engine/src/hybrid_forward.rs:2569:25
+     |
+2569 |         crate::glm5_tp::glm5_tp_s]
+CAUGHT-CAUSE   negative-rounding  dsa-warp-online-f32  (3.9s, size x2.2): memra_mla_attn_gathered_kernel vs _Z30memra_mla_ds CHANGED approximation,fma-contraction,fp-ops,precision,reduction; memra_mla_attn_gathered_kernel vs _Z30memra_mla_ds CHANGED approximation,fma-contraction,fp-ops,precision,reduction; memra_mla_attn_gathered_kernel vs _Z30memra_mla_ds CHANGED approximation,fma-contraction,fp-ops,precision,reduction; memra_mla_attn_gathered_kernel vs _Z30memra_mla_ds CHANGED approximation,fma-contraction,fp-ops,precision,reduction
+CAUGHT-CAUSE   negative-rounding  qwen-fa2-prefill  (43.8s, size x1.14): fa_prefill_qw_db vs fa_prefill_qw_fa2 [flash_attn. CHANGED approximation,fma-contraction,fp-ops,precision,reduction,tensor-core; fa_prefill_qw_db vs fa_prefill_qw_fa2 [flash_attn_ CHANGED approximation,fma-contraction,fp-ops,precision,reduction,tensor-core
+CAUGHT-CAUSE   negative-rounding  spec-penalty-keskar-rn CHANGED (4.0s): penalize_logits_sparse_rows_f32 CHANGED fma-contraction,precision; penalize_logits_f32 CHANGED same-fp-ops; penalize_logits_rows_f32 CHANGED same-fp-ops; penalize_logits_rows_inc_f32 CHANGED same-fp-ops  [host: 6 files]
+UNCOVERED      negative-rounding  rms-block-1024-launch KERNELS-IDENTICAL (158.4s): rms_norm_f32 NOT-FOUND   [host: 3 files]
+CAUGHT-CAUSE   negative-incident  hc-pre-zq8-v1-fmad  (1118.0s, size x3.48): rms_norm_zq8_f32_v2 vs dsv4_hc_pre_zq8_kernel [ker CHANGED approximation,build-flag,data,fp-ops,precision,reduction
+CAUGHT-CAUSE   negative-incident  tp-ar-hcpost-fma CHANGED (0.6s): _Z32memra_tp_ar_1stage_hcpost_kernelPKfS0_S0_S0_S0 CHANGED fma-contraction  [host: 2 files]
+CAUGHT-CAUSE   negative-incident  q8-fuse-blockdim  (7.4s, size x1.62): rms_norm_f32 vs rms_norm_zq8_f32 CHANGED approximation,fp-ops,precision,reduction
+MISSED-PROOF   positive-refactor  moe-split-plane-pinned-core CHANGED (15.0s): moe_gate_up_preclamp8_q8_w4 CHANGED fp-ops,precision; moe_down8_fma_q8_w4 CHANGED fp-ops,precision  [host: 4 files]
+CAUGHT         negative-incident  kda6-v2-y5-missing-write CHANGED (12.4s): qmatvec_kda6_bf16f32_v2 CHANGED same-fp-ops  [host: 4 files]
+{"negative-incident": {"CAUGHT": 4, "CAUGHT-CAUSE": 5}, "positive-twin": {"MISSED-PROOF": 13}, "positive-refactor": {"MISSED-PROOF": 8, "PROVEN-KERNELS": 1, "PROVEN": 1}, "negative-rounding": {"NO-DATA": 1, "CAUGHT-CAUSE": 3, "UNCOVERED": 1}}
+rc=0
