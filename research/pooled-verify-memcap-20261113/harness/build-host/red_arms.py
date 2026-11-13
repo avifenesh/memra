@@ -26,6 +26,10 @@ test's panic).
   booking-off       reclaim_reading ignores the unbuilt booking: the booking test fails
   reap-off          the parked rung does not reap after an eviction: the reap census fails
   fence-funded-off  the ladder does not mark a pass the fence funded: its test fails
+ round 3:
+  booking-unbounded the reclaim leaves the whole unbuilt booking out, not just the FA growth: the
+                    overlap test fails
+  growth-max-not-sum fa_rows_growth keeps the largest grow, not the sum: the two-runs test fails
 """
 import pathlib
 import shutil
@@ -136,6 +140,12 @@ elif arm == "reap-off":
 """, "")
 elif arm == "fence-funded-off":
     sub(WORKER, "            out.fence_funded = true;\n", "")
+elif arm == "booking-unbounded":
+    sub(WORKER, "    booked.min(fa_growth)\n", "    let _ = fa_growth;\n    booked\n")
+elif arm == "growth-max-not-sum":
+    sub(ELIB, """            bytes = bytes.saturating_add(
+                grown""", """            bytes = bytes.max(
+                grown""")
 else:
     raise SystemExit(f"unknown arm {arm}")
 print("arm", arm, "written")

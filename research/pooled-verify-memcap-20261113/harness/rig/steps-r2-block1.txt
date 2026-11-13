@@ -1,6 +1,6 @@
-# memra#1266 review 2, RTX 5090 block 1 (one lease): c=4 F S M and the two gates on F5, correctness cells.
-ag35-01-F 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag35 01-F <lane>/bins5090/F5/memra-server
-ag35-02-S 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag35 02-S <lane>/bins5090/F5/memra-server MEMRA_SPEC_POOL_SERIAL=1
+# memra#1266 review 2, RTX 5090 block 1 (one lease): c=4 F S M and the two gates on F6 (the review-round-3 head), correctness cells.
+ag35-01-F 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag35 01-F <lane>/bins5090/F6/memra-server
+ag35-02-S 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag35 02-S <lane>/bins5090/F6/memra-server MEMRA_SPEC_POOL_SERIAL=1
 ag35-03-M 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag35 03-M <lane>/bins5090/M3/memra-server
-gate-inv-F5 29 -- bash <lane>/tools/gate_5090.sh inv <lane>/bins5090/F5/memra-server inv-F5 27
-gate-resend-F5 29 -- bash <lane>/tools/gate_5090.sh resend <lane>/bins5090/F5/memra-server resend-F5 27
+gate-inv-F6 29 -- bash <lane>/tools/gate_5090.sh inv <lane>/bins5090/F6/memra-server inv-F6 27
+gate-resend-F6 29 -- bash <lane>/tools/gate_5090.sh resend <lane>/bins5090/F6/memra-server resend-F6 27

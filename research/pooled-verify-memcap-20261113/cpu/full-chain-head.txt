@@ -1,0 +1,24 @@
+# head deb6114414 (the review-round-3 code on main 202e1411fe)
+# 2026-11-13T14:57:29+01:00 full CPU chain of memra#1266
+# 2026-11-13T14:57:29+01:00 fmt
+fmt rc=0
+# 2026-11-13T14:57:39+01:00 clippy
+clippy rc=0
+# 2026-11-13T14:59:07+01:00 coalescer
+coalescer rc=0
+# 2026-11-13T14:59:11+01:00 server
+server rc=0
+  passed 1243, failed 0, ignored 14 over 6 binaries
+# 2026-11-13T15:08:07+01:00 kv
+kv rc=0
+  passed 87, failed 0, ignored 0 over 1 binaries
+# 2026-11-13T15:08:07+01:00 engine
+engine rc=0
+  passed 756, failed 0, ignored 65 over 1 binaries
+# 2026-11-13T15:11:12+01:00 gguf
+gguf rc=0
+  passed 418, failed 0, ignored 2 over 1 binaries
+# 2026-11-13T15:11:15+01:00 portable
+portable rc=0
+FULL-DONE
+skip-census: 448 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 17 binaries
