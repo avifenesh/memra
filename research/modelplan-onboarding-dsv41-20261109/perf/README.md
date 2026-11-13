@@ -1858,6 +1858,28 @@ sm_120 kernel gate of this tree (RTX 5090 Laptop): 972 checks, 0 failed (`receip
 check of the two-buffer body: 1,792 comparisons, 0 differ. Its GB10 gates are first in the queue, and the four-card
 wrx run starts with its own kernel and tp gates on the PRO 6000s.
 
+On the PRO 6000 (2026-11-13, cards 2 and 3, 20 layers, `receipts/cfix-pro6000`: the run summary, the build's sync
+check, the chain; the runs' raw logs on the measurement box under `receipts-perf/cfix-two` and `cfix-tok23`): the
+kernel gate 972 checks, tp on the pair 480 (default), 478 (peer-pull) and 478 (host-canonical), 0 failed. k3 (A)
+against this tree (B), A B B A, steady calls past 0.5 s of load, ms:
+
+| call | k3 | this tree | this / k3 |
+|---|---|---|---|
+| one-row decode (480 calls an arm) | 6.664 | 6.357 | 0.954 |
+| 4-row block | 8.630 | 8.719 | 1.010 |
+| 8-row block | 11.914 | 11.549 | 0.969 |
+| 9 rows | 12.679 | 12.416 | 0.979 |
+| 12 rows | 14.111 | 13.595 | 0.963 |
+| 16 rows | 16.524 | 15.466 | 0.936 |
+
+The CUTLASS tree before this fix was 10 to 12% slower than k3 on four cards at 1, 4 and 8 rows. The two arms' decode
+tokens differ at 20 layers on two cards, as the CUTLASS tree's did: the CUTLASS tree (498473abd8) and this tree write
+one token tape (`cfix-tok23`), so the fix keeps CUTLASS's bytes, and the 53-tape order gate judges that byte family
+against the vendor (below). Another job ran on the box's other two cards during these runs; the arms are interleaved,
+so the ratios hold. No run flagged for a slowdown, no page-cache drop inside a run. Owed: the four-card confirm (40
+layers), the keys side's overlap A/B on four cards, and the GB10 gates of the last commit (s5: queued; s1 and s4 in
+`gates-cutlass-gb10/`).
+
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
 The order gate above ran on the decode lane's 18 tapes. Its interval was wide, so 35 more vendor
