@@ -792,9 +792,13 @@ __device__ __forceinline__ void v41_mma_w_u(float c[4], const uint32_t a[4], uin
     }
 }
 
-// A block's ring of V41D_PS stages of PK K blocks: the call's activation rows, shared by the block's warps
-// ([M][AR] codes + their scale words [M][PK / 4]), then each warp's own weight rows ([CW][WR] codes + their scale
-// words [CW][PK / 4]); +16 on a row: conflict-free fragment loads.
+// A block's shared memory: two buffers of the call's activation rows for one stage of PK K blocks, shared by the
+// block's warps ([M][AR] codes + their scale words [M][PK / 4]), then each warp's own ring of V41D_PS stages of its
+// weight rows ([CW][WR] codes + their scale words [CW][PK / 4]); +16 on a row: conflict-free fragment loads. The
+// activations come from L2 (written by the call's act_quant), so one stage of lead through registers covers them,
+// and the weights' ring keeps the shared memory: at 16 rows a four-deep activation ring would halve the weight stage.
+#define V41D_AREG 8  // 16-byte activation chunks a thread holds for the next stage
+#define V41D_SREG 2  // activation scale words a thread holds
 struct V41Dg {
     int wr, ar, a_st, w_st;
     __host__ __device__ V41Dg(int wf, int cw, int m, int pk) {
@@ -803,11 +807,11 @@ struct V41Dg {
         a_st = m * ar + ((m * (pk / 4) * 4 + 15) & ~15);
         w_st = cw * wr + ((cw * (pk / 4) * 4 + 15) & ~15);
     }
-    __host__ __device__ int block(int nwb) const { return V41D_PS * (a_st + nwb * w_st); }
+    __host__ __device__ int block(int nwb) const { return 2 * a_st + nwb * V41D_PS * w_st; }
 };
 
 // Block x: blockDim / 32 warps of CW output columns each, over the call's M <= 8 MR rows and all of K, PK = 1 << LPK
-// K blocks a stage (a power of two from 4). The block copies the activation rows once a stage for all its warps.
+// K blocks a stage (a power of two from 4). The block stages the activation rows once a stage for all its warps.
 template <int WF, int CW, int MR>
 __global__ void __launch_bounds__(128) v41_dense_small_kernel(const uint8_t* __restrict__ A, long lda,
                                                               const uint8_t* __restrict__ asf,
@@ -822,26 +826,17 @@ __global__ void __launch_bounds__(128) v41_dense_small_kernel(const uint8_t* __r
     const int nw = max(0, min(CW, N - rw0));  // live weight rows (the rest stay zero; a warp with none only copies)
     const int PK = 1 << LPK, KB = K / 32, NS = (KB + PK - 1) / PK;
     const V41Dg G(WF, CW, M, PK);
-    uint8_t* aring = v41_ds_sm;
-    uint8_t* wring = v41_ds_sm + V41D_PS * G.a_st + warp * V41D_PS * G.w_st;
+    uint8_t* abuf = v41_ds_sm;
+    uint8_t* wring = v41_ds_sm + 2 * G.a_st + warp * V41D_PS * G.w_st;
     const int AS_O = M * G.ar, WS_O = CW * G.wr;
     // 16-byte chunks of a row's stage (powers of two): weights, activations; scale words a row
     const int lw = WF == 0 ? LPK + 1 : LPK, la = LPK + 1, lp = LPK - 2;
     // rows that are never copied (weight rows past N, activation rows past M) are never read: their fragments and
     // scale words are zeros in registers; a short last stage copies and reads only its own K blocks
-    auto issue = [&](int i) {
-        const int slot = i % V41D_PS, kb0 = i * PK, pk = min(PK, KB - kb0);
-        const int wl = pk * WB / 16, al = pk * 2, pl = pk / 4;
-        uint8_t* as = aring + slot * G.a_st;
-        uint8_t* ws = wring + slot * G.w_st;
-        for (int c = tid; c < (M << la); c += nthr) {
-            int r = c >> la, q = c & ((1 << la) - 1);
-            if (q < al) v41_cp16(as + r * G.ar + q * 16, A + (long)r * lda + (long)kb0 * 32 + q * 16, true);
-        }
-        for (int c = tid; c < (M << lp); c += nthr) {
-            int r = c >> lp, u = c & ((1 << lp) - 1);
-            if (u < pl) v41_cp4(as + AS_O + c * 4, asf + v41_sf_off(r, kb0 + 4 * u, KB));
-        }
+    auto issue_w = [&](int i) {
+        const int kb0 = i * PK, pk = min(PK, KB - kb0);
+        const int wl = pk * WB / 16, pl = pk / 4;
+        uint8_t* ws = wring + (i % V41D_PS) * G.w_st;
         for (int c = lane; c < (nw << lw); c += 32) {
             int r = c >> lw, q = c & ((1 << lw) - 1);
             if (q < wl) v41_cp16(ws + r * G.wr + q * 16, W + (long)(rw0 + r) * ldw + (long)kb0 * WB + q * 16, true);
@@ -851,10 +846,44 @@ __global__ void __launch_bounds__(128) v41_dense_small_kernel(const uint8_t* __r
             if (u < pl) v41_cp4(ws + WS_O + c * 4, wsf + v41_sf_off(rw0 + r, kb0 + 4 * u, KB));
         }
     };
+    // the activations of stage i into registers (each thread a fixed set of chunks and words), and from there into
+    // buffer i & 1
+    uint4 areg[V41D_AREG];
+    uint32_t sreg[V41D_SREG];
+    auto load_a = [&](int i) {
+        const int kb0 = i * PK, pk = min(PK, KB - kb0), al = pk * 2, pl = pk / 4;
+#pragma unroll
+        for (int j = 0; j < V41D_AREG; ++j) {
+            int c = j * nthr + tid, r = c >> la, q = c & ((1 << la) - 1);
+            if (c < (M << la) && q < al) areg[j] = __ldg((const uint4*)(A + (long)r * lda + (long)kb0 * 32 + q * 16));
+        }
+#pragma unroll
+        for (int j = 0; j < V41D_SREG; ++j) {
+            int c = j * nthr + tid, r = c >> lp, u = c & ((1 << lp) - 1);
+            if (c < (M << lp) && u < pl) sreg[j] = __ldg((const unsigned int*)(asf + v41_sf_off(r, kb0 + 4 * u, KB)));
+        }
+    };
+    auto store_a = [&](int i) {
+        const int pk = min(PK, KB - i * PK), al = pk * 2, pl = pk / 4;
+        uint8_t* as = abuf + (i & 1) * G.a_st;
+#pragma unroll
+        for (int j = 0; j < V41D_AREG; ++j) {
+            int c = j * nthr + tid, r = c >> la, q = c & ((1 << la) - 1);
+            if (c < (M << la) && q < al) *(uint4*)(as + r * G.ar + q * 16) = areg[j];
+        }
+#pragma unroll
+        for (int j = 0; j < V41D_SREG; ++j) {
+            int c = j * nthr + tid, u = c & ((1 << lp) - 1);
+            if (c < (M << lp) && u < pl) *(uint32_t*)(as + AS_O + c * 4) = sreg[j];
+        }
+    };
     for (int s = 0; s < V41D_PS - 1; ++s) {
-        if (s < NS) issue(s);
+        if (s < NS) issue_w(s);
         v41_cp_commit();
     }
+    load_a(0);
+    store_a(0);
+    if (NS > 1) load_a(1);
     const bool w0 = g < nw, w1 = g + 8 < nw;
     const int wsr = g + 8 * (t & 1);  // lane t = 0: weight row g's word, t = 1: row g + 8's
     const bool wsok = wsr < nw;
@@ -863,11 +892,15 @@ __global__ void __launch_bounds__(128) v41_dense_small_kernel(const uint8_t* __r
     for (int mr = 0; mr < MR; ++mr) acc[mr][0] = acc[mr][1] = acc[mr][2] = acc[mr][3] = 0.f;
     for (int i = 0; i < NS; ++i) {
         v41_cp_wait<V41D_PS - 2>();
-        __syncthreads();  // stage i landed for every thread; every warp is done with stage i - 1
-        if (i + V41D_PS - 1 < NS) issue(i + V41D_PS - 1);
+        // weight stage i landed for every thread and activation stage i is in its buffer; every warp is done with
+        // stage i - 1 (its weight slot and the other activation buffer)
+        __syncthreads();
+        if (i + V41D_PS - 1 < NS) issue_w(i + V41D_PS - 1);
         v41_cp_commit();
+        if (i + 1 < NS) store_a(i + 1);
+        if (i + 2 < NS) load_a(i + 2);
         if (nw == 0) continue;
-        const uint8_t* sa = aring + (i % V41D_PS) * G.a_st;
+        const uint8_t* sa = abuf + (i & 1) * G.a_st;
         const uint8_t* sw = wring + (i % V41D_PS) * G.w_st;
         const int pk = min(PK, KB - i * PK);
         for (int j = 0; j < pk / 4; ++j) {
@@ -947,18 +980,16 @@ static V41Smem v41_smem() {
 // Whether a dense call of m rows is the small-row body's (form 0 of `memra_v41_cutlass_gemm`); the two bodies give
 // the same bytes, so this is speed only. CUTLASS's swapped forms run a call on ceil(n / 128) CTAs, each near 50-60
 // GB/s; the small-row body spreads the call over the card, less the length of its chain over K. So the line is
-// CUTLASS's CTAs against the card's SMs, at up to 8 rows (decode-shape probe, graph replay, every share of one and
-// four ranks at 1 to 16 rows; receipts research/modelplan-onboarding-dsv41-20261109/perf/receipts/dense-small):
-// - RTX 5090 Laptop (sm_120, 82 SMs): 2 to 6 CTAs 0.74-1.00 of CUTLASS's time at 1 to 8 rows (with a PRO 6000's
-//   four-rank share per SM), 9 to 10 CTAs 0.99-1.05 at 1 row and 1.04-1.17 at 4 to 8, 14 to 64 CTAs level
-//   (0.97-1.05);
-// - GB10 (sm_121, 48 SMs, LPDDR5x: a few CTAs nearly saturate it): 2 CTAs 0.82-0.85, 4 level, 5 1.03, 9 1.12;
-// - at 9 to 16 rows (two B fragments a K block) the body is behind CUTLASS's tileN-16 form on every shape (1.02-1.41
-//   on the 5090), so those calls stay on CUTLASS.
-// Taken: at most 8 rows and at most SMs / 12 CTAs. On a PRO 6000 (188 SMs) that is every four-rank dense call but
+// CUTLASS's CTAs against the card's SMs (decode-shape probe, graph replay, every share of one and four ranks at 1 to
+// 16 rows; receipts research/modelplan-onboarding-dsv41-20261109/perf/receipts/dense-small):
+// - RTX 5090 Laptop (sm_120, 82 SMs) with a PRO 6000's four-rank share per SM (2 to 6 CTAs): 0.67-0.95 of
+//   CUTLASS's time at 1 to 8 rows, 0.86-1.03 of its tileN-16 form at 9 to 16; at the 5090's own shares 9 to 10 CTAs
+//   are level at 1 row and 1.04-1.17 at 4 to 8, 14 to 64 CTAs level (0.97-1.05);
+// - GB10 (sm_121, 48 SMs, LPDDR5x: a few CTAs nearly saturate it): 2 CTAs 0.82-0.85, 4 level, 5 1.03, 9 1.12.
+// Taken: at most 16 rows and at most SMs / 12 CTAs. On a PRO 6000 (188 SMs) that is every four-rank dense call but
 // the indexer's wq_b and wq_b (32 and 64 CTAs); on GB10 `wkv` alone.
 extern "C" int memra_v41_dense_small_fits(int m, int n, int k) {
-    if (m < 1 || m > 8 || n <= 0 || k <= 0 || k % 128) return 0;
+    if (m < 1 || m > V41D_MAX_M || n <= 0 || k <= 0 || k % 128) return 0;
     long ctas = (n + 127) / 128;
     return ctas * 12 <= v41_sms();
 }
@@ -989,10 +1020,14 @@ extern "C" int memra_v41_dense_small(const void* a, long lda, const void* asf, c
     // K blocks a stage: a power of two from 4 to 64, not past K, while the ring fits and the stages in flight
     // (V41D_PS - 1) hold at most the in-flight target
     const long want = 48L * 1024 / bps;
+    // (and the next stage's activation chunks and scale words fit the registers that carry them)
+    const int nthr = nwb * 32;
     int lpk = 2;
     while (lpk < 6 && (1 << lpk) < kb && V41Dg(wf, cw, m, 2 << lpk).block(nwb) <= budget &&
-           (long)(V41D_PS - 1) * nwb * cw * wb * (2 << lpk) <= want)
+           (long)(V41D_PS - 1) * nwb * cw * wb * (2 << lpk) <= want && (m << (lpk + 2)) <= V41D_AREG * nthr &&
+           (m << (lpk - 1)) <= V41D_SREG * nthr)
         ++lpk;
+    if ((m << (lpk + 1)) > V41D_AREG * nthr || (m << (lpk - 2)) > V41D_SREG * nthr) return 41028;
     const int smem = V41Dg(wf, cw, m, 1 << lpk).block(nwb);
     if (smem > sm.optin) return 41028;
     const unsigned grid = (unsigned)blocks;

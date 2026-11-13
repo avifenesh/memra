@@ -1,0 +1,62 @@
+# build k3 device NVIDIA GeForce RTX 5090 Laptop GPU SMs 82 L2 64 MB
+# mark 1 set m1
+k3       set    dense4       n      7 k     0 rows   1  eager    86.71 us  host   19.80 us  graph    89.71 us  (a cell = 13 launches)
+# mark 2 set m8
+k3       set    dense4       n      7 k     0 rows   8  eager   114.38 us  host   18.70 us  graph   112.00 us  (a cell = 13 launches)
+# mark 3 set m9
+k3       set    dense4       n      7 k     0 rows   9  eager   125.86 us  host   18.48 us  graph   122.65 us  (a cell = 13 launches)
+# mark 4 set m12
+k3       set    dense4       n      7 k     0 rows  12  eager   135.21 us  host   19.00 us  graph   132.52 us  (a cell = 13 launches)
+# mark 5 set m16
+k3       set    dense4       n      7 k     0 rows  16  eager   156.18 us  host   18.82 us  graph   157.00 us  (a cell = 13 launches)
+# mark 6 set m1
+k3       set    P:dense4     n      7 k     0 rows   1  eager    64.83 us  host   19.65 us  graph    59.70 us  (a cell = 13 launches)
+# mark 7 set m8
+k3       set    P:dense4     n      7 k     0 rows   8  eager    83.89 us  host   28.20 us  graph    80.42 us  (a cell = 13 launches)
+# mark 8 set m9
+k3       set    P:dense4     n      7 k     0 rows   9  eager    89.72 us  host   27.68 us  graph    87.73 us  (a cell = 13 launches)
+# mark 9 set m12
+k3       set    P:dense4     n      7 k     0 rows  12  eager    91.94 us  host   18.92 us  graph    90.35 us  (a cell = 13 launches)
+# mark 10 set m16
+k3       set    P:dense4     n      7 k     0 rows  16  eager    98.37 us  host   18.94 us  graph    97.47 us  (a cell = 13 launches)
+# mark 11 moe rows1 plan
+k3       moe    plan         n    384 k     0 rows   1  eager     5.84 us  host    2.18 us  graph     5.71 us  (a cell = 1 launches)
+# mark 12 moe rows1 hidden
+k3       moe    plan+hid     n    576 k  5120 rows   1  eager    48.36 us  host    6.50 us  graph    48.65 us  (a cell = 3 launches)
+# mark 13 moe rows1 out
+k3       moe    plan+out     n   1280 k  2304 rows   1  eager    38.20 us  host   10.68 us  graph    38.40 us  (a cell = 5 launches)
+# mark 14 moe rows1 all
+k3       moe    plan+all     n   1280 k  2304 rows   1  eager    83.88 us  host    9.91 us  graph    82.76 us  (a cell = 7 launches)
+# mark 15 moe rows8 plan
+k3       moe    plan         n    384 k     0 rows   8  eager     6.93 us  host    1.77 us  graph     6.79 us  (a cell = 1 launches)
+# mark 16 moe rows8 hidden
+k3       moe    plan+hid     n    576 k  5120 rows   8  eager   278.65 us  host    5.35 us  graph   308.23 us  (a cell = 3 launches)
+# mark 17 moe rows8 out
+k3       moe    plan+out     n   1280 k  2304 rows   8  eager   177.74 us  host   10.42 us  graph   174.13 us  (a cell = 5 launches)
+# mark 18 moe rows8 all
+k3       moe    plan+all     n   1280 k  2304 rows   8  eager   513.68 us  host   14.09 us  graph   516.98 us  (a cell = 7 launches)
+# mark 19 moe rows9 plan
+k3       moe    plan         n    384 k     0 rows   9  eager     9.56 us  host    2.12 us  graph     9.33 us  (a cell = 1 launches)
+# mark 20 moe rows9 hidden
+k3       moe    plan+hid     n    576 k  5120 rows   9  eager   367.10 us  host    6.17 us  graph   370.87 us  (a cell = 3 launches)
+# mark 21 moe rows9 out
+k3       moe    plan+out     n   1280 k  2304 rows   9  eager   214.97 us  host    7.23 us  graph   209.11 us  (a cell = 5 launches)
+# mark 22 moe rows9 all
+k3       moe    plan+all     n   1280 k  2304 rows   9  eager   564.36 us  host   14.56 us  graph   569.57 us  (a cell = 7 launches)
+# mark 23 moe rows12 plan
+k3       moe    plan         n    384 k     0 rows  12  eager     9.68 us  host    2.07 us  graph     9.48 us  (a cell = 1 launches)
+# mark 24 moe rows12 hidden
+k3       moe    plan+hid     n    576 k  5120 rows  12  eager   450.35 us  host    4.54 us  graph   469.65 us  (a cell = 3 launches)
+# mark 25 moe rows12 out
+k3       moe    plan+out     n   1280 k  2304 rows  12  eager   263.55 us  host    7.54 us  graph   258.89 us  (a cell = 5 launches)
+# mark 26 moe rows12 all
+k3       moe    plan+all     n   1280 k  2304 rows  12  eager   718.92 us  host   10.26 us  graph   717.00 us  (a cell = 7 launches)
+# mark 27 moe rows16 plan
+k3       moe    plan         n    384 k     0 rows  16  eager     9.93 us  host    2.06 us  graph     9.73 us  (a cell = 1 launches)
+# mark 28 moe rows16 hidden
+k3       moe    plan+hid     n    576 k  5120 rows  16  eager   581.04 us  host    4.40 us  graph   602.82 us  (a cell = 3 launches)
+# mark 29 moe rows16 out
+k3       moe    plan+out     n   1280 k  2304 rows  16  eager   329.51 us  host   10.44 us  graph   326.82 us  (a cell = 5 launches)
+# mark 30 moe rows16 all
+k3       moe    plan+all     n   1280 k  2304 rows  16  eager   912.94 us  host   10.39 us  graph   919.63 us  (a cell = 7 launches)
+# done

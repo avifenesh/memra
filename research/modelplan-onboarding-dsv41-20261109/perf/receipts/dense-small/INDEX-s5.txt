@@ -1,0 +1,5 @@
+out-wide-*: the four-deep-ring body at 8 to 16 rows by rows a block (probe-only launch override), against
+  CUTLASS's tileN-16 form
+out-new5-*: the two-buffer body (this commit): byte check, 8-16-row sweep against the four-deep ring, dense cells A/B
+out-step-*: the step model, one four-rank layer's dense set and split MoE at 1, 8, 9, 12, 16 rows (k3, CUTLASS tree,
+  fixes 1-4, this tree); step_table.py builds the table

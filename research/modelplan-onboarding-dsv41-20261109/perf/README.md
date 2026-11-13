@@ -1798,6 +1798,66 @@ saved tensors byte-identical to the fa825eee set both times (the fused weights i
 478/0. The other transports, 4 ranks, decode, the graph door and the tapes are queued. sm_120 kernel gate (RTX 5090
 Laptop): 972/0 (`receipts/kgate-5090/s4`).
 
+### Calls of 9 to 16 rows: no step at 9
+
+With eight running requests a drafted row turns an 8-row decode step into a 9-row call, and that row cost 5.09 ms on
+four cards against 0.6 to 0.9 ms for each row after it (the drafting lane, two boots): at 9 rows several paths left
+their 8-row form at once. In this tree, on four ranks:
+- the dense GEMMs left the small-row body for CUTLASS's tileN-16 form (the body's 16-row form was behind CUTLASS on
+  every shape: at 16 rows a four-deep activation ring halves the weight stage);
+- the split MoE left its one bf16 gather of the hidden rows for the quantized path (each rank quantizes its own
+  columns, codes and scales are gathered: one collective more, a quantization a rank, the scale-row and placing
+  kernels);
+- the grouped expert GEMMs stay on the small-row body on sm_120 (8-row tiles, the commit before last), the bf16 family
+  has its 16-row form, the router's gate and the mHC mixes stay one launch to 32 and 48 rows, and the second stream
+  keeps the shared expert to 64 rows and the mixes to 32; the keys side's overlap stops at 8 (its bench seam is
+  `dsv41-tpbench --side-rows`).
+
+The dense body now stages the activation rows through two buffers fed one stage ahead from registers (they come from
+L2, written by the call's act_quant), so the shared memory holds the weights' four-stage ring at every row count.
+Small-row body / CUTLASS (tileN-8 at 8 rows, tileN-16 above), the four-deep activation ring this tree had against the
+two buffers, RTX 5090 Laptop at a PRO 6000's four-rank share per SM, graph replay
+(`receipts/dense-small/out-new5-1113-0431`):
+
+| call (a PRO 6000's four-rank share per SM) | 8 rows: four-deep ring / two buffers | 9 rows | 12 rows | 16 rows |
+|---|---|---|---|---|
+| `wkv` | 0.83 / 0.66 | 1.07 / 0.85 | 1.07 / 0.86 | 1.15 / 0.87 |
+| `wq_a` + `wkv` | 0.90 / 0.87 | 1.03 / 0.90 | 1.16 / 0.92 | 1.21 / 0.98 |
+| `wo_b` | 0.90 / 0.77 | 1.15 / 0.85 | 1.20 / 0.88 | 1.30 / 0.89 |
+| shared w1 + w3 | 0.85 / 0.80 | 1.09 / 0.86 | 1.18 / 0.87 | 1.24 / 0.88 |
+| shared w2 | 0.95 / 0.91 | 1.12 / 0.93 | 1.13 / 0.93 | 1.10 / 0.98 |
+| `wq_b` (CUTLASS keeps it) | 1.00 / 1.13 | 1.01 / 1.14 | 1.03 / 1.14 | 1.01 / 1.15 |
+
+At 1 to 8 rows the two buffers are level to 12% faster on the small-row calls (`wo_b` 0.91-0.92 and `wkv` 0.88-0.91 of
+the four-deep ring's time; `wq_a` + `wkv` 1.01-1.08), and the rule now takes calls of up to 16 rows (at most SMs / 12
+CTAs). The probe's byte check of the new body: 1,792 comparisons, 0 differ.
+
+The split MoE keeps the bf16 gather and the small-row path through 16 rows (`SPLIT_BF16_ROWS`): the same codes (a
+32-wide block lies inside a rank's columns, so quantizing after the gather writes what each rank wrote before it), one
+gather and three launches fewer at 9 to 16 rows on sm_120 (GB10's CUTLASS path keeps its launches and drops the
+gather).
+
+The step model (RTX 5090 Laptop, the probe's kernels of one four-rank layer on one rank: the dense set at a PRO 6000's
+share per SM and the split MoE, graph replay, medians of four interleaved runs, us; the gathers and the rest of the
+layer are not in it):
+
+| rows | k3: dense + MoE = layer | CUTLASS tree: dense + MoE = layer | this tree: dense + MoE = layer | this / k3 |
+|---|---|---|---|---|
+| 1 | 58.5 + 83.4 = 141.8 | 75.4 + 83.2 = 158.6 | 48.4 + 79.0 = 127.4 | 0.90 |
+| 8 | 78.8 + 525.6 = 604.4 | 76.1 + 637.8 = 713.9 | 49.7 + 520.1 = 569.8 | 0.94 |
+| 9 | 86.3 + 554.2 = 640.6 | 82.0 + 680.8 = 762.7 | 56.7 + 564.9 = 621.6 | 0.97 |
+| 12 | 89.2 + 736.3 = 825.5 | 82.3 + 865.8 = 948.1 | 58.7 + 768.0 = 826.8 | 1.00 |
+| 16 | 95.4 + 926.3 = 1021.6 | 83.3 + 1106.4 = 1189.7 | 60.6 + 936.3 = 996.9 | 0.98 |
+
+The step from 8 to 9 rows against a row's slope from 9 to 16, us a layer: k3 +36 against 54; CUTLASS tree +49 against
+61; this tree +52 against 54. In these kernels no build steps at 9 by more than a row; the four-card jump is outside
+them (the gathers, the overlaps), which is where the split MoE's one gather fewer and the keys side's overlap (an A/B
+owed on four cards) act.
+
+sm_120 kernel gate of this tree (RTX 5090 Laptop): 972 checks, 0 failed (`receipts/kgate-5090/s5`); the probe's byte
+check of the two-buffer body: 1,792 comparisons, 0 differ. Its GB10 gates are first in the queue, and the four-card
+wrx run starts with its own kernel and tp gates on the PRO 6000s.
+
 ### The order gate on 53 tapes: the four speed changes of 2026-11-13
 
 The order gate above ran on the decode lane's 18 tapes. Its interval was wide, so 35 more vendor

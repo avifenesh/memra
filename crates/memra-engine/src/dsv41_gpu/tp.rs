@@ -64,6 +64,12 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+/// The most rows of a split MoE call that gather the bf16 hidden rows (one gather) rather than their
+/// codes and scales (two gathers, a quantization a rank, the placing kernels): a decode or verify
+/// step of up to 16 rows keeps the small-row path of the 8-row step. Speed only: the codes are
+/// those of the whole row either way.
+pub const SPLIT_BF16_ROWS: usize = 16;
+
 /// A byte region of a rank buffer: `rows` rows of `width` bytes, `pitch` apart, from `off`. A
 /// gather copies a producer's region into the same region of every other rank's buffer.
 #[derive(Debug, Clone, Copy)]
@@ -2252,8 +2258,11 @@ impl Group {
         let (ne, topk, d, inter) = (g.n_experts, g.topk, g.dim, g.moe_inter);
         let np = rows * topk;
         let trace = self.trace || self.route_log.is_some();
-        // a few rows: one bf16 gather of the hidden columns (a gather's latency, not its bytes)
-        let quant = rows > super::SMALL_M;
+        // up to SPLIT_BF16_ROWS rows: one bf16 gather of the hidden columns (a gather's latency, not
+        // its bytes), and the rows quantized whole after it; more: each rank quantizes its own columns
+        // and the codes and scales are gathered (the same codes: a 32-wide block lies inside a rank's
+        // columns)
+        let quant = rows > SPLIT_BF16_ROWS;
         let parts = {
             let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
             self.each_mut(&mut trs, |r, c, trr| {
