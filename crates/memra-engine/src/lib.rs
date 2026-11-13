@@ -2668,6 +2668,35 @@ impl VerifyWs {
 /// what this counts. Relaxed atomic: one increment per allocation, noise-level.
 pub static SCRATCH_ALLOC_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// The FA partial pool's growth for one seqs launch (memra#1266), pure: `rows` rows whose
+/// deepest row attends `t_kv_max` keys at split rung `split_keys`, against the pool's `current`
+/// (o, ml) lengths in floats. `fa_seqs_attend` needs `rows x n_head x n_splits x head_dim` o
+/// floats and `rows x n_head x n_splits` m and l floats; a pool short of either grows all three
+/// to `max(needed, 2 x current)`. Bytes; 0 when the pool already holds the launch.
+pub fn fa_part_growth(
+    rows: usize,
+    t_kv_max: usize,
+    split_keys: usize,
+    n_head: usize,
+    head_dim: usize,
+    current: (usize, usize),
+) -> usize {
+    if rows == 0 || t_kv_max == 0 {
+        return 0;
+    }
+    let n_splits = t_kv_max.div_ceil(split_keys.max(1)).max(1);
+    let o_len = rows * n_head * n_splits * head_dim;
+    let ml_len = rows * n_head * n_splits;
+    let (co, cm) = current;
+    if co >= o_len && cm >= ml_len {
+        return 0;
+    }
+    o_len
+        .max(2 * co)
+        .saturating_add(2 * ml_len.max(2 * cm))
+        .saturating_mul(std::mem::size_of::<f32>())
+}
+
 /// `MEMRA_FA_PART_ZERO=1`: zero every freshly grown fa partial bank. DEFAULT OFF,
 /// diagnostic only. See `fa_part_alloc` for what it discriminates and why it is not a fix.
 pub(crate) fn fa_part_zero_on() -> bool {
@@ -32748,6 +32777,30 @@ impl Engine {
                 Some(self.fa_part_alloc(o_len.max(2 * co), ml_len.max(2 * cm), co, cm)?);
         }
         Ok(())
+    }
+
+    /// The bytes the FA partial pool would allocate for one seqs launch of `rows` rows whose
+    /// deepest row attends `t_kv_max` keys, at this (n_head, n_head_kv, head_dim) geometry: 0
+    /// when the pool already holds that launch, else the grown o, m and l buffers
+    /// (`fa_seqs_attend`'s sizing at the deepest row's split rung, and `fa_part_pool_grow`'s
+    /// `max(needed, 2 x current)`; the old buffers are retired, never freed). An upper bound for
+    /// a pooled verify, whose shallower rows launch at their own rung (memra#1266).
+    pub fn fa_part_growth_bytes(
+        &self,
+        rows: usize,
+        t_kv_max: usize,
+        n_head: usize,
+        n_head_kv: usize,
+        head_dim: usize,
+    ) -> usize {
+        let current = self
+            .fa_part_pool
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map_or((0, 0), |pp| (pp.0.len(), pp.1.len()));
+        let sp = fa_split_keys(t_kv_max, n_head_kv);
+        fa_part_growth(rows, t_kv_max, sp, n_head, head_dim, current)
     }
 
     /// Pre-grow the fa partial pool for a dcw call at (n_head, bucket_max) geometry, from

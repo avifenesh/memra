@@ -10079,7 +10079,25 @@ fn prefix_yield_transient_reserve(
     reserve: usize,
     what: &str,
 ) -> (usize, usize) {
-    if px.total_bytes == 0 || device_is_unified(engine) {
+    if device_is_unified(engine) {
+        return (0, 0);
+    }
+    prefix_yield_to_reserve(engine, loaded, px, reserve, what)
+}
+
+/// The prefix rung of `prefix_yield_transient_reserve` without its discrete-card gate: when the
+/// effective free reading (fenced) is short of `reserve`, the oldest unleased entries go until
+/// the shortfall is freed, settled back to the driver. The pre-cohort reclaim runs it on unified
+/// memory too, where the reading is the allocatable one (memra#1266). Returns (entries evicted,
+/// bytes freed).
+fn prefix_yield_to_reserve(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    px: &mut PrefixCache,
+    reserve: usize,
+    what: &str,
+) -> (usize, usize) {
+    if px.total_bytes == 0 {
         return (0, 0);
     }
     let Some((free, _)) = effective_free_bytes(engine) else {
@@ -10170,41 +10188,111 @@ fn yield_prefix_for_prime(
 }
 
 /// Pre-cohort reclaims since process start (memra#1266): phase (a) passes where the reading
-/// could not fund the largest cohort member's verify round and evictable memory went first.
+/// could not fund the cohort's verify (`pre_cohort_need`) and evictable memory went first.
 static SPEC_COHORT_RECLAIMS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Phase (a) passes where the reading stayed short of `pre_cohort_need` with nothing evictable
+/// left (memra#1266): the state that comes right before a step OOM.
+static SPEC_COHORT_SHORT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub fn spec_cohort_reclaims_total() -> u64 {
     SPEC_COHORT_RECLAIMS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// The bytes the device is short of one verify round of `round` bytes plus the launch floor
-/// (`pooled_verify_floor_bytes`), against the allocatable reading (memra#1266); None when the
-/// reading funds it.
-fn spec_round_shortfall(allocatable: usize, round: usize, floor: usize) -> Option<usize> {
-    let need = round.saturating_add(floor);
-    (allocatable < need).then(|| need - allocatable)
+pub fn spec_cohort_short_total() -> u64 {
+    SPEC_COHORT_SHORT.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// What one pre-cohort reclaim gave back (memra#1266).
+/// What the cohort's verify needs funded before the cohorts step (memra#1266), from each
+/// member's `(verify round bytes, burst-entry snapshot bytes)`: the largest member's round (the
+/// memory cap verifies the others after it), every member's snapshot (each burst takes its own
+/// at entry and holds it to the end, so they are all live at the first verify) and
+/// `POOLED_VERIFY_MARGIN`. None without members.
+fn pre_cohort_need(members: &[(usize, usize)], margin: usize) -> Option<usize> {
+    let round = members.iter().map(|&(round, _)| round).max()?;
+    let snapshots = members
+        .iter()
+        .fold(0usize, |sum, &(_, snap)| sum.saturating_add(snap));
+    Some(round.saturating_add(snapshots).saturating_add(margin))
+}
+
+/// What one pre-cohort reclaim read and did (memra#1266).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct SpecRoundReclaim {
+    /// The fenced reading the ladder decided on; None when it did not run (funded or unreadable).
+    before: Option<usize>,
+    after: usize,
     prefix_entries: usize,
     prefix_bytes: usize,
     parked_sessions: usize,
+    /// Short of the need after both rungs.
+    still_short: bool,
+    /// The device could not be read: the ladder did nothing.
+    unreadable: bool,
+}
+
+/// THE PRE-COHORT RECLAIM'S LADDER (memra#1266), its device effects injected: `read` is the
+/// allocatable reading (None when the device cannot be read), `fence` drains the owning streams
+/// (in-flight frees read as used until then), `prefix_rung(need)` evicts unleased prefix
+/// entries until the reading covers `need` and returns (entries, bytes), `parked_rung` evicts the
+/// globally oldest parked session and answers whether there was one. An unreadable device does
+/// nothing. A reading that funds `need`, before or after the fence, does nothing more. Otherwise
+/// prefix entries go first, then parked sessions one at a time, each followed by a fence and a
+/// fresh reading, until the reading covers `need` or nothing evictable is left.
+fn spec_round_reclaim_ladder(
+    need: usize,
+    read: &mut dyn FnMut() -> Option<usize>,
+    fence: &mut dyn FnMut(),
+    prefix_rung: &mut dyn FnMut(usize) -> (usize, usize),
+    parked_rung: &mut dyn FnMut() -> bool,
+) -> SpecRoundReclaim {
+    let mut out = SpecRoundReclaim::default();
+    match read() {
+        None => {
+            out.unreadable = true;
+            return out;
+        }
+        Some(r) if r >= need => {
+            out.after = r;
+            return out;
+        }
+        Some(_) => {}
+    }
+    fence();
+    let before = match read() {
+        None => {
+            out.unreadable = true;
+            return out;
+        }
+        Some(r) if r >= need => {
+            out.after = r;
+            return out;
+        }
+        Some(r) => r,
+    };
+    out.before = Some(before);
+    let (entries, bytes) = prefix_rung(need);
+    out.prefix_entries = entries;
+    out.prefix_bytes = bytes;
+    while read().is_some_and(|r| r < need) && parked_rung() {
+        out.parked_sessions += 1;
+        fence();
+    }
+    out.after = read().unwrap_or(0);
+    out.still_short = out.after < need;
+    out
 }
 
 /// PRE-COHORT RECLAIM (memra#1266). Before the pooled cohorts step, the allocatable reading
-/// (`memra_engine::spec::pooled_verify_allocatable`: driver or unified-allocatable free plus
-/// the pool's cached blocks) must fund the largest member's verify round, `round` bytes
-/// (`spec_round_transient_bytes`, about 790 MB at K=5 on Qwen3.8-27B), plus the launch floor.
-/// The memory cap keeps a pooled forward within the reading; this keeps one member's round
-/// within it. Measured before it (RTX 5090 Laptop, agentic c = 2): a step OOM ended two streamed
-/// requests while 2,226 MiB of unleased prefix entries and two parked sessions stayed resident
-/// until the teardown. When short (read again after a fence, since in-flight frees read as
-/// used): unleased prefix entries go first, oldest first, until the shortfall is freed and
-/// settled (`prefix_yield_transient_reserve`), then parked sessions, globally oldest first, each
-/// followed by a fence and a fresh reading. One receipt line per reclaim. A device whose reading
-/// funds the round does nothing beyond the reading.
+/// (`memra_engine::spec::pooled_verify_reading`: driver or unified-allocatable free plus the
+/// pool's cached blocks) must fund `need` (`pre_cohort_need`: the largest member's verify round,
+/// every member's burst-entry snapshot and the verify margin). The memory cap keeps a pooled
+/// forward within the reading; this keeps the cohort's first serial round within it. Measured
+/// before it (RTX 5090 Laptop, agentic c = 2): a step OOM ended two streamed requests while
+/// 2,226 MiB of unleased prefix entries and two parked sessions stayed resident until the
+/// teardown. The ladder (`spec_round_reclaim_ladder`): unleased prefix entries first, oldest
+/// first, on unified memory too (`prefix_yield_to_reserve`), then parked sessions, globally
+/// oldest first. One receipt line per reclaim; a reclaim that stays short prints its line (the
+/// first 16, then every 256th) and counts it. An unreadable device does nothing.
 #[allow(clippy::too_many_arguments)]
 fn reclaim_for_spec_round<P: ParkedEntryAge, S: ParkedEntryAge, D: ParkedEntryAge>(
     engine: &Engine,
@@ -10214,56 +10302,51 @@ fn reclaim_for_spec_round<P: ParkedEntryAge, S: ParkedEntryAge, D: ParkedEntryAg
     spec_reuse: &mut HashMap<PoolKey, Vec<S>>,
     dspark_reuse: &mut HashMap<PoolKey, Vec<D>>,
     metrics: &mut ReuseMetrics,
-    round: usize,
+    need: usize,
 ) -> SpecRoundReclaim {
-    let floor = memra_engine::spec::pooled_verify_floor_bytes();
-    let reading = || memra_engine::spec::pooled_verify_allocatable(engine);
-    let mut out = SpecRoundReclaim::default();
-    if spec_round_shortfall(reading(), round, floor).is_none() {
-        return out;
-    }
-    synchronize_model_devices(engine, loaded, "pre-cohort reclaim check");
-    let before = reading();
-    if spec_round_shortfall(before, round, floor).is_none() {
-        return out;
-    }
-    let resident = px.total_bytes;
-    let (n, freed) = prefix_yield_transient_reserve(
-        engine,
-        loaded,
-        px,
-        round.saturating_add(floor),
-        "verify round of the largest cohort member",
+    let out = spec_round_reclaim_ladder(
+        need,
+        &mut || memra_engine::spec::pooled_verify_reading(engine),
+        &mut || synchronize_model_devices(engine, loaded, "pre-cohort reclaim"),
+        &mut |need| {
+            prefix_yield_to_reserve(
+                engine,
+                loaded,
+                px,
+                need,
+                "verify round of the cohort (pre-cohort reclaim)",
+            )
+        },
+        &mut || evict_oldest_parked(reuse, spec_reuse, dspark_reuse, metrics).is_some(),
     );
-    out.prefix_entries = n;
-    out.prefix_bytes = freed.min(resident);
-    while spec_round_shortfall(reading(), round, floor).is_some()
-        && evict_oldest_parked(reuse, spec_reuse, dspark_reuse, metrics).is_some()
-    {
-        out.parked_sessions += 1;
-        synchronize_model_devices(engine, loaded, "pre-cohort reclaim");
-    }
-    let after = reading();
+    let Some(before) = out.before else {
+        return out;
+    };
     if out.prefix_entries + out.parked_sessions > 0 {
         let total = SPEC_COHORT_RECLAIMS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
         eprintln!(
-            "[spec-pool] pre-cohort reclaim: allocatable {}MiB short of the largest member's \
-             verify round {}MiB + the {}MiB launch floor; evicted {} prefix entries ({}MiB) + {} \
-             parked sessions; allocatable {}MiB -> {}MiB{} (reclaims {total})",
+            "[spec-pool] pre-cohort reclaim: allocatable {}MiB short of the cohort's {}MiB \
+             (largest round, burst snapshots, margin); evicted {} prefix entries ({}MiB) + {} \
+             parked sessions; allocatable {}MiB -> {}MiB (reclaims {total})",
             before >> 20,
-            round >> 20,
-            floor >> 20,
+            need >> 20,
             out.prefix_entries,
             out.prefix_bytes >> 20,
             out.parked_sessions,
             before >> 20,
-            after >> 20,
-            if spec_round_shortfall(after, round, floor).is_some() {
-                "; still short, nothing evictable left"
-            } else {
-                ""
-            },
+            out.after >> 20,
         );
+    }
+    if out.still_short {
+        let short = SPEC_COHORT_SHORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        if short <= 16 || short.is_multiple_of(256) {
+            eprintln!(
+                "[spec-pool] pre-cohort reclaim still short: allocatable {}MiB of the cohort's \
+                 {}MiB with nothing evictable left (short passes {short})",
+                out.after >> 20,
+                need >> 20,
+            );
+        }
     }
     out
 }
@@ -25320,19 +25403,28 @@ pub fn run(
                         active[i].prime_service.peer_quantum = owes;
                     }
                     // PRE-COHORT RECLAIM (memra#1266): the newcomers primed above, so the cohorts
-                    // step on what they left. Each member's round needs its own verify bytes even
-                    // when the memory cap verifies it serially; when the reading cannot fund the
-                    // largest member's round, evictable memory goes before the step, not after it
-                    // fails (`reclaim_for_spec_round`).
-                    let largest_round = active
+                    // step on what they left. The cohort's first verify needs the largest member's
+                    // round (the memory cap verifies the others after it) on top of every member's
+                    // burst-entry snapshot; when the reading cannot fund that, evictable memory
+                    // goes before the step, not after it fails (`reclaim_for_spec_round`).
+                    let members: Vec<(usize, usize)> = active
                         .iter()
                         .enumerate()
                         .filter(|&(i, s)| {
                             !finished.contains(&i) && spec_pool_candidate(s, &loaded[&s.model])
                         })
-                        .map(|(_, s)| loaded[&s.model].model.spec_round_transient_bytes(s.spec_k))
-                        .max();
-                    if let Some(round) = largest_round {
+                        .map(|(_, s)| {
+                            let model = &loaded[&s.model].model;
+                            let pos = s.spec.as_ref().map_or(0, |sp| sp.kv_position());
+                            (
+                                model.spec_round_bytes(&engine, s.spec_k, pos),
+                                model.spec_burst_snapshot_bytes(),
+                            )
+                        })
+                        .collect();
+                    if let Some(need) =
+                        pre_cohort_need(&members, memra_engine::spec::POOLED_VERIFY_MARGIN)
+                    {
                         let reclaim = reclaim_for_spec_round(
                             &engine,
                             &loaded,
@@ -25341,7 +25433,7 @@ pub fn run(
                             &mut spec_reuse,
                             &mut dspark_reuse,
                             &mut reuse_metrics,
-                            round,
+                            need,
                         );
                         n_prefix_headroom_evictions += reclaim.prefix_entries as u64;
                     }
@@ -36608,6 +36700,7 @@ impl memra_engine::spec::PooledPlainRiders for PlainRiderSet<'_, '_> {
                         id: k,
                         token: t,
                         samp: devsample_meta(s),
+                        pos: s.cache.as_ref().map_or(0, |c| c.pos),
                     });
                 }
             }
@@ -60972,35 +61065,125 @@ mod windowless_drafter_window_tests {
     }
 }
 
-/// memra#1266: the pre-cohort reclaim's trigger and where it sits.
+/// memra#1266: the pre-cohort reclaim's need, its ladder behind an injected reading, and where
+/// it sits.
 #[cfg(test)]
 mod pre_cohort_reclaim_1266_tests {
     use super::*;
 
     const MIB: usize = 1 << 20;
+    /// Qwen3.8-27B: one verify column (and one burst-entry snapshot), and a K=5 round.
+    const COL: usize = 48 * (30_720 + 786_432) * 4;
+    const K5: usize = 5 * COL + 2 * 6 * 248_320 * 4;
 
+    /// The need funds the largest round, every member's burst snapshot and the margin. The
+    /// measured pair (memra#1266 diagnostic boot): 1,915 MiB before the cohort, 1,616 MiB at
+    /// its first verify after two members' snapshots (+299 MiB used).
     #[test]
-    fn the_reclaim_fires_only_when_the_reading_cannot_fund_the_round() {
-        let floor = memra_engine::spec::pooled_verify_floor_bytes();
-        // About 790 MB: one K=5 verify round on Qwen3.8-27B.
-        let round = 760 * MIB;
-        assert_eq!(spec_round_shortfall(round + floor, round, floor), None);
-        assert_eq!(
-            spec_round_shortfall(round + floor - 1, round, floor),
-            Some(1)
-        );
-        // The failing tick's reading before the cohorts: 1,915 MiB funds one K=5 round, so
-        // the reclaim stays out and the memory cap verifies the second member after the first.
-        assert_eq!(spec_round_shortfall(1_915 * MIB, round, floor), None);
-        assert_eq!(
-            spec_round_shortfall(700 * MIB, round, floor),
-            Some(round + floor - 700 * MIB)
-        );
+    fn the_need_covers_the_round_and_every_burst_snapshot() {
+        let margin = memra_engine::spec::POOLED_VERIFY_MARGIN;
+        assert_eq!(pre_cohort_need(&[], margin), None);
+        let k2 = 2 * COL + 2 * 3 * 248_320 * 4;
+        let need = pre_cohort_need(&[(K5, COL), (k2, COL)], margin).unwrap();
+        assert_eq!(need, K5 + 2 * COL + margin);
+        // Two K=5 members: 1,314 MiB.
+        let need = pre_cohort_need(&[(K5, COL), (K5, COL)], margin).unwrap();
+        assert_eq!(need >> 20, 1_314);
+        // The measured pair: 1,915 MiB funds it, and after the two snapshots the 1,616 MiB the
+        // first verify found still holds one K=5 round and the margin.
+        assert!(1_915 * MIB >= need);
+        assert_eq!((1_915 * MIB - 2 * COL) >> 20, 1_615);
+        assert!(1_915 * MIB - 2 * COL >= K5 + margin);
+        // The reviewer's band: 1,200 MiB is at least one round and the margin (main's trigger
+        // would not fire), but not the round on top of two snapshots: this one reclaims.
+        assert!(1_200 * MIB >= K5 + margin);
+        assert!(1_200 * MIB < need);
     }
 
-    /// The census: the Cohorts pass funds its largest member's round before it forms the cohorts
-    /// (after the newcomers primed), and the reclaim decides through `spec_round_shortfall` on
-    /// the allocatable reading, prefix entries before parked sessions.
+    /// A device the ladder drives: a reading that each rung raises, and the order it ran in.
+    struct Fake {
+        reading: Option<usize>,
+        prefix: usize,
+        parked: Vec<usize>,
+        log: Vec<&'static str>,
+        fences: usize,
+    }
+
+    fn run(f: &mut Fake, need: usize) -> SpecRoundReclaim {
+        let f = std::cell::RefCell::new(f);
+        spec_round_reclaim_ladder(
+            need,
+            &mut || f.borrow().reading,
+            &mut || f.borrow_mut().fences += 1,
+            &mut |need| {
+                let mut f = f.borrow_mut();
+                f.log.push("prefix");
+                let r = f.reading.unwrap_or(0);
+                let freed = need.saturating_sub(r).min(f.prefix);
+                f.prefix -= freed;
+                f.reading = Some(r + freed);
+                (usize::from(freed > 0), freed)
+            },
+            &mut || {
+                let mut f = f.borrow_mut();
+                f.log.push("parked");
+                match f.parked.pop() {
+                    Some(b) => {
+                        f.reading = f.reading.map(|r| r + b);
+                        true
+                    }
+                    None => false,
+                }
+            },
+        )
+    }
+
+    fn fake(reading: Option<usize>, prefix: usize, parked: &[usize]) -> Fake {
+        Fake {
+            reading,
+            prefix,
+            parked: parked.to_vec(),
+            log: Vec::new(),
+            fences: 0,
+        }
+    }
+
+    #[test]
+    fn the_ladder_evicts_prefix_first_then_parked_sessions() {
+        // Funded: nothing runs, not even the fence.
+        let mut f = fake(Some(1_200), 500, &[300]);
+        let r = run(&mut f, 1_000);
+        assert_eq!(
+            (r.before, r.after, f.fences, f.log.len()),
+            (None, 1_200, 0, 0)
+        );
+        // Unreadable: nothing runs; the device's parked sessions stay.
+        let mut f = fake(None, 500, &[300]);
+        let r = run(&mut f, 1_000);
+        assert!(r.unreadable && f.log.is_empty() && f.parked.len() == 1);
+        // The prefix rung covers the shortfall: no parked session goes.
+        let mut f = fake(Some(700), 500, &[300]);
+        let r = run(&mut f, 1_000);
+        assert_eq!(f.log, ["prefix"]);
+        assert_eq!(
+            (r.prefix_bytes, r.parked_sessions, r.after, r.still_short),
+            (300, 0, 1_000, false)
+        );
+        // Prefix first, then parked sessions one at a time until the reading covers the need.
+        let mut f = fake(Some(700), 100, &[150, 150, 150]);
+        let r = run(&mut f, 1_000);
+        assert_eq!(f.log, ["prefix", "parked", "parked"]);
+        assert_eq!((r.parked_sessions, r.after, f.parked.len()), (2, 1_100, 1));
+        // Nothing evictable: the ladder reports it still short.
+        let mut f = fake(Some(700), 0, &[]);
+        let r = run(&mut f, 1_000);
+        assert_eq!((r.before, r.after, r.still_short), (Some(700), 700, true));
+    }
+
+    /// The census: the Cohorts pass funds the cohort's need before it forms the cohorts (after
+    /// the newcomers primed), the need is `pre_cohort_need` over every candidate's round and
+    /// burst snapshot, and the reclaim runs the ladder on the allocatable reading with the prefix
+    /// rung (unified memory included) before the parked one.
     #[test]
     fn the_cohorts_pass_reclaims_before_it_forms_cohorts() {
         let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
@@ -61030,24 +61213,30 @@ mod pre_cohort_reclaim_1266_tests {
             pass < reclaim && reclaim < cohorts,
             "the reclaim runs before the cohorts form"
         );
-        assert_eq!(
-            count(concat!(
-                ".map(|(_, s)| loaded[&s.model].model",
-                ".spec_round_transient_bytes(s.spec_k)) .max();"
-            )),
-            1,
-            "the reclaim funds the largest member's round"
-        );
-        // The function: the allocatable reading, fenced before deciding, prefix entries first.
+        for needle in [
+            concat!(
+                "model.spec_round_bytes(&engine, s.spec_k, pos), ",
+                "model.spec_burst_snapshot_bytes(),"
+            ),
+            concat!(
+                "if let Some(need) = ",
+                "pre_cohort_need(&members, memra_engine::spec::POOLED_VERIFY_MARGIN) {"
+            ),
+        ] {
+            assert_eq!(count(needle), 1, "the Cohorts pass lost: {needle}");
+        }
         let raw = &src[src.find("fn reclaim_for_spec_round<").expect("the reclaim")..];
         let body = squash(&raw[..raw.find("\n}\n").unwrap()]);
+        let ladder = body.find("spec_round_reclaim_ladder(").unwrap();
         let read = body
-            .find("memra_engine::spec::pooled_verify_allocatable(engine)")
+            .find("memra_engine::spec::pooled_verify_reading(engine)")
             .expect("the allocatable reading");
-        let fence = body.find("synchronize_model_devices(").unwrap();
-        let prefix = body.find("prefix_yield_transient_reserve(").unwrap();
+        let prefix = body.find("prefix_yield_to_reserve(").unwrap();
         let parked = body.find("evict_oldest_parked(").unwrap();
-        assert!(read < fence && fence < prefix && prefix < parked);
-        assert!(body.contains("spec_round_shortfall(reading(), round, floor).is_none()"));
+        assert!(ladder < read && read < prefix && prefix < parked);
+        // The prefix rung carries no unified-memory gate of its own.
+        let raw = &src[src.find("fn prefix_yield_to_reserve(").unwrap()..];
+        let rung = &raw[..raw.find("\n}\n").unwrap()];
+        assert!(!rung.contains("device_is_unified"));
     }
 }
