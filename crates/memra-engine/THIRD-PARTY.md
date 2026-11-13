@@ -40,8 +40,8 @@ SOFTWARE.
 `third_party/cutlass/` is NVIDIA CUTLASS v4.8.1 (https://github.com/NVIDIA/cutlass, tag commit
 `2c85f497547eb441f0fe80bfb0fb2e6f9add1719`): its `include/` and `tools/util/include/` subtrees and
 `LICENSE.txt`, copied byte for byte (`third_party/cutlass/README.md`). The CUTLASS units under `cu/`
-(`dsv41_cutlass.cu`, built on the 120a family, and the opt-in `cutlass_fp4_sm120.cu` and
-`dsv4_dense_cutlass.cu`) compile against it. CUTLASS is distributed under the BSD-3-Clause license; its full text is
+(`dsv41_cutlass.cu`, built on the 120a family, and the opt-in `cutlass_fp4_sm120.cu`) compile
+against it. CUTLASS is distributed under the BSD-3-Clause license; its full text is
 `third_party/cutlass/LICENSE.txt`:
 
 ```

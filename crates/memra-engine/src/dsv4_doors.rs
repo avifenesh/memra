@@ -1055,11 +1055,6 @@ mod tests {
             "retired gate selector, read only to refuse with the placement it meant",
         ),
         ("MEMRA_DSV4_BENCH_PROFILE", "bench profile selector"),
-        (
-            "MEMRA_DSV4_CUTLASS",
-            "build-time archive switch; when the archive is linked the dense \
-             tensor-core path IS the code, and no serving process reads it",
-        ),
         ("MEMRA_DSV4_DECODE_PATH", "program selector"),
         ("MEMRA_DSV4_DENSE_ARM", "program selector"),
         ("MEMRA_DSV4_DOTS_ARM", "program selector"),

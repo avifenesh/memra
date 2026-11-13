@@ -210,8 +210,8 @@ check "cause4: a companion source the build script names but the tree lacks is r
     "$(companion_fixture "" memra_cpu_experts_renamed.cpp)"
 
 # ---------------------------------------------------------------------------
-# cause 5: a build script. crates/*/build.rs reads build-time doors (MEMRA_DSV4_CUTLASS links a
-# whole tensor-core archive) and sits beside src/, not in it, so a src-only census let
+# cause 5: a build script. crates/*/build.rs reads build-time doors (MEMRA_DSV4_CUTLASS, removed
+# 2026-11-13, linked a whole tensor-core archive) and sits beside src/, not in it, so a src-only census let
 # MEMRA_DSV4_CUTLASS reach KERNELS.md with no docs/FLAGS.md row. Literal and const-indirected.
 # ---------------------------------------------------------------------------
 BUILD_READ='fn main() {

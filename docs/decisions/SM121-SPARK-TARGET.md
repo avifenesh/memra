@@ -26,10 +26,11 @@ the engine):
   block-FP8 MMQ translation units are the real ones) and takes every 120a-keyed default. The
   ~30 runtime sites that compare against `"120a"` did not change.
 
-The two CUTLASS archives (`MEMRA_CUTLASS`, `MEMRA_DSV4_CUTLASS`) compiled with a fixed sm_120a
-gencode, so they refused every target other than `120a`. Since 2026-11-11 they compile against the
-vendored CUTLASS v4.8.1 (`crates/memra-engine/third_party/cutlass`) for the build's own target, and
-refuse every family other than `120a` (CUTLASS builds its SM120 kernels for sm_121a since 4.2.0). memra-probe follows the same target rule
+The CUTLASS archives (`MEMRA_CUTLASS`, and `MEMRA_DSV4_CUTLASS` until its removal on 2026-11-13)
+compiled with a fixed sm_120a gencode, so they refused every target other than `120a`. Since 2026-11-11
+`MEMRA_CUTLASS` compiles against the vendored CUTLASS v4.8.1 (`crates/memra-engine/third_party/cutlass`) for
+the build's own target, and refuses every family other than `120a` (CUTLASS builds its SM120 kernels for
+sm_121a since 4.2.0). memra-probe follows the same target rule
 for its own fatbin.
 
 ## Rejected: one `120f` family binary for 12.0 and 12.1

@@ -531,7 +531,7 @@ jobs:
         id: dense_controls
         if: ${{ needs.changes.result != 'success' || needs.changes.outputs.engine != 'false' }}
         run: |
-          cargo test --release -p memra-engine --bin dsv4_tp_ep_sampled_perf_gate --bin dsv4_compose_cadence_dense_gate --bin dsv4_hc_dot_split_gate --bin dsv4-dense-arm-ab
+          cargo test --release -p memra-engine --bin dsv4_tp_ep_sampled_perf_gate --bin dsv4_compose_cadence_dense_gate --bin dsv4_hc_dot_split_gate
           set -euo pipefail
           CARGO_TARGET_DIR="$PWD/target" bash tools/test-dsv4-dense-control-policy.sh | tee "$RUNNER_TEMP/dense-control-policy.log"
           python3 - "$RUNNER_TEMP/dense-control-policy.log" "$GITHUB_OUTPUT" <<'PY'

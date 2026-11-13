@@ -299,7 +299,7 @@ numeric class.
 
 | Gate binary | Placement | Why |
 | --- | --- | --- |
-| `dsv4-ar-phase-gate`, `dsv4_compose_cadence_dense_gate`, `dsv4_dense_exact_tail_gate`, `dsv4_dense_fast_gate`, `dsv4_hc_dot_split_gate`, `dsv4_kv_split_gate`, `dsv4_launch_boundary_gate`, `dsv4_tp_replay_long_gate`, `dsv4_park_boundary_gate`, `dsv4-dense-arm-ab` | `tp_ep` | The served placement; each checks or measures one mechanism on it, and none alone covers the served program. Receipts before memra #710 are PP-2 cells; the park red arm owes one `tp_ep` run against a reverted driver. |
+| `dsv4-ar-phase-gate`, `dsv4_compose_cadence_dense_gate`, `dsv4_dense_exact_tail_gate`, `dsv4_dense_fast_gate`, `dsv4_hc_dot_split_gate`, `dsv4_kv_split_gate`, `dsv4_launch_boundary_gate`, `dsv4_tp_replay_long_gate`, `dsv4_park_boundary_gate` | `tp_ep` | The served placement; each checks or measures one mechanism on it, and none alone covers the served program. Receipts before memra #710 are PP-2 cells; the park red arm owes one `tp_ep` run against a reverted driver. |
 | `dsv4-gpu-dspark-gate`, `dsv4_tp_ep_verify_gate` | `--placement=tp_ep\|tp_ep_replicated\|pp` | `tp_ep` first; `pp` is the PP-2 (DSpark) or control (verify) cell. |
 | `dsv4_rows_gate` | `--placement=tp_ep\|pp` | TP/EP B-row groups need attention TP2, so there is no replicated cell. |
 | `dsv4_tp_ep_gate`, `dsv4_tp_ep_sampled_perf_gate` | `--placement=tp_ep\|tp_ep_replicated` | TP/EP-only gates; the full-token replay cells need `tp_ep`. |
@@ -309,7 +309,7 @@ numeric class.
 | `dsv4_long_decode_gate`, `dsv4_chunk_sweep_gate`, `dsv4_coupled_proposal_gate`, `dsv4_dense_census`, `dsv4_dense_tile_gate`, `dsv4_prefill_work_gate`, `dsv4_matrix_program_gate`, `dsv4_wide_prefill_gate` | `pp` | Historical instruments that pin the doors they were taken with; a TP/EP cell is a new cell. `dsv4_wide_prefill_gate` stops at its `grouped=true` arm at HEAD. The served long-decode cell is `dsv4_tp_replay_long_gate`. |
 | `dsv4-gpu-gate`, `dsv4-gpu-greedy`, `dsv4-gpu-decode-gate`, `dsv4-decode-probe`, `dsv4-native-gemm-gate`, `dsv4-gpu-tf-gate`, `dsv4-gpu-sampled-gate`, `dsv4-drafted-corpus`, `dsv4-decode-bench`, `dsv4_host_cache_gate`, `dsv4_grouped_prefill_gate` | `pp` named; **no runnable cell at HEAD** | Their monolithic or grouped prefill refuses the matrix expert program ("matrix request program requires chunked prefill"), and none arms the reference executor. |
 
-`dsv4-hc-grid-gate`, `dsv4-dense-family-bench`, `dsv4_q_layout_gate`, `dsv4_sampler_sort_gate` and
+`dsv4-hc-grid-gate`, `dsv4_q_layout_gate`, `dsv4_sampler_sort_gate` and
 `dsv4_http_prompt_pack` load no model and have no placement. The cells that refuse at HEAD refuse
 because of the expert program (the loaded default since memra #461), not the placement. Whether
 each is ported (to chunked prefill, or by arming the reference executor before load as
