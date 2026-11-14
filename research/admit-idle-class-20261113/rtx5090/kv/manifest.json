@@ -1,10 +1,10 @@
 {
   "status": "complete",
-  "source": "43a727db3c8dccb1c72de9d8dedb6769521dd3e5",
-  "binary_sha256": "a414c93f29b8bbd49d91b9c6c9d601e8ffe48bdb9324fe2ddb3eac3c5886edb4",
+  "source": "244347983a7bf996e384c66de6a32d309a752146",
+  "binary_sha256": "4f22a7ce85256f995b03338d39682a43ee54cea813c94385cb6306fd39f8ae2b",
   "model_sha256": "0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c",
   "phase": "kv",
-  "server_pid": 164667,
+  "server_pid": 1834776,
   "hardware": "NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 615.71.09, 24463 MiB",
   "server_exit": -2,
   "results": [
@@ -13,14 +13,14 @@
       "status": 200,
       "headers": {
         "content-type": "application/json",
-        "x-request-id": "cmpl-aafa5ef14f5c28d434eaf037d17f0c36",
+        "x-request-id": "cmpl-3c193e9bd998faeacad65c916eae1bce",
         "x-ratelimit-limit": "8",
         "x-ratelimit-remaining": "7",
         "x-ratelimit-reset": "0",
-        "content-length": "152",
-        "date": "Sat, 14 Nov 2026 02:16:57 GMT"
+        "content-length": "151",
+        "date": "Sat, 14 Nov 2026 07:12:31 GMT"
       },
-      "started": 122803.044495723,
+      "started": 140537.346359024,
       "source_log_start": 23,
       "disconnected": false,
       "body": {
@@ -35,16 +35,16 @@
         "n_tokens": 3,
         "prompt_tokens": 6,
         "cached_tokens": 0,
-        "elapsed_s": 0.184311934
+        "elapsed_s": 0.13440851
       },
-      "ended": 122803.273102936,
+      "ended": 140537.489192048,
       "source_log_end": 43,
-      "id": "cmpl-aafa5ef14f5c28d434eaf037d17f0c36",
+      "id": "cmpl-3c193e9bd998faeacad65c916eae1bce",
       "callbacks": [
         {
           "tag": "CHOICE_OPEN",
           "value": {
-            "id": "cmpl-aafa5ef14f5c28d434eaf037d17f0c36",
+            "id": "cmpl-3c193e9bd998faeacad65c916eae1bce",
             "model": "fixture",
             "tenant": "default",
             "max_tokens": 8,
@@ -56,16 +56,16 @@
         {
           "tag": "CHOICE_PROMPT",
           "value": {
-            "id": "cmpl-aafa5ef14f5c28d434eaf037d17f0c36",
+            "id": "cmpl-3c193e9bd998faeacad65c916eae1bce",
             "prompt": 6,
             "cached": 0
           },
-          "line": 28
+          "line": 29
         },
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-aafa5ef14f5c28d434eaf037d17f0c36",
+            "id": "cmpl-3c193e9bd998faeacad65c916eae1bce",
             "output": 1
           },
           "line": 36
@@ -73,7 +73,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-aafa5ef14f5c28d434eaf037d17f0c36",
+            "id": "cmpl-3c193e9bd998faeacad65c916eae1bce",
             "output": 2
           },
           "line": 38
@@ -81,7 +81,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-aafa5ef14f5c28d434eaf037d17f0c36",
+            "id": "cmpl-3c193e9bd998faeacad65c916eae1bce",
             "output": 3
           },
           "line": 39
@@ -89,7 +89,7 @@
         {
           "tag": "CHOICE_TERMINAL",
           "value": {
-            "id": "cmpl-aafa5ef14f5c28d434eaf037d17f0c36",
+            "id": "cmpl-3c193e9bd998faeacad65c916eae1bce",
             "kind": "complete",
             "status": 200,
             "code": "",
@@ -105,7 +105,7 @@
         {
           "tag": "CHOICE_DROP",
           "value": {
-            "id": "cmpl-aafa5ef14f5c28d434eaf037d17f0c36",
+            "id": "cmpl-3c193e9bd998faeacad65c916eae1bce",
             "terminal": true,
             "prompt": 6,
             "cached": 0,
@@ -129,29 +129,29 @@
         "x-ratelimit-limit": "8",
         "x-ratelimit-remaining": "0",
         "x-ratelimit-reset": "1",
-        "x-request-id": "cmpl-a3ba5bc7fafda7481777035f24af7bc4",
-        "content-length": "306",
-        "date": "Sat, 14 Nov 2026 02:16:57 GMT"
+        "x-request-id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
+        "content-length": "321",
+        "date": "Sat, 14 Nov 2026 07:12:31 GMT"
       },
-      "started": 122803.638741801,
+      "started": 140537.779018299,
       "source_log_start": 43,
       "disconnected": false,
       "body": {
         "error": {
-          "message": "request context 3142 fits this model's KV capacity but not the server's free memory right now; the largest context that fits now is 712 tokens. Retry after the Retry-After delay, or send a shorter prompt or a smaller max_tokens",
+          "message": "request context 3142 fits this model's KV capacity but not the server's free memory right now; the largest prompt plus max_tokens that fits now is 659 tokens. Retry after the Retry-After delay, or send a shorter prompt or a smaller max_tokens",
           "type": "server_error",
           "param": null,
           "code": "overloaded"
         }
       },
-      "ended": 122803.642220548,
+      "ended": 140537.780928071,
       "source_log_end": 60,
-      "id": "cmpl-a3ba5bc7fafda7481777035f24af7bc4",
+      "id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
       "callbacks": [
         {
           "tag": "CHOICE_OPEN",
           "value": {
-            "id": "cmpl-a3ba5bc7fafda7481777035f24af7bc4",
+            "id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
             "model": "fixture",
             "tenant": "default",
             "max_tokens": 24576,
@@ -163,7 +163,7 @@
         {
           "tag": "CHOICE_TERMINAL",
           "value": {
-            "id": "cmpl-a3ba5bc7fafda7481777035f24af7bc4",
+            "id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
             "kind": "reject",
             "status": 503,
             "code": "overloaded",
@@ -179,7 +179,7 @@
         {
           "tag": "CHOICE_DROP",
           "value": {
-            "id": "cmpl-a3ba5bc7fafda7481777035f24af7bc4",
+            "id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
             "terminal": true,
             "prompt": 0,
             "cached": 0,
@@ -198,14 +198,14 @@
       "status": 200,
       "headers": {
         "content-type": "application/json",
-        "x-request-id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+        "x-request-id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
         "x-ratelimit-limit": "8",
         "x-ratelimit-remaining": "0",
         "x-ratelimit-reset": "1",
-        "content-length": "888",
-        "date": "Sat, 14 Nov 2026 02:16:57 GMT"
+        "content-length": "887",
+        "date": "Sat, 14 Nov 2026 07:12:32 GMT"
       },
-      "started": 122803.773383791,
+      "started": 140537.894745094,
       "source_log_start": 60,
       "disconnected": false,
       "body": {
@@ -260,20 +260,20 @@
           "prompt_tokens_details": {
             "cached_tokens": 0
           },
-          "elapsed_s": 0.226464874
+          "elapsed_s": 0.21949657
         },
-        "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
-        "created": 1794622617,
-        "system_fingerprint": "memra-0.141.1-408ad3a2d420"
+        "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
+        "created": 1794640351,
+        "system_fingerprint": "memra-0.141.1-f41206bfaadf"
       },
-      "ended": 122804.004550625,
+      "ended": 140538.11861829,
       "source_log_end": 148,
-      "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+      "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
       "callbacks": [
         {
           "tag": "CHOICE_OPEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "model": "fixture",
             "tenant": "default",
             "max_tokens": 64,
@@ -285,7 +285,7 @@
         {
           "tag": "CHOICE_PROMPT",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "prompt": 6,
             "cached": 0
           },
@@ -294,7 +294,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 1
           },
           "line": 78
@@ -302,7 +302,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 2
           },
           "line": 79
@@ -310,7 +310,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 3
           },
           "line": 80
@@ -318,7 +318,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 4
           },
           "line": 81
@@ -326,7 +326,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 5
           },
           "line": 82
@@ -334,7 +334,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 6
           },
           "line": 83
@@ -342,7 +342,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 7
           },
           "line": 84
@@ -350,7 +350,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 8
           },
           "line": 85
@@ -358,7 +358,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 9
           },
           "line": 86
@@ -366,7 +366,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 10
           },
           "line": 87
@@ -374,7 +374,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 11
           },
           "line": 88
@@ -382,7 +382,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 12
           },
           "line": 89
@@ -390,7 +390,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 13
           },
           "line": 90
@@ -398,7 +398,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 14
           },
           "line": 91
@@ -406,7 +406,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 15
           },
           "line": 92
@@ -414,7 +414,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 16
           },
           "line": 93
@@ -422,7 +422,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 17
           },
           "line": 95
@@ -430,7 +430,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 18
           },
           "line": 96
@@ -438,7 +438,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 19
           },
           "line": 97
@@ -446,7 +446,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 20
           },
           "line": 98
@@ -454,7 +454,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 21
           },
           "line": 99
@@ -462,7 +462,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 22
           },
           "line": 100
@@ -470,7 +470,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 23
           },
           "line": 101
@@ -478,7 +478,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 24
           },
           "line": 102
@@ -486,7 +486,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 25
           },
           "line": 103
@@ -494,7 +494,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 26
           },
           "line": 104
@@ -502,7 +502,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 27
           },
           "line": 105
@@ -510,7 +510,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 28
           },
           "line": 106
@@ -518,7 +518,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 29
           },
           "line": 107
@@ -526,7 +526,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 30
           },
           "line": 108
@@ -534,7 +534,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 31
           },
           "line": 109
@@ -542,7 +542,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 32
           },
           "line": 110
@@ -550,7 +550,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 33
           },
           "line": 111
@@ -558,7 +558,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 34
           },
           "line": 112
@@ -566,7 +566,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 35
           },
           "line": 113
@@ -574,7 +574,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 36
           },
           "line": 114
@@ -582,7 +582,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 37
           },
           "line": 115
@@ -590,7 +590,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 38
           },
           "line": 116
@@ -598,7 +598,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 39
           },
           "line": 117
@@ -606,7 +606,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 40
           },
           "line": 118
@@ -614,7 +614,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 41
           },
           "line": 119
@@ -622,7 +622,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 42
           },
           "line": 120
@@ -630,7 +630,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 43
           },
           "line": 121
@@ -638,7 +638,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 44
           },
           "line": 122
@@ -646,7 +646,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 45
           },
           "line": 123
@@ -654,7 +654,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 46
           },
           "line": 124
@@ -662,7 +662,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 47
           },
           "line": 125
@@ -670,7 +670,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 48
           },
           "line": 126
@@ -678,7 +678,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 49
           },
           "line": 127
@@ -686,7 +686,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 50
           },
           "line": 128
@@ -694,7 +694,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 51
           },
           "line": 129
@@ -702,7 +702,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 52
           },
           "line": 130
@@ -710,7 +710,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 53
           },
           "line": 131
@@ -718,7 +718,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 54
           },
           "line": 132
@@ -726,7 +726,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 55
           },
           "line": 133
@@ -734,7 +734,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 56
           },
           "line": 134
@@ -742,7 +742,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 57
           },
           "line": 135
@@ -750,7 +750,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 58
           },
           "line": 136
@@ -758,7 +758,7 @@
         {
           "tag": "CHOICE_TOKEN",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "output": 59
           },
           "line": 137
@@ -766,7 +766,7 @@
         {
           "tag": "CHOICE_TERMINAL",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "kind": "complete",
             "status": 200,
             "code": "",
@@ -782,7 +782,7 @@
         {
           "tag": "CHOICE_DROP",
           "value": {
-            "id": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+            "id": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
             "terminal": true,
             "prompt": 6,
             "cached": 0,
@@ -793,7 +793,7 @@
       ],
       "worker_rows": [
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 0,
           "seed": 73,
           "prompt": 6,
@@ -812,7 +812,7 @@
           "think": "Default"
         },
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 1,
           "seed": 74,
           "prompt": 6,
@@ -831,7 +831,7 @@
           "think": "Default"
         },
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 2,
           "seed": 75,
           "prompt": 6,
@@ -850,7 +850,7 @@
           "think": "Default"
         },
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 3,
           "seed": 76,
           "prompt": 6,
@@ -869,7 +869,7 @@
           "think": "Default"
         },
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 4,
           "seed": 77,
           "prompt": 6,
@@ -888,7 +888,7 @@
           "think": "Default"
         },
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 5,
           "seed": 78,
           "prompt": 6,
@@ -907,7 +907,7 @@
           "think": "Default"
         },
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 6,
           "seed": 79,
           "prompt": 6,
@@ -926,7 +926,7 @@
           "think": "Default"
         },
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 7,
           "seed": 80,
           "prompt": 6,
@@ -947,38 +947,38 @@
       ],
       "prime_events": [
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 0,
           "rows": 1
         },
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 0,
           "rows": 1
         },
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 0,
           "rows": 1
         },
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 0,
           "rows": 1
         },
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 0,
           "rows": 1
         },
         {
-          "group": "cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8",
+          "group": "cmpl-5d151072cf35c3ab2b5cc226b0318a49",
           "index": 0,
           "rows": 1
         }
       ],
       "fork_lines": [
-        "[n-choice-prefill] group=cmpl-3bb0f3dd0ba9bef73fb967b7e34ed7a8 choices=8 prompt=6 cached=0 copies=7 bytes=52780032 leader=0"
+        "[n-choice-prefill] group=cmpl-5d151072cf35c3ab2b5cc226b0318a49 choices=8 prompt=6 cached=0 copies=7 bytes=52780032 leader=0"
       ],
       "masked_steps": 0
     }
@@ -987,25 +987,25 @@
   "helper_sha256": {
     "native_choices.py": "7b2dbe5ee33404bc6c9e89453ed0b67c0340ca214bc26920dd0ae685e808ccd5",
     "choice_verifier.py": "b2b35b2339579d704788887155b28ca95d6abc8993bb6630f4ea62cd9b6b7b83",
-    "replay_native_choices.py": "e29f315842b21b930fdb392f85cae4d678a5d093808f558b40edab6f24e40f89"
+    "replay_native_choices.py": "ea99afffaae8f723d8ccb4723b7f8e551f4424ec261684d6333a13a58abcd177"
   },
   "files": {
-    "pressure.json": "6103500d9fa02d876d9de681dc62611eccd314bcbc615dd8f1b08aa877746bc8",
+    "pressure.json": "4ccd86ab53e91786c9c37a7f4d76aec18fa5b3caa878deb8489b304f0443072b",
     "metadata.toml": "9702a9b331f50a38b798c18531dccfbd22abc277560cf70c322c0b3f091c2380",
-    "callback-events.json": "bfca1602cefe15e487de0e69bd89808b5ec9ee07b23363d0baef32b35d3983ce",
-    "server.log": "ea9cdaf03afb55efb63fd6e6417f7b0a9f29bfdae3e37717f07c1a022b881a0f",
+    "callback-events.json": "70804347ba66fc1a2a981205fcbf6b5210ed95d10b62e1f460259d1e4d007c2c",
+    "server.log": "aa690e2db5a97607f4d696e422e9ecb3020af398bd8a53bbd746e0a2900e0a40",
     "env.json": "089462258c7732e16a0fc26493f732e17638ced3626fe562c668612eeb552121",
     "kv-warm/request.json": "681f058ab81b038d05556a9a5e60761cd26513a2eaccccba59cad1967092e451",
-    "kv-warm/client.json": "c600bb31c7eee7dac3c66f3daf85cb8d7b1c32a61c6632964e7e0e5161ed3810",
-    "kv-warm/wire.json": "613085e23c966c33d50acb3fc638ccf7fa307de483c2e9da1937deee03c35e94",
-    "kv-warm/headers.json": "0fc20ff8867a6656b870e6150f2cca2253ce26d3143a09639e2fedd3583cfdb1",
+    "kv-warm/client.json": "d56c2dd54b2b56b617bf0e78429310e9a6e94884ae9a5a5a2367bc4ce6bf4464",
+    "kv-warm/wire.json": "c756ca26aba71eaaad00b178f8deb67aeb5a4d73b91854afeacc6cf86aa63a23",
+    "kv-warm/headers.json": "f5bcd11a4bb912bc4f6e723b2fd24709057804e38e2ab121e2282ea969d78e22",
     "kv/request.json": "9604201bdc0b94ce53863366b15a35c0d0a13a9dcec2b0317560c450b25e19fa",
-    "kv/client.json": "a84b4294ccfdcdda1a193ea8605f98bd3f38203ed2262032d5be54987d1931a9",
-    "kv/wire.json": "e82b9b8e70fb961740d53246a5efd100d0b2f0cb8331cccddb42aaad62f12010",
-    "kv/headers.json": "b459843b98525250bd5672cfa28cf13f7b48933f4abe35ee462fd0f1776488cd",
+    "kv/client.json": "e7a694bbf38a669f66b748cfce22a174e37e09faf75bccc00697c8b4921991a0",
+    "kv/wire.json": "debc1b79c4512b52e83946420674234102ac23d39b3199534700f4df22102e9b",
+    "kv/headers.json": "08b39b074fa78825a7731f9a47c27cea23808f315fc1c78a382d06b260064f46",
     "kv-recovery/request.json": "196c797aa0aa0b1fc4f49fc553ca31dba0413bec8d2c48a28942b263f6914048",
-    "kv-recovery/client.json": "609dbfaa1f95fa870ec185d8e1c82cd122209db74469ab0a928f0e04f353db77",
-    "kv-recovery/wire.json": "0b45419d73a2ed382f7429496ae8beaf817e463e2a7046006345d2cd4c70e9c8",
-    "kv-recovery/headers.json": "e5a95c104f405dbf6e09a00644d044dce95b41157fc10c2ff05c2b083f39e89f"
+    "kv-recovery/client.json": "ddf837913033aae291c7a1ec40961aab30e9d581975c0e02056e8e9851b621fa",
+    "kv-recovery/wire.json": "a0e8d41857e9a08057628830d1fb7159b12b6ea40a1a556d24765f89d43a295f",
+    "kv-recovery/headers.json": "ccfe6ced109b7d0adbc5c7a3bfb393d900cc9ec2299bdd9890413dea8a37cba7"
   }
 }

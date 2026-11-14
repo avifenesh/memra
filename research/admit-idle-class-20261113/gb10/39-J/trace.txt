@@ -1,0 +1,15 @@
+1794642216.203987 [server] build: memra-0.141.1-f41206bfaadf (id: source-tree, git: unknown)
+1794642270.372495 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17012097024,"still_owned_bytes":16373883904,"pool_reserved_bytes":16642998272,"pool_cached_bytes":269114368,"driver_free_bytes":85818654720,"synchronization_errors":[]}
+1794642276.165720 [prefix-cache] on: budget 49679MB (49678602240 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 49678602240 B; boot driver free 103115300864 B, post-reserve clamp 99357204480 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794642276.165726 [admission] "q38": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+1794642276.165730 [admission] "q38": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+1794642281.153005 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1744830464,"still_owned_bytes":21209551056,"pool_reserved_bytes":21407727616,"pool_cached_bytes":198176560,"driver_free_bytes":79823405056,"synchronization_errors":[]}
+1794642281.153053 [admit-cal] post-probe pool trim: released 1664MB cached back to the driver
+1794642281.153057 [admit-cal] boot calibration done: model="q38" route=dspark transient floor 1544MB (static was 1536MB; measured 1544MB; probe kv charge 119MB, draft-state 0MB, drafted 75 accepted 39; [dev0 peak-mapped 22080MB rest-mapped 20416MB charged 119MB -> 1544MB]; 5.0s)
+1794642281.153060 [admission] idle capacity (post-load, cache empty): dev0 free 100897MB (pool used 21210MB)
+1794642281.153070 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794642281.153073 [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+1794642401.827014 [admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+1794642401.827063 [admission] request cost: model="q38" ctx=131622 path=spec = 29696 B/token x ctx + 4479MB prefill-workspace + 0MB fixed = 8388MB
+1794642525.377282 [prefix-cache] unified memory: insert budget 2718MB (configured 49679MB; live free 6319MB, headroom 3758MB, resident 0MB, of the entry already allocated 157MB)
+1794642525.387489 [prefix-cache] insert refused: entry 4131520512 exceeds budget 2717971044 (live free memory holds the insert budget under its configured 49678602240; snapshot preflight, model q38)

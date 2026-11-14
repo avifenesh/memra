@@ -1,0 +1,25 @@
+2026-11-14T09:27:46+02:00 start, unit idle, arm fold, target 2400 MB, mode single, route mtp, request 1024, holder regulating, extra 
+MemFree:        121220496 kB
+MemAvailable:   122228612 kB
+Cached:          1495216 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 2m05s
+waitfor: until awk '/^MemAvailable/{exit !($2/1024 < 2400 + 48)}' /proc/meminfo (deadline 2m00s, every 2s)
+waitfor: not yet
+waitfor: MET after 0m51s
+2026-11-14T09:30:57+02:00 before the request:
+MemFree:          793932 kB
+MemAvailable:    2493044 kB
+Cached:         101094176 kB
+{"tag": "34-J", "req": "g1k", "status": 200, "ttft_s": 1.167, "total_s": 5.394, "completion_tokens": 127, "finish": "stop", "text_sha256": "26ca98d4733a9c67f315f2ea1af2ec45ef76cca50999476c62b771813f1ee4ca", "refusal": null}
+2026-11-14T09:31:02+02:00 after the request:
+MemFree:         1672444 kB
+MemAvailable:    2316888 kB
+Cached:         98997240 kB
+waitfor: gone 3851425 (deadline 1m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+waitfor: gone 3843055 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

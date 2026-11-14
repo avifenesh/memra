@@ -8,29 +8,29 @@
     "x-ratelimit-limit": "8",
     "x-ratelimit-remaining": "0",
     "x-ratelimit-reset": "1",
-    "x-request-id": "cmpl-a3ba5bc7fafda7481777035f24af7bc4",
-    "content-length": "306",
-    "date": "Sat, 14 Nov 2026 02:16:57 GMT"
+    "x-request-id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
+    "content-length": "321",
+    "date": "Sat, 14 Nov 2026 07:12:31 GMT"
   },
-  "started": 122803.638741801,
+  "started": 140537.779018299,
   "source_log_start": 43,
   "disconnected": false,
   "body": {
     "error": {
-      "message": "request context 3142 fits this model's KV capacity but not the server's free memory right now; the largest context that fits now is 712 tokens. Retry after the Retry-After delay, or send a shorter prompt or a smaller max_tokens",
+      "message": "request context 3142 fits this model's KV capacity but not the server's free memory right now; the largest prompt plus max_tokens that fits now is 659 tokens. Retry after the Retry-After delay, or send a shorter prompt or a smaller max_tokens",
       "type": "server_error",
       "param": null,
       "code": "overloaded"
     }
   },
-  "ended": 122803.642220548,
+  "ended": 140537.780928071,
   "source_log_end": 60,
-  "id": "cmpl-a3ba5bc7fafda7481777035f24af7bc4",
+  "id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
   "callbacks": [
     {
       "tag": "CHOICE_OPEN",
       "value": {
-        "id": "cmpl-a3ba5bc7fafda7481777035f24af7bc4",
+        "id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
         "model": "fixture",
         "tenant": "default",
         "max_tokens": 24576,
@@ -42,7 +42,7 @@
     {
       "tag": "CHOICE_TERMINAL",
       "value": {
-        "id": "cmpl-a3ba5bc7fafda7481777035f24af7bc4",
+        "id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
         "kind": "reject",
         "status": 503,
         "code": "overloaded",
@@ -58,7 +58,7 @@
     {
       "tag": "CHOICE_DROP",
       "value": {
-        "id": "cmpl-a3ba5bc7fafda7481777035f24af7bc4",
+        "id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
         "terminal": true,
         "prompt": 0,
         "cached": 0,

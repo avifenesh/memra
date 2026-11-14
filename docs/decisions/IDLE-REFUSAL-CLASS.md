@@ -1,10 +1,11 @@
 # An idle server refuses by the request's size, not the moment's memory (2026-11-13)
 
-Date: 2026-11-13, review fold 2026-11-14. Issue memra#1304, branch `fix/1304-admit-class`,
+Date: 2026-11-13, review folds 2026-11-14. Issue memra#1304, branch `fix/1304-admit-class`,
 receipts `research/admit-idle-class-20261113/`. Devices: one DGX Spark (GB10, unified memory),
 Qwen3.8-27B GGUF (NVFP4 trunk, Q5_K output head) with its masked MTP draft, and with the DFlash2
 drafter for the copy-publisher cells, 262,144 context, the served defaults; one RTX 5090 Laptop
-(discrete), Qwen3.5-9B Q8_0, for the foreign-pressure cell.
+(discrete), Qwen3.5-9B Q8_0, for the foreign-pressure cell, and Qwen3.8-27B GGUF with the DFlash2
+drafter for the discrete publisher cell.
 
 ## Problem
 
@@ -161,14 +162,26 @@ the cells execute:
 Sixteen source red arms and the gate's (the stored 400 receipt under the new verifier) each fail
 for their stated reason; the list is in the research README.
 
+Second review fold (2026-11-14), on main `0db086f87a`, measured on build id `f41206bfaadf`:
+
+| cell | result |
+|---|---|
+| RTX 5090 Laptop, the native-choices `kv` phase again | 503 `overloaded`, `Retry-After: 5`, "the largest prompt plus max_tokens that fits now is 659 tokens" (available 1,194 MB, required 1,517 MB, capacity 16,423 MB; the request is charged its prompt plus `max_tokens` plus 64 rows, so the first fold's 712 was a size the caller could not send) |
+| RTX 5090 Laptop, Qwen3.8-27B with the DFlash2 drafter, prefix cache on, one request twice, main `0db086f87a` against the head | the same in both arms: `insert (dspark-boundary): 7968 tokens, 477.7MB`, the second request restored from it with the drafter tail, four identical texts; the head counts the publication (`preflight_bytes=477724672 entry_bytes=477724672`) and reserves nothing on a discrete card |
+| GB10, the first fold's eight cells again (1.8 and 1.5 GB, 2.4 GB, ample, the 20 GB pair, the teeth door, the DFlash copy with ample memory and under a fixed holder) | the same status, code, `Retry-After`, tokens and text in each; the 1.8 GB refusal names "218" (2,129 MB free under the 2,170 MB charge), the 1.5 GB one names nothing because the charge's fixed part is over the free memory; the copy is refused before allocating at 6,319 MB free (budget 2,718 MB) |
+| GB10, the host tier on (`MEMRA_KV_HOST_MB=8192`), the host-tier identity gate, MTP route and DFlash2 drafter | all green in both: the promotion's room is made first (`evict (snapshot preflight, LRU)`), the entry that gives way is demoted, the promoted state's digest matches, and the request served through the round trip writes the bytes of the same request served cold with the tier off |
+
+Thirty-two source red arms (the sixteen above, the second review's six mutations that had
+passed the suite, ten for this fold) and the verifier's each fail for their stated reason.
+
 ## Limits
 
 - The capacity is read once at boot. A server booted under host pressure has a smaller capacity,
   and a request between that and the box's real capacity gets the 400 as before this change.
 - Memory memra holds outside its pool after boot (lazily captured graphs, driver workspaces), and
   memory another process keeps for good, count as transient, so a request within that margin of
-  the capacity gets a 503 that retrying does not clear. Its message names the largest context
-  that fits now, which is the caller's way out.
+  the capacity gets a 503 that retrying does not clear. Its message names the largest request
+  (prompt plus `max_tokens`) that fits now, which is the caller's way out.
 - The copy preflight is unified-memory only. On a discrete card a copying publisher still
   allocates before the cache evicts for it; there the allocation fails with a CUDA out-of-memory
   error when the card is full and the publication is dropped

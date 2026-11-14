@@ -5,7 +5,7 @@
 > a 503 `overloaded` with `Retry-After`; the 400 `context_length_exceeded` stays for a request
 > over that capacity. The `kv` phase of `receipts/native-final-v5/` records the 400 the `c6db`
 > server gave and stays as that server's record; the gate replays its recapture on the same card
-> and fixture, [`admit-idle-class-20261113/rtx5090/kv/`](../admit-idle-class-20261113/README.md#rtx-5090-the-idle-refusal-under-another-processs-memory),
+> and fixture, [`admit-idle-class-20261113/rtx5090/kv/`](../admit-idle-class-20261113/README.md#rtx-5090-the-idle-refusal-again-take-3),
 > named by `receipts/native-final-v5/superseded.json`. Every other edge is unchanged.
 
 Memra #528 implements n=2..8 on eligible ordinary single-device text routes. The pinned local fixture is Qwen3.5-9B Q8_0, artifact SHA256 `0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c`. This is API and lifecycle evidence for that fixture. It grants no model support state or release qualification.

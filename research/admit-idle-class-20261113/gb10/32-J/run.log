@@ -1,0 +1,25 @@
+2026-11-14T09:18:16+02:00 start, unit idle, arm fold, target 1800 MB, mode single, route mtp, request 1024, holder regulating, extra 
+MemFree:        42136284 kB
+MemAvailable:   121900452 kB
+Cached:         79536600 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 1m55s
+waitfor: until awk '/^MemAvailable/{exit !($2/1024 < 1800 + 48)}' /proc/meminfo (deadline 2m00s, every 2s)
+waitfor: not yet
+waitfor: TIMEOUT after 2m00s, condition not met
+2026-11-14T09:22:26+02:00 before the request:
+MemFree:          786100 kB
+MemAvailable:    1949912 kB
+Cached:         100765164 kB
+{"tag": "32-J", "req": "g1k", "status": 503, "ttft_s": 0.021, "total_s": 0.021, "completion_tokens": null, "finish": null, "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "refusal": {"status": 503, "retry_after": "5", "retry_after_ms": "5000", "x_should_retry": null, "body": {"error": {"message": "request context 1607 fits this model's KV capacity but not the server's free memory right now; the largest prompt plus max_tokens that fits now is 218 tokens. Retry after the Retry-After delay, or send a shorter prompt or a smaller max_tokens", "type": "server_error", "param": null, "code": "overloaded"}}}}
+2026-11-14T09:22:26+02:00 after the request:
+MemFree:          772568 kB
+MemAvailable:    1945700 kB
+Cached:         100774224 kB
+waitfor: gone 3813090 (deadline 1m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+waitfor: gone 3803567 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

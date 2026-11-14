@@ -1,0 +1,27 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.18s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::a_copy_publication_reserves_its_room_before_it_allocates ... FAILED
+
+failures:
+
+---- worker::tests::a_copy_publication_reserves_its_room_before_it_allocates stdout ----
+[prefix-cache] insert refused: entry 4166000000 exceeds budget 0 (live free memory holds the insert budget under its configured 50529000000; snapshot preflight, model q38)
+[prefix-cache] insert refused: entry 4166000000 exceeds budget 1278000000 (live free memory holds the insert budget under its configured 50529000000; snapshot preflight, model q38)
+[prefix-cache] insert refused: entry 4166000000 exceeds budget 4165999999 (live free memory holds the insert budget under its configured 50529000000; snapshot preflight, model q38)
+[prefix-cache] insert (t): 1 tokens, 3000.0MB (resident 3000.0MB / 50529MB, model q38)
+[prefix-cache] evict (snapshot preflight, LRU): 1 tokens, 3000.0MB (model q38)
+
+thread 'worker::tests::a_copy_publication_reserves_its_room_before_it_allocates' (2998247) panicked at crates/memra-server/src/worker.rs:43590:36:
+missing `bytes: dspark.draft_kv().tail_bytes(end),` in: fn publish_dspark_prefix_capture_inner( engine: &Engine, px: &mut PrefixCache, hpx: &mut HostPrefixCache, s: &Session, cap: memra_engine::spec::SpecBoundaryCapture, ) -> Option<(usize, u64)> { let dspark = s.dspark.as_ref()?; let end = cap.pos.min(s.fed.len()); if end == 0 { return None; } let pool_key = s.pool_key(); if px.has_key(&pool_key, &s.fed[..end]) { return None; } let at_capture = end == cap.pos; let export_tail = || { let t = dspark.draft_kv().export_tail(engine, end); if t.is_none() { eprintln!( "[prefix-cache] dspark publish: draft tail export failed; entry published \ trunk-only (a later long-decode hit will cold-prime as before)" ); } t }; let dspark_tail = if dspark_prefix_restore_on() { Some(DraftTailExport { bytes: 0 * dspark.draft_kv().tail_bytes(end), export: &export_tail, }) } else { None }; prefix_insert_from_spec_boundary( engine, px, hpx, &pool_key, &s.fed, &dspark.cache, None, dspark_tail, cap, SpecPlanes::Copy, "dspark-boundary", ); px.key_index(&pool_key, &s.fed[..end]) .filter(|_| at_capture) .map(|i| (end, px.entries[&pool_key][i].id))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::a_copy_publication_reserves_its_room_before_it_allocates
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

@@ -1,0 +1,103 @@
+1794641833.492469 [server] build: memra-0.141.1-f41206bfaadf (id: source-tree, git: unknown)
+1794641833.492642 [server] starting; models config = [("q38", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1794641833.494050 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1794641833.494261 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1794641833.594313 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1794641833.854107 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1794641833.854155 [worker] loading model "q38" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1794641833.924844 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1794641833.924906 [mtp-skip] MEMRA_MTP_SKIP=1: skipping 1 embedded MTP/NextN block(s) blk.64..=blk.64 (~227 MiB of weights not loaded); MTP spec decode is unavailable for this model (dspark/DFlash2 drafting keeps its trimmed head via the MEMRA_FRSPEC_TRIM stub)
+1794641853.418305 [mtp-skip] FR-Spec stub draft head built: 32768 rows of main output.weight (Q5_K); DFlash2 trim serves without the embedded MTP block
+1794641853.951114 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1794641853.953094 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1794641853.954027 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794641853.956370 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1794641853.956830 [route-contract] model="q38" route=hybrid-worker capacity=1 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1794641853.957304 [worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1794641853.957385 [dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves ON (whole-entry restore, strict-prefix restore and boundary capture together)
+1794641863.574836 [dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+1794641863.582839 [dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+1794641863.582868 [dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+1794641863.595930 [worker] q38: DSPARK SPEC route armed (drafter attached (/data/ai-ml/models/q38-gguf/Qwen3.8-27B-DFlash2-memra); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+1794641863.596506 [dspark] q38: DFlash2 draft head TRIMMED to 32768 rows (FR-Spec d2t; verify stays full-vocab)
+1794641863.597150 [prefix-cache] on: budget 4194MB (4194304000 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794641863.597847 [admission] "q38": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+1794641863.598048 [admission] "q38": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+1794641863.598840 [prime-walk] model="q38" route=dspark supported=false yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=false no_hyper_connections=true no_pipeline_cuts=true]
+1794641870.320239 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=6714.914
+1794641870.320310 [prime-finalize] walker=memra_engine::dflash::DflashTapWalker<'_> wall_ms=0.004 success=true
+1794641870.322632 [prime-finalize] walker=memra_engine::dflash::DsparkPrimeWalker<'_> wall_ms=2.413 success=true
+1794641870.323102 [dspark-vg] serve pool ENGAGED (vt_cap=8)
+1794641870.324910 [topk-shards] engaged: rows=7 cols=32768 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+1794641870.336976 [fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+1794641870.485048 [dflash-kv-ring] compact keep_from=2057 kept=2056 phys_rows=4120
+1794641871.105050 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1778384896,"still_owned_bytes":19351791368,"pool_reserved_bytes":19461570560,"pool_cached_bytes":109779192,"driver_free_bytes":5013766144,"synchronization_errors":[]}
+1794641871.105389 [admit-cal] post-probe pool trim: released 1696MB cached back to the driver
+1794641871.105393 [admit-cal] boot calibration done: model="q38" route=dspark transient floor 1576MB (static was 1536MB; measured 1576MB; probe kv charge 119MB, draft-state 0MB, drafted 71 accepted 44; [dev0 peak-mapped 20256MB rest-mapped 18560MB charged 119MB -> 1576MB]; 7.5s)
+1794641871.105648 [admission] idle capacity (post-load, cache empty): dev0 free 5124MB (pool used 19352MB)
+1794641871.105651 [admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1794641871.105740 [admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+1794641871.105742 [admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+1794641871.105744 [kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+1794641871.106673 [server] worker ready; serving models: ["q38"]
+1794641871.123292 [server] listening on http://127.0.0.1:8093
+1794641873.546697 [meter] admit id=chatcmpl-b7ebc128b6acf9283ff77d8fde635f4c tenant=default lane=interactive model="q38"
+1794641873.556966 [admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+1794641873.556995 [admission] request cost: model="q38" ctx=8572 path=spec = 29696 B/token x ctx + 516MB prefill-workspace + 0MB fixed = 771MB
+1794641873.557000 [admission] prefill workspace held: model="q38" prompt=7996 call=7996 stack=7996 concat=0 slab_resident=1443MB held=516MB cold=1959MB
+1794641873.557422 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=7996 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794641873.558153 [prefix-loan] reconcile why=tick books=0 lent_live=0 adopted=0.0MB charged=0.0MB real=0.0MB adoptions=0 compactions=0 pool_used=19351.8MB
+1794641876.361707 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=2801.296
+1794641876.361771 [prime-yield] count=1 remaining=2 chunks=1 wall_ms=2801.296 max_chunk_ms=2801.296
+1794641876.361775 [tick-spec] seq=1 slot=0 trace=- start_ms=0.021 gap_ms=0.021 wall_ms=2803.486 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794641876.361788 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2803.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.2 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794641879.217286 [dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+1794641879.218031 [dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+1794641879.245639 [prime-chunk] phase=dflash-trunk-ingest rows=3872 wall_ms=2883.562
+1794641879.245696 [prime-yield] count=2 remaining=1 chunks=1 wall_ms=2883.562 max_chunk_ms=2883.562
+1794641879.245703 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=2883.581 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794641879.245731 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2883.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.2 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794641879.361105 [prime-chunk] phase=dflash-trunk-ingest rows=28 wall_ms=115.266
+1794641879.362589 [prime-finalize] walker=memra_engine::dflash::DflashTapWalker<'_> wall_ms=1.506 success=true
+1794641879.362880 [prime-finalize] walker=memra_engine::dflash::DsparkPrimeWalker<'_> wall_ms=1.800 success=true
+1794641879.378870 [fa-pool] grow #1 dev=0 o_len 3194880 -> 6389760 ml_len 12480 -> 24960 (retired kept, zero=false)
+1794641879.863738 [dspark-acc] ctx=7996 burst=21/40 cum=21/40=0.525
+1794641879.863803 [tick-spec] seq=1 slot=0 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=617.919 generated=0->34 rounds=13 drafted=40 accepted=21 k=0
+1794641879.863908 [tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=617.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.2 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794641879.864182 [prefix-cache] insert (dspark-boundary): 7968 tokens, 477.7MB (resident 477.7MB / 4194MB, model q38)
+1794641879.864186 [specpub] Copy publication why=dspark-boundary pos=7968 lent=0.0MB us=240 pool_reserved=21911044096 pool_used=20773484380 preflight_bytes=477724672 entry_bytes=477724672
+1794641879.864199 [prefix-loan] reconcile why=retire books=0 lent_live=0 adopted=0.0MB charged=477.7MB real=477.7MB adoptions=0 compactions=0 pool_used=20773.5MB
+1794641880.235676 [dspark-acc] ctx=8030 burst=23/32 cum=44/72=0.611
+1794641880.235731 [tick-spec] seq=1 slot=0 trace=- start_ms=0.014 gap_ms=0.014 wall_ms=371.267 generated=34->67 rounds=10 drafted=32 accepted=23 k=0
+1794641880.235751 [tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=371.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.2 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794641880.684819 [dspark-acc] ctx=8063 burst=22/37 cum=66/109=0.606
+1794641880.684877 [tick-spec] seq=1 slot=0 trace=- start_ms=0.013 gap_ms=0.013 wall_ms=448.879 generated=67->101 rounds=12 drafted=37 accepted=22 k=0
+1794641880.684884 [tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=448.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.2 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794641881.071362 [dspark-acc] ctx=8097 burst=14/27 cum=80/136=0.588
+1794641881.071426 [tick-spec] seq=1 slot=0 trace=- start_ms=0.013 gap_ms=0.013 wall_ms=386.391 generated=101->126 rounds=11 drafted=27 accepted=14 k=0
+1794641881.071543 [tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=386.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.2 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794641881.071606 [worker] dspark-park SKIPPED (grid law): a recurrent trunk's 8122 rows cannot resume exactly and it cannot rewind (the restore switch is on: the next turn restores from the prefix cache); session freed (model q38)
+1794641881.162155 [meter] admit id=chatcmpl-de9b243f0c312c18e172ee263f7e3730 tenant=default lane=interactive model="q38"
+1794641881.173373 [prefix-cache] hit: 7968 of 7996 prompt tokens from cache (model q38)
+1794641881.173868 [prefix-cache] DSPARK restore: 7968 of 7996 prompt tokens + draft tail from cache (28 suffix tokens to prime) (model q38)
+1794641881.173908 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=7996 cached=7968 lcp=7968 active=1 wave=1 placement=single-or-non-pp2
+1794641881.174082 [admission] fixed residual high-water: model="q38" 492MB (observed 745MB at ctx 8516 path=plain)
+1794641881.280526 [prime-chunk] phase=dflash-trunk-ingest rows=28 wall_ms=106.369
+1794641881.280589 [prime-finalize] walker=memra_engine::dflash::DflashTapWalker<'_> wall_ms=0.004 success=true
+1794641881.280934 [prime-finalize] walker=memra_engine::dflash::DsparkPrimeWalker<'_> wall_ms=0.433 success=true
+1794641881.756417 [dspark-acc] ctx=7996 burst=21/40 cum=21/40=0.525
+1794641881.756480 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=582.286 generated=0->34 rounds=13 drafted=40 accepted=21 k=0
+1794641881.756604 [tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=582.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.2 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794641882.136668 [dspark-acc] ctx=8030 burst=23/32 cum=44/72=0.611
+1794641882.136725 [tick-spec] seq=1 slot=0 trace=- start_ms=0.013 gap_ms=0.013 wall_ms=379.677 generated=34->67 rounds=10 drafted=32 accepted=23 k=0
+1794641882.136728 [tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=379.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.2 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794641882.584230 [dspark-acc] ctx=8063 burst=22/37 cum=66/109=0.606
+1794641882.584291 [tick-spec] seq=1 slot=0 trace=- start_ms=0.014 gap_ms=0.014 wall_ms=447.534 generated=67->101 rounds=12 drafted=37 accepted=22 k=0
+1794641882.584430 [tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=447.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.2 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794641882.970085 [dspark-acc] ctx=8097 burst=14/27 cum=80/136=0.588
+1794641882.970126 [tick-spec] seq=1 slot=0 trace=- start_ms=0.013 gap_ms=0.013 wall_ms=385.583 generated=101->126 rounds=11 drafted=27 accepted=14 k=0
+1794641882.970230 [tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=385.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.1 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794641882.970269 [worker] dspark-park SKIPPED (grid law): a recurrent trunk's 8122 rows cannot resume exactly and it cannot rewind (the restore switch is on: the next turn restores from the prefix cache); session freed (model q38)
+1794641882.991035 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1794641882.991081 [server] drain complete in 0.0s; exiting
+1794641883.209406 [server] GPU worker shutdown complete
