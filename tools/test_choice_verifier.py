@@ -81,6 +81,13 @@ class Controls(unittest.TestCase):
         for bad in [retryable,self.idle(400,'context_length_exceeded',{'x-should-retry':'false','retry-after':'5'}),self.idle(400,'context_length_exceeded')]:
             with self.assertRaises(Invalid) as e:check_idle_refusal(bad,over,6000)
             self.assertEqual(e.exception.edge,'kv_exhaustion')
+        # A server that under-reads its capacity cannot buy the 400 back (round-2 review, probes P5 and P6): the capacity collapsed to the reading now, or sitting just under the charge, with the boot reading holding the request ten times over.
+        for sizes in [{'logged':'reject','capacity':1192,'available':1192,'required':1320},{'logged':'reject','capacity':1300,'available':1192,'required':1320}]:
+            with self.assertRaises(Invalid) as e:check_idle_refusal(self.idle(400,'context_length_exceeded',{'x-should-retry':'false'}),sizes,15900)
+            self.assertEqual(e.exception.edge,'kv_exhaustion')
+            # And a 503 beside a capacity that does not hold the request is not the server's judgement either.
+            with self.assertRaises(Invalid) as e:check_idle_refusal(retryable,{**sizes,'logged':'short'},15900)
+            self.assertEqual(e.exception.edge,'kv_exhaustion')
         # The sizes decide, not the class the server logged; and they must be a real shortfall inside the boot reading.
         for sizes,record in [({**short,'logged':'reject'},retryable),({**over,'logged':'short'},final),({**short,'capacity':16000},retryable),({**short,'available':1400},retryable)]:
             with self.assertRaises(Invalid) as e:check_idle_refusal(record,sizes,15900)
