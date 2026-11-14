@@ -9713,6 +9713,40 @@ fn reap_then_trim(
     reaped.saturating_add(trim())
 }
 
+/// A parked prime GDN scan workspace is counted as cached (`Engine::pool_cached_bytes`), and
+/// only a prime of at least half a chunk or a trim can use it (memra#1258). The engine decides
+/// whether to park once, at the prime's end. If the device gets short afterwards (short prompts
+/// fill the card and no long prime comes), admission would keep counting bytes nothing else can
+/// allocate. So in front of every admitted request each owned device drops a workspace it parked
+/// when it no longer holds the park floor (`Engine::prime_gdn_ws_reconsider`): the bytes are
+/// cached blocks again, which is what the gate counted them as, and the driver-headroom rung
+/// that runs next can hand them to the driver like any other cached block.
+///
+/// This is why the workspace is dropped here and the rung's target is left alone: a target that
+/// counted parked bytes would free them only once the other cached blocks ran out, and a device
+/// could stay short with the workspace still parked. Returns the bytes dropped.
+fn release_short_parked_workspaces(owners: &[&Engine], why: &str) -> usize {
+    let mut released = 0usize;
+    for owner in owners {
+        let bytes = owner.prime_gdn_ws_reconsider();
+        if bytes > 0 {
+            eprintln!(
+                "[admit-trim] dev{} parked prime workspace released: bytes={bytes} before {why}",
+                owner.ctx().ordinal()
+            );
+            released = released.saturating_add(bytes);
+        }
+    }
+    released
+}
+
+/// Whether a retiring request leaves a prime unfinished (memra#1258): its prime service is still
+/// pending, or prompt tokens are still queued for the prime. Such a request makes no further
+/// prime call, so nothing would release the workspace its last call left in the slab.
+fn retires_mid_prime(prime_pending: bool, prefill_queued: usize) -> bool {
+    prime_pending || prefill_queued > 0
+}
+
 fn admission_required(cost: usize, reserve: usize) -> usize {
     cost.saturating_add(reserve)
 }
@@ -10082,6 +10116,9 @@ fn driver_headroom_trim_keep(
 /// gone the raw reading is the larger one and the floor is the raw reading's again. A host whose
 /// `MemAvailable` is short still trims.
 fn ensure_driver_headroom(engine: &Engine, loaded: &HashMap<String, LoadedModel>, why: &str) {
+    // memra#1258: before anything reads the pool. The park has its own floor, so this runs with
+    // the rung switched off too.
+    release_short_parked_workspaces(&model_device_engines(engine, loaded), why);
     let floor = admit_driver_headroom_bytes();
     if floor == 0 {
         return;
@@ -21955,9 +21992,10 @@ pub fn run(
             batch_oom_recover_boot_line(batch_oom_recover)
         }
     );
-    // PARKED PRIME WORKSPACE (memra#1258): a prime parks its GDN scan workspace only on a device
-    // that holds the floor admission keeps free; under it the bytes go back to the pool for the
-    // steps that follow the prime.
+    // PARKED PRIME WORKSPACE (memra#1258): a prime keeps its GDN scan workspace mapped only on a
+    // device that holds the floor admission keeps free; under it the bytes go back to the pool.
+    // With the rung off (0) the engine keeps its own default floor: the rollback seam of the
+    // rung is not a switch for the park.
     memra_engine::set_prime_gdn_ws_park_floor(admit_driver_headroom_bytes());
     // PREFILL WORKSPACE HELD (research/c8-workspace-20261108): the card's arm, resolved once.
     let prefill_held = prefill_held_for_device(&device_name, device_is_unified(&engine));
@@ -27540,6 +27578,14 @@ pub fn run(
             }
             retired_interactive |= s.lane == crate::lanes::Lane::Interactive;
             retire_prefix_pin(&mut px, &mut s.prefix_pin);
+            // memra#1258: every way out of `active` passes here (abort, error, out-of-memory
+            // teardown, a pending prime). A request that leaves between two calls of its prime
+            // makes no call that would release the prime's GDN scan workspace.
+            if retires_mid_prime(s.prime_service.pending, s.prefill_queue.len())
+                && let Some(lm) = loaded.get(&s.model)
+            {
+                lm.model.prime_abandoned(&engine);
+            }
             let pool_key = s.pool_key(); // before the partial moves below (PC-ISO park key)
             // SAMPLER IDENTITY OF THE RETIRING REQUEST (lane/session-resume-sampler-predicate-
             // 20260820): read here, alongside `pool_key`, for the same reason — the spec park
@@ -42863,6 +42909,53 @@ mod tests {
         assert!(read < trim);
         let flat: String = body.chars().filter(|c| !c.is_whitespace()).collect();
         assert!(flat.contains("calibration_transient_floor(res_high,res_rest,charged,0,parked)"));
+    }
+
+    #[test]
+    fn a_short_device_gives_its_parked_workspace_back_before_the_rung() {
+        // memra#1258 (review): the park is decided at the prime's end and the device can get
+        // short later. The rung's entry drops a parked workspace first, before its own early
+        // return for a rung that is switched off, and before it reads the pool.
+        let src = include_str!("worker.rs");
+        let at = src.find("\nfn ensure_driver_headroom(").expect("the rung");
+        let body = &src[at..at + src[at..].find("\n}\n").expect("its end")];
+        let release = body
+            .find(concat!(
+                "release_short_parked",
+                "_workspaces(&model_device_engines(engine, loaded), why);"
+            ))
+            .expect("the release");
+        let off = body.find("if floor == 0 {").expect("the rung's off switch");
+        let pool = body.find("pool_reserved_used()").expect("the pool reading");
+        assert!(release < off && off < pool, "{body}");
+        let at = src
+            .find(concat!("\nfn release_short_parked", "_workspaces("))
+            .expect("the helper");
+        let helper = &src[at..at + src[at..].find("\n}\n").expect("its end")];
+        assert!(helper.contains(concat!("owner.prime_gdn_ws", "_reconsider()")));
+    }
+
+    #[test]
+    fn a_request_retired_mid_prime_hands_the_workspace_back() {
+        // memra#1258 (review): pending prime service, or prompt tokens still queued.
+        assert!(!super::retires_mid_prime(false, 0));
+        assert!(super::retires_mid_prime(true, 0));
+        assert!(super::retires_mid_prime(false, 1));
+        assert!(super::retires_mid_prime(false, 4_077));
+        // At the one seam every session leaves `active` through, before any of the retire
+        // loop's early exits.
+        let src = include_str!("worker.rs");
+        let remove = src.find("let mut s = active.remove(i);").expect("the seam");
+        let rest = &src[remove..];
+        let hook = rest
+            .find(concat!(
+                "if retires_mid_prime(s.prime_service.pending, ",
+                "s.prefill_queue.len())"
+            ))
+            .expect("the hook");
+        let first_exit = rest.find("continue;").expect("the loop's first early exit");
+        assert!(hook < first_exit, "the hook runs before every early exit");
+        assert!(rest[hook..first_exit].contains(concat!("lm.model.prime", "_abandoned(&engine);")));
     }
 
     #[test]

@@ -2323,31 +2323,84 @@ impl GdnScanWs {
     /// Whether a scan of `t` rows over `h` value and `hk` key heads at chunk `c` fits (`pair`: the
     /// scan takes the unfused K4/K5 pair and needs its planes).
     fn fits(&self, t: usize, h: usize, hk: usize, c: usize, pair: bool) -> bool {
-        c == Self::C
-            && t <= self.t_cap
-            && h <= self.h
-            && hk <= self.hk
-            && (!pair || self.pair.is_some())
+        Self::dims_fit(
+            (self.t_cap, self.h, self.hk, self.pair.is_some()),
+            t,
+            h,
+            hk,
+            c,
+            pair,
+        )
+    }
+
+    /// `fits` on the dimensions alone. `have` = the planes' rows, value heads, key heads and
+    /// whether the pair planes exist. A scan wider than the planes' rows must not take them: its
+    /// kernels would write past the planes' end.
+    pub(crate) fn dims_fit(
+        have: (usize, usize, usize, bool),
+        t: usize,
+        h: usize,
+        hk: usize,
+        c: usize,
+        pair: bool,
+    ) -> bool {
+        let (t_cap, h_cap, hk_cap, has_pair) = have;
+        c == Self::C && t <= t_cap && h <= h_cap && hk <= hk_cap && (!pair || has_pair)
+    }
+
+    /// Whether a prime call of `t` rows on a model of `h` value and `hk` key heads (`pair`: its
+    /// device's scan takes the unfused pair) must allocate a new workspace in place of one with
+    /// the dimensions `have`: too few rows, other head counts, or no pair planes where the scan
+    /// needs them. `HybridModel::prime_slabs_get` asks this before it reuses the slab's or the
+    /// parked workspace.
+    pub(crate) fn dims_stale(
+        have: (usize, usize, usize, bool),
+        t: usize,
+        h: usize,
+        hk: usize,
+        pair: bool,
+    ) -> bool {
+        let (t_cap, h_have, hk_have, has_pair) = have;
+        t_cap < t || h_have != h || hk_have != hk || (pair && !has_pair)
     }
 }
 
-/// The free-memory floor under which a prime's GDN scan workspace is not parked (memra#1258).
-/// 0, the default and what an engine binary without admission runs with, parks always.
-static PRIME_GDN_WS_PARK_FLOOR: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+/// The free memory a device must hold for a prime's GDN scan workspace to stay mapped between
+/// prime calls and between primes (memra#1258): 2,048 MiB, the default of the floor admission
+/// keeps free in front of every request. It is the park's own floor. A server whose
+/// driver-headroom rung is on passes that rung's floor (`set_prime_gdn_ws_park_floor`); with the
+/// rung switched off (`MEMRA_ADMIT_DRIVER_HEADROOM_MB=0`), and in an engine binary, which has
+/// no admission, this default stands. So no configuration keeps the workspace mapped on a
+/// short device.
+pub const PRIME_GDN_WS_PARK_FLOOR_DEFAULT: usize = 2048 << 20;
 
-/// Sets the floor a prime's GDN scan workspace needs free on its device to stay parked between
-/// primes. A server passes the floor its admission keeps free in front of every request
-/// (`MEMRA_ADMIT_DRIVER_HEADROOM_MB`): parked bytes count as cached, but only a prime or a trim
-/// can use them, so on a device under that floor they go back to the pool instead.
+static PRIME_GDN_WS_PARK_FLOOR: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(PRIME_GDN_WS_PARK_FLOOR_DEFAULT);
+
+/// Sets the park floor to the floor a server's admission keeps free in front of every request
+/// (`MEMRA_ADMIT_DRIVER_HEADROOM_MB`). Parked bytes count as cached, but only a prime or a trim
+/// can use them, so on a device under the floor they go back to the pool instead. Zero is the
+/// rung's rollback seam, not a park setting: it leaves `PRIME_GDN_WS_PARK_FLOOR_DEFAULT`.
 pub fn set_prime_gdn_ws_park_floor(bytes: usize) {
-    PRIME_GDN_WS_PARK_FLOOR.store(bytes, std::sync::atomic::Ordering::Relaxed);
+    PRIME_GDN_WS_PARK_FLOOR.store(
+        prime_gdn_ws_park_floor_from(bytes),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }
 
-/// Whether a prime's GDN scan workspace stays parked at the prime's end: always with no floor;
-/// with one, only while the device's free reading (`None`: unreadable) holds it.
+/// The park floor for the floor a server passes: that floor, or the default for zero.
+pub(crate) fn prime_gdn_ws_park_floor_from(bytes: usize) -> usize {
+    if bytes == 0 {
+        PRIME_GDN_WS_PARK_FLOOR_DEFAULT
+    } else {
+        bytes
+    }
+}
+
+/// Whether a prime's GDN scan workspace may stay mapped: only while the device's free reading
+/// (`None`: unreadable) holds the floor.
 pub(crate) fn prime_gdn_ws_parks(free: Option<usize>, floor: usize) -> bool {
-    floor == 0 || free.is_some_and(|free| free >= floor)
+    free.is_some_and(|free| free >= floor)
 }
 
 #[cfg(test)]
@@ -2388,13 +2441,79 @@ mod gdn_scan_ws_tests {
     #[test]
     fn the_workspace_parks_only_above_the_floor() {
         let floor = 2048usize << 20;
-        assert!(super::prime_gdn_ws_parks(None, 0));
-        assert!(super::prime_gdn_ws_parks(Some(0), 0));
         assert!(super::prime_gdn_ws_parks(Some(floor), floor));
         assert!(super::prime_gdn_ws_parks(Some(floor + 1), floor));
         assert!(!super::prime_gdn_ws_parks(Some(floor - 1), floor));
         assert!(!super::prime_gdn_ws_parks(Some(94 << 20), floor));
         assert!(!super::prime_gdn_ws_parks(None, floor));
+        // The park's floor is its own: the rung's rollback seam (0) leaves the default, and a
+        // floor the server passes is taken as it is.
+        assert_eq!(super::PRIME_GDN_WS_PARK_FLOOR_DEFAULT, floor);
+        assert_eq!(super::prime_gdn_ws_park_floor_from(0), floor);
+        assert_eq!(super::prime_gdn_ws_park_floor_from(512 << 20), 512 << 20);
+        assert!(!super::prime_gdn_ws_parks(
+            Some(floor - 1),
+            super::prime_gdn_ws_park_floor_from(0)
+        ));
+    }
+
+    /// memra#1258: a scan takes the workspace only when the planes hold its rows and heads, at
+    /// the planes' chunk width, with the pair planes where it needs them. One row too many must
+    /// not fit: the scan's kernels would write past the planes' end.
+    #[test]
+    fn a_scan_fits_only_within_the_planes() {
+        let c = GdnScanWs::C;
+        let have = (4096usize, 48usize, 48usize, true);
+        // (t, h, hk, c, pair) -> fits
+        let table = [
+            ((4096, 48, 48, c, true), true),
+            ((4096, 48, 48, c, false), true),
+            ((32, 16, 16, c, true), true),
+            ((4097, 48, 48, c, true), false),
+            ((8192, 48, 48, c, false), false),
+            ((4096, 49, 48, c, true), false),
+            ((4096, 48, 49, c, true), false),
+            ((4096, 48, 48, 2 * c, true), false),
+        ];
+        for ((t, h, hk, cc, pair), want) in table {
+            assert_eq!(
+                GdnScanWs::dims_fit(have, t, h, hk, cc, pair),
+                want,
+                "t={t} h={h} hk={hk} c={cc} pair={pair}"
+            );
+        }
+        // Planes without the pair serve only a scan that does not take it.
+        let no_pair = (4096usize, 48usize, 48usize, false);
+        assert!(GdnScanWs::dims_fit(no_pair, 4096, 48, 48, c, false));
+        assert!(!GdnScanWs::dims_fit(no_pair, 4096, 48, 48, c, true));
+    }
+
+    /// memra#1258: a prime call reuses the slab's or the parked workspace only when it holds the
+    /// call's rows and was sized for the model's heads; otherwise it allocates a new one. A wider
+    /// call must never reuse a narrower workspace.
+    #[test]
+    fn a_wider_call_gets_a_new_workspace() {
+        let have = (4096usize, 48usize, 48usize, true);
+        // (t, h, hk, pair) -> must allocate
+        let table = [
+            ((4096, 48, 48, true), false),
+            ((2048, 48, 48, true), false),
+            ((4096, 48, 48, false), false),
+            ((4097, 48, 48, true), true),
+            ((5733, 48, 48, false), true),
+            ((4096, 32, 48, true), true),
+            ((4096, 48, 16, true), true),
+        ];
+        for ((t, h, hk, pair), want) in table {
+            assert_eq!(
+                GdnScanWs::dims_stale(have, t, h, hk, pair),
+                want,
+                "t={t} h={h} hk={hk} pair={pair}"
+            );
+        }
+        let no_pair = (4096usize, 48usize, 48usize, false);
+        assert!(!GdnScanWs::dims_stale(no_pair, 4096, 48, 48, false));
+        assert!(GdnScanWs::dims_stale(no_pair, 4096, 48, 48, true));
     }
 }
 
@@ -29951,25 +30070,91 @@ impl Engine {
         let Some(ws) = ws else {
             return;
         };
-        let floor = PRIME_GDN_WS_PARK_FLOOR.load(std::sync::atomic::Ordering::Relaxed);
-        let free = (floor > 0)
-            .then(|| crate::unified_memory::allocatable_mem_info(self.ctx()).ok())
-            .flatten()
-            .map(|(free, _)| free);
+        let (free, floor) = self.prime_gdn_ws_floor_reading();
         if !prime_gdn_ws_parks(free, floor) {
-            eprintln!(
-                "[prime-ws] dev{} GDN scan workspace not parked: free_bytes={} floor_bytes={floor} \
-                 workspace_bytes={}",
-                self.ctx().ordinal(),
-                free.map_or_else(|| "unreadable".to_string(), |free| free.to_string()),
-                ws.bytes(),
-            );
+            self.prime_gdn_ws_note("not parked", free, floor, ws.bytes());
             return;
         }
         *self
             .prime_gdn_ws_parked
             .lock()
             .unwrap_or_else(|p| p.into_inner()) = Some(ws);
+    }
+
+    /// The device's free memory as admission sizes with it, and the park floor. The reading is
+    /// `cuMemGetInfo` on a discrete card and, on a unified-memory device, the larger of that and
+    /// `MemAvailable` (`unified_memory::unified_free_bytes`), which the driver-headroom rung reads
+    /// since memra#1257: with a full page cache the raw reading sits near 2 GiB on a host that is
+    /// not short. Which of the two this device takes is the engine's own answer, read once when
+    /// it was built (`Engine::unified_memory`).
+    fn prime_gdn_ws_floor_reading(&self) -> (Option<usize>, usize) {
+        let floor = PRIME_GDN_WS_PARK_FLOOR.load(std::sync::atomic::Ordering::Relaxed);
+        let free = self.ctx().mem_get_info().ok().map(|(free, _)| {
+            if self.unified_memory() {
+                crate::unified_memory::unified_free_bytes(
+                    free,
+                    crate::unified_memory::host_mem_available_bytes(),
+                )
+            } else {
+                free
+            }
+        });
+        (free, floor)
+    }
+
+    /// The gap between two calls of one prime (memra#1258): a workspace left in the slab is
+    /// `used` memory that no trim frees, while other sessions run. It stays only on a device that
+    /// holds the park floor; under it `home` is emptied and the bytes are cached blocks.
+    pub(crate) fn prime_gdn_ws_between_calls(&self, home: &mut Option<GdnScanWs>) {
+        let Some(bytes) = home.as_ref().map(GdnScanWs::bytes) else {
+            return;
+        };
+        let (free, floor) = self.prime_gdn_ws_floor_reading();
+        if !prime_gdn_ws_parks(free, floor) {
+            *home = None;
+            self.prime_gdn_ws_note("not held between calls", free, floor, bytes);
+        }
+    }
+
+    /// One line per workspace that is dropped where it could have stayed mapped.
+    pub(crate) fn prime_gdn_ws_note(
+        &self,
+        what: &str,
+        free: Option<usize>,
+        floor: usize,
+        bytes: usize,
+    ) {
+        eprintln!(
+            "[prime-ws] dev{} GDN scan workspace {what}: free_bytes={} floor_bytes={floor} \
+             workspace_bytes={bytes}",
+            self.ctx().ordinal(),
+            free.map_or_else(|| "unreadable".to_string(), |free| free.to_string()),
+        );
+    }
+
+    /// Drops the parked workspace when this device no longer holds the park floor, and returns its
+    /// bytes (0 when nothing is parked or the floor holds). The floor is read at the prime's end,
+    /// and the device can get short afterwards, when no long prime comes to take the workspace
+    /// back: admission would then count bytes as cached that only a long prime can use. A server
+    /// calls this in front of every admitted request, before its driver-headroom rung reads the
+    /// pool, so the bytes are cached blocks by the time anything is sized against them.
+    pub fn prime_gdn_ws_reconsider(&self) -> usize {
+        if self.prime_gdn_ws_parked_bytes() == 0 {
+            return 0;
+        }
+        let (free, floor) = self.prime_gdn_ws_floor_reading();
+        if prime_gdn_ws_parks(free, floor) {
+            return 0;
+        }
+        let Some(ws) = self.prime_gdn_ws_unpark() else {
+            return 0;
+        };
+        let bytes = ws.bytes();
+        drop(ws);
+        // The frees are stream-ordered: let them land before the caller reads the pool.
+        let _ = self.stream().synchronize();
+        self.prime_gdn_ws_note("unparked", free, floor, bytes);
+        bytes
     }
 
     /// Takes the parked workspace back for a prime, when there is one.

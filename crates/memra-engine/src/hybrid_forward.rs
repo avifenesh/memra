@@ -33,10 +33,12 @@ pub struct PrimeSlabs {
     pub up: CudaSlice<f32>,      // t * n_ff_max
     pub ffn_out: CudaSlice<f32>, // t * n_embd
     /// memra#1258 step 2: the GDN chunk scan's planes (`HybridModel::prime_gdn_ws_dims`), lent to
-    /// the engine for each walk. A prime holds them from its first call (regrown for a wider
-    /// one) to its last; then they are parked on the engine (`Engine::prime_gdn_ws_park`): the
-    /// next prime takes the same bytes back, and between primes admission counts them as
-    /// reclaimable (`Engine::pool_cached_bytes`), which a trim on the reclaim path frees.
+    /// the engine for each walk. On a device that holds the park floor a prime holds them from
+    /// its first call (regrown for a wider one) to its last; then they are parked on the engine
+    /// (`Engine::prime_gdn_ws_park`): the next prime takes the same bytes back, and between
+    /// primes admission counts them as reclaimable (`Engine::pool_cached_bytes`), which a trim on
+    /// the reclaim path frees. On a device under the floor they do not outlive a call
+    /// (`HybridModel::prime_gdn_ws_end_call`).
     pub gdn: Option<crate::GdnScanWs>,
 }
 
@@ -62,6 +64,47 @@ impl<'a> GdnWsLoan<'a> {
 impl Drop for GdnWsLoan<'_> {
     fn drop(&mut self) {
         *self.home = self.e.prime_gdn_ws_take();
+    }
+}
+
+/// memra#1258: what becomes of the slab's GDN scan workspace when one prime call's walk ends,
+/// on every path out of it (`HybridModel::prime_gdn_ws_end_call`). Declared before the slab's
+/// guard and the loan, so it runs after both are gone.
+struct GdnWsCallEnd<'a> {
+    model: &'a HybridModel,
+    e: &'a Engine,
+    /// The prime's last call (`base + t == seq_end`).
+    last: bool,
+    /// Set when the walk returns its rows; a failed walk leaves it false.
+    done: bool,
+}
+
+impl Drop for GdnWsCallEnd<'_> {
+    fn drop(&mut self) {
+        // A captured walk keeps the workspace: the prime graph holds its address, and the
+        // graph's owner releases it after the graph (`prime_cache_overlaid`), on failure too.
+        if crate::qwen_prime_graph::current().is_some() {
+            return;
+        }
+        self.model
+            .prime_gdn_ws_end_call(self.e, self.last || !self.done);
+    }
+}
+
+/// memra#1258: a prime chunk that fails leaves no workspace held in a slab, whoever called it
+/// (`prime_cache_overlaid` releases on failure as well; the MTP prime walker calls `prime_chunk`
+/// directly).
+struct GdnWsChunkEnd<'a> {
+    model: &'a HybridModel,
+    e: &'a Engine,
+    ok: bool,
+}
+
+impl Drop for GdnWsChunkEnd<'_> {
+    fn drop(&mut self) {
+        if !self.ok {
+            self.model.prime_gdn_ws_release(self.e);
+        }
     }
 }
 
@@ -7472,9 +7515,10 @@ impl HybridModel {
     /// memra#1258 step 2: the head counts a prime's `GdnScanWs` is sized for, or None when the
     /// model has no GDN layer or its GDN scans do not take the route the workspace serves
     /// (`Engine::gdn_scan_ws_route`, a d_state other than 128). The key-head count is the
-    /// value-head count, the bound `gdn_hk` never exceeds; the K4/K5 pair planes are always
-    /// allocated (a device on the fused route leaves them unused), so admission's shape needs no
-    /// device.
+    /// value-head count, the bound `gdn_hk` never exceeds. The K4/K5 pair planes are allocated
+    /// only where the device's scan takes the unfused pair (`gdn_k45_on` off, `prime_slabs_get`);
+    /// admission's shape charges them on every device, so it needs none and never charges less
+    /// than a device allocates.
     pub fn prime_gdn_ws_dims(&self) -> Option<(usize, usize)> {
         if !Engine::gdn_scan_ws_route(Engine::gdn_chunk_size()) {
             return None;
@@ -7543,7 +7587,13 @@ impl HybridModel {
             let rows = t.max(crate::cache::PRIME_CHUNK_MAX_TOKENS);
             if (s.gdn.is_some() || t >= PRIME_GDN_WS_MIN_ROWS)
                 && s.gdn.as_ref().is_none_or(|g| {
-                    g.t_cap < t || g.h != h || g.hk != hk || (pair && g.pair.is_none())
+                    crate::GdnScanWs::dims_stale(
+                        (g.t_cap, g.h, g.hk, g.pair.is_some()),
+                        t,
+                        h,
+                        hk,
+                        pair,
+                    )
                 })
             {
                 s.gdn = None;
@@ -7553,14 +7603,56 @@ impl HybridModel {
         Ok(slab)
     }
 
-    /// memra#1258 step 2: park the prime GDN scan workspace on `e`'s device once its prime has
-    /// ended (`Engine::prime_gdn_ws_park`). A walk in progress holds the slab's lock, so this
-    /// waits for it.
+    /// memra#1258 step 2: a prime has ended or failed, so no slab keeps its GDN scan workspace.
+    /// Each device this model primes on has its own slab; each one's workspace goes to the
+    /// engine that owns that device (`Engine::prime_gdn_ws_park`: parked, or dropped under the
+    /// park floor). A walk in progress holds its slab's lock, so this waits for it.
+    ///
+    /// Today the list is `e` alone wherever a workspace exists: a plan with a `GatedDeltaNet`
+    /// mixer is refused pipeline placement at load (`execution_manifest::PIPELINE`), and the
+    /// workspace serves only those scans. The loop is what keeps a stage's workspace from being
+    /// left behind if that refusal is ever lifted.
     pub(crate) fn prime_gdn_ws_release(&self, e: &Engine) {
         let _numeric = self.enter_numeric();
+        let owners = self.owned_engines(e);
         let slabs = self.prime_slabs.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(slab) = slabs.get(&e.ctx().ordinal()) {
-            e.prime_gdn_ws_park(slab.lock().unwrap_or_else(|p| p.into_inner()).gdn.take());
+        for owner in owners {
+            if let Some(slab) = slabs.get(&owner.ctx().ordinal()) {
+                owner.prime_gdn_ws_park(slab.lock().unwrap_or_else(|p| p.into_inner()).gdn.take());
+            }
+        }
+    }
+
+    /// memra#1258: a request whose prime will make no further call (retired, aborted or torn
+    /// down between two of its prime calls) hands the workspace back. The last call of a prime
+    /// and a failed call release it themselves; a prime that simply stops being called cannot.
+    pub fn prime_abandoned(&self, e: &Engine) {
+        self.prime_gdn_ws_release(e);
+    }
+
+    /// memra#1258: the slab's GDN scan workspace at the end of one prime call on `e`'s device.
+    ///
+    /// `over` (the prime's last call, or a call that failed): it leaves the slab for the engine,
+    /// which parks it or, under the park floor, drops it (`Engine::prime_gdn_ws_park`).
+    ///
+    /// Otherwise the prime has more calls to come and other sessions run in the gap. On a device
+    /// that holds the floor the workspace stays in the slab for the next call. Under the floor
+    /// it is dropped (`Engine::prime_gdn_ws_between_calls`): held, its bytes are `used`, which no
+    /// trim frees and no other allocation can take, while the sessions that run in the gap
+    /// allocate from the pool's cached blocks and then from the driver. The next call allocates
+    /// a new workspace, or keeps the per-layer planes when it is narrower than
+    /// `PRIME_GDN_WS_MIN_ROWS`.
+    pub(crate) fn prime_gdn_ws_end_call(&self, e: &Engine, over: bool) {
+        let _numeric = self.enter_numeric();
+        let slabs = self.prime_slabs.lock().unwrap_or_else(|p| p.into_inner());
+        let Some(slab) = slabs.get(&e.ctx().ordinal()) else {
+            return;
+        };
+        let mut s = slab.lock().unwrap_or_else(|p| p.into_inner());
+        if over {
+            e.prime_gdn_ws_park(s.gdn.take());
+        } else {
+            e.prime_gdn_ws_between_calls(&mut s.gdn);
         }
     }
 
@@ -7588,6 +7680,11 @@ impl HybridModel {
                     .into(),
             );
         }
+        let mut chunk_end = GdnWsChunkEnd {
+            model: self,
+            e,
+            ok: false,
+        };
         // LEVER B (lane/pp-leverb, 2026-08-08): the ppN door for the chunked prime. With the
         // door open + per-stage streams, each chunk walks its layer ranges on the OWNING
         // stage's engine/device (the anatomy receipt this kills: dev1 ran ZERO prefill
@@ -7613,7 +7710,9 @@ impl HybridModel {
                          run single-device or MEMRA_PRIME_PP=0"
                     .into());
             }
-            return self.prime_chunk_ppn(e, tokens, cache, seq_end, &fence);
+            let out = self.prime_chunk_ppn(e, tokens, cache, seq_end, &fence);
+            chunk_end.ok = out.is_ok();
+            return out;
         }
         if crate::pp::pp_host_bounce_active() {
             return Err(
@@ -7680,7 +7779,9 @@ impl HybridModel {
             cache.qwen_prime_graph = None;
             e.trim_device_graph_mem()?;
         }
-        self.prime_chunk_epilogue(e, x, t, cache)
+        let out = self.prime_chunk_epilogue(e, x, t, cache);
+        chunk_end.ok = out.is_ok();
+        out
     }
 
     /// PRIME RANGE SUBGRAPH (lane/pp-leverb, 2026-08-08): layers `[lo, hi)` of the chunked
@@ -7735,6 +7836,14 @@ impl HybridModel {
             .max(n_embd);
         // No fused-norm seed survives into or out of this walk (error returns included).
         let _seed_guard = e.f8f4_seed_guard();
+        // memra#1258: the workspace's fate when this call ends, on every path. Declared before
+        // the slab's guard and the loan, so it runs after them.
+        let mut ws_end = GdnWsCallEnd {
+            model: self,
+            e,
+            last: base + t == seq_end,
+            done: false,
+        };
         let use_slabs = std::env::var("MEMRA_PRIME_SLABS").as_deref() != Ok("0");
         let slab = if use_slabs {
             Some(self.prime_slabs_get(e, t, n_embd, n_ff_max)?)
@@ -8293,18 +8402,13 @@ impl HybridModel {
         // hidden-stack return: clone the final x out of the slab
         let mut x = e.uninit(t * n_embd)?;
         e.copy_into(&mut x, 0, x_cur, t * n_embd)?;
-        // The workspace goes back into the slab before the slab's lock is released, and is
-        // parked on the engine when this was the prime's last call (`seq_end` is the request's
-        // end). A captured walk keeps it: the prime graph's owner parks it after the graph
-        // (`prime_cache_overlaid`).
+        // The workspace goes back into the slab before the slab's lock is released. What becomes
+        // of it then is `ws_end`'s, once the lock is gone: parked or dropped when this was the
+        // prime's last call (`seq_end` is the request's end), kept or dropped by the park floor
+        // when more calls follow.
         drop(gdn_loan);
-        if base + t == seq_end
-            && crate::qwen_prime_graph::current().is_none()
-            && let Some(g) = slab_guard.as_mut()
-        {
-            e.prime_gdn_ws_park(g.gdn.take());
-        }
         drop(slab_guard);
+        ws_end.done = true;
         Ok(x)
     }
 
@@ -9879,6 +9983,7 @@ impl HybridModel {
         let head_dim = geometry.head_dim_k as usize;
         if seq_end > t
             && (head_dim == 256 || head_dim == 128)
+            && !crate::portable_mma_gated()
             && std::env::var("MEMRA_NOFA").is_err()
             && std::env::var("MEMRA_PRIME_DEQW")
                 .map(|v| v != "0")
@@ -33203,13 +33308,84 @@ mod prime_slab_into_census_tests {
             )),
             "{overlaid}"
         );
+        // Every path out of a walk settles the workspace: a guard declared before the slab's
+        // lock, told the prime's last call, and marked done only where the rows are returned.
         let walk = code(fn_body(&hf, concat!("pub(crate) fn prime", "_layers(")));
+        let guard = walk
+            .find(concat!("let mut ws_end = GdnWs", "CallEnd {"))
+            .expect("the walk's end-of-call guard");
+        let lock = walk
+            .find(concat!("let mut slab", "_guard ="))
+            .expect("the slab's lock");
+        assert!(guard < lock, "the guard outlives the slab's lock");
+        assert!(walk.contains(concat!("last: base + t ", "== seq_end,")));
+        assert_eq!(walk.matches(concat!("ws_end.done ", "= true;")).count(), 1);
         assert!(
-            walk.contains(concat!(
-                "if base + t == seq_end\n",
-                "            && crate::qwen_prime_graph::current().is_none()"
+            walk.trim_end()
+                .ends_with(concat!("ws_end.done ", "= true;\n        Ok(x)\n    }")),
+            "{}",
+            &walk[walk.len().saturating_sub(200)..]
+        );
+        let call_end = code(fn_body(
+            &hf,
+            concat!("impl Drop for GdnWs", "CallEnd<'_> {"),
+        ));
+        assert!(
+            call_end.contains(concat!("qwen_prime_graph::current()", ".is_some()"))
+                && call_end.contains(concat!(
+                    ".prime_gdn_ws_end_call(self.e, self.last ",
+                    "|| !self.done);"
+                )),
+            "{call_end}"
+        );
+        // The last or a failed call: to the engine. More calls to come: the park floor decides.
+        let end = code(fn_body(
+            &hf,
+            concat!("pub(crate) fn prime_gdn_ws", "_end_call("),
+        ));
+        assert!(
+            end.contains(concat!(
+                "if over {\n",
+                "            e.prime_gdn_ws_park(s.gdn.take());\n",
+                "        } else {\n",
+                "            e.prime_gdn_ws_between_calls(&mut s.gdn);"
             )),
-            "the walk frees the workspace at the prime's last call, outside a capture"
+            "{end}"
+        );
+        // A failed chunk releases, and a release reaches every engine the model owns.
+        let chunk = code(fn_body(&hf, concat!("pub(crate) fn prime", "_chunk(")));
+        assert!(chunk.contains(concat!("let mut chunk_end = GdnWs", "ChunkEnd {")));
+        assert_eq!(
+            chunk
+                .matches(concat!("chunk_end.ok ", "= out.is_ok();"))
+                .count(),
+            2,
+            "{chunk}"
+        );
+        let chunk_drop = code(fn_body(
+            &hf,
+            concat!("impl Drop for GdnWs", "ChunkEnd<'_> {"),
+        ));
+        assert!(chunk_drop.contains(concat!(
+            "if !self.ok {\n",
+            "            self.model.prime_gdn_ws_release(self.e);"
+        )));
+        let release = code(fn_body(
+            &hf,
+            concat!("pub(crate) fn prime_gdn_ws", "_release("),
+        ));
+        assert!(
+            release.contains(concat!("self.owned_engines", "(e)"))
+                && release.contains(concat!("owner.prime_gdn_ws", "_park(")),
+            "{release}"
+        );
+        let abandoned = code(fn_body(&hf, concat!("pub fn prime", "_abandoned(")));
+        assert!(abandoned.contains(concat!("self.prime_gdn_ws", "_release(e);")));
+        // A call reuses a workspace only through the sizing decision.
+        let get = code(fn_body(&hf, concat!("pub fn prime_slabs", "_get(")));
+        assert!(
+            get.contains(concat!("crate::GdnScanWs::dims", "_stale(")),
+            "{get}"
         );
         let shape = code(fn_body(&hf, concat!("pub fn prime_workspace", "_shape(")));
         assert!(
@@ -33236,15 +33412,45 @@ mod prime_slab_into_census_tests {
             .expect("trim frees the parked workspace");
         let second = trim.rfind(call).expect("a second trim");
         assert!(first < check && check < parked && parked < second, "{trim}");
-        // The park keeps the workspace only above the park floor, on admission's free reading.
+        // The park, the gap between two calls and the later reclaim all keep the workspace only
+        // above the park floor, on one reading: admission's, by the engine's own answer to
+        // whether its device shares the host's memory.
         let park = code(fn_body(
             &lib,
             concat!("pub(crate) fn prime_gdn_ws", "_park("),
         ));
         assert!(
-            park.contains(concat!("if !prime_gdn_ws", "_parks(free, floor)"))
-                && park.contains(concat!("allocatable_mem", "_info(self.ctx())")),
+            park.contains(concat!("self.prime_gdn_ws_floor", "_reading();"))
+                && park.contains(concat!("if !prime_gdn_ws", "_parks(free, floor)")),
             "{park}"
         );
+        let reading = code(fn_body(&lib, concat!("fn prime_gdn_ws_floor", "_reading(")));
+        assert!(
+            reading.contains(concat!("if self.unified", "_memory() {"))
+                && reading.contains(concat!("unified_memory::unified_free", "_bytes("))
+                && reading.contains(concat!("host_mem_available", "_bytes()")),
+            "{reading}"
+        );
+        let between = code(fn_body(
+            &lib,
+            concat!("pub(crate) fn prime_gdn_ws_between", "_calls("),
+        ));
+        assert!(
+            between.contains(concat!("self.prime_gdn_ws_floor", "_reading();"))
+                && between.contains(concat!("if !prime_gdn_ws", "_parks(free, floor)")),
+            "{between}"
+        );
+        let reconsider = code(fn_body(
+            &lib,
+            concat!("pub fn prime_gdn_ws", "_reconsider("),
+        ));
+        assert!(
+            reconsider.contains(concat!("self.prime_gdn_ws_floor", "_reading();"))
+                && reconsider.contains(concat!("if prime_gdn_ws", "_parks(free, floor)"))
+                && reconsider.contains(concat!("self.stream()", ".synchronize()")),
+            "{reconsider}"
+        );
+        let fits = code(fn_body(&lib, concat!("fn fits", "(&self")));
+        assert!(fits.contains(concat!("Self::dims", "_fit(")), "{fits}");
     }
 }
