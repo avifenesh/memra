@@ -1,0 +1,26 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.12s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::a_host_promotion_reserves_the_bytes_it_copies ... FAILED
+
+failures:
+
+---- worker::tests::a_host_promotion_reserves_the_bytes_it_copies stdout ----
+[prefix-cache] unified memory: insert budget 2608MB (configured 50529MB; live free 6366MB, headroom 3758MB, resident 0MB, of the entry already allocated 0MB)
+[prefix-cache] insert refused: entry 4130000000 exceeds budget 2608000000 (live free memory holds the insert budget under its configured 50529000000; snapshot preflight, model m, ns "tenant-a")
+
+thread 'worker::tests::a_host_promotion_reserves_the_bytes_it_copies' (649322) panicked at crates/memra-server/src/worker.rs:44339:9:
+assertion `left == right` failed
+  left: Instant { tv_sec: 2818191, tv_nsec: 475363170 }
+ right: Instant { tv_sec: 2818191, tv_nsec: 475285791 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::a_host_promotion_reserves_the_bytes_it_copies
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1307 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

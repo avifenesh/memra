@@ -1,0 +1,37 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+warning: method `with_hit_leased` is never used
+     --> crates/memra-server/src/worker.rs:13433:8
+      |
+12139 | impl PrefixCache {
+      | ---------------- method in this implementation
+...
+13433 |     fn with_hit_leased<R>(
+      |        ^^^^^^^^^^^^^^^
+      |
+      = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-server` (lib test) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.12s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::a_copy_publication_counts_its_drafter_tail ... FAILED
+
+failures:
+
+---- worker::tests::a_copy_publication_counts_its_drafter_tail stdout ----
+[prefix-cache] unified memory: insert budget 2644MB (configured 50529MB; live free 6366MB, headroom 3758MB, resident 0MB, of the entry already allocated 36MB)
+
+thread 'worker::tests::a_copy_publication_counts_its_drafter_tail' (509968) panicked at crates/memra-server/src/worker.rs:44172:9:
+assertion `left == right` failed
+  left: Some((5368234, 36000000))
+ right: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::a_copy_publication_counts_its_drafter_tail
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1307 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

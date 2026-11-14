@@ -1,0 +1,24 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.19s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::a_publication_reads_every_plane_off_the_cache ... FAILED
+
+failures:
+
+---- worker::tests::a_publication_reads_every_plane_off_the_cache stdout ----
+
+thread 'worker::tests::a_publication_reads_every_plane_off_the_cache' (650196) panicked at crates/memra-server/src/worker.rs:44026:9:
+assertion `left == right` failed
+  left: 0
+ right: 513920
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::a_publication_reads_every_plane_off_the_cache
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1307 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`
