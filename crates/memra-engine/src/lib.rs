@@ -4691,27 +4691,46 @@ impl Engine {
                 );
             }
         }
-        let module = gpu.ctx.load_module(Ptx::from_binary(FATBIN.to_vec()))?;
-        let hybrid = gpu
-            .ctx
-            .load_module(Ptx::from_binary(HYBRID_FATBIN.to_vec()))?;
-        let kda = gpu.ctx.load_module(Ptx::from_binary(KDA_FATBIN.to_vec()))?;
-        let qmatvec = gpu
-            .ctx
-            .load_module(Ptx::from_binary(QMATVEC_FATBIN.to_vec()))?;
-        let flash = gpu
-            .ctx
-            .load_module(Ptx::from_binary(FLASH_FATBIN.to_vec()))?;
-        let gemm = gpu
-            .ctx
-            .load_module(Ptx::from_binary(gemm_fatbin_bytes().into_owned()))?;
-        let router = gpu
-            .ctx
-            .load_module(Ptx::from_binary(ROUTER_FATBIN.to_vec()))?;
-        let sample = gpu
-            .ctx
-            .load_module(Ptx::from_binary(SAMPLE_FATBIN.to_vec()))?;
-        let copy_stream = gpu.ctx.new_stream()?;
+        // Each boot step names its driver call on failure (memra#1316: an out-of-memory answer
+        // from here used to carry no site).
+        let load = |call: &'static str, fatbin: Vec<u8>| {
+            memra_runtime::ctx_boot::boot_step(
+                ordinal,
+                call,
+                gpu.ctx.load_module(Ptx::from_binary(fatbin)),
+            )
+        };
+        let module = load("cuModuleLoadData (the core kernels)", FATBIN.to_vec())?;
+        let hybrid = load(
+            "cuModuleLoadData (the hybrid kernels)",
+            HYBRID_FATBIN.to_vec(),
+        )?;
+        let kda = load("cuModuleLoadData (the KDA kernels)", KDA_FATBIN.to_vec())?;
+        let qmatvec = load(
+            "cuModuleLoadData (the quantized matvec kernels)",
+            QMATVEC_FATBIN.to_vec(),
+        )?;
+        let flash = load(
+            "cuModuleLoadData (the attention kernels)",
+            FLASH_FATBIN.to_vec(),
+        )?;
+        let gemm = load(
+            "cuModuleLoadData (the GEMM kernels)",
+            gemm_fatbin_bytes().into_owned(),
+        )?;
+        let router = load(
+            "cuModuleLoadData (the router kernels)",
+            ROUTER_FATBIN.to_vec(),
+        )?;
+        let sample = load(
+            "cuModuleLoadData (the sampler kernels)",
+            SAMPLE_FATBIN.to_vec(),
+        )?;
+        let copy_stream = memra_runtime::ctx_boot::boot_step(
+            ordinal,
+            "cuStreamCreate (the copy stream)",
+            gpu.ctx.new_stream(),
+        )?;
         // DECODE EVENT-TRACKING ELISION — DEFAULT ON (2026-07-05; MEMRA_EVT=1 = escape hatch).
         // cudarc is in multi-stream mode (main stream +
         // copy_stream are both created streams), so with tracking on EVERY launch arg records a

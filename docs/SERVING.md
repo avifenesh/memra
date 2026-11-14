@@ -540,6 +540,7 @@ unified arm; discrete cards read none of them. GB10 values and the measurements 
 | non-streaming `timeout_ms` maximum and default | 90,000 ms | the streaming value plus 8,192 open output tokens at 4 tok/s |
 | prefix-cache insert budget | the configured budget | clamped on every insert to what the cache holds plus allocatable free memory less the driver headroom and the reserve |
 | admission booking of cache growth | none, except after a partial admission reclaim | the cache's allowed growth is booked as committed |
+| context creation at boot | one call; its error is the boot's | retried while it answers out of memory and MemAvailable is at least 256 MiB: waits of 50 ms doubling to 800 ms, until 90 s have passed |
 
 Of the readers memra#1307 went through, three stay on raw `cuMemGetInfo` free on unified memory, where
 it can only read lower: the 256 MiB graph-launch floor, the bound a failed draft-graph capture
@@ -554,6 +555,39 @@ pinned spill budget and the MoE slot cache keep their discrete values. Rollback:
 `MEMRA_PREFIX_CACHE_MB` is authoritative; `MEMRA_SSE_PREFILL_COMMIT_MS=0` restores the 90 s
 windows; an explicit `MEMRA_STREAM_TTFT_MS_MAX` or `MEMRA_TIMEOUT_MS_MAX` takes over its ceiling.
 The `[prefix-cache] on:` and `[deadline] unified memory` boot lines state each value.
+
+**Boot on a busy page cache.** Creating the CUDA context needs one free 2 MiB block from the host
+for the context buffer. With the page cache full and other tasks filling it, the kernel may not
+have one at that moment, and the driver answers `CUDA_ERROR_OUT_OF_MEMORY` with more than 100 GB
+reclaimable. The boot tries again: waits of 50 ms doubling to 800 ms, until 90 s have passed
+since the first try began (the tries count, not only the waits). The record is
+[GB10-CONTEXT-CREATE-RETRY](decisions/GB10-CONTEXT-CREATE-RETRY.md); there is no flag.
+
+| Line | Meaning |
+|---|---|
+| `[ctx-retry] device 0: context creation returned driver code 2 (no memory) on unified memory (try N, T ms since the first try began; host MemFree ..., MemAvailable ..., Cached ..., free blocks of order 9 and up (2 MiB with 4 KiB pages): K); trying again in W ms` | a try found no block; the boot waits and tries again. The line names the driver's code by number on purpose: a boot that recovers is not a failure, and the serving gates scan a server log for the code's name and text |
+| `[ctx-retry] device 0: context created on try N, after T ms` | the boot goes on; nothing else differs from a boot that needed no retry |
+| `[ctx-retry] device 0: context creation still out of memory after N tries and T ms (...); giving up` | 90 s passed with no block. The next line is the boot's error: `[server] FATAL: worker init failed: Engine::new failed: cuDevicePrimaryCtxRetain (context creation) on device 0 failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") (host ...)` |
+| `[ctx-retry] device 0: context creation answered out of memory and the host has under 256 MiB available (...); not retried` (or `... the host's MemAvailable could not be read; not retried`) | the host is short, or cannot say: the driver's answer stands and the boot fails at once with the same error |
+
+- **Added boot time.** Nothing when the first try succeeds. In the measured boots a retry added
+  0.2 to 9 s. The bound is 90 s from the first try, plus the length of the last try (a try
+  returns in 22 to 266 ms when it fails; one that succeeded took 3.6 s).
+- **After a give-up** the process exits with the error above. Read its host line: `MemAvailable`
+  in the tens of GB with `free blocks of order 9 and up ...: 0` means the host had the memory
+  and no 2 MiB block for 90 s, which is load on the host (something filling the page cache: a
+  copy, a backup, another model loading), not a fault of the card or of the model. Under the
+  shipped unit systemd restarts the server (`Restart=on-failure`, after `RestartSec`) and the
+  new boot has the full 90 s again. Four failed starts within an hour stop the unit
+  (`StartLimitBurst=4`): once the host's load has eased, `systemctl reset-failed memra-server`
+  and start it. Nothing in memra needs changing, and dropping the page cache is the host
+  owner's call, never the server's.
+- **A worker respawn** creates its context the same way, while `WATCHDOG=1` is withheld. If the
+  retry and the reload together outlast `WatchdogSec` (180 s), systemd restarts the unit, which
+  is what a give-up leads to as well; the fresh boot then runs under `TimeoutStartSec` (600 s).
+  Measured on GB10 from the start line: 20 to 54 s to `listening` for Qwen3.8-27B with the
+  DFlash2 drafter at 32,768 context, 115 to 140 s to `/readyz` with the MTP draft at 262,144
+  context and 32 sessions.
 
 <a id="prompt-caching-cross-request-prefix-cache--2026-08-02"></a>
 

@@ -51,6 +51,7 @@ line here.
 | [GEMMA-UNOPENED-THOUGHT.md](GEMMA-UNOPENED-THOUGHT.md) | 2026-11-04 | Adopted | gemma4 parsers route text before an unopened `<channel\|>` at the start of a turn to reasoning; a stream holds at most 256 bytes. |
 | [POOLED-MEMBER-CLOSE.md](POOLED-MEMBER-CLOSE.md) | 2026-11-11 | Adopted | A pooled MTP or DSpark cohort member closes at the round its stream ended, not when the whole cohort call returns (memra#1209). |
 | [HANDOFF-DIRECT-EXPORT.md](HANDOFF-DIRECT-EXPORT.md) | 2026-11-04 | Adopted | The host-tier handoff export writes with `O_DIRECT` on the full-power RTX PRO 6000 Workstation Edition, buffered elsewhere; `MEMRA_KV_HOST_HANDOFF_IO` deleted. |
+| [GB10-CONTEXT-CREATE-RETRY.md](GB10-CONTEXT-CREATE-RETRY.md) | 2026-11-14 | Adopted | On a unified-memory device context creation is retried while it answers out of memory and the host reports at least 256 MiB available (50 ms doubling to 800 ms, until 90 s have elapsed); discrete cards keep one call; every boot step names its driver call (memra#1316). |
 | [VISION-LANE.md](VISION-LANE.md) | 2026-08-15 | Adopted | The in-engine Qwen vision tower for image input, gated by tower parity against the HF f32 oracle; video was left for a later lane. |
 
 ## KV cache, prefix cache and spill
