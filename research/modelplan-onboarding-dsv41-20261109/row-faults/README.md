@@ -45,6 +45,11 @@ included, are served.
   calls of the running request at index i in that step from NaN streams (`Runner::poison`), so its
   router rows name no expert in every layer, as a request's data can make them, through the real
   kernels; `step` alone keeps the whole-step injection (a call word no map names).
+- **The gate's ranks and plan forms** (the memra#1315 review). `dsv41-gate rowfault` takes
+  `--devices` (default one rank on device 0; `0,0` is two ranks on one card, the N-rank path on one
+  device), and poisons a 50-row call beside a clean one: 300 pairs, past the 256 the one-block plan
+  takes, so the three-kernel plan skips the pairs and marks the rows. The first three poisoned calls
+  (23, 29 and 34 rows) all took the one-block plan.
 
 ## Which faults fail what
 

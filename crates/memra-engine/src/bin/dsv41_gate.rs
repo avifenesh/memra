@@ -19,7 +19,8 @@
 //!                    --side-delay and --poison-free arm `SIDE_DELAY_NS` and `POISON_FREE` for the
 //!                    run, the decode gate's ordering faults)
 //!   any of them with --dense-form F: every dense FP8/FP4 GEMM in form F (`dsv41_gpu::GEMM_FORM`)
-//!   dsv41-gate rowfault CKPT_DIR --token-map FILE [--layers N] [--experts-host] [--out RECEIPT.json]
+//!   dsv41-gate rowfault CKPT_DIR --token-map FILE [--layers N] [--experts-host] [--devices 0,0]
+//!                       [--out RECEIPT.json]
 //!                    (a call flag names its rows: a poisoned request's rows named, the others' bytes kept)
 
 use memra_engine::dsv41_gpu::{
@@ -4649,13 +4650,16 @@ fn idx_gate(
     ))
 }
 
-/// `dsv41-gate rowfault CKPT --token-map FILE [--layers N] [--experts-host]`: a call flag names its
-/// rows (memra#1292), on the serving route's runner (`Runner` with its call flag attributed, one
-/// rank). A request's rows are poisoned the way the route's fault door does it (`Runner::poison`:
-/// the call's streams start as NaN, so its router rows name no expert in every layer):
+/// `dsv41-gate rowfault CKPT --token-map FILE [--layers N] [--experts-host] [--devices 0,0]`: a call
+/// flag names its rows (memra#1292), on the serving route's runner (`Runner` with its call flag
+/// attributed). A request's rows are poisoned the way the route's fault door does it
+/// (`Runner::poison`: the call's streams start as NaN, so its router rows name no expert in every
+/// layer):
 ///
 /// - two own calls in one forward, the second poisoned: `step_faults` names every row of the
 ///   second call and none of the first, and the first call's logits are its clean run's bytes;
+/// - the same with a 50-row second call: its 300 pairs are past the one-block plan's 256, so the
+///   skipped pairs go through the three-kernel plan;
 /// - a batched call of two rows, row 1 poisoned: `step_faults` names row 1 alone, row 0's logits
 ///   are its clean run's bytes, and so are the logits of row 0's next step (the poisoned row left
 ///   nothing in the shared state: the expert cache, the step block, the free lists);
@@ -4665,11 +4669,14 @@ fn idx_gate(
 /// `--experts-host` runs the served one-card residency (every layer's own weights on the card, the
 /// routed experts in pinned host memory behind the device cache), whose MoE reads its plan back
 /// and refused a plan with skipped pairs before #1292; without it the trunk is resident.
+/// `--devices` names each rank's device (default one rank on device 0; `0,0` is two ranks on one
+/// card, a pair's N-rank path on one device).
 fn rowfault_gate(
     ckpt: &Path,
     tmap: &Path,
     layers: usize,
     host: bool,
+    devices: &[usize],
     rep: &mut Report,
 ) -> Result<String, String> {
     use memra_engine::dsv41_gpu::decode::{Call, Runner};
@@ -4687,12 +4694,25 @@ fn rowfault_gate(
     let n_layers = layers.clamp(1, trunk);
     let stm = memra_gguf::safetensors::StModel::open(ckpt).map_err(|e| e.to_string())?;
     let ec = v::engram::EngramConsts::derive(&g, v::engram::token_map_from_file(tmap)?)?;
-    let mut rn = Runner::new(&stm, g.clone(), Some(ec), &[0], 1024, n_layers, 0, 8192)?;
-    // what the gate's forwards need beside the weights (and the expert cache): prompts of under 32
-    // tokens, eight sequences at most, and a GiB of margin
-    let reserve = v::decode::prefill_workspace_bytes(&g, 1, 64, 8192)
+    if devices.is_empty() {
+        return Err("rowfault: --devices names no device".into());
+    }
+    let n = devices.len();
+    v::Part::check(&g, n)?;
+    let mut rn = Runner::new(&stm, g.clone(), Some(ec), devices, 1024, n_layers, 0, 8192)?;
+    // what the gate's forwards need on a rank beside the weights (and the expert cache): prompts
+    // of under 64 tokens, eight sequences at most, and a GiB of margin; the ranks of a card share
+    // it
+    let most = rn
+        .device_ranks()
+        .iter()
+        .map(|x| x.1.len())
+        .max()
+        .unwrap_or(1);
+    let reserve = (v::decode::prefill_workspace_bytes(&g, n, 64, 8192)
         + 8 * v::decode::seq_state_bytes(&g, n_layers, 64)
-        + (1 << 30);
+        + (1 << 30))
+        * most;
     if host {
         let threads = std::thread::available_parallelism().map_or(8, |n| n.get());
         let ctx = rn.grp.cx[0].ops.st.context().clone();
@@ -4700,7 +4720,8 @@ fn rowfault_gate(
             &stm, &g, n_layers, &ctx, threads,
         )?);
         rn.experts_off_card(hx)?;
-        rn.grow_caches(reserve as u64, usize::MAX)?;
+        // a rank's cache holds at most its own range's experts of every layer
+        rn.grow_caches(reserve as u64, n_layers * (g.n_experts / n))?;
     } else {
         rn.load_resident(n_layers, reserve)?;
     }
@@ -4708,6 +4729,8 @@ fn rowfault_gate(
     let vocab = g.vocab;
     let pa: Vec<u32> = (0..23).map(|i| 1000 + 37 * i).collect();
     let pb: Vec<u32> = (0..29).map(|i| 5000 + 53 * i).collect();
+    // 50 rows: 300 expert pairs, past the 256 the one-block plan takes
+    let pc: Vec<u32> = (0..50).map(|i| 9000 + 41 * i).collect();
     let pick = |row: &[f32]| v::decode::argmax(row) as u32;
     let bits = |x: &[f32]| x.iter().map(|f| f.to_bits()).collect::<Vec<u32>>();
     let pair = |rn: &Runner| vec![rn.seq_with_capacity(64), rn.seq_with_capacity(64)];
@@ -4719,6 +4742,16 @@ fn rowfault_gate(
         Call {
             seq: 1,
             tokens: pb.clone(),
+        },
+    ];
+    let long = [
+        Call {
+            seq: 0,
+            tokens: pa.clone(),
+        },
+        Call {
+            seq: 1,
+            tokens: pc.clone(),
         },
     ];
     let mut clean_named = Vec::new();
@@ -4743,6 +4776,13 @@ fn rowfault_gate(
     let rnext = rn.logits(&o, 0, 1)?;
     clean_named.push(rn.step_faults(&[&o])?);
     drop(o);
+    let mut r = pair(&rn);
+    rn.begin_step()?;
+    let outs = rn.forward(&mut r, &long)?;
+    rn.logits(&outs[0], pa.len() - 1, 1)?;
+    rn.logits(&outs[1], pc.len() - 1, 1)?;
+    clean_named.push(rn.step_faults(&[&outs[0], &outs[1]])?);
+    drop(outs);
     rep.raw(
         "rowfault/clean_steps_name_nothing",
         clean_named.iter().flatten().all(|rows| rows.is_empty()),
@@ -4772,6 +4812,32 @@ fn rowfault_gate(
         "rowfault/forward/other_call_keeps_its_bytes",
         bits(&la) == bits(&ra),
         "the clean call's last-row logits beside the poisoned call are its clean run's bytes",
+        format!("{} logits", la.len()),
+    );
+
+    // the same with the 50-row call poisoned: the three-kernel plan skips its pairs and marks
+    // its rows
+    let mut s = pair(&rn);
+    rn.begin_step()?;
+    rn.poison = Some(1);
+    let outs = rn.forward(&mut s, &long);
+    rn.poison = None;
+    let outs = outs?;
+    let la = rn.logits(&outs[0], pa.len() - 1, 1)?;
+    rn.logits(&outs[1], pc.len() - 1, 1)?;
+    let named = rn.step_faults(&[&outs[0], &outs[1]])?;
+    drop(outs);
+    let all_c: Vec<usize> = (0..pc.len()).collect();
+    rep.raw(
+        "rowfault/forward_long/names_the_poisoned_call",
+        named.len() == 2 && named[0].is_empty() && named[1] == all_c,
+        "the poisoned 50-row call's rows named (the three-kernel plan), the other call's none",
+        format!("{named:?}"),
+    );
+    rep.raw(
+        "rowfault/forward_long/other_call_keeps_its_bytes",
+        bits(&la) == bits(&ra),
+        "the clean call's last-row logits beside the poisoned 50-row call are its clean run's bytes",
         format!("{} logits", la.len()),
     );
 
@@ -4836,7 +4902,7 @@ fn rowfault_gate(
         format!("{whole:?}"),
     );
     Ok(format!(
-        "\"layers\": {n_layers}, \"experts_host\": {host}, \"vocab\": {vocab}"
+        "\"layers\": {n_layers}, \"experts_host\": {host}, \"devices\": {devices:?}, \"vocab\": {vocab}"
     ))
 }
 
@@ -4902,8 +4968,9 @@ fn main() {
         }
         Some("rowfault") if a.len() > 2 => {
             let layers = flag("--layers").and_then(|x| x.parse().ok()).unwrap_or(2);
+            let devices: Vec<usize> = flag("--devices").unwrap_or_else(|| "0".into()).split(',').filter_map(|x| x.parse().ok()).collect();
             match flag("--token-map") {
-                Some(tm) => rowfault_gate(Path::new(&a[2]), Path::new(&tm), layers, has("--experts-host"), &mut rep)
+                Some(tm) => rowfault_gate(Path::new(&a[2]), Path::new(&tm), layers, has("--experts-host"), &devices, &mut rep)
                     .map(|s| format!("\"gate\": \"rowfault\", {s}")),
                 None => Err("rowfault: --token-map FILE (the Engram hash of the prompts)".into()),
             }
@@ -4918,7 +4985,7 @@ fn main() {
             idx_gate(Path::new(&a[2]), Path::new(&a[3]), layer, &devices, slice, reps, rows, last, &mut rep)
                 .map(|s| format!("\"gate\": \"idx\", \"capture\": {:?}, {s}", a[3]))
         }
-        _ => Err("usage: dsv41-gate [--dense-form F] kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json] | decode CKPT CAPTURE --layers L,.. --token-map FILE [--out R.json] | tp CKPT CAPTURE --layers L,.. [--devices 0,1] [--token-map FILE] [--decode N] [--chunk N] [--reps N] [--side-delay NS] [--poison-free] [--out R.json] | idx CKPT CAPTURE --layer L [--devices 0,1] [--slice N] [--reps N] [--rows N] [--last N] [--out R.json] | rowfault CKPT --token-map FILE [--layers N] [--experts-host] [--out R.json]".into()),
+        _ => Err("usage: dsv41-gate [--dense-form F] kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json] | decode CKPT CAPTURE --layers L,.. --token-map FILE [--out R.json] | tp CKPT CAPTURE --layers L,.. [--devices 0,1] [--token-map FILE] [--decode N] [--chunk N] [--reps N] [--side-delay NS] [--poison-free] [--out R.json] | idx CKPT CAPTURE --layer L [--devices 0,1] [--slice N] [--reps N] [--rows N] [--last N] [--out R.json] | rowfault CKPT --token-map FILE [--layers N] [--experts-host] [--devices 0,0] [--out R.json]".into()),
     };
     let header = match r {
         Ok(h) => h,
