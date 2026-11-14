@@ -1,0 +1,19 @@
+2026-11-14T04:29:33+02:00 start, unit idle, arm fold, target 0 MB, mode single, route dflash, request 131072, extra 
+MemFree:        121427616 kB
+MemAvailable:   122399612 kB
+Cached:          1873448 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 1m05s
+2026-11-14T04:30:53+02:00 before the request:
+MemFree:        78903744 kB
+MemAvailable:   98318028 kB
+Cached:         20357928 kB
+{"tag": "28-G", "req": "g131k", "status": 200, "ttft_s": 121.922, "total_s": 127.189, "completion_tokens": 95, "finish": "stop", "text_sha256": "e3b0c1e81f9ab15eb9c37b50df4934b70cae06b51dee22b0c2e624d69e504971", "refusal": null}
+2026-11-14T04:33:01+02:00 after the request:
+MemFree:        69704076 kB
+MemAvailable:   89125632 kB
+Cached:         20364740 kB
+waitfor: gone 2684244 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

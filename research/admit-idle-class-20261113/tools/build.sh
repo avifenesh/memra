@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # memra#1304, runs ON GB10 cb33 inside a sparklock lease, CPU only: memra-server (sm_121a) from
-# tree-ARM for each ARM given (main = origin/main 01960ee1b1, head = the fix branch), one shared
+# tree-ARM for each ARM given (main = origin/main 01960ee1b1, head = the fix branch, fold = the
+# branch after the review fold, on main bbc6f83aea), one shared
 # target dir seeded from a recent memra-server build on this unit.
 # usage: build.sh ARM...   -> bins/ARM/memra-server
 set -u

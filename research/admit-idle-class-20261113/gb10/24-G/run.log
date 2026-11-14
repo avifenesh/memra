@@ -1,0 +1,6 @@
+2026-11-14T04:26:12+02:00 start, unit idle, arm fold, target 0 MB, mode single, route dflash, request 131072, extra 
+MemFree:        106397836 kB
+MemAvailable:   122393400 kB
+Cached:         16893800 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: FAIL-IF matched after 0m00s: ! kill -0 2673601
