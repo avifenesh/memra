@@ -1293,14 +1293,40 @@ slowdown, no page-cache drop inside a run.
 
 The ring at one and two stages (2026-11-14, one GB10, 121a, `receipts/r2-ring-k256-k512-gb10`, the
 #1283 review's nit): the ring has 4 stages of 256 elements and its prologue lands 3, so at K 256 and
-512 a call holds fewer stages than the prologue lands, and both the prologue's guard and the loop's
-refill guard skip. The kernel gate now runs the ring there beside the (2, 30, 5120) shape: widths 30
-(the last 4-column block partial) and 32 (whole blocks), 2 rows and 8 (every lane of the warp), each
-against the first rows of a 24-row call on the narrow kernel with K in parts (a form that is not the
-ring), and the pair against the 24-row calls on each weight. 202 of 202 built from the change's commit
-(`6b1617fa46`) against 184 of 184 on main at `df1d23a764` (`base-main/`; the change's base, main
-`bbc6f83aea`, has the same gate and kernel sources): the 18 new checks pass, every output byte equal,
-and the existing entries keep their names.
+512 a call holds fewer stages than the prologue lands. What no gate shape did before is skip the
+prologue's guard, which leaves the prologue's trailing commit groups empty. The loop's refill guard
+skips there too, but that is not new: K 5,120 already skips it on its last three stages. The kernel
+gate now runs the ring there beside the (2, 30, 5120) shape: widths 30 (the last 4-column block
+partial) and 32 (whole blocks), 2 rows and 8 (every lane of the warp), each against the first rows of
+a 24-row call on the narrow kernel with K in parts (a form that is not the ring), and the pair against
+the 24-row calls on each weight. 202 of 202 built from the change's commit (`6b1617fa46`) against 184
+of 184 on main at `df1d23a764` (`base-main/`; the change's base, main `bbc6f83aea`, has the same gate
+and kernel sources): the 18 new checks pass, every output byte equal, and the existing entries keep
+their names.
+
+The red arm comes from the independent review of memra#1312, on the same kind of card
+(`receipts/r2-ring-k256-k512-gb10/review-redarm/`, copied from the review: its mutation source
+`make_mut.py` and the resulting `mut.patch`, its run scripts and its raw gate logs; one build holds
+the mutations, picked by `REVIEW_MUT`, and its gate has four more ring shapes, so 214 checks). The
+mutation (`REVIEW_MUT=1`): the prologue commits a group only for a stage it lands,
+`if (t < nk) { land(t); v41_cp_commit(); }`. Below 3 stages the loop's `wait_group 2` then no longer
+fences stage 0, and a chain reads a stage before it has landed.
+
+- K 256 is the shape with the red arm: all nine K 256 entries fail in 23 of 23 passes (`b.txt`,
+  `c.txt`, `c-fails.txt`, `kernels-mut1-*.log`).
+- Main's gate cannot see the mutation: its 184 entries all pass under it.
+- K 512 adds little of its own. In 2 of the 23 passes one K 512 entry failed
+  (`gemm_ffma2_partial/m8_n30_k512/first` once, `/second` once).
+- The guards themselves are not what these shapes test: with both guards dropped (`REVIEW_MUT=2`) the
+  gate passes 214 of 214 in 3 passes.
+- The new shapes never wrap the ring (1 to 2 stages in 4 slots), so wrap and stale-lap coverage stays
+  with K 5,120. A refill guard off by one (`REVIEW_MUT=5`) is caught at K 1,024, 1,280 and 5,120 and
+  missed at 256, 512 and 768.
+
+Not in this change: the partial block's column guard (`REVIEW_MUT=3`) is detected through a race, 19
+to 20 of 20 passes on the single-call K 256 and 512 entries and 4 of 20 on
+`gemm_ffma2_partial/m2_n30_k512/second`. Outputs two columns wider than N over zero-filled buffers,
+with the padding compared, would make that deterministic.
 
 ### A four-card prefill's copies, and the copy call that was slow
 

@@ -1,0 +1,356 @@
+mut build start 02:49:35
+mut build rc 0 02:53:34
+NVIDIA GB10, 208 MHz, 44
+== REVIEW_MUT=0 pass trace rc 0: 214 checks, 0 failed, 0 FAIL lines
+      2 REVIEW ffma m=1 n=384 k=5120 form=ring kp=256
+      2 REVIEW ffma m=24 n=30 k=1024 form=narrow_parts_9to32 kp=512
+      2 REVIEW ffma m=24 n=30 k=1280 form=narrow_parts_9to32 kp=640
+      4 REVIEW ffma m=24 n=30 k=256 form=narrow_parts_9to32 kp=128
+      4 REVIEW ffma m=24 n=30 k=5120 form=narrow_parts_9to32 kp=1280
+      4 REVIEW ffma m=24 n=30 k=512 form=narrow_parts_9to32 kp=256
+      2 REVIEW ffma m=24 n=30 k=768 form=narrow_parts_9to32 kp=384
+      2 REVIEW ffma m=24 n=32 k=256 form=narrow_parts_9to32 kp=128
+      1 REVIEW ffma m=24 n=32 k=5120 form=narrow_parts_9to32 kp=1280
+      2 REVIEW ffma m=24 n=32 k=512 form=narrow_parts_9to32 kp=256
+      1 REVIEW ffma m=24 n=384 k=5120 form=narrow_parts_9to32 kp=1280
+      1 REVIEW ffma m=24 n=5000 k=1280 form=groups_of_8 kp=0
+      1 REVIEW ffma m=24 n=512 k=5120 form=narrow_parts_9to32 kp=1280
+      1 REVIEW ffma m=2 n=30 k=1024 form=ring kp=256
+      1 REVIEW ffma m=2 n=30 k=1280 form=ring kp=256
+      1 REVIEW ffma m=2 n=30 k=256 form=ring kp=256
+      1 REVIEW ffma m=2 n=30 k=5120 form=ring kp=256
+      1 REVIEW ffma m=2 n=30 k=512 form=ring kp=256
+      1 REVIEW ffma m=2 n=30 k=768 form=ring kp=256
+      1 REVIEW ffma m=2 n=32 k=256 form=ring kp=256
+      1 REVIEW ffma m=2 n=32 k=512 form=ring kp=256
+      2 REVIEW ffma m=37 n=512 k=5120 form=groups_of_8 kp=0
+      2 REVIEW ffma m=3 n=32 k=5120 form=ring kp=256
+      1 REVIEW ffma m=40 n=32 k=5120 form=groups_of_8 kp=0
+      1 REVIEW ffma m=40 n=384 k=5120 form=groups_of_8 kp=0
+      1 REVIEW ffma m=40 n=5000 k=1280 form=groups_of_8 kp=0
+      1 REVIEW ffma m=40 n=512 k=5120 form=groups_of_8 kp=0
+      2 REVIEW ffma m=45 n=16 k=5120 form=groups_of_8 kp=0
+      2 REVIEW ffma m=4 n=512 k=5120 form=ring kp=256
+      2 REVIEW ffma m=5 n=16 k=5120 form=ring kp=256
+      2 REVIEW ffma m=5 n=512 k=5120 form=ring kp=256
+      1 REVIEW ffma m=64 n=32 k=5120 form=tile kp=0
+      1 REVIEW ffma m=64 n=384 k=5120 form=tile kp=0
+      1 REVIEW ffma m=64 n=5000 k=1280 form=tile kp=0
+      1 REVIEW ffma m=64 n=512 k=5120 form=tile kp=0
+     10 REVIEW ffma m=8 n=16 k=5120 form=ring kp=256
+      1 REVIEW ffma m=8 n=30 k=256 form=ring kp=256
+      1 REVIEW ffma m=8 n=30 k=5120 form=ring kp=256
+      1 REVIEW ffma m=8 n=30 k=512 form=ring kp=256
+      7 REVIEW ffma m=8 n=32 k=5120 form=ring kp=256
+      7 REVIEW ffma m=8 n=384 k=5120 form=ring kp=256
+     15 REVIEW ffma m=8 n=512 k=5120 form=ring kp=256
+== REVIEW_MUT=0 pass 1 rc 0: 214 checks, 0 failed, 0 FAIL lines
+== REVIEW_MUT=1 pass 1 rc 1: 214 checks, 9 failed, 9 FAIL lines
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k256: 240 bytes, 61 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k256/first: 240 bytes, 134 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k256/second: 240 bytes, 97 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring/m2_n32_k256: 256 bytes, 77 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_ring/m2_n32_k256/first: 256 bytes, 145 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_ring/m2_n32_k256/second: 256 bytes, 115 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k256: 960 bytes, 162 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/first: 960 bytes, 588 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/second: 960 bytes, 550 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=2 pass 1 rc 0: 214 checks, 0 failed, 0 FAIL lines
+== REVIEW_MUT=3 pass 1 rc 1: 214 checks, 15 failed, 15 FAIL lines
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k5120: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k5120/first: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k5120/second: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k256: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k256: 960 bytes, 55 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/first: 960 bytes, 55 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/second: 960 bytes, 56 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k512: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k512: 960 bytes, 56 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k768: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k1024: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k1280: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k5120: 960 bytes, 56 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/first: 960 bytes, 56 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/second: 960 bytes, 56 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=4 pass 1 rc 1: 214 checks, 29 failed, 29 FAIL lines
+FAIL compressor/r2/latent: n=9216 exact=7164 (77.7344%) max_abs=1.953e-3 rel_l2=2.573e-5 max_ulp=2 >1ulp=1 nonfinite=2048  [rel_l2 <= 1e-3, max_abs <=
+FAIL compressor/r2/cache_fp4: n=9216 exact=7168 (77.7778%) max_abs=3.762e0 rel_l2=4.720e-1 max_ulp=31920 >1ulp=2048 nonfinite=0 off_grid_frac=0.2222 [
+FAIL moe/route_ids: 241/270 [identical expert ids and order]
+FAIL moe/route_w: n=270 exact=61 (22.5926%) max_abs=1.054e-1 rel_l2=7.463e-2 max_ulp=0 >1ulp=0 nonfinite=0  [rel_l2 <= 1e-5, max_abs <= 1e-3 x rms]
+FAIL moe/full: n=230400 exact=204788 (88.8837%) max_abs=3.450e1 rel_l2=3.295e-1 max_ulp=31969 >1ulp=25600 nonfinite=0  [rel_l2 <= 2e-3, max_abs <= 5e-
+FAIL schedule/gemm_ffma_24/n32_k5120: 1024 bytes, 124 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_40/n32_k5120: 1024 bytes, 123 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n32_k5120: 1024 bytes, 124 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n32_k5120/first: 1024 bytes, 118 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n32_k5120/second: 1024 bytes, 114 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_24/n512_k5120: 16384 bytes, 1983 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_40/n512_k5120: 16384 bytes, 1907 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n512_k5120: 16384 bytes, 1983 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n512_k5120/first: 16384 bytes, 1957 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n512_k5120/second: 16384 bytes, 1965 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_24/n384_k5120: 12288 bytes, 1449 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_40/n384_k5120: 12288 bytes, 1457 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n384_k5120: 12288 bytes, 1449 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n384_k5120/first: 12288 bytes, 1462 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n384_k5120/second: 12288 bytes, 1477 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k256: 960 bytes, 109 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/first: 960 bytes, 115 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/second: 960 bytes, 114 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k512: 960 bytes, 111 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k512/first: 960 bytes, 107 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k512/second: 960 bytes, 112 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k5120: 960 bytes, 110 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/first: 960 bytes, 110 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/second: 960 bytes, 115 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=5 pass 1 rc 1: 214 checks, 23 failed, 23 FAIL lines
+FAIL compressor/r2/latent: n=9216 exact=46 (0.4991%) max_abs=3.555e0 rel_l2=3.978e-1 max_ulp=32711 >1ulp=9088 nonfinite=0  [rel_l2 <= 1e-3, max_abs <=
+FAIL compressor/r2/cache_fp4: n=9216 exact=872 (9.4618%) max_abs=3.562e0 rel_l2=4.161e-1 max_ulp=32712 >1ulp=8344 nonfinite=0 off_grid_frac=0.9054 [<=
+FAIL moe/route_ids: 112/270 [identical expert ids and order]
+FAIL moe/route_w: n=270 exact=0 (0.0000%) max_abs=5.296e-2 rel_l2=7.157e-2 max_ulp=0 >1ulp=0 nonfinite=0  [rel_l2 <= 1e-5, max_abs <= 1e-3 x rms]
+FAIL moe/full: n=230400 exact=1738 (0.7543%) max_abs=2.891e1 rel_l2=4.873e-1 max_ulp=33483 >1ulp=225289 nonfinite=0  [rel_l2 <= 2e-3, max_abs <= 5e-2 
+FAIL schedule/gemm_ffma_24/n32_k5120: 1024 bytes, 852 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n32_k5120: 1024 bytes, 852 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_24/n512_k5120: 16384 bytes, 13651 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n512_k5120: 16384 bytes, 13651 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_24/n384_k5120: 12288 bytes, 10268 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n384_k5120: 12288 bytes, 10268 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k5120: 240 bytes, 201 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k5120/first: 240 bytes, 201 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k5120/second: 240 bytes, 197 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k1024: 240 bytes, 211 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k1024/first: 240 bytes, 220 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k1024/second: 240 bytes, 219 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k1280: 240 bytes, 211 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k1280/first: 240 bytes, 211 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k1280/second: 240 bytes, 212 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k5120: 960 bytes, 806 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/first: 960 bytes, 806 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/second: 960 bytes, 799 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=6 pass 1 rc 1: 214 checks, 18 failed, 18 FAIL lines
+FAIL compressor/r2/latent: n=9216 exact=6852 (74.3490%) max_abs=4.203e0 rel_l2=1.981e-1 max_ulp=32781 >1ulp=1420 nonfinite=512  [rel_l2 <= 1e-3, max_a
+FAIL compressor/r2/cache_fp4: n=9216 exact=7483 (81.1957%) max_abs=4.312e0 rel_l2=3.109e-1 max_ulp=32788 >1ulp=1733 nonfinite=0 off_grid_frac=0.1880 [
+FAIL moe/full: n=230400 exact=225618 (97.9245%) max_abs=9.375e-1 rel_l2=4.215e-3 max_ulp=31975 >1ulp=4127 nonfinite=0  [rel_l2 <= 2e-3, max_abs <= 5e-
+FAIL schedule/gemm_ffma2/m4_n512_k5120/first: 8192 bytes, 636 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m4_n512_k5120/second: 8192 bytes, 923 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n512_k5120/second: 16384 bytes, 2007 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m1_n384_k5120/first: 1536 bytes, 50 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m1_n384_k5120/second: 1536 bytes, 90 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n384_k5120/second: 12288 bytes, 2880 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k256: 240 bytes, 33 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k256/first: 240 bytes, 107 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k256/second: 240 bytes, 85 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring/m2_n32_k256: 256 bytes, 51 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_ring/m2_n32_k256/first: 256 bytes, 103 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_ring/m2_n32_k256/second: 256 bytes, 92 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k256: 960 bytes, 151 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/first: 960 bytes, 585 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/second: 960 bytes, 547 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=0 pass 2 rc 0: 214 checks, 0 failed, 0 FAIL lines
+== REVIEW_MUT=1 pass 2 rc 1: 214 checks, 9 failed, 9 FAIL lines
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k256: 240 bytes, 57 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k256/first: 240 bytes, 124 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k256/second: 240 bytes, 107 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring/m2_n32_k256: 256 bytes, 64 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_ring/m2_n32_k256/first: 256 bytes, 115 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_ring/m2_n32_k256/second: 256 bytes, 115 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k256: 960 bytes, 164 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/first: 960 bytes, 602 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/second: 960 bytes, 555 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=2 pass 2 rc 0: 214 checks, 0 failed, 0 FAIL lines
+== REVIEW_MUT=3 pass 2 rc 1: 214 checks, 14 failed, 14 FAIL lines
+FAIL schedule/gemm_ffma2_partial/m2_n30_k5120/first: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k5120/second: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k256: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k256: 960 bytes, 55 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/first: 960 bytes, 55 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/second: 960 bytes, 56 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k512: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k512: 960 bytes, 56 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k768: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k1024: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k1280: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k5120: 960 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/first: 960 bytes, 56 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/second: 960 bytes, 56 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=4 pass 2 rc 1: 214 checks, 29 failed, 29 FAIL lines
+FAIL compressor/r2/latent: n=9216 exact=7164 (77.7344%) max_abs=1.953e-3 rel_l2=2.573e-5 max_ulp=2 >1ulp=1 nonfinite=2048  [rel_l2 <= 1e-3, max_abs <=
+FAIL compressor/r2/cache_fp4: n=9216 exact=7168 (77.7778%) max_abs=3.762e0 rel_l2=4.720e-1 max_ulp=31920 >1ulp=2048 nonfinite=0 off_grid_frac=0.2222 [
+FAIL moe/route_ids: 241/270 [identical expert ids and order]
+FAIL moe/route_w: n=270 exact=61 (22.5926%) max_abs=6.605e-2 rel_l2=4.220e-2 max_ulp=0 >1ulp=0 nonfinite=0  [rel_l2 <= 1e-5, max_abs <= 1e-3 x rms]
+FAIL moe/full: n=230400 exact=204788 (88.8837%) max_abs=3.450e1 rel_l2=3.295e-1 max_ulp=31969 >1ulp=25600 nonfinite=0  [rel_l2 <= 2e-3, max_abs <= 5e-
+FAIL schedule/gemm_ffma_24/n32_k5120: 1024 bytes, 119 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_40/n32_k5120: 1024 bytes, 118 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n32_k5120: 1024 bytes, 119 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n32_k5120/first: 1024 bytes, 120 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n32_k5120/second: 1024 bytes, 114 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_24/n512_k5120: 16384 bytes, 1970 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_40/n512_k5120: 16384 bytes, 1841 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n512_k5120: 16384 bytes, 1970 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n512_k5120/first: 16384 bytes, 1946 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n512_k5120/second: 16384 bytes, 1933 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_24/n384_k5120: 12288 bytes, 1454 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_40/n384_k5120: 12288 bytes, 1463 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n384_k5120: 12288 bytes, 1454 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n384_k5120/first: 12288 bytes, 1458 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n384_k5120/second: 12288 bytes, 1461 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k256: 960 bytes, 109 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/first: 960 bytes, 115 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/second: 960 bytes, 114 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k512: 960 bytes, 111 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k512/first: 960 bytes, 107 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k512/second: 960 bytes, 112 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k5120: 960 bytes, 110 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/first: 960 bytes, 111 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/second: 960 bytes, 115 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=5 pass 2 rc 1: 214 checks, 23 failed, 23 FAIL lines
+FAIL compressor/r2/latent: n=9216 exact=46 (0.4991%) max_abs=3.555e0 rel_l2=3.978e-1 max_ulp=32711 >1ulp=9088 nonfinite=0  [rel_l2 <= 1e-3, max_abs <=
+FAIL compressor/r2/cache_fp4: n=9216 exact=872 (9.4618%) max_abs=3.562e0 rel_l2=4.161e-1 max_ulp=32712 >1ulp=8344 nonfinite=0 off_grid_frac=0.9054 [<=
+FAIL moe/route_ids: 112/270 [identical expert ids and order]
+FAIL moe/route_w: n=270 exact=0 (0.0000%) max_abs=5.296e-2 rel_l2=7.157e-2 max_ulp=0 >1ulp=0 nonfinite=0  [rel_l2 <= 1e-5, max_abs <= 1e-3 x rms]
+FAIL moe/full: n=230400 exact=1738 (0.7543%) max_abs=2.891e1 rel_l2=4.873e-1 max_ulp=33483 >1ulp=225289 nonfinite=0  [rel_l2 <= 2e-3, max_abs <= 5e-2 
+FAIL schedule/gemm_ffma_24/n32_k5120: 1024 bytes, 852 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n32_k5120: 1024 bytes, 852 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_24/n512_k5120: 16384 bytes, 13651 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n512_k5120: 16384 bytes, 13651 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_24/n384_k5120: 12288 bytes, 10268 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n384_k5120: 12288 bytes, 10268 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k5120: 240 bytes, 201 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k5120/first: 240 bytes, 201 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k5120/second: 240 bytes, 197 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k1024: 240 bytes, 211 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k1024/first: 240 bytes, 220 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k1024/second: 240 bytes, 219 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k1280: 240 bytes, 211 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k1280/first: 240 bytes, 211 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k1280/second: 240 bytes, 212 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k5120: 960 bytes, 806 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/first: 960 bytes, 806 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/second: 960 bytes, 799 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=6 pass 2 rc 1: 214 checks, 19 failed, 19 FAIL lines
+FAIL compressor/r2/latent: n=9216 exact=5656 (61.3715%) max_abs=4.895e0 rel_l2=2.156e-1 max_ulp=32758 >1ulp=2211 nonfinite=0  [rel_l2 <= 1e-3, max_abs
+FAIL compressor/r2/cache_fp4: n=9216 exact=7402 (80.3168%) max_abs=4.688e0 rel_l2=2.262e-1 max_ulp=32768 >1ulp=1814 nonfinite=0 off_grid_frac=0.1968 [
+FAIL moe/full: n=230400 exact=225682 (97.9523%) max_abs=8.125e-1 rel_l2=3.510e-3 max_ulp=32072 >1ulp=3964 nonfinite=0  [rel_l2 <= 2e-3, max_abs <= 5e-
+FAIL schedule/gemm_ffma2/m4_n512_k5120/first: 8192 bytes, 511 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m4_n512_k5120/second: 8192 bytes, 871 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n512_k5120/second: 16384 bytes, 2294 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m1_n384_k5120/first: 1536 bytes, 113 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m1_n384_k5120/second: 1536 bytes, 161 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n384_k5120/first: 12288 bytes, 83 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n384_k5120/second: 12288 bytes, 2260 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k256: 240 bytes, 62 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k256/first: 240 bytes, 140 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k256/second: 240 bytes, 110 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring/m2_n32_k256: 256 bytes, 77 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_ring/m2_n32_k256/first: 256 bytes, 144 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_ring/m2_n32_k256/second: 256 bytes, 114 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k256: 960 bytes, 163 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/first: 960 bytes, 595 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/second: 960 bytes, 554 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=0 pass 3 rc 0: 214 checks, 0 failed, 0 FAIL lines
+== REVIEW_MUT=1 pass 3 rc 1: 214 checks, 9 failed, 9 FAIL lines
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k256: 240 bytes, 70 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k256/first: 240 bytes, 110 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k256/second: 240 bytes, 139 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring/m2_n32_k256: 256 bytes, 75 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_ring/m2_n32_k256/first: 256 bytes, 108 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_ring/m2_n32_k256/second: 256 bytes, 142 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k256: 960 bytes, 180 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/first: 960 bytes, 604 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/second: 960 bytes, 592 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=2 pass 3 rc 0: 214 checks, 0 failed, 0 FAIL lines
+== REVIEW_MUT=3 pass 3 rc 1: 214 checks, 15 failed, 15 FAIL lines
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k5120: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k5120/first: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k5120/second: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k256: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k256: 960 bytes, 55 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/first: 960 bytes, 55 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/second: 960 bytes, 56 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k512: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k512: 960 bytes, 56 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k768: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k1024: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k1280: 240 bytes, 8 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k5120: 960 bytes, 56 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/first: 960 bytes, 56 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/second: 960 bytes, 56 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=4 pass 3 rc 1: 214 checks, 29 failed, 29 FAIL lines
+FAIL compressor/r2/latent: n=9216 exact=7164 (77.7344%) max_abs=1.953e-3 rel_l2=2.573e-5 max_ulp=2 >1ulp=1 nonfinite=2048  [rel_l2 <= 1e-3, max_abs <=
+FAIL compressor/r2/cache_fp4: n=9216 exact=7168 (77.7778%) max_abs=3.762e0 rel_l2=4.720e-1 max_ulp=31920 >1ulp=2048 nonfinite=0 off_grid_frac=0.2222 [
+FAIL moe/route_ids: 243/270 [identical expert ids and order]
+FAIL moe/route_w: n=270 exact=61 (22.5926%) max_abs=9.965e-1 rel_l2=5.623e-1 max_ulp=0 >1ulp=0 nonfinite=0  [rel_l2 <= 1e-5, max_abs <= 1e-3 x rms]
+FAIL moe/full: n=230400 exact=204788 (88.8837%) max_abs=3.450e1 rel_l2=3.295e-1 max_ulp=31969 >1ulp=25600 nonfinite=0  [rel_l2 <= 2e-3, max_abs <= 5e-
+FAIL schedule/gemm_ffma_24/n32_k5120: 1024 bytes, 122 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_40/n32_k5120: 1024 bytes, 119 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n32_k5120: 1024 bytes, 122 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n32_k5120/first: 1024 bytes, 121 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n32_k5120/second: 1024 bytes, 115 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_24/n512_k5120: 16384 bytes, 1975 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_40/n512_k5120: 16384 bytes, 1928 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n512_k5120: 16384 bytes, 1975 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n512_k5120/first: 16384 bytes, 1956 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n512_k5120/second: 16384 bytes, 1943 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_24/n384_k5120: 12288 bytes, 1452 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_40/n384_k5120: 12288 bytes, 1461 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n384_k5120: 12288 bytes, 1452 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n384_k5120/first: 12288 bytes, 1458 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n384_k5120/second: 12288 bytes, 1460 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k256: 960 bytes, 109 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/first: 960 bytes, 115 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/second: 960 bytes, 114 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k512: 960 bytes, 111 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k512/first: 960 bytes, 107 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k512/second: 960 bytes, 112 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k5120: 960 bytes, 110 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/first: 960 bytes, 112 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/second: 960 bytes, 115 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=5 pass 3 rc 1: 214 checks, 23 failed, 23 FAIL lines
+FAIL compressor/r2/latent: n=9216 exact=46 (0.4991%) max_abs=3.555e0 rel_l2=3.978e-1 max_ulp=32711 >1ulp=9088 nonfinite=0  [rel_l2 <= 1e-3, max_abs <=
+FAIL compressor/r2/cache_fp4: n=9216 exact=872 (9.4618%) max_abs=3.562e0 rel_l2=4.161e-1 max_ulp=32712 >1ulp=8344 nonfinite=0 off_grid_frac=0.9054 [<=
+FAIL moe/route_ids: 112/270 [identical expert ids and order]
+FAIL moe/route_w: n=270 exact=0 (0.0000%) max_abs=5.296e-2 rel_l2=7.157e-2 max_ulp=0 >1ulp=0 nonfinite=0  [rel_l2 <= 1e-5, max_abs <= 1e-3 x rms]
+FAIL moe/full: n=230400 exact=1738 (0.7543%) max_abs=2.891e1 rel_l2=4.873e-1 max_ulp=33483 >1ulp=225289 nonfinite=0  [rel_l2 <= 2e-3, max_abs <= 5e-2 
+FAIL schedule/gemm_ffma_24/n32_k5120: 1024 bytes, 852 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n32_k5120: 1024 bytes, 852 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_24/n512_k5120: 16384 bytes, 13651 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n512_k5120: 16384 bytes, 13651 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_24/n384_k5120: 12288 bytes, 10268 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n384_k5120: 12288 bytes, 10268 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k5120: 240 bytes, 201 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k5120/first: 240 bytes, 201 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k5120/second: 240 bytes, 197 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k1024: 240 bytes, 211 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k1024/first: 240 bytes, 220 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k1024/second: 240 bytes, 219 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k1280: 240 bytes, 211 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k1280/first: 240 bytes, 211 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k1280/second: 240 bytes, 212 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k5120: 960 bytes, 806 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/first: 960 bytes, 806 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k5120/second: 960 bytes, 799 differ [byte-identical to the reference schedule]
+== REVIEW_MUT=6 pass 3 rc 1: 214 checks, 24 failed, 24 FAIL lines
+FAIL compressor/r2/latent: n=9216 exact=7101 (77.0508%) max_abs=3.359e0 rel_l2=2.635e-1 max_ulp=32524 >1ulp=2043 nonfinite=0  [rel_l2 <= 1e-3, max_abs
+FAIL compressor/r2/cache_fp4: n=9216 exact=7857 (85.2539%) max_abs=3.375e0 rel_l2=2.691e-1 max_ulp=32512 >1ulp=1359 nonfinite=0 off_grid_frac=0.1475 [
+FAIL moe/full: n=230400 exact=225469 (97.8598%) max_abs=1.734e0 rel_l2=6.962e-3 max_ulp=32223 >1ulp=4539 nonfinite=0  [rel_l2 <= 2e-3, max_abs <= 5e-2
+FAIL schedule/gemm_ffma2/m4_n512_k5120/first: 8192 bytes, 583 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m4_n512_k5120/second: 8192 bytes, 725 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n512_k5120/first: 16384 bytes, 486 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n512_k5120/second: 16384 bytes, 3376 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_24/n384_k5120: 12288 bytes, 186 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_40/n384_k5120: 12288 bytes, 186 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_tile/n384_k5120: 12288 bytes, 186 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m1_n384_k5120/first: 1536 bytes, 23 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m1_n384_k5120/second: 1536 bytes, 50 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n384_k5120/first: 12288 bytes, 186 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2/m8_n384_k5120/second: 12288 bytes, 1081 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m2_n30_k256: 240 bytes, 60 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k256/first: 240 bytes, 124 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m2_n30_k256/second: 240 bytes, 107 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring/m2_n32_k256: 256 bytes, 64 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_ring/m2_n32_k256/first: 256 bytes, 120 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_ring/m2_n32_k256/second: 256 bytes, 104 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma_ring_partial/m8_n30_k256: 960 bytes, 182 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/first: 960 bytes, 600 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k256/second: 960 bytes, 585 differ [byte-identical to the reference schedule]
+FAIL schedule/gemm_ffma2_partial/m8_n30_k512/first: 960 bytes, 13 differ [byte-identical to the reference schedule]
+B-DONE 02:54:19
