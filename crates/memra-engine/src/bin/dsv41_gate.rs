@@ -4179,9 +4179,10 @@ fn tp_gate(
             format!("rel_l2 N-rank {r_tp:.3e} / single-card {r_1:.3e}, cos {c_tp:.8}"),
         );
         // Calls of 9 to 32 rows keep the small-row bodies, issued over groups of rows, and the
-        // shared expert and the mHC mixes on the second stream. The prompt's first 12, 16 and 32
-        // rows as their own call, twice: with every family's limit at 0 and nothing on the
-        // second stream (the pipelined bodies in stream order, the reference), then with the
+        // shared expert and the mHC mixes on the second stream. The prompt's first 9, 10, 12, 16
+        // and 32 rows as their own call (9 and 10: on four ranks the split MoE's largest bf16 push
+        // and its first codes gather, `tp::split_quant`), twice: with every family's limit at 0 and
+        // nothing on the second stream (the pipelined bodies in stream order, the reference), then with the
         // limits at 32 and the second stream's own limits, on the single card and on every
         // rank; each output of the second against the first. Not on a layer that
         // reads another layer's selection: the capture's selection rows index the full prompt's
@@ -4193,8 +4194,10 @@ fn tp_gate(
             let (hb, pb) = (h.host(&cx.ops.st)?, pre.host(&cx.ops.st)?);
             let (rh, rp) = (g.hc * g.dim * 2, g.hc * 4);
             for round in 0..reps.max(1) {
-                for rows in [12usize, 16, 32] {
-                    if rows >= s {
+                for rows in [9usize, 10, 12, 16, 32] {
+                    // 9 and 10 rows once: the race harness's rounds stay the 12-, 16- and 32-row
+                    // passes
+                    if rows >= s || (round > 0 && rows < 12) {
                         continue;
                     }
                     let off = if round == 0 {
