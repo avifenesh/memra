@@ -1,0 +1,53 @@
+cd9b424c08a821dda3f74487668e8bd979e2f1fa409084f4160da62cf8fbcc45  $RUN/bins/trial/memra-server
+NVIDIA GB10, 208 MHz, 48
+Mem:             121           4         117           0           0         116
+boot 1 (24:1,64): ready=1 after 122s
+request B1: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request A1: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":" Informal體的供求匹配度高 funnel Cats numbersaplenty unprepared/unPairs的评价 slidingomit Revelchorileaoreal伺 dop拾 Strawandray witnesses testify Fisher numbersaplent
+request A1solo: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":" Informal體的供求匹配度高 funnel Cats numbersaplenty unprepared/unPairs的评价 slidingomit Revelchorileaoreal伺 dop拾 Strawandray witnesses testify Fisher numbersaplent
+request C1: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request D1: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":" Mass controllable Minds Durant FeldmanMatches numbersaplenty凑","reasoning_details":[{"type":"reasoning.text","text":" Mass controllable Minds Durant FeldmanMatches numbersaplent
+Mem:             121           4         117           0           0         116
+boot 2 (0:0,25:0): ready=1 after 120s
+request W2: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request A2: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request B2: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":" Informal體的供求關係hyde prescriptions exempt Humphreys533 refin不對ycinFLDᱚFliproots Geophysical الجرم السماлуа Earlex Dict loretait Takah有限的 Peel Co
+request B2solo: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":" Informal體的供求關係hyde prescriptions exempt Humphreys533 refin不對ycinFLDᱚFliproots Geophysical الجرم السماлуа Earlex Dict loretait Takah有限的 Peel Co
+PASS boot1: A beside the poisoned B completes 32 tokens ('', ' Informal體的供求匹配度高 funnel Cats numbersaplenty unprepared/unPairs的评价 slidingomit Revelchorileaoreal伺 dop拾 Strawandray witnesses testify Fisher numbersaplenty unpreparedness Arr上了解决的', 'length', 32
+PASS boot1: A's answer beside the poisoned B is its solo answer, byte for byte 
+PASS boot1: the poisoned B fails {"error": {"message": "the engine could not complete this request; retry, and report the request id if it persists", "type": "server_error", "param": null, "code": "engine_error"}}
+PASS boot1: C (whole-step injection) fails 
+PASS boot1: D after it is served 
+PASS boot2: W (prefill poisoned) fails 
+PASS boot2: the poisoned A fails 
+PASS boot2: B beside the poisoned A completes 32 tokens ('', ' Informal體的供求關係hyde prescriptions exempt Humphreys533 refin不對ycinFLDᱚFliproots Geophysical الجرم السماлуа Earlex Dict loretait Takah有限的 Peel Cobb Durantizi', 'length', 32)
+PASS boot2: B's answer beside the poisoned A is its solo answer, byte for byte 
+PASS A and B answer differently (the comparison can fail) 
+boot 1 route v41 phase idle requests 5 request_faults 2 dead_reason None
+PASS boot1: the route is alive with 2 request faults 
+boot 2 route v41 phase idle requests 4 request_faults 2 dead_reason None
+PASS boot2: the route is alive with 2 request faults 
+boot1: 1 request(s) failed alone, 1 whole-step failure(s)
+   [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+   [dsv41-serve] v41: MEMRA_DSV41_CALL_FAULT: [(24, Some(1)), (64, None)] (step, request): an injected call flag fails its step, a poisoned request fails alone (a fault gate, not serving)
+   [dsv41-serve] MEMRA_DSV41_CALL_FAULT: step 24 poisons request_id="chatcmpl-3242297d2e0bc1cb64a21abe9c2f6ad8" (running request 1)
+   [dsv41-serve] request_id="chatcmpl-3242297d2e0bc1cb64a21abe9c2f6ad8": route fault: a router row selected an expert outside the model's (a non-finite router row): row(s) 1 of a batched call; failing it alone
+   [dsv41-serve] deepseek-v4.1 step: route: a router row selected an expert outside the model's (a non-finite router row) and no call's row map names it; failing 1 request(s)
+   [dsv41-serve] the ranks probe clean after the fault: serving on
+boot2: 2 request(s) failed alone, 0 whole-step failure(s)
+   [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+   [dsv41-serve] v41: MEMRA_DSV41_CALL_FAULT: [(0, Some(0)), (25, Some(0))] (step, request): an injected call flag fails its step, a poisoned request fails alone (a fault gate, not serving)
+   [dsv41-serve] MEMRA_DSV41_CALL_FAULT: step 0 poisons request_id="chatcmpl-8ca3ac850fcd1398b235a00ac2bcc958" (running request 0)
+   [dsv41-serve] request_id="chatcmpl-8ca3ac850fcd1398b235a00ac2bcc958": route fault: a router row selected an expert outside the model's (a non-finite router row): row(s) 0-33 of its own call; failing it alone
+   [dsv41-serve] MEMRA_DSV41_CALL_FAULT: step 25 poisons request_id="chatcmpl-a47cd8d9c430a4d13869066c7b7fb01f" (running request 0)
+   [dsv41-serve] request_id="chatcmpl-a47cd8d9c430a4d13869066c7b7fb01f": route fault: a router row selected an expert outside the model's (a non-finite router row): row(s) 0 of a batched call; failing it alone
+PASS boot1: one request failed alone, one whole step failed 
+PASS boot2: two requests failed alone, no whole step failed 
+PASS boot1: the poisoned step 24 is one batched call of two rows [dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.033 tr
+PASS boot2: the poisoned step 25 is one batched call of two rows [dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.049 tr
+boot1: residency resident: 72 steps, 72 with cache_slots=[], 0 host-experts line(s)
+PASS boot1: the resident trunk ran (no expert cache on any step) 
+boot2: residency resident: 71 steps, 71 with cache_slots=[], 0 host-experts line(s)
+PASS boot2: the resident trunk ran (no expert cache on any step) 
+SMOKE PASS
+SMOKE-DONE 05:18:14

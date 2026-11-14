@@ -1,0 +1,37 @@
+   Compiling memra-engine v0.141.1 ($RUN/src-rowflag/crates/memra-engine)
+   Compiling memra-sampling v0.141.1 ($RUN/src-rowflag/crates/memra-sampling)
+   Compiling memra-validate v0.141.1 ($RUN/src-rowflag/crates/memra-validate)
+   Compiling memra-gguf v0.141.1 ($RUN/src-rowflag/crates/memra-gguf)
+   Compiling memra-tier v0.141.1 ($RUN/src-rowflag/crates/memra-tier)
+   Compiling memra-tokenizer v0.141.1 ($RUN/src-rowflag/crates/memra-tokenizer)
+   Compiling memra-runtime v0.141.1 ($RUN/src-rowflag/crates/memra-runtime)
+   Compiling memra-kv v0.141.1 ($RUN/src-rowflag/crates/memra-kv)
+   Compiling memra-reference v0.141.1 ($RUN/src-rowflag/crates/memra-reference)
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8m 17s
+     Running unittests src/lib.rs ($RUN/target/debug/deps/memra_engine-9b6423762af58046)
+
+running 20 tests
+test dsv41_gpu::decode::tests::lse_is_stable_far_from_zero ... ok
+test dsv41_gpu::draft::tests::a_sequence_whose_drafts_do_not_pay_stops_drafting_for_a_stretch ... ok
+test dsv41_gpu::decode::tests::step_faults_name_the_faulted_rows_of_each_call_or_fail_the_step ... ok
+test dsv41_gpu::draft::tests::expected_tokens_follow_the_survival_of_the_drafts ... ok
+test dsv41_gpu::draft::tests::confident_drafts_are_verified_whole_and_doubtful_ones_cut_short ... ok
+test dsv41_gpu::draft::tests::a_row_count_nobody_ran_is_read_off_its_measured_neighbours ... ok
+test dsv41_gpu::draft::tests::the_accept_walk_keeps_the_matching_prefix_and_the_targets_next_token ... ok
+test dsv41_gpu::decode::tests::each_layer_reads_the_latest_kv_source_at_or_below_it ... ok
+test dsv41_gpu::decode::tests::top_k_is_the_sorted_largest_with_lower_ids_first_among_ties ... ok
+test dsv41_gpu::engram::tests::a_decode_span_hashes_like_the_whole_sequence ... ok
+test dsv41_gpu::tests::a_build_without_cutlass_gemms_is_refused_by_name ... ok
+test dsv41_gpu::engram::tests::hash_after_is_the_span_of_the_appended_sequence ... ok
+test dsv41_gpu::tests::decode_rows_read_the_ring_oldest_slot_first ... ok
+test dsv41_gpu::tests::mint_is_exact_and_refuses_what_e4m3_cannot_hold ... ok
+test dsv41_gpu::tests::the_selection_width_of_a_step_is_one_of_a_few_classes ... ok
+test dsv41_gpu::tests::window_rows_match_the_reference_prefill_selection ... ok
+test dsv41_gpu::tp::tests::blk_end_covers_the_last_row_only_to_its_width ... ok
+test dsv41_gpu::tp::tests::moe_plan_orders_pairs_by_expert_then_token_and_tokens_by_expert ... ok
+test dsv41_gpu::experts::tests::the_slot_layout_packs_the_six_pieces_on_256_byte_boundaries ... ok
+test dsv41_gpu::tests::verify_rows_read_the_positions_the_one_token_calls_read ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 827 filtered out; finished in 0.03s
+

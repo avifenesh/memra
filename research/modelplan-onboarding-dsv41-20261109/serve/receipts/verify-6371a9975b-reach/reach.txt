@@ -1,0 +1,147 @@
+## range
+0db086f87a data(qualification): sm_120a and sm_121a records for 9c2a3ddf5b (the landing of memra#1310 and memra#1317)
+9c2a3ddf5b data(research): unified-readers-20261114: the CPU checks, seven red arms and suites on the folded head at main 63c351a2f4 (memra#1307)
+ff41a46cc3 data(research): unified-readers-20261114: the folded head against main with landing 24, and the counts it moved (memra#1307)
+23916078a0 docs(spec): fold the #1317 review: the census is the three readers memra#1307 named, the rejected candidate, arm hashes, fuller traces (mem
+82aa935aed fix(spec): the draft-state delta asks the engine "unified?", read once, and its reading is a pure function (memra#1307 review)
+20378fa9de data(research): unified-readers-20261114: the CPU arms and suites rerun on the head (memra#1307)
+ae23e77491 docs(spec): the unified-memory readers' decision record, and what the cells showed in the comments (memra#1307)
+522a193770 data(research): unified-readers-20261114: the three readers' GB10 cells, the instrument probe, the boot probe and the CPU arms (memra#1307)
+b45b131735 fix(spec): on unified memory the pooled DFlash2 verify width reads the allocatable free memory and the draft-state measurement reads free p
+f381500f06 data(research): parked-evict-reap-20261113, the CPU receipts of the second review's fold on main 63c351a2f4 (memra#1278, memra#1314)
+1195e91cfe fix(admission): the spec pool's evict-first clear reaps without a trim, and the right-size ladder's clamp is pinned (memra#1278 review 2)
+076aa3a003 data(research): parked-evict-reap-20261113, the CPU receipts of the review fold on the rebased head (memra#1278, memra#1314)
+83a45a0b6c fix(admission): an allocation retries on the bytes its reap released, and a path that allocates next trims the pools (memra#1278 review, me
+12f1350ade data(research): parked-evict-reap-20261113, the CPU receipts of memra#1278
+7b293b62c4 fix(admission): every eviction a reading or a retry counts on reaps the graveyard first
+
+## files changed under crates/, docs/, tools/
+crates/memra-engine/src/dsv41_gpu/experts.rs
+crates/memra-engine/src/dsv4_gpu.rs
+crates/memra-engine/src/lib.rs
+crates/memra-engine/src/spec.rs
+crates/memra-engine/src/unified_memory.rs
+crates/memra-server/src/worker.rs
+docs/SERVING.md
+docs/decisions/KV-VMM-SERVING-DEFAULT.md
+docs/decisions/POOLED-VERIFY-MEMORY-CAP.md
+docs/decisions/README.md
+docs/decisions/SPEC-CAPTURE-HEADROOM-UNIFIED.md
+docs/decisions/UNIFIED-MEMORY-READERS.md
+docs/rigs/dgx-spark.md
+
+## tools/cell_evidence.py need --base 63c351a2f4 --head 0db086f87a
+  cell sm_120a:numeric  [push-gated]  <- crates/memra-engine/src/lib.rs, crates/memra-engine/src/spec.rs, crates/memra-engine/src/unified_memory.rs
+  cell sm_120a:serving  [push-gated]  <- crates/memra-server/src/worker.rs
+  cell sm_120a:perf     [push-gated]  <- crates/memra-engine/src/lib.rs, crates/memra-engine/src/spec.rs, crates/memra-engine/src/unified_memory.rs (+1)
+  cell sm_121a:numeric  [push-gated]  <- crates/memra-engine/src/lib.rs, crates/memra-engine/src/spec.rs, crates/memra-engine/src/unified_memory.rs
+  cell sm_121a:serving  [push-gated]  <- crates/memra-server/src/worker.rs
+  cell sm_121a:perf     [push-gated]  <- crates/memra-engine/src/lib.rs, crates/memra-engine/src/spec.rs, crates/memra-engine/src/unified_memory.rs (+1)
+  cell sm_100a:numeric  [daily/pre-tag]  <- crates/memra-engine/src/lib.rs, crates/memra-engine/src/spec.rs, crates/memra-engine/src/unified_memory.rs
+  cell sm_100a:serving  [daily/pre-tag]  <- crates/memra-server/src/worker.rs
+  cell sm_100a:perf     [daily/pre-tag]  <- crates/memra-engine/src/lib.rs, crates/memra-engine/src/spec.rs, crates/memra-engine/src/unified_memory.rs (+1)
+  cell sm_90a:numeric  [daily/pre-tag]  <- crates/memra-engine/src/lib.rs, crates/memra-engine/src/spec.rs, crates/memra-engine/src/unified_memory.rs
+  cell sm_90a:serving  [daily/pre-tag]  <- crates/memra-server/src/worker.rs
+  cell sm_90a:perf     [daily/pre-tag]  <- crates/memra-engine/src/lib.rs, crates/memra-engine/src/spec.rs, crates/memra-engine/src/unified_memory.rs (+1)
+  cell sm_89:numeric  [daily/pre-tag]  <- crates/memra-engine/src/lib.rs, crates/memra-engine/src/spec.rs, crates/memra-engine/src/unified_memory.rs
+  cell sm_89:serving  [daily/pre-tag]  <- crates/memra-server/src/worker.rs
+  cell sm_89:perf     [daily/pre-tag]  <- crates/memra-engine/src/lib.rs, crates/memra-engine/src/spec.rs, crates/memra-engine/src/unified_memory.rs (+1)
+  sm_100a: battery,perf,serving (daily/pre-tag)
+  sm_120a: battery,perf,serving (push-gated)
+  sm_121a: battery,perf,serving (push-gated)
+  sm_89: battery,perf,serving (daily/pre-tag)
+  sm_90a: battery,perf,serving (daily/pre-tag)
+
+## route files changed in the range
+crates/memra-engine/src/dsv41_gpu/experts.rs
+crates/memra-engine/src/dsv4_gpu.rs
+
+## crates/memra-engine/src/dsv41_gpu/experts.rs: added and removed lines
++///
++/// The free bytes are the raw `cuMemGetInfo` reading. On a unified-memory device that is the
++/// host's `MemFree` and leaves out page cache; memra#1307 moved the readers it named off it and
++/// left this route's alone (this one and `decode.rs` `device_mem`). The route loads on one device
++/// and only its size keeps it off a GB10 today. If it loads there, a level read from this needs
++/// `unified_memory::allocatable_mem_info` and a delta between two calls needs
++/// `unified_memory::delta_free_bytes` (`docs/decisions/UNIFIED-MEMORY-READERS.md`).
+## crates/memra-engine/src/dsv41_gpu/experts.rs: lines that are not comments, sha256 at each end
+63c351a2f4 d5b8592ec4133b06939342bf0880afdc7f0d13294765986c176abcb8ea7eaa37
+0db086f87a d5b8592ec4133b06939342bf0880afdc7f0d13294765986c176abcb8ea7eaa37
+
+## crates/memra-engine/src/dsv4_gpu.rs: added and removed lines
++    ///
++    /// `driver_free` is the raw `cuMemGetInfo` reading, not
++    /// [`crate::unified_memory::allocatable_mem_info`] (memra#1307), because this route never
++    /// loads on unified memory: [`Dsv4Gpu::load`] takes exactly two CUDA devices, and the 0731
++    /// checkpoint's NVFP4 weights fill about 83 GiB of each 96 GB card (with the DSpark drafter),
++    /// more than a GB10 holds even with both stages on its one GPU. If it ever does, the door's
++    /// level (`effective_free`, the calibrated ceiling) needs the allocatable reading, and both
++    /// ends of each `occupied` delta behind the calibrated fixed terms need
++    /// [`crate::unified_memory::delta_free_bytes`], as the draft-state bracket in `spec.rs` takes
++    /// it: the raw reading moves with the page cache.
+## crates/memra-engine/src/dsv4_gpu.rs: lines that are not comments, sha256 at each end
+63c351a2f4 a5fa3aebde775f0e9d690628e16848594db0f134bbee7bc8d93a7506e0dc9dc4
+0db086f87a a5fa3aebde775f0e9d690628e16848594db0f134bbee7bc8d93a7506e0dc9dc4
+
+## what the route files name outside their own modules, among the files the range changed
+# unified_memory, spec:: (non-comment lines of the route files at 0db086f87a)
+# (end of list)
+# crate::worker items the server's route files use
+crates/memra-server/src/dsv41_serve.rs:79:use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request, SpecUsage};
+crates/memra-server/src/dsv41_serve.rs:388:    let max_seq = crate::worker::resolve_env_ctx(declared).map_err(|e| {
+crates/memra-server/src/dsv41_serve.rs:558:        let stop_id = crate::worker::stop_token_reason(id, &self.stop_ids);
+crates/memra-server/src/dsv41_serve.rs:615:    let mut delta = crate::worker::utf8_delta(bytes, emitted);
+crates/memra-server/src/dsv41_serve.rs:2064:    crate::worker::release_request_reservation(&mut req);
+crates/memra-server/src/dsv4_serve.rs:44:use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request, SpecUsage};
+crates/memra-server/src/dsv4_serve.rs:823:        let available = crate::worker::meminfo_available_bytes(&meminfo)?;
+crates/memra-server/src/dsv4_serve.rs:898:    let max_seq = crate::worker::resolve_env_ctx(model_ctx).map_err(|e| {
+crates/memra-server/src/dsv4_serve.rs:1394:        crate::worker::release_request_reservation(&mut req);
+crates/memra-server/src/dsv4_serve.rs:2304:    let mut delta = crate::worker::utf8_delta(open, &mut done);
+crates/memra-server/src/dsv4_serve.rs:2338:    tx: &'a crate::worker::EventSender,
+crates/memra-server/src/dsv4_serve.rs:2364:        tx: &'a crate::worker::EventSender,
+crates/memra-server/src/dsv4_serve.rs:2402:            let stop_id = crate::worker::stop_token_reason(id, self.stop_token_ids);
+crates/memra-server/src/dsv4_serve.rs:2475:    if let Some(error) = crate::worker::prompt_source_limit_error(req) {
+crates/memra-server/src/dsv4_serve.rs:2496:        let plain = crate::worker::plain_chat_render_path(
+crates/memra-server/src/dsv4_serve.rs:3541:    use crate::worker::{ENGINE_MAX_CTX, resolve_ctx};
+crates/memra-server/src/dsv4_serve.rs:4576:    use crate::worker::{Event, event_channel};
+crates/memra-server/src/dsv4_serve.rs:4644:    use crate::worker::{Event, event_channel};
+
+## those items in the range's diff of worker.rs (added or removed lines naming them)
+EngineError: 0
+Event: 0
+EventSender: 0
+ModelCaps: 0
+Request: 0
+SpecUsage: 0
+ENGINE_MAX_CTX: 0
+resolve_ctx: 0
+event_channel: 0
+utf8_delta: 0
+stop_token_reason: 0
+resolve_env_ctx: 0
+release_request_reservation: 0
+prompt_source_limit_error: 0
+plain_chat_render_path: 0
+meminfo_available_bytes: 0
+
+## the engine's lib.rs in the range (added and removed lines)
++    /// Whether this engine's device shares system memory with the host, read once at
++    /// construction (`Engine::unified_memory`).
++    unified_memory: bool,
++        // This engine's own answer, read once (memra#1307). A free-memory delta asks it at both
++        // ends, so it is never taken across two different readings, and a discrete card pays no
++        // attribute call per reading.
++        let unified_memory = crate::unified_memory::is_unified(&gpu.ctx);
++            unified_memory,
++    /// Whether this engine's device shares system memory with the host (an integrated GPU such as
++    /// GB10), as read once when the engine was built. The device never changes, and asking it
++    /// again goes through `CudaContext::attribute`, which first returns any stored driver error:
++    /// a reader that asked at each end of a delta could take the two ends on different readings
++    /// (memra#1307).
++    pub fn unified_memory(&self) -> bool {
++        self.unified_memory
++    }
++
+
+## Engine::unified_memory or is_unified named by the route files at 0db086f87a
+# (end of list)

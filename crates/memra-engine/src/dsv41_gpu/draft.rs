@@ -474,6 +474,8 @@ impl<'a> Runner<'a> {
         let b = dw.cfg.block;
         let mr = dw.cfg.markov_rank;
         self.grp.live()?;
+        // the draft's plans are in no logits read yet
+        self.grp.seen = None;
         if pos == 0 || pos + b > self.max_pos {
             return Err(format!(
                 "draft at position {pos}: a block of {b} past the prompt and inside {}",

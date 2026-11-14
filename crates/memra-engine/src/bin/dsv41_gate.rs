@@ -19,6 +19,9 @@
 //!                    --side-delay and --poison-free arm `SIDE_DELAY_NS` and `POISON_FREE` for the
 //!                    run, the decode gate's ordering faults)
 //!   any of them with --dense-form F: every dense FP8/FP4 GEMM in form F (`dsv41_gpu::GEMM_FORM`)
+//!   dsv41-gate rowfault CKPT_DIR --token-map FILE [--layers N] [--experts-host] [--devices 0,0]
+//!                       [--out RECEIPT.json]
+//!                    (a call flag names its rows: a poisoned request's rows named, the others' bytes kept)
 
 use memra_engine::dsv41_gpu::{
     self as v, Buf, Ctx, Dp, Geo, LayerState, LayerW, Ops, QFmt, QW, Shared, Trace, bf16_to_f32,
@@ -1819,6 +1822,9 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         let ntiles = ops.buf(4)?;
         let err = ops.buf(4)?;
         let flag = ops.buf(4)?;
+        // the call's row map (zeroed): a plan whose ids are all in range marks no row
+        let map_words = rows.div_ceil(32);
+        let map = ops.buf(map_words * 4)?;
         ck("moe_plan", unsafe {
             ffi::memra_v41_moe_plan(
                 dsel.p(&st).i(),
@@ -1838,6 +1844,9 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 ntiles.p(&st).im(),
                 err.p(&st).im(),
                 flag.p(&st).im(),
+                map.p(&st).im(),
+                0,
+                (map_words * 32) as i32,
                 sv,
             )
         })?;
@@ -1847,18 +1856,29 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             && bytes_f32(&pw.host(&st)?) == host.pw
             && bytes_i32(&order.host(&st)?) == host.order
             && bytes_i32(&err.host(&st)?)[0] == 0
-            && bytes_i32(&flag.host(&st)?)[0] == 0;
+            && bytes_i32(&flag.host(&st)?)[0] == 0
+            && bytes_i32(&map.host(&st)?).iter().all(|&w| w == 0);
         rep.raw(
             &format!("schedule/moe_plan/rows{rows}_bm{bm}{nt}"),
             ok,
             "device plan == host MoePlan (offsets, pair tokens, weights, per-token order)",
             format!("{np} pairs, {} tiles", bytes_i32(&ntiles.host(&st)?)[0]),
         );
-        if rows == 3 {
-            // a selection naming no expert (the router's -1 for a NaN row): the plan skips the
-            // pair, counts it and sets bit 0 of the rank's call flag
+        if rows == 3 || rows == 700 {
+            // ids naming no expert (the router's -1 for a NaN row, or past the experts): the plan
+            // skips each pair, counts it, sets bit 0 of the rank's call flag and marks the pair's row
+            // in the call's row map at the slice's offset (`row0`). Three rows take the one-block
+            // plan, 700 the three kernels; the small case's slice starts at row 37 of its call.
+            let bad: Vec<(usize, usize, i32)> = if rows == 3 {
+                vec![(1, 0, -1)]
+            } else {
+                vec![(5, 0, -1), (650, 3, ne as i32), (651, 5, -1), (651, 2, -7)]
+            };
+            let row0 = if rows == 3 { 37usize } else { 0 };
             let mut bad_sel = sel.clone();
-            bad_sel[topk] = -1;
+            for &(t, j, e) in &bad {
+                bad_sel[t * topk + j] = e;
+            }
             let dbad = Buf::from_i32(&st, &bad_sel)?;
             // its own outputs: the tile-list check below reads the plan above
             let (off2, ptok2, pw2, order2) = (
@@ -1873,6 +1893,8 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 ops.buf(4)?,
                 ops.buf(4)?,
             );
+            let words2 = (row0 + rows).div_ceil(32);
+            let map2 = ops.buf(words2 * 4)?;
             ck("moe_plan", unsafe {
                 ffi::memra_v41_moe_plan(
                     dbad.p(&st).i(),
@@ -1892,6 +1914,9 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                     ntiles2.p(&st).im(),
                     err2.p(&st).im(),
                     flag2.p(&st).im(),
+                    map2.p(&st).im(),
+                    row0 as i32,
+                    (words2 * 32) as i32,
                     sv,
                 )
             })?;
@@ -1900,13 +1925,39 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 bytes_i32(&err2.host(&st)?)[0],
                 bytes_i32(&flag2.host(&st)?)[0],
             );
-            let skipped = ord[topk..2 * topk].iter().filter(|&&o| o < 0).count();
+            let mut bad_rows: Vec<usize> = bad.iter().map(|b| b.0).collect();
+            bad_rows.dedup();
+            let skipped: usize = bad_rows
+                .iter()
+                .map(|&t| {
+                    ord[t * topk..(t + 1) * topk]
+                        .iter()
+                        .filter(|&&o| o < 0)
+                        .count()
+                })
+                .sum();
             let placed = bytes_i32(&off2.host(&st)?)[ne];
+            let words = bytes_i32(&map2.host(&st)?);
+            let marked: Vec<usize> = (0..words2 * 32)
+                .filter(|&b| (words[b / 32] as u32 >> (b % 32)) & 1 != 0)
+                .collect();
+            let want: Vec<usize> = bad_rows.iter().map(|&t| row0 + t).collect();
+            let name = if rows == 3 {
+                "schedule/moe_plan/out_of_range_id".to_string()
+            } else {
+                format!("schedule/moe_plan/out_of_range_id_rows{rows}")
+            };
             rep.raw(
-                "schedule/moe_plan/out_of_range_id",
-                e2 == 1 && f2 == 1 && skipped == 1 && placed as usize == np - 1,
-                "an id outside [0, ne): counted, call flag bit 0 set, its pair skipped (order -1, one pair fewer placed)",
-                format!("err {e2}, flag {f2}, token 1 skips {skipped}, {placed} of {np} placed"),
+                &name,
+                e2 == bad.len() as i32
+                    && f2 == 1
+                    && skipped == bad.len()
+                    && placed as usize == np - bad.len()
+                    && marked == want,
+                "ids outside [0, ne): counted, call flag bit 0 set, the pairs skipped (order -1, one pair fewer placed each), exactly their rows marked in the row map at row0",
+                format!(
+                    "err {e2}, flag {f2}, {skipped} skips, {placed} of {np} placed, rows marked {marked:?} (want {want:?})"
+                ),
             );
         }
         // w1-shaped MXFP4 experts (k 5120): the pairs' codes, row-major scale codes placed through
@@ -4599,6 +4650,262 @@ fn idx_gate(
     ))
 }
 
+/// `dsv41-gate rowfault CKPT --token-map FILE [--layers N] [--experts-host] [--devices 0,0]`: a call
+/// flag names its rows (memra#1292), on the serving route's runner (`Runner` with its call flag
+/// attributed). A request's rows are poisoned the way the route's fault door does it
+/// (`Runner::poison`: the call's streams start as NaN, so its router rows name no expert in every
+/// layer):
+///
+/// - two own calls in one forward, the second poisoned: `step_faults` names every row of the
+///   second call and none of the first, and the first call's logits are its clean run's bytes;
+/// - the same with a 50-row second call: its 300 pairs are past the one-block plan's 256, so the
+///   skipped pairs go through the three-kernel plan;
+/// - a batched call of two rows, row 1 poisoned: `step_faults` names row 1 alone, row 0's logits
+///   are its clean run's bytes, and so are the logits of row 0's next step (the poisoned row left
+///   nothing in the shared state: the expert cache, the step block, the free lists);
+/// - the call flag set with no row (the door's whole-step injection) fails the step, and clean
+///   steps name nothing.
+///
+/// `--experts-host` runs the served one-card residency (every layer's own weights on the card, the
+/// routed experts in pinned host memory behind the device cache), whose MoE reads its plan back
+/// and refused a plan with skipped pairs before #1292; without it the trunk is resident.
+/// `--devices` names each rank's device (default one rank on device 0; `0,0` is two ranks on one
+/// card, a pair's N-rank path on one device).
+fn rowfault_gate(
+    ckpt: &Path,
+    tmap: &Path,
+    layers: usize,
+    host: bool,
+    devices: &[usize],
+    rep: &mut Report,
+) -> Result<String, String> {
+    use memra_engine::dsv41_gpu::decode::{Call, Runner};
+    if std::env::var("MEMRA_FULL_PREC").as_deref() != Ok("1") {
+        return Err("set MEMRA_FULL_PREC=1: the route runs the checkpoint's own program".into());
+    }
+    let mc = memra_gguf::config::ModelConfig::from_config_json(&ckpt.join("config.json"))
+        .map_err(|e| e.to_string())?;
+    let g = Geo::from_config(&mc)?;
+    let trunk = g.compress_ratios.len()
+        - mc.dsv41
+            .as_ref()
+            .ok_or("not a deepseek_v41 config")?
+            .num_nextn_predict_layers as usize;
+    let n_layers = layers.clamp(1, trunk);
+    let stm = memra_gguf::safetensors::StModel::open(ckpt).map_err(|e| e.to_string())?;
+    let ec = v::engram::EngramConsts::derive(&g, v::engram::token_map_from_file(tmap)?)?;
+    if devices.is_empty() {
+        return Err("rowfault: --devices names no device".into());
+    }
+    let n = devices.len();
+    v::Part::check(&g, n)?;
+    let mut rn = Runner::new(&stm, g.clone(), Some(ec), devices, 1024, n_layers, 0, 8192)?;
+    // what the gate's forwards need on a rank beside the weights (and the expert cache): prompts
+    // of under 64 tokens, eight sequences at most, and a GiB of margin; the ranks of a card share
+    // it
+    let most = rn
+        .device_ranks()
+        .iter()
+        .map(|x| x.1.len())
+        .max()
+        .unwrap_or(1);
+    let reserve = (v::decode::prefill_workspace_bytes(&g, n, 64, 8192)
+        + 8 * v::decode::seq_state_bytes(&g, n_layers, 64)
+        + (1 << 30))
+        * most;
+    if host {
+        let threads = std::thread::available_parallelism().map_or(8, |n| n.get());
+        let ctx = rn.grp.cx[0].ops.st.context().clone();
+        let hx = Arc::new(v::experts::HostExperts::fill(
+            &stm, &g, n_layers, &ctx, threads,
+        )?);
+        rn.experts_off_card(hx)?;
+        // a rank's cache holds at most its own range's experts of every layer
+        rn.grow_caches(reserve as u64, n_layers * (g.n_experts / n))?;
+    } else {
+        rn.load_resident(n_layers, reserve)?;
+    }
+    rn.grp.attributed = true;
+    let vocab = g.vocab;
+    let pa: Vec<u32> = (0..23).map(|i| 1000 + 37 * i).collect();
+    let pb: Vec<u32> = (0..29).map(|i| 5000 + 53 * i).collect();
+    // 50 rows: 300 expert pairs, past the 256 the one-block plan takes
+    let pc: Vec<u32> = (0..50).map(|i| 9000 + 41 * i).collect();
+    let pick = |row: &[f32]| v::decode::argmax(row) as u32;
+    let bits = |x: &[f32]| x.iter().map(|f| f.to_bits()).collect::<Vec<u32>>();
+    let pair = |rn: &Runner| vec![rn.seq_with_capacity(64), rn.seq_with_capacity(64)];
+    let prompts = [
+        Call {
+            seq: 0,
+            tokens: pa.clone(),
+        },
+        Call {
+            seq: 1,
+            tokens: pb.clone(),
+        },
+    ];
+    let long = [
+        Call {
+            seq: 0,
+            tokens: pa.clone(),
+        },
+        Call {
+            seq: 1,
+            tokens: pc.clone(),
+        },
+    ];
+    let mut clean_named = Vec::new();
+
+    // the clean reference: both prompts, a batched step of both, row 0's next step alone
+    let mut r = pair(&rn);
+    rn.begin_step()?;
+    let outs = rn.forward(&mut r, &prompts)?;
+    let ra = rn.logits(&outs[0], pa.len() - 1, 1)?;
+    let rb = rn.logits(&outs[1], pb.len() - 1, 1)?;
+    clean_named.push(rn.step_faults(&[&outs[0], &outs[1]])?);
+    drop(outs);
+    let (ta, tb) = (pick(&ra), pick(&rb));
+    rn.begin_step()?;
+    let o = rn.forward_batch(&mut r, &[(0, ta), (1, tb)])?;
+    let rrow0 = rn.logits(&o, 0, 1)?;
+    clean_named.push(rn.step_faults(&[&o])?);
+    drop(o);
+    let ta2 = pick(&rrow0);
+    rn.begin_step()?;
+    let o = rn.forward_batch(&mut r, &[(0, ta2)])?;
+    let rnext = rn.logits(&o, 0, 1)?;
+    clean_named.push(rn.step_faults(&[&o])?);
+    drop(o);
+    let mut r = pair(&rn);
+    rn.begin_step()?;
+    let outs = rn.forward(&mut r, &long)?;
+    rn.logits(&outs[0], pa.len() - 1, 1)?;
+    rn.logits(&outs[1], pc.len() - 1, 1)?;
+    clean_named.push(rn.step_faults(&[&outs[0], &outs[1]])?);
+    drop(outs);
+    rep.raw(
+        "rowfault/clean_steps_name_nothing",
+        clean_named.iter().flatten().all(|rows| rows.is_empty()),
+        "a step whose router rows all named experts names no row",
+        format!("{clean_named:?}"),
+    );
+
+    // two own calls in one forward, the second poisoned
+    let mut s = pair(&rn);
+    rn.begin_step()?;
+    rn.poison = Some(1);
+    let outs = rn.forward(&mut s, &prompts);
+    rn.poison = None;
+    let outs = outs?;
+    let la = rn.logits(&outs[0], pa.len() - 1, 1)?;
+    rn.logits(&outs[1], pb.len() - 1, 1)?;
+    let named = rn.step_faults(&[&outs[0], &outs[1]])?;
+    drop(outs);
+    let all_b: Vec<usize> = (0..pb.len()).collect();
+    rep.raw(
+        "rowfault/forward/names_the_poisoned_call",
+        named.len() == 2 && named[0].is_empty() && named[1] == all_b,
+        "the poisoned call's rows named, the other call's none",
+        format!("{named:?}"),
+    );
+    rep.raw(
+        "rowfault/forward/other_call_keeps_its_bytes",
+        bits(&la) == bits(&ra),
+        "the clean call's last-row logits beside the poisoned call are its clean run's bytes",
+        format!("{} logits", la.len()),
+    );
+
+    // the same with the 50-row call poisoned: the three-kernel plan skips its pairs and marks
+    // its rows
+    let mut s = pair(&rn);
+    rn.begin_step()?;
+    rn.poison = Some(1);
+    let outs = rn.forward(&mut s, &long);
+    rn.poison = None;
+    let outs = outs?;
+    let la = rn.logits(&outs[0], pa.len() - 1, 1)?;
+    rn.logits(&outs[1], pc.len() - 1, 1)?;
+    let named = rn.step_faults(&[&outs[0], &outs[1]])?;
+    drop(outs);
+    let all_c: Vec<usize> = (0..pc.len()).collect();
+    rep.raw(
+        "rowfault/forward_long/names_the_poisoned_call",
+        named.len() == 2 && named[0].is_empty() && named[1] == all_c,
+        "the poisoned 50-row call's rows named (the three-kernel plan), the other call's none",
+        format!("{named:?}"),
+    );
+    rep.raw(
+        "rowfault/forward_long/other_call_keeps_its_bytes",
+        bits(&la) == bits(&ra),
+        "the clean call's last-row logits beside the poisoned 50-row call are its clean run's bytes",
+        format!("{} logits", la.len()),
+    );
+
+    // a batched call of two rows, row 1 poisoned, then row 0's next step alone
+    let mut p = pair(&rn);
+    rn.begin_step()?;
+    let outs = rn.forward(&mut p, &prompts)?;
+    rn.logits(&outs[0], pa.len() - 1, 1)?;
+    rn.logits(&outs[1], pb.len() - 1, 1)?;
+    let pre = rn.step_faults(&[&outs[0], &outs[1]])?;
+    drop(outs);
+    rn.begin_step()?;
+    rn.poison = Some(1);
+    let o = rn.forward_batch(&mut p, &[(0, ta), (1, tb)]);
+    rn.poison = None;
+    let o = o?;
+    let lg = rn.logits(&o, 0, 2)?;
+    let named = rn.step_faults(&[&o])?;
+    drop(o);
+    rep.raw(
+        "rowfault/batch/names_the_poisoned_row",
+        pre.iter().all(|x| x.is_empty()) && named == vec![vec![1usize]],
+        "row 1 of the batched call named, row 0 not (and the clean prefills before it named nothing)",
+        format!("prefills {pre:?}, batched {named:?}, row 1 finite logits {}", lg[vocab..].iter().filter(|x| x.is_finite()).count()),
+    );
+    rep.raw(
+        "rowfault/batch/other_row_keeps_its_bytes",
+        bits(&lg[..vocab]) == bits(&rrow0),
+        "row 0's logits beside the poisoned row are its clean run's bytes",
+        format!("{vocab} logits"),
+    );
+    rn.begin_step()?;
+    let o = rn.forward_batch(&mut p, &[(0, ta2)])?;
+    let lnext = rn.logits(&o, 0, 1)?;
+    let named = rn.step_faults(&[&o])?;
+    drop(o);
+    rep.raw(
+        "rowfault/batch/other_row_next_step_keeps_its_bytes",
+        named == vec![Vec::<usize>::new()] && bits(&lnext) == bits(&rnext),
+        "row 0's next step, alone, is its clean run's bytes and names nothing",
+        format!("{named:?}"),
+    );
+
+    // the call flag set with no row named: the step fails as a whole
+    let mut w = vec![rn.seq_with_capacity(64)];
+    rn.begin_step()?;
+    let outs = rn.forward(&mut w, &prompts[..1])?;
+    rn.logits(&outs[0], pa.len() - 1, 1)?;
+    rn.step_faults(&[&outs[0]])?;
+    drop(outs);
+    rn.begin_step()?;
+    rn.inject_call_fault()?;
+    let o = rn.forward_batch(&mut w, &[(0, ta)])?;
+    rn.logits(&o, 0, 1)?;
+    let whole = rn.step_faults(&[&o]);
+    rep.raw(
+        "rowfault/unnamed_flag_fails_the_step",
+        whole
+            .as_ref()
+            .is_err_and(|e| e.contains("no call's row map")),
+        "a call flag no row map explains fails the step",
+        format!("{whole:?}"),
+    );
+    Ok(format!(
+        "\"layers\": {n_layers}, \"experts_host\": {host}, \"devices\": {devices:?}, \"vocab\": {vocab}"
+    ))
+}
+
 fn main() {
     let mut a: Vec<String> = std::env::args().collect();
     // --dense-form F, anywhere on the line: the form of every dense FP8/FP4 GEMM of the run
@@ -4659,6 +4966,15 @@ fn main() {
             tp_gate(Path::new(&a[2]), Path::new(&a[3]), &layers, &devices, token_map.as_deref(), decode, chunk, reps, &mut rep)
                 .map(|s| format!("\"gate\": \"tp\", \"capture\": {:?}, \"side_delay_ns\": {side_delay}, \"poison_free\": {poison}, {s}", a[3]))
         }
+        Some("rowfault") if a.len() > 2 => {
+            let layers = flag("--layers").and_then(|x| x.parse().ok()).unwrap_or(2);
+            let devices: Vec<usize> = flag("--devices").unwrap_or_else(|| "0".into()).split(',').filter_map(|x| x.parse().ok()).collect();
+            match flag("--token-map") {
+                Some(tm) => rowfault_gate(Path::new(&a[2]), Path::new(&tm), layers, has("--experts-host"), &devices, &mut rep)
+                    .map(|s| format!("\"gate\": \"rowfault\", {s}")),
+                None => Err("rowfault: --token-map FILE (the Engram hash of the prompts)".into()),
+            }
+        }
         Some("idx") if a.len() > 3 => {
             let layer = flag("--layer").and_then(|x| x.parse().ok()).unwrap_or(20);
             let devices: Vec<usize> = flag("--devices").unwrap_or_else(|| "0,1".into()).split(',').filter_map(|x| x.parse().ok()).collect();
@@ -4669,7 +4985,7 @@ fn main() {
             idx_gate(Path::new(&a[2]), Path::new(&a[3]), layer, &devices, slice, reps, rows, last, &mut rep)
                 .map(|s| format!("\"gate\": \"idx\", \"capture\": {:?}, {s}", a[3]))
         }
-        _ => Err("usage: dsv41-gate [--dense-form F] kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json] | decode CKPT CAPTURE --layers L,.. --token-map FILE [--out R.json] | tp CKPT CAPTURE --layers L,.. [--devices 0,1] [--token-map FILE] [--decode N] [--chunk N] [--reps N] [--side-delay NS] [--poison-free] [--out R.json] | idx CKPT CAPTURE --layer L [--devices 0,1] [--slice N] [--reps N] [--rows N] [--last N] [--out R.json]".into()),
+        _ => Err("usage: dsv41-gate [--dense-form F] kernels FIXTURE_ROOT [--out R.json] | layer CKPT CAPTURE --layers L,.. [--mint] [--chain N] [--tol X] [--token-map FILE] [--floor CPU_FLOOR_DIR] [--decode N] [--save DIR] [--head] [--chunk N] [--out R.json] | decode CKPT CAPTURE --layers L,.. --token-map FILE [--out R.json] | tp CKPT CAPTURE --layers L,.. [--devices 0,1] [--token-map FILE] [--decode N] [--chunk N] [--reps N] [--side-delay NS] [--poison-free] [--out R.json] | idx CKPT CAPTURE --layer L [--devices 0,1] [--slice N] [--reps N] [--rows N] [--last N] [--out R.json] | rowfault CKPT --token-map FILE [--layers N] [--experts-host] [--devices 0,0] [--out R.json]".into()),
     };
     let header = match r {
         Ok(h) => h,

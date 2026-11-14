@@ -193,6 +193,17 @@ pub struct Group {
     /// why the group can no longer run a forward: a gather whose peer never arrived
     /// ([`Self::route_verdict`]); every later call refuses ([`Self::live`])
     pub lost: Option<String>,
+    /// the call flag is the caller's: the reads of a call's logits leave the call word to it
+    /// ([`Self::route_verdict`]), and it names the faulted rows from each call's row map after the
+    /// step's last read (`decode::Runner::step_faults`). Set by a serving route, which then fails
+    /// only the requests whose rows faulted; off (the gates, the benches), any call flag fails the
+    /// read that sees it.
+    pub attributed: bool,
+    /// every rank's route words ([`Ctx::route_words`], rank order) as the latest read of a call's
+    /// logits found them ([`Self::read_words`]); cleared by every forward, batched step and
+    /// draft, whose plans those words may not hold yet, so a step's faults are read from it only
+    /// when nothing ran after that read
+    pub seen: Option<Vec<[i32; 3]>>,
 }
 
 /// What the router chose and what the MoE returned, call by call in the order the blocks ran
@@ -683,6 +694,8 @@ impl Group {
             capturing: false,
             route_log: None,
             lost: None,
+            attributed: false,
+            seen: None,
         };
         gr.probe()?;
         gr.stats = CommStats::default();
@@ -709,12 +722,16 @@ impl Group {
     /// What the ranks' route flags (`(call, transport)` of [`Ctx::route_flags`], rank order) say
     /// about the calls they were read with: a transport flag loses the group for good (a peer's
     /// slice of a gather never arrived, so the gathers' sequence words can no longer be trusted);
-    /// a call flag fails these calls only.
+    /// a call flag fails these calls only, and is left to the caller when the group is
+    /// [`Self::attributed`].
     pub fn route_verdict(&mut self, flags: &[(i32, i32)]) -> Result<(), String> {
         if let Some(r) = flags.iter().position(|f| f.1 & 0x10000 != 0) {
             let why = format!("rank {r}: a peer's slice of a gather never arrived");
             self.lost = Some(why.clone());
             return Err(why);
+        }
+        if self.attributed {
+            return Ok(());
         }
         if let Some(r) = flags.iter().position(|f| f.0 != 0) {
             return Err(format!(
@@ -723,6 +740,24 @@ impl Group {
             ));
         }
         Ok(())
+    }
+
+    /// The route words of every rank read with a call's logits (rank order): kept as
+    /// [`Self::seen`] and judged by [`Self::route_verdict`].
+    pub fn read_words(&mut self, words: Vec<[i32; 3]>) -> Result<(), String> {
+        let flags: Vec<(i32, i32)> = words.iter().map(|w| (w[0], w[1])).collect();
+        self.seen = Some(words);
+        self.route_verdict(&flags)
+    }
+
+    /// Point every rank's MoE plans at a call's row map (`Some((maps, rows))`: rank r's map
+    /// `maps[r]`, `ceil(rows / 32)` i32 words, [`Ctx::fault_rows`]) or back at the rank's own word
+    /// of plans no call owns (`None`). A caller sets the map around the call's blocks and unsets it
+    /// before the map can drop.
+    pub fn own_faults(&mut self, f: Option<(&[Buf], usize)>) {
+        for (r, c) in self.cx.iter_mut().enumerate() {
+            c.fault_rows = f.map(|(maps, rows)| (maps[r].p(&c.ops.st), rows.div_ceil(32) * 32));
+        }
     }
 
     /// `parallel` (one host thread per rank) or `serial`.
@@ -1863,15 +1898,21 @@ impl Group {
         res.and(out)
     }
 
-    /// Each rank's inputs of the second half, (address, bytes), in [`FfnIn`]'s order.
+    /// Each rank's inputs of the second half, (address, bytes), in [`FfnIn`]'s order, then the row
+    /// map its plans mark ([`Ctx::fault_span`]): a call's own map moves from call to call, so a
+    /// replay points the plan at the map of the call it runs for.
     fn ffn_spans(&self, i: &FfnIn<'_>) -> Vec<Vec<(u64, usize)>> {
         (0..self.n())
             .map(|r| {
-                let st = &self.cx[r].ops.st;
-                [i.h, i.a, i.a_pre, i.a_post, i.a_comb]
+                let c = &self.cx[r];
+                let st = &c.ops.st;
+                let mut v: Vec<(u64, usize)> = [i.h, i.a, i.a_pre, i.a_post, i.a_comb]
                     .iter()
                     .map(|b| (b[r].p(st).addr(), b[r].len))
-                    .collect()
+                    .collect();
+                let (map, rows) = c.fault_span();
+                v.push((map.addr(), rows / 8));
+                v
             })
             .collect()
     }
@@ -2135,6 +2176,7 @@ impl Group {
                 x2[0].at(&st, r0 * d * 2),
                 rows,
                 m[0].at(&st, r0 * d * 2),
+                r0,
                 &mut tr[0],
             );
         }
@@ -2156,7 +2198,7 @@ impl Group {
                 }
                 // the rank's range, on the card or behind its cache (an off-card share holds
                 // no expert, so its own list would be empty)
-                c.moe_plan(&sel, &selw, rows, Part { rank: r, n }.range(ne))
+                c.moe_plan(&sel, &selw, rows, Part { rank: r, n }.range(ne), r0)
             })?
         };
         let np = rows * topk;
@@ -2164,7 +2206,11 @@ impl Group {
             .into_iter()
             .map(|x| x as usize)
             .collect();
-        if off[ne] != rows * topk {
+        // fewer pairs than the rows' top-k: a router row named no expert there, and the plan
+        // skipped those pairs (their order slots -1), counted them and marked their rows in the
+        // call's row map and the call flag, which the call's reads report; the placed pairs are
+        // complete, and the ranks' ranges, gathers and combine cover exactly them
+        if off[ne] > rows * topk {
             return Err(format!(
                 "route: {} of {} pairs placed",
                 off[ne],
@@ -2277,7 +2323,7 @@ impl Group {
                     trr.route_w
                         .extend_from_slice(&bytes_f32(&host_timed(&selw, &st)?));
                 }
-                let plan = c.moe_plan(&sel, &selw, rows, 0..ne)?;
+                let plan = c.moe_plan(&sel, &selw, rows, 0..ne, r0)?;
                 c.split_hidden(&lw[r], x, &plan, &hb)?;
                 if forked {
                     c.split_shared_join()?;
@@ -2402,10 +2448,10 @@ impl Group {
                 .linear_bf16(x.p(&st), d, rows, &hw[r], lg.p(&st), hw[r].n, true)?;
             let lg = bytes_f32(&host_timed(&lg, &st)?);
             // the stream is drained: the flags of the calls since the last read
-            Ok((lg, c.route_flags()?))
+            Ok((lg, c.route_words()?))
         })?;
-        let (parts, flags): (Vec<Vec<f32>>, Vec<(i32, i32)>) = parts.into_iter().unzip();
-        self.route_verdict(&flags)?;
+        let (parts, words): (Vec<Vec<f32>>, Vec<[i32; 3]>) = parts.into_iter().unzip();
+        self.read_words(words)?;
         let mut out = vec![0f32; rows * g.vocab];
         let mut col = 0;
         for r in 0..n {

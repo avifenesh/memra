@@ -1083,6 +1083,7 @@ fn taped_out(rn: &mut Runner, bytes: &[u8], sp: usize, rows: usize) -> Result<Ou
         tap_row0: 0,
         tap_rows: rows,
         batch: Vec::new(),
+        faults: Vec::new(),
     })
 }
 

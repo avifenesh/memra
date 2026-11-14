@@ -1,0 +1,37 @@
+adb46b050da6d242ced04bf408ac15fc0c3b9521c5f9d1442330d4919cd392f8  $RUN/bins/main2/memra-server
+d2d5a63c1540bef13eee2acebb910969af0cb1fc10e5f70be8fdbc32de46d225  $RUN/bins/rowflag3/memra-server
+r1-A (main2) ready=1
+r1-A p1 http 200
+r1-A p2 http 200
+r1-A solo http 200
+r2-B (rowflag3) ready=1
+r2-B p1 http 200
+r2-B p2 http 200
+r2-B solo http 200
+r3-B (rowflag3) ready=1
+r3-B p1 http 200
+r3-B p2 http 200
+r3-B solo http 200
+r4-A (main2) ready=1
+r4-A p1 http 200
+r4-A p2 http 200
+r4-A solo http 200
+r5-B (rowflag3) ready=1
+r5-B p1 http 200
+r5-B p2 http 200
+r5-B solo http 200
+r6-A (main2) ready=1
+r6-A p1 http 200
+r6-A p2 http 200
+r6-A solo http 200
+r1-A rows1: n=86 median=16.000 ms rows2: n=51 median=24.000 ms
+r2-B rows1: n=66 median=16.000 ms rows2: n=61 median=25.000 ms
+r3-B rows1: n=70 median=16.000 ms rows2: n=59 median=32.000 ms
+r4-A rows1: n=68 median=16.000 ms rows2: n=60 median=32.000 ms
+r5-B rows1: n=70 median=16.000 ms rows2: n=59 median=24.000 ms
+r6-A rows1: n=74 median=16.000 ms rows2: n=57 median=32.000 ms
+arm A rows1: run medians 16.000, 16.000, 16.000 ms; median of medians 16.000 [16.000, 16.000]
+arm B rows1: run medians 16.000, 16.000, 16.000 ms; median of medians 16.000 [16.000, 16.000]
+arm A rows2: run medians 24.000, 32.000, 32.000 ms; median of medians 32.000 [24.000, 32.000]
+arm B rows2: run medians 25.000, 32.000, 24.000 ms; median of medians 25.000 [24.000, 32.000]
+AB-DONE 01:16:05

@@ -79,6 +79,10 @@ pub struct Out {
     /// a batched call ([`Runner::forward_batch`]): each row's own position (its sequence's);
     /// empty for a call of one sequence, whose rows are consecutive from `sp`
     pub batch: Vec<usize>,
+    /// on every rank the call's row map, i32 `[ceil(s / 32)]`: bit i set when a router row of the
+    /// call's row i named no expert in some layer ([`super::Ctx::fault_rows`],
+    /// [`Runner::step_faults`]); empty for a call that keeps none
+    pub faults: Vec<Buf>,
 }
 
 impl Out {
@@ -154,6 +158,10 @@ pub struct Runner<'a> {
     /// `[layers][rows][top-k]` (a measurement: how many experts a batch reads)
     pub last_routes: Vec<i32>,
     pub stats: Stats,
+    /// fault injection of the serving route's step-fault gate (`MEMRA_DSV41_CALL_FAULT`): the
+    /// calls of this sequence start from NaN streams (every byte 0xFF), so its router rows name no
+    /// expert in every layer and its rows fault as a request's data can make them
+    pub poison: Option<usize>,
 }
 
 /// The embedding table is one copy a card, read from every rank's stream and freed on its card's
@@ -217,6 +225,7 @@ impl<'a> Runner<'a> {
             tap_mix: Vec::new(),
             last_routes: Vec::new(),
             stats: Stats::default(),
+            poison: None,
         })
     }
 
@@ -515,14 +524,66 @@ impl<'a> Runner<'a> {
     /// Open a step: every rank's call flag cleared ([`super::Ctx::clear_call_flag`]), so the
     /// flags read with this step's logits are those of its own calls. A serving route calls it
     /// before each step's first call.
-    pub fn begin_step(&self) -> Result<(), String> {
+    pub fn begin_step(&mut self) -> Result<(), String> {
+        self.grp.seen = None;
         self.grp.cx.iter().try_for_each(|c| c.clear_call_flag())
     }
 
     /// Fault injection of the serving route's step-fault gate (`MEMRA_DSV41_CALL_FAULT`): every
     /// rank's call flag set ([`super::Ctx::set_call_flag`]), so the next read of the flags fails.
-    pub fn inject_call_fault(&self) -> Result<(), String> {
+    /// No call's row map names a row for it: [`Self::step_faults`] fails the step as a whole.
+    pub fn inject_call_fault(&mut self) -> Result<(), String> {
+        self.grp.seen = None;
         self.grp.cx.iter().try_for_each(|c| c.set_call_flag())
+    }
+
+    /// The rows of a step's calls whose router named no expert, read after the step's last logits
+    /// read on a group whose call flag is [`super::tp::Group::attributed`]: entry i holds the
+    /// faulted rows of `outs[i]` (ascending, empty for a clean call), from the call's row map on
+    /// every rank ([`Out::faults`]). A row of a call is its request's, and the request's rows
+    /// alone carry its fault: a call of one sequence runs alone through every block, and a row of
+    /// a batched call meets the other rows only in kernels that compute each row on its own
+    /// (norms, mixes, GEMMs with per-row 32-wide scales, attention over its own sequence's keys,
+    /// the plan, which skips the row's pairs, the combine), so the other rows' bytes are those of
+    /// a step without it.
+    ///
+    /// `Err` fails the step as a whole: a lost transport ([`super::tp::Group::route_verdict`]); a
+    /// fault no call owns (a plan outside every call's map, such as a draft's; its rows are in
+    /// word 2 of `Ctx::route_bad`); and a call flag that no map explains (the step-fault gate's
+    /// whole-step injection, [`Self::inject_call_fault`]).
+    pub fn step_faults(&mut self, outs: &[&Out]) -> Result<Vec<Vec<usize>>, String> {
+        // the words the step's last logits read found, when nothing ran after it; else read now
+        let words = match self.grp.seen.take() {
+            Some(w) => w,
+            None => {
+                let mut w = Vec::with_capacity(self.grp.n());
+                for (r, c) in self.grp.cx.iter().enumerate() {
+                    w.push(c.route_words().map_err(|e| format!("rank {r}: {e}"))?);
+                }
+                w
+            }
+        };
+        let (call, unowned) = (
+            words.iter().any(|w| w[0] != 0),
+            words.iter().any(|w| w[2] != 0),
+        );
+        let flags: Vec<(i32, i32)> = words.iter().map(|w| (0, w[1])).collect();
+        self.grp.route_verdict(&flags)?;
+        // the maps are read only when the call word says a plan faulted: a clean step reads none
+        let mut maps = Vec::with_capacity(outs.len());
+        for o in outs {
+            let mut bits = vec![0u32; o.s.div_ceil(32)];
+            if call && !unowned {
+                for (r, m) in o.faults.iter().enumerate() {
+                    let st = &self.grp.cx[r].ops.st;
+                    for (b, w) in bits.iter_mut().zip(super::bytes_i32(&m.host(st)?)) {
+                        *b |= w as u32;
+                    }
+                }
+            }
+            maps.push((o.s, bits));
+        }
+        attribute_faults(call, unowned, &maps)
     }
 
     /// Every rank's expert-cache counters, summed, and the slots per rank.
@@ -738,6 +799,7 @@ impl<'a> Runner<'a> {
     /// [`Self::logits`]. An error part-way leaves the sequences it touched unusable.
     pub fn forward(&mut self, seqs: &mut [Seq], calls: &[Call]) -> Result<Vec<Out>, String> {
         self.grp.live()?;
+        self.grp.seen = None;
         let n = self.grp.n();
         let g = self.g.clone();
         // positions first, so a refused call leaves every sequence as it was
@@ -793,6 +855,15 @@ impl<'a> Runner<'a> {
             q.ids.extend_from_slice(&c.tokens);
             h.push(hr);
             pre.push(pr);
+        }
+        // each call's row map on every rank (zeroed), and the step-fault gate's poisoned streams
+        let mut faults: Vec<Vec<Buf>> = Vec::with_capacity(calls.len());
+        for (ci, c) in calls.iter().enumerate() {
+            let s = pos[ci].1;
+            faults.push(self.grp.each(|_, cx| cx.ops.buf(s.div_ceil(32) * 4))?);
+            if self.poison == Some(c.seq) {
+                self.poison_rows(&h[ci], 0, s)?;
+            }
         }
         let mut fwd: Vec<Vec<Shared>> = calls
             .iter()
@@ -885,6 +956,8 @@ impl<'a> Runner<'a> {
                         f.swap_group(st);
                     }
                 }
+                // the call's plans mark its own row map, unset before anything else runs
+                self.grp.own_faults(Some((&faults[ci], s)));
                 let res = self.grp.block_forward_owned(
                     lw,
                     std::mem::take(&mut h[ci]),
@@ -895,6 +968,7 @@ impl<'a> Runner<'a> {
                     &mut q.ls[li],
                     &mut tr,
                 );
+                self.grp.own_faults(None);
                 if let Some(gi) = gi {
                     for (f, st) in fwd[ci].iter_mut().zip(q.store[gi].iter_mut()) {
                         f.swap_group(st);
@@ -932,7 +1006,8 @@ impl<'a> Runner<'a> {
             .zip(pre)
             .zip(pos)
             .zip(taps)
-            .map(|(((h, pre), (sp, s)), taps)| {
+            .zip(faults)
+            .map(|((((h, pre), (sp, s)), taps), faults)| {
                 let (tap_row0, tap_rows) = if taps.is_empty() { (0, 0) } else { tap_span(s) };
                 Out {
                     h,
@@ -943,6 +1018,7 @@ impl<'a> Runner<'a> {
                     tap_row0,
                     tap_rows,
                     batch: Vec::new(),
+                    faults,
                 }
             })
             .collect())
@@ -959,6 +1035,7 @@ impl<'a> Runner<'a> {
         rows: &[(usize, u32)],
     ) -> Result<Out, String> {
         self.grp.live()?;
+        self.grp.seen = None;
         let n = self.grp.n();
         let g = self.g.clone();
         let nr = rows.len();
@@ -1188,6 +1265,11 @@ impl<'a> Runner<'a> {
             pos_keep.push(keep);
             pos.push(c);
         }
+        // the call's row map on every rank (zeroed): bit i is row i's, its sequence `rows[i].0`
+        let faults = self.grp.each(|_, cx| cx.ops.buf(nr.div_ceil(32) * 4))?;
+        if let Some(k) = rows.iter().position(|r| Some(r.0) == self.poison) {
+            self.poison_rows(&h, k, 1)?;
+        }
         let mut sel: Vec<BatchSel> = (0..n).map(|_| BatchSel::default()).collect();
         let mut tr: Vec<Trace> = (0..n).map(|_| Trace::default()).collect();
         let nt = self.taps.len();
@@ -1291,6 +1373,7 @@ impl<'a> Runner<'a> {
                 }
                 next += 1;
             }
+            self.grp.own_faults(Some((&faults, nr)));
             let res = self.grp.block_forward_batch(
                 lw,
                 std::mem::take(&mut h),
@@ -1301,6 +1384,7 @@ impl<'a> Runner<'a> {
                 steps.get(li).map(|sl| (blk.as_slice(), sl)),
                 &mut tr,
             );
+            self.grp.own_faults(None);
             drop(by_rank);
             if let Some(gi) = gi {
                 for (f, &(si, _)) in fwd.iter_mut().zip(rows) {
@@ -1342,7 +1426,29 @@ impl<'a> Runner<'a> {
             tap_row0: 0,
             tap_rows,
             batch: positions,
+            faults,
         })
+    }
+
+    /// The step-fault gate's poison ([`Self::poison`]): rows `[r0, r0 + rows)` of a call's streams
+    /// `h` (bf16 `[rows][hc][dim]` on every rank) become NaN on the card, in stream order before
+    /// the call's first layer reads them.
+    fn poison_rows(&mut self, h: &[Buf], r0: usize, rows: usize) -> Result<(), String> {
+        let row = self.g.hc * self.g.dim * 2;
+        self.grp.each(|r, cx| {
+            let st = cx.ops.st.clone();
+            // SAFETY: `rows` whole stream rows of the call's buffer from row `r0`, on its stream
+            unsafe {
+                cudarc::driver::result::memset_d8_async(
+                    h[r].at(&st, r0 * row).addr(),
+                    0xff,
+                    rows * row,
+                    cx.ops.sv() as cudarc::driver::sys::CUstream,
+                )
+            }
+            .map_err(|e| format!("poison rows: {e:?}"))
+        })?;
+        Ok(())
     }
 
     /// Close a several-token decode call on `q`: its first `keep` rows (at least one: the first
@@ -1492,10 +1598,10 @@ impl<'a> Runner<'a> {
             );
             // the stream is drained: the route flags of the calls since the last read, read as
             // `Group::head_logits` reads them
-            Ok((got, c.route_flags()?))
+            Ok((got, c.route_words()?))
         })?;
-        let (parts, flags): (Vec<_>, Vec<(i32, i32)>) = parts.into_iter().unzip();
-        self.grp.route_verdict(&flags)?;
+        let (parts, words): (Vec<_>, Vec<[i32; 3]>) = parts.into_iter().unzip();
+        self.grp.read_words(words)?;
         let mut best = vec![(f32::NEG_INFINITY, 0u32); rows];
         let mut col = 0usize;
         for (val, idx, n) in parts {
@@ -1527,6 +1633,42 @@ impl<'a> Runner<'a> {
         let lg = self.logits(out, out.s - 1, 1)?;
         Scored::of(lg, keep_logits)
     }
+}
+
+/// [`Runner::step_faults`]'s verdict from what the ranks hold: `call`, a call word was set on
+/// some rank; `unowned`, a row map of the plans no call owns was marked on some rank; `maps`, each
+/// call's rows and its row map OR-ed over the ranks. `Ok`: each call's faulted rows (all empty
+/// when no call word was set); `Err`: the step fails as a whole (a fault no call owns, or a call
+/// word that no map explains).
+pub fn attribute_faults(
+    call: bool,
+    unowned: bool,
+    maps: &[(usize, Vec<u32>)],
+) -> Result<Vec<Vec<usize>>, String> {
+    let mut got: Vec<Vec<usize>> = maps.iter().map(|_| Vec::new()).collect();
+    if !call {
+        return Ok(got);
+    }
+    if unowned {
+        return Err(
+            "route: a router row selected an expert outside the model's (a non-finite \
+                    router row) in a call no request owns"
+                .into(),
+        );
+    }
+    for ((s, bits), rows) in maps.iter().zip(got.iter_mut()) {
+        rows.extend(
+            (0..*s).filter(|&i| bits.get(i / 32).is_some_and(|w| (w >> (i % 32)) & 1 != 0)),
+        );
+    }
+    if got.iter().all(|r| r.is_empty()) {
+        return Err(
+            "route: a router row selected an expert outside the model's (a non-finite router \
+             row) and no call's row map names it"
+                .into(),
+        );
+    }
+    Ok(got)
 }
 
 /// What [`Runner::load_resident`] placed, per device.
@@ -1735,6 +1877,42 @@ mod tests {
         assert_eq!(got[14], Some(2));
         assert_eq!(got[19], Some(2));
         assert!(got[20..].iter().all(|&x| x == Some(3)));
+    }
+
+    /// A step of two calls: a prefill of 40 rows and a batched call of 2 rows. A router fault on
+    /// the batched call's row 1 names that row alone; one on the prefill's row 33 (its second
+    /// map word) names the prefill alone; a fault no call owns, or a call word no map explains,
+    /// fails the step; no call word reads as a clean step whatever the maps hold.
+    #[test]
+    fn step_faults_name_the_faulted_rows_of_each_call_or_fail_the_step() {
+        let clean = vec![(40usize, vec![0u32, 0]), (2, vec![0])];
+        assert_eq!(
+            attribute_faults(false, false, &clean),
+            Ok(vec![vec![], vec![]])
+        );
+        let row1 = vec![(40usize, vec![0u32, 0]), (2, vec![0b10])];
+        assert_eq!(
+            attribute_faults(true, false, &row1),
+            Ok(vec![vec![], vec![1]])
+        );
+        let prefill = vec![(40usize, vec![0u32, 1 << 1]), (2, vec![0])];
+        assert_eq!(
+            attribute_faults(true, false, &prefill),
+            Ok(vec![vec![33], vec![]])
+        );
+        // a bit past a call's rows names nothing (a map word is wider than the call)
+        let past = vec![(40usize, vec![0u32, 1 << 9]), (2, vec![0b100])];
+        assert!(attribute_faults(true, false, &past).is_err());
+        assert!(
+            attribute_faults(true, true, &row1)
+                .unwrap_err()
+                .contains("no request owns")
+        );
+        assert!(attribute_faults(true, false, &clean).is_err());
+        assert_eq!(
+            attribute_faults(false, true, &row1),
+            Ok(vec![vec![], vec![]])
+        );
     }
 
     #[test]

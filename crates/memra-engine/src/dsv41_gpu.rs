@@ -528,6 +528,9 @@ pub mod ffi {
             ntiles: *mut i32,
             err: *mut i32,
             flag: *mut i32,
+            rows_bad: *mut i32,
+            row0: i32,
+            rows_cap: i32,
             stream: *mut c_void,
         ) -> i32;
         /// act_quant into the CUTLASS GEMMs' operands: codes `[rows][ldq]` (rows gathered through
@@ -3406,16 +3409,25 @@ pub struct Ctx {
     pub nvtx: bool,
     /// this rank's routed experts when the layers hold none ([`LayerW::load_part_with`])
     pub experts: Option<experts::ExpertCache>,
-    /// Two i32 flags, read with a call's logits ([`Self::route_flags`]). Word 0, the call's:
-    /// bit 0, a router row that selected an expert outside `[0, n_experts)` (a non-finite router
-    /// row; `memra_v41_route` names no expert there and the plan skips it); cleared when a step
-    /// opens ([`decode::Runner::begin_step`]), so a flag belongs to the step's calls and every
-    /// read inside the step reports it (a refused device pick does not hide it from the logits
-    /// read after it). Word 1, the
-    /// transport's: bit 16, a small gather whose peer never arrived (`memra_v41_gather`), never
-    /// cleared: the gathers' sequence words can no longer be trusted, and the group refuses every
-    /// later forward ([`tp::Group::live`]).
+    /// Three i32 words (and one of padding), read with a call's logits ([`Self::route_flags`]).
+    /// Word 0, the call's: bit 0, a router row that selected an expert outside `[0, n_experts)` (a
+    /// non-finite router row; `memra_v41_route` names no expert there and the plan skips it);
+    /// cleared when a step opens ([`decode::Runner::begin_step`]), so a flag belongs to the step's
+    /// calls and every read inside the step reports it (a refused device pick does not hide it
+    /// from the logits read after it). Word 1, the transport's: bit 16, a small gather whose peer
+    /// never arrived (`memra_v41_gather`), never cleared: the gathers' sequence words can no
+    /// longer be trusted, and the group refuses every later forward ([`tp::Group::live`]). Word 2,
+    /// the row map of the plans no call owns ([`Self::fault_rows`] unset: a draft, a gate's
+    /// block), cleared with word 0: any bit set means a fault no request can be named for.
     pub route_bad: Buf,
+    /// Where this rank's MoE plans mark the rows whose router named no expert: the row map of
+    /// the call being issued (`ceil(rows / 32)` i32 words on the card) and its capacity in rows,
+    /// set around the call's blocks by [`decode::Runner::forward`] and
+    /// [`decode::Runner::forward_batch`] ([`tp::Group::own_faults`]) and read back by
+    /// [`decode::Runner::step_faults`], so a serving step fails only the requests whose rows
+    /// faulted. Unset: word 2 of [`Self::route_bad`]. A plan sets bit `row0 + t` for its row t,
+    /// where `row0` is the slice's first row in the call (`memra_v41_moe_plan`).
+    pub fault_rows: Option<(Dp, usize)>,
     /// the card's second stream, made at the first one-token MoE ([`Side`])
     side: Option<Side>,
     /// a decode call's heads read the ring and the compressed KV where they live (a key table
@@ -3546,7 +3558,7 @@ impl Ctx {
             g.yarn_beta_fast,
             g.yarn_beta_slow,
         )?;
-        let route_bad = ops.buf(8)?;
+        let route_bad = ops.buf(16)?;
         Ok(Self {
             ops,
             g,
@@ -3562,6 +3574,7 @@ impl Ctx {
             nvtx: false,
             experts: None,
             route_bad,
+            fault_rows: None,
             side: None,
             keyed: true,
             select_long_min: (32_768, usize::MAX),
@@ -5814,13 +5827,15 @@ impl Ctx {
     /// device and runs as one grouped launch per projection; each token's expert rows are added in
     /// ascending expert id into an fp32 zero, then the shared expert, then rounded, which is the
     /// per-expert loop's order (the N-rank gates compare the two byte for byte). Nothing here waits
-    /// on the host: every buffer is stream-ordered.
+    /// on the host: every buffer is stream-ordered. `row0`: the slice's first row in its call
+    /// ([`Self::moe_plan`]).
     pub fn moe(
         &mut self,
         lw: &LayerW,
         x: Dp,
         s: usize,
         out: Dp,
+        row0: usize,
         tr: &mut Trace,
     ) -> Result<(), String> {
         if lw.experts.is_empty() {
@@ -5858,7 +5873,7 @@ impl Ctx {
         }
         self.nv(c"moe_plan");
         let ex = lw.expert0..lw.expert0 + lw.experts.len();
-        let plan = self.moe_plan(&sel, &selw, s, ex)?;
+        let plan = self.moe_plan(&sel, &selw, s, ex, row0)?;
         self.nv_end();
         self.nv(c"experts");
         let slots = self.ops.tmp(plan.np * d * 2)?;
@@ -5950,12 +5965,15 @@ impl Ctx {
     }
 
     /// The device dispatch plan of a slice from its routing, with the tile list of experts `ex`.
+    /// `row0` is the slice's first row in its call: a row whose router named no expert marks bit
+    /// `row0 + t` of the call's row map ([`Self::fault_rows`]).
     pub fn moe_plan(
         &mut self,
         sel: &Buf,
         selw: &Buf,
         rows: usize,
         ex: std::ops::Range<usize>,
+        row0: usize,
     ) -> Result<MoePlanDev, String> {
         let g = self.g.clone();
         let st = self.ops.st.clone();
@@ -5993,6 +6011,7 @@ impl Ctx {
             e0: ex.start,
             ng: ex.len(),
         };
+        let (rows_bad, rows_cap) = self.fault_span();
         ck("moe_plan", unsafe {
             ffi::memra_v41_moe_plan(
                 sel.p(&st).i(),
@@ -6012,6 +6031,9 @@ impl Ctx {
                 plan.ntiles.p(&st).im(),
                 plan.err.p(&st).im(),
                 self.route_bad.p(&st).im(),
+                rows_bad.im(),
+                row0 as i32,
+                rows_cap as i32,
                 self.ops.sv(),
             )
         })?;
@@ -6239,23 +6261,44 @@ impl Ctx {
     /// The rank's two route flags `(call, transport)` ([`Self::route_bad`]), read after the
     /// stream drains.
     pub fn route_flags(&self) -> Result<(i32, i32), String> {
-        let w = bytes_i32(&self.route_bad.host(&self.ops.st)?);
+        let w = self.route_words()?;
         Ok((w[0], w[1]))
     }
 
-    /// Clear the call word of the route flags on the stream ([`decode::Runner::begin_step`]).
+    /// The rank's three route words `[call, transport, rows no call owns]` ([`Self::route_bad`]),
+    /// read after the stream drains.
+    pub fn route_words(&self) -> Result<[i32; 3], String> {
+        let w = bytes_i32(&self.route_bad.host(&self.ops.st)?);
+        Ok([w[0], w[1], w[2]])
+    }
+
+    /// Where the rank's next plan marks its faulted rows: the call's row map and its capacity in
+    /// rows ([`Self::fault_rows`]), else word 2 of [`Self::route_bad`] (32 rows, every row past
+    /// them on its last bit).
+    pub fn fault_span(&self) -> (Dp, usize) {
+        match self.fault_rows {
+            Some(f) => f,
+            None => (self.route_bad.at(&self.ops.st, 8), 32),
+        }
+    }
+
+    /// Clear the call word of the route flags and the row map of the plans no call owns, on the
+    /// stream ([`decode::Runner::begin_step`]).
     pub fn clear_call_flag(&self) -> Result<(), String> {
         let st = &self.ops.st;
-        // SAFETY: the first 4 bytes of the 8-byte flag buffer, on its stream
-        unsafe {
-            cudarc::driver::result::memset_d8_async(
-                self.route_bad.p(st).addr(),
-                0,
-                4,
-                self.ops.sv() as cudarc::driver::sys::CUstream,
-            )
+        for (at, what) in [(0, "the call flag"), (8, "the unowned row map")] {
+            // SAFETY: bytes `at..at + 4` of the 16-byte flag buffer, on its stream
+            unsafe {
+                cudarc::driver::result::memset_d8_async(
+                    self.route_bad.p(st).addr() + at,
+                    0,
+                    4,
+                    self.ops.sv() as cudarc::driver::sys::CUstream,
+                )
+            }
+            .map_err(|e| format!("clear {what}: {e:?}"))?;
         }
-        .map_err(|e| format!("clear the call flag: {e:?}"))
+        Ok(())
     }
 
     /// Whether the rank's device still runs: both streams drain and the context holds no error a
@@ -6492,7 +6535,14 @@ impl Ctx {
         let cm = decode::moe_slice(self.chunk).min(s).max(1);
         for r0 in (0..s).step_by(cm) {
             let rows = cm.min(s - r0);
-            self.moe(lw, x2.at(&st, r0 * d * 2), rows, m.at(&st, r0 * d * 2), tr)?;
+            self.moe(
+                lw,
+                x2.at(&st, r0 * d * 2),
+                rows,
+                m.at(&st, r0 * d * 2),
+                r0,
+                tr,
+            )?;
         }
         self.nv(c"hc_post");
         let h2 = self.hc_post(&m, &h1, &f_post, &f_comb, s)?;

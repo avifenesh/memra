@@ -1,0 +1,100 @@
+[server] build: memra-0.141.1-092bd26f7dc4 (id: source-tree, git: unknown)
+[server] starting; models config = [("v41", "/home/access/dsv41/DeepSeek-V4.1-Flash-1017", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "v41" <- /home/access/dsv41/DeepSeek-V4.1-Flash-1017
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+[dsv41-serve] v41: routed experts of 40 layers in pinned host memory: 288777830400 bytes, filled and locked in 20.7s on 16 threads
+[dsv41-serve] v41: 1 rank(s) on devices [0]; routed experts in pinned host memory; resident weights [11353892328] bytes per rank; ceiling [88902686728] bytes; expert cache [4640] slots of 18800640 bytes (floor 384 slots, all 15360); max_seq 1048576; 64 session(s); prefill slices of 8192 rows
+[dsv41-serve] v41: warm-up in 0.3s; one-token call 67.5 ms
+[dsv41-serve] v41: capacity: the longest session with the route idle is 325814 positions (max_seq 1048576); at once: 4096 sessions of 1,536 positions (1,024-token prompts), 3825 of 4,608 (4,096-token prompts), 640 of 32,768, 117 of 131,072; MEMRA_MAX_SESSIONS 64
+[dsv41-serve] v41: MEMRA_DSV41_CALL_FAULT: [(24, Some(1)), (64, None)] (step, request): an injected call flag fails its step, a poisoned request fails alone (a fault gate, not serving)
+[dsv41-serve] v41: up in 36.1s
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[route-contract] model="v41" route=dsv41-thread capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,service-metrics] refused=[prime-fairness: a prompt's prefill is one call of one runner forward; it does not yield, and the running requests' decode calls ride the same forward]
+[prefix-cache] WARNING: derived budget is 0 B after the boot free-VRAM reserve clamp; prefix caching disabled
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["v41"]
+[server] listening on http://127.0.0.1:18393
+[meter] admit id=chatcmpl-d775f2032f4b9d3d25a29bfa58cbe4ee tenant=default lane=interactive model="v41"
+[dsv41-step] calls=1 prefill=42 decode_rows=0 step_s=1.222 transient_peak=22277536 predicted_live_need=1105147812 cache_slots=[4640] hits=403 misses=3976 h2d_bytes=74751344640
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.041 transient_peak=337792 predicted_live_need=1074482335 cache_slots=[4640] hits=586 misses=4033 h2d_bytes=75822981120
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.042 transient_peak=24708 predicted_live_need=1074482335 cache_slots=[4640] hits=752 misses=4107 h2d_bytes=77214228480
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.035 transient_peak=24666 predicted_live_need=1074482335 cache_slots=[4640] hits=940 misses=4159 h2d_bytes=78191861760
+[meter] admit id=chatcmpl-875f7b7f001d95228ba72dcd813f3e11 tenant=default lane=interactive model="v41"
+[dsv41-step] calls=2 prefill=35 decode_rows=1 step_s=0.247 transient_peak=17720999 predicted_live_need=1100857387 cache_slots=[4640] hits=4093 misses=4567 h2d_bytes=85862522880
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.032 transient_peak=1298647 predicted_live_need=1075222831 cache_slots=[4640] hits=4505 misses=4600 h2d_bytes=86482944000
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.033 transient_peak=24698 predicted_live_need=1075222831 cache_slots=[4640] hits=4864 misses=4639 h2d_bytes=87216168960
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.037 transient_peak=24795 predicted_live_need=1075222831 cache_slots=[4640] hits=5264 misses=4687 h2d_bytes=88118599680
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.043 transient_peak=24804 predicted_live_need=1075222831 cache_slots=[4640] hits=5624 misses=4755 h2d_bytes=89397043200
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.041 transient_peak=24798 predicted_live_need=1075222831 cache_slots=[4640] hits=6003 misses=4816 h2d_bytes=90543882240
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.044 transient_peak=24814 predicted_live_need=1075222831 cache_slots=[4640] hits=6376 misses=4885 h2d_bytes=91841126400
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.036 transient_peak=24766 predicted_live_need=1075222831 cache_slots=[4640] hits=6777 misses=4932 h2d_bytes=92724756480
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.041 transient_peak=24738 predicted_live_need=1075222831 cache_slots=[4640] hits=7176 misses=4991 h2d_bytes=93833994240
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.042 transient_peak=24686 predicted_live_need=1075222831 cache_slots=[4640] hits=7580 misses=5054 h2d_bytes=95018434560
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.049 transient_peak=24744 predicted_live_need=1075222831 cache_slots=[4640] hits=7943 misses=5139 h2d_bytes=96616488960
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.035 transient_peak=24690 predicted_live_need=1075222831 cache_slots=[4640] hits=8324 misses=5182 h2d_bytes=97424916480
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.042 transient_peak=24750 predicted_live_need=1075222831 cache_slots=[4640] hits=8702 misses=5247 h2d_bytes=98646958080
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.043 transient_peak=24694 predicted_live_need=1075222831 cache_slots=[4640] hits=9089 misses=5312 h2d_bytes=99868999680
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.041 transient_peak=24756 predicted_live_need=1075222831 cache_slots=[4640] hits=9488 misses=5372 h2d_bytes=100997038080
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.055 transient_peak=24698 predicted_live_need=1075222831 cache_slots=[4640] hits=9854 misses=5475 h2d_bytes=102933504000
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.039 transient_peak=24576 predicted_live_need=1074482320 cache_slots=[4640] hits=10028 misses=5541 h2d_bytes=104174346240
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.039 transient_peak=24576 predicted_live_need=1074482320 cache_slots=[4640] hits=10204 misses=5605 h2d_bytes=105377587200
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.032 transient_peak=24576 predicted_live_need=1074482320 cache_slots=[4640] hits=10400 misses=5649 h2d_bytes=106204815360
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.022 transient_peak=24576 predicted_live_need=1074482320 cache_slots=[4640] hits=10625 misses=5664 h2d_bytes=106486824960
+[dsv41-serve] MEMRA_DSV41_CALL_FAULT: step 24 has no running request 1
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.030 transient_peak=24576 predicted_live_need=1074482320 cache_slots=[4640] hits=10826 misses=5703 h2d_bytes=107220049920
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.024 transient_peak=24576 predicted_live_need=1074482320 cache_slots=[4640] hits=11045 misses=5724 h2d_bytes=107614863360
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.036 transient_peak=24576 predicted_live_need=1074482320 cache_slots=[4640] hits=11229 misses=5780 h2d_bytes=108667699200
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.034 transient_peak=24576 predicted_live_need=1074482320 cache_slots=[4640] hits=11418 misses=5831 h2d_bytes=109626531840
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.033 transient_peak=24576 predicted_live_need=1074482320 cache_slots=[4640] hits=11610 misses=5879 h2d_bytes=110528962560
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.024 transient_peak=24576 predicted_live_need=1074482320 cache_slots=[4640] hits=11831 misses=5898 h2d_bytes=110886174720
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.025 transient_peak=24576 predicted_live_need=1074482320 cache_slots=[4640] hits=12047 misses=5922 h2d_bytes=111337390080
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.032 transient_peak=24762 predicted_live_need=1074482320 cache_slots=[4640] hits=12244 misses=5965 h2d_bytes=112145817600
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.031 transient_peak=24702 predicted_live_need=1074482320 cache_slots=[4640] hits=12443 misses=6006 h2d_bytes=112916643840
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.032 transient_peak=24640 predicted_live_need=1074482320 cache_slots=[4640] hits=12640 misses=6049 h2d_bytes=113725071360
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.031 transient_peak=24715 predicted_live_need=1074482320 cache_slots=[4640] hits=12841 misses=6088 h2d_bytes=114458296320
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.029 transient_peak=24774 predicted_live_need=1074482320 cache_slots=[4640] hits=13047 misses=6122 h2d_bytes=115097518080
+[meter] admit id=chatcmpl-541b0021b20fc8cc8b7b2f2e40cef8fb tenant=default lane=interactive model="v41"
+[dsv41-step] calls=1 prefill=42 decode_rows=0 step_s=0.860 transient_peak=16582656 predicted_live_need=1105147812 cache_slots=[4640] hits=14366 misses=8412 h2d_bytes=158150983680
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.033 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=14559 misses=8459 h2d_bytes=159034613760
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.038 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=14738 misses=8520 h2d_bytes=160181452800
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.028 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=14945 misses=8553 h2d_bytes=160801873920
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.030 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=15148 misses=8590 h2d_bytes=161497497600
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.025 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=15366 misses=8612 h2d_bytes=161911111680
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.024 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=15586 misses=8632 h2d_bytes=162287124480
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.029 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=15792 misses=8666 h2d_bytes=162926346240
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.027 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=16003 misses=8695 h2d_bytes=163471564800
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.032 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=16199 misses=8739 h2d_bytes=164298792960
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.030 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=16402 misses=8776 h2d_bytes=164994416640
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.023 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=16625 misses=8793 h2d_bytes=165314027520
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.029 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=16831 misses=8827 h2d_bytes=165953249280
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.025 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=17047 misses=8851 h2d_bytes=166404464640
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.028 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=17255 misses=8883 h2d_bytes=167006085120
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.026 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=17469 misses=8909 h2d_bytes=167494901760
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.022 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=17694 misses=8924 h2d_bytes=167776911360
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.019 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=17928 misses=8930 h2d_bytes=167889715200
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.026 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=18141 misses=8957 h2d_bytes=168397332480
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.028 transient_peak=24576 predicted_live_need=1074482335 cache_slots=[4640] hits=18348 misses=8990 h2d_bytes=169017753600
+[meter] admit id=chatcmpl-213eb7f20eea208b543776c834ae572f tenant=default lane=interactive model="v41"
+[dsv41-step] calls=1 prefill=33 decode_rows=0 step_s=0.137 transient_peak=17026691 predicted_live_need=1099555338 cache_slots=[4640] hits=21272 misses=9134 h2d_bytes=171725045760
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.022 transient_peak=24678 predicted_live_need=1074482265 cache_slots=[4640] hits=21499 misses=9147 h2d_bytes=171969454080
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.022 transient_peak=24646 predicted_live_need=1074482265 cache_slots=[4640] hits=21725 misses=9161 h2d_bytes=172232663040
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.021 transient_peak=24576 predicted_live_need=1074482265 cache_slots=[4640] hits=21953 misses=9173 h2d_bytes=172458270720
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.028 transient_peak=24576 predicted_live_need=1074482265 cache_slots=[4640] hits=22162 misses=9204 h2d_bytes=173041090560
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.019 transient_peak=24576 predicted_live_need=1074482265 cache_slots=[4640] hits=22398 misses=9208 h2d_bytes=173116293120
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.027 transient_peak=24576 predicted_live_need=1074482265 cache_slots=[4640] hits=22608 misses=9238 h2d_bytes=173680312320
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.030 transient_peak=24576 predicted_live_need=1074482265 cache_slots=[4640] hits=22809 misses=9277 h2d_bytes=174413537280
+[meter] admit id=chatcmpl-c3761ccb624e1e2d6366a1f322b9322f tenant=default lane=interactive model="v41"
+[dsv41-serve] deepseek-v4.1 step: route: a router row selected an expert outside the model's (a non-finite router row) and no call's row map names it; failing 1 request(s)
+[engine-error] class=Engine deepseek-v4.1 step: route: a router row selected an expert outside the model's (a non-finite router row) and no call's row map names it
+[dsv41-serve] the ranks probe clean after the fault: serving on
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

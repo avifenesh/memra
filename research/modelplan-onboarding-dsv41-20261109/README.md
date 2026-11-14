@@ -410,3 +410,10 @@ under a fault injection before the fix, green after), a route flag that belongs 
 lost gather that stops the route, the server booking device faults as failures, and the reviews'
 other findings; the GB10 gate set of the fixed head and what still needs wrx cards (the support
 record's re-verification, a long-context gate on the pair): `review-1281/README.md`.
+
+# Step 9: a call flag names its rows (memra#1292, 2026-11-13)
+
+Each call keeps a row map that the MoE plan marks, so a router row that names no expert fails only
+its own request and the step's other requests are served, the other rows of the same batched call
+included; which faults still fail the whole step, why the other rows keep their bytes, and the GB10
+gates and serve smoke: `row-faults/README.md`.

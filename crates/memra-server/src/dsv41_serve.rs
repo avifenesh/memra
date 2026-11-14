@@ -1010,9 +1010,12 @@ struct Up<'a> {
     price: Price,
     /// the most one-token steps one decode call carries (1: every call alone)
     batch_rows: usize,
-    /// `MEMRA_DSV41_CALL_FAULT`: the steps (0-based, counted over the steps that ran) whose call
-    /// flag is set before they run, the step-fault gate's injection
-    call_faults: Vec<usize>,
+    /// `MEMRA_DSV41_CALL_FAULT`: the step-fault gate's injections, by step (0-based, counted over
+    /// the steps that ran): the call flag set before the step runs (`None`: a fault no row map
+    /// explains, which fails the step), or the running request at that index poisoned
+    /// (`Some(i)`: its rows fault in the router as a request's data can make them, and it fails
+    /// alone)
+    call_faults: Vec<(usize, Option<usize>)>,
     /// steps run so far
     steps: usize,
 }
@@ -1029,8 +1032,9 @@ enum Picked {
 /// for each row's argmax (`argmax`); any other chunk downloads its rows' logits (`logits`). The
 /// device pick answers for the chunk as a whole, so when it refuses (one row holds a non-finite
 /// logit) the chunk's logits come down instead and every request chooses from its own row: the
-/// bad row's request fails alone in [`choose`], as on the logits path, and the others go on. A
-/// fault of the step itself (a rank's route flag) fails the logits too, and with them the step.
+/// bad row's request fails alone in [`choose`], as on the logits path, and the others go on. The
+/// route's call flag is attributed (`Group::attributed`): neither read fails on it, and the
+/// step's faulted rows are read once its calls are done (`Runner::step_faults`).
 fn pick_rows<R>(
     rn: &mut R,
     greedy: bool,
@@ -1047,6 +1051,65 @@ fn pick_rows<R>(
         }
     }
     Ok(Picked::Logits(logits(rn)?))
+}
+
+/// Which running requests a step's faulted rows belong to (`Runner::step_faults`): entry k of
+/// `faults` is the faulted rows of the step's call k, its own calls first (call k is request
+/// `who[k]`'s), then its batched calls in order (of `widths` rows each), whose rows are `batch`'s
+/// requests in turn. Entry i of the result, for running request i, says why that request fails
+/// (None: it goes on).
+fn faulted_requests(
+    faults: &[Vec<usize>],
+    who: &[usize],
+    batch: &[(usize, u32)],
+    widths: &[usize],
+    running: usize,
+) -> Vec<Option<String>> {
+    let why = |rows: &[usize], call: &str| {
+        format!(
+            "a router row selected an expert outside the model's (a non-finite router row): \
+             row(s) {} of {call}",
+            row_spans(rows)
+        )
+    };
+    let mut out = vec![None; running];
+    let (own, batched) = faults.split_at(who.len().min(faults.len()));
+    for (&i, rows) in who.iter().zip(own) {
+        if !rows.is_empty() && i < running {
+            out[i] = Some(why(rows, "its own call"));
+        }
+    }
+    let mut b0 = 0usize;
+    for (rows, &w) in batched.iter().zip(widths) {
+        for &r in rows {
+            if let Some(&(i, _)) = batch.get(b0 + r)
+                && i < running
+            {
+                out[i] = Some(why(&[r], "a batched call"));
+            }
+        }
+        b0 += w;
+    }
+    out
+}
+
+/// Ascending rows as runs, `0-33, 40`: a prompt's faulted rows can be thousands.
+fn row_spans(rows: &[usize]) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < rows.len() {
+        let mut j = i;
+        while j + 1 < rows.len() && rows[j + 1] == rows[j] + 1 {
+            j += 1;
+        }
+        out.push(if j > i {
+            format!("{}-{}", rows[i], rows[j])
+        } else {
+            rows[i].to_string()
+        });
+        i = j + 1;
+    }
+    out.join(", ")
 }
 
 /// The most rows a batched decode call carries: the small-M GEMM bodies' limit
@@ -1095,17 +1158,28 @@ impl Price {
     }
 }
 
-/// `MEMRA_DSV41_CALL_FAULT`: a comma list of 0-based step numbers whose call flag is set before
-/// they run (unset: none).
-fn resolve_call_faults(raw: Option<&str>) -> Result<Vec<usize>, String> {
+/// `MEMRA_DSV41_CALL_FAULT`: a comma list of 0-based step numbers, each alone (the step's call
+/// flag set before it runs) or `step:i` (the request at running index i of that step poisoned);
+/// unset: none.
+fn resolve_call_faults(raw: Option<&str>) -> Result<Vec<(usize, Option<usize>)>, String> {
     match raw.map(str::trim) {
         None | Some("") => Ok(Vec::new()),
         Some(x) => x
             .split(',')
             .map(|s| {
-                s.trim().parse::<usize>().map_err(|_| {
-                    format!("MEMRA_DSV41_CALL_FAULT {x:?} is not a comma list of step numbers")
-                })
+                let bad = || {
+                    format!(
+                        "MEMRA_DSV41_CALL_FAULT {x:?} is not a comma list of step numbers, each \
+                         alone or as step:request"
+                    )
+                };
+                match s.trim().split_once(':') {
+                    None => Ok((s.trim().parse::<usize>().map_err(|_| bad())?, None)),
+                    Some((st, i)) => Ok((
+                        st.trim().parse::<usize>().map_err(|_| bad())?,
+                        Some(i.trim().parse::<usize>().map_err(|_| bad())?),
+                    )),
+                }
             })
             .collect(),
     }
@@ -1333,11 +1407,14 @@ fn bring_up<'a>(
     let call_faults = resolve_call_faults(std::env::var("MEMRA_DSV41_CALL_FAULT").ok().as_deref())?;
     if !call_faults.is_empty() {
         eprintln!(
-            "[dsv41-serve] {}: MEMRA_DSV41_CALL_FAULT: steps {call_faults:?} fail with an injected \
-             call flag (a fault gate, not serving)",
+            "[dsv41-serve] {}: MEMRA_DSV41_CALL_FAULT: {call_faults:?} (step, request): an injected \
+             call flag fails its step, a poisoned request fails alone (a fault gate, not serving)",
             cfg.name
         );
     }
+    // the reads of the logits leave the call flag to the route, which reads each step's faulted
+    // rows from its calls' row maps and fails only their requests (`Runner::step_faults`)
+    rn.grp.attributed = true;
     Ok(Up {
         rn,
         book,
@@ -1737,8 +1814,21 @@ fn serve_loop(
         let stepped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             // the flags read with this step's logits are its own calls'
             up.rn.begin_step()?;
-            if up.call_faults.contains(&step_no) {
-                up.rn.inject_call_fault()?;
+            for &(at, req) in up.call_faults.iter().filter(|f| f.0 == step_no) {
+                match req {
+                    None => up.rn.inject_call_fault()?,
+                    Some(i) if i < act.len() => {
+                        eprintln!(
+                            "[dsv41-serve] MEMRA_DSV41_CALL_FAULT: step {at} poisons request_id={:?} \
+                             (running request {i})",
+                            act[i].req.request_id
+                        );
+                        up.rn.poison = Some(i);
+                    }
+                    Some(i) => eprintln!(
+                        "[dsv41-serve] MEMRA_DSV41_CALL_FAULT: step {at} has no running request {i}"
+                    ),
+                }
             }
             let mut draft_ms = Vec::new();
             for (i, a) in act.iter_mut().enumerate() {
@@ -1808,15 +1898,23 @@ fn serve_loop(
                 )?;
                 bouts.push((o, picked));
             }
+            // the calls' faulted rows, each its request's (a fault no row map explains fails the
+            // step as a whole)
+            let calls_out: Vec<&Out> = outs.iter().chain(bouts.iter().map(|b| &b.0)).collect();
+            let faults = up.rn.step_faults(&calls_out)?;
+            let widths: Vec<usize> = bouts.iter().map(|b| b.0.s).collect();
+            let faulted = faulted_requests(&faults, &who, &batch, &widths, act.len());
             Ok::<_, String>((
                 outs,
                 rows,
                 bouts,
                 draft_ms,
                 tf.elapsed().as_secs_f64() * 1e3,
+                faulted,
             ))
         }));
-        let (outs, rows, bouts, draft_ms, forward_ms) = match stepped {
+        up.rn.poison = None;
+        let (outs, rows, bouts, draft_ms, forward_ms, mut faulted) = match stepped {
             Ok(Ok(x)) => x,
             Ok(Err(e)) => step_fault!(format!("deepseek-v4.1 step: {e}"), false),
             Err(payload) => step_fault!(
@@ -1895,6 +1993,17 @@ fn serve_loop(
                     a.stream.client_gone = true;
                     a.fault = true;
                 };
+                // a router row of this request's call named no expert: its rows are garbage and
+                // it fails alone; the step's other requests go on
+                if let Some(why) = faulted[i].take() {
+                    eprintln!(
+                        "[dsv41-serve] request_id={:?}: route fault: {why}; failing it alone",
+                        a.req.request_id
+                    );
+                    fail(a, "route", why);
+                    done.push(i);
+                    continue;
+                }
                 // a prompt's taps seed the draft rings
                 if o.sp == 0
                     && let (Some((dw, _)), Some(ds)) = (up.draft.as_ref(), a.ds.as_mut())
@@ -2172,10 +2281,12 @@ fn panic_text(payload: &(dyn std::any::Any + Send)) -> String {
 /// probed (`probe`: their device state and route flags; read before `lost`, which the probe can
 /// set): when the engine lost its transport (every later forward refuses), when the probe fails
 /// (a fault the device keeps), or when the fault is a caught panic (`panic`: a bug in the engine
-/// or the route, which a probe of the device cannot clear). A fault that ended with its call (a
-/// route flag from a non-finite router row, an allocation the pool refused) fails that step's
+/// or the route, which a probe of the device cannot clear). A fault that ended with its call (an
+/// allocation the pool refused, a route flag that no call's row map explains) fails that step's
 /// requests and nothing else, however many steps in a row it hits: one request's data can do it.
-/// `Some` is the reason the route stops on.
+/// A route flag whose rows a call's row map names is no step fault: the step fails those rows'
+/// requests alone and serves the rest (`Runner::step_faults`, [`faulted_requests`]). `Some` is
+/// the reason the route stops on.
 fn route_dies(
     lost: Option<&str>,
     probe: Result<(), String>,
@@ -2244,11 +2355,62 @@ mod tests {
     }
 
     #[test]
-    fn the_call_fault_door_takes_a_list_of_steps() {
-        assert_eq!(resolve_call_faults(None).unwrap(), Vec::<usize>::new());
-        assert_eq!(resolve_call_faults(Some("")).unwrap(), Vec::<usize>::new());
-        assert_eq!(resolve_call_faults(Some("1, 2")).unwrap(), vec![1, 2]);
-        assert!(resolve_call_faults(Some("one")).is_err());
+    fn the_call_fault_door_takes_a_list_of_steps_or_step_request_pairs() {
+        assert_eq!(resolve_call_faults(None).unwrap(), vec![]);
+        assert_eq!(resolve_call_faults(Some("")).unwrap(), vec![]);
+        assert_eq!(
+            resolve_call_faults(Some("1, 2")).unwrap(),
+            vec![(1, None), (2, None)]
+        );
+        assert_eq!(
+            resolve_call_faults(Some("4:1, 6")).unwrap(),
+            vec![(4, Some(1)), (6, None)]
+        );
+        for bad in ["one", "4:", ":1", "4:x", "4:1:2"] {
+            assert!(resolve_call_faults(Some(bad)).is_err(), "{bad:?}");
+        }
+    }
+
+    /// A two-request step whose batched call faults on one row fails that row's request alone:
+    /// the other request of the call goes on. A fault on a request's own call (its prefill or
+    /// its verification) fails that request alone; a clean step fails none. Requests 0 and 2 ride
+    /// the first batched call, request 1 its own call, request 3 the second batched call.
+    #[test]
+    fn a_step_with_a_fault_on_one_row_fails_only_that_rows_request() {
+        // two requests in one batched call (rows: request 0, request 1); row 1 faulted
+        let two = faulted_requests(&[vec![1]], &[], &[(0, 11), (1, 12)], &[2], 2);
+        assert!(two[0].is_none(), "the clean row's request goes on");
+        let why = two[1].as_deref().expect("the faulted row's request fails");
+        assert!(why.contains("non-finite router row") && why.contains("row(s) 1 of"));
+        // the same rows clean: nobody fails
+        assert!(
+            faulted_requests(&[vec![]], &[], &[(0, 11), (1, 12)], &[2], 2)
+                .iter()
+                .all(Option::is_none)
+        );
+        // own calls first, then batched calls of 2 and 1 rows
+        let who = [1usize];
+        let batch = [(0usize, 5u32), (2, 6), (3, 7)];
+        let got = faulted_requests(
+            &[vec![0, 1, 2, 3, 4, 9], vec![], vec![0]],
+            &who,
+            &batch,
+            &[2, 1],
+            4,
+        );
+        assert!(
+            got[1]
+                .as_deref()
+                .unwrap()
+                .contains("row(s) 0-4, 9 of its own call")
+        );
+        assert!(got[0].is_none() && got[2].is_none());
+        assert!(got[3].as_deref().unwrap().contains("batched call"));
+        let got = faulted_requests(&[vec![], vec![1], vec![]], &who, &batch, &[2, 1], 4);
+        assert_eq!(
+            got.iter().map(Option::is_some).collect::<Vec<_>>(),
+            [false, false, true, false]
+        );
     }
 
     /// Feed a stream's text step the tokens' byte pieces; returns the deltas and the final text.

@@ -6,7 +6,7 @@ program on one RTX PRO 6000 Blackwell.
 
 | | |
 |---|---|
-| **Serving route** | memra-server's deepseek-v4.1 route (`dsv41_serve` over `dsv41_gpu::decode`) on one RTX PRO 6000 Blackwell Max-Q (sm_120a, 96 GB), the routed experts in pinned host memory; `verify checkpoint` and `verify serve` pass at `a05173ee27` (2026-11-14: batched decode up to 8 rows a call, the greedy pick as the card's argmax, the GEMMs on the block-scaled MMA and vendored CUTLASS), served greedy answers equal the native runner's. A correctness route, measured at 7.5 tok/s decode for one request at the first pin `87bbe3bfc8`, not a fast one |
+| **Serving route** | memra-server's deepseek-v4.1 route (`dsv41_serve` over `dsv41_gpu::decode`) on one RTX PRO 6000 Blackwell Max-Q (sm_120a, 96 GB), the routed experts in pinned host memory; `verify checkpoint` and `verify serve` pass at `6371a9975b` (2026-11-14: batched decode up to 8 rows a call, the greedy pick as the card's argmax, the GEMMs on the block-scaled MMA and vendored CUTLASS, a router row that names no expert failing its own request alone), served greedy answers equal the native runner's. A correctness route, measured at 7.5 tok/s decode for one request at the first pin `87bbe3bfc8`, not a fast one |
 | **Pack** | `deepseek_v41`, **NativeQualified** on that route (record `deepseek_v41-gpu-1x-pro6000`) and **NativeReference** on CPU (record `deepseek_v41-reference`) <!-- support: deepseek_v41-gpu-1x-pro6000,deepseek_v41-reference --> |
 | **Artifact** | `deepseek-ai/DeepSeek-V4.1-Flash-1017@1bae0e1088993b9b82de08f59de5be5a34e42170`, 48 safetensors shards, 96,085 header tensors |
 | **Hardware** | one 96 GB RTX PRO 6000 Blackwell and about 290 GB of free host memory for the pinned expert store; CPU for the reference executor |
