@@ -105,7 +105,7 @@ Present only for the operator scope.
 | `admission_inflight`, `admission_booked_bytes` | per model: in-flight sessions and the sum of their admission charges |
 | `continuation_pool_entries`, `spec_pool_entries` | parked sessions (gauges) |
 | `cuda_driver_free_bytes` | the driver's free bytes on the worker's device |
-| `cuda_pool_reserved_bytes`, `cuda_pool_used_bytes`, `cuda_pool_cached_bytes` | the worker's CUDA memory pool: reserved from the driver, in use, cached for reuse |
+| `cuda_pool_reserved_bytes`, `cuda_pool_used_bytes`, `cuda_pool_cached_bytes` | the worker's CUDA memory pool: reserved from the driver, in use, cached for reuse. Cached is what admission counts as reclaimable: reserved less used, plus a parked prime GDN scan workspace (memra#1258), whose bytes are also inside `used`. So while a workspace is parked, cached is larger than reserved less used by the workspace's size |
 | `kv_vmm_mapped_bytes`, `kv_vmm_reserved_bytes`, `kv_vmm_owed_bytes`, `kv_vmm_graveyard_bytes` | on-demand KV planes: backed and reserved bytes, growth owed to active sessions, bytes pending release |
 | `kv_vmm_grows_total`, `kv_vmm_mapper_grows_total`, `kv_vmm_grow_waits_total`, `kv_vmm_grow_failures_total`, `kv_vmm_released_bytes_total`, `kv_vmm_quarantined_bytes_total` | on-demand KV plane events. All `kv_vmm_*` fields stay 0 where the planes are off; they are a card default on the full-power RTX PRO 6000 Blackwell Workstation Edition |
 | `routes` | one row per dedicated route, see below |

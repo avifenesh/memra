@@ -396,6 +396,12 @@ a `[shed]` line.
   and re-primes it, up to `MEMRA_STEP_OOM_RETRIES` (default 3) times, only for a session that has
   emitted nothing, so a streamed prefix is never replayed. Past the budget it is a 503 `overloaded`.
 - `MEMRA_ADMIT_DRIVER_HEADROOM_MB` (2048) keeps a driver floor in front of every admission.
+- A long prime on a GDN model keeps its scan workspace (about 0.5 GiB on Qwen3.8-27B) mapped
+  between its calls and parked between primes only while the device holds that floor (2,048 MiB
+  when the rung is off). Parked bytes count as cached. Under the floor the workspace is dropped
+  at the end of each prime call, and a workspace parked earlier is dropped in front of the next
+  admission (`[prime-ws]` and `[admit-trim]` lines;
+  [decision](decisions/PRIME-GDN-WORKSPACE.md)).
 - 64 staggered streams with speculation on, on one 24 GB RTX 5090 Laptop, finished well formed in
   3 of 3 runs, peak 23.1 of 24.5 GB (2026-08-06, [receipt](../research/admit-oom-20260806/));
   `tools/serve-stress-gate.sh` holds that, and its `--teeth` arm must invert it.
