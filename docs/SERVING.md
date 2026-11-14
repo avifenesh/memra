@@ -541,10 +541,13 @@ unified arm; discrete cards read none of them. GB10 values and the measurements 
 | prefix-cache insert budget | the configured budget | clamped on every insert to what the cache holds plus allocatable free memory less the driver headroom and the reserve |
 | admission booking of cache growth | none, except after a partial admission reclaim | the cache's allowed growth is booked as committed |
 
-Three readings stay on raw `cuMemGetInfo` free on unified memory, where it can only read lower:
-the 256 MiB graph-launch floor, the bound a failed draft-graph capture records as its appetite (a
-proven bound; an estimate there would stick as an over-charge), and the DeepSeek-V4 route's memory
-door, which loads only on discrete cards ([unified_memory.rs](../crates/memra-engine/src/unified_memory.rs)).
+Of the readers memra#1307 went through, three stay on raw `cuMemGetInfo` free on unified memory, where
+it can only read lower: the 256 MiB graph-launch floor, the bound a failed draft-graph capture
+records as its appetite (a proven bound; an estimate there would stick as an over-charge), and the
+DeepSeek-V4 route's memory door, which loads only on two discrete cards
+([unified_memory.rs](../crates/memra-engine/src/unified_memory.rs)). The deepseek-v4.1 route reads
+raw free memory in its own code (`dsv41_gpu`: `device_memory`, `device_mem`); it loads on one
+device, and only its size keeps it off a GB10 today.
 The driver headroom's 2 GiB floor, the crash guards, the async pool's release threshold, the host KV tier (it
 adds copies, not capacity, on shared DRAM; armed, the derived device share subtracts it), the
 pinned spill budget and the MoE slot cache keep their discrete values. Rollback: an explicit

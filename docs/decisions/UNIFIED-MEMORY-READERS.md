@@ -36,6 +36,11 @@ measurement, and the DeepSeek-V4 route's memory door. Which reading does each ne
   level and the delta reading for the `occupied` deltas behind its calibrated terms.
 - **Discrete cards read what they read.** `allocatable_mem_info` and `delta_free_bytes` return the
   `cuMemGetInfo` value there.
+- **"Unified?" is the engine's answer, read once when it is built** (`Engine::unified_memory`).
+  Both ends of a delta ask the engine, so a delta is never taken across two readings, and a
+  discrete card pays no device attribute call per reading. Asking the device again goes through
+  `CudaContext::attribute`, which first returns any stored driver error; an end that read
+  "discrete" against a unified entry would record tens of GB as the charge.
 
 ## Rejected
 
@@ -52,6 +57,11 @@ measurement, and the DeepSeek-V4 route's memory door. Which reading does each ne
 - **`MemFree + Cached` without the slab.** One of 96 probe samples read 993 MiB for a 1 GiB
   allocation; with `SReclaimable` it read 1,028 MiB. `Buffers` changed nothing in the samples and
   belongs to the same pool.
+- **The pool's own counters plus the capture's driver allocations** (memra#1307's candidate for
+  the delta). The bracket already records the larger of the parked delta and the pool's
+  capture-time peak, so the pool's counters are its floor. A pool-only delta cannot see what the
+  driver holds outside the pool, which is 32 MiB of the first capture's 34, and the allocations
+  graph instantiation makes inside the driver are not the engine's to count.
 - **Dropping the DFlash2 rule's transient floor**, the other half of what POOLED-VERIFY-MEMORY-CAP
   left open. Nothing here measured it. The floor stays.
 
@@ -94,6 +104,12 @@ branch, both arms carrying the same diagnostic lines. Tables and conditions are 
 - **The width's effect is small here.** The pool's cached blocks (1.1 to 1.7 GB) keep the raw
   headroom above most members' needs, so main serialized 7 of 757 forwards. No cell shows the cap
   protecting a forward when memory is short: at 2 GB the cached blocks alone covered the need.
+- **This record covers the three readers memra#1307 named.** The deepseek-v4.1 route is outside
+  it: it loads on one device by default and has its own raw readers (`dsv41_gpu/experts.rs`
+  `device_memory`, `dsv41_gpu/decode.rs` `device_mem`: the driver's free memory plus the pool's
+  cached blocks, read as levels and as the two ends of deltas). Only its size keeps it off a GB10
+  today. If it loads there, its levels need the allocatable figure and its deltas the delta
+  reading.
 - One model on GB10. A discrete card reads as before and has no cell. Timing was not measured.
 - `/proc/meminfo` is host-wide; the cgroup caveat of
   [SPEC-CAPTURE-HEADROOM-UNIFIED.md](SPEC-CAPTURE-HEADROOM-UNIFIED.md) applies to both readings.

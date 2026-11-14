@@ -4,8 +4,9 @@ paths written as ~ (as memra#1221's and memra#1257's records are), trailing whit
 trailing blank lines dropped (the 1 Hz memory logs end every line with a space).
 
 SRC is a campaign part's directory as campaign1307.sh wrote it (RUNS/CAMPAIGN/PART), DST its place
-under RECORD_DIR. A cell directory (NN-ARM) keeps rows.jsonl, guard.log, run.log, trace.txt (the
-server's [diag1307], [spec], [spec-pool], [admit-trim], [device-trim] and OOM lines), memfree.log,
+under RECORD_DIR. A cell directory (NN-ARM) keeps rows.jsonl, guard.log, run.log, trace.txt (cut
+again here from the cell's server.log: the [diag1307], [spec], [spec-pool], [spec-k], [dspark-acc],
+[admit-trim], [device-trim] and OOM lines), memfree.log,
 and for the short-memory cells holder.log, mem.jsonl, kernel-oom-count.txt and the kernel log's OOM
 lines. A cell that died before its trace was cut keeps its whole server.log. A probe directory keeps probe.jsonl and its logs. The part's campaign.log comes along."""
 import re
@@ -14,7 +15,9 @@ from pathlib import Path
 
 rec = Path(sys.argv[1])
 HOME = str(Path.home())
-CELL = ("rows.jsonl", "guard.log", "run.log", "trace.txt", "memfree.log", "holder.log", "kernel-oom-count.txt")
+CELL = ("rows.jsonl", "guard.log", "run.log", "memfree.log", "holder.log", "kernel-oom-count.txt")
+TRACE = re.compile(r"\[diag1307\]|\[spec\]|\[spec-pool\]|\[spec-k\]|\[dspark-acc\]|\[admit-trim\]|\[device-trim\]"
+                   r"|out of memory|OUT_OF_MEMORY|panicked")
 OOM = re.compile(r"out of memory|oom-kill|oom_reaper|invoked oom-killer", re.I)
 
 
@@ -43,8 +46,13 @@ for pair in sys.argv[2:]:
         for f in CELL:
             if (cell / f).exists():
                 put(cell / f, dst / cell.name / f)
-        if not (cell / "trace.txt").exists() and (cell / "server.log").exists():
-            put(cell / "server.log", dst / cell.name / "server.log")  # a cell that died before its trace
+        srv = cell / "server.log"
+        if srv.exists() and (cell / "trace.txt").exists():
+            lines = [x for x in srv.read_text(errors="replace").splitlines() if TRACE.search(x)]
+            (dst / cell.name).mkdir(parents=True, exist_ok=True)
+            (dst / cell.name / "trace.txt").write_text(clean("\n".join(lines) + "\n"))
+        elif srv.exists():
+            put(srv, dst / cell.name / "server.log")  # a cell that died before its trace
         if (cell / "holder.log").exists() and (cell / "mem.jsonl").exists():
             put(cell / "mem.jsonl", dst / cell.name / "mem.jsonl")
         k = cell / "kernel.log"

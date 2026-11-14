@@ -15,8 +15,8 @@
 #               default) with anonymous memory (oom_score_adj 1000, exits by itself after 600 s)
 #               and holds it until the requests end. The memory guard is lowered to 1 GiB and the
 #               window's kernel log goes to the cell.
-# trace.txt keeps the server's [diag1307], [spec], [spec-pool], [admit-trim], [device-trim] and OOM
-# lines.
+# trace.txt keeps the server's [diag1307], [spec], [spec-pool], [spec-k], [dspark-acc], [admit-trim],
+# [device-trim] and OOM lines.
 # usage: [TARGET_MB=n] cell1307.sh CAMPAIGN_DIR NAME BIN_DIR MODE STATE
 set -u
 CD=$1; NAME=$2; BIN=$3; MODE=$4; STATE=$5
@@ -69,7 +69,7 @@ if [ "$STATE" = shortlate ]; then
   journalctl -k --since "$t0" --no-pager > "$OUT/kernel.log" 2>&1
   grep -ciE 'out of memory|oom-kill|oom_reaper|invoked oom-killer' "$OUT/kernel.log" > "$OUT/kernel-oom-count.txt"
 fi
-grep -E '\[diag1307\]|\[spec\]|\[spec-pool\]|\[admit-trim\]|\[device-trim\]|out of memory|OUT_OF_MEMORY|panicked' \
+grep -E '\[diag1307\]|\[spec\]|\[spec-pool\]|\[spec-k\]|\[dspark-acc\]|\[admit-trim\]|\[device-trim\]|out of memory|OUT_OF_MEMORY|panicked' \
   "$OUT/server.log" > "$OUT/trace.txt"
 n=$(grep -c '"status": 200' "$OUT/rows.jsonl" 2>/dev/null)
 log "done rows_200=${n:-0} empty_text=$(grep -c 'empty text' "$OUT/rows.jsonl" 2>/dev/null) oom_lines=$(grep -c -E 'out of memory|OUT_OF_MEMORY' "$OUT/server.log")"

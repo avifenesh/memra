@@ -525,6 +525,13 @@ impl ExpertCache {
 /// Effective free bytes on `ops`'s card and its total: the driver's free plus what the stream-
 /// ordered pool holds mapped and unused (the engine pins the pool's release threshold, so freed
 /// blocks stay mapped where `cuMemGetInfo` cannot see them). Drains the stream first.
+///
+/// The free bytes are the raw `cuMemGetInfo` reading. On a unified-memory device that is the
+/// host's `MemFree` and leaves out page cache; memra#1307 moved the readers it named off it and
+/// left this route's alone (this one and `decode.rs` `device_mem`). The route loads on one device
+/// and only its size keeps it off a GB10 today. If it loads there, a level read from this needs
+/// `unified_memory::allocatable_mem_info` and a delta between two calls needs
+/// `unified_memory::delta_free_bytes` (`docs/decisions/UNIFIED-MEMORY-READERS.md`).
 pub fn device_memory(ops: &Ops) -> Result<(u64, u64), String> {
     use cudarc::driver::sys;
     ops.sync()?;

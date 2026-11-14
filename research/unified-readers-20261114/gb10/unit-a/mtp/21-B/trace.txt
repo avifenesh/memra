@@ -1,3 +1,4 @@
+1794615579.673702 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
 1794615626.318489 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":18844184576,"synchronization_errors":[]}
 1794615679.032082 [spec] draft-session state high-water: 55MB (max of parked delta 55MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
 1794615679.032137 [diag1307] draft-bracket raw0_mb=1394 avail0_mb=82900 cached0_mb=15996 raw1_mb=1341 avail1_mb=82864 cached1_mb=15994 raw_delta_kib=55820 avail_delta_kib=38840 fpr_delta_kib=36796
@@ -10,6 +11,9 @@
 1794615695.253475 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":18690768896,"synchronization_errors":[]}
 1794615697.840775 [diag1307] draft-bracket raw0_mb=11269 avail0_mb=97445 cached0_mb=859 raw1_mb=11256 avail1_mb=97445 cached1_mb=858 raw_delta_kib=15524 avail_delta_kib=1700 fpr_delta_kib=1700
 1794615700.440392 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":8927989760,"synchronization_errors":[]}
+1794615703.934010 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1868 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
 1794615705.765055 [diag1307] draft-bracket raw0_mb=1301 avail0_mb=97654 cached0_mb=632 raw1_mb=1293 avail1_mb=97654 cached1_mb=631 raw_delta_kib=9892 avail_delta_kib=1700 fpr_delta_kib=1700
+1794615709.568801 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1868 cached=0 lcp=54 active=1 wave=1 placement=single-or-non-pp2
 1794615711.374201 [diag1307] draft-bracket raw0_mb=940 avail0_mb=97020 cached0_mb=582 raw1_mb=948 avail1_mb=97020 cached1_mb=580 raw_delta_kib=-6748 avail_delta_kib=1448 fpr_delta_kib=1448
+1794615715.150169 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1868 cached=0 lcp=54 active=1 wave=1 placement=single-or-non-pp2
 1794615716.930469 [diag1307] draft-bracket raw0_mb=952 avail0_mb=96351 cached0_mb=595 raw1_mb=1172 avail1_mb=96353 cached1_mb=594 raw_delta_kib=-223344 avail_delta_kib=-996 fpr_delta_kib=1500
