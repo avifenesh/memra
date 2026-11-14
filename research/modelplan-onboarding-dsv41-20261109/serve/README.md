@@ -16,7 +16,20 @@ per decode forward: a correctness route, not a fast one. The lane's shared bench
 against it unchanged. The pack is `NativeQualified` <!-- support: deepseek_v41-gpu-1x-pro6000 --> on this
 topology (record `deepseek_v41-gpu-1x-pro6000`).
 
-> **Re-pinned (2026-11-14).** The record `deepseek_v41-gpu-1x-pro6000` now pins `a05173ee27`, the head of the
+> **Re-pinned (2026-11-14, the row map).** The record `deepseek_v41-gpu-1x-pro6000` now pins `6371a9975b`, the
+> head of memra#1315 on main `63c351a2f4`: the route's call flag with a row map, so a router row that names no
+> expert fails its own request alone (`../row-faults/README.md`), the first route-code change after the pin
+> below. On one RTX PRO 6000 Max-Q, `verify checkpoint` and `verify serve` pass at that head
+> (`verified=Checkpoint`, `verified=Serve`; CheckpointParity with argmax 51119 on both sides and max abs 2.94):
+> `receipts/verify-6371a9975b/` (the run, the binaries' sha256, the bundle with its large tables gzipped).
+> `memra model verify tiny` and `ci:verify-tiny`'s test ran on the same tree, with every output hash equal to the
+> earlier pins': `receipts/verify-6371a9975b-tiny/`. In the same window the row-fault gate over all 40 layers and
+> the serve smoke with a poisoned row passed on this topology (`../row-faults/receipts/pro6000-6371a9975b/`). The
+> two commits after the pin are receipts and docs, and the merge of main `0db086f87a` after them changes no code
+> line of this route (`receipts/verify-6371a9975b-reach/`: one doc comment in `dsv41_gpu/experts.rs`). RewriteParity
+> stays pending.
+>
+> **Earlier pin (2026-11-14, the CUTLASS lane).** The record pinned `a05173ee27`, the head of the
 > CUTLASS lane (the route's FP8 and MXFP4 GEMMs on the block-scaled MMA and on vendored CUTLASS 4.8.1, with
 > small-row decode bodies; `../perf/README.md`). On one RTX PRO 6000 Max-Q, `verify checkpoint` and `verify serve`
 > pass at that head (`verified=Checkpoint`, `verified=Serve`; CheckpointParity with argmax 51119 on both sides and
@@ -299,8 +312,10 @@ Every script reads the run box's paths, card and lease wrapper from the file `LA
   compared file on both sides); `verify-res/` (the checkpoint and serve gates' bundle of `87bbe3bfc8`: lock, parity
   receipt, gates, serve receipt and response, logs); `verify-0d074a7055/` (the same gates at `0d074a7055`, with the
   run, the binaries' sha256, the plan, the census and the tiny gate, the large tables gzipped);
-  `verify-0d074a7055-tiny/` and `verify-a05173ee27-tiny/` (`memra model verify tiny` at each pin's tree: gates,
-  the tiny gate receipt, the oracles gzipped, the log; the second also has the gate test's log); `serve_gate_all.out` (the binaries' sha256
+  `verify-6371a9975b/` (the same gates at `6371a9975b`, `raw.sha256` for the gzipped tables);
+  `verify-6371a9975b-reach/` (what main's commits merged after that pin reach in this route: the script and its output);
+  `verify-0d074a7055-tiny/`, `verify-a05173ee27-tiny/` and `verify-6371a9975b-tiny/` (`memra model verify tiny` at each pin's tree: gates,
+  the tiny gate receipt, the oracles gzipped, the log; the last two also have the gate test's log); `serve_gate_all.out` (the binaries' sha256
   and the three gate steps); `chat/` (`chat-gate.json`, the client and server logs, `rates.json`);
   `bench-client/` and `bench-client-native/` (the client's samples, summary and logs, the server
   log, for the OpenAI and memra's own stream shape); `tests/` (suite summaries); `leases.tsv` (one line per lease of the lane, the failed
