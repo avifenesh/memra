@@ -1,0 +1,49 @@
+i 0: status 200 prompt 8155 path spec need 1048 growth 704 unused0 343 calls [(1048, 704), (1096, 0)] trims 0 oom 0
+i 1: status 200 prompt 8142 path spec need 1072 growth 768 unused0 303 calls [(1072, 768), (1168, 96)] trims 0 oom 0
+i 2: status 200 prompt 8150 path spec need 1072 growth 768 unused0 303 calls [(1072, 768), (1168, 96)] trims 0 oom 0
+i 3: status 200 prompt 8134 path spec need 1072 growth 768 unused0 303 calls [(1072, 768), (1168, 96)] trims 0 oom 0
+i 4: status 200 prompt 8183 path spec need 1167 growth 864 unused0 302 calls [(1167, 864), (1166, 0)] trims 0 oom 0
+i 5: status 200 prompt 8172 path spec need 1071 growth 768 unused0 302 calls [(1071, 768), (1071, 0)] trims 0 oom 0
+i 6: status 200 prompt 8177 path spec need 1071 growth 768 unused0 302 calls [(1071, 768), (1167, 96)] trims 0 oom 0
+i 7: status 200 prompt 8097 path spec need 1073 growth 768 unused0 304 calls [(1073, 768), (1073, 0)] trims 0 oom 0
+i 8: status 200 prompt 8169 path spec need 1071 growth 768 unused0 302 calls [(1071, 768), (1071, 0)] trims 0 oom 0
+i 9: status 200 prompt 8170 path spec need 1071 growth 768 unused0 302 calls [(1071, 768), (1071, 0)] trims 0 oom 0
+Exception in thread Thread-1 (<lambda>):
+Traceback (most recent call last):
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "~/.cache/memra-1258/b-spread.py", line 60, in <lambda>
+    t = threading.Thread(target=lambda: keeper.update(server.complete(g.keeper_prompt(), 20000)),
+                                                      ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "~/.cache/memra-1255/wt/tools/same-pass-admission-gate.py", line 290, in complete
+    with urllib.request.urlopen(req, timeout=300) as f:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 487, in open
+    response = self._open(req, data)
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 1350, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 1325, in do_open
+    r = h.getresponse()
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/http/client.py", line 1450, in getresponse
+    response.begin()
+    ~~~~~~~~~~~~~~^^
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/http/client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ~~~~~~~~~~~~~~~~~^^
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/http/client.py", line 305, in _read_status
+    raise RemoteDisconnected("Remote end closed connection without"
+                             " response")
+http.client.RemoteDisconnected: Remote end closed connection without response

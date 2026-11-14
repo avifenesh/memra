@@ -1,0 +1,50 @@
+i 0: status 200 prompt 5800 path spec need 1088 growth 640 unused0 447 calls [(1088, 640), (1082, 0)] trims 0 oom 0
+i 1: status 200 prompt 5753 path spec need 1218 growth 0 unused0 1217 calls [(1218, 0), (1218, 0)] trims 0 oom 0
+i 2: status 200 prompt 5803 path spec need 1217 growth 0 unused0 1216 calls [(1217, 0), (1217, 0)] trims 0 oom 0
+i 3: status 200 prompt 5756 path spec need 1218 growth 0 unused0 1217 calls [(1218, 0), (1218, 0)] trims 0 oom 0
+i 4: status 200 prompt 5737 path spec need 1219 growth 0 unused0 1218 calls [(1219, 0), (1219, 0)] trims 0 oom 0
+i 5: status 200 prompt 5740 path spec need 1219 growth 0 unused0 1218 calls [(1219, 0), (1219, 0)] trims 0 oom 0
+i 6: status 200 prompt 5708 path spec need 1220 growth 0 unused0 1219 calls [(1220, 0), (1220, 0)] trims 0 oom 0
+i 7: status 200 prompt 5730 path spec need 1219 growth 0 unused0 1218 calls [(1219, 0), (1219, 0)] trims 0 oom 0
+i 8: status 200 prompt 5758 path spec need 1218 growth 0 unused0 1217 calls [(1218, 0), (1218, 0)] trims 0 oom 0
+i 9: status 200 prompt 5724 path spec need 1219 growth 0 unused0 1218 calls [(1219, 0), (1219, 0)] trims 0 oom 0
+i 10: status 200 prompt 5725 path spec need 1219 growth 0 unused0 1218 calls [(1219, 0), (1219, 0)] trims 0 oom 0
+i 11: status 200 prompt 5756 path spec need 1218 growth 0 unused0 1217 calls [(1218, 0), (1218, 0)] trims 0 oom 0
+Exception in thread Thread-1 (<lambda>):
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/threading.py", line 1073, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.12/threading.py", line 1010, in run
+    self._target(*self._args, **self._kwargs)
+  File "~/.cache/memra-1258/cap-gb10/b-spread.py", line 60, in <lambda>
+    t = threading.Thread(target=lambda: keeper.update(server.complete(g.keeper_prompt(), 20000)),
+                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "~/.cache/memra-1255/wt/tools/same-pass-admission-gate.py", line 290, in complete
+    with urllib.request.urlopen(req, timeout=300) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 515, in open
+    response = self._open(req, data)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 532, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 1373, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 1348, in do_open
+    r = h.getresponse()
+        ^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/client.py", line 1457, in getresponse
+    response.begin()
+  File "/usr/lib/python3.12/http/client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/client.py", line 305, in _read_status
+    raise RemoteDisconnected("Remote end closed connection without"
+http.client.RemoteDisconnected: Remote end closed connection without response
