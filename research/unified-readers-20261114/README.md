@@ -53,7 +53,8 @@ What the cells show (Qwen3.8-27B on two DGX Sparks, main against this branch):
   has the binary's sha256, and `gb10/arms/` has each arm's source hashes (`tools/arm_sha.py REV`
   prints them from a revision):
   - B = main bbc6f83aea's `spec.rs`, `dflash.rs`, `unified_memory.rs`, `dsv4_gpu.rs`;
-  - T = this branch's at 4142526e8a, the commit sections 1 to 7 ran on. The review's fold changed
+  - T = this branch's first commit as first pushed (4142526e8a, on bbc6f83aea; `gb10/arms/README.md`
+    says how it maps onto the rebased history), which sections 1 to 7 ran on. The review's fold changed
     code after it (the delta's "unified?" became the engine's answer, read once); section 8 runs
     main against that head.
   - Both carry the `[diag1307]` lines of `tools/diag1307.py` (stderr only, no decision reads
@@ -339,8 +340,8 @@ MTP requests (section 2's 21-B and 22-T shape), then one live DFlash2 pair cell 
 
 ## CPU
 
-`cpu/`, on this branch's head at main bbc6f83aea (`checks-summary.txt` and `suites-summary.txt`
-start with the engine files' sha256):
+`cpu/`, on this branch's head at main 63c351a2f4, after the review's fold (`checks-summary.txt` and
+`suites-summary.txt` start with the engine files' sha256):
 
 - `pooled_dspark_verify_headroom_reads_the_allocatable_free_memory`: memra#1221's full-page-cache
   reading (raw 1,882 MiB, 100 GB available) leaves 346 MiB of headroom on the raw reading and
@@ -366,5 +367,5 @@ start with the engine files' sha256):
   - R7: `Engine::unified_memory` asks the device on every call.
   A red arm whose edit does not apply is reported as such and not run: R4's first version asserted
   the wrong anchor count, left the source unchanged and passed.
-- Engine library suite 782 passed, server library suite 1,263 passed; clippy (engine and server,
+- Engine library suite 784 passed, server library suite 1,263 passed; clippy (engine and server,
   all targets) and fmt green.
