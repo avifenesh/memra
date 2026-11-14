@@ -1,0 +1,54 @@
+dc519c9eacd3d03872412b5783afa7b422bfe9aff55f63bd961d071b208a6968  /home/access/dsv41/perf-bins/land-1315/memra-server
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 2272 MHz, 70
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 2272 MHz, 64
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 180 MHz, 65
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 180 MHz, 45
+Mem:            1002         109         279           0         610         893
+boot 1 (150:1): ready=1 after 27s
+request B1: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request A1: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"**The Bicycle: A History of Human-Powered Motion**\n\nThe bicycle is one of the most enduring and democratic machines ever invented. It is simple, efficient, and affordable","reasoning":"We need 
+request A1solo: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"**The Bicycle: A History of Human-Powered Motion**\n\nThe bicycle is one of the most enduring and democratic machines ever invented. It is simple, efficient, and affordable","reasoning":"We need 
+Mem:            1002         116         281           0         610         886
+boot 2 (0:0,150:0): ready=1 after 26s
+request W2: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request A2: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request B2: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"**From Flour to Loaf: The","reasoning":"We need answer detailed 800-word essay about how bread is baked step by step. Need write essay ~800 words. Need cover process: ingredients, mixing, kneadin
+request B2solo: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"**From Flour to Loaf: The","reasoning":"We need answer detailed 800-word essay about how bread is baked step by step. Need write essay ~800 words. Need cover process: ingredients, mixing, kneadin
+PASS boot1: A beside the poisoned B completes 300 tokens  answer only essay. Use title. Let's write.", 'length', 300)
+PASS boot1: A's answer beside the poisoned B is its solo answer, byte for byte 
+PASS boot1: the poisoned B fails {"error": {"message": "the engine could not complete this request; retry, and report the request id if it persists", "type": "server_error", "param": null, "code": "engine_error"}}
+PASS boot2: W (prefill poisoned) fails 
+PASS boot2: the poisoned A fails 
+PASS boot2: B beside the poisoned A completes 300 tokens " not bullet list. Use prose. Let\'s write.', 'length', 300)
+PASS boot2: B's answer beside the poisoned A is its solo answer, byte for byte 
+PASS A and B answer differently (the comparison can fail) 
+boot 1 route v41 phase idle requests 3 request_faults 1 dead_reason None
+PASS boot1: the route is alive with 1 request faults 
+boot 2 route v41 phase idle requests 4 request_faults 2 dead_reason None
+PASS boot2: the route is alive with 2 request faults 
+boot1: 1 request(s) failed alone, 0 whole-step failure(s)
+   [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+   [dsv41-serve] v41: MEMRA_DSV41_CALL_FAULT: [(150, Some(1))] (step, request): an injected call flag fails its step, a poisoned request fails alone (a fault gate, not serving)
+   [dsv41-serve] MEMRA_DSV41_CALL_FAULT: step 150 poisons request_id="chatcmpl-74d18ed50d0ffafe55da47eae5b8c0d8" (running request 1)
+   [dsv41-serve] request_id="chatcmpl-74d18ed50d0ffafe55da47eae5b8c0d8": route fault: a router row selected an expert outside the model's (a non-finite router row): row(s) 1 of a batched call; failing it alone
+boot2: 2 request(s) failed alone, 0 whole-step failure(s)
+   [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+   [dsv41-serve] v41: MEMRA_DSV41_CALL_FAULT: [(0, Some(0)), (150, Some(0))] (step, request): an injected call flag fails its step, a poisoned request fails alone (a fault gate, not serving)
+   [dsv41-serve] MEMRA_DSV41_CALL_FAULT: step 0 poisons request_id="chatcmpl-b994cd47f7911bbfe4258c6118060366" (running request 0)
+   [dsv41-serve] request_id="chatcmpl-b994cd47f7911bbfe4258c6118060366": route fault: a router row selected an expert outside the model's (a non-finite router row): row(s) 0-33 of its own call; failing it alone
+   [dsv41-serve] MEMRA_DSV41_CALL_FAULT: step 150 poisons request_id="chatcmpl-5d94b18273ca05f8b6719d2acc6bedb8" (running request 0)
+   [dsv41-serve] request_id="chatcmpl-5d94b18273ca05f8b6719d2acc6bedb8": route fault: a router row selected an expert outside the model's (a non-finite router row): row(s) 0 of a batched call; failing it alone
+PASS boot1: one request failed alone, no whole step failed 
+PASS boot2: two requests failed alone, no whole step failed 
+PASS boot1: the poisoned step 150 is one batched call of two rows [dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.030 tr
+PASS boot2: the poisoned step 150 is one batched call of two rows [dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.027 tr
+boot1: residency one-card: 600 steps, 0 with cache_slots=[], 2 host-experts line(s)
+   [dsv41-serve] v41: routed experts of 40 layers in pinned host memory: 288777830400 bytes, filled and locked in 15.4s on 16 threads
+   [dsv41-serve] v41: 1 rank(s) on devices [0]; routed experts in pinned host memory; resident weights [11353892328] bytes per rank; ceiling [88902686728] bytes; expert cache [4640] slots of 18800640 bytes (floor 384 slots, all 15360); max_seq 1048576; 64 session(s); prefill slices of 8192 rows
+PASS boot1: the one-card residency ran (experts in pinned host memory, a cache on every step) 
+boot2: residency one-card: 622 steps, 0 with cache_slots=[], 2 host-experts line(s)
+   [dsv41-serve] v41: routed experts of 40 layers in pinned host memory: 288777830400 bytes, filled and locked in 15.3s on 16 threads
+   [dsv41-serve] v41: 1 rank(s) on devices [0]; routed experts in pinned host memory; resident weights [11353892328] bytes per rank; ceiling [88902686728] bytes; expert cache [4640] slots of 18800640 bytes (floor 384 slots, all 15360); max_seq 1048576; 64 session(s); prefill slices of 8192 rows
+PASS boot2: the one-card residency ran (experts in pinned host memory, a cache on every step) 
+SMOKE PASS
+SMOKE-DONE 08:55:32

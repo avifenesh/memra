@@ -5,10 +5,12 @@ rowfault gate passes 7 of 7 on both residencies, the serve smoke passes with the
 byte-identical to its solo run, and the kernel gate passes 185 of 185. A draft-head stage's fault and a
 call flag no row map explains still fail the whole step.
 
-Scope of that evidence: a GB10, trunk layers 0 and 1. The rowfault gate ran both residencies (9 of 9
-each, at one rank and at two ranks on the card); every serve smoke ran the resident trunk. The serve
-smoke on the one-card residency, the rowfault gate over all 40 layers and on a pair of cards, and the
-support record's re-pin are RTX PRO 6000 runs that have not happened yet (Open, at the end).
+Scope of that evidence. On a GB10, at trunk layers 0 and 1: the rowfault gate on both residencies
+(9 of 9 each, at one rank and at two ranks on the card) and the serve smoke on the resident trunk.
+On RTX PRO 6000 cards, at the head `6371a9975b` (the last section): the rowfault gate over all 40
+layers on the one-card residency and on a pair of cards, 9 of 9 each; the serve smoke on the 40-layer
+route's own one-card residency, PASS; and `verify checkpoint` and `verify serve`, with the support
+record re-pinned to that head.
 
 Since #1281 the route stays alive after a request-caused numeric fault, but the call flag only said
 that some router row of the step named no expert, so the route failed every request of that step.
@@ -127,7 +129,9 @@ read. That is main's behaviour on the served residency: the forward's error carr
 route fails every request of the step. With the change the same arm passes 7 of 7.
 
 **Serve smoke** (`memra-server`, the route on a 2-layer trunk, `MEMRA_DSV41_TRUNK_LAYERS=2`: a
-rehearsal of the serving loop, not the checkpoint's answers. Residency: the resident trunk. A GB10
+rehearsal of the serving loop, not the checkpoint's answers. The requests carry `ignore_eos: true`,
+which the chat surface drops (memra#1325); each ran its full budget only because a 2-layer trunk's
+output never reaches the end id. Residency: the resident trunk. A GB10
 holds a 2-layer trunk's routed experts, so the route keeps them on the card: every step line of every
 boot here reads `cache_slots=[]`, and so does every step of the A/B below. These smokes therefore do
 not run the off-card MoE, the one forward path this change touches; MEMRA_CTX=8192, greedy, `ignore_eos`, 32
@@ -242,17 +246,57 @@ head; the landing ran none. The CPU checks ran again on the rebased tree (`recei
 `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` pass,
 memra-engine's dsv41 lib tests 20 of 20, memra-server's lib tests 1,264 passed (18 ignored).
 
-## Open: the RTX PRO 6000 window
+## The RTX PRO 6000 window (2026-11-14)
 
-Not run yet. These need PRO 6000 cards and the commit this change lands as:
+The four items the GB10 could not run, at the head `6371a9975b` on main `63c351a2f4` (binaries built
+from that commit, 120a, CUDA 13.1), RTX PRO 6000 Blackwell Max-Q cards, MEMRA_FULL_PREC=1 for the gate.
+`receipts/pro6000-6371a9975b/`:
 
-- **The serve smoke on the one-card residency**: the whole 40-layer trunk on one card, where the
-  route picks that residency by itself. A GB10 cannot run it: it holds a 2-layer trunk's experts, and
-  the route has no switch that puts them off a card with room.
-- **`dsv41-gate rowfault --layers 40 --experts-host`** on one card. Everything above is trunk layers 0
-  and 1 (ratio 0): no compressor layer (2 to 19) and no index-selection layer (20 to 39) has seen a
-  non-finite row on any device.
-- **`dsv41-gate rowfault --devices 0,1`** on a pair of cards.
-- **The support record.** This is the first route-code change after the record's pin:
-  `memra model verify checkpoint` and `verify serve` on one card at the landing commit, and the
-  re-pin.
+| run | residency and cards | result |
+|---|---|---|
+| rowfault, 40 layers (`rowfault/rowfault-l40-host`) | one-card residency (`--experts-host`), one card | 9 of 9 |
+| rowfault, 2 layers (`rowfault-pair-resident`) | resident trunk, two cards (`--devices 0,1`) | 9 of 9 |
+| rowfault, 2 layers (`rowfault-pair-host`) | experts in host memory, two cards | 9 of 9 |
+| rowfault, 40 layers (`rowfault-pair-l40-host`) | experts in host memory, two cards | 9 of 9 |
+| serve smoke, 2 boots, 40 layers (`smoke/`) | one-card residency, the route's own pick, one card | PASS, 16 checks, after a failed first script (`smoke-try1/`) |
+| `verify checkpoint`, `verify serve` | one-card residency, one card | `verified=Checkpoint`, `verified=Serve` |
+
+- **All 40 layers.** The compressor layers (2 to 19) and the index-selection layers (20 to 39) have
+  now seen a non-finite row: the poisoned calls' rows are named, the 50-row one through the
+  three-kernel plan, and the other call's and the other row's logits are their clean runs' bytes.
+- **Two cards.** The pair runs on its own transport (`transport=device-push`, parallel issue). The
+  fully poisoned calls pass on both residencies and at both depths.
+- **The serve smoke** (`scripts/smoke_wrx2.sh`: the whole trunk, no `MEMRA_DSV41_TRUNK_LAYERS`, so
+  the card picks the one-card residency by itself; two essay prompts, 300 tokens each, the second
+  request sent after 20 steps):
+  - boot 1, `MEMRA_DSV41_CALL_FAULT=150:1`: step 150 poisons B, row 1 of a two-row batched call. B
+    fails alone (HTTP 500), A completes its 300 tokens, and A's answer is byte for byte the answer
+    of A sent alone afterwards. Health: 3 requests, 1 request fault, no dead reason.
+  - boot 2, `MEMRA_DSV41_CALL_FAULT=0:0,150:0`: W's prefill is poisoned and W fails alone; step 150
+    poisons A, row 0 of a two-row call; A fails alone and B completes its 300 tokens with its solo
+    answer's bytes. Health: 4 requests, 2 request faults, no dead reason.
+  - Residency, checked by the script: every step of both boots (600 and 622) has an expert cache,
+    and the boot log reads `routed experts of 40 layers in pinned host memory: 288777830400 bytes`.
+  - This script has no whole-step injection. It still sends `ignore_eos: true`, which the chat
+    surface drops (memra#1325); it passes because both essays run to their 300-token budget
+    (`finish_reason: "length"`), not because the field held.
+- **The first smoke script failed on its own assumptions, not on the route** (`smoke-try1/`,
+  `scripts/smoke_wrx.sh`: SMOKE FAIL, 4 PASS and 14 FAIL lines). It sent `ignore_eos: true` to the
+  chat surface, which has no such field and drops it (memra#1325), and counted on every request
+  running its whole budget. At 40 layers the answer to "What is the capital of France? Answer in one
+  word." ended at the end id after 19 tokens (`finish_reason: "stop"`, `smoke-try1/resp-A1.json`), in
+  under a second, so B never shared a call with A (`MEMRA_DSV41_CALL_FAULT: step 24 has no running
+  request 1`) and every later step number was off. Its residency check also wanted exactly one
+  host-experts line where the boot log has two. What that run still shows at 40 layers: the
+  whole-step injection failed its step's one request and the route went on (`the ranks probe clean
+  after the fault: serving on`), and W's poisoned prefill failed alone.
+- **The support record.** `memra model verify checkpoint` and `verify serve` pass at `6371a9975b`
+  on one card (`../serve/receipts/verify-6371a9975b/`: Config, TokenizerTemplate, TensorCensus,
+  CheckpointParity with argmax 51119 on both sides and max abs 2.94, and Serve), and the tiny gate
+  passes on the same tree (`../serve/receipts/verify-6371a9975b-tiny/`). The record
+  `deepseek_v41-gpu-1x-pro6000` pins this head.
+
+`lease/` has each run's lease summary, its 1 Hz card telemetry (gzipped; `raw.sha256` lists the
+bytes before compression) and the window's `summary.txt`; no run was flagged for a slowdown.
+`scripts/` has the window's runner (`w3_arm.sh`, whose first part is another change's four-card
+runs), both smoke scripts and the verify recipe (`m1_verify.sh`).

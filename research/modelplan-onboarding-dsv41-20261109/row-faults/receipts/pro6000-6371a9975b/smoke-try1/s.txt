@@ -1,0 +1,59 @@
+dc519c9eacd3d03872412b5783afa7b422bfe9aff55f63bd961d071b208a6968  /home/access/dsv41/perf-bins/land-1315/memra-server
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 2325 MHz, 70
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 975 MHz, 64
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 2317 MHz, 69
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 180 MHz, 54
+Mem:            1002         118         251           0         642         884
+boot 1 (24:1,64): ready=1 after 38s
+request A1: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"Paris","reasoning":"We need answer one word. Capital France = Paris. Must answer in one word.","reasoning_details":[{"type":"reasoning.text","text":"We need answer one word. Capital France = Pari
+request B1: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":"We need answer simple. Need name three primary colors. Ambiguity additive vs subtractive. Common answer red, blue, yellow (traditional art) or red","reasoning_details":[{"type":"re
+request A1solo: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"Paris","reasoning":"We need answer one word. Capital France = Paris. Must answer in one word.","reasoning_details":[{"type":"reasoning.text","text":"We need answer one word. Capital France = Pari
+request C1: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":"We need answer simple. \"Say hello","reasoning_details":[{"type":"reasoning.text","text":"We need answer simple. \"Say hello"}]},"finish_reason":"length"}],"usage":{"prompt_tokens"
+request D1: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+Mem:            1002          80         285           0         614         921
+boot 2 (0:0,25:0): ready=1 after 26s
+request W2: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request A2: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"Paris","reasoning":"We need answer one word. Capital France = Paris. Must answer in one word.","reasoning_details":[{"type":"reasoning.text","text":"We need answer one word. Capital France = Pari
+request B2: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request B2solo: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":"We need answer simple. Need name three primary colors. Ambiguity additive vs subtractive. Common answer red, blue, yellow (traditional art) or red","reasoning_details":[{"type":"re
+FAIL boot1: A beside the poisoned B completes 32 tokens ('Paris', 'We need answer one word. Capital France = Paris. Must answer in one word.', 'stop', 19)
+PASS boot1: A's answer beside the poisoned B is its solo answer, byte for byte 
+FAIL boot1: the poisoned B fails {"object": "chat.completion", "model": "v41", "choices": [{"index": 0, "message": {"role": "assistant", "content": "", "reasoning": "We need answer simple. Need name three primary colors. Ambiguity ad
+FAIL boot1: C (whole-step injection) fails 
+FAIL boot1: D after it is served 
+PASS boot2: W (prefill poisoned) fails 
+FAIL boot2: the poisoned A fails 
+FAIL boot2: B beside the poisoned A completes 32 tokens None
+FAIL boot2: B's answer beside the poisoned A is its solo answer, byte for byte 
+FAIL A and B answer differently (the comparison can fail) 
+boot 1 route v41 phase idle requests 5 request_faults 1 dead_reason None
+FAIL boot1: the route is alive with 2 request faults 
+boot 2 route v41 phase idle requests 4 request_faults 2 dead_reason None
+PASS boot2: the route is alive with 2 request faults 
+boot1: 0 request(s) failed alone, 1 whole-step failure(s)
+   [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+   [dsv41-serve] v41: MEMRA_DSV41_CALL_FAULT: [(24, Some(1)), (64, None)] (step, request): an injected call flag fails its step, a poisoned request fails alone (a fault gate, not serving)
+   [dsv41-serve] MEMRA_DSV41_CALL_FAULT: step 24 has no running request 1
+   [dsv41-serve] deepseek-v4.1 step: route: a router row selected an expert outside the model's (a non-finite router row) and no call's row map names it; failing 1 request(s)
+   [dsv41-serve] the ranks probe clean after the fault: serving on
+boot2: 2 request(s) failed alone, 0 whole-step failure(s)
+   [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+   [dsv41-serve] v41: MEMRA_DSV41_CALL_FAULT: [(0, Some(0)), (25, Some(0))] (step, request): an injected call flag fails its step, a poisoned request fails alone (a fault gate, not serving)
+   [dsv41-serve] MEMRA_DSV41_CALL_FAULT: step 0 poisons request_id="chatcmpl-8f35031ec9ffe2a888160c1c17a4c0e3" (running request 0)
+   [dsv41-serve] request_id="chatcmpl-8f35031ec9ffe2a888160c1c17a4c0e3": route fault: a router row selected an expert outside the model's (a non-finite router row): row(s) 0-33 of its own call; failing it alone
+   [dsv41-serve] MEMRA_DSV41_CALL_FAULT: step 25 poisons request_id="chatcmpl-977e869bd019712a55e1a12d369a41fe" (running request 0)
+   [dsv41-serve] request_id="chatcmpl-977e869bd019712a55e1a12d369a41fe": route fault: a router row selected an expert outside the model's (a non-finite router row): row(s) 0 of a batched call; failing it alone
+FAIL boot1: one request failed alone, one whole step failed 
+PASS boot2: two requests failed alone, no whole step failed 
+FAIL boot1: the poisoned step 24 is one batched call of two rows 
+FAIL boot2: the poisoned step 25 is one batched call of two rows [dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.012 tr
+boot1: residency one-card: 64 steps, 0 with cache_slots=[], 2 host-experts line(s)
+   [dsv41-serve] v41: routed experts of 40 layers in pinned host memory: 288777830400 bytes, filled and locked in 20.7s on 16 threads
+   [dsv41-serve] v41: 1 rank(s) on devices [0]; routed experts in pinned host memory; resident weights [11353892328] bytes per rank; ceiling [88902686728] bytes; expert cache [4640] slots of 18800640 bytes (floor 384 slots, all 15360); max_seq 1048576; 64 session(s); prefill slices of 8192 rows
+FAIL boot1: the one-card residency ran (experts in pinned host memory, a cache on every step) 
+boot2: residency one-card: 58 steps, 0 with cache_slots=[], 2 host-experts line(s)
+   [dsv41-serve] v41: routed experts of 40 layers in pinned host memory: 288777830400 bytes, filled and locked in 16.2s on 16 threads
+   [dsv41-serve] v41: 1 rank(s) on devices [0]; routed experts in pinned host memory; resident weights [11353892328] bytes per rank; ceiling [88902686728] bytes; expert cache [4640] slots of 18800640 bytes (floor 384 slots, all 15360); max_seq 1048576; 64 session(s); prefill slices of 8192 rows
+FAIL boot2: the one-card residency ran (experts in pinned host memory, a cache on every step) 
+SMOKE FAIL
+SMOKE-DONE 08:50:42

@@ -1,0 +1,19 @@
+06:36:41 waiting for agy's window-open; give up 23:30
+08:39:13 W3-START: opened_at=2026-11-14T08:38:42+0200 window=w3-quiet-4card ; all four box locks held; host free 984 GiB
+08:44:20 gather1 vs main24 (four cards) rc 0
+08:47:56 gather1 vs route2 (four cards) rc 0
+08:47:56 W3-A-DONE: gpu0.lock and gpu1.lock released, dsv41.w3-4card-done touched (gpu2/gpu3 still held)
+08:47:56 land-1315 6371a9975b609d1786ebfe374baa385b6bce5d77 built 2026-11-14T05:35:47+01:00 on the dev desk, cuda 13.1, sm_120a
+08:48:49 (a) rowfault 40 layers one-card residency rc 0
+08:48:49 (a): 9 checks, 0 failed 0 FAIL lines
+08:50:42 (b) serve smoke 40 layers rc 0 4 PASS lines, 14 FAIL; SMOKE FAIL SMOKE-DONE 08:50:42 
+08:50:48 (d) rowfault pair-resident rc 0
+08:50:48 (d) pair-resident: 9 checks, 0 failed 0 FAIL lines
+08:50:58 (d) rowfault pair-host rc 0
+08:50:58 (d) pair-host: 9 checks, 0 failed 0 FAIL lines
+08:51:39 (d) rowfault pair-l40-host rc 0
+08:51:39 (d) pair-l40-host: 9 checks, 0 failed 0 FAIL lines
+08:53:03 (e) M1 lease rc 0
+w3-1114/m1-verify rc 0 M1-DONE 08:53:02
+08:53:03 gpu2.lock and gpu3.lock released, gpu01.dsv41-window-done touched
+08:53:03 W3-DONE
