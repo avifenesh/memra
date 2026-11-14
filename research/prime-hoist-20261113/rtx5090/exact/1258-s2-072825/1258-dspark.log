@@ -1,0 +1,31 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+target loaded (65 layers); dspark draft: block 8, taps [5, 19, 33, 47, 61], markov false, yarn false
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 792576 ml_len 24 -> 3096 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 792576 -> 1585152 ml_len 3096 -> 6192 (retired kept, zero=false)
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=6136 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=8184 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=10232 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=12280 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=14328 kept=2056 phys_rows=4120
+[topk-shards] engaged: rows=7 cols=248320 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #3 dev=0 o_len 1585152 -> 6340608 ml_len 6192 -> 24768 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 6340608 -> 12681216 ml_len 24768 -> 49536 (retired kept, zero=false)
+p16500.txt: prompt 16500 -> gen 96 | plain 5.6 tok/s | spec 96.9 tok/s | EXACT
+[dspark-q38-gate] p16500.txt: prompt=16500 spec_sha256=3b6012aea319adeaa562b59519f8ab60ad86f156492ef9f50ec2c4dd466aa846 plain_sha256=3b6012aea319adeaa562b59519f8ab60ad86f156492ef9f50ec2c4dd466aa846 spec_len=96 plain_len=96 prime_s=14.485
+p2000.txt: prompt 2000 -> gen 96 | plain 25.7 tok/s | spec 113.0 tok/s | EXACT
+[dspark-q38-gate] p2000.txt: prompt=2000 spec_sha256=2d8e5abf4a1177e8186d1366f617cb2909f8006a4e36b0e73e6f7d903359e8ca plain_sha256=2d8e5abf4a1177e8186d1366f617cb2909f8006a4e36b0e73e6f7d903359e8ca spec_len=96 plain_len=96 prime_s=1.659
+[dflash-kv-ring] compact keep_from=2057 kept=2056 phys_rows=4120
+p4106.txt: prompt 4106 -> gen 96 | plain 16.5 tok/s | spec 99.2 tok/s | EXACT
+[dspark-q38-gate] p4106.txt: prompt=4106 spec_sha256=3b505656924b91bcca10945c0be7472647524ec9b207fb1d54a5890596ed85cc plain_sha256=3b505656924b91bcca10945c0be7472647524ec9b207fb1d54a5890596ed85cc spec_len=96 plain_len=96 prime_s=3.649
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=6145 kept=2056 phys_rows=4120
+p8200.txt: prompt 8200 -> gen 96 | plain 10.2 tok/s | spec 110.3 tok/s | EXACT
+[dspark-q38-gate] p8200.txt: prompt=8200 spec_sha256=c75b93d7de497f3392056931801ff0fed558be8be0202a2e17c1aec12d6e6181 plain_sha256=c75b93d7de497f3392056931801ff0fed558be8be0202a2e17c1aec12d6e6181 spec_len=96 plain_len=96 prime_s=7.252
+== dspark_q38_gate: ALL EXACT | mean plain 14.5 tok/s | mean spec 104.8 tok/s | 384 tokens ==

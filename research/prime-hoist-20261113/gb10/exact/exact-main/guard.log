@@ -1,0 +1,16 @@
+2026-11-13T07:11:12+02:00
+d72b67fdc926b0bde6d237a8f7ccd640a4b8664f0898124a22d69e43d3fb4984  ~/.cache/memra-1258/bins/run-gen-main-121a
+8d7bbcdb8ad3f0061b09bd983b350e37be61e5fb746e6ec3bbc1fea80ef9fd14  ~/.cache/memra-1258/bins/run-spec-main-121a
+9b41e9c4501443bba012ba5328079b1293071b315aa3aba08a4c5438d04f03d7  ~/.cache/memra-1258/bins/dspark-q38-gate-main-121a
+NVIDIA GB10, 580.178.04, 57, 208 MHz, 5.12 W
+ 07:11:12 up 19 days, 16:34,  8 users,  load average: 3.40, 3.27, 3.39
+p2000: 8527 bytes, last ids [17173, 12489, 55893]
+p4106: 17183 bytes, last ids [3045, 32709, 3045]
+p8200: 34417 bytes, last ids [95027, 220, 862]
+db7f73646e7ca7e4e47509ac4369baf3e766ebae0333618aa68f3eeb0f6fa430  ~/.cache/memra-1258/run/exact-prompts/p2000.ids
+bc51fe82e76bec80550a1da13719a154635b85841675976173ed43b02efb7fc7  ~/.cache/memra-1258/run/exact-prompts/p4106.ids
+e0cb3c60db396b6e862cbbf916ac5fde3e47cdbb431f7413d74db95429b9acec  ~/.cache/memra-1258/run/exact-prompts/p8200.ids
+main run-gen 4106 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=3.186e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=3.203e-1  MATCH
+main run-spec 4106 rc=0 STEP-IDENTITY: 4 batched plain steps against one 4-column verify, 2 rounds after 211 primed tokens: 0 of 1986560 logits differ (max |diff| 0), 0 argmax differ - === SELF-CONSISTENCY PASS ===
+main dspark rc=0 == dspark_q38_gate: ALL EXACT | mean plain 9.8 tok/s | mean spec 56.3 tok/s | 288 tokens ==
+GB10-EXACT-DONE rc=0 2026-11-13T07:18:47+02:00
