@@ -299,7 +299,8 @@ or more live rounds, by `MemAvailable` at the forward:
 
 ## CPU
 
-`cpu/`, on this branch at main bbc6f83aea:
+`cpu/`, on this branch's head at main bbc6f83aea (`checks-summary.txt` and `suites-summary.txt`
+start with the engine files' sha256):
 
 - `pooled_dspark_verify_headroom_reads_the_allocatable_free_memory`: memra#1221's full-page-cache
   reading (raw 1,882 MiB, 100 GB available) leaves 346 MiB of headroom on the raw reading and

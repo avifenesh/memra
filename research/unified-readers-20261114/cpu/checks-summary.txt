@@ -1,32 +1,32 @@
-ddbc7e763dab5a25b645cc32d7c060f702e5cdbdc4fab55fafcae63ad87cde54  ~/.cache/memra-1307/tree/crates/memra-engine/src/spec.rs
-a81d493b4a7ee272150e46b625b57cebd3548b9792ae5763deff98ae0b7bad94  crates/memra-engine/src/unified_memory.rs
+ecc5f3fdfdb0300bbcec72be97a6f25b47a78b2910dc9d7f1e349bed78f7264d  ~/.cache/memra-1307/tree/crates/memra-engine/src/spec.rs
+858428702d46e0b92fb315bdcbdc597325fc36067c4579692e7f6844856e1edd  crates/memra-engine/src/unified_memory.rs
 8afe86c86a6db2c1ca15df46c70f49992cf77a35d6566af55bc09ae644b782c9  crates/memra-engine/src/dsv4_gpu.rs
 green pooled_dspark_verify_headroom_reads_the_allocatable_free_memory rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 847 filtered out; finished in 0.00s
-green draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 847 filtered out; finished in 0.00s
-engine capture_headroom_tests + unified_memory + env_audit rc=0 test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 829 filtered out; finished in 0.15s
+green draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 847 filtered out; finished in 0.01s
+engine capture_headroom_tests + unified_memory + env_audit rc=0 test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 829 filtered out; finished in 0.23s
 R1 pooled_dspark_verify_headroom_reads_the_allocatable_free_memory rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 847 filtered out; finished in 0.00s
-thread 'spec::capture_headroom_tests::pooled_dspark_verify_headroom_reads_the_allocatable_free_memory' (3819204) panicked at crates/memra-engine/src/spec.rs:18116:9:
+thread 'spec::capture_headroom_tests::pooled_dspark_verify_headroom_reads_the_allocatable_free_memory' (1470455) panicked at crates/memra-engine/src/spec.rs:18119:9:
 the pooled DFlash2 width reads the raw driver free memory: pub(crate) fn pooled_verify_headroom(e: &Engine) -> usize {
     match e.ctx().mem_get_info() {
         Ok((free, _total)) => free
             .saturating_add(e.pool_cached_bytes())
 error: test failed, to rerun pass `-p memra-engine --lib`
 R2 draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 847 filtered out; finished in 0.00s
-thread 'spec::capture_headroom_tests::draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one' (820546) panicked at crates/memra-engine/src/spec.rs:18204:9:
+thread 'spec::capture_headroom_tests::draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one' (1538583) panicked at crates/memra-engine/src/spec.rs:18207:9:
 the draft-state bracket end does not take the delta reading: PER-SESSION DRAFT-STATE MEASUREMENT bracket end (vram-admission lane): when a
         // capture landed in THIS call, the effective-free delta across the capture section is
         // this session's parked draft-graph state (keepers + instantiated graphs'
         // backing). Recorded as a model-owned high-water; admission charges it per
 error: test failed, to rerun pass `-p memra-engine --lib`
 R3 draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 847 filtered out; finished in 0.00s
-thread 'spec::capture_headroom_tests::draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one' (862010) panicked at crates/memra-engine/src/spec.rs:18204:9:
+thread 'spec::capture_headroom_tests::draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one' (1614200) panicked at crates/memra-engine/src/spec.rs:18207:9:
 the draft-state bracket end does not take the delta reading: PER-SESSION DRAFT-STATE MEASUREMENT bracket end (vram-admission lane): when a
         // capture landed in THIS call, the effective-free delta across the capture section is
         // this session's parked draft-graph state (keepers + instantiated graphs'
         // backing). Recorded as a model-owned high-water; admission charges it per
 error: test failed, to rerun pass `-p memra-engine --lib`
 R4 draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 847 filtered out; finished in 0.00s
-thread 'spec::capture_headroom_tests::draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one' (2094049) panicked at crates/memra-engine/src/spec.rs:18214:9:
+thread 'spec::capture_headroom_tests::draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one' (1693933) panicked at crates/memra-engine/src/spec.rs:18217:9:
 assertion `left == right` failed
   left: 3
  right: 4
@@ -36,4 +36,4 @@ spec.rs restored
 clippy rc=0
       1 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
 fmt rc=0
-CHECKS-DONE 2026-11-14T01:33:51+01:00
+CHECKS-DONE 2026-11-14T03:25:02+01:00
