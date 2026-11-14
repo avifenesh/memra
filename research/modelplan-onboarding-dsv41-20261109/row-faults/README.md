@@ -233,6 +233,15 @@ scripts); the route sources merge by themselves.
 So over memra#1286's GEMM bodies the other rows keep their bytes on both residencies (the rowfault
 gate's byte checks) and through the serving loop on the resident trunk (the smoke's solo comparison).
 
+**The rebase itself** (2026-11-14). memra#1286, memra#1294 and memra#1312 landed as main `63c351a2f4`,
+and this change now sits on it. The trial's resolutions applied as recorded, and the rebased head's
+`crates/` are byte for byte the trial tree's (the only difference under `crates/`, `docs/` and
+`tools/` is main's own re-pin of the support record), so the trial's GB10 runs above are runs of this
+code. Its kernel gate, 1,027 of 1,027, is also the one `dsv41-gate kernels` run on the combined
+head; the landing ran none. The CPU checks ran again on the rebased tree (`receipts/cpu-rebased/`):
+`cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` pass,
+memra-engine's dsv41 lib tests 20 of 20, memra-server's lib tests 1,264 passed (18 ignored).
+
 ## Open: the RTX PRO 6000 window
 
 Not run yet. These need PRO 6000 cards and the commit this change lands as:
