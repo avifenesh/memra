@@ -1,0 +1,193 @@
+1794630227.588628 [server] build: memra-0.141.1-c07cfe486189 (id: source-tree, git: unknown)
+1794630227.588741 [server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1794630227.589322 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1794630227.589709 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1794630227.790447 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1794630227.942063 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1794630227.942096 [worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1794630227.985113 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1794630246.498929 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1794630246.500219 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1794630246.500253 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794630246.500871 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1794630246.501583 [route-contract] model="q38" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1794630246.502613 [worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1794630246.502642 [dspark] prefix restore switch default ON on "NVIDIA GB10" (gb10=true): MEMRA_DSPARK_PREFIX_RESTORE resolves ON (whole-entry restore, strict-prefix restore and boundary capture together)
+1794630254.295207 [dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+1794630254.304049 [dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+1794630254.304079 [dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+1794630254.323410 [worker] q38: DSPARK SPEC route armed (drafter attached (~/models/memra-q38/Qwen3.8-27B-DFlash2-memra); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+1794630254.323454 [dspark] q38: DFlash2 draft head FULL target vocab (external_mtp_d2t_ignored=false; set MEMRA_FRSPEC_TRIM=<ranks.txt> to trim)
+1794630254.323966 [admission] "q38": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+1794630254.323999 [admission] "q38": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+1794630254.324274 [prime-walk] model="q38" route=dspark supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1794630257.610291 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3223.219
+1794630257.610333 [prime-finalize] walker=memra_engine::dflash::DflashTapWalker<'_> wall_ms=0.043 success=true
+1794630257.612905 [prime-finalize] walker=memra_engine::dflash::DsparkPrimeWalker<'_> wall_ms=2.615 success=true
+1794630257.613277 [dspark-vg] serve pool ENGAGED (vt_cap=8)
+1794630257.614934 [topk-shards] engaged: rows=7 cols=248320 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+1794630257.649507 [fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+1794630258.735060 [dflash-kv-ring] compact keep_from=2057 kept=2056 phys_rows=4120
+1794630260.305590 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1778384896,"still_owned_bytes":19473817360,"pool_reserved_bytes":19595788288,"pool_cached_bytes":121970928,"driver_free_bytes":5136957440,"synchronization_errors":[]}
+1794630260.305624 [admit-cal] post-probe pool trim: released 1696MB cached back to the driver
+1794630260.305627 [admit-cal] boot calibration done: model="q38" route=dspark transient floor 1576MB (static was 1536MB; measured 1576MB; probe kv charge 119MB, draft-state 0MB, drafted 75 accepted 39; [dev0 peak-mapped 20384MB rest-mapped 18688MB charged 119MB -> 1576MB]; 6.0s)
+1794630260.305629 [admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1794630260.305631 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794630260.305633 [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+1794630260.305634 [kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+1794630260.306138 [deadline] unified memory (48 SMs, served ctx 32768): streaming TTFT default/max 124664 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 2172664 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+1794630260.306395 [server] worker ready; serving models: ["q38"]
+1794630260.311128 [server] listening on http://127.0.0.1:8090
+1794630266.724825 [meter] admit id=chatcmpl-73e20012b19d6397f74757a66c78f633 tenant=default lane=interactive model="q38"
+1794630266.725979 [meter] admit id=chatcmpl-a8ec04b7e7e36fc083e5aaabf12dabc6 tenant=default lane=interactive model="q38"
+1794630266.726889 [admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+1794630266.726895 [admission] request cost: model="q38" ctx=4171 path=spec = 29696 B/token x ctx + 1708MB prefill-workspace + 0MB fixed = 1832MB
+1794630266.727441 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3723 cached=0 lcp=0 active=1 wave=2 placement=single-or-non-pp2
+1794630266.727510 [prefix-loan] reconcile why=tick books=0 lent_live=0 adopted=0.0MB charged=0.0MB real=0.0MB adoptions=0 compactions=0 pool_used=19473.8MB
+1794630269.253917 [prime-chunk] phase=dflash-trunk-ingest rows=3723 wall_ms=2477.910
+1794630269.256394 [prime-finalize] walker=memra_engine::dflash::DflashTapWalker<'_> wall_ms=2.538 success=true
+1794630269.256716 [prime-finalize] walker=memra_engine::dflash::DsparkPrimeWalker<'_> wall_ms=2.848 success=true
+1794630269.962993 [dspark-acc] ctx=3723 burst=25/35 cum=25/35=0.714
+1794630269.963037 [tick-spec] seq=1 slot=0 trace=- start_ms=0.073 gap_ms=0.073 wall_ms=3235.286 generated=0->32 rounds=7 drafted=35 accepted=25 k=0
+1794630269.963041 [tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3235.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630269.965306 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3723 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+1794630272.388063 [prime-chunk] phase=dflash-trunk-ingest rows=3723 wall_ms=2422.026
+1794630272.390534 [prime-finalize] walker=memra_engine::dflash::DflashTapWalker<'_> wall_ms=2.534 success=true
+1794630272.390857 [prime-finalize] walker=memra_engine::dflash::DsparkPrimeWalker<'_> wall_ms=2.845 success=true
+1794630273.012161 [dspark-acc] ctx=3723 burst=33/37 cum=33/37=0.892
+1794630273.012204 [tick-spec] seq=1 slot=1 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=3046.766 generated=0->39 rounds=6 drafted=37 accepted=33 k=0
+1794630273.980411 [dspark-acc] ctx=3755 burst=24/34 cum=49/69=0.710
+1794630273.980458 [tick-spec] seq=2 slot=0 trace=- start_ms=3046.791 gap_ms=0.016 wall_ms=967.970 generated=32->66 rounds=10 drafted=34 accepted=24 k=0
+1794630273.980460 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=4014.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630273.980463 [spec-pool] pooled DFlash2 cohort engaged: 2 sessions (model q38)
+1794630274.014241 [spec-pool] pooled DFlash2 forward capped by VRAM headroom: 759 more MB needed, 590 MB above the transient floor
+1794630274.590039 [fa-pool] grow #1 dev=0 o_len 3194880 -> 6389760 ml_len 12480 -> 24960 (retired kept, zero=false)
+1794630275.423423 [dspark-acc] ctx=3789 burst=23/36 cum=72/105=0.686
+1794630275.423458 [dspark-acc] ctx=3762 burst=22/37 cum=55/74=0.743
+1794630275.423460 [tick-spec] seq=1 slot=0 trace=- start_ms=1442.781 gap_ms=1442.781 wall_ms=0.002 generated=66->100 rounds=0 drafted=0 accepted=0 k=0
+1794630275.423461 [tick-spec] seq=2 slot=1 trace=- start_ms=1442.797 gap_ms=0.014 wall_ms=0.001 generated=39->71 rounds=0 drafted=0 accepted=0 k=0
+1794630275.423463 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1442.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630276.739571 [dspark-acc] ctx=3823 burst=26/35 cum=98/140=0.700
+1794630276.739633 [dspark-acc] ctx=3794 burst=25/34 cum=80/108=0.741
+1794630276.739635 [tick-spec] seq=1 slot=0 trace=- start_ms=1316.474 gap_ms=1316.474 wall_ms=0.003 generated=100->133 rounds=0 drafted=0 accepted=0 k=0
+1794630276.739638 [tick-spec] seq=2 slot=1 trace=- start_ms=1316.488 gap_ms=0.012 wall_ms=0.000 generated=71->107 rounds=0 drafted=0 accepted=0 k=0
+1794630276.739639 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1316.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630277.797956 [dspark-acc] ctx=3856 burst=26/31 cum=124/171=0.725
+1794630277.797995 [dspark-acc] ctx=3830 burst=24/34 cum=104/142=0.732
+1794630277.797997 [tick-spec] seq=1 slot=0 trace=- start_ms=1058.221 gap_ms=1058.221 wall_ms=0.001 generated=133->167 rounds=0 drafted=0 accepted=0 k=0
+1794630277.798002 [tick-spec] seq=2 slot=1 trace=- start_ms=1058.231 gap_ms=0.009 wall_ms=0.000 generated=107->139 rounds=0 drafted=0 accepted=0 k=0
+1794630277.798005 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1058.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630279.032185 [dspark-acc] ctx=3890 burst=25/32 cum=149/203=0.734
+1794630279.032224 [dspark-acc] ctx=3862 burst=26/34 cum=130/176=0.739
+1794630279.032227 [tick-spec] seq=1 slot=0 trace=- start_ms=1234.108 gap_ms=1234.108 wall_ms=0.002 generated=167->200 rounds=0 drafted=0 accepted=0 k=0
+1794630279.032230 [tick-spec] seq=2 slot=1 trace=- start_ms=1234.122 gap_ms=0.013 wall_ms=0.000 generated=139->175 rounds=0 drafted=0 accepted=0 k=0
+1794630279.032233 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1234.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630280.492739 [dspark-acc] ctx=3923 burst=23/37 cum=172/240=0.717
+1794630280.492779 [dspark-acc] ctx=3898 burst=26/37 cum=156/213=0.732
+1794630280.492781 [tick-spec] seq=1 slot=0 trace=- start_ms=1460.494 gap_ms=1460.494 wall_ms=0.002 generated=200->235 rounds=0 drafted=0 accepted=0 k=0
+1794630280.492807 [tick-spec] seq=2 slot=1 trace=- start_ms=1460.511 gap_ms=0.015 wall_ms=0.001 generated=175->210 rounds=0 drafted=0 accepted=0 k=0
+1794630280.492810 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1460.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630281.542304 [dspark-acc] ctx=3958 burst=26/32 cum=198/272=0.728
+1794630281.542351 [dspark-acc] ctx=3933 burst=24/32 cum=180/245=0.735
+1794630281.542352 [tick-spec] seq=1 slot=0 trace=- start_ms=1049.578 gap_ms=1049.578 wall_ms=0.001 generated=235->269 rounds=0 drafted=0 accepted=0 k=0
+1794630281.542354 [tick-spec] seq=2 slot=1 trace=- start_ms=1049.590 gap_ms=0.011 wall_ms=0.000 generated=210->242 rounds=0 drafted=0 accepted=0 k=0
+1794630281.542356 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1049.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630282.691129 [dspark-acc] ctx=3992 burst=27/37 cum=225/309=0.728
+1794630282.691175 [dspark-acc] ctx=3965 burst=23/32 cum=203/277=0.733
+1794630282.691177 [tick-spec] seq=1 slot=0 trace=- start_ms=1148.843 gap_ms=1148.843 wall_ms=0.001 generated=269->303 rounds=0 drafted=0 accepted=0 k=0
+1794630282.691183 [tick-spec] seq=2 slot=1 trace=- start_ms=1148.857 gap_ms=0.012 wall_ms=0.001 generated=242->274 rounds=0 drafted=0 accepted=0 k=0
+1794630282.691185 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1148.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630283.838131 [dspark-acc] ctx=4026 burst=25/30 cum=250/339=0.737
+1794630283.838177 [dspark-acc] ctx=3997 burst=26/34 cum=229/311=0.736
+1794630283.838179 [tick-spec] seq=1 slot=0 trace=- start_ms=1146.851 gap_ms=1146.851 wall_ms=0.002 generated=303->336 rounds=0 drafted=0 accepted=0 k=0
+1794630283.838183 [tick-spec] seq=2 slot=1 trace=- start_ms=1146.865 gap_ms=0.012 wall_ms=0.001 generated=274->309 rounds=0 drafted=0 accepted=0 k=0
+1794630283.838185 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1146.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630284.983785 [dspark-acc] ctx=4059 burst=27/34 cum=277/373=0.743
+1794630284.983823 [dspark-acc] ctx=4032 burst=26/35 cum=255/346=0.737
+1794630284.983825 [tick-spec] seq=1 slot=0 trace=- start_ms=1145.607 gap_ms=1145.607 wall_ms=0.002 generated=336->370 rounds=0 drafted=0 accepted=0 k=0
+1794630284.983828 [tick-spec] seq=2 slot=1 trace=- start_ms=1145.621 gap_ms=0.012 wall_ms=0.000 generated=309->344 rounds=0 drafted=0 accepted=0 k=0
+1794630284.983829 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1145.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630285.676320 [spec-pool] member finished inside the cohort: route=dspark completion_tokens=384 members_running=0 reason=MaxNew request=chatcmpl-73e20012b19d6397f74757a66c78f633
+1794630285.676403 [dspark-acc] ctx=4093 burst=9/16 cum=286/389=0.735
+1794630285.676406 [dspark-acc] ctx=4067 burst=29/31 cum=284/377=0.753
+1794630285.676408 [tick-spec] seq=1 slot=0 trace=- start_ms=692.182 gap_ms=692.182 wall_ms=0.001 generated=370->384 rounds=0 drafted=0 accepted=0 k=0
+1794630285.676411 [tick-spec] seq=2 slot=1 trace=- start_ms=692.192 gap_ms=0.009 wall_ms=0.000 generated=344->378 rounds=0 drafted=0 accepted=0 k=0
+1794630285.676413 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=692.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630285.784909 [dspark-acc] ctx=4101 burst=6/7 cum=290/384=0.755
+1794630285.784963 [tick-spec] seq=1 slot=0 trace=- start_ms=0.011 gap_ms=0.011 wall_ms=108.208 generated=378->384 rounds=1 drafted=7 accepted=6 k=0
+1794630285.784965 [tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=108.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630285.788475 [meter] admit id=chatcmpl-7fef7ab73f12f14dea34448355f8571c tenant=default lane=interactive model="q38"
+1794630285.788508 [meter] admit id=chatcmpl-e4114f43560ef9fa38540414f86e5e60 tenant=default lane=interactive model="q38"
+1794630285.790703 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3723 cached=0 lcp=0 active=1 wave=2 placement=single-or-non-pp2
+1794630285.792474 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3723 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+1794630288.155946 [prime-chunk] phase=dflash-trunk-ingest rows=3723 wall_ms=2362.556
+1794630288.158430 [prime-finalize] walker=memra_engine::dflash::DflashTapWalker<'_> wall_ms=2.561 success=true
+1794630288.158750 [prime-finalize] walker=memra_engine::dflash::DsparkPrimeWalker<'_> wall_ms=2.872 success=true
+1794630288.866481 [dspark-acc] ctx=3723 burst=25/35 cum=25/35=0.714
+1794630288.866526 [tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=3073.930 generated=0->32 rounds=7 drafted=35 accepted=25 k=0
+1794630291.235820 [prime-chunk] phase=dflash-trunk-ingest rows=3723 wall_ms=2368.598
+1794630291.238294 [prime-finalize] walker=memra_engine::dflash::DflashTapWalker<'_> wall_ms=2.542 success=true
+1794630291.238616 [prime-finalize] walker=memra_engine::dflash::DsparkPrimeWalker<'_> wall_ms=2.850 success=true
+1794630291.946849 [dspark-acc] ctx=3723 burst=25/35 cum=25/35=0.714
+1794630291.946916 [tick-spec] seq=2 slot=1 trace=- start_ms=3073.954 gap_ms=0.018 wall_ms=3080.418 generated=0->32 rounds=7 drafted=35 accepted=25 k=0
+1794630291.946922 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=6154.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630293.236295 [dspark-acc] ctx=3755 burst=24/34 cum=49/69=0.710
+1794630293.236365 [dspark-acc] ctx=3755 burst=24/34 cum=49/69=0.710
+1794630293.236367 [tick-spec] seq=1 slot=0 trace=- start_ms=1289.022 gap_ms=1289.022 wall_ms=0.001 generated=32->66 rounds=0 drafted=0 accepted=0 k=0
+1794630293.236370 [tick-spec] seq=2 slot=1 trace=- start_ms=1289.036 gap_ms=0.012 wall_ms=0.000 generated=32->66 rounds=0 drafted=0 accepted=0 k=0
+1794630293.236372 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1289.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630294.718176 [dspark-acc] ctx=3789 burst=26/36 cum=75/105=0.714
+1794630294.718225 [dspark-acc] ctx=3789 burst=23/38 cum=72/107=0.673
+1794630294.718227 [tick-spec] seq=1 slot=0 trace=- start_ms=1481.826 gap_ms=1481.826 wall_ms=0.002 generated=66->102 rounds=0 drafted=0 accepted=0 k=0
+1794630294.718229 [tick-spec] seq=2 slot=1 trace=- start_ms=1481.840 gap_ms=0.012 wall_ms=0.000 generated=66->101 rounds=0 drafted=0 accepted=0 k=0
+1794630294.718230 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1481.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630295.793000 [dspark-acc] ctx=3825 burst=25/35 cum=100/140=0.714
+1794630295.793042 [dspark-acc] ctx=3824 burst=24/32 cum=96/139=0.691
+1794630295.793044 [tick-spec] seq=1 slot=0 trace=- start_ms=1074.946 gap_ms=1074.946 wall_ms=0.001 generated=102->135 rounds=0 drafted=0 accepted=0 k=0
+1794630295.793069 [tick-spec] seq=2 slot=1 trace=- start_ms=1074.955 gap_ms=0.008 wall_ms=0.000 generated=101->133 rounds=0 drafted=0 accepted=0 k=0
+1794630295.793070 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1075.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630296.948533 [dspark-acc] ctx=3858 burst=24/33 cum=124/173=0.717
+1794630296.948595 [dspark-acc] ctx=3856 burst=26/33 cum=122/172=0.709
+1794630296.948598 [tick-spec] seq=1 slot=0 trace=- start_ms=1155.551 gap_ms=1155.551 wall_ms=0.003 generated=135->168 rounds=0 drafted=0 accepted=0 k=0
+1794630296.948603 [tick-spec] seq=2 slot=1 trace=- start_ms=1155.566 gap_ms=0.012 wall_ms=0.000 generated=133->167 rounds=0 drafted=0 accepted=0 k=0
+1794630296.948604 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1155.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630298.273182 [dspark-acc] ctx=3891 burst=27/35 cum=151/208=0.726
+1794630298.273244 [dspark-acc] ctx=3890 burst=25/36 cum=147/208=0.707
+1794630298.273246 [tick-spec] seq=1 slot=0 trace=- start_ms=1324.590 gap_ms=1324.590 wall_ms=0.002 generated=168->205 rounds=0 drafted=0 accepted=0 k=0
+1794630298.273249 [tick-spec] seq=2 slot=1 trace=- start_ms=1324.603 gap_ms=0.012 wall_ms=0.000 generated=167->202 rounds=0 drafted=0 accepted=0 k=0
+1794630298.273251 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1324.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630299.582266 [dspark-acc] ctx=3928 burst=25/37 cum=176/245=0.718
+1794630299.582305 [dspark-acc] ctx=3925 burst=23/33 cum=170/241=0.705
+1794630299.582307 [tick-spec] seq=1 slot=0 trace=- start_ms=1308.923 gap_ms=1308.923 wall_ms=0.001 generated=205->240 rounds=0 drafted=0 accepted=0 k=0
+1794630299.582309 [tick-spec] seq=2 slot=1 trace=- start_ms=1308.937 gap_ms=0.013 wall_ms=0.000 generated=202->235 rounds=0 drafted=0 accepted=0 k=0
+1794630299.582311 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1308.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630300.856259 [dspark-acc] ctx=3963 burst=27/35 cum=203/280=0.725
+1794630300.856301 [dspark-acc] ctx=3958 burst=25/35 cum=195/276=0.707
+1794630300.856302 [tick-spec] seq=1 slot=0 trace=- start_ms=1273.941 gap_ms=1273.941 wall_ms=0.002 generated=240->275 rounds=0 drafted=0 accepted=0 k=0
+1794630300.856304 [tick-spec] seq=2 slot=1 trace=- start_ms=1273.954 gap_ms=0.011 wall_ms=0.000 generated=235->270 rounds=0 drafted=0 accepted=0 k=0
+1794630300.856306 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1274.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630302.117191 [dspark-acc] ctx=3998 burst=26/35 cum=229/315=0.727
+1794630302.117245 [dspark-acc] ctx=3993 burst=26/33 cum=221/309=0.715
+1794630302.117247 [tick-spec] seq=1 slot=0 trace=- start_ms=1260.851 gap_ms=1260.851 wall_ms=0.002 generated=275->311 rounds=0 drafted=0 accepted=0 k=0
+1794630302.117249 [tick-spec] seq=2 slot=1 trace=- start_ms=1260.866 gap_ms=0.013 wall_ms=0.000 generated=270->304 rounds=0 drafted=0 accepted=0 k=0
+1794630302.117250 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1260.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630303.280366 [dspark-acc] ctx=4034 burst=25/34 cum=254/349=0.728
+1794630303.280434 [dspark-acc] ctx=4027 burst=29/36 cum=250/345=0.725
+1794630303.280436 [tick-spec] seq=1 slot=0 trace=- start_ms=1163.135 gap_ms=1163.135 wall_ms=0.002 generated=311->345 rounds=0 drafted=0 accepted=0 k=0
+1794630303.280437 [tick-spec] seq=2 slot=1 trace=- start_ms=1163.150 gap_ms=0.013 wall_ms=0.001 generated=304->340 rounds=0 drafted=0 accepted=0 k=0
+1794630303.280439 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1163.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630304.374321 [dspark-acc] ctx=4068 burst=25/35 cum=279/384=0.727
+1794630304.374373 [dspark-acc] ctx=4063 burst=24/35 cum=274/380=0.721
+1794630304.374374 [tick-spec] seq=1 slot=0 trace=- start_ms=1093.755 gap_ms=1093.755 wall_ms=0.002 generated=345->378 rounds=0 drafted=0 accepted=0 k=0
+1794630304.374377 [tick-spec] seq=2 slot=1 trace=- start_ms=1093.769 gap_ms=0.012 wall_ms=0.000 generated=340->372 rounds=0 drafted=0 accepted=0 k=0
+1794630304.374378 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=1093.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630304.628124 [spec-pool] member finished inside the cohort: route=dspark completion_tokens=384 members_running=1 reason=MaxNew request=chatcmpl-7fef7ab73f12f14dea34448355f8571c
+1794630304.826778 [spec-pool] member finished inside the cohort: route=dspark completion_tokens=384 members_running=0 reason=MaxNew request=chatcmpl-e4114f43560ef9fa38540414f86e5e60
+1794630304.826822 [dspark-acc] ctx=4101 burst=5/7 cum=284/391=0.726
+1794630304.826825 [dspark-acc] ctx=4095 burst=8/11 cum=282/391=0.721
+1794630304.826827 [tick-spec] seq=1 slot=0 trace=- start_ms=452.527 gap_ms=452.527 wall_ms=0.002 generated=378->384 rounds=0 drafted=0 accepted=0 k=0
+1794630304.826829 [tick-spec] seq=2 slot=1 trace=- start_ms=452.540 gap_ms=0.011 wall_ms=0.000 generated=372->384 rounds=0 drafted=0 accepted=0 k=0
+1794630304.826832 [tick] act=2 int=2 priming=0 ready=0 spec=0 demoted=0 spec_calls=2 spec_ms=452.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794630304.842268 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1794630304.842293 [server] drain complete in 0.0s; exiting
+1794630304.971407 [server] GPU worker shutdown complete
