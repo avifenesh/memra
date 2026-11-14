@@ -1,0 +1,5 @@
+[server] build: memra-0.141.1-e2dedf82d6bd (id: source-tree, git: unknown)
+[server] starting; models config = [("q38", "~/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[server] FATAL: worker init failed: Engine::new failed: cuDeviceGet on device 7 failed: DriverError(CUDA_ERROR_INVALID_DEVICE, "invalid device ordinal")

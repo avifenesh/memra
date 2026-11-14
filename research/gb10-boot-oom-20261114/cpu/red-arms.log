@@ -1,0 +1,247 @@
+=== budget-zero
+test ctx_boot::tests::a_failed_step_names_its_driver_call ... ok
+test ctx_boot::tests::a_host_that_is_really_short_is_not_retried ... FAILED
+test ctx_boot::tests::discrete_card_keeps_its_first_answer ... ok
+test ctx_boot::tests::another_error_ends_the_retry_at_once ... FAILED
+test ctx_boot::tests::host_memory_is_parsed_from_its_own_lines ... ok
+test ctx_boot::tests::only_a_driver_out_of_memory_answer_is_one ... ok
+test ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps ... FAILED
+test ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry ... FAILED
+test ctx_boot::tests::the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for ... ok
+test ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget ... FAILED
+test ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor ... FAILED
+test ctx_boot::tests::unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts ... FAILED
+thread 'ctx_boot::tests::a_host_that_is_really_short_is_not_retried' (3594153) panicked at crates/memra-runtime/src/ctx_boot.rs:520:9:
+  left: (Err("out of memory"), 1)
+ right: (Ok(2), 2)
+thread 'ctx_boot::tests::another_error_ends_the_retry_at_once' (3594154) panicked at crates/memra-runtime/src/ctx_boot.rs:665:9:
+  left: (Err("out of memory"), 1)
+ right: (Err("no device"), 2)
+thread 'ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps' (3594159) panicked at crates/memra-runtime/src/ctx_boot.rs:595:9:
+  left: 1
+ right: 25
+thread 'ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry' (3594160) panicked at crates/memra-runtime/src/ctx_boot.rs:643:9:
+  left: (Err("out of memory"), 1, 1)
+ right: (Err("out of memory"), 2, 2)
+thread 'ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget' (3594162) panicked at crates/memra-runtime/src/ctx_boot.rs:568:9:
+  left: (1, 0)
+ right: (116, 115)
+thread 'ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor' (3594163) panicked at crates/memra-runtime/src/ctx_boot.rs:720:9:
+  left: (Err(CUDA_ERROR_OUT_OF_MEMORY), 1)
+ right: (Ok(3), 3)
+thread 'ctx_boot::tests::unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts' (3594164) panicked at crates/memra-runtime/src/ctx_boot.rs:476:9:
+  left: Err("out of memory")
+ right: Ok(3)
+test result: FAILED. 5 passed; 7 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-runtime --lib`
+=== budget-ge
+test ctx_boot::tests::a_failed_step_names_its_driver_call ... ok
+test ctx_boot::tests::a_host_that_is_really_short_is_not_retried ... ok
+test ctx_boot::tests::another_error_ends_the_retry_at_once ... ok
+test ctx_boot::tests::discrete_card_keeps_its_first_answer ... ok
+test ctx_boot::tests::host_memory_is_parsed_from_its_own_lines ... ok
+test ctx_boot::tests::only_a_driver_out_of_memory_answer_is_one ... ok
+test ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps ... ok
+test ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry ... ok
+test ctx_boot::tests::the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for ... ok
+test ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor ... ok
+test ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget ... FAILED
+test ctx_boot::tests::unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts ... ok
+thread 'ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget' (3599591) panicked at crates/memra-runtime/src/ctx_boot.rs:539:9:
+  left: [50, 100, 200]
+ right: [50, 100, 200, 200]
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-runtime --lib`
+=== bound-sleeps-only
+test ctx_boot::tests::a_failed_step_names_its_driver_call ... ok
+test ctx_boot::tests::a_host_that_is_really_short_is_not_retried ... ok
+test ctx_boot::tests::another_error_ends_the_retry_at_once ... ok
+test ctx_boot::tests::discrete_card_keeps_its_first_answer ... ok
+test ctx_boot::tests::host_memory_is_parsed_from_its_own_lines ... ok
+test ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry ... ok
+test ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps ... FAILED
+test ctx_boot::tests::only_a_driver_out_of_memory_answer_is_one ... ok
+test ctx_boot::tests::the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for ... ok
+test ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget ... FAILED
+test ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor ... ok
+test ctx_boot::tests::unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts ... ok
+thread 'ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps' (3603466) panicked at crates/memra-runtime/src/ctx_boot.rs:597:9:
+  left: 116
+ right: 25
+thread 'ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget' (3603469) panicked at crates/memra-runtime/src/ctx_boot.rs:541:9:
+  left: [50, 100, 200, 200, 200, 200]
+ right: [50, 100, 200, 200]
+test result: FAILED. 10 passed; 2 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-runtime --lib`
+=== retry-discrete
+test ctx_boot::tests::a_failed_step_names_its_driver_call ... ok
+test ctx_boot::tests::a_host_that_is_really_short_is_not_retried ... ok
+test ctx_boot::tests::another_error_ends_the_retry_at_once ... ok
+test ctx_boot::tests::host_memory_is_parsed_from_its_own_lines ... ok
+test ctx_boot::tests::only_a_driver_out_of_memory_answer_is_one ... ok
+test ctx_boot::tests::discrete_card_keeps_its_first_answer ... FAILED
+test ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps ... ok
+test ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry ... ok
+test ctx_boot::tests::the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for ... ok
+test ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget ... ok
+test ctx_boot::tests::unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts ... ok
+test ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor ... FAILED
+thread 'ctx_boot::tests::discrete_card_keeps_its_first_answer' (3613343) panicked at crates/memra-runtime/src/ctx_boot.rs:497:9:
+  left: Ok(2)
+ right: Err("out of memory")
+thread 'ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor' (3613350) panicked at crates/memra-runtime/src/ctx_boot.rs:725:9:
+  left: (Ok(2), 2)
+ right: (Err(CUDA_ERROR_OUT_OF_MEMORY), 1)
+test result: FAILED. 10 passed; 2 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-runtime --lib`
+=== any-error
+test ctx_boot::tests::a_failed_step_names_its_driver_call ... ok
+test ctx_boot::tests::host_memory_is_parsed_from_its_own_lines ... ok
+test ctx_boot::tests::only_a_driver_out_of_memory_answer_is_one ... ok
+test ctx_boot::tests::another_error_ends_the_retry_at_once ... FAILED
+test ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps ... ok
+test ctx_boot::tests::the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for ... ok
+test ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor ... FAILED
+test ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry ... ok
+test ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget ... ok
+test ctx_boot::tests::unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts ... ok
+test ctx_boot::tests::discrete_card_keeps_its_first_answer ... ok
+test ctx_boot::tests::a_host_that_is_really_short_is_not_retried ... ok
+thread 'ctx_boot::tests::another_error_ends_the_retry_at_once' (3719842) panicked at crates/memra-runtime/src/ctx_boot.rs:664:9:
+  left: (Err("no device"), 116)
+ right: (Err("no device"), 2)
+thread 'ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor' (3719850) panicked at crates/memra-runtime/src/ctx_boot.rs:738:9:
+  left: (Ok(2), 2)
+ right: (Err(CUDA_ERROR_NO_DEVICE), 1)
+test result: FAILED. 10 passed; 2 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-runtime --lib`
+=== no-floor
+test ctx_boot::tests::a_failed_step_names_its_driver_call ... ok
+test ctx_boot::tests::another_error_ends_the_retry_at_once ... ok
+test ctx_boot::tests::host_memory_is_parsed_from_its_own_lines ... ok
+test ctx_boot::tests::discrete_card_keeps_its_first_answer ... ok
+test ctx_boot::tests::a_host_that_is_really_short_is_not_retried ... FAILED
+test ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps ... ok
+test ctx_boot::tests::the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for ... ok
+test ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry ... FAILED
+test ctx_boot::tests::only_a_driver_out_of_memory_answer_is_one ... ok
+test ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor ... FAILED
+test ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget ... ok
+test ctx_boot::tests::unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts ... ok
+thread 'ctx_boot::tests::a_host_that_is_really_short_is_not_retried' (3725625) panicked at crates/memra-runtime/src/ctx_boot.rs:508:9:
+  left: Ok(2)
+ right: Err("out of memory")
+thread 'ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry' (3725631) panicked at crates/memra-runtime/src/ctx_boot.rs:643:9:
+  left: (Err("out of memory"), 116, 116)
+ right: (Err("out of memory"), 2, 2)
+thread 'ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor' (3725634) panicked at crates/memra-runtime/src/ctx_boot.rs:752:9:
+  left: (Ok(2), 2)
+ right: (Err(CUDA_ERROR_OUT_OF_MEMORY), 1)
+test result: FAILED. 9 passed; 3 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-runtime --lib`
+=== no-reread
+test ctx_boot::tests::a_host_that_is_really_short_is_not_retried ... ok
+test ctx_boot::tests::a_failed_step_names_its_driver_call ... ok
+test ctx_boot::tests::another_error_ends_the_retry_at_once ... ok
+test ctx_boot::tests::discrete_card_keeps_its_first_answer ... ok
+test ctx_boot::tests::host_memory_is_parsed_from_its_own_lines ... ok
+test ctx_boot::tests::only_a_driver_out_of_memory_answer_is_one ... ok
+test ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps ... ok
+test ctx_boot::tests::the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for ... ok
+test ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget ... ok
+test ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry ... FAILED
+test ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor ... ok
+test ctx_boot::tests::unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts ... ok
+thread 'ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry' (3730404) panicked at crates/memra-runtime/src/ctx_boot.rs:643:9:
+  left: (Err("out of memory"), 116, 1)
+ right: (Err("out of memory"), 2, 2)
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-runtime --lib`
+=== wiring-unified-always
+test ctx_boot::tests::a_failed_step_names_its_driver_call ... ok
+test ctx_boot::tests::another_error_ends_the_retry_at_once ... ok
+test ctx_boot::tests::a_host_that_is_really_short_is_not_retried ... ok
+test ctx_boot::tests::discrete_card_keeps_its_first_answer ... ok
+test ctx_boot::tests::host_memory_is_parsed_from_its_own_lines ... ok
+test ctx_boot::tests::only_a_driver_out_of_memory_answer_is_one ... ok
+test ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps ... ok
+test ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry ... ok
+test ctx_boot::tests::the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for ... ok
+test ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget ... ok
+test ctx_boot::tests::unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts ... ok
+test ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor ... FAILED
+thread 'ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor' (3735201) panicked at crates/memra-runtime/src/ctx_boot.rs:725:9:
+  left: (Ok(2), 2)
+ right: (Err(CUDA_ERROR_OUT_OF_MEMORY), 1)
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-runtime --lib`
+=== wiring-any-error
+test ctx_boot::tests::a_failed_step_names_its_driver_call ... ok
+test ctx_boot::tests::another_error_ends_the_retry_at_once ... ok
+test ctx_boot::tests::a_host_that_is_really_short_is_not_retried ... ok
+test ctx_boot::tests::discrete_card_keeps_its_first_answer ... ok
+test ctx_boot::tests::host_memory_is_parsed_from_its_own_lines ... ok
+test ctx_boot::tests::only_a_driver_out_of_memory_answer_is_one ... ok
+test ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps ... ok
+test ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry ... ok
+test ctx_boot::tests::the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for ... ok
+test ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget ... ok
+test ctx_boot::tests::unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts ... ok
+test ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor ... FAILED
+thread 'ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor' (3739411) panicked at crates/memra-runtime/src/ctx_boot.rs:739:9:
+  left: (Ok(2), 2)
+ right: (Err(CUDA_ERROR_NO_DEVICE), 1)
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-runtime --lib`
+=== wiring-no-floor
+test ctx_boot::tests::a_failed_step_names_its_driver_call ... ok
+test ctx_boot::tests::a_host_that_is_really_short_is_not_retried ... ok
+test ctx_boot::tests::another_error_ends_the_retry_at_once ... ok
+test ctx_boot::tests::discrete_card_keeps_its_first_answer ... ok
+test ctx_boot::tests::host_memory_is_parsed_from_its_own_lines ... ok
+test ctx_boot::tests::only_a_driver_out_of_memory_answer_is_one ... ok
+test ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps ... ok
+test ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry ... ok
+test ctx_boot::tests::the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for ... ok
+test ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget ... ok
+test ctx_boot::tests::unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts ... ok
+test ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor ... FAILED
+thread 'ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor' (3744328) panicked at crates/memra-runtime/src/ctx_boot.rs:755:9:
+  left: (Ok(2), 2)
+ right: (Err(CUDA_ERROR_OUT_OF_MEMORY), 1)
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-runtime --lib`
+=== attr-error-is-unified
+test ctx_boot::tests::a_failed_step_names_its_driver_call ... ok
+test ctx_boot::tests::a_host_that_is_really_short_is_not_retried ... ok
+test ctx_boot::tests::another_error_ends_the_retry_at_once ... ok
+test ctx_boot::tests::discrete_card_keeps_its_first_answer ... ok
+test ctx_boot::tests::host_memory_is_parsed_from_its_own_lines ... ok
+test ctx_boot::tests::only_a_driver_out_of_memory_answer_is_one ... ok
+test ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps ... ok
+test ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry ... ok
+test ctx_boot::tests::the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for ... ok
+test ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget ... ok
+test ctx_boot::tests::unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts ... ok
+test ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor ... FAILED
+thread 'ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor' (3748757) panicked at crates/memra-runtime/src/ctx_boot.rs:730:9:
+  left: (Ok(2), 2)
+ right: (Err(CUDA_ERROR_OUT_OF_MEMORY), 1)
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-runtime --lib`
+=== line-names-the-error
+test ctx_boot::tests::a_failed_step_names_its_driver_call ... ok
+test ctx_boot::tests::a_host_that_is_really_short_is_not_retried ... ok
+test ctx_boot::tests::another_error_ends_the_retry_at_once ... ok
+test ctx_boot::tests::discrete_card_keeps_its_first_answer ... ok
+test ctx_boot::tests::host_memory_is_parsed_from_its_own_lines ... ok
+test ctx_boot::tests::only_a_driver_out_of_memory_answer_is_one ... ok
+test ctx_boot::tests::the_budget_bounds_elapsed_time_not_the_sleeps ... ok
+test ctx_boot::tests::the_host_reading_is_taken_again_before_every_retry ... ok
+test ctx_boot::tests::the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for ... FAILED
+test ctx_boot::tests::the_waits_double_to_the_cap_and_stop_at_the_budget ... ok
+test ctx_boot::tests::the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor ... ok
+test ctx_boot::tests::unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts ... ok
+thread 'ctx_boot::tests::the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for' (3751648) panicked at crates/memra-runtime/src/ctx_boot.rs:794:17:
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p memra-runtime --lib`
