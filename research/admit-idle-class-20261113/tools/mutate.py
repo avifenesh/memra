@@ -24,6 +24,7 @@ T_PROMO = "a_promotion_that_fails_leaves_the_caller_a_live_hit"
 T_OVER = "a_publication_that_overruns_its_reservation_says_so"
 T_DISCRETE = "a_discrete_card_keeps_its_copy_publication_order"
 T_LIVE = "a_live_memory_refusal_names_its_cause_and_keeps_the_shape_warning"
+T_READ = "a_publication_reads_every_plane_off_the_cache"
 
 ARMS = {
     # ---- The author's arms.
@@ -35,12 +36,18 @@ ARMS = {
         "    if fits_capacity && false {\n        return EngineError::overloaded(",
     )]),
     # R3: the reject branch answers EngineError::context_length again.
-    "R3": (T_WIRE, "largest_now), );", [(
+    "R3": (T_WIRE, "largest_now, ), );", [(
         "                            fail_request(\n"
         "                                req,\n"
-        "                                idle_refusal(admission_cap, fits_capacity, largest, largest_now),\n"
+        "                                idle_refusal(\n"
+        "                                    admission_cap,\n"
+        "                                    fits_capacity,\n"
+        "                                    hint,\n"
+        "                                    largest,\n"
+        "                                    largest_now,\n"
+        "                                ),\n"
         "                            );",
-        "                            let _ = (fits_capacity, largest, largest_now);\n"
+        "                            let _ = (fits_capacity, hint, largest, largest_now);\n"
         "                            fail_request(req, EngineError::context_length(format!(\"request context {admission_cap} does not fit\")));",
     )]),
     # ---- The first reviewer's arms.
@@ -70,7 +77,7 @@ ARMS = {
     )]),
     # ---- The first fold's arms.
     # R6: the size that fits now is computed on the capacity reading, not on the reading now.
-    "R6": (T_WIRE, "let largest_now = largest_request_within( admission_cap, slack,", [(
+    "R6": (T_WIRE, "let largest_now = largest_request_within( admission_cap, hint,", [(
         "                                &headroom.charges(primary_device, required),",
         "                                &at_capacity.charges(primary_device, required),",
     )]),
@@ -182,16 +189,14 @@ ARMS = {
         "",
     )]),
     # H1: the hint is the charged context, not prompt plus max_tokens (the slack stays in).
-    "H1": (T_HINT, "slack 8: the hint 110927 is charged", [(
-        "        .checked_sub(slack)\n        .filter(|&n| n > 0)\n",
-        "        .checked_sub(slack * 0)\n        .filter(|&n| n > 0)\n",
+    "H1": (T_HINT, "slack 64: the hint", [(
+        "            HintBound::Request { slack } => fits.checked_sub(slack),\n",
+        "            HintBound::Request { slack } => fits.checked_sub(slack * 0),\n",
     )]),
     # H2: the hint is what fits on the first device.
     "H2": (T_HINT, "left: 100000", [(
-        "        devices.iter().all(|d| {\n"
-        "            let shed = context(d.device, admission_cap)",
-        "        devices.iter().take(1).all(|d| {\n"
-        "            let shed = context(d.device, admission_cap)",
+        "        devices.iter().zip(&full).all(|(d, full)| {\n",
+        "        devices.iter().zip(&full).take(1).all(|(d, full)| {\n",
     )]),
     # H3: the context term is a flat slope with the ring term beside it (the first fold's).
     "H3": (T_WIRE, "_ if device == primary_device => hint_costs .context_bytes(ctx, estimate_spec)", [(
@@ -202,8 +207,8 @@ ARMS = {
     )]),
     # H4: a figure that is all slack is named (zero tokens).
     "H4": (T_HINT, "left: Some(0)", [(
-        "        .checked_sub(slack)\n        .filter(|&n| n > 0)\n",
-        "        .checked_sub(slack)\n",
+        "        largest.filter(|&n| n > 0)\n",
+        "        largest\n",
     )]),
     # O1: an entry larger than its reservation is not reported.
     "O1": (T_OVER, "left: None", [(
@@ -225,19 +230,58 @@ ARMS = {
         "    }\n",
         "    host.touch(pool_key, hi);\n",
     )]),
+    # ---- The third review's fold.
+    # X1: a request that pins max_ctx is still told a prompt plus max_tokens.
+    "X1": (T_HINT, "left: (131072, Request { slack: 110560 })", [(
+        "        match max_ctx {\n            Some(_) => HintBound::MaxCtx { prompt, max_new },\n",
+        "        match max_ctx.filter(|_| false) {\n            Some(_) => HintBound::MaxCtx { prompt, max_new },\n",
+    )]),
+    # X2: the max_ctx figure ignores the 64 rows a max_tokens past the context is charged.
+    "X2": (T_HINT, "right: 119936", [(
+        "                    fits.checked_sub(SPEC_SHRINK_SLACK)\n",
+        "                    Some(fits)\n",
+    )]),
+    # X3: the reject branch hands the bound no max_ctx.
+    "X3": (T_WIRE, "let hint = HintBound::of( req.params.max_ctx", [(
+        "                                req.params.max_ctx,\n                                prompt_len,\n",
+        "                                None,\n                                prompt_len,\n",
+    )]),
+    # MA2 (the third reviewer's): the geometry read off the cache has no trunk plane.
+    "MA2": (T_READ, "left: []", [(
+        "            .map(|(_, k_tok_bytes, v_tok_bytes)| (k_tok_bytes, v_tok_bytes))\n",
+        "            .map(|(_, k_tok_bytes, v_tok_bytes)| (k_tok_bytes, v_tok_bytes))\n            .take(0)\n",
+    )]),
+    # MH3 (the third reviewer's): the geometry read off the cache has no latent rows.
+    "MH3": (T_READ, "left: 0", [(
+        "            geometry.latent_floats += latent_publish_floats(tail);\n",
+        "",
+    )]),
+    # G1: the adapter takes no trunk layer off the live cache.
+    "G1": (T_READ, "missing `publication_geometry( cache .kv .iter() .flatten()", [(
+        "            .map(|l| (l.len, l.k_tok_bytes, l.v_tok_bytes)),\n",
+        "            .map(|l| (l.len, l.k_tok_bytes, l.v_tok_bytes))\n            .take(0),\n",
+    )]),
+    # G2: the adapter reports no latent layer as live.
+    "G2": (T_READ, "missing `cache .latent .iter() .zip(&cap.latent_tails)", [(
+        "            .map(|(live, tail)| (live.is_some(), tail.as_ref())),\n",
+        "            .map(|(live, tail)| (live.is_some() && false, tail.as_ref())),\n",
+    )]),
 }
 
+# The third fold's arms sit where they break no other arm's test: MA2, MH3, G1 and G2 fail
+# T_READ only (MA, beside MH3, breaks T_READ's later count assertion, after MH3's); X1 and X2
+# fail T_HINT only; X3 edits the reject branch's bound, which only T_WIRE reads.
 # No two arms of a batch name the same test, and none breaks a test another arm of the batch
 # names (R2 and R7 break T_RETRY or T_NOW; R13 breaks T_COPY and T_PLANES, which read the shape
 # warning; MA breaks T_DISCRETE; R10 breaks T_PLANES, T_TAIL, T_LATENT, T_HELD, T_STOP and
-# T_HOST; ME and MF break every refusal test; H1 and H4 edit the same lines).
+# T_HOST; ME and MF break every refusal test; H1, H4, X1 and X2 fail the same test).
 BATCHES = [
-    ["R1", "R2", "R3", "R4", "RA", "R9", "R14", "MB", "MC", "MH", "I1", "H1", "O1"],
-    ["R5", "R6", "R11", "MA", "T1", "I2", "H2"],
-    ["R8", "R15", "R12", "ME", "I3", "H4"],
-    ["H3", "R10"],
-    ["MF", "P1"],
-    ["R13", "R7"],
+    ["R1", "R2", "R3", "R4", "RA", "R9", "R14", "MB", "MC", "MH", "I1", "H1", "O1", "MA2"],
+    ["R5", "R6", "R11", "MA", "T1", "I2", "H2", "MH3"],
+    ["R8", "R15", "R12", "ME", "I3", "H4", "G1"],
+    ["H3", "R10", "X1", "G2"],
+    ["MF", "P1", "X2"],
+    ["R13", "R7", "X3"],
 ]
 
 if sys.argv[1] == "--list":

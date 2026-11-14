@@ -296,6 +296,11 @@ else
     chk "r4 repeats r3 byte-for-byte (deterministic promoted path)" \
         text_eq "$EV/host-on-r3.json" "$EV/host-on-r4.json"
 fi
+# memra#1304: a publication that copies reserves its room from a count of what it will allocate.
+# The server warns at the insert when an entry holds more than it reserved; the seeds here are
+# such publications (copies with the drafter tail in the drafter arm), so the line fails the gate.
+chk "no publication held more than it reserved (its count missed no plane)" \
+    absent "its count missed a plane" "$EV/host-on-server.log"
 
 # Drafter arm (lane/spill-c-20260919 day 56, DAY56.md design f; DAY19.md Task 3's rule): with
 # MEMRA_DSPARK_SPEC=1 (and MEMRA_DSPARK_PREFIX_RESTORE=1 set by the caller) the seeds publish

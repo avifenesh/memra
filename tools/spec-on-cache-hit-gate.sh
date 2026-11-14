@@ -768,6 +768,16 @@ entry_census() { # $1 label  $2 server log
     elif [ "$idsb" = 0 ] && [ "$idseed" = 0 ]; then cls=none
     else cls=mixed; fi
     echo "    identity clause namespaces (default, \"grow\") on the $1 side: $idsb draft-bearing, $idseed plain -> its hits restored $cls entries"
+    # memra#1304: a publication reserves its room from a count of what it will allocate, and
+    # the server warns at the insert when the entry holds more than that. Every entry counted
+    # above is such a publication, so the line fails the gate.
+    if grep -q "its count missed a plane" "$log"; then
+        echo "  FAIL: $1: a publication held more than it reserved:"
+        grep "its count missed a plane" "$log" | head -n 3 | sed 's/^/    /'
+        FAILS=$((FAILS + 1))
+    else
+        echo "  ok: $1: no publication held more than it reserved"
+    fi
 }
 
 if [ "$ARM" = qwen ]; then
