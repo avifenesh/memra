@@ -1,0 +1,37 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (~/.cache/memra-1304/tree/crates/memra-server)
+warning: function `host_promote_reserve` is never used
+     --> crates/memra-server/src/worker.rs:15239:4
+      |
+15239 | fn host_promote_reserve(
+      |    ^^^^^^^^^^^^^^^^^^^^
+      |
+      = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-server` (lib test) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 6m 42s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::a_copy_publication_reserves_its_room_before_it_allocates ... FAILED
+
+failures:
+
+---- worker::tests::a_copy_publication_reserves_its_room_before_it_allocates stdout ----
+[prefix-cache] insert refused: entry 4166000000 exceeds budget 0 (live free memory holds the insert budget under its configured 50529000000; snapshot preflight, model q38)
+[prefix-cache] insert refused: entry 4166000000 exceeds budget 1278000000 (live free memory holds the insert budget under its configured 50529000000; snapshot preflight, model q38)
+[prefix-cache] insert refused: entry 4166000000 exceeds budget 4165999999 (live free memory holds the insert budget under its configured 50529000000; snapshot preflight, model q38)
+[prefix-cache] insert (t): 1 tokens, 3000.0MB (resident 3000.0MB / 50529MB, model q38)
+[prefix-cache] evict (snapshot preflight, LRU): 1 tokens, 3000.0MB (model q38)
+
+thread 'worker::tests::a_copy_publication_reserves_its_room_before_it_allocates' (3936947) panicked at crates/memra-server/src/worker.rs:42830:36:
+missing `let hi = host_promote_reserve(engine, px, host, pool_key, hi, prepared.host_id)?;` in: fn host_promote_prefix_hit( engine: &Engine, px: &mut PrefixCache, host: &mut HostPrefixCache, pool_key: &PoolKey, prompt: &[u32], device_best_len: usize, ) -> Option<(usize, PrefixPin)> { let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?; let prepared = host_promote_prepare(host, pool_key, hi)?; let _ = (px.total_bytes, prepared.host_id); let t0 = Instant::now(); let e = match device_entry_from_host(engine, &host.entries[pool_key][hi]) { Ok(e) => e, Err(err) => { host.rejected_allocs += 1; eprintln!("[prefix-host] promote failed ({err}); serving without the host entry"); return None; } }; let pin = host_promote_finish(engine, px, host, pool_key, prepared, e, t0)?; let i = px.id_index(&pin)?; Some((i, pin))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::a_copy_publication_reserves_its_room_before_it_allocates
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1288 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p memra-server --lib`

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
-print("| cell | arm | MemAvailable before (MB) | request | HTTP | code | Retry-After | tokens, finish | text | admission |")
+print("| cell | arm | MemAvailable before (MiB) | request | HTTP | code | Retry-After | tokens, finish | text | admission |")
 print("|---|---|---|---|---|---|---|---|---|---|")
 for cell in sorted(p for p in root.iterdir() if p.is_dir() and (p / "ab.jsonl").exists()):
     run = (cell / "run.log").read_text()

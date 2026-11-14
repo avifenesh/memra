@@ -1,0 +1,23 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (~/.cache/memra-1304/tree/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 4m 57s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::a_discrete_card_keeps_its_copy_publication_order ... FAILED
+
+failures:
+
+---- worker::tests::a_discrete_card_keeps_its_copy_publication_order stdout ----
+
+thread 'worker::tests::a_discrete_card_keeps_its_copy_publication_order' (184376) panicked at crates/memra-server/src/worker.rs:42933:36:
+missing `if !device_is_unified(engine) { return true; }` in: fn prefix_copy_preflight( engine: &Engine, px: &mut PrefixCache, hpx: &mut HostPrefixCache, pool_key: &PoolKey, to_allocate: usize, held: usize, ) -> bool { let _ = device_is_unified(engine); let (entry, allocated) = copy_preflight_split(to_allocate, held); let budget = prefix_insert_budget( engine, kv_flex_effective_budget(), px.total_bytes, allocated, ); let mut demote = |dead| host_demote_prefix_entry(engine, hpx, dead); px.prepare_snapshot(pool_key, entry, budget, Some(&mut demote))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::a_discrete_card_keeps_its_copy_publication_order
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1288 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

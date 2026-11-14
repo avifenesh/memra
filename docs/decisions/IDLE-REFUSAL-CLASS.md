@@ -1,9 +1,10 @@
 # An idle server refuses by the request's size, not the moment's memory (2026-11-13)
 
-Date: 2026-11-13. Issue memra#1304, branch `fix/1304-admit-class`, receipts
-`research/admit-idle-class-20261113/`. Device: one DGX Spark (GB10, unified memory), Qwen3.8-27B
-GGUF (NVFP4 trunk, Q5_K output head) with its masked MTP draft, 262,144 context, the served
-defaults.
+Date: 2026-11-13, review fold 2026-11-14. Issue memra#1304, branch `fix/1304-admit-class`,
+receipts `research/admit-idle-class-20261113/`. Devices: one DGX Spark (GB10, unified memory),
+Qwen3.8-27B GGUF (NVFP4 trunk, Q5_K output head) with its masked MTP draft, and with the DFlash2
+drafter for the copy-publisher cells, 262,144 context, the served defaults; one RTX 5090 Laptop
+(discrete), Qwen3.5-9B Q8_0, for the foreign-pressure cell.
 
 ## Problem
 
@@ -121,6 +122,21 @@ No out-of-memory line in any cell, in the server or the kernel. Red arms (tests 
 restored): the booking ignoring idle, the refusal always a 400, and the reject branch answering
 `EngineError::context_length` each fail their test. Receipts:
 [research/admit-idle-class-20261113/](../../research/admit-idle-class-20261113/README.md).
+
+Review fold (2026-11-14), measured on the fold's code as build id `408ad3a2d420`, before the
+branch's rebase onto main `63c351a2f4`, which changes no file of `crates/memra-server` and none
+the cells execute:
+
+| cell | result |
+|---|---|
+| GB10, the branch's six cells again on the fold build (1.8 and 1.5 GB, 2.4 GB, ample, the 20 GB pair, the teeth door) | the same status, code, `Retry-After`, tokens and text in each |
+| GB10, DFlash2 drafter, a 131k prompt, ample memory | the boundary entry is copied and published: 4,131.5 MB, the bytes the preflight counted (`preflight_bytes=4131520512 entry_bytes=4131520512`) |
+| the same, `MemAvailable` held at the 10,176 MB charge plus 600 MB by a holder that gives memory back as the server grows | admitted with nothing booked; 12,137 MB free at the publication, budget 8,535 MB, the copy fits and is published; the same text |
+| the same, the charge plus 1,500 MB held by a fixed amount of other memory | admitted; 6,366 MB free at the publication, budget 2,765 MB: `insert refused: entry 4131520512 exceeds budget 2765296228 (live free memory holds the insert budget under its configured 49153134592; snapshot preflight, model q38)` before anything is allocated; the request completes with the same text; `MemAvailable` never under 4,642 MiB |
+| RTX 5090 Laptop, the native-choices `kv` phase: another process takes all but 1 GiB of the card, then an `n = 8` request on the idle server | 503 `overloaded`, `Retry-After: 5`, "the largest context that fits now is 712 tokens" (available 1,193 MB, required 1,517 MB, capacity 16,424 MB); the stored receipt of the same cell on the earlier server is a 400; 200 once the memory is freed |
+
+Sixteen source red arms and the gate's (the stored 400 receipt under the new verifier) each fail
+for their stated reason; the list is in the research README.
 
 ## Limits
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """idle_req.py OUT.jsonl TAG [TOKENS]: memra#1304's request. short_req.py's request (the same
-document, nonce and greedy 512-token answer, TOKENS 1024 = g1k, 28000 = g28k), so its text compares
+document, nonce and greedy 512-token answer, TOKENS 1024 = g1k, 28000 = g28k, 131072 = g131k), so its text compares
 with memra#1221 and memra#1257's rows of that size; on an HTTP refusal the row also keeps the
 status, the retry headers and the error body. BENCH_BASE / BENCH_MODEL as pf_long_memra.py."""
 import json
@@ -39,7 +39,7 @@ def urlopen(*args, **kwargs):
 urllib.request.urlopen = urlopen
 
 n = int(sys.argv[3]) if len(sys.argv) > 3 else 1024
-name = {1024: "g1k", 28000: "g28k"}[n]
+name = {1024: "g1k", 28000: "g28k", 131072: "g131k"}[n]
 row = eos_ab.stream(
     [{"role": "user", "content": pf.doc(pf.lines_for(n, "fairness-bench-v1"), f"memra-rows nonce {name}")}],
     512, {"temperature": 0.0})

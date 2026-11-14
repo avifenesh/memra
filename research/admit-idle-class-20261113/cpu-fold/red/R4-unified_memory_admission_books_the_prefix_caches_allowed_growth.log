@@ -1,0 +1,24 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (~/.cache/memra-1304/tree/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 7m 40s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::unified_memory_admission_books_the_prefix_caches_allowed_growth ... FAILED
+
+failures:
+
+---- worker::tests::unified_memory_admission_books_the_prefix_caches_allowed_growth stdout ----
+
+thread 'worker::tests::unified_memory_admission_books_the_prefix_caches_allowed_growth' (1687262) panicked at crates/memra-server/src/worker.rs:42460:9:
+assertion failed: squashed.contains("let unified_growth = unified_prefix_growth_booking( device_is_unified(&engine), \
+             active.is_empty(), prefix_cache_budget_bytes(), px.total_bytes, );")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::unified_memory_admission_books_the_prefix_caches_allowed_growth
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1288 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p memra-server --lib`
