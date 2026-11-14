@@ -5,6 +5,11 @@ rowfault gate passes 7 of 7 on both residencies, the serve smoke passes with the
 byte-identical to its solo run, and the kernel gate passes 185 of 185. A draft-head stage's fault and a
 call flag no row map explains still fail the whole step.
 
+Scope of that evidence: a GB10, trunk layers 0 and 1. The rowfault gate ran both residencies (9 of 9
+each, at one rank and at two ranks on the card); every serve smoke ran the resident trunk. The serve
+smoke on the one-card residency, the rowfault gate over all 40 layers and on a pair of cards, and the
+support record's re-pin are RTX PRO 6000 runs that have not happened yet (Open, at the end).
+
 Since #1281 the route stays alive after a request-caused numeric fault, but the call flag only said
 that some router row of the step named no expert, so the route failed every request of that step.
 Now each call keeps a row map, the plan marks the faulted rows in it, and the route fails only the
@@ -91,9 +96,9 @@ both trees is the same binary (sha256 `73bef935...`), and `memra-server` differs
 | kernels (`fixtures-gpu/rand`) | 185 of 185 (main: 184 of 184, `kernels/base-main/`) | 185 of 185 |
 | rowfault, resident trunk (2 layers) | 7 of 7 | 7 of 7 |
 | rowfault, `--experts-host` (the served one-card residency) | 7 of 7 | 7 of 7 |
-| serve smoke (2 boots) | PASS, 14 checks | PASS, 16 checks (`smoke/`), after a harness miss (`smoke-try1/`) |
+| serve smoke on the resident trunk (2 boots) | PASS, 14 checks | PASS, 16 checks (`smoke/`), after a harness miss (`smoke-try1/`) |
 | red arm: the off-card MoE's old check restored | resident 7 of 7, `--experts-host` fails | |
-| serving-step A/B against main | no difference at the log's 1 ms | |
+| serving-step A/B against main, the resident trunk | no difference at the log's 1 ms | |
 
 **Kernels.** The new check is `schedule/moe_plan/out_of_range_id_rows700` (the three-kernel plan: 4
 out-of-range pairs in 700 rows, rows 5, 650 and 651 marked and no other); `out_of_range_id` (the
@@ -122,7 +127,10 @@ read. That is main's behaviour on the served residency: the forward's error carr
 route fails every request of the step. With the change the same arm passes 7 of 7.
 
 **Serve smoke** (`memra-server`, the route on a 2-layer trunk, `MEMRA_DSV41_TRUNK_LAYERS=2`: a
-rehearsal of the serving loop, not the checkpoint's answers; MEMRA_CTX=8192, greedy, `ignore_eos`, 32
+rehearsal of the serving loop, not the checkpoint's answers. Residency: the resident trunk. A GB10
+holds a 2-layer trunk's routed experts, so the route keeps them on the card: every step line of every
+boot here reads `cache_slots=[]`, and so does every step of the A/B below. These smokes therefore do
+not run the off-card MoE, the one forward path this change touches; MEMRA_CTX=8192, greedy, `ignore_eos`, 32
 tokens for A and B, 8 for the others, the checkpoint's page cache dropped before each boot):
 
 - boot 1, `MEMRA_DSV41_CALL_FAULT=24:1,64`: requests A and B share batched calls; step 24 poisons B
@@ -170,3 +178,72 @@ call word with a row map, with the unowned word, with no row, and clean). memra-
 1,264 passed, 18 ignored; `a_step_with_a_fault_on_one_row_fails_only_that_rows_request` is new (a
 two-request batched step with row 1 faulted fails request 1 and not request 0), and the door's parse
 test now covers `step:request`.
+
+## The review's runs (memra#1315, 2026-11-14)
+
+The independent review asked for the three-kernel plan, for N ranks and for the residency of every
+run. The head with the gate's 50-row case and `--devices` (`50413a3a4d`), one GB10 (121a,
+MEMRA_FULL_PREC=1 for the gates), `receipts/gb10-50413a3a4d/`:
+
+| gate | residency and ranks | result |
+|---|---|---|
+| kernels (`fixtures-gpu/rand`) | | 185 of 185 |
+| rowfault, 2 layers | resident trunk, one rank | 9 of 9 |
+| rowfault, 2 layers | one-card (`--experts-host`), one rank | 9 of 9 |
+| rowfault, 2 layers | resident trunk, two ranks on the card (`--devices 0,0`) | 9 of 9 |
+| rowfault, 2 layers | one-card, two ranks on the card | 9 of 9 |
+| serve smoke, 2 boots (`scripts/smoke5.sh`) | resident trunk | PASS, 18 checks |
+
+- **The three-kernel plan.** The two new checks: a 50-row call poisoned beside a clean one has its
+  rows 0 to 49 named and none of the clean call's, and the clean call's logits are its clean run's
+  bytes. 50 rows at top-6 are 300 pairs, and the plan takes its one-block form only up to 256
+  (`V41_PLAN_SMALL`), so the skipped pairs go through the three-kernel plan, and under
+  `--experts-host` through `Group::moe`. A clean run of the same two calls names nothing.
+- **N ranks.** Two ranks on one card run the N-rank path (each rank's plan over its expert range, the
+  gathers) on one device. The fully poisoned calls, whose blocks are empty on both ranks, pass on
+  both residencies; nothing there showed a limit. Two cards are a PRO 6000 run (Open).
+- **The smoke's residency** is checked by the script now: both boots ran the resident trunk (72 and
+  71 steps, none with an expert cache, no host-experts line). Its 18 checks are the 16 above and one
+  residency check a boot.
+
+CPU at `50413a3a4d` (`receipts/cpu-50413a3a4d/`, the build box): `cargo fmt --all -- --check` and
+`cargo clippy --workspace --all-targets -- -D warnings` pass, memra-engine's dsv41 lib tests 19 of 19,
+memra-server's lib tests 1,264 passed (18 ignored). `first-try-stale-build-script/` keeps the first
+try, whose test builds stopped with "cc1plus: fatal error: cu/dsv41_cutlass.cu: No such file or
+directory": the box's shared target dir handed this tree the build script compiled from the trial tree
+below, whose kernel list has that file. The passing run touched this tree's sources first.
+
+### The trial rebase onto the memra#1286 landing head
+
+memra#1286 replaces the GEMM bodies under the plan and lands before this change, with memra#1312. A
+trial: this change's three commits replayed on that landing branch's head `e225735efd`, memra#1312's
+three commits replayed first (`29d734d95c`, a local commit; the branch itself stays on main until
+memra#1286 is there). Three places conflict, the gate's usage text, `docs/FLAGS.md` and
+`docs/KERNELS.md`, and each keeps both sides (`receipts/trial-29d734d95c/scripts/`, the two resolution
+scripts); the route sources merge by themselves.
+
+| check on `29d734d95c` | result |
+|---|---|
+| fmt, clippy `-D warnings` on all targets (`cpu/`) | pass |
+| memra-engine's dsv41 lib tests, memra-server's lib tests | 20 of 20; 1,264 passed (18 ignored) |
+| kernels, GB10 (`gset/`) | 1,027 of 1,027 |
+| rowfault, 2 layers, GB10: resident and one-card, each at one rank and at `0,0` | 9 of 9 in each of the four arms |
+| serve smoke on the resident trunk, GB10 (`smoke/`) | PASS, 18 checks |
+
+So over memra#1286's GEMM bodies the other rows keep their bytes on both residencies (the rowfault
+gate's byte checks) and through the serving loop on the resident trunk (the smoke's solo comparison).
+
+## Open: the RTX PRO 6000 window
+
+Not run yet. These need PRO 6000 cards and the commit this change lands as:
+
+- **The serve smoke on the one-card residency**: the whole 40-layer trunk on one card, where the
+  route picks that residency by itself. A GB10 cannot run it: it holds a 2-layer trunk's experts, and
+  the route has no switch that puts them off a card with room.
+- **`dsv41-gate rowfault --layers 40 --experts-host`** on one card. Everything above is trunk layers 0
+  and 1 (ratio 0): no compressor layer (2 to 19) and no index-selection layer (20 to 39) has seen a
+  non-finite row on any device.
+- **`dsv41-gate rowfault --devices 0,1`** on a pair of cards.
+- **The support record.** This is the first route-code change after the record's pin:
+  `memra model verify checkpoint` and `verify serve` on one card at the landing commit, and the
+  re-pin.

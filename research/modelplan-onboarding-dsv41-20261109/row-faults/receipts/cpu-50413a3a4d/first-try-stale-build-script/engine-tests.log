@@ -1,0 +1,243 @@
+   Compiling memra-engine v0.141.1 ($RUN/src-rowflag/crates/memra-engine)
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+error: failed to run custom build command for `memra-engine v0.141.1 ($RUN/src-rowflag/crates/memra-engine)`
+
+Caused by:
+  process didn't exit successfully: `$RUN/target/debug/build/memra-engine-16bcdd2f3ed65b18/build-script-build` (exit status: 101)
+  --- stdout
+  cargo:rerun-if-env-changed=DOCS_RS
+  cargo:rustc-check-cfg=cfg(memra_env_registry_present)
+  cargo:rerun-if-changed=$RUN/src-rowflag/crates/memra-engine/env-registry.txt
+  cargo:rustc-cfg=memra_env_registry_present
+  cargo:rerun-if-env-changed=MEMRA_NVCC
+  cargo:rerun-if-env-changed=CUDA_HOME
+  cargo:rerun-if-env-changed=CUDA_PATH
+  cargo:rerun-if-env-changed=CUDA_ROOT
+  cargo:warning=nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+  cargo:rerun-if-env-changed=MEMRA_CUDA_ARCH
+  cargo:rerun-if-env-changed=MEMRA_CUTLASS
+  cargo:rerun-if-changed=third_party/cutlass
+  cargo:rustc-check-cfg=cfg(memra_portable_cuda)
+  cargo:rustc-check-cfg=cfg(memra_hopper_mma)
+  cargo:rustc-check-cfg=cfg(memra_sm100_tcgen05)
+  cargo:rustc-check-cfg=cfg(memra_cutlass)
+  cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH=120a
+  cargo:rustc-env=MEMRA_BUILT_CUDA_TARGET=120a
+  cargo:rerun-if-changed=cu/dsv4_dense_census.cuh
+  cargo:rerun-if-changed=cu/dsv4_dense_m1_exact_tail.cuh
+  cargo:rerun-if-changed=cu/dsv4_dense_tile.cuh
+  cargo:rerun-if-changed=cu/memra_pdl_chain.cuh
+  cargo:rerun-if-changed=cu/mma_tile.cuh
+  cargo:rerun-if-changed=cu/mmq_common.cuh
+  cargo:rerun-if-changed=cu/mmq_mma_i8.cuh
+  cargo:rerun-if-changed=cu/moe_kq_prims.cuh
+  cargo:rerun-if-changed=cu/sm100_blockscale_layout.cuh
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-changed=cu/kernels.cu
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_ENGINE_FATBIN=$RUN/target/debug/build/memra-engine-695a141412d646d5/out/kernels.fatbin
+  cargo:rerun-if-changed=cu/hybrid.cu
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_HYBRID_FATBIN=$RUN/target/debug/build/memra-engine-695a141412d646d5/out/hybrid.fatbin
+  cargo:rerun-if-changed=cu/kda.cu
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_KDA_FATBIN=$RUN/target/debug/build/memra-engine-695a141412d646d5/out/kda.fatbin
+  cargo:rerun-if-changed=cu/qmatvec.cu
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_QMATVEC_FATBIN=$RUN/target/debug/build/memra-engine-695a141412d646d5/out/qmatvec.fatbin
+  cargo:rerun-if-changed=cu/flash_attn.cu
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_FLASH_FATBIN=$RUN/target/debug/build/memra-engine-695a141412d646d5/out/flash_attn.fatbin
+  cargo:rerun-if-changed=cu/qmatvec_gemm.cu
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_GEMM_FATBIN=$RUN/target/debug/build/memra-engine-695a141412d646d5/out/qmatvec_gemm.fatbin
+  cargo:rerun-if-changed=cu/moe_router.cu
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_ROUTER_FATBIN=$RUN/target/debug/build/memra-engine-695a141412d646d5/out/moe_router.fatbin
+  cargo:rerun-if-changed=cu/spec_sample.cu
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+  cargo:rustc-env=MEMRA_SAMPLE_FATBIN=$RUN/target/debug/build/memra-engine-695a141412d646d5/out/spec_sample.fatbin
+  cargo:rustc-env=MEMRA_FLASH_FATBIN_KF8VF8=$RUN/target/debug/build/memra-engine-695a141412d646d5/out/flash_attn_kf8vf8.fatbin
+  cargo:rerun-if-env-changed=MEMRA_MMQ_X_Q45K
+  cargo:rerun-if-env-changed=MEMRA_MMQ_X_Q4
+  cargo:rerun-if-env-changed=MEMRA_MMQ_X_W4A8
+  cargo:rerun-if-env-changed=MEMRA_MMQ_X_IQEXP
+  cargo:rerun-if-env-changed=MEMRA_IQEXP_K16
+  cargo:rerun-if-env-changed=MEMRA_MMQ_Y_W4A8
+  cargo:rerun-if-env-changed=MEMRA_MMQ_FOLD_CEILING
+  cargo:rerun-if-env-changed=MEMRA_MMQ_F8F4_PLAIN
+  cargo:rerun-if-env-changed=MEMRA_MMQ_X_FP8
+  cargo:rerun-if-env-changed=MEMRA_MMQ_FP8BLK_PLAIN
+  cargo:rerun-if-env-changed=ACCPROBE_F32_PLAIN
+  cargo:rerun-if-env-changed=MEMRA_DSV4_FMAD
+  cargo:rerun-if-changed=cu/mmq_fp4.cu
+  cargo:rerun-if-changed=cu/mmq_fp4.cu
+  cargo:rerun-if-changed=cu/mmq_q45k.cu
+  cargo:rerun-if-changed=cu/mmq_q45k.cu
+  cargo:rerun-if-changed=cu/mmq_nvfp4_w4a8.cu
+  cargo:rerun-if-changed=cu/mmq_nvfp4_w4a8.cu
+  cargo:rerun-if-changed=cu/mmq_iq_experts.cu
+  cargo:rerun-if-changed=cu/mmq_iq_experts.cu
+  cargo:rerun-if-changed=cu/mmq_q8_0.cu
+  cargo:rerun-if-changed=cu/mmq_q8_0.cu
+  cargo:rerun-if-changed=cu/mmq_q4_0.cu
+  cargo:rerun-if-changed=cu/mmq_q4_0.cu
+  cargo:rerun-if-changed=cu/fp8_prefill.cu
+  cargo:rerun-if-changed=cu/fp8_prefill.cu
+  cargo:rerun-if-changed=cu/f16_prefill.cu
+  cargo:rerun-if-changed=cu/f16_prefill.cu
+  cargo:rerun-if-changed=cu/mmq_nvfp4_f8f4.cu
+  cargo:rerun-if-changed=cu/mmq_nvfp4_f8f4.cu
+  cargo:rerun-if-changed=cu/fa3_prefill.cu
+  cargo:rerun-if-changed=cu/fa3_prefill.cu
+  cargo:rerun-if-changed=cu/moe_f16_grouped.cu
+  cargo:rerun-if-changed=cu/moe_f16_grouped.cu
+  cargo:rerun-if-changed=cu/fp8_blk_dequant.cu
+  cargo:rerun-if-changed=cu/fp8_blk_dequant.cu
+  cargo:rerun-if-changed=cu/mmq_fp8_blk.cu
+  cargo:rerun-if-changed=cu/mmq_fp8_blk.cu
+  cargo:rustc-env=MEMRA_FP8_BLK_UNIT=cu/mmq_fp8_blk.cu
+  cargo:rerun-if-changed=cu/mmq_q8_0_f32acc.cu
+  cargo:rerun-if-changed=cu/mmq_q8_0_f32acc.cu
+  cargo:rerun-if-changed=cu/mla_attn.cu
+  cargo:rerun-if-changed=cu/mla_attn.cu
+  cargo:rerun-if-changed=cu/dsv4_gpu.cu
+  cargo:rerun-if-changed=cu/dsv4_gpu.cu
+  cargo:rerun-if-changed=cu/dsv4_sampler.cu
+  cargo:rerun-if-changed=cu/dsv4_sampler.cu
+  cargo:rerun-if-changed=cu/dsv41_gpu.cu
+  cargo:rerun-if-changed=cu/dsv41_gpu.cu
+  cargo:rerun-if-changed=cu/dsv41_cutlass.cu
+  cargo:rerun-if-changed=cu/dsv41_cutlass.cu
+
+  --- stderr
+  cu/kernels.cu(1199): warning #550-D: variable "head" was set but never used
+        int head = hr % n_heads;
+            ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cu/kernels.cu(2284): warning #550-D: variable "red" was set but never used
+        __attribute__((shared)) float red[1];
+                                      ^
+
+  cu/kernels.cu(2390): warning #550-D: variable "red" was set but never used
+        __attribute__((shared)) float red[1];
+                                      ^
+
+  cu/kernels.cu(2829): warning #550-D: variable "red" was set but never used
+        __attribute__((shared)) float red[1];
+                                      ^
+
+  cu/qmatvec.cu(5764): warning #550-D: variable "s1" was set but never used
+            int s0 = whichHalf * 2, s1 = s0 + 1;
+                                    ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cu/qmatvec.cu(12058): warning #550-D: variable "vals_sh" was set but never used
+        __attribute__((shared)) float vals_sh[2];
+                                      ^
+
+  cu/flash_attn.cu(848): warning #177-D: variable "alpha_self" was declared but never referenced
+                float alpha_self = 1.0f;
+                      ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cu/flash_attn.cu(1083): warning #177-D: variable "sMw" was declared but never referenced
+        float* sMw = sM + warp*16;
+               ^
+
+  cu/flash_attn.cu(3669): warning #177-D: variable "sSw" was declared but never referenced
+        float* sSw = sS + warp*16*32;
+               ^
+
+  cu/flash_attn.cu(3670): warning #177-D: variable "sMw" was declared but never referenced
+        float* sMw = sM + warp*16;
+               ^
+
+  cu/flash_attn.cu(268): warning #177-D: function "dq_fp8_elem" was declared but never referenced
+    static __attribute__((device)) __inline__ __attribute__((always_inline)) float dq_fp8_elem(
+                                                                                   ^
+
+  cu/flash_attn.cu(5784): warning #177-D: function "fa_ld_int_2a" was declared but never referenced
+    static __attribute__((device)) __inline__ __attribute__((always_inline)) int fa_ld_int_2a(const uint8_t* p) {
+                                                                                 ^
+
+  cu/qmatvec_gemm.cu(1489): warning #177-D: variable "kg" was declared but never referenced
+        int kg = lane % 4;
+            ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cu/qmatvec_gemm.cu(443): warning #821-D: extern inline function "decode_block_s<QT>(const unsigned char *, int, int8_t *, float *) [with QT=9]" was referenced but not defined
+    __attribute__((device)) __inline__ __attribute__((always_inline)) float decode_block_s(const unsigned char* b, int grp, int8_t* out, float* bias);
+                                                                            ^
+
+  cu/moe_router.cu(627): warning #177-D: variable "s_pick_w" was declared but never referenced
+        __attribute__((shared)) float s_pick_w[32];
+                                      ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cu/flash_attn.cu(848): warning #177-D: variable "alpha_self" was declared but never referenced
+                float alpha_self = 1.0f;
+                      ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cu/flash_attn.cu(1083): warning #177-D: variable "sMw" was declared but never referenced
+        float* sMw = sM + warp*16;
+               ^
+
+  cu/flash_attn.cu(3669): warning #177-D: variable "sSw" was declared but never referenced
+        float* sSw = sS + warp*16*32;
+               ^
+
+  cu/flash_attn.cu(3670): warning #177-D: variable "sMw" was declared but never referenced
+        float* sMw = sM + warp*16;
+               ^
+
+  cu/flash_attn.cu(196): warning #177-D: function "dq_q8_0_elem" was declared but never referenced
+    static __attribute__((device)) __inline__ __attribute__((always_inline)) float dq_q8_0_elem(
+                                                                                   ^
+
+  cu/flash_attn.cu(206): warning #177-D: function "dq_q5_1_elem" was declared but never referenced
+    static __attribute__((device)) __inline__ __attribute__((always_inline)) float dq_q5_1_elem(
+                                                                                   ^
+
+  cu/flash_attn.cu(221): warning #177-D: function "warp_amax" was declared but never referenced
+    static __attribute__((device)) __inline__ __attribute__((always_inline)) float warp_amax(float v) {
+                                                                                   ^
+
+  cu/flash_attn.cu(227): warning #177-D: function "warp_min" was declared but never referenced
+    static __attribute__((device)) __inline__ __attribute__((always_inline)) float warp_min(float v) {
+                                                                                   ^
+
+  cu/flash_attn.cu(232): warning #177-D: function "warp_max" was declared but never referenced
+    static __attribute__((device)) __inline__ __attribute__((always_inline)) float warp_max(float v) {
+                                                                                   ^
+
+  cu/flash_attn.cu(5784): warning #177-D: function "fa_ld_int_2a" was declared but never referenced
+    static __attribute__((device)) __inline__ __attribute__((always_inline)) int fa_ld_int_2a(const uint8_t* p) {
+                                                                                 ^
+
+  cu/mmq_q45k.cu(499): warning #177-D: function "mmq_q45k_nsm" was declared but never referenced
+    static int mmq_q45k_nsm() {
+               ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cu/mmq_nvfp4_f8f4.cu(53): warning #177-D: function "mma_f8f4_16x8x32" was declared but never referenced
+    static __attribute__((device)) __inline__ __attribute__((always_inline)) void mma_f8f4_16x8x32(
+                                                                                  ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cc1plus: fatal error: cu/dsv41_cutlass.cu: No such file or directory
+  compilation terminated.
+
+  thread 'main' (2041433) panicked at crates/memra-engine/build.rs:826:13:
+  nvcc static-lib build failed for cu/dsv41_cutlass.cu
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

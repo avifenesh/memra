@@ -1,0 +1,26 @@
+fmt start 03:25:56
+fmt rc=0 03:26:04
+clippy start 03:26:04
+clippy rc=0 03:33:22
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7m 17s
+engine-tests start 03:33:22
+engine-tests rc=101 03:37:59
+server-tests start 03:37:59
+server-tests rc=101 03:43:08
+$RUN/out/cpu-rowflag/engine-tests.log:error: failed to run custom build command for `memra-engine v0.141.1 ($RUN/src-rowflag/crates/memra-engine)`
+$RUN/out/cpu-rowflag/engine-tests.log-
+$RUN/out/cpu-rowflag/engine-tests.log-Caused by:
+$RUN/out/cpu-rowflag/engine-tests.log-  process didn't exit successfully: `$RUN/target/debug/build/memra-engine-16bcdd2f3ed65b18/build-script-build` (exit status: 101)
+$RUN/out/cpu-rowflag/engine-tests.log-  --- stdout
+$RUN/out/cpu-rowflag/engine-tests.log-  cargo:rerun-if-env-changed=DOCS_RS
+$RUN/out/cpu-rowflag/engine-tests.log-  cargo:rustc-check-cfg=cfg(memra_env_registry_present)
+--
+$RUN/out/cpu-rowflag/server-tests.log:error: failed to run custom build command for `memra-engine v0.141.1 ($RUN/src-rowflag/crates/memra-engine)`
+$RUN/out/cpu-rowflag/server-tests.log-
+$RUN/out/cpu-rowflag/server-tests.log-Caused by:
+$RUN/out/cpu-rowflag/server-tests.log-  process didn't exit successfully: `$RUN/target/debug/build/memra-engine-16bcdd2f3ed65b18/build-script-build` (exit status: 101)
+$RUN/out/cpu-rowflag/server-tests.log-  --- stdout
+$RUN/out/cpu-rowflag/server-tests.log-  cargo:rerun-if-env-changed=DOCS_RS
+$RUN/out/cpu-rowflag/server-tests.log-  cargo:rustc-check-cfg=cfg(memra_env_registry_present)
+CPU-DONE 03:43:08
