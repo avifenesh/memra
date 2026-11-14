@@ -1084,6 +1084,10 @@ The `MEMRA_ADMIT_DRIVER_HEADROOM_MB` row before memra#1257 (2026-11-13; FLAGS.md
 
 | `MEMRA_ADMIT_DRIVER_HEADROOM_MB` | 2048; `0` = off | Driver-headroom rung of admission. Admission counts the async pool's cached blocks as free, which a large prime's driver allocations (cuBLAS workspaces, graph instantiation, blocks larger than any cached fragment) cannot use. After every admission, on each owned device whose driver free is below the floor while the pool holds cached blocks, `cuMemPoolTrimTo` releases only the shortfall (`[admit-trim]` line); the slice re-maps once on next use. `0` is the rollback seam. Unified memory (GB10) keeps 2048 on the raw `cuMemGetInfo` reading, and the derived unified prefix-cache share subtracts this floor. | [PREFIX-CACHE-DISCRETE.md](decisions/PREFIX-CACHE-DISCRETE.md), [history](FLAGS-HISTORY.md#memra_admit_driver_headroom_mb) |
 
+The `MEMRA_ADMIT_DRIVER_HEADROOM_MB` row before memra#1258 (2026-11-14; FLAGS.md section "Server (memra-server)"):
+
+| `MEMRA_ADMIT_DRIVER_HEADROOM_MB` | 2048; `0` = off | Driver-headroom rung of admission. Admission counts the async pool's cached blocks as free, which a large prime's driver allocations (cuBLAS workspaces, graph instantiation, blocks larger than any cached fragment) cannot use. After every admission, on each owned device whose driver free is below the floor while the pool holds cached blocks, `cuMemPoolTrimTo` releases only the shortfall (`[admit-trim]` line); the slice re-maps once on next use. `0` is the rollback seam. The free reading is `cuMemGetInfo` on a discrete card and, on unified memory (GB10), the larger of that and `MemAvailable`, the reading admission sizes with (memra#1257: with a full page cache the raw reading sat under the floor before nearly every prime while `MemAvailable` was about 100 GB). The floor stays 2048 there, and the derived unified prefix-cache share subtracts it. | [PREFIX-CACHE-DISCRETE.md](decisions/PREFIX-CACHE-DISCRETE.md), [history](FLAGS-HISTORY.md#memra_admit_driver_headroom_mb) |
+
 ## MEMRA_ADMIT_RESERVE_MB
 
 The `MEMRA_ADMIT_RESERVE_MB` row before the 2026-11-12 rewrite (FLAGS.md section "Server (memra-server)"):

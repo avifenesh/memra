@@ -2331,6 +2331,25 @@ impl GdnScanWs {
     }
 }
 
+/// The free-memory floor under which a prime's GDN scan workspace is not parked (memra#1258).
+/// 0, the default and what an engine binary without admission runs with, parks always.
+static PRIME_GDN_WS_PARK_FLOOR: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+/// Sets the floor a prime's GDN scan workspace needs free on its device to stay parked between
+/// primes. A server passes the floor its admission keeps free in front of every request
+/// (`MEMRA_ADMIT_DRIVER_HEADROOM_MB`): parked bytes count as cached, but only a prime or a trim
+/// can use them, so on a device under that floor they go back to the pool instead.
+pub fn set_prime_gdn_ws_park_floor(bytes: usize) {
+    PRIME_GDN_WS_PARK_FLOOR.store(bytes, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether a prime's GDN scan workspace stays parked at the prime's end: always with no floor;
+/// with one, only while the device's free reading (`None`: unreadable) holds it.
+pub(crate) fn prime_gdn_ws_parks(free: Option<usize>, floor: usize) -> bool {
+    floor == 0 || free.is_some_and(|free| free >= floor)
+}
+
 #[cfg(test)]
 mod gdn_scan_ws_tests {
     use super::GdnScanWs;
@@ -2361,6 +2380,21 @@ mod gdn_scan_ws_tests {
         }
         // Qwen3.8-27B (48 value heads, kb16 sized for 48): 123,072 B/row, 504 MB at 4,096 rows.
         assert_eq!(GdnScanWs::row_bytes(48, 48, true), 123_072);
+    }
+
+    /// memra#1258: the workspace stays parked only while the device holds the park floor. With
+    /// no floor it always parks; under the floor, or on a device that cannot be read, it does not
+    /// (94 MB is the driver's free reading after a prime in the margin sweep's zero-margin row).
+    #[test]
+    fn the_workspace_parks_only_above_the_floor() {
+        let floor = 2048usize << 20;
+        assert!(super::prime_gdn_ws_parks(None, 0));
+        assert!(super::prime_gdn_ws_parks(Some(0), 0));
+        assert!(super::prime_gdn_ws_parks(Some(floor), floor));
+        assert!(super::prime_gdn_ws_parks(Some(floor + 1), floor));
+        assert!(!super::prime_gdn_ws_parks(Some(floor - 1), floor));
+        assert!(!super::prime_gdn_ws_parks(Some(94 << 20), floor));
+        assert!(!super::prime_gdn_ws_parks(None, floor));
     }
 }
 
@@ -29906,13 +29940,36 @@ impl Engine {
 
     /// Parks a prime's GDN scan workspace between primes (memra#1258): it stays mapped for the
     /// next prime and counts as reclaimable until a trim frees it.
+    ///
+    /// Only a prime or a trim can use parked bytes. The steps that follow a prime allocate from
+    /// the pool's cached blocks and, past those, from the driver. So the workspace is parked only
+    /// while the device's free reading (admission's, `allocatable_mem_info`) holds the park floor
+    /// (`set_prime_gdn_ws_park_floor`). Under it the workspace is dropped here and its bytes are
+    /// cached blocks again, as the per-layer planes were before the workspace: the next prime
+    /// allocates a new one.
     pub(crate) fn prime_gdn_ws_park(&self, ws: Option<GdnScanWs>) {
-        if ws.is_some() {
-            *self
-                .prime_gdn_ws_parked
-                .lock()
-                .unwrap_or_else(|p| p.into_inner()) = ws;
+        let Some(ws) = ws else {
+            return;
+        };
+        let floor = PRIME_GDN_WS_PARK_FLOOR.load(std::sync::atomic::Ordering::Relaxed);
+        let free = (floor > 0)
+            .then(|| crate::unified_memory::allocatable_mem_info(self.ctx()).ok())
+            .flatten()
+            .map(|(free, _)| free);
+        if !prime_gdn_ws_parks(free, floor) {
+            eprintln!(
+                "[prime-ws] dev{} GDN scan workspace not parked: free_bytes={} floor_bytes={floor} \
+                 workspace_bytes={}",
+                self.ctx().ordinal(),
+                free.map_or_else(|| "unreadable".to_string(), |free| free.to_string()),
+                ws.bytes(),
+            );
+            return;
         }
+        *self
+            .prime_gdn_ws_parked
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(ws);
     }
 
     /// Takes the parked workspace back for a prime, when there is one.
