@@ -789,18 +789,29 @@ mod tests {
                 &mut pool,
                 &("model-a".into(), "tenant-b".into()),
                 &prompt,
-                0
+                &mut None
             )
             .is_none()
         );
         assert_eq!(pool.promotions, 0);
-        assert!(host_promote_prefix_hit(&root, &mut px, &mut pool, &key, &prompt, 0).is_some());
+        let mut hit = None;
+        assert!(
+            host_promote_prefix_hit(&root, &mut px, &mut pool, &key, &prompt, &mut hit).is_some()
+        );
+        // The promotion leaves the caller's hit at the promoted entry (memra#1304 review).
+        assert_eq!(
+            hit.map(|i| px.entries[&key][i].toks.len()),
+            Some(prompt.len())
+        );
         assert_eq!(pool.promotions, 1);
         // A new artifact/model instance under the SAME name invalidates the old
         // host image before allocating, independently of VERIFY.
         pool.model_generations.insert(key.0.clone(), Arc::new(()));
         let mut empty = PrefixCache::default();
-        assert!(host_promote_prefix_hit(&root, &mut empty, &mut pool, &key, &prompt, 0).is_none());
+        assert!(
+            host_promote_prefix_hit(&root, &mut empty, &mut pool, &key, &prompt, &mut None)
+                .is_none()
+        );
         assert_eq!(pool.n_entries(), 0);
         assert_eq!(empty.n_entries(), 0);
         // Corruption must be rejected by the real hook, not merely hash unequal.
@@ -814,7 +825,10 @@ mod tests {
             .data
             .as_mut_slice()[0] ^= 1;
         assert!(pool.insert(&key, damaged));
-        assert!(host_promote_prefix_hit(&root, &mut empty, &mut pool, &key, &prompt, 0).is_none());
+        assert!(
+            host_promote_prefix_hit(&root, &mut empty, &mut pool, &key, &prompt, &mut None)
+                .is_none()
+        );
         assert_eq!(pool.digest_mismatches, 1);
         assert_eq!(pool.n_entries(), 0);
         assert_eq!(empty.n_entries(), 0);
@@ -841,8 +855,9 @@ mod tests {
         assert_eq!(preflight.total_bytes, 0);
         assert_eq!(pool.demotions, demotions + 1);
         assert_eq!(pool.total_bytes, size + prompt.len() * 4 + 8);
-        let (index, _) =
-            host_promote_prefix_hit(&root, &mut preflight, &mut pool, &key, &prompt, 0).unwrap();
+        let mut hit = None;
+        host_promote_prefix_hit(&root, &mut preflight, &mut pool, &key, &prompt, &mut hit).unwrap();
+        let index = hit.expect("the promoted entry is the hit");
         assert_eq!(digest(&preflight.entries[&key][index]).unwrap(), expected);
         eprintln!(
             "host-glm: prepare_snapshot reserved bytes, respected lease, demoted and promoted real state PASS"

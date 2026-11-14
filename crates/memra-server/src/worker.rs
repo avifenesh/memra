@@ -6350,6 +6350,14 @@ fn prefix_insert_refused_live(
     )
 }
 
+/// Why a snapshot preflight refuses (`PrefixCache::snapshot_refusal`): the entry is larger than
+/// the whole budget, or it cannot fit beside the bytes in-flight sessions lease.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SnapshotRefusal {
+    Oversize,
+    Leased,
+}
+
 /// A prefix-cache insert budget and the configured budget it came from. They are equal on a
 /// discrete card and wherever the live reading does not bind; on unified memory
 /// `prefix_insert_budget` clamps `bytes` under `configured`. A refusal reads both to name its
@@ -9301,9 +9309,9 @@ fn device_is_unified(engine: &Engine) -> bool {
 /// `prefix_copy_preflight`. A lending publication allocates no plane. (An entry several sessions
 /// share, a fanout's or a choice group's, needs a second session, whose admission booked the
 /// whole growth.) The insert wrappers clamp once more when the entry exists. The next arrival
-/// finds a session active and books the whole growth again. Booking it on an idle box with an empty cache refused a 1k request at
-/// `MemAvailable` 1.8-2.0 GB (`available 0MB` against a half-pool budget) that the same box
-/// served with the cache off.
+/// finds a session active and books the whole growth again. Booking it on an idle box with an
+/// empty cache refused a 1k request at `MemAvailable` 1.8-2.0 GB (`available 0MB` against a
+/// half-pool budget) that the same box served with the cache off.
 fn unified_prefix_growth_booking(
     unified: bool,
     idle: bool,
@@ -9340,6 +9348,61 @@ fn unified_insert_budget(
     )
 }
 
+/// The live reading a unified-memory insert is clamped against: the allocatable free bytes (the
+/// pool's cached blocks included) and the bytes that must stay free (the driver headroom and the
+/// transient reserve).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LiveMemory {
+    free: usize,
+    headroom: usize,
+}
+
+/// The device's live reading for the insert guard: `None` on a discrete card, which has no such
+/// clamp, and when the reading fails.
+fn live_memory(engine: &Engine) -> Option<LiveMemory> {
+    if !device_is_unified(engine) {
+        return None;
+    }
+    let (free, _) = effective_free_bytes(engine)?;
+    Some(LiveMemory {
+        free,
+        headroom: admit_driver_headroom_bytes().saturating_add(SPEC_SHRINK_RESERVE),
+    })
+}
+
+/// The insert budget from a live reading (the engine-free half of [`prefix_insert_budget`]): the
+/// configured budget with no reading, else [`unified_insert_budget`], with a log line when the
+/// clamp binds. `allocated` is what of the entry exists already: all of it at an insert, none of
+/// it at a snapshot preflight, the capture's own bytes at a copy preflight.
+fn insert_budget_at(
+    configured: usize,
+    resident: usize,
+    allocated: usize,
+    live: Option<LiveMemory>,
+) -> InsertBudget {
+    let Some(live) = live else {
+        return configured.into();
+    };
+    let budget = unified_insert_budget(configured, resident, allocated, live.free, live.headroom);
+    if budget < configured {
+        eprintln!(
+            "[prefix-cache] unified memory: insert budget {:.0}MB (configured {:.0}MB; live \
+             free {:.0}MB, headroom {:.0}MB, resident {:.0}MB, of the entry already allocated \
+             {:.0}MB)",
+            budget as f64 / 1e6,
+            configured as f64 / 1e6,
+            live.free as f64 / 1e6,
+            live.headroom as f64 / 1e6,
+            resident as f64 / 1e6,
+            allocated as f64 / 1e6,
+        );
+    }
+    InsertBudget {
+        bytes: budget,
+        configured,
+    }
+}
+
 /// The insert budget the production wrappers use: unchanged on a discrete card; on unified
 /// memory clamped by [`unified_insert_budget`] against the live reading, with a log line when the
 /// clamp binds.
@@ -9349,30 +9412,10 @@ fn prefix_insert_budget(
     resident: usize,
     allocated: usize,
 ) -> InsertBudget {
-    if configured == 0 || !device_is_unified(engine) {
+    if configured == 0 {
         return configured.into();
     }
-    let Some((live_free, _)) = effective_free_bytes(engine) else {
-        return configured.into();
-    };
-    let headroom = admit_driver_headroom_bytes().saturating_add(SPEC_SHRINK_RESERVE);
-    let budget = unified_insert_budget(configured, resident, allocated, live_free, headroom);
-    if budget < configured {
-        eprintln!(
-            "[prefix-cache] unified memory: insert budget {:.0}MB (configured {:.0}MB; live \
-             free {:.0}MB, headroom {:.0}MB, resident {:.0}MB, new entry {:.0}MB)",
-            budget as f64 / 1e6,
-            configured as f64 / 1e6,
-            live_free as f64 / 1e6,
-            headroom as f64 / 1e6,
-            resident as f64 / 1e6,
-            allocated as f64 / 1e6,
-        );
-    }
-    InsertBudget {
-        bytes: budget,
-        configured,
-    }
+    insert_budget_at(configured, resident, allocated, live_memory(engine))
 }
 
 /// The budget the cache is held to between inserts (memra#1221 review): `prefix_insert_budget`'s
@@ -13365,6 +13408,42 @@ impl PrefixCache {
             .map(|_| inserted_id)
     }
 
+    /// Whether [`Self::prepare_snapshot`] would refuse `bytes` under `budget`, and why, deciding
+    /// it as that function does and evicting nothing: a caller that must not disturb anything
+    /// for a reservation that will be refused asks here first (a host promotion's candidate,
+    /// memra#1304 review).
+    fn snapshot_refusal(&mut self, bytes: usize, budget: usize) -> Option<SnapshotRefusal> {
+        // The adoptions are charged before the room is decided (memra#1221 review).
+        self.reconcile_loans(None, "snapshot", false);
+        if bytes > budget {
+            return Some(SnapshotRefusal::Oversize);
+        }
+        let needed = self.total_bytes.saturating_sub(budget - bytes);
+        let reclaimable = usize::try_from(self.evictable_bytes()).unwrap_or(usize::MAX);
+        (needed > reclaimable).then_some(SnapshotRefusal::Leased)
+    }
+
+    /// Runs `f`, which may evict or move entries (a reservation, a pinned insert), with the
+    /// entry at `hit` leased, and returns `f`'s result with that entry's index afterwards
+    /// (memra#1304 review). An index into a pool is only good until the next eviction: a
+    /// removal swaps the pool's last entry into the hole, so an index held across one names
+    /// another entry or nothing. The lease keeps the entry from being the victim and lets it be
+    /// found again by its id; it credits no hit.
+    fn with_hit_leased<R>(
+        &mut self,
+        key: &PoolKey,
+        hit: Option<usize>,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> (R, Option<usize>) {
+        let lease = hit.and_then(|i| self.pin(key, i));
+        let out = f(self);
+        let hit = lease.as_ref().and_then(|pin| self.id_index(pin));
+        if let Some(pin) = &lease {
+            self.unpin(pin);
+        }
+        (out, hit)
+    }
+
     /// Reserve publication room before allocating its device snapshot. Leases are
     /// authoritative; every unleased byte is reclaimable, oldest first (memra#523 item 1), so
     /// the only refusals are an entry larger than the whole budget or one that cannot fit
@@ -13381,22 +13460,18 @@ impl PrefixCache {
         const WHY: &str = "snapshot preflight";
         let limit: InsertBudget = budget.into();
         let budget = limit.bytes;
-        // The adoptions are charged before the room is decided (memra#1221 review).
-        self.reconcile_loans(None, "snapshot", false);
-        if bytes > budget {
-            self.refuse_oversize(bytes, limit, WHY, key);
-            return false;
+        match self.snapshot_refusal(bytes, budget) {
+            Some(SnapshotRefusal::Oversize) => {
+                self.refuse_oversize(bytes, limit, WHY, key);
+                return false;
+            }
+            Some(SnapshotRefusal::Leased) => {
+                self.refuse_leased(bytes, budget, WHY, key);
+                return false;
+            }
+            None => {}
         }
         let target = budget - bytes;
-        let needed = self.total_bytes.saturating_sub(target);
-        if needed == 0 {
-            return true;
-        }
-        let reclaimable = usize::try_from(self.evictable_bytes()).unwrap_or(usize::MAX);
-        if needed > reclaimable {
-            self.refuse_leased(bytes, budget, WHY, key);
-            return false;
-        }
         while self.total_bytes > target {
             if self.strip_tail_victim() > 0 {
                 continue;
@@ -15356,21 +15431,100 @@ fn host_promote_candidate(
 /// The promote hook (admit-time): device miss (or a device hit SHALLOWER than the host's
 /// best) -> host probe with the SAME exact-token / PC-ISO key rules -> on hit, re-materialize
 /// a normal device `PrefixEntry` and insert it PINNED so it survives until the unmodified hit
-/// path pins it for the serving session. Returns the device pool index plus the insertion
-/// pin; the caller RELEASES that pin after the probe, whatever route the request took. The
-/// host twin is kept (recency-touched): a later re-eviction of the promoted entry demotes a
-/// fresh copy anyway, and keeping it makes an evict/promote flap cheap to re-serve.
+/// path pins it for the serving session. Returns the insertion pin, which the caller RELEASES
+/// after the probe, whatever route the request took. The host twin is kept (recency-touched): a
+/// later re-eviction of the promoted entry demotes a fresh copy anyway, and keeping it makes an
+/// evict/promote flap cheap to re-serve.
+///
+/// `device_hit` is the caller's device hit, and this function owns it across the promotion
+/// (memra#1304 review): it is the promoted entry's index after a promotion, and the same entry's
+/// current index after one that did not happen. A promotion can evict (the unified-memory
+/// reservation, the pinned insert) and still fail, and an eviction moves entries, so the index
+/// the caller came in with is not one it may read again; passing it by reference leaves the
+/// caller no other index to read. On unified memory the hit is leased across the promotion, so
+/// the reservation cannot take the entry the request would otherwise be served from.
 fn host_promote_prefix_hit(
     engine: &Engine,
     px: &mut PrefixCache,
     host: &mut HostPrefixCache,
     pool_key: &PoolKey,
     prompt: &[u32],
-    device_best_len: usize,
-) -> Option<(usize, PrefixPin)> {
+    device_hit: &mut Option<usize>,
+) -> Option<PrefixPin> {
+    let device_best_len = device_hit.map_or(0, |i| px.entries[pool_key][i].toks.len());
     let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
+    let memory = copy_memory(engine);
+    let (pin, kept) = host_promote_holding_hit(px, pool_key, *device_hit, memory.unified, |px| {
+        host_promote_materialize(engine, px, host, pool_key, hi, &memory)
+    });
+    *device_hit = host_promote_resolved_hit(px, pin.as_ref(), kept);
+    pin.filter(|_| device_hit.is_some())
+}
+
+/// Runs a promotion (`promote`, which may evict and may fail) holding the caller's device hit:
+/// leased on unified memory (`PrefixCache::with_hit_leased`), where the reservation evicts
+/// before the promotion can fail, and followed by its id on a discrete card, where a promotion
+/// that fails has evicted nothing and the lease's recency bump would change the eviction order.
+/// Returns the promotion's result and the hit's index afterwards.
+fn host_promote_holding_hit<R>(
+    px: &mut PrefixCache,
+    pool_key: &PoolKey,
+    hit: Option<usize>,
+    unified: bool,
+    promote: impl FnOnce(&mut PrefixCache) -> R,
+) -> (R, Option<usize>) {
+    if unified {
+        return px.with_hit_leased(pool_key, hit, promote);
+    }
+    let id = hit.map(|i| px.entries[pool_key][i].id);
+    let out = promote(px);
+    let hit = id.and_then(|id| {
+        px.id_index(&PrefixPin {
+            key: pool_key.clone(),
+            id,
+        })
+    });
+    (out, hit)
+}
+
+/// The device hit after a promotion: the promoted entry's index when it was inserted (`pin`),
+/// else the index the earlier hit has now (`kept`, `None` when it is gone).
+fn host_promote_resolved_hit(
+    px: &PrefixCache,
+    pin: Option<&PrefixPin>,
+    kept: Option<usize>,
+) -> Option<usize> {
+    match pin {
+        Some(pin) => px.id_index(pin),
+        None => kept,
+    }
+}
+
+/// The promotion itself: the candidate's identity, its room on unified memory, the device copy
+/// and the pinned insert. `None` after a typed line.
+fn host_promote_materialize(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    host: &mut HostPrefixCache,
+    pool_key: &PoolKey,
+    hi: usize,
+    memory: &CopyMemory,
+) -> Option<PrefixPin> {
     let prepared = host_promote_prepare(host, pool_key, hi)?;
-    let hi = host_promote_reserve(engine, px, host, pool_key, hi, prepared.host_id)?;
+    let evictions = px.evictions;
+    let hi = host_promote_reserve(
+        px,
+        host,
+        pool_key,
+        hi,
+        prepared.host_id,
+        memory,
+        &mut |host, dead| host_demote_prefix_entry(engine, host, dead),
+    )?;
+    // As at a spec publication: the copy counts on what the reservation evicted (memra#1278).
+    if px.evictions > evictions {
+        vmm_reap_for("promote preflight");
+    }
     let t0 = Instant::now();
     let e = match device_entry_from_host(engine, &host.entries[pool_key][hi]) {
         Ok(e) => e,
@@ -15380,9 +15534,7 @@ fn host_promote_prefix_hit(
             return None;
         }
     };
-    let pin = host_promote_finish(engine, px, host, pool_key, prepared, e, t0)?;
-    let i = px.id_index(&pin)?;
-    Some((i, pin))
+    host_promote_finish(engine, px, host, pool_key, prepared, e, t0)
 }
 
 /// The promote candidate's checked identity: its model generation is current. `None` from
@@ -15414,25 +15566,33 @@ fn host_promote_prepare(
 }
 
 /// The promoted copy's room, reserved before `device_entry_from_host` allocates it (unified
-/// memory, memra#1304 review; `prefix_copy_preflight`). The reservation can demote older device
-/// entries into the host tier, which shifts its indexes and evicts its oldest entries: the
-/// candidate is touched first, so it is the last the tier gives up, and is found again by its
-/// id. `None` after the preflight's typed refusal, or when the candidate left the tier; the
-/// caller serves cold. A discrete card returns `hi` untouched.
+/// memory, memra#1304 review; `copy_preflight_plan`). The reservation can demote older device
+/// entries into the host tier (`demote`), which shifts its indexes and evicts its oldest
+/// entries: the candidate is touched first, so it is the last the tier gives up, and is found
+/// again by its id. A reservation that will be refused is refused before that touch
+/// (`PrefixCache::snapshot_refusal`), so a promotion that does not happen leaves the tier's
+/// recency as it was. `None` after the preflight's typed refusal, or when the candidate left the
+/// tier; the caller serves cold. A discrete card returns `hi` untouched. Engine-free.
 fn host_promote_reserve(
-    engine: &Engine,
     px: &mut PrefixCache,
     host: &mut HostPrefixCache,
     pool_key: &PoolKey,
     hi: usize,
     host_id: u64,
+    memory: &CopyMemory,
+    demote: &mut dyn FnMut(&mut HostPrefixCache, PrefixEntry),
 ) -> Option<usize> {
-    if !device_is_unified(engine) {
-        return Some(hi);
-    }
-    host.touch(pool_key, hi);
     let bytes = host.entries[pool_key][hi].device_bytes;
-    if !prefix_copy_preflight(engine, px, host, pool_key, bytes, 0) {
+    let Some(reservation) = copy_preflight_plan(px, memory, bytes, 0) else {
+        return Some(hi);
+    };
+    if px
+        .snapshot_refusal(reservation.entry, reservation.budget.bytes)
+        .is_none()
+    {
+        host.touch(pool_key, hi);
+    }
+    if !reservation.reserve(px, pool_key, Some(&mut |dead| demote(host, dead))) {
         return None;
     }
     host_entry_index_by_id(host, pool_key, host_id)
@@ -16987,58 +17147,89 @@ struct DraftTailExport<'a> {
     export: &'a dyn Fn() -> Option<memra_engine::dflash::DflashKvTail>,
 }
 
-/// What a spec boundary publication adds to the cache, counted before any of it is allocated
-/// (memra#1304 review): `(to_allocate, held)`. `to_allocate` is what the publication will
-/// allocate: on the copying arm rows `[0, pos)` of every executed trunk layer and of the draft
-/// plane; on either arm the latent slices `snapshot_plane_at` cuts and the drafter tail
-/// (`tail_bytes`). `held` is what the capture already holds and the entry is charged for (the
-/// recurrent state, the latent tail rings, the boundary hidden row). Their sum is the entry's
-/// `bytes` when every optional plane publishes; an entry that drops its draft plane or its tail
-/// is smaller, never larger.
-fn spec_publication_bytes(
+/// The sizes a spec boundary publication is counted from, read off the session's cache and its
+/// capture before anything is allocated (memra#1304 review). Plain numbers, so the counting and
+/// the reservation are engine-free (`spec_publication_reserve`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct PublicationGeometry {
+    /// Per-token K and V bytes of every executed trunk layer.
+    trunk: Vec<(usize, usize)>,
+    /// The draft plane's, when it covers the boundary.
+    draft: Option<(usize, usize)>,
+    /// `f32`s `snapshot_plane_at` will copy for the latent layers (`latent_publish_floats`).
+    latent_floats: usize,
+    /// Bytes the capture already holds and the entry is charged for: the recurrent state, the
+    /// latent tail rings, the boundary hidden row.
+    held: usize,
+}
+
+/// [`PublicationGeometry`] of a publication at `pos`.
+fn spec_publication_geometry(
     cache: &Cache,
     draft_plane: Option<(&KvPlane, &KvPlane, usize, usize)>,
     cap: &memra_engine::spec::SpecBoundaryCapture,
     pos: usize,
-    planes: SpecPlanes,
-    tail_bytes: usize,
-) -> (usize, usize) {
+) -> PublicationGeometry {
     let f32_bytes = std::mem::size_of::<f32>();
-    let mut to_allocate = tail_bytes;
-    if planes == SpecPlanes::Copy {
-        to_allocate += spec_copy_plane_bytes(
-            pos,
-            cache
-                .kv
-                .iter()
-                .flatten()
-                .filter(|l| l.len > 0)
-                .map(|l| (l.k_tok_bytes, l.v_tok_bytes)),
-        );
-        to_allocate += spec_copy_plane_bytes(
-            pos,
-            draft_plane
-                .filter(|(k, v, kt, vt)| k.len() >= pos * kt && v.len() >= pos * vt)
-                .map(|(_, _, kt, vt)| (kt, vt)),
-        );
-    }
-    let mut held = cap.last_h.len() * f32_bytes;
+    let mut geometry = PublicationGeometry {
+        trunk: cache
+            .kv
+            .iter()
+            .flatten()
+            .filter(|l| l.len > 0)
+            .map(|l| (l.k_tok_bytes, l.v_tok_bytes))
+            .collect(),
+        draft: draft_plane
+            .filter(|(k, v, kt, vt)| k.len() >= pos * kt && v.len() >= pos * vt)
+            .map(|(_, _, kt, vt)| (kt, vt)),
+        latent_floats: 0,
+        held: cap.last_h.len() * f32_bytes,
+    };
     for (live, tail) in cache.latent.iter().zip(&cap.latent_tails) {
         if let (Some(_), Some(tail)) = (live, tail) {
-            let keys = if tail.index_width > 0 {
-                tail.index_pools_ready * (tail.index_width / 2)
-            } else {
-                0
-            };
-            to_allocate += (tail.len * tail.width + keys) * f32_bytes;
-            held += tail.bytes();
+            geometry.latent_floats += latent_publish_floats(tail);
+            geometry.held += tail.bytes();
         }
     }
     for (conv, ssm) in cap.snap.conv.iter().zip(cap.snap.ssm.iter()) {
-        held += conv.as_ref().map_or(0, |c| c.len() * f32_bytes);
-        held += ssm.as_ref().map_or(0, |s| s.len() * f32_bytes);
+        geometry.held += conv.as_ref().map_or(0, |c| c.len() * f32_bytes);
+        geometry.held += ssm.as_ref().map_or(0, |s| s.len() * f32_bytes);
     }
-    (to_allocate, held)
+    geometry
+}
+
+/// The `f32`s `LatentKvLayer::snapshot_plane_at` allocates for one latent layer's boundary: its
+/// rows `[0, len)` and, with an indexer plane, the final keys of the pools ready at the boundary.
+/// The tail ring is the capture's already.
+fn latent_publish_floats(tail: &memra_engine::cache::LatentTailCapture) -> usize {
+    let keys = if tail.index_width > 0 {
+        tail.index_pools_ready * (tail.index_width / 2)
+    } else {
+        0
+    };
+    tail.len * tail.width + keys
+}
+
+/// What a spec boundary publication adds to the cache, counted before any of it is allocated
+/// (memra#1304 review): `(to_allocate, held)`. `to_allocate` is what the publication will
+/// allocate: on the copying arm rows `[0, pos)` of every executed trunk layer and of the draft
+/// plane; on either arm the latent slices `snapshot_plane_at` cuts and the drafter tail
+/// (`tail_bytes`). `held` is what the capture already holds and the entry is charged for. Their
+/// sum is the entry's `bytes` when every optional plane publishes; an entry that drops its draft
+/// plane or its tail is smaller, never larger (`publication_overrun` says so if it ever is).
+fn spec_publication_bytes(
+    geometry: &PublicationGeometry,
+    pos: usize,
+    planes: SpecPlanes,
+    tail_bytes: usize,
+) -> (usize, usize) {
+    let mut to_allocate = tail_bytes;
+    if planes == SpecPlanes::Copy {
+        to_allocate += spec_copy_plane_bytes(pos, geometry.trunk.iter().copied());
+        to_allocate += spec_copy_plane_bytes(pos, geometry.draft);
+    }
+    to_allocate += geometry.latent_floats * std::mem::size_of::<f32>();
+    (to_allocate, geometry.held)
 }
 
 /// Bytes the copying arm allocates for rows `[0, pos)` of planes with these per-token K and V
@@ -17050,6 +17241,98 @@ fn spec_copy_plane_bytes(pos: usize, planes: impl IntoIterator<Item = (usize, us
         .sum()
 }
 
+/// A spec boundary publication's room: what it will allocate is counted
+/// (`spec_publication_bytes`, the drafter tail at the size its publisher declared) and reserved
+/// (`prefix_copy_preflight`) before the first byte. `Some((to_allocate, held))` when the
+/// publication may go ahead, `None` after the preflight's typed refusal. Engine-free: the
+/// publisher passes the geometry and the device's reading in.
+#[allow(clippy::too_many_arguments)]
+fn spec_publication_reserve(
+    px: &mut PrefixCache,
+    pool_key: &PoolKey,
+    memory: &CopyMemory,
+    geometry: &PublicationGeometry,
+    pos: usize,
+    planes: SpecPlanes,
+    draft_tail: Option<&DraftTailExport<'_>>,
+    demote: Option<&mut dyn FnMut(PrefixEntry)>,
+) -> Option<(usize, usize)> {
+    let tail_bytes = draft_tail.map_or(0, |tail| tail.bytes);
+    let (to_allocate, held) = spec_publication_bytes(geometry, pos, planes, tail_bytes);
+    if to_allocate > 0 && !prefix_copy_preflight(px, pool_key, memory, to_allocate, held, demote) {
+        return None;
+    }
+    Some((to_allocate, held))
+}
+
+/// Bytes an inserted entry holds beyond what its publication reserved, when it holds more: the
+/// count (`spec_publication_bytes`) missed something the publication allocated. Never expected;
+/// said aloud at the insert, on every device, so a new plane cannot go uncounted quietly.
+fn publication_overrun(entry_bytes: usize, to_allocate: usize, held: usize) -> Option<usize> {
+    entry_bytes
+        .checked_sub(to_allocate.saturating_add(held))
+        .filter(|&over| over > 0)
+}
+
+/// What the copy preflight reads of the device apart from the cache: whether its memory is
+/// unified, the configured insert budget and the live reading ([`live_memory`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CopyMemory {
+    unified: bool,
+    configured: usize,
+    live: Option<LiveMemory>,
+}
+
+/// The device's [`CopyMemory`] now.
+fn copy_memory(engine: &Engine) -> CopyMemory {
+    CopyMemory {
+        unified: device_is_unified(engine),
+        configured: kv_flex_effective_budget(),
+        live: live_memory(engine),
+    }
+}
+
+/// A copy preflight's reservation: the bytes the entry will hold and the budget it is held to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CopyReservation {
+    entry: usize,
+    budget: InsertBudget,
+}
+
+impl CopyReservation {
+    /// Makes the room (`PrefixCache::prepare_snapshot`: evicts older unleased entries into
+    /// `demote`, or refuses with its typed line and evicts nothing).
+    fn reserve(
+        self,
+        px: &mut PrefixCache,
+        pool_key: &PoolKey,
+        demote: Option<&mut dyn FnMut(PrefixEntry)>,
+    ) -> bool {
+        px.prepare_snapshot(pool_key, self.entry, self.budget, demote)
+    }
+}
+
+/// The reservation a copy of `to_allocate` bytes needs beside the `held` bytes of its entry that
+/// exist already; `None` on a discrete card, which reserves nothing. The budget is the insert
+/// wrappers' with the bytes not yet allocated counted as not allocated (`copy_preflight_split`).
+fn copy_preflight_plan(
+    px: &PrefixCache,
+    memory: &CopyMemory,
+    to_allocate: usize,
+    held: usize,
+) -> Option<CopyReservation> {
+    if !memory.unified {
+        return None;
+    }
+    let (entry, allocated) = copy_preflight_split(to_allocate, held);
+    let budget = if memory.configured == 0 {
+        memory.configured.into()
+    } else {
+        insert_budget_at(memory.configured, px.total_bytes, allocated, memory.live)
+    };
+    Some(CopyReservation { entry, budget })
+}
+
 /// COPY PREFLIGHT (memra#1304 review): on unified memory, the room for bytes a publication is
 /// about to allocate is reserved before the first of them, as `prefix_insert_from_session`
 /// reserves its snapshot's. `to_allocate` is what will be allocated and `held` what of the entry
@@ -17057,31 +17340,25 @@ fn spec_copy_plane_bytes(pos: usize, planes: impl IntoIterator<Item = (usize, us
 /// succeeds past the driver headroom, so the insert wrappers' clamp, which runs once the entry
 /// exists, refused such a copy only after its bytes were taken: an idle arrival admitted with no
 /// growth booked (`unified_prefix_growth_booking`) could copy a multi-GB entry into memory the
-/// box did not have. The budget is the wrappers' with the bytes not yet allocated counted as not
-/// allocated (`copy_preflight_split`); a refusal prints its typed `[prefix-cache] insert
-/// refused:` line and the request continues unpublished. A discrete card reserves nothing here:
-/// an allocation on a full card fails and the publication is dropped, and its publishers keep
-/// their order (copy, then evict to the budget).
+/// box did not have. A refusal prints its typed `[prefix-cache] insert refused:` line and the
+/// request continues unpublished. A discrete card reserves nothing here: an allocation on a full
+/// card fails and the publication is dropped, and its publishers keep their order (copy, then
+/// evict to the budget). Engine-free: the caller passes the device's reading (`copy_memory`).
+///
+/// A reservation evicts: an index into `px` taken before this call is stale after it, whether
+/// the publication then succeeds or not.
 fn prefix_copy_preflight(
-    engine: &Engine,
     px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
     pool_key: &PoolKey,
+    memory: &CopyMemory,
     to_allocate: usize,
     held: usize,
+    demote: Option<&mut dyn FnMut(PrefixEntry)>,
 ) -> bool {
-    if !device_is_unified(engine) {
-        return true;
+    match copy_preflight_plan(px, memory, to_allocate, held) {
+        None => true,
+        Some(reservation) => reservation.reserve(px, pool_key, demote),
     }
-    let (entry, allocated) = copy_preflight_split(to_allocate, held);
-    let budget = prefix_insert_budget(
-        engine,
-        kv_flex_effective_budget(),
-        px.total_bytes,
-        allocated,
-    );
-    let mut demote = |dead| host_demote_prefix_entry(engine, hpx, dead);
-    px.prepare_snapshot(pool_key, entry, budget, Some(&mut demote))
 }
 
 /// The copy preflight's two figures: the bytes the entry will hold (`to_allocate + held`, what
@@ -18533,11 +18810,25 @@ fn prefix_insert_from_spec_boundary(
     }
     let planes = spec_publication_planes(engine, cache, draft_plane, pos, planes);
     // The room for every byte this publication allocates, before the first of them.
-    let tail_bytes = draft_tail.as_ref().map_or(0, |tail| tail.bytes);
-    let (to_allocate, held) =
-        spec_publication_bytes(cache, draft_plane, &cap, pos, planes, tail_bytes);
-    if to_allocate > 0 && !prefix_copy_preflight(engine, px, hpx, pool_key, to_allocate, held) {
+    let geometry = spec_publication_geometry(cache, draft_plane, &cap, pos);
+    let mut demote = |dead| host_demote_prefix_entry(engine, hpx, dead);
+    let evictions = px.evictions;
+    let Some((to_allocate, held)) = spec_publication_reserve(
+        px,
+        pool_key,
+        &copy_memory(engine),
+        &geometry,
+        pos,
+        planes,
+        draft_tail.as_ref(),
+        Some(&mut demote),
+    ) else {
         return;
+    };
+    // The copy below counts on the bytes the reservation evicted: an evicted entry's on-demand
+    // planes sit in the graveyard until they are reaped (memra#1278), so they are reaped first.
+    if px.evictions > evictions {
+        vmm_reap_for("copy preflight");
     }
     let dspark_draft = draft_tail.and_then(|tail| (tail.export)());
     if has_latent {
@@ -18745,6 +19036,12 @@ fn prefix_insert_from_spec_boundary(
     trace_prefix_entry_state(engine, &e, e.pos, "spec-snapshot", why);
     let lent = e.lent_bytes();
     let entry_bytes = e.bytes;
+    if let Some(over) = publication_overrun(entry_bytes, to_allocate, held) {
+        eprintln!(
+            "[prefix-cache] WARNING: a {why} publication holds {entry_bytes} bytes, {over} more \
+             than it reserved ({to_allocate} to allocate, {held} held): its count missed a plane"
+        );
+    }
     let _ = px.insert_demoting(pool_key, e, why, engine, hpx);
     if tick_trace_enabled() {
         let (reserved, used) = engine.pool_reserved_used();
@@ -24385,8 +24682,8 @@ pub fn run(
                         fundable,
                     );
                     // A drained refusal's reading at the box's post-load capacity (memra#1304):
-                    // whether the request fits it, and its limiting free bytes.
-                    let mut idle_capacity_fit: Option<(bool, usize)> = None;
+                    // whether the request fits it, and the reading itself.
+                    let mut idle_capacity_fit: Option<(bool, AdmissionHeadroom)> = None;
                     let drained = verdict == GateVerdict::Drain;
                     if drained {
                         // STALE-READ HONESTY (measured on the med-class cell): the
@@ -24465,7 +24762,7 @@ pub fn run(
                                     )
                                     .map(at_capacity)
                                     .is_some_and(|c| c.sufficient(required_eager)));
-                            idle_capacity_fit = capacity.map(|c| (fits, c.limiting_free_bytes()));
+                            idle_capacity_fit = capacity.map(|c| (fits, c));
                         }
                         if matches!(verdict, GateVerdict::Admit | GateVerdict::AdmitEager) {
                             eprintln!(
@@ -24514,43 +24811,68 @@ pub fn run(
                             // busy and a later arrival really does fit.
                             // NAME THE LIMIT, from the admission model's own arithmetic and
                             // values already in scope, rather than from a second estimator that
-                            // could disagree with the one that just refused. The charge is
-                            // linear in context at `bytes_per_token + ring_bytes_per_token`, so
-                            // the largest admissible context is this request's context less the
-                            // overshoot of the post-load capacity divided by that slope. Stated
-                            // as the model's own estimate, which is what admission enforces.
-                            // The same arithmetic on the reading now is the largest context
-                            // that fits this moment (`largest_context_within`): the 503 names
-                            // it, because memory another process holds for good never comes
-                            // back to a retry, and the 400 names it beside the capacity's when
-                            // it is the smaller, so the size it sends a caller to is not one
-                            // that then gets the 503.
+                            // could disagree with the one that just refused. The charge's
+                            // context term is re-keyed to a smaller context with everything else
+                            // held (`largest_request_within`): the cost model's exact context
+                            // allocation, ring geometry included, for every state the request
+                            // builds (a choice group's rows and its snapshot), on each device
+                            // the charge is per device. The figure is in the caller's units,
+                            // prompt plus max_tokens: the charged context less this request's
+                            // slack over them, so a caller that sends it is charged what was
+                            // just found to fit. On the post-load capacity it is the largest
+                            // admissible request; on the reading now it is the largest that
+                            // fits this moment. The 503 names that one, because memory another
+                            // process holds for good never comes back to a retry, and the 400
+                            // names it beside the capacity's when it is the smaller, so the size
+                            // it sends a caller to is not one that then gets the 503.
                             let available = headroom.limiting_free_bytes();
-                            let (fits_capacity, capacity) =
-                                idle_capacity_fit.unwrap_or((false, available));
-                            // The slope is per state the request builds: one for a plain
-                            // request, a choice group's states for a group (the whole-group
-                            // charge above is `cost * choice_state_count`). Without the count
-                            // a group's overshoot shed more tokens than it has and the hint
-                            // was dropped (RTX 5090, the native-choices kv cell: an n=8 group
-                            // 324 MB short got a 503 with no size in it).
-                            let per_token = (bytes_per_token as u64)
-                                .saturating_add(ring_bytes_per_token as u64)
-                                .saturating_mul(choice_state_count as u64);
-                            let largest = largest_context_within(
+                            let (fits_capacity, at_capacity) = match idle_capacity_fit {
+                                Some((fits, reading)) => (fits, reading),
+                                None => (false, headroom.clone()),
+                            };
+                            let capacity = at_capacity.limiting_free_bytes();
+                            let hint_costs = &admission_costs[&model_key];
+                            let hint_model = &loaded[&model_key].model;
+                            let context_on = |device: usize, ctx: usize| -> usize {
+                                match (&pp_plan, pp_fence.as_deref()) {
+                                    (Some((devices, _)), Some(fence)) => pp_stage_context_bytes(
+                                        hint_model,
+                                        fence,
+                                        ctx,
+                                        estimate_spec,
+                                    )
+                                    .map_or(0, |stages| {
+                                        stages
+                                            .iter()
+                                            .zip(devices)
+                                            .filter(|&(_, &d)| d == device)
+                                            .map(|(bytes, _)| *bytes)
+                                            .sum()
+                                    }),
+                                    _ if device == primary_device => hint_costs
+                                        .context_bytes(ctx, estimate_spec)
+                                        .saturating_mul(choice_state_count),
+                                    _ => 0,
+                                }
+                            };
+                            let slack = admission_cap
+                                .saturating_sub(prompt_len.saturating_add(shape.budget));
+                            let largest = largest_request_within(
                                 admission_cap,
-                                required,
-                                capacity,
-                                per_token,
+                                slack,
+                                &at_capacity.charges(primary_device, required),
+                                &context_on,
                             );
-                            let largest_now = largest_context_within(
+                            let largest_now = largest_request_within(
                                 admission_cap,
-                                required,
-                                available,
-                                per_token,
+                                slack,
+                                &headroom.charges(primary_device, required),
+                                &context_on,
                             );
                             let fits_now = match largest_now {
-                                Some(n) => format!(", largest context that fits now {n}"),
+                                Some(n) => {
+                                    format!(", largest prompt+max_tokens that fits now {n}")
+                                }
                                 None => String::new(),
                             };
                             if fits_capacity {
@@ -24575,7 +24897,9 @@ pub fn run(
                                     capacity as f64 / 1e6,
                                     required as f64 / 1e6,
                                     match largest {
-                                        Some(n) => format!(", largest admissible context {n}"),
+                                        Some(n) => {
+                                            format!(", largest admissible prompt+max_tokens {n}")
+                                        }
                                         None => String::new(),
                                     },
                                 );
@@ -30002,6 +30326,27 @@ impl AdmissionHeadroom {
         }
     }
 
+    /// Each device's free bytes and the request's charge on it (the size hint's inputs,
+    /// `largest_context_within`): the scalar charge on the primary device for a primary reading,
+    /// each device's own requirement for a per-device one.
+    fn charges(&self, primary_device: usize, primary_required: usize) -> Vec<HintDevice> {
+        match self {
+            Self::Primary { free_bytes, .. } => vec![HintDevice {
+                device: primary_device,
+                free: *free_bytes,
+                required: primary_required,
+            }],
+            Self::Devices(devices) => devices
+                .iter()
+                .map(|d| HintDevice {
+                    device: d.requirement.device,
+                    free: d.free_bytes,
+                    required: d.requirement.required(),
+                })
+                .collect(),
+        }
+    }
+
     fn primary_pool_cached_bytes(&self) -> usize {
         match self {
             Self::Primary {
@@ -30094,37 +30439,77 @@ fn idle_capacity_free(
     })
 }
 
-/// The largest context whose charge fits `free` bytes, from the admission model's own
-/// arithmetic: the charge is linear in context at `per_token` bytes, so it is this request's
-/// context (`admission_cap`, charged `required`) less its overshoot of `free` divided by that
-/// slope, rounded against the caller. The request's own context when it fits. `None` when the
-/// charge has no per-token slope, or when no context fits (the fixed part alone is over `free`).
+/// One device's side of an idle refusal's size hint: its free bytes and the request's charge on
+/// it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct HintDevice {
+    device: usize,
+    free: usize,
+    required: usize,
+}
+
+/// The largest context this request could be charged and fit on every device, from the admission
+/// model's own arithmetic: each device's charge with its context term re-keyed from the request's
+/// context (`admission_cap`) to a smaller one, everything else held. `context(device, ctx)` is
+/// that term: the exact context allocation the charge was built from (ring geometry included:
+/// past the ring's rows a token costs less than `bytes_per_token`), for every state the request
+/// builds, on that device. It does not shrink as the context grows, so the largest context that
+/// fits is found by bisection; no slope is assumed. The request's own context when it fits.
+/// `None` when no context fits (what the charge holds besides its context is over a device's
+/// free bytes).
 fn largest_context_within(
     admission_cap: usize,
-    required: usize,
-    free: usize,
-    per_token: u64,
+    devices: &[HintDevice],
+    context: &dyn Fn(usize, usize) -> usize,
 ) -> Option<usize> {
-    if per_token == 0 {
+    let fits = |ctx: usize| {
+        devices.iter().all(|d| {
+            let shed = context(d.device, admission_cap).saturating_sub(context(d.device, ctx));
+            d.required.saturating_sub(shed) <= d.free
+        })
+    };
+    if !fits(1) {
         return None;
     }
-    let over = (required as u64).saturating_sub(free as u64);
-    (admission_cap as u64)
-        .checked_sub(over.div_ceil(per_token))
+    // Invariant: `lo` fits, `hi + 1` does not (or is past the request's own context).
+    let (mut lo, mut hi) = (1usize, admission_cap.max(1));
+    while lo < hi {
+        let mid = lo + (hi - lo).div_ceil(2);
+        if fits(mid) {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    Some(lo)
+}
+
+/// [`largest_context_within`] in the caller's units: prompt plus max_tokens. A request is charged
+/// its prompt and output plus `slack` rows (`RequestShape::admission_cap`), so a caller told the
+/// charged context and sending it as prompt plus max_tokens would be charged `slack` more and
+/// refused again with the same figure. `None` when nothing fits or the slack is all of it.
+fn largest_request_within(
+    admission_cap: usize,
+    slack: usize,
+    devices: &[HintDevice],
+    context: &dyn Fn(usize, usize) -> usize,
+) -> Option<usize> {
+    largest_context_within(admission_cap, devices, context)?
+        .checked_sub(slack)
         .filter(|&n| n > 0)
-        .map(|n| n as usize)
 }
 
 /// The refusal an idle, drained box gives a request it cannot hold now (memra#1304).
 /// `fits_capacity` says whether the request fits the box at its post-load capacity
-/// (`at_idle_capacity`); `largest` is the largest context that does and `largest_now` the largest
-/// that fits the free memory of the moment (`largest_context_within`; never above `largest`).
-/// A request that fits the capacity is short only of the moment's memory, so it gets a retryable
-/// 503 (`Overloaded`, `Retry-After`) that names `largest_now`: memory another process holds for
-/// good does not come back to a retry, and a caller that cannot wait can send that size. One
-/// that does not fit gets the 400 `context_length_exceeded` naming the largest admissible
-/// context, and `largest_now` beside it when that is smaller, so the size the 400 sends the
-/// caller to is not one that is then refused with the 503.
+/// (`at_idle_capacity`); `largest` is the largest request that does and `largest_now` the largest
+/// that fits the free memory of the moment (`largest_request_within`: prompt plus max_tokens,
+/// what a caller can send; never above `largest`). A request that fits the capacity is short
+/// only of the moment's memory, so it gets a retryable 503 (`Overloaded`, `Retry-After`) that
+/// names `largest_now`: memory another process holds for good does not come back to a retry, and
+/// a caller that cannot wait can send that size. One that does not fit gets the 400
+/// `context_length_exceeded` naming the largest admissible request, and `largest_now` beside it
+/// when that is smaller, so the size the 400 sends the caller to is not one that is then refused
+/// with the 503. With no figure (nothing fits) neither message names one.
 fn idle_refusal(
     admission_cap: usize,
     fits_capacity: bool,
@@ -30135,9 +30520,9 @@ fn idle_refusal(
         return EngineError::overloaded(match largest_now {
             Some(n) => format!(
                 "request context {admission_cap} fits this model's KV capacity but not the \
-                 server's free memory right now; the largest context that fits now is {n} \
-                 tokens. Retry after the Retry-After delay, or send a shorter prompt or a \
-                 smaller max_tokens"
+                 server's free memory right now; the largest prompt plus max_tokens that fits \
+                 now is {n} tokens. Retry after the Retry-After delay, or send a shorter prompt \
+                 or a smaller max_tokens"
             ),
             None => format!(
                 "request context {admission_cap} fits this model's KV capacity but not the \
@@ -30155,8 +30540,8 @@ fn idle_refusal(
     EngineError::context_length(match largest {
         Some(n) => format!(
             "request context {admission_cap} does not fit this model's KV capacity on an idle \
-             server; the largest admissible context is {n} tokens{now}. Retrying will not help: \
-             send a shorter prompt or a smaller max_tokens"
+             server; the largest admissible prompt plus max_tokens is {n} tokens{now}. Retrying \
+             will not help: send a shorter prompt or a smaller max_tokens"
         ),
         None => format!(
             "request context {admission_cap} does not fit this model's KV capacity on an idle \
@@ -31256,15 +31641,10 @@ fn admit(
     // the request took (the serving hit path takes its own pin first).
     let mut host_promote_pin: Option<PrefixPin> = None;
     if prefix_on && reused.is_none() && admission_restore.is_none() && hpx.armed() {
-        let device_best_len = consumable_hit
-            .map(|i| px.entries[&pool_key][i].toks.len())
-            .unwrap_or(0);
-        if let Some((i, pin)) =
-            host_promote_prefix_hit(engine, px, hpx, &pool_key, &prompt, device_best_len)
-        {
-            consumable_hit = Some(i);
-            host_promote_pin = Some(pin);
-        }
+        // The promotion owns `consumable_hit` while it runs: it can evict and still fail, so
+        // the index is whatever it leaves here (memra#1304 review).
+        host_promote_pin =
+            host_promote_prefix_hit(engine, px, hpx, &pool_key, &prompt, &mut consumable_hit);
     }
     // Can the consumable hit re-arm speculation? Tail present AND whole-entry cover, read here
     // beside the hit itself so the probe gate can distinguish "a hit the conversion will
@@ -42692,11 +43072,19 @@ mod tests {
              active.is_empty(), prefix_cache_budget_bytes(), px.total_bytes, );"
         ));
         // Every production insert path takes the unified guard (the prompt-end tail attach,
-        // memra#1233, and the copy preflight, memra#1304 review, included).
+        // memra#1233, included), and the copy preflight takes it from the same reading
+        // (memra#1304 review).
         assert_eq!(
             squashed.matches("prefix_insert_budget( engine,").count()
                 + squashed.matches("prefix_insert_budget(engine,").count(),
-            5
+            4
+        );
+        assert!(squashed.contains(
+            "insert_budget_at(memory.configured, px.total_bytes, allocated, memory.live)"
+        ));
+        assert!(
+            squashed
+                .contains("insert_budget_at(configured, resident, allocated, live_memory(engine))")
         );
     }
 
@@ -42778,7 +43166,7 @@ mod tests {
         assert_eq!(err.class, ErrClass::ContextLength);
         assert!(
             err.message
-                .contains("largest admissible context is 123456 tokens. Retrying will not help"),
+                .contains("largest admissible prompt plus max_tokens is 123456 tokens. Retrying"),
             "{}",
             err.message
         );
@@ -42824,7 +43212,7 @@ mod tests {
     fn the_idle_refusal_is_classified_against_the_post_load_capacity() {
         // memra#1304: the wiring. The capacity is read once after the boot calibration, the
         // drained refusal reads the same plans at it (unbooked), and the reject branch answers
-        // through `idle_refusal` with the largest context computed from that capacity.
+        // through `idle_refusal` with the largest request computed from that capacity.
         let worker = include_str!("worker.rs");
         let production = &worker[..worker.find("\nmod tests {").unwrap()];
         let squashed = production.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -42839,33 +43227,44 @@ mod tests {
             .find("verdict = vram_gate_drained(captured_ok, eager_ok, draft_arm);")
             .unwrap();
         let classify = squashed
-            .find("idle_capacity_fit = capacity.map(|c| (fits, c.limiting_free_bytes()));")
+            .find("idle_capacity_fit = capacity.map(|c| (fits, c));")
             .expect("the classification");
         assert!(drained < classify);
         let reject = &squashed[squashed
             .find("} else if matches!(verdict, GateVerdict::Reject | GateVerdict::Defer) {")
             .unwrap()..];
         let reject = &reject[..reject.find("continue; }").unwrap()];
-        assert!(reject.contains("idle_capacity_fit.unwrap_or((false, available));"));
+        // Without a capacity reading the refusal is judged on the reading now.
+        assert!(reject.contains("None => (false, headroom.clone()),"));
+        // The size hint (review of memra#1304): the capacity's and the moment's are the same
+        // arithmetic on the two readings, each device's own charge and free bytes.
         assert!(reject.contains(
-            "let largest = largest_context_within( admission_cap, required, capacity, per_token, );"
+            "let largest = largest_request_within( admission_cap, slack, \
+             &at_capacity.charges(primary_device, required), &context_on, );"
         ));
-        // The size that fits now is the same arithmetic on the reading now, and both reach the
-        // refusal (review of memra#1304).
-        assert!(reject.contains("let available = headroom.limiting_free_bytes();"));
-        // The slope counts every state a choice group builds, as the whole-group charge does.
+        assert!(reject.contains(
+            "let largest_now = largest_request_within( admission_cap, slack, \
+             &headroom.charges(primary_device, required), &context_on, );"
+        ));
+        // In the caller's units: the charged context less this request's slack over its prompt
+        // and output.
+        assert!(reject.contains(
+            "let slack = admission_cap .saturating_sub(prompt_len.saturating_add(shape.budget));"
+        ));
+        // The context term is the cost model's own (ring geometry included), once per state a
+        // choice group builds, as the whole-group charge counts them; per stage under PP.
         assert!(
             squashed
                 .contains("admission_required(cost.saturating_mul(choice_state_count), reserve);")
         );
         assert!(reject.contains(
-            "let per_token = (bytes_per_token as u64) .saturating_add(ring_bytes_per_token as \
-             u64) .saturating_mul(choice_state_count as u64);"
+            "_ if device == primary_device => hint_costs .context_bytes(ctx, estimate_spec) \
+             .saturating_mul(choice_state_count),"
         ));
-        assert!(reject.contains(
-            "let largest_now = largest_context_within( admission_cap, required, available, \
-             per_token, );"
-        ));
+        assert!(
+            reject.contains("pp_stage_context_bytes( hint_model, fence, ctx, estimate_spec, )")
+        );
+        assert!(!reject.contains("bytes_per_token"));
         assert!(reject.contains(
             "fail_request( req, idle_refusal(admission_cap, fits_capacity, largest, largest_now), );"
         ));
@@ -42873,29 +43272,37 @@ mod tests {
     }
 
     #[test]
-    fn the_idle_refusal_names_the_largest_context_that_fits_now() {
+    fn the_idle_refusal_names_the_largest_request_that_fits_now() {
         // Review of memra#1304. On a discrete card the capacity subtracts memra's own pool growth
         // only, so memory another process holds for good left a near-capacity request with a 503
-        // that no retry clears, and the 400's "largest admissible context" named a size that then
-        // got that 503. Both refusals now carry the largest context that fits the reading now.
-        use super::{ErrClass, idle_refusal, largest_context_within};
+        // that no retry clears, and the 400's hint named a size that then got that 503. Both
+        // refusals now carry the largest request that fits the reading now.
+        use super::{ErrClass, HintDevice, idle_refusal, largest_request_within};
         const MB: usize = 1_000_000;
-        let per_token = 31_552u64;
-        let charge = |ctx: usize| ctx * per_token as usize + 500 * MB;
+        let charge = |ctx: usize| ctx * 31_552 + 500 * MB;
+        let context = |_: usize, ctx: usize| ctx * 31_552;
+        let on = |free: usize, ctx: usize| {
+            [HintDevice {
+                device: 0,
+                free,
+                required: charge(ctx),
+            }]
+        };
         // A 24 GB card: 6,000 MB free at boot, of which another process now holds 2,000 MB.
         let (capacity, now) = (6_000 * MB, 4_000 * MB);
         // 150,000 tokens fit the capacity and not the moment: the 503, naming what fits now.
         let ctx = 150_000;
         assert!(charge(ctx) <= capacity && charge(ctx) > now);
-        let largest = largest_context_within(ctx, charge(ctx), capacity, per_token);
-        let largest_now = largest_context_within(ctx, charge(ctx), now, per_token);
+        let largest = largest_request_within(ctx, 0, &on(capacity, ctx), &context);
+        let largest_now = largest_request_within(ctx, 0, &on(now, ctx), &context);
         assert_eq!((largest, largest_now), (Some(150_000), Some(110_927)));
         assert!(charge(110_927) <= now && charge(110_928) > now);
         let err = idle_refusal(ctx, true, largest, largest_now);
         assert_eq!(err.class, ErrClass::Overloaded);
         assert!(
-            err.message
-                .contains("the largest context that fits now is 110927 tokens. Retry after"),
+            err.message.contains(
+                "the largest prompt plus max_tokens that fits now is 110927 tokens. Retry after"
+            ),
             "{}",
             err.message
         );
@@ -42903,36 +43310,36 @@ mod tests {
         // the figure the 503 would give a caller who sends that is beside it.
         let ctx = 200_000;
         assert!(charge(ctx) > capacity);
-        let largest = largest_context_within(ctx, charge(ctx), capacity, per_token);
-        let largest_now = largest_context_within(ctx, charge(ctx), now, per_token);
+        let largest = largest_request_within(ctx, 0, &on(capacity, ctx), &context);
+        let largest_now = largest_request_within(ctx, 0, &on(now, ctx), &context);
         assert_eq!((largest, largest_now), (Some(174_315), Some(110_927)));
         assert!(charge(174_315) <= capacity && charge(174_316) > capacity);
         let err = idle_refusal(ctx, false, largest, largest_now);
         assert_eq!(err.class, ErrClass::ContextLength);
         assert!(
             err.message.contains(
-                "the largest admissible context is 174315 tokens (110927 tokens fit the server's \
-                 free memory right now). Retrying will not help"
+                "the largest admissible prompt plus max_tokens is 174315 tokens (110927 tokens \
+                 fit the server's free memory right now). Retrying will not help"
             ),
             "{}",
             err.message
         );
         // The caller that shortens to the 400's 174,315 is told the same 110,927 by the 503.
         assert_eq!(
-            largest_context_within(174_315, charge(174_315), now, per_token),
+            largest_request_within(174_315, 0, &on(now, 174_315), &context),
             Some(110_927)
         );
         // Nothing else holding memory: one figure, said once.
         let err = idle_refusal(ctx, false, largest, largest);
         assert!(!err.message.contains("right now"), "{}", err.message);
-        // A fixed charge over the free memory: no context fits, and neither message invents one.
-        assert_eq!(
-            largest_context_within(1_000, charge(1_000), 400 * MB, per_token),
-            None
-        );
+        // No figure: neither message invents one.
         let err = idle_refusal(1_000, true, Some(1_000), None);
         assert_eq!(err.class, ErrClass::Overloaded);
-        assert!(!err.message.contains("largest"), "{}", err.message);
+        assert!(
+            !err.message.contains("largest") && err.message.contains("retry after"),
+            "{}",
+            err.message
+        );
         let err = idle_refusal(ctx, false, largest, None);
         assert!(
             err.message.contains(
@@ -42941,19 +43348,148 @@ mod tests {
             "{}",
             err.message
         );
-        // No per-token slope: no figure.
-        assert_eq!(largest_context_within(ctx, charge(ctx), capacity, 0), None);
-        // A choice group builds its rows' states and one transient snapshot (nine for n = 8), and
-        // its charge is nine times a row's: the slope is nine rows' too. With one row's slope the
-        // 187 MB this group is short of shed 6,289 tokens of its 3,142 and no size was named.
-        let states = 9;
-        let group = |ctx: usize| states * (ctx * 29_696 + 60 * MB);
-        let (ctx, now) = (3_142, 1_193 * MB);
-        assert!(group(ctx) > now);
-        assert_eq!(largest_context_within(ctx, group(ctx), now, 29_696), None);
-        let fits = largest_context_within(ctx, group(ctx), now, 29_696 * states as u64);
-        assert_eq!(fits, Some(2_443));
-        assert!(group(2_443) <= now && group(2_444) > now);
+    }
+
+    #[test]
+    fn the_size_hint_is_a_request_the_caller_can_send() {
+        // Round-2 review of memra#1304. The figure was in charged-context units, on one row's
+        // slope plus the ring term a second time, against the scalar charge. A caller that sent
+        // it as prompt plus max_tokens was charged its slack more and refused again with the
+        // same figure; on a ring model it was charged more than the free bytes; with a
+        // per-device charge another device could still be short.
+        use super::{
+            HintDevice, context_cache_bytes, largest_context_within, largest_request_within,
+            request_ctx_cap,
+        };
+        const MB: usize = 1_000_000;
+        let one = |free: usize, required: usize| {
+            [HintDevice {
+                device: 0,
+                free,
+                required,
+            }]
+        };
+
+        // SLACK. A bounded request is charged prompt + max_tokens + 8 (`request_ctx_cap`), 64 on
+        // a route that can speculate (`RequestShape::need`). The caller keeps its prompt and
+        // lowers max_tokens so that prompt + max_tokens is the hint: it must be admitted.
+        let charge = |cap: usize| cap * 31_552 + 500 * MB;
+        let context = |_: usize, ctx: usize| ctx * 31_552;
+        let free = 4_000 * MB;
+        let prompt = 1_000usize;
+        for slack in [8usize, 64] {
+            let cap = |max_tokens: usize| {
+                request_ctx_cap(262_144, 262_144, prompt, None, max_tokens, None) - 8 + slack
+            };
+            let cap0 = cap(149_000);
+            assert!(charge(cap0) > free);
+            let hint = largest_request_within(cap0, slack, &one(free, charge(cap0)), &context)
+                .expect("a request fits");
+            let cap1 = cap(hint - prompt);
+            assert_eq!(cap1, hint + slack);
+            assert!(
+                charge(cap1) <= free,
+                "slack {slack}: the hint {hint} is charged {} > {free}",
+                charge(cap1)
+            );
+            // And it is the largest: one token more is refused.
+            assert!(charge(cap(hint + 1 - prompt)) > free);
+            // Sent again, the hint is its own answer.
+            assert_eq!(
+                largest_request_within(cap1, slack, &one(free, charge(cap1)), &context),
+                Some(hint)
+            );
+        }
+
+        // RING. Past the ring's rows a token costs `bytes_per_token - ring_bytes_per_token`; the
+        // ring term is inside `bytes_per_token`, not beside it. The hint's charge must fit.
+        let (bpt, ring_bpt, ring_rows, fixed) = (100usize, 40usize, 1_000usize, 50_000usize);
+        let ring = |ctx: usize| context_cache_bytes(bpt, ring_bpt, ring_rows, ctx) + fixed;
+        let ring_context =
+            |_: usize, ctx: usize| context_cache_bytes(bpt, ring_bpt, ring_rows, ctx);
+        let (ctx, free) = (10_000usize, 400_000usize);
+        assert!(ring(ctx) > free);
+        let hint = largest_context_within(ctx, &one(free, ring(ctx)), &ring_context)
+            .expect("a context fits");
+        assert_eq!(hint, 5_166);
+        assert!(ring(hint) <= free && ring(hint + 1) > free);
+        // Below the ring's rows the same arithmetic walks the steeper leg.
+        let free = 120_000usize;
+        let hint = largest_context_within(ctx, &one(free, ring(ctx)), &ring_context).unwrap();
+        assert_eq!(hint, 700);
+        assert!(ring(hint) <= free && ring(hint + 1) > free);
+
+        // A CHOICE GROUP builds its rows' states and one snapshot (nine for n = 8), and its
+        // charge is nine times a row's cost: so is its context term. RTX 5090, the native-choices
+        // kv cell: 14,848 B/token, 105 MB fixed per state, 152 MB of reserve, 1,193 MB free.
+        let states = 9usize;
+        let group = |ctx: usize| states * (ctx * 14_848 + 105 * MB) + 152 * MB;
+        let group_context = |_: usize, ctx: usize| states * ctx * 14_848;
+        let (ctx, free, slack) = (3_142usize, 1_193 * MB, 64usize);
+        assert!(group(ctx) > free);
+        let hint = largest_request_within(ctx, slack, &one(free, group(ctx)), &group_context)
+            .expect("a smaller group fits");
+        assert_eq!(hint, 654);
+        assert!(group(hint + slack) <= free && group(hint + slack + 1) > free);
+
+        // PER DEVICE. Two pipeline stages hold 60% and 40% of the context; the second device is
+        // the short one, and the hint is what fits on both.
+        let share = |device: usize, ctx: usize| {
+            ctx * match device {
+                0 => 600,
+                1 => 400,
+                _ => 0,
+            }
+        };
+        let ctx = 100_000usize;
+        let devices = [
+            HintDevice {
+                device: 0,
+                free: 70 * MB,
+                required: share(0, ctx) + 5 * MB,
+            },
+            HintDevice {
+                device: 1,
+                free: 30 * MB,
+                required: share(1, ctx) + 4 * MB,
+            },
+        ];
+        let hint = largest_context_within(ctx, &devices, &share).unwrap();
+        assert_eq!(hint, 65_000);
+        assert!(share(1, hint) + 4 * MB <= 30 * MB && share(1, hint + 1) + 4 * MB > 30 * MB);
+        assert!(share(0, hint) + 5 * MB <= 70 * MB);
+        // On the first device alone the answer would be 100,000: the minimum is over devices.
+        assert_eq!(
+            largest_context_within(ctx, &devices[..1], &share),
+            Some(100_000)
+        );
+        // A device whose charge does not scale with the context and does not fit: nothing fits.
+        let stuck = [
+            devices[0],
+            HintDevice {
+                device: 2,
+                free: MB,
+                required: 2 * MB,
+            },
+        ];
+        assert_eq!(largest_context_within(ctx, &stuck, &share), None);
+
+        // NOTHING FITS: what the charge holds besides its context is over the free bytes; and a
+        // figure that is all slack is no figure.
+        let charge = |cap: usize| cap * 31_552 + 500 * MB;
+        assert_eq!(
+            largest_request_within(1_000, 8, &one(400 * MB, charge(1_000)), &context),
+            None
+        );
+        let tight = 500 * MB + 8 * 31_552;
+        assert_eq!(
+            largest_context_within(1_000, &one(tight, charge(1_000)), &context),
+            Some(8)
+        );
+        assert_eq!(
+            largest_request_within(1_000, 8, &one(tight, charge(1_000)), &context),
+            None
+        );
     }
 
     #[test]
@@ -43059,36 +43595,28 @@ mod tests {
             text.find(needle)
                 .unwrap_or_else(|| panic!("missing `{needle}` in: {text}"))
         };
-        // The preflight: unified memory only, the wrappers' budget with only the held bytes
-        // counted as allocated, room made by `prepare_snapshot`.
-        let preflight = body("fn prefix_copy_preflight(");
-        at(
-            &preflight,
-            "let (entry, allocated) = copy_preflight_split(to_allocate, held);",
-        );
-        at(
-            &preflight,
-            "prefix_insert_budget( engine, kv_flex_effective_budget(), px.total_bytes, allocated, );",
-        );
-        at(
-            &preflight,
-            "px.prepare_snapshot(pool_key, entry, budget, Some(&mut demote))",
-        );
-        // The spec publisher decides lend or copy, reserves, and only then exports the tail,
-        // slices a latent plane or allocates a copy.
+        // The spec publisher decides lend or copy, counts and reserves from the device's own
+        // reading, and only then exports the tail, slices a latent plane or allocates a copy.
         let publish = body("fn prefix_insert_from_spec_boundary(");
         let reserved = at(
             &publish,
-            "if to_allocate > 0 && !prefix_copy_preflight(engine, px, hpx, pool_key, to_allocate, \
-             held) { return; }",
+            "let Some((to_allocate, held)) = spec_publication_reserve( px, pool_key, \
+             &copy_memory(engine), &geometry, pos, planes, draft_tail.as_ref(), Some(&mut demote), \
+             ) else { return; };",
         );
         assert!(at(&publish, "let planes = spec_publication_planes(") < reserved);
         assert!(
             at(
                 &publish,
-                "spec_publication_bytes(cache, draft_plane, &cap, pos, planes, tail_bytes);"
+                "let geometry = spec_publication_geometry(cache, draft_plane, &cap, pos);"
             ) < reserved
         );
+        // What the reservation evicted is reaped before anything is allocated on it.
+        let reaped = at(
+            &publish,
+            "if px.evictions > evictions { vmm_reap_for(\"copy preflight\"); }",
+        );
+        assert!(at(&publish, "let evictions = px.evictions;") < reserved && reserved < reaped);
         for allocation in [
             "(tail.export)()",
             "snapshot_plane_at(",
@@ -43096,8 +43624,8 @@ mod tests {
             "spec_plane_lend(",
         ] {
             assert!(
-                reserved < at(&publish, allocation),
-                "{allocation} runs before the reservation"
+                reaped < at(&publish, allocation),
+                "{allocation} runs before the reservation and its reap"
             );
         }
         // The publishers hand the tail over as its size and its export; neither exports it.
@@ -43122,23 +43650,467 @@ mod tests {
             at(&publisher, bytes);
             at(&publisher, "export: &export_tail,");
         }
-        // A host promotion reserves before it materializes the device entry, keeps its candidate
-        // newest in the tier and finds it again by id.
-        let promote = body("fn host_promote_prefix_hit(");
+        // A host promotion reserves before it materializes the device entry.
+        let promote = body("fn host_promote_materialize(");
+        let reaped = at(
+            &promote,
+            "if px.evictions > evictions { vmm_reap_for(\"promote preflight\"); }",
+        );
+        assert!(at(&promote, "let hi = host_promote_reserve(") < reaped);
+        assert!(reaped < at(&promote, "device_entry_from_host("));
+        at(
+            &promote,
+            "prepared.host_id, memory, &mut |host, dead| host_demote_prefix_entry(engine, host, \
+             dead), )?;",
+        );
+        // The reading every reservation is held to is the device's.
+        let memory = body("fn copy_memory(");
+        at(&memory, "unified: device_is_unified(engine),");
+        at(&memory, "configured: kv_flex_effective_budget(),");
+        at(&memory, "live: live_memory(engine),");
+        let live = body("fn live_memory(");
+        at(&live, "if !device_is_unified(engine) { return None; }");
+        at(&live, "let (free, _) = effective_free_bytes(engine)?;");
+        at(
+            &live,
+            "headroom: admit_driver_headroom_bytes().saturating_add(SPEC_SHRINK_RESERVE),",
+        );
+    }
+
+    /// The round-2 seam tests' reading: GB10's configured budget and headroom, `free` live.
+    fn copy_memory_at(free: usize) -> super::CopyMemory {
+        super::CopyMemory {
+            unified: true,
+            configured: 50_529_000_000,
+            live: Some(super::LiveMemory {
+                free,
+                headroom: 3_758_000_000,
+            }),
+        }
+    }
+
+    /// A DFlash boundary at 131,008 tokens on the q38 geometry, in round numbers: 64 executed
+    /// layers of 246 B per token for K and for V (4,125 MB), no draft plane, 36 MB held.
+    fn dflash_geometry() -> super::PublicationGeometry {
+        super::PublicationGeometry {
+            trunk: vec![(246, 246); 64],
+            draft: None,
+            latent_floats: 0,
+            held: 36_000_000,
+        }
+    }
+
+    #[test]
+    fn a_copy_publication_counts_the_planes_it_copies() {
+        // Round-2 review, mutation MA: the copied trunk and draft planes not counted passed the
+        // suite. GB10 cell 31-G: 6,366 MB free, 3,758 MB of it headroom, a 4.1 GB trunk copy.
+        use super::{PrefixCache, SpecPlanes, spec_publication_bytes, spec_publication_reserve};
+        const MB: usize = 1_000_000;
+        let k = (String::from("q38"), String::new());
+        let (pos, geometry) = (131_008usize, dflash_geometry());
+        let trunk = 64 * 2 * 246 * pos;
+        assert_eq!(
+            spec_publication_bytes(&geometry, pos, SpecPlanes::Copy, 0),
+            (trunk, 36 * MB)
+        );
+        // Lending allocates no plane.
+        assert_eq!(
+            spec_publication_bytes(&geometry, pos, SpecPlanes::Lend, 0),
+            (0, 36 * MB)
+        );
+        // The draft plane is two more planes of its own geometry.
+        let with_draft = super::PublicationGeometry {
+            draft: Some((1_000, 24)),
+            ..geometry.clone()
+        };
+        assert_eq!(
+            spec_publication_bytes(&with_draft, pos, SpecPlanes::Copy, 0).0,
+            trunk + 1_024 * pos
+        );
+        let reserve = |px: &mut PrefixCache, free: usize, planes: SpecPlanes| {
+            spec_publication_reserve(
+                px,
+                &k,
+                &copy_memory_at(free),
+                &geometry,
+                pos,
+                planes,
+                None,
+                None,
+            )
+        };
+        // 31-G: the copy is refused, counted as a refusal of the moment, and nothing is evicted.
+        let mut px = PrefixCache::default();
+        assert_eq!(reserve(&mut px, 6_366 * MB, SpecPlanes::Copy), None);
+        assert_eq!((px.skips_budget, px.oversize_warned), (1, false));
+        // 29-G: 12,137 MB free, the same copy has its room.
+        assert_eq!(
+            reserve(&mut px, 12_137 * MB, SpecPlanes::Copy),
+            Some((trunk, 36 * MB))
+        );
+        // The lending publication reserves nothing at 31-G's reading and goes ahead.
+        assert_eq!(
+            reserve(&mut px, 6_366 * MB, SpecPlanes::Lend),
+            Some((0, 36 * MB))
+        );
+        assert_eq!(px.skips_budget, 1);
+    }
+
+    #[test]
+    fn a_copy_publication_counts_its_drafter_tail() {
+        // Round-2 review, mutation MC: the drafter tail counted at 1/1024 passed the suite. A
+        // drafter with no sliding layer publishes its whole history: 5,366 MB at 131k tokens,
+        // more than the trunk planes it rides with.
+        use super::{DraftTailExport, PrefixCache, SpecPlanes, spec_publication_reserve};
+        const MB: usize = 1_000_000;
+        let k = (String::from("q38"), String::new());
+        let geometry = super::PublicationGeometry {
+            trunk: vec![(64, 64)],
+            ..dflash_geometry()
+        };
+        let pos = 1_000usize;
+        let exported = std::cell::Cell::new(0usize);
+        let export = || -> Option<memra_engine::dflash::DflashKvTail> {
+            exported.set(exported.get() + 1);
+            None
+        };
+        let tail = DraftTailExport {
+            bytes: 5_366 * MB,
+            export: &export,
+        };
+        let reserve = |px: &mut PrefixCache, free: usize, tail: Option<&DraftTailExport<'_>>| {
+            let memory = copy_memory_at(free);
+            spec_publication_reserve(
+                px,
+                &k,
+                &memory,
+                &geometry,
+                pos,
+                SpecPlanes::Copy,
+                tail,
+                None,
+            )
+        };
+        let mut px = PrefixCache::default();
+        // 6,366 MB free: the tail alone does not fit beside the headroom.
+        assert_eq!(reserve(&mut px, 6_366 * MB, Some(&tail)), None);
+        // Without a tail the small trunk copy fits; with room the tail is counted in full.
+        assert_eq!(reserve(&mut px, 6_366 * MB, None), Some((128_000, 36 * MB)));
+        assert_eq!(
+            reserve(&mut px, 9_200 * MB, Some(&tail)),
+            Some((5_366 * MB + 128_000, 36 * MB))
+        );
+        // The reservation never runs the export: that is the publication's, after it.
+        assert_eq!(exported.get(), 0);
+    }
+
+    #[test]
+    fn a_publication_counts_its_latent_rows() {
+        // Round-2 review, mutation MH: no latent rows counted passed the suite. A GLM-5 entry's
+        // latent planes are sliced at publication: its rows `[0, len)` and the ready pools'
+        // final keys; the tail ring is the capture's already.
+        use super::{PrefixCache, SpecPlanes, latent_publish_floats, spec_publication_reserve};
+        const MB: usize = 1_000_000;
+        let tail = |index_width: usize, pools: usize| memra_engine::cache::LatentTailCapture {
+            len: 100_000,
+            width: 512,
+            index_width,
+            index_pool: 64,
+            index_pools_ready: pools,
+            index_tail: None,
+        };
+        assert_eq!(latent_publish_floats(&tail(0, 0)), 51_200_000);
+        // An indexer plane adds half its width per ready pool.
+        assert_eq!(
+            latent_publish_floats(&tail(256, 1_562)),
+            51_200_000 + 1_562 * 128
+        );
+        // Sixteen such layers are 3,277 MB of rows, on either arm.
+        let k = (String::from("glm5"), String::new());
+        let geometry = super::PublicationGeometry {
+            trunk: Vec::new(),
+            draft: None,
+            latent_floats: 16 * latent_publish_floats(&tail(0, 0)),
+            held: 8 * MB,
+        };
+        let mut px = PrefixCache::default();
+        for planes in [SpecPlanes::Copy, SpecPlanes::Lend] {
+            let memory = copy_memory_at(6_366 * MB);
+            assert_eq!(
+                spec_publication_reserve(
+                    &mut px, &k, &memory, &geometry, 100_000, planes, None, None
+                ),
+                None
+            );
+            let memory = copy_memory_at(7_100 * MB);
+            assert_eq!(
+                spec_publication_reserve(
+                    &mut px, &k, &memory, &geometry, 100_000, planes, None, None
+                ),
+                Some((3_276_800_000, 8 * MB))
+            );
+        }
+    }
+
+    #[test]
+    fn the_copy_preflight_is_held_to_the_live_reading() {
+        // Round-2 review, mutation MF: a preflight budget that ignored the live reading (the
+        // configured budget, as on a discrete card) passed the suite.
+        use super::{CopyMemory, InsertBudget, PrefixCache, copy_preflight_plan};
+        const MB: usize = 1_000_000;
+        let px = PrefixCache::default();
+        let plan = |free: usize| {
+            copy_preflight_plan(&px, &copy_memory_at(free), 4_130 * MB, 36 * MB)
+                .expect("unified memory reserves")
+        };
+        // The entry is everything it will hold; the budget is what is held plus the live free
+        // bytes above the headroom, under the configured budget.
+        let short = plan(6_366 * MB);
+        assert_eq!(short.entry, 4_166 * MB);
+        assert_eq!(
+            short.budget,
+            InsertBudget {
+                bytes: (36 + 6_366 - 3_758) * MB,
+                configured: 50_529 * MB,
+            }
+        );
+        assert!(short.budget.bytes < short.entry);
+        assert_eq!(plan(100_000 * MB).budget.bytes, 50_529 * MB);
+        assert_eq!(plan(3_000 * MB).budget.bytes, 0);
+        // A reading that failed leaves the configured budget, as the insert wrappers do.
+        let unread = CopyMemory {
+            live: None,
+            ..copy_memory_at(0)
+        };
+        assert_eq!(
+            copy_preflight_plan(&px, &unread, 4_130 * MB, 36 * MB)
+                .unwrap()
+                .budget,
+            InsertBudget::from(50_529 * MB)
+        );
+        // A cache switched off holds nothing.
+        let off = CopyMemory {
+            configured: 0,
+            ..copy_memory_at(100_000 * MB)
+        };
+        assert_eq!(
+            copy_preflight_plan(&px, &off, MB, 0).unwrap().budget.bytes,
+            0
+        );
+    }
+
+    #[test]
+    fn a_refused_copy_preflight_stops_the_publication() {
+        // Round-2 review, mutation ME: the reservation's verdict discarded (`|| true`) passed
+        // the suite. The verdict is the reservation's, and every caller gets it.
+        use super::{PrefixCache, prefix_copy_preflight};
+        const MB: usize = 1_000_000;
+        let k = (String::from("q38"), String::new());
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, entry_b(&k, 1, 1_000 * MB), "t", 50_529 * MB);
+        let demoted = std::cell::RefCell::new(Vec::new());
+        let mut sink = |dead: PrefixEntry| demoted.borrow_mut().push(dead.bytes);
+        // 6,366 MB free with 1,000 MB resident: the cache may hold 3,644 MB, the entry is 4,166.
+        let memory = copy_memory_at(6_366 * MB);
+        assert!(!prefix_copy_preflight(
+            &mut px,
+            &k,
+            &memory,
+            4_130 * MB,
+            36 * MB,
+            Some(&mut sink)
+        ));
+        // A refusal evicts nothing and demotes nothing.
+        assert_eq!(
+            (px.total_bytes, px.evictions, px.skips_budget),
+            (1_000 * MB, 0, 1)
+        );
+        // With room for it beside nothing else, the older entry goes to the demote sink first.
+        let memory = copy_memory_at(6_900 * MB);
+        assert!(prefix_copy_preflight(
+            &mut px,
+            &k,
+            &memory,
+            4_130 * MB,
+            36 * MB,
+            Some(&mut sink)
+        ));
+        assert_eq!((px.total_bytes, px.evictions), (0, 1));
+        assert_eq!(*demoted.borrow(), vec![1_000 * MB]);
+    }
+
+    #[test]
+    fn a_host_promotion_reserves_the_bytes_it_copies() {
+        // Round-2 review, mutation MB (a promotion reserving 1/1024 of its bytes passed the
+        // suite) and the recency nit: the candidate was touched before a reservation that then
+        // refused.
+        use super::{HostPrefixCache, PrefixCache, host_promote_reserve};
+        const MB: usize = 1_000_000;
+        let k = key("tenant-a");
+        let min = super::PREFIX_CACHE_MIN_TOKENS;
+        let mut host = HostPrefixCache::new(1 << 40);
+        assert!(host.insert(&k, host_entry(&k, toks(min + 64), 4_130 * MB)));
+        assert!(host.insert(&k, host_entry(&k, toks(min), 10 * MB)));
+        let hi = host.lookup(&k, &toks(min + 64)).expect("the deeper entry");
+        let (id, recency) = (host.entries[&k][hi].id, host.entries[&k][hi].last_use);
+        let mut px = PrefixCache::default();
+        let demoted = std::cell::Cell::new(0usize);
+        let mut demote =
+            |_: &mut HostPrefixCache, dead: PrefixEntry| demoted.set(demoted.get() + dead.bytes);
+        // 6,366 MB free: the 4,130 MB copy is refused, and the candidate's recency is untouched.
+        let memory = copy_memory_at(6_366 * MB);
+        assert_eq!(
+            host_promote_reserve(&mut px, &mut host, &k, hi, id, &memory, &mut demote),
+            None
+        );
+        assert_eq!(px.skips_budget, 1);
+        assert_eq!(host.entries[&k][hi].last_use, recency);
+        // With room it is reserved, touched (it is the last the tier would give up to the
+        // demotions the reservation makes) and found again by its id.
+        let _ = next_instant();
+        let memory = copy_memory_at(9_000 * MB);
+        let found = host_promote_reserve(&mut px, &mut host, &k, hi, id, &memory, &mut demote)
+            .expect("reserved");
+        assert_eq!(host.entries[&k][found].id, id);
+        assert!(host.entries[&k][found].last_use > recency);
+        assert_eq!(demoted.get(), 0);
+    }
+
+    #[test]
+    fn a_promotion_that_fails_leaves_the_caller_a_live_hit() {
+        // Round-2 review of memra#1304, the must-fix. `admit` resolved its device hit to an
+        // index, then ran the host promotion. On unified memory the promotion's reservation
+        // evicts (a removal swaps the pool's last entry into the hole) and the promotion can
+        // still fail; the caller then read the old index: out of the pool (a panic), or another
+        // prompt's entry restored as this prompt's prefix. The promotion owns the hit now.
+        use super::{PrefixCache, host_promote_holding_hit, host_promote_resolved_hit};
+        let k = (String::from("q38"), String::new());
+        let pool = || {
+            let mut px = PrefixCache::default();
+            px.insert_with_budget(&k, entry_b(&k, 1, 600), "t", 1_000);
+            px.insert_with_budget(&k, entry_b(&k, 2, 300), "t", 1_000);
+            px
+        };
+        // The mechanism: the shallow hit is entry 2 at index 1; a reservation of 500 of the
+        // 1,000-byte budget evicts entry 1, and entry 2 is at index 0.
+        let mut px = pool();
+        let held = px.key_index(&k, &[2]).unwrap();
+        assert_eq!(held, 1);
+        assert!(px.prepare_snapshot(&k, 500, 1_000, None));
+        assert!(px.entries[&k].get(held).is_none());
+        assert_eq!(px.key_index(&k, &[2]), Some(0));
+
+        // Unified memory: the hit is leased across a promotion that reserves and then fails.
+        let mut px = pool();
+        let (promoted, hit) = host_promote_holding_hit(&mut px, &k, Some(1), true, |px| {
+            assert!(px.prepare_snapshot(&k, 500, 1_000, None));
+            None::<super::PrefixPin>
+        });
+        assert_eq!(hit, Some(0));
+        let hit = host_promote_resolved_hit(&px, promoted.as_ref(), hit).expect("the hit lives");
+        assert_eq!(px.entries[&k][hit].toks, vec![2]);
+        assert_eq!(px.entries[&k][hit].pins, 0, "the lease is released");
+        // The lease also keeps the reservation from taking the hit itself: with nothing else to
+        // evict it is refused, and the request is served from the entry it had.
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, entry_b(&k, 2, 300), "t", 1_000);
+        let (reserved, hit) = host_promote_holding_hit(&mut px, &k, Some(0), true, |px| {
+            px.prepare_snapshot(&k, 800, 1_000, None)
+        });
+        assert!(!reserved);
+        assert_eq!(hit, Some(0));
+        assert_eq!((px.total_bytes, px.evictions), (300, 0));
+        // No hit to hold: nothing is leased and nothing comes back.
+        let mut px = pool();
+        let (_, hit) = host_promote_holding_hit(&mut px, &k, None, true, |px| {
+            px.prepare_snapshot(&k, 500, 1_000, None)
+        });
+        assert_eq!(hit, None);
+
+        // A discrete card takes no lease (its recency would move): the hit is followed by its
+        // id, so an index that moved is found and an entry that went is `None`, never stale.
+        let mut px = pool();
+        let recency = px.entries[&k][1].last_use;
+        let (_, hit) = host_promote_holding_hit(&mut px, &k, Some(1), false, |px| {
+            px.prepare_snapshot(&k, 500, 1_000, None)
+        });
+        assert_eq!(hit, Some(0));
+        assert_eq!(px.entries[&k][0].last_use, recency);
+        let mut px = pool();
+        let (_, hit) = host_promote_holding_hit(&mut px, &k, Some(0), false, |px| {
+            px.prepare_snapshot(&k, 500, 1_000, None)
+        });
+        assert_eq!(hit, None);
+
+        // A promotion that inserted: the hit is the promoted entry, wherever it landed.
+        let mut px = pool();
+        let id = px
+            .insert_with_budget_pins(&k, entry_b(&k, 3, 100), "host-promote", 1_000, 1, None)
+            .expect("inserted");
+        let pin = super::PrefixPin { key: k.clone(), id };
+        let hit = host_promote_resolved_hit(&px, Some(&pin), Some(1)).unwrap();
+        assert_eq!(px.entries[&k][hit].toks, vec![3]);
+
+        // The wiring: `admit` hands its hit over by reference and reads no index of its own
+        // between the lookup and the promotion's return.
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let flat = |text: &str| {
+            text.lines()
+                .filter(|l| !l.trim_start().starts_with("//"))
+                .flat_map(str::split_whitespace)
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let squashed = flat(production);
+        assert!(squashed.contains(
+            "host_promote_pin = host_promote_prefix_hit(engine, px, hpx, &pool_key, &prompt, &mut \
+             consumable_hit);"
+        ));
+        assert!(!squashed.contains("device_best_len = consumable_hit"));
+        let a = production.find("fn host_promote_prefix_hit(").unwrap();
+        let hook = flat(&production[a..a + production[a..].find("\n}\n").unwrap()]);
+        assert!(hook.contains("device_hit: &mut Option<usize>,"));
+        assert!(hook.contains(
+            "let (pin, kept) = host_promote_holding_hit(px, pool_key, *device_hit, memory.unified, \
+             |px| { host_promote_materialize(engine, px, host, pool_key, hi, &memory) });"
+        ));
+        assert!(hook.contains("*device_hit = host_promote_resolved_hit(px, pin.as_ref(), kept);"));
+    }
+
+    #[test]
+    fn a_publication_that_overruns_its_reservation_says_so() {
+        // Round-2 review: an entry larger than the bytes its publication reserved means the
+        // count missed a plane; the publisher says so at the insert, on every device, tick trace
+        // or not.
+        use super::publication_overrun;
+        assert_eq!(
+            publication_overrun(4_131_520_512, 3_974_602_752, 156_917_760),
+            None
+        );
+        assert_eq!(publication_overrun(4_000, 4_000, 96), None);
+        assert_eq!(publication_overrun(4_097, 4_000, 96), Some(1));
+        assert_eq!(publication_overrun(9_000, 4_000, 96), Some(4_904));
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let a = production
+            .find("fn prefix_insert_from_spec_boundary(")
+            .unwrap();
+        let publish = production[a..a + production[a..].find("\n}\n").unwrap()]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let warned = publish
+            .find("if let Some(over) = publication_overrun(entry_bytes, to_allocate, held) {")
+            .expect("the publisher checks its count");
         assert!(
-            at(
-                &promote,
-                "let hi = host_promote_reserve(engine, px, host, pool_key, hi, prepared.host_id)?;"
-            ) < at(&promote, "device_entry_from_host(")
+            warned
+                < publish
+                    .find("px.insert_demoting(pool_key, e, why, engine, hpx);")
+                    .unwrap()
         );
-        let reserve = body("fn host_promote_reserve(");
-        let touched = at(&reserve, "host.touch(pool_key, hi);");
-        let checked = at(
-            &reserve,
-            "if !prefix_copy_preflight(engine, px, host, pool_key, bytes, 0) { return None; }",
-        );
-        assert!(touched < checked);
-        assert!(checked < at(&reserve, "host_entry_index_by_id(host, pool_key, host_id)"));
+        assert!(warned < publish.find("if tick_trace_enabled() {").unwrap());
+        assert!(publish[warned..].contains("[prefix-cache] WARNING: a {why} publication holds"));
     }
 
     #[test]
@@ -43148,61 +44120,73 @@ mod tests {
         // a CUDA out-of-memory error the publisher already handles (the publication is dropped),
         // so its path is the one before the fold: nothing reserved or evicted ahead of the copy,
         // the insert budget the configured one, the refusal lines and the warning unchanged.
-        use super::{InsertBudget, PrefixCache};
-        let worker = include_str!("worker.rs");
-        let production = &worker[..worker.find("\nmod tests {").unwrap()];
-        let body = |start: &str| {
-            let a = production.find(start).unwrap_or_else(|| panic!("{start}"));
-            production[a..a + production[a..].find("\n}\n").expect("the function ends")]
-                .lines()
-                .filter(|l| !l.trim_start().starts_with("//"))
-                .flat_map(str::split_whitespace)
-                .collect::<Vec<_>>()
-                .join(" ")
+        use super::{
+            CopyMemory, HostPrefixCache, InsertBudget, PrefixCache, SpecPlanes,
+            copy_preflight_plan, host_promote_reserve, insert_budget_at, prefix_copy_preflight,
+            spec_publication_reserve,
         };
-        let at = |text: &str, needle: &str| {
-            text.find(needle)
-                .unwrap_or_else(|| panic!("missing `{needle}` in: {text}"))
+        const MB: usize = 1_000_000;
+        let discrete = CopyMemory {
+            unified: false,
+            configured: 1_000 * MB,
+            live: None,
         };
-        // The preflight returns before it reads a budget or touches the cache.
-        let preflight = body("fn prefix_copy_preflight(");
-        let gate = at(&preflight, "if !device_is_unified(engine) { return true; }");
-        for later in [
-            "copy_preflight_split(",
-            "prefix_insert_budget(",
-            "px.prepare_snapshot(",
-        ] {
-            assert!(
-                gate < at(&preflight, later),
-                "{later} runs on a discrete card"
-            );
-        }
-        // A host promotion keeps its candidate's index and recency.
-        let reserve = body("fn host_promote_reserve(");
-        let gate = at(
-            &reserve,
-            "if !device_is_unified(engine) { return Some(hi); }",
+        let k = key("tenant-a");
+        let mut px = PrefixCache::default();
+        px.insert_with_budget(&k, entry_b(&k, 1, 900 * MB), "t", 1_000 * MB);
+        // A copy far over the budget: nothing is reserved, refused, evicted or counted.
+        assert_eq!(copy_preflight_plan(&px, &discrete, 50_000 * MB, 0), None);
+        assert!(prefix_copy_preflight(
+            &mut px,
+            &k,
+            &discrete,
+            50_000 * MB,
+            0,
+            None
+        ));
+        assert_eq!(
+            spec_publication_reserve(
+                &mut px,
+                &k,
+                &discrete,
+                &dflash_geometry(),
+                131_008,
+                SpecPlanes::Copy,
+                None,
+                None
+            ),
+            Some((64 * 2 * 246 * 131_008, 36 * MB))
         );
-        for later in [
-            "host.touch(",
-            "prefix_copy_preflight(",
-            "host_entry_index_by_id(",
-        ] {
-            assert!(
-                gate < at(&reserve, later),
-                "{later} runs on a discrete card"
-            );
-        }
+        assert_eq!(
+            (
+                px.total_bytes,
+                px.evictions,
+                px.skips_budget,
+                px.skips_pinned
+            ),
+            (900 * MB, 0, 0, 0)
+        );
+        // A host promotion keeps its candidate's index and recency, and demotes nothing.
+        let min = super::PREFIX_CACHE_MIN_TOKENS;
+        let mut host = HostPrefixCache::new(1 << 40);
+        assert!(host.insert(&k, host_entry(&k, toks(min + 64), 50_000 * MB)));
+        let hi = host.lookup(&k, &toks(min + 64)).unwrap();
+        let (id, recency) = (host.entries[&k][hi].id, host.entries[&k][hi].last_use);
+        let mut demote = |_: &mut HostPrefixCache, _: PrefixEntry| panic!("nothing is demoted");
+        assert_eq!(
+            host_promote_reserve(&mut px, &mut host, &k, hi, id, &discrete, &mut demote),
+            Some(hi)
+        );
+        assert_eq!(host.entries[&k][hi].last_use, recency);
+        assert_eq!((px.total_bytes, px.evictions), (900 * MB, 0));
         // The insert budget is the configured one, so no refusal is the live reading's.
-        let budget = body("fn prefix_insert_budget(");
-        at(
-            &budget,
-            "if configured == 0 || !device_is_unified(engine) { return configured.into(); }",
+        assert_eq!(
+            insert_budget_at(1_000 * MB, 900 * MB, 200 * MB, None),
+            InsertBudget::from(1_000 * MB)
         );
         let plain = InsertBudget::from(100);
         assert_eq!((plain.bytes, plain.configured), (100, 100));
         assert!(!plain.live_short(101) && !plain.live_short(100));
-        let k = (String::from("q38"), String::new());
         let mut px = PrefixCache::default();
         assert_eq!(
             px.insert_with_budget_pins(&k, entry_b(&k, 1, 101), "test", 100, 0, None),
@@ -59013,15 +59997,22 @@ mod tests {
         assert!(live.contains(
             "let evicted = evict_oldest_parked(reuse, spec_reuse, dspark_reuse, metrics).is_some(); if evicted { vmm_reap_for(\"pre-cohort reclaim\"); } evicted"
         ));
+        // memra#1304 review: a copy reservation that evicted reaps before the copy allocates on
+        // those bytes (a spec boundary publication, a host promotion).
+        assert!(live.contains("if px.evictions > evictions { vmm_reap_for(\"copy preflight\"); }"));
+        assert!(
+            live.contains("if px.evictions > evictions { vmm_reap_for(\"promote preflight\"); }")
+        );
         // Every pool trim on a reclaim path follows its reap; the pre-cohort reclaim reaps
         // between its evictions and trims nothing. memra#1278 adds the admission drain's trim,
         // the reap of every eviction a reading counts on, and `vmm_reap_trim_for` (the reap, then
-        // the trim) on every path that allocates next (`parked_evict_reap_1278_tests`).
+        // the trim) on every path that allocates next (`parked_evict_reap_1278_tests`). The two
+        // copy reservations (memra#1304 review) reap before their copy.
         assert_eq!(
             live.matches("vmm_reap_for(\"").count(),
-            9,
+            11,
             "the four trims, the pre-cohort reclaim, the reclaim-on-defer's ladder and climb, the \
-             kv-flex shed and the spec pool's evict-first clear"
+             kv-flex shed, the spec pool's evict-first clear and the two copy reservations"
         );
         assert!(live.contains(
             "if !armed { return 0; } let reaped = reap(); reaped.saturating_add(trim())"
@@ -63262,7 +64253,9 @@ mod parked_evict_reap_1278_tests {
     /// first and joins the list. It reports every needle that does not match, not the first.
     ///
     /// Not counted: the evictions `PrefixCache` makes inside itself (its budget on an insert,
-    /// its preflight before a snapshot), which no reading follows.
+    /// its preflight before a snapshot), which no reading follows. The copy reservations use
+    /// that preflight and an allocation does follow them, so they are in the list with their
+    /// reap (memra#1304 review).
     ///
     /// What a source scan cannot see: a drop. A session or cache that goes out of scope, is
     /// overwritten or is set to `None` buries its on-demand planes with no call to count, and a
@@ -63657,8 +64650,31 @@ mod parked_evict_reap_1278_tests {
                 ),
                 1,
             ),
+            // The copy reservations (memra#1304 review): a spec boundary publication and a host
+            // promotion make their room through `PrefixCache`'s own snapshot preflight, which
+            // can evict, and then allocate their copy on those bytes: each reaps between the
+            // two when the reservation evicted.
+            (
+                concat!(
+                    "let evictions = px.evictions; let Some((to_allocate, held)) = ",
+                    "spec_publication_reserve(",
+                ),
+                1,
+            ),
+            (
+                "if px.evictions > evictions { vmm_reap_for(\"copy preflight\"); }",
+                1,
+            ),
+            (
+                "let evictions = px.evictions; let hi = host_promote_reserve(",
+                1,
+            ),
+            (
+                "if px.evictions > evictions { vmm_reap_for(\"promote preflight\"); }",
+                1,
+            ),
             // Every reap in the worker is one of the sites above.
-            ("vmm_reap_for(\"", 9),
+            ("vmm_reap_for(\"", 11),
             ("vmm_reap_trim_for(engine, loaded, \"", 6),
             ("vmm_retry_reap(engine, loaded, ", 6),
         ] {
