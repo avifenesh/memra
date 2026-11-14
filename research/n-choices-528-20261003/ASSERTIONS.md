@@ -1,5 +1,13 @@
 # Independent assertion map
 
+> **KV exhaustion edge superseded (2026-11-14, memra#1304).** An idle server now refuses by the
+> request's size: a request its post-load capacity holds, short of memory another process took, is
+> a 503 `overloaded` with `Retry-After`; the 400 `context_length_exceeded` stays for a request
+> over that capacity. The `kv` phase of `receipts/native-final-v5/` records the 400 the `c6db`
+> server gave and stays as that server's record; the gate replays its recapture on the same card
+> and fixture, [`admit-idle-class-20261113/rtx5090/kv/`](../admit-idle-class-20261113/README.md#rtx-5090-the-idle-refusal-under-another-processs-memory),
+> named by `receipts/native-final-v5/superseded.json`. Every other edge is unchanged.
+
 Planning only. Native values must be observed; this map cannot convert a skipped or failing cell into qualification.
 
 | Edge | Raw evidence and actual assertion | Required failing control |

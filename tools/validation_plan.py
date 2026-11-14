@@ -363,9 +363,35 @@ TOOL_CONTRACTS = {
                 'slots/slots-recovery/wire.json',
                 'source-binding.json',
                 'state.json',
+                # memra#1304: the kv phase is replayed from its recapture (the idle refusal's
+                # class changed); the pointer and the recapture are inputs like the phase was.
+                'superseded.json',
+            )
+        ] + [
+            'research/admit-idle-class-20261113/rtx5090/kv/' + name
+            for name in (
+                'callback-events.json',
+                'env.json',
+                'expected-context.json',
+                'kv-recovery/client.json',
+                'kv-recovery/headers.json',
+                'kv-recovery/request.json',
+                'kv-recovery/wire.json',
+                'kv-warm/client.json',
+                'kv-warm/headers.json',
+                'kv-warm/request.json',
+                'kv-warm/wire.json',
+                'kv/client.json',
+                'kv/headers.json',
+                'kv/request.json',
+                'kv/wire.json',
+                'manifest.json',
+                'metadata.toml',
+                'pressure.json',
+                'server.log',
             )
         ],
-        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_choice_verifier.py', '23'],
+        'cpu': ['tools/unittest-floor.sh', 'tools', 'test_choice_verifier.py', '25'],
         'native': ['Exact-source n1 before/after, shared-prefix fork, independent seeded choices, indexed termination, parent usage/reservation, slot/KV exhaustion and group cancellation/recovery on a pinned cached artifact; CPU controls do not qualify native execution'],
     },
     'tool-choice': {
