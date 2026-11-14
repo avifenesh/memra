@@ -7627,6 +7627,7 @@ impl HybridModel {
     /// down between two of its prime calls) hands the workspace back. The last call of a prime
     /// and a failed call release it themselves; a prime that simply stops being called cannot.
     pub fn prime_abandoned(&self, e: &Engine) {
+        let _numeric = self.enter_numeric();
         self.prime_gdn_ws_release(e);
     }
 
