@@ -1,0 +1,343 @@
+[server] build: memra-0.141.1-fab1fedb9349 (id: source-tree, git: unknown)
+[env-audit] warning: 2 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_DIAG_CALL_TRIM, MEMRA_DIAG_TRIM_BEFORE_PRIME. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] starting; models config = [("gate", "~/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "gate" <- ~/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves OFF (whole-entry restore, strict-prefix restore and boundary capture together)
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] gate: DSPARK SPEC route armed (drafter attached (~/models/q38-gguf/Qwen3.8-27B-DFlash2-memra); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] gate: DFlash2 draft head FULL target vocab (external_mtp_d2t_ignored=false; set MEMRA_FRSPEC_TRIM=<ranks.txt> to trim)
+[admission] "gate": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+[admission] "gate": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=dspark supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[dspark-vg] serve pool ENGAGED (vt_cap=8)
+[topk-shards] engaged: rows=7 cols=248320 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+[dflash-kv-ring] compact keep_from=2064 kept=2056 phys_rows=4120
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2248146944,"still_owned_bytes":19475431184,"pool_reserved_bytes":19629342720,"pool_cached_bytes":153911536,"driver_free_bytes":4845731840,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 2144MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=dspark transient floor 1543MB (static was 1536MB; measured 1543MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 20864MB parked-gdn-ws 480MB rest-mapped 18720MB charged 119MB -> 1543MB]; 3.9s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18181
+[meter] admit id=cmpl-06a47e2eb6047306c4301d6210854750 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=8230 path=spec = 29696 B/token x ctx + 519MB prefill-workspace + 0MB fixed = 764MB
+[admission] prefill workspace held: model="gate" prompt=8150 call=8150 stack=8150 concat=0 slab_resident=1443MB held=519MB cold=1962MB
+[diag1255] gate-pass id=cmpl-06a47e2eb6047306c4301d6210854750 prompt=8150 path=spec cost=889MB draft=160MB reserve=1543MB required=2432MB required_eager=2271MB eager_arm=false booked=0MB limiting_free=4768MB active=0
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=8150 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[diag1255] dspark-prime-start-before id=cmpl-06a47e2eb6047306c4301d6210854750 rows=8150: driver_free=4621MB pool_res=18720MB pool_used=18573MB pool_unused=146MB eff_free=4768MB
+[diag1255] dspark-prime-chunk-before id=cmpl-06a47e2eb6047306c4301d6210854750: driver_free=4013MB pool_res=19328MB pool_used=19298MB pool_unused=29MB eff_free=4042MB
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=2847.365 max_chunk_ms=2847.365
+[diag1255] dspark-prime-chunk-after id=cmpl-06a47e2eb6047306c4301d6210854750: driver_free=2381MB pool_res=20960MB pool_used=19795MB pool_unused=1164MB eff_free=3545MB
+[diag1255] dspark-prime-chunk-before id=cmpl-06a47e2eb6047306c4301d6210854750: driver_free=2381MB pool_res=20960MB pool_used=19795MB pool_unused=1164MB eff_free=3545MB
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[diag1255] dspark-prime-done id=cmpl-06a47e2eb6047306c4301d6210854750: driver_free=2381MB pool_res=20960MB pool_used=19770MB pool_unused=1189MB eff_free=3570MB
+[fa-pool] grow #1 dev=0 o_len 3194880 -> 6389760 ml_len 12480 -> 24960 (retired kept, zero=false)
+[dspark-acc] ctx=8150 burst=10/24 cum=10/24=0.417
+[meter] admit id=cmpl-b731554ec9631c7bb28aa4c94c29034e tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=20555 path=spec = 29696 B/token x ctx + 52MB prefill-workspace + 0MB fixed = 663MB
+[admission] prefill workspace held: model="gate" prompt=491 call=491 stack=491 concat=0 slab_resident=1443MB held=52MB cold=225MB
+[diag1255] gate-pass id=cmpl-b731554ec9631c7bb28aa4c94c29034e prompt=491 path=spec cost=792MB draft=160MB reserve=1543MB required=2336MB required_eager=2175MB eager_arm=false booked=0MB limiting_free=4727MB active=0
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=491 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[diag1255] dspark-prime-start-before id=cmpl-b731554ec9631c7bb28aa4c94c29034e rows=491: driver_free=2317MB pool_res=21024MB pool_used=19094MB pool_unused=1929MB eff_free=4246MB
+[diag1255] dspark-prime-chunk-before id=cmpl-b731554ec9631c7bb28aa4c94c29034e: driver_free=2317MB pool_res=21024MB pool_used=20190MB pool_unused=833MB eff_free=3150MB
+[diag1255] dspark-prime-done id=cmpl-b731554ec9631c7bb28aa4c94c29034e: driver_free=2317MB pool_res=21024MB pool_used=20165MB pool_unused=858MB eff_free=3175MB
+[dspark-acc] ctx=491 burst=28/28 cum=28/28=1.000
+[dspark-acc] ctx=523 burst=28/28 cum=56/56=1.000
+[dspark-acc] ctx=555 burst=28/28 cum=84/84=1.000
+[dspark-acc] ctx=587 burst=28/28 cum=112/112=1.000
+[dspark-acc] ctx=619 burst=28/28 cum=140/140=1.000
+[dspark-acc] ctx=651 burst=28/28 cum=168/168=1.000
+[dspark-acc] ctx=683 burst=28/28 cum=196/196=1.000
+[dspark-acc] ctx=715 burst=28/28 cum=224/224=1.000
+[dspark-acc] ctx=747 burst=28/28 cum=252/252=1.000
+[dspark-acc] ctx=779 burst=28/28 cum=280/280=1.000
+[dspark-acc] ctx=811 burst=28/28 cum=308/308=1.000
+[dspark-acc] ctx=843 burst=28/28 cum=336/336=1.000
+[dspark-acc] ctx=875 burst=28/28 cum=364/364=1.000
+[dspark-acc] ctx=907 burst=28/28 cum=392/392=1.000
+[dspark-acc] ctx=939 burst=28/28 cum=420/420=1.000
+[dspark-acc] ctx=971 burst=28/28 cum=448/448=1.000
+[dspark-acc] ctx=1003 burst=28/28 cum=476/476=1.000
+[dspark-acc] ctx=1035 burst=28/28 cum=504/504=1.000
+[dspark-acc] ctx=1067 burst=28/28 cum=532/532=1.000
+[dspark-acc] ctx=1099 burst=28/28 cum=560/560=1.000
+[dspark-acc] ctx=1131 burst=28/28 cum=588/588=1.000
+[dspark-acc] ctx=1163 burst=28/28 cum=616/616=1.000
+[dspark-acc] ctx=1195 burst=28/28 cum=644/644=1.000
+[dspark-acc] ctx=1227 burst=28/28 cum=672/672=1.000
+[dspark-acc] ctx=1259 burst=28/28 cum=700/700=1.000
+[dspark-acc] ctx=1291 burst=28/28 cum=728/728=1.000
+[dspark-acc] ctx=1323 burst=28/28 cum=756/756=1.000
+[dspark-acc] ctx=1355 burst=28/28 cum=784/784=1.000
+[dspark-acc] ctx=1387 burst=28/28 cum=812/812=1.000
+[dspark-acc] ctx=1419 burst=28/28 cum=840/840=1.000
+[dspark-acc] ctx=1451 burst=28/28 cum=868/868=1.000
+[dspark-acc] ctx=1483 burst=28/28 cum=896/896=1.000
+[dspark-acc] ctx=1515 burst=28/28 cum=924/924=1.000
+[dspark-acc] ctx=1547 burst=28/28 cum=952/952=1.000
+[dspark-acc] ctx=1579 burst=28/28 cum=980/980=1.000
+[dspark-acc] ctx=1611 burst=28/28 cum=1008/1008=1.000
+[dspark-acc] ctx=1643 burst=28/28 cum=1036/1036=1.000
+[dspark-acc] ctx=1675 burst=28/28 cum=1064/1064=1.000
+[dspark-acc] ctx=1707 burst=28/28 cum=1092/1092=1.000
+[dspark-acc] ctx=1739 burst=28/28 cum=1120/1120=1.000
+[dspark-acc] ctx=1771 burst=28/28 cum=1148/1148=1.000
+[dspark-acc] ctx=1803 burst=28/28 cum=1176/1176=1.000
+[dspark-acc] ctx=1835 burst=28/28 cum=1204/1204=1.000
+[dspark-acc] ctx=1867 burst=28/28 cum=1232/1232=1.000
+[dspark-acc] ctx=1899 burst=28/28 cum=1260/1260=1.000
+[dspark-acc] ctx=1931 burst=28/28 cum=1288/1288=1.000
+[dspark-acc] ctx=1963 burst=28/28 cum=1316/1316=1.000
+[dspark-acc] ctx=1995 burst=28/28 cum=1344/1344=1.000
+[dspark-acc] ctx=2027 burst=28/28 cum=1372/1372=1.000
+[dspark-acc] ctx=2059 burst=28/28 cum=1400/1400=1.000
+[dspark-acc] ctx=2091 burst=28/28 cum=1428/1428=1.000
+[dspark-acc] ctx=2123 burst=28/28 cum=1456/1456=1.000
+[dspark-acc] ctx=2155 burst=28/28 cum=1484/1484=1.000
+[dspark-acc] ctx=2187 burst=28/28 cum=1512/1512=1.000
+[dspark-acc] ctx=2219 burst=28/28 cum=1540/1540=1.000
+[dspark-acc] ctx=2251 burst=28/28 cum=1568/1568=1.000
+[dspark-acc] ctx=2283 burst=28/28 cum=1596/1596=1.000
+[dspark-acc] ctx=2315 burst=28/28 cum=1624/1624=1.000
+[dspark-acc] ctx=2347 burst=28/28 cum=1652/1652=1.000
+[dspark-acc] ctx=2379 burst=28/28 cum=1680/1680=1.000
+[dspark-acc] ctx=2411 burst=28/28 cum=1708/1708=1.000
+[dspark-acc] ctx=2443 burst=28/28 cum=1736/1736=1.000
+[dspark-acc] ctx=2475 burst=28/28 cum=1764/1764=1.000
+[dspark-acc] ctx=2507 burst=28/28 cum=1792/1792=1.000
+[dspark-acc] ctx=2539 burst=28/28 cum=1820/1820=1.000
+[dspark-acc] ctx=2571 burst=28/28 cum=1848/1848=1.000
+[dspark-acc] ctx=2603 burst=28/28 cum=1876/1876=1.000
+[dspark-acc] ctx=2635 burst=28/28 cum=1904/1904=1.000
+[dspark-acc] ctx=2667 burst=28/28 cum=1932/1932=1.000
+[dspark-acc] ctx=2699 burst=28/28 cum=1960/1960=1.000
+[dspark-acc] ctx=2731 burst=28/28 cum=1988/1988=1.000
+[dspark-acc] ctx=2763 burst=28/28 cum=2016/2016=1.000
+[dspark-acc] ctx=2795 burst=28/28 cum=2044/2044=1.000
+[dspark-acc] ctx=2827 burst=28/28 cum=2072/2072=1.000
+[dspark-acc] ctx=2859 burst=28/28 cum=2100/2100=1.000
+[dspark-acc] ctx=2891 burst=28/28 cum=2128/2128=1.000
+[dspark-acc] ctx=2923 burst=28/28 cum=2156/2156=1.000
+[dspark-acc] ctx=2955 burst=28/28 cum=2184/2184=1.000
+[dspark-acc] ctx=2987 burst=28/28 cum=2212/2212=1.000
+[dspark-acc] ctx=3019 burst=28/28 cum=2240/2240=1.000
+[dspark-acc] ctx=3051 burst=28/28 cum=2268/2268=1.000
+[dspark-acc] ctx=3083 burst=28/28 cum=2296/2296=1.000
+[dspark-acc] ctx=3115 burst=28/28 cum=2324/2324=1.000
+[dspark-acc] ctx=3147 burst=28/28 cum=2352/2352=1.000
+[dspark-acc] ctx=3179 burst=28/28 cum=2380/2380=1.000
+[dspark-acc] ctx=3211 burst=28/28 cum=2408/2408=1.000
+[dspark-acc] ctx=3243 burst=28/28 cum=2436/2436=1.000
+[dspark-acc] ctx=3275 burst=28/28 cum=2464/2464=1.000
+[dspark-acc] ctx=3307 burst=28/28 cum=2492/2492=1.000
+[dspark-acc] ctx=3339 burst=28/28 cum=2520/2520=1.000
+[dspark-acc] ctx=3371 burst=28/28 cum=2548/2548=1.000
+[dspark-acc] ctx=3403 burst=28/28 cum=2576/2576=1.000
+[dspark-acc] ctx=3435 burst=28/28 cum=2604/2604=1.000
+[dspark-acc] ctx=3467 burst=28/28 cum=2632/2632=1.000
+[meter] admit id=cmpl-1b378d61520e71aba82f5fe88f0d4565 tenant=default lane=interactive model="gate"
+[dspark-acc] ctx=3499 burst=28/28 cum=2660/2660=1.000
+[admission] per-session draft-state charge: model="gate" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=8297 path=spec = 29696 B/token x ctx + 521MB prefill-workspace + 0MB fixed = 767MB
+[admission] prefill workspace held: model="gate" prompt=8217 call=8217 stack=8217 concat=0 slab_resident=1443MB held=521MB cold=1963MB
+[diag1255] gate-pass id=cmpl-1b378d61520e71aba82f5fe88f0d4565 prompt=8217 path=spec cost=892MB draft=160MB reserve=1543MB required=2436MB required_eager=2275MB eager_arm=false booked=0MB limiting_free=2531MB active=1
+[admit-trim] dev0 driver_free_bytes=1004470272 floor_bytes=2147483648 reclaimed_bytes=1140850688 still_owned_bytes=20798117924 pool_reserved_bytes=21307064320 driver_free_after=2145320960 before prime
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=8217 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[diag1255] dspark-prime-start-before id=cmpl-1b378d61520e71aba82f5fe88f0d4565 rows=8217: driver_free=2045MB pool_res=20320MB pool_used=19834MB pool_unused=485MB eff_free=2531MB
+[diag1255] dspark-prime-chunk-before id=cmpl-1b378d61520e71aba82f5fe88f0d4565: driver_free=1789MB pool_res=20576MB pool_used=20562MB pool_unused=13MB eff_free=1803MB
+[prime-yield] count=1 remaining=2 chunks=1 wall_ms=3440.464 max_chunk_ms=3440.464
+[diag1255] dspark-prime-chunk-after id=cmpl-1b378d61520e71aba82f5fe88f0d4565: driver_free=285MB pool_res=22080MB pool_used=21043MB pool_unused=1036MB eff_free=1322MB
+[dspark-acc] ctx=3531 burst=7/7 cum=2667/2667=1.000
+[dspark-acc] ctx=3539 burst=7/7 cum=2674/2674=1.000
+[diag1255] dspark-prime-chunk-before id=cmpl-1b378d61520e71aba82f5fe88f0d4565: driver_free=221MB pool_res=22144MB pool_used=21043MB pool_unused=1100MB eff_free=1322MB
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[prime-yield] count=2 remaining=1 chunks=1 wall_ms=3501.588 max_chunk_ms=3501.588
+[diag1255] dspark-prime-chunk-after id=cmpl-1b378d61520e71aba82f5fe88f0d4565: driver_free=221MB pool_res=22144MB pool_used=21043MB pool_unused=1100MB eff_free=1322MB
+[dspark-acc] ctx=3547 burst=7/7 cum=2681/2681=1.000
+[diag1255] dspark-prime-chunk-before id=cmpl-1b378d61520e71aba82f5fe88f0d4565: driver_free=221MB pool_res=22144MB pool_used=21043MB pool_unused=1100MB eff_free=1322MB
+[prime-ws] dev0 GDN scan workspace not parked: free_bytes=232718336 floor_bytes=2147483648 workspace_bytes=504102912
+[dflash-kv-ring] compact keep_from=6136 kept=2056 phys_rows=4120
+[diag1255] dspark-prime-done id=cmpl-1b378d61520e71aba82f5fe88f0d4565: driver_free=221MB pool_res=22144MB pool_used=20537MB pool_unused=1606MB eff_free=1828MB
+[dspark-acc] ctx=8217 burst=9/21 cum=9/21=0.429
+[dspark-acc] ctx=3555 burst=28/28 cum=2709/2709=1.000
+[dspark-acc] ctx=3587 burst=28/28 cum=2737/2737=1.000
+[server] SIGTERM: draining (1 in flight, deadline 30s)
+[dspark-acc] ctx=3619 burst=28/28 cum=2765/2765=1.000
+[dspark-acc] ctx=3651 burst=28/28 cum=2793/2793=1.000
+[dspark-acc] ctx=3683 burst=28/28 cum=2821/2821=1.000
+[dspark-acc] ctx=3715 burst=28/28 cum=2849/2849=1.000
+[dspark-acc] ctx=3747 burst=28/28 cum=2877/2877=1.000
+[dspark-acc] ctx=3779 burst=28/28 cum=2905/2905=1.000
+[dspark-acc] ctx=3811 burst=28/28 cum=2933/2933=1.000
+[dspark-acc] ctx=3843 burst=28/28 cum=2961/2961=1.000
+[dspark-acc] ctx=3875 burst=28/28 cum=2989/2989=1.000
+[dspark-acc] ctx=3907 burst=28/28 cum=3017/3017=1.000
+[dspark-acc] ctx=3939 burst=28/28 cum=3045/3045=1.000
+[dspark-acc] ctx=3971 burst=28/28 cum=3073/3073=1.000
+[dspark-acc] ctx=4003 burst=28/28 cum=3101/3101=1.000
+[dspark-acc] ctx=4035 burst=28/28 cum=3129/3129=1.000
+[dspark-acc] ctx=4067 burst=28/28 cum=3157/3157=1.000
+[dflash-kv-ring] compact keep_from=2059 kept=2056 phys_rows=4120
+[dspark-acc] ctx=4099 burst=28/28 cum=3185/3185=1.000
+[dspark-acc] ctx=4131 burst=28/28 cum=3213/3213=1.000
+[dspark-acc] ctx=4163 burst=28/28 cum=3241/3241=1.000
+[dspark-acc] ctx=4195 burst=28/28 cum=3269/3269=1.000
+[dspark-acc] ctx=4227 burst=28/28 cum=3297/3297=1.000
+[dspark-acc] ctx=4259 burst=28/28 cum=3325/3325=1.000
+[dspark-acc] ctx=4291 burst=28/28 cum=3353/3353=1.000
+[dspark-acc] ctx=4323 burst=28/28 cum=3381/3381=1.000
+[dspark-acc] ctx=4355 burst=28/28 cum=3409/3409=1.000
+[dspark-acc] ctx=4387 burst=28/28 cum=3437/3437=1.000
+[dspark-acc] ctx=4419 burst=28/28 cum=3465/3465=1.000
+[dspark-acc] ctx=4451 burst=28/28 cum=3493/3493=1.000
+[dspark-acc] ctx=4483 burst=28/28 cum=3521/3521=1.000
+[dspark-acc] ctx=4515 burst=28/28 cum=3549/3549=1.000
+[dspark-acc] ctx=4547 burst=28/28 cum=3577/3577=1.000
+[dspark-acc] ctx=4579 burst=28/28 cum=3605/3605=1.000
+[dspark-acc] ctx=4611 burst=28/28 cum=3633/3633=1.000
+[dspark-acc] ctx=4643 burst=28/28 cum=3661/3661=1.000
+[dspark-acc] ctx=4675 burst=28/28 cum=3689/3689=1.000
+[dspark-acc] ctx=4707 burst=28/28 cum=3717/3717=1.000
+[dspark-acc] ctx=4739 burst=28/28 cum=3745/3745=1.000
+[dspark-acc] ctx=4771 burst=28/28 cum=3773/3773=1.000
+[dspark-acc] ctx=4803 burst=28/28 cum=3801/3801=1.000
+[dspark-acc] ctx=4835 burst=28/28 cum=3829/3829=1.000
+[dspark-acc] ctx=4867 burst=28/28 cum=3857/3857=1.000
+[dspark-acc] ctx=4899 burst=28/28 cum=3885/3885=1.000
+[dspark-acc] ctx=4931 burst=28/28 cum=3913/3913=1.000
+[dspark-acc] ctx=4963 burst=28/28 cum=3941/3941=1.000
+[dspark-acc] ctx=4995 burst=28/28 cum=3969/3969=1.000
+[dspark-acc] ctx=5027 burst=28/28 cum=3997/3997=1.000
+[dspark-acc] ctx=5059 burst=28/28 cum=4025/4025=1.000
+[dspark-acc] ctx=5091 burst=28/28 cum=4053/4053=1.000
+[dspark-acc] ctx=5123 burst=28/28 cum=4081/4081=1.000
+[dspark-acc] ctx=5155 burst=28/28 cum=4109/4109=1.000
+[dspark-acc] ctx=5187 burst=28/28 cum=4137/4137=1.000
+[dspark-acc] ctx=5219 burst=28/28 cum=4165/4165=1.000
+[dspark-acc] ctx=5251 burst=28/28 cum=4193/4193=1.000
+[dspark-acc] ctx=5283 burst=28/28 cum=4221/4221=1.000
+[dspark-acc] ctx=5315 burst=28/28 cum=4249/4249=1.000
+[dspark-acc] ctx=5347 burst=28/28 cum=4277/4277=1.000
+[dspark-acc] ctx=5379 burst=28/28 cum=4305/4305=1.000
+[dspark-acc] ctx=5411 burst=28/28 cum=4333/4333=1.000
+[dspark-acc] ctx=5443 burst=28/28 cum=4361/4361=1.000
+[dspark-acc] ctx=5475 burst=28/28 cum=4389/4389=1.000
+[dspark-acc] ctx=5507 burst=28/28 cum=4417/4417=1.000
+[dspark-acc] ctx=5539 burst=28/28 cum=4445/4445=1.000
+[dspark-acc] ctx=5571 burst=28/28 cum=4473/4473=1.000
+[dspark-acc] ctx=5603 burst=28/28 cum=4501/4501=1.000
+[dspark-acc] ctx=5635 burst=28/28 cum=4529/4529=1.000
+[dspark-acc] ctx=5667 burst=28/28 cum=4557/4557=1.000
+[dspark-acc] ctx=5699 burst=28/28 cum=4585/4585=1.000
+[dspark-acc] ctx=5731 burst=28/28 cum=4613/4613=1.000
+[dspark-acc] ctx=5763 burst=28/28 cum=4641/4641=1.000
+[dspark-acc] ctx=5795 burst=28/28 cum=4669/4669=1.000
+[dspark-acc] ctx=5827 burst=28/28 cum=4697/4697=1.000
+[dspark-acc] ctx=5859 burst=28/28 cum=4725/4725=1.000
+[dspark-acc] ctx=5891 burst=28/28 cum=4753/4753=1.000
+[dspark-acc] ctx=5923 burst=28/28 cum=4781/4781=1.000
+[dspark-acc] ctx=5955 burst=28/28 cum=4809/4809=1.000
+[dspark-acc] ctx=5987 burst=28/28 cum=4837/4837=1.000
+[dspark-acc] ctx=6019 burst=28/28 cum=4865/4865=1.000
+[dspark-acc] ctx=6051 burst=28/28 cum=4893/4893=1.000
+[dspark-acc] ctx=6083 burst=28/28 cum=4921/4921=1.000
+[dspark-acc] ctx=6115 burst=28/28 cum=4949/4949=1.000
+[dspark-acc] ctx=6147 burst=28/28 cum=4977/4977=1.000
+[dflash-kv-ring] compact keep_from=4123 kept=2056 phys_rows=4120
+[dspark-acc] ctx=6179 burst=28/28 cum=5005/5005=1.000
+[dspark-acc] ctx=6211 burst=28/28 cum=5033/5033=1.000
+[dspark-acc] ctx=6243 burst=28/28 cum=5061/5061=1.000
+[dspark-acc] ctx=6275 burst=28/28 cum=5089/5089=1.000
+[dspark-acc] ctx=6307 burst=28/28 cum=5117/5117=1.000
+[dspark-acc] ctx=6339 burst=28/28 cum=5145/5145=1.000
+[dspark-acc] ctx=6371 burst=28/28 cum=5173/5173=1.000
+[dspark-acc] ctx=6403 burst=28/28 cum=5201/5201=1.000
+[dspark-acc] ctx=6435 burst=28/28 cum=5229/5229=1.000
+[dspark-acc] ctx=6467 burst=28/28 cum=5257/5257=1.000
+[dspark-acc] ctx=6499 burst=28/28 cum=5285/5285=1.000
+[dspark-acc] ctx=6531 burst=28/28 cum=5313/5313=1.000
+[dspark-acc] ctx=6563 burst=28/28 cum=5341/5341=1.000
+[dspark-acc] ctx=6595 burst=28/28 cum=5369/5369=1.000
+[dspark-acc] ctx=6627 burst=28/28 cum=5397/5397=1.000
+[dspark-acc] ctx=6659 burst=28/28 cum=5425/5425=1.000
+[dspark-acc] ctx=6691 burst=28/28 cum=5453/5453=1.000
+[dspark-acc] ctx=6723 burst=28/28 cum=5481/5481=1.000
+[dspark-acc] ctx=6755 burst=28/28 cum=5509/5509=1.000
+[dspark-acc] ctx=6787 burst=28/28 cum=5537/5537=1.000
+[dspark-acc] ctx=6819 burst=28/28 cum=5565/5565=1.000
+[dspark-acc] ctx=6851 burst=28/28 cum=5593/5593=1.000
+[dspark-acc] ctx=6883 burst=28/28 cum=5621/5621=1.000
+[dspark-acc] ctx=6915 burst=28/28 cum=5649/5649=1.000
+[dspark-acc] ctx=6947 burst=28/28 cum=5677/5677=1.000
+[dspark-acc] ctx=6979 burst=28/28 cum=5705/5705=1.000
+[dspark-acc] ctx=7011 burst=28/28 cum=5733/5733=1.000
+[dspark-acc] ctx=7043 burst=28/28 cum=5761/5761=1.000
+[dspark-acc] ctx=7075 burst=28/28 cum=5789/5789=1.000
+[dspark-acc] ctx=7107 burst=28/28 cum=5817/5817=1.000
+[dspark-acc] ctx=7139 burst=28/28 cum=5845/5845=1.000
+[dspark-acc] ctx=7171 burst=28/28 cum=5873/5873=1.000
+[dspark-acc] ctx=7203 burst=28/28 cum=5901/5901=1.000
+[dspark-acc] ctx=7235 burst=28/28 cum=5929/5929=1.000
+[dspark-acc] ctx=7267 burst=28/28 cum=5957/5957=1.000
+[dspark-acc] ctx=7299 burst=28/28 cum=5985/5985=1.000
+[dspark-acc] ctx=7331 burst=28/28 cum=6013/6013=1.000
+[dspark-acc] ctx=7363 burst=28/28 cum=6041/6041=1.000
+[dspark-acc] ctx=7395 burst=28/28 cum=6069/6069=1.000
+[dspark-acc] ctx=7427 burst=28/28 cum=6097/6097=1.000
+[dspark-acc] ctx=7459 burst=28/28 cum=6125/6125=1.000
+[dspark-acc] ctx=7491 burst=28/28 cum=6153/6153=1.000
+[dspark-acc] ctx=7523 burst=28/28 cum=6181/6181=1.000
+[dspark-acc] ctx=7555 burst=28/28 cum=6209/6209=1.000
+[dspark-acc] ctx=7587 burst=28/28 cum=6237/6237=1.000
+[dspark-acc] ctx=7619 burst=28/28 cum=6265/6265=1.000
+[dspark-acc] ctx=7651 burst=28/28 cum=6293/6293=1.000
+[dspark-acc] ctx=7683 burst=28/28 cum=6321/6321=1.000
+[dspark-acc] ctx=7715 burst=28/28 cum=6349/6349=1.000
+[server] drain deadline (30s) hit with 1 in flight; exiting
+[dspark-acc] ctx=7747 burst=28/28 cum=6377/6377=1.000
+[dspark-acc] ctx=7779 burst=28/28 cum=6405/6405=1.000
+[dspark-acc] ctx=7811 burst=28/28 cum=6433/6433=1.000
+[dspark-acc] ctx=7843 burst=28/28 cum=6461/6461=1.000
+[dspark-acc] ctx=7875 burst=28/28 cum=6489/6489=1.000
+[dspark-acc] ctx=7907 burst=28/28 cum=6517/6517=1.000
+[dspark-acc] ctx=7939 burst=28/28 cum=6545/6545=1.000
+[dspark-acc] ctx=7971 burst=28/28 cum=6573/6573=1.000
+[dspark-acc] ctx=8003 burst=28/28 cum=6601/6601=1.000
+[dspark-acc] ctx=8035 burst=28/28 cum=6629/6629=1.000
+[dspark-acc] ctx=8067 burst=28/28 cum=6657/6657=1.000
+[dspark-acc] ctx=8099 burst=28/28 cum=6685/6685=1.000
+[dspark-acc] ctx=8131 burst=28/28 cum=6713/6713=1.000
+[dspark-acc] ctx=8163 burst=28/28 cum=6741/6741=1.000
+[dspark-acc] ctx=8195 burst=28/28 cum=6769/6769=1.000
+[dflash-kv-ring] compact keep_from=6187 kept=2056 phys_rows=4120
+[dspark-acc] ctx=8227 burst=28/28 cum=6797/6797=1.000
+[dspark-acc] ctx=8259 burst=28/28 cum=6825/6825=1.000
+[fa-pool] grow #2 dev=0 o_len 6389760 -> 12779520 ml_len 24960 -> 49920 (retired kept, zero=false)
+[dspark-acc] ctx=8291 burst=28/28 cum=6853/6853=1.000
+[dspark-acc] ctx=8323 burst=28/28 cum=6881/6881=1.000
+[dspark-acc] ctx=8355 burst=28/28 cum=6909/6909=1.000
+[dspark-acc] ctx=8387 burst=28/28 cum=6937/6937=1.000
+[server] WARN: HTTP connections exceeded the 5s graceful close deadline
+[dspark-acc] ctx=8419 burst=21/21 cum=6958/6958=1.000
+[abort] client disconnected: model "gate", prompt 491 (0 cached, 8443 fed), 7952 generated — billed to abort point, 63.21s
+[server] GPU worker shutdown complete
