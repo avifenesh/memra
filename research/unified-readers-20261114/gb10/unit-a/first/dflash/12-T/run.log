@@ -1,0 +1,15 @@
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 0m15s
+2026-11-14T01:12:19+02:00 live_fill: before MemFree: 2764 MemAvailable: 98056 Cached: 96027
+  2026-11-14T01:12:19+02:00 fill2: before MemFree: 2829324 kB;MemAvailable: 100408608 kB;Cached: 98332612 kB;
+  2026-11-14T01:12:19+02:00 fill2 done: MemFree: 2809432 kB;MemAvailable: 100397136 kB;Cached: 98340988 kB;
+2026-11-14T01:12:19+02:00 live_fill: 2 readers running until ~/.cache/memra-1307/runs/c3/dflash/12-T/stop (at most 900s): 2919770 2919772
+before requests: MemFree: 2805844 kB;MemAvailable: 100394568 kB;Cached: 98342012 kB;
+{"tag": "12-T", "req": "p1a", "status": 200, "prompt_tokens": 3719, "completion_tokens": 384, "finish": "length", "wall_s": 18.791, "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d", "error": null}
+{"tag": "12-T", "req": "p1b", "status": 200, "prompt_tokens": 3719, "completion_tokens": 384, "finish": "length", "wall_s": 19.694, "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d", "error": null}
+{"tag": "12-T", "req": "p2a", "status": 200, "prompt_tokens": 3719, "completion_tokens": 384, "finish": "length", "wall_s": 18.727, "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d", "error": null}
+{"tag": "12-T", "req": "p2b", "status": 200, "prompt_tokens": 3719, "completion_tokens": 384, "finish": "length", "wall_s": 18.726, "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d", "error": null}
+waitfor: gone 2919482 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

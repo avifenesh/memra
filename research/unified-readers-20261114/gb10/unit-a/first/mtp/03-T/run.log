@@ -1,0 +1,14 @@
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 2m01s
+2026-11-14T00:59:32+02:00 live_fill: before MemFree: 18469 MemAvailable: 98691 Cached: 80677
+  2026-11-14T00:59:32+02:00 fill2: before MemFree: 18912648 kB;MemAvailable: 101059608 kB;Cached: 82613264 kB;
+  2026-11-14T00:59:54+02:00 fill2 done: MemFree: 1327372 kB;MemAvailable: 101098136 kB;Cached: 100232656 kB;
+2026-11-14T00:59:54+02:00 live_fill: 2 readers running until ~/.cache/memra-1307/runs/c3/mtp/03-T/stop (at most 900s): 2908304 2908305
+before requests: MemFree: 1265568 kB;MemAvailable: 101095884 kB;Cached: 100292208 kB;
+{"tag": "03-T", "req": "m1", "status": 200, "prompt_tokens": 1868, "completion_tokens": 128, "finish": "length", "wall_s": 5.687, "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d", "error": null}
+{"tag": "03-T", "req": "m2", "status": 200, "prompt_tokens": 1868, "completion_tokens": 128, "finish": "length", "wall_s": 5.649, "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d", "error": null}
+{"tag": "03-T", "req": "m3", "status": 200, "prompt_tokens": 1868, "completion_tokens": 128, "finish": "length", "wall_s": 5.735, "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d", "error": null}
+waitfor: gone 2905028 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

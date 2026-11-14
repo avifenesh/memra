@@ -1,0 +1,50 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.141.1 (~/.cache/memra-1307/tree/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 2m 28s
+     Running unittests src/lib.rs (~/.cache/memra-1307/target/release/deps/memra_engine-d5220b04f652c299)
+
+running 1 test
+test spec::capture_headroom_tests::draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one ... FAILED
+
+failures:
+
+---- spec::capture_headroom_tests::draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one stdout ----
+
+thread 'spec::capture_headroom_tests::draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one' (862010) panicked at crates/memra-engine/src/spec.rs:18204:9:
+the draft-state bracket end does not take the delta reading: PER-SESSION DRAFT-STATE MEASUREMENT bracket end (vram-admission lane): when a
+        // capture landed in THIS call, the effective-free delta across the capture section is
+        // this session's parked draft-graph state (keepers + instantiated graphs'
+        // backing). Recorded as a model-owned high-water; admission charges it per
+        // spec-capable session (see `draft_session_admission_bytes`). Both ends take the delta
+        // reading (memra#1307, `draft_state_parked_delta`).
+        if captured_now
+            && let Some(meas0) = cap_meas0
+            && let Ok((f1, _)) = crate::unified_memory::allocatable_mem_info(e.ctx())
+        {
+            let parked_delta = draft_state_parked_delta(meas0, f1, e.pool_cached_bytes());
+            let (_res_high, used_high) = e.pool_high_water_reset();
+            let peak_delta = used_high.saturating_sub(cap_used0);
+            let observed = parked_delta.max(peak_delta);
+            if observed > 0
+                && let Some(hw) = self.record_draft_state_bytes(observed)
+            {
+                eprintln!(
+                    "[spec] draft-session state high-water: {}MB (max of parked delta {}MB \
+                     and capture-time pool peak {}MB; charged per spec admission and gating \
+                     future captures)",
+                    hw / (1 << 20),
+                    parked_delta / (1 << 20),
+                    peak_delta / (1 << 20),
+                );
+            }
+        }
+        //
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    spec::capture_headroom_tests::draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 847 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-engine --lib`

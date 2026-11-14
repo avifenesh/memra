@@ -1,0 +1,7 @@
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 2m25s
+before requests: MemFree: 18649796 kB;MemAvailable: 101644320 kB;Cached: 83885628 kB;
+waitfor: gone 2395155 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
