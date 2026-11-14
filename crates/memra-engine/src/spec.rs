@@ -566,7 +566,10 @@ pub(crate) fn capture_trim_keep(reserved: usize, driver_free: usize, required: u
 /// moves with the page cache: with the page cache full on GB10 a 34 MiB allocation read -16 to
 /// +43 MiB and a 256 MiB one -500 to +308 MiB, and the served brackets of memra#1221's and
 /// memra#1257's cells read 0-4 MiB where an emptier cache read 33-34 MiB. The delta reading moved
-/// by 33-39 and 251-263 MiB in the same samples (`research/unified-readers-20261114/`).
+/// by 33-39 and 251-263 MiB in the same samples, and booting under a filling page cache it
+/// recorded 34 and 35 MB where the raw one recorded 46 and 55
+/// (`research/unified-readers-20261114/`). It can still read low while reclaim runs
+/// (`unified_memory.rs`).
 pub(crate) fn draft_state_parked_delta(
     entry: usize,
     free_end: usize,
