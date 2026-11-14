@@ -1,1 +1,12 @@
+1794617494.423095 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
 1794617507.036076 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1778384896,"still_owned_bytes":19473817360,"pool_reserved_bytes":19595788288,"pool_cached_bytes":121970928,"driver_free_bytes":82345947136,"synchronization_errors":[]}
+1794617511.571395 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3719 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794617514.654046 [dspark-acc] ctx=3719 burst=25/35 cum=25/35=0.714
+1794617514.656882 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=3719 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+1794617514.658813 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=3719 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+1794617514.668789 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=3719 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2
+1794617555.527966 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3719 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794617558.563111 [dspark-acc] ctx=3719 burst=25/35 cum=25/35=0.714
+1794617558.565606 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=3719 cached=0 lcp=0 active=2 wave=4 placement=single-or-non-pp2
+1794617558.567829 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=3719 cached=0 lcp=0 active=3 wave=4 placement=single-or-non-pp2
+1794617558.569985 [spec-k] model="q38" tenant="" K=0 source=concurrency prompt=3719 cached=0 lcp=0 active=4 wave=4 placement=single-or-non-pp2

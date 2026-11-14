@@ -12,7 +12,7 @@ L=$D/logs/${1:-suites}
 mkdir -p "$L"
 S=$L/summary.txt
 cd "$D/tree" || exit 1
-sha256sum crates/memra-engine/src/spec.rs crates/memra-engine/src/unified_memory.rs crates/memra-engine/src/dsv4_gpu.rs > "$S"
+(cd crates/memra-engine/src && sha256sum spec.rs unified_memory.rs lib.rs dsv4_gpu.rs) > "$S"
 taskset -c 14-31 nice -n 15 cargo test --release -p memra-engine --lib -j 14 > "$L/engine.log" 2>&1
 echo "engine lib suite rc=$? $(grep -E '^test result' "$L/engine.log" | tail -n 1)" | tee -a "$S"
 grep -E "^test .*FAILED$" "$L/engine.log" | head -n 10 >> "$S"

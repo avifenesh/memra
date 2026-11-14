@@ -46,9 +46,12 @@ What the cells show (Qwen3.8-27B on two DGX Sparks, main against this branch):
   - **dflash**: the DFlash2 drafter, 32,768 context, 4 sessions, prefix cache and reuse pool off so
     every request primes cold. The pooled DFlash2 verify runs here.
 - Arms, both `memra-server` for sm_121a, built on the unit from one tree; each cell's `guard.log`
-  has the binary's sha256:
+  has the binary's sha256, and `gb10/arms/` has each arm's source hashes (`tools/arm_sha.py REV`
+  prints them from a revision):
   - B = main bbc6f83aea's `spec.rs`, `dflash.rs`, `unified_memory.rs`, `dsv4_gpu.rs`;
-  - T = this branch's.
+  - T = this branch's at 4142526e8a, the commit sections 1 to 7 ran on. The review's fold changed
+    code after it (the delta's "unified?" became the engine's answer, read once); section 8 runs
+    main against that head.
   - Both carry the `[diag1307]` lines of `tools/diag1307.py` (stderr only, no decision reads
     them): one line per planned pooled DFlash2 forward and one per draft-state bracket that
     captured, with the raw, `MemAvailable` and free-plus-reclaimable deltas.
@@ -295,6 +298,7 @@ or more live rounds, by `MemAvailable` at the forward:
 - `serve1307.sh`, `cell1307.sh`, `live_fill.sh`, `client1307.py`, `campaign1307.sh`: the servings,
   one cell, the fill with readers, the requests, the campaigns;
 - `tab1307.py`: the tables; `assemble1307.py`: copies receipts here, home paths written as `~`;
+  `arm_sha.py`: an arm's source hashes from a revision;
 - `dd-checks.sh`, `dd-suites.sh`: the CPU checks and red arms.
 
 ## CPU
@@ -311,11 +315,19 @@ start with the engine files' sha256):
   one, 0 and 877.7 on the allocatable one; the bracket takes the delta reading at both ends and
   every failed capture records the raw entry reading.
 - `free_plus_reclaimable_reads_each_field_from_its_own_line` (`unified_memory.rs`).
+- `delta_reading_is_the_driver_free_on_a_discrete_card_and_free_plus_reclaimable_on_unified`
+  (`unified_memory.rs`): the delta reading as a table over (unified, driver free, `/proc/meminfo`
+  content); `delta_free_bytes` only feeds it the host's file; the engine reads "unified?" once,
+  when it is built.
 - Red arms, tests kept, one production line changed, each fails (`cpu/R*.log`):
   - R1: the width reads `mem_get_info` again;
   - R2: the bracket end reads `mem_get_info` again (main);
   - R3: the bracket end reads `allocatable_mem_info` (this branch's first commit);
-  - R4: one failed capture's floor takes the delta's entry reading.
+  - R4: one failed capture's floor takes the delta's entry reading;
+  - R5: the delta reading's unified branch reads `MemAvailable` (the review's mutation, which
+    every test passed before the table test);
+  - R6: the bracket end asks the device "unified?" again;
+  - R7: `Engine::unified_memory` asks the device on every call.
   A red arm whose edit does not apply is reported as such and not run: R4's first version asserted
   the wrong anchor count, left the source unchanged and passed.
 - Engine library suite 782 passed, server library suite 1,263 passed; clippy (engine and server,

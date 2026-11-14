@@ -25,7 +25,11 @@
 # the [diag1307] lines. A quiet cell starts from `echo 1 > /proc/sys/vm/drop_caches` (page cache
 # only; the kernel's reclaimable cache, nothing else is touched).
 #   probe2: as probe without the quiet state, 16 samples of 34, 256 and 1,024 MiB per state.
-# usage: [TARGET_MB=n] campaign1307.sh CAMPAIGN [probe] [probe2] [mtp] [mtpboot] [dflash] [dflash4] [bootfull] [dflashagain] [dflash4low] [dflashshort]
+#   confirm: the head after the review's fold against main, arms Bc and Tc: one boot per arm under
+#          a filling page cache with the MTP requests (71-Bc, 72-Tc: the 21-B/22-T shape), then one
+#          live DFlash2 pair cell per arm (73-Tc, 74-Bc), each after the last cell's readers ended
+#          and a dropped page cache.
+# usage: [TARGET_MB=n] campaign1307.sh CAMPAIGN [probe] [probe2] [mtp] [mtpboot] [dflash] [dflash4] [bootfull] [dflashagain] [dflash4low] [dflashshort] [confirm]
 set -u
 CAMP=$1; shift
 H=$(cd "$(dirname "$0")" && pwd)
@@ -82,6 +86,10 @@ for part in "$@"; do
       export EXTRA="MEMRA_SPEC_GATE_LOW=4 MEMRA_SPEC_GATE_HIGH=5"
       for c in 61-B 62-T 63-T 64-B; do bash "$H/cell1307.sh" "$CD/dflash4low" "$c" "$R/bins/${c#*-}" dflash4 live; done
       unset EXTRA ;;
+    confirm)
+      for c in 71-Bc 72-Tc; do bash "$H/cell1307.sh" "$CD/mtp" "$c" "$R/bins/${c#*-}" mtp liveboot; done
+      sleep 35; drop; bash "$H/cell1307.sh" "$CD/dflash" 73-Tc "$R/bins/Tc" dflash live
+      sleep 35; drop; bash "$H/cell1307.sh" "$CD/dflash" 74-Bc "$R/bins/Bc" dflash live ;;
     dflashshort)
       export EXTRA="MEMRA_SPEC_GATE_LOW=4 MEMRA_SPEC_GATE_HIGH=5"
       drop; bash "$H/cell1307.sh" "$CD/dflashshort" 41-T "$R/bins/T" dflash4long shortlate
