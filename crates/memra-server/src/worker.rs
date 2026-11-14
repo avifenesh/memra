@@ -21955,6 +21955,10 @@ pub fn run(
             batch_oom_recover_boot_line(batch_oom_recover)
         }
     );
+    // PARKED PRIME WORKSPACE (memra#1258): a prime parks its GDN scan workspace only on a device
+    // that holds the floor admission keeps free; under it the bytes go back to the pool for the
+    // steps that follow the prime.
+    memra_engine::set_prime_gdn_ws_park_floor(admit_driver_headroom_bytes());
     // PREFILL WORKSPACE HELD (research/c8-workspace-20261108): the card's arm, resolved once.
     let prefill_held = prefill_held_for_device(&device_name, device_is_unified(&engine));
     eprintln!("{}", prefill_held_boot_line(prefill_held));
@@ -42859,6 +42863,19 @@ mod tests {
         assert!(read < trim);
         let flat: String = body.chars().filter(|c| !c.is_whitespace()).collect();
         assert!(flat.contains("calibration_transient_floor(res_high,res_rest,charged,0,parked)"));
+    }
+
+    #[test]
+    fn the_worker_hands_the_engine_the_park_floor() {
+        // memra#1258: admission counts a parked prime workspace as cached, and only a prime or
+        // a trim can use it. The engine parks it only above the floor the driver-headroom rung
+        // keeps; without this call the floor is 0 and it parks on a short device too.
+        let src = include_str!("worker.rs");
+        let flat: String = src.chars().filter(|c| !c.is_whitespace()).collect();
+        assert!(flat.contains(concat!(
+            "memra_engine::set_prime_gdn_ws_park",
+            "_floor(admit_driver_headroom_bytes());"
+        )));
     }
 
     #[test]

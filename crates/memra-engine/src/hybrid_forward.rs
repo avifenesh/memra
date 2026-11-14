@@ -33236,5 +33236,15 @@ mod prime_slab_into_census_tests {
             .expect("trim frees the parked workspace");
         let second = trim.rfind(call).expect("a second trim");
         assert!(first < check && check < parked && parked < second, "{trim}");
+        // The park keeps the workspace only above the park floor, on admission's free reading.
+        let park = code(fn_body(
+            &lib,
+            concat!("pub(crate) fn prime_gdn_ws", "_park("),
+        ));
+        assert!(
+            park.contains(concat!("if !prime_gdn_ws", "_parks(free, floor)"))
+                && park.contains(concat!("allocatable_mem", "_info(self.ctx())")),
+            "{park}"
+        );
     }
 }
