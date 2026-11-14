@@ -1,0 +1,352 @@
+# head 0ad2a9cbc9 (the fold-check code rebased onto main d6ae4e525d); main files for the census arms from 7a32d9b10b
+accumulation-off rc=101 thread 'spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384' (1228915) panicked at crates/memra-engine/src/spec.rs:19241:9:
+fa-growth-off rc=101 thread 'spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_512' (1229380) panicked at crates/memra-engine/src/spec.rs:19277:9:
+rider-cap-off rc=101 thread 'spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth' (1229925) panicked at crates/memra-engine/src/spec.rs:19357:9:
+margin-low rc=101 thread 'spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384' (1230367) panicked at crates/memra-engine/src/spec.rs:19242:9:
+main-engine rc=101 thread 'spec::pooled_verify_cap_1266_tests::the_mtp_lockstep_chunk_walk_applies_the_memory_cap' (1231778) panicked at crates/memra-engine/src/spec.rs:18528:13:
+snapshots-off rc=101 thread 'worker::pre_cohort_reclaim_1266_tests::the_need_covers_the_round_and_every_burst_snapshot' (1239389) panicked at crates/memra-server/src/worker.rs:61141:9:
+parked-first rc=101 thread 'worker::pre_cohort_reclaim_1266_tests::the_reclaim_reads_without_the_unbuilt_booking' (1241434) panicked at crates/memra-server/src/worker.rs:61298:9:
+unreadable-acts rc=101 thread 'worker::pre_cohort_reclaim_1266_tests::an_unreadable_device_does_nothing' (1242715) panicked at crates/memra-server/src/worker.rs:61251:9:
+main-worker rc=101 error[E0560]: struct `worker::PrefixEntry` has no field named `loan_charge`
+fa-deepest-rung rc=101 thread 'spec::pooled_verify_cap_1266_tests::a_cohort_stacked_grows_the_pool_where_no_round_alone_does' (1252353) panicked at crates/memra-engine/src/spec.rs:19312:9:
+rider-depth-off rc=101 thread 'spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth' (1254426) panicked at crates/memra-engine/src/spec.rs:19357:9:
+booking-off rc=101 thread 'worker::pre_cohort_reclaim_1266_tests::only_the_fa_growth_overlaps_the_unbuilt_booking' (1259187) panicked at crates/memra-server/src/worker.rs:61284:9:
+reap-off rc=101 thread 'worker::tests::vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap' (1261320) panicked at crates/memra-server/src/worker.rs:57572:9:
+fence-funded-off rc=101 thread 'worker::pre_cohort_reclaim_1266_tests::a_reading_the_fence_funds_evicts_nothing' (1268944) panicked at crates/memra-server/src/worker.rs:61261:9:
+booking-unbounded rc=101 thread 'worker::pre_cohort_reclaim_1266_tests::only_the_fa_growth_overlaps_the_unbuilt_booking' (1273683) panicked at crates/memra-server/src/worker.rs:61279:9:
+growth-max-not-sum rc=101 thread 'spec::pooled_verify_cap_1266_tests::two_runs_that_both_grow_the_pool_add_up' (1274303) panicked at crates/memra-engine/src/spec.rs:19292:9:
+cohort-rows-first-only rc=101 thread 'spec::pooled_verify_cap_1266_tests::a_cohort_stacked_grows_the_pool_where_no_round_alone_does' (1278604) panicked at crates/memra-engine/src/spec.rs:19306:9:
+RED-DONE 2026-11-13T17:32:54+01:00
+== accumulation-off
+arm accumulation-off written
+test spec::pooled_verify_cap_1266_tests::a_round_needs_its_checkpoint_columns_and_two_logits_stacks ... ok
+test spec::pooled_verify_cap_1266_tests::a_cohort_stacked_grows_the_pool_where_no_round_alone_does ... ok
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384 ... FAILED
+test spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth ... FAILED
+test spec::pooled_verify_cap_1266_tests::riders_join_only_within_the_reading ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_512 ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_fa_pool_growth_counts_in_the_forward ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_margin_exceeds_what_the_pool_could_not_deliver ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_joins_members_only_within_the_reading ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_walk_keeps_the_row_and_readiness_stops ... FAILED
+test spec::pooled_verify_cap_1266_tests::two_runs_that_both_grow_the_pool_add_up ... ok
+test spec::pooled_verify_cap_1266_tests::the_mtp_lockstep_chunk_walk_applies_the_memory_cap ... ok
+thread 'spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384' (1228915) panicked at crates/memra-engine/src/spec.rs:19241:9:
+assertion `left == right` failed
+  left: (3, 12)
+ right: (2, 10)
+thread 'spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth' (1228912) panicked at crates/memra-engine/src/spec.rs:19356:9:
+assertion `left == right` failed
+  left: 1
+ right: 0
+thread 'spec::pooled_verify_cap_1266_tests::riders_join_only_within_the_reading' (1228914) panicked at crates/memra-engine/src/spec.rs:19325:9:
+assertion `left == right` failed
+  left: 4
+ right: 3
+thread 'spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_512' (1228916) panicked at crates/memra-engine/src/spec.rs:19277:9:
+assertion `left == right` failed
+  left: 2
+ right: 1
+thread 'spec::pooled_verify_cap_1266_tests::the_fa_pool_growth_counts_in_the_forward' (1228917) panicked at crates/memra-engine/src/spec.rs:19218:9:
+assertion `left == right` failed
+  left: 2
+ right: 1
+thread 'spec::pooled_verify_cap_1266_tests::the_walk_joins_members_only_within_the_reading' (1228920) panicked at crates/memra-engine/src/spec.rs:19130:9:
+assertion `left == right` failed
+  left: (2, 2, 12, 0)
+ right: (1, 1, 6, 796385280)
+thread 'spec::pooled_verify_cap_1266_tests::the_walk_keeps_the_row_and_readiness_stops' (1228921) panicked at crates/memra-engine/src/spec.rs:19198:9:
+assertion `left == right` failed
+  left: (3, 3)
+ right: (1, 1)
+test result: FAILED. 5 passed; 7 failed; 0 ignored; 0 measured; 815 filtered out; finished in 0.00s
+arm restore written
+== fa-growth-off
+arm fa-growth-off written
+test spec::pooled_verify_cap_1266_tests::a_round_needs_its_checkpoint_columns_and_two_logits_stacks ... ok
+test spec::pooled_verify_cap_1266_tests::a_cohort_stacked_grows_the_pool_where_no_round_alone_does ... ok
+test spec::pooled_verify_cap_1266_tests::riders_join_only_within_the_reading ... ok
+test spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth ... ok
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_512 ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384 ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_fa_pool_growth_counts_in_the_forward ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_margin_exceeds_what_the_pool_could_not_deliver ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_joins_members_only_within_the_reading ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_keeps_the_row_and_readiness_stops ... ok
+test spec::pooled_verify_cap_1266_tests::two_runs_that_both_grow_the_pool_add_up ... ok
+test spec::pooled_verify_cap_1266_tests::the_mtp_lockstep_chunk_walk_applies_the_memory_cap ... ok
+thread 'spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_512' (1229380) panicked at crates/memra-engine/src/spec.rs:19277:9:
+assertion `left == right` failed
+  left: 2
+ right: 1
+thread 'spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384' (1229379) panicked at crates/memra-engine/src/spec.rs:19241:9:
+assertion `left == right` failed
+  left: (3, 12)
+ right: (2, 10)
+thread 'spec::pooled_verify_cap_1266_tests::the_fa_pool_growth_counts_in_the_forward' (1229381) panicked at crates/memra-engine/src/spec.rs:19218:9:
+assertion `left == right` failed
+  left: 2
+ right: 1
+test result: FAILED. 9 passed; 3 failed; 0 ignored; 0 measured; 815 filtered out; finished in 0.00s
+arm restore written
+== rider-cap-off
+arm rider-cap-off written
+test spec::pooled_verify_cap_1266_tests::a_round_needs_its_checkpoint_columns_and_two_logits_stacks ... ok
+test spec::pooled_verify_cap_1266_tests::a_cohort_stacked_grows_the_pool_where_no_round_alone_does ... ok
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384 ... ok
+test spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth ... FAILED
+test spec::pooled_verify_cap_1266_tests::riders_join_only_within_the_reading ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_512 ... ok
+test spec::pooled_verify_cap_1266_tests::the_fa_pool_growth_counts_in_the_forward ... ok
+test spec::pooled_verify_cap_1266_tests::the_margin_exceeds_what_the_pool_could_not_deliver ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_joins_members_only_within_the_reading ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_keeps_the_row_and_readiness_stops ... ok
+test spec::pooled_verify_cap_1266_tests::two_runs_that_both_grow_the_pool_add_up ... ok
+test spec::pooled_verify_cap_1266_tests::the_mtp_lockstep_chunk_walk_applies_the_memory_cap ... ok
+thread 'spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth' (1229925) panicked at crates/memra-engine/src/spec.rs:19357:9:
+assertion `left == right` failed
+  left: 1
+ right: 0
+thread 'spec::pooled_verify_cap_1266_tests::riders_join_only_within_the_reading' (1229927) panicked at crates/memra-engine/src/spec.rs:19326:9:
+assertion `left == right` failed
+  left: 4
+ right: 3
+test result: FAILED. 10 passed; 2 failed; 0 ignored; 0 measured; 815 filtered out; finished in 0.00s
+arm restore written
+== margin-low
+arm margin-low written
+test spec::pooled_verify_cap_1266_tests::a_round_needs_its_checkpoint_columns_and_two_logits_stacks ... ok
+test spec::pooled_verify_cap_1266_tests::riders_join_only_within_the_reading ... ok
+test spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth ... ok
+test spec::pooled_verify_cap_1266_tests::a_cohort_stacked_grows_the_pool_where_no_round_alone_does ... ok
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_512 ... ok
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384 ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_margin_exceeds_what_the_pool_could_not_deliver ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_fa_pool_growth_counts_in_the_forward ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_joins_members_only_within_the_reading ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_walk_keeps_the_row_and_readiness_stops ... ok
+test spec::pooled_verify_cap_1266_tests::two_runs_that_both_grow_the_pool_add_up ... ok
+test spec::pooled_verify_cap_1266_tests::the_mtp_lockstep_chunk_walk_applies_the_memory_cap ... ok
+thread 'spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384' (1230367) panicked at crates/memra-engine/src/spec.rs:19242:9:
+assertion `left == right` failed
+  left: (3, 12)
+ right: (2, 10)
+thread 'spec::pooled_verify_cap_1266_tests::the_margin_exceeds_what_the_pool_could_not_deliver' (1230370) panicked at crates/memra-engine/src/spec.rs:19117:9:
+assertion failed: POOLED_VERIFY_MARGIN > undeliverable
+thread 'spec::pooled_verify_cap_1266_tests::the_walk_joins_members_only_within_the_reading' (1230372) panicked at crates/memra-engine/src/spec.rs:19157:9:
+assertion `left == right` failed
+  left: 2
+ right: 1
+test result: FAILED. 9 passed; 3 failed; 0 ignored; 0 measured; 815 filtered out; finished in 0.00s
+arm restore written
+== main-engine
+arm main-engine written
+test spec::pooled_verify_cap_1266_tests::the_mtp_lockstep_chunk_walk_applies_the_memory_cap ... FAILED
+thread 'spec::pooled_verify_cap_1266_tests::the_mtp_lockstep_chunk_walk_applies_the_memory_cap' (1231778) panicked at crates/memra-engine/src/spec.rs:18528:13:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 812 filtered out; finished in 0.00s
+arm restore written
+== snapshots-off
+arm snapshots-off written
+test worker::pre_cohort_reclaim_1266_tests::a_reading_the_fence_funds_evicts_nothing ... ok
+test worker::pre_cohort_reclaim_1266_tests::only_the_fa_growth_overlaps_the_unbuilt_booking ... ok
+test worker::pre_cohort_reclaim_1266_tests::an_unreadable_device_does_nothing ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_ladder_evicts_prefix_first_then_parked_sessions ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_reclaim_reads_without_the_unbuilt_booking ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_need_covers_the_round_and_every_burst_snapshot ... FAILED
+test worker::pre_cohort_reclaim_1266_tests::the_cohorts_pass_reclaims_before_it_forms_cohorts ... ok
+thread 'worker::pre_cohort_reclaim_1266_tests::the_need_covers_the_round_and_every_burst_snapshot' (1239389) panicked at crates/memra-server/src/worker.rs:61141:9:
+assertion `left == right` failed
+  left: 1064820736
+ right: 1378607104
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 1252 filtered out; finished in 0.15s
+arm restore written
+== parked-first
+arm parked-first written
+test worker::pre_cohort_reclaim_1266_tests::a_reading_the_fence_funds_evicts_nothing ... ok
+test worker::pre_cohort_reclaim_1266_tests::an_unreadable_device_does_nothing ... ok
+test worker::pre_cohort_reclaim_1266_tests::only_the_fa_growth_overlaps_the_unbuilt_booking ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_need_covers_the_round_and_every_burst_snapshot ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_reclaim_reads_without_the_unbuilt_booking ... FAILED
+test worker::pre_cohort_reclaim_1266_tests::the_ladder_evicts_prefix_first_then_parked_sessions ... FAILED
+test worker::pre_cohort_reclaim_1266_tests::the_cohorts_pass_reclaims_before_it_forms_cohorts ... ok
+thread 'worker::pre_cohort_reclaim_1266_tests::the_reclaim_reads_without_the_unbuilt_booking' (1241434) panicked at crates/memra-server/src/worker.rs:61298:9:
+assertion `left == right` failed
+  left: ["parked", "prefix"]
+ right: ["prefix"]
+thread 'worker::pre_cohort_reclaim_1266_tests::the_ladder_evicts_prefix_first_then_parked_sessions' (1241432) panicked at crates/memra-server/src/worker.rs:61230:9:
+assertion `left == right` failed
+  left: ["parked", "prefix"]
+ right: ["prefix"]
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 1252 filtered out; finished in 0.15s
+arm restore written
+== unreadable-acts
+arm unreadable-acts written
+test worker::pre_cohort_reclaim_1266_tests::a_reading_the_fence_funds_evicts_nothing ... ok
+test worker::pre_cohort_reclaim_1266_tests::only_the_fa_growth_overlaps_the_unbuilt_booking ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_ladder_evicts_prefix_first_then_parked_sessions ... ok
+test worker::pre_cohort_reclaim_1266_tests::an_unreadable_device_does_nothing ... FAILED
+test worker::pre_cohort_reclaim_1266_tests::the_need_covers_the_round_and_every_burst_snapshot ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_reclaim_reads_without_the_unbuilt_booking ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_cohorts_pass_reclaims_before_it_forms_cohorts ... ok
+thread 'worker::pre_cohort_reclaim_1266_tests::an_unreadable_device_does_nothing' (1242715) panicked at crates/memra-server/src/worker.rs:61251:9:
+assertion failed: r.unreadable
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 1252 filtered out; finished in 0.15s
+arm restore written
+== main-worker
+arm main-worker written
+error[E0560]: struct `worker::PrefixEntry` has no field named `loan_charge`
+error[E0063]: missing fields `gdn_grid` and `step_gemm` in initializer of `PrimeWorkspaceShape`
+error[E0063]: missing fields `gdn_grid` and `step_gemm` in initializer of `PrimeWorkspaceShape`
+error[E0063]: missing fields `gdn_grid` and `step_gemm` in initializer of `PrimeWorkspaceShape`
+error[E0063]: missing fields `gdn_grid` and `step_gemm` in initializer of `PrimeWorkspaceShape`
+error[E0063]: missing fields `gdn_grid` and `step_gemm` in initializer of `PrimeWorkspaceShape`
+error[E0063]: missing fields `gdn_grid` and `step_gemm` in initializer of `PrimeWorkspaceShape`
+error[E0063]: missing fields `gdn_grid` and `step_gemm` in initializer of `PrimeWorkspaceShape`
+error[E0063]: missing fields `gdn_grid` and `step_gemm` in initializer of `PrimeWorkspaceShape`
+arm restore written
+== fa-deepest-rung
+arm fa-deepest-rung written
+test spec::pooled_verify_cap_1266_tests::a_round_needs_its_checkpoint_columns_and_two_logits_stacks ... ok
+test spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth ... ok
+test spec::pooled_verify_cap_1266_tests::riders_join_only_within_the_reading ... ok
+test spec::pooled_verify_cap_1266_tests::a_cohort_stacked_grows_the_pool_where_no_round_alone_does ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384 ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_512 ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_fa_pool_growth_counts_in_the_forward ... ok
+test spec::pooled_verify_cap_1266_tests::the_margin_exceeds_what_the_pool_could_not_deliver ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_joins_members_only_within_the_reading ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_keeps_the_row_and_readiness_stops ... ok
+test spec::pooled_verify_cap_1266_tests::two_runs_that_both_grow_the_pool_add_up ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_mtp_lockstep_chunk_walk_applies_the_memory_cap ... ok
+thread 'spec::pooled_verify_cap_1266_tests::a_cohort_stacked_grows_the_pool_where_no_round_alone_does' (1252353) panicked at crates/memra-engine/src/spec.rs:19312:9:
+assertion `left == right` failed
+  left: 0
+ right: 113932800
+thread 'spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384' (1252357) panicked at crates/memra-engine/src/spec.rs:19235:9:
+assertion `left == right` failed
+  left: 0
+ right: 113932800
+thread 'spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_512' (1252358) panicked at crates/memra-engine/src/spec.rs:19264:9:
+assertion `left == right` failed
+  left: 1337472
+ right: 6340608
+thread 'spec::pooled_verify_cap_1266_tests::two_runs_that_both_grow_the_pool_add_up' (1252364) panicked at crates/memra-engine/src/spec.rs:19292:9:
+assertion `left == right` failed
+  left: 19170432
+ right: 19021824
+test result: FAILED. 8 passed; 4 failed; 0 ignored; 0 measured; 815 filtered out; finished in 0.00s
+arm restore written
+== rider-depth-off
+arm rider-depth-off written
+test spec::pooled_verify_cap_1266_tests::a_round_needs_its_checkpoint_columns_and_two_logits_stacks ... ok
+test spec::pooled_verify_cap_1266_tests::a_cohort_stacked_grows_the_pool_where_no_round_alone_does ... ok
+test spec::pooled_verify_cap_1266_tests::riders_join_only_within_the_reading ... ok
+test spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384 ... ok
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_512 ... ok
+test spec::pooled_verify_cap_1266_tests::the_fa_pool_growth_counts_in_the_forward ... ok
+test spec::pooled_verify_cap_1266_tests::the_margin_exceeds_what_the_pool_could_not_deliver ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_joins_members_only_within_the_reading ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_keeps_the_row_and_readiness_stops ... ok
+test spec::pooled_verify_cap_1266_tests::two_runs_that_both_grow_the_pool_add_up ... ok
+test spec::pooled_verify_cap_1266_tests::the_mtp_lockstep_chunk_walk_applies_the_memory_cap ... ok
+thread 'spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth' (1254426) panicked at crates/memra-engine/src/spec.rs:19357:9:
+assertion `left == right` failed
+  left: 1
+ right: 0
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 815 filtered out; finished in 0.00s
+arm restore written
+== booking-off
+arm booking-off written
+test worker::pre_cohort_reclaim_1266_tests::an_unreadable_device_does_nothing ... ok
+test worker::pre_cohort_reclaim_1266_tests::a_reading_the_fence_funds_evicts_nothing ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_ladder_evicts_prefix_first_then_parked_sessions ... ok
+test worker::pre_cohort_reclaim_1266_tests::only_the_fa_growth_overlaps_the_unbuilt_booking ... FAILED
+test worker::pre_cohort_reclaim_1266_tests::the_need_covers_the_round_and_every_burst_snapshot ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_reclaim_reads_without_the_unbuilt_booking ... FAILED
+test worker::pre_cohort_reclaim_1266_tests::the_cohorts_pass_reclaims_before_it_forms_cohorts ... ok
+thread 'worker::pre_cohort_reclaim_1266_tests::only_the_fa_growth_overlaps_the_unbuilt_booking' (1259187) panicked at crates/memra-server/src/worker.rs:61284:9:
+assertion `left == right` failed
+  left: (None, 2000, 0)
+ right: (None, 1900, 0)
+thread 'worker::pre_cohort_reclaim_1266_tests::the_reclaim_reads_without_the_unbuilt_booking' (1259191) panicked at crates/memra-server/src/worker.rs:61292:9:
+assertion `left == right` failed
+  left: Some(2000)
+ right: Some(1100)
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 1252 filtered out; finished in 0.15s
+arm restore written
+== reap-off
+arm reap-off written
+test worker::tests::vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap ... FAILED
+thread 'worker::tests::vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap' (1261320) panicked at crates/memra-server/src/worker.rs:57572:9:
+assertion failed: live.contains("let evicted = evict_oldest_parked(reuse, spec_reuse, dspark_reuse, metrics).is_some(); if evicted { vmm_reap_for(\"pre-cohort reclaim\"); } evicted")
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1258 filtered out; finished in 0.14s
+arm restore written
+== fence-funded-off
+arm fence-funded-off written
+test worker::pre_cohort_reclaim_1266_tests::an_unreadable_device_does_nothing ... ok
+test worker::pre_cohort_reclaim_1266_tests::only_the_fa_growth_overlaps_the_unbuilt_booking ... ok
+test worker::pre_cohort_reclaim_1266_tests::a_reading_the_fence_funds_evicts_nothing ... FAILED
+test worker::pre_cohort_reclaim_1266_tests::the_ladder_evicts_prefix_first_then_parked_sessions ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_need_covers_the_round_and_every_burst_snapshot ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_reclaim_reads_without_the_unbuilt_booking ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_cohorts_pass_reclaims_before_it_forms_cohorts ... ok
+thread 'worker::pre_cohort_reclaim_1266_tests::a_reading_the_fence_funds_evicts_nothing' (1268944) panicked at crates/memra-server/src/worker.rs:61261:9:
+assertion failed: r.fence_funded
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 1252 filtered out; finished in 0.19s
+arm restore written
+== booking-unbounded
+arm booking-unbounded written
+test worker::pre_cohort_reclaim_1266_tests::an_unreadable_device_does_nothing ... ok
+test worker::pre_cohort_reclaim_1266_tests::a_reading_the_fence_funds_evicts_nothing ... ok
+test worker::pre_cohort_reclaim_1266_tests::only_the_fa_growth_overlaps_the_unbuilt_booking ... FAILED
+test worker::pre_cohort_reclaim_1266_tests::the_need_covers_the_round_and_every_burst_snapshot ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_ladder_evicts_prefix_first_then_parked_sessions ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_reclaim_reads_without_the_unbuilt_booking ... ok
+test worker::pre_cohort_reclaim_1266_tests::the_cohorts_pass_reclaims_before_it_forms_cohorts ... ok
+thread 'worker::pre_cohort_reclaim_1266_tests::only_the_fa_growth_overlaps_the_unbuilt_booking' (1273683) panicked at crates/memra-server/src/worker.rs:61279:9:
+assertion `left == right` failed
+  left: 900
+ right: 100
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 1252 filtered out; finished in 0.15s
+arm restore written
+== growth-max-not-sum
+arm growth-max-not-sum written
+test spec::pooled_verify_cap_1266_tests::a_round_needs_its_checkpoint_columns_and_two_logits_stacks ... ok
+test spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth ... ok
+test spec::pooled_verify_cap_1266_tests::a_cohort_stacked_grows_the_pool_where_no_round_alone_does ... ok
+test spec::pooled_verify_cap_1266_tests::riders_join_only_within_the_reading ... ok
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384 ... ok
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_512 ... ok
+test spec::pooled_verify_cap_1266_tests::the_fa_pool_growth_counts_in_the_forward ... ok
+test spec::pooled_verify_cap_1266_tests::the_margin_exceeds_what_the_pool_could_not_deliver ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_joins_members_only_within_the_reading ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_keeps_the_row_and_readiness_stops ... ok
+test spec::pooled_verify_cap_1266_tests::two_runs_that_both_grow_the_pool_add_up ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_mtp_lockstep_chunk_walk_applies_the_memory_cap ... ok
+thread 'spec::pooled_verify_cap_1266_tests::two_runs_that_both_grow_the_pool_add_up' (1274303) panicked at crates/memra-engine/src/spec.rs:19292:9:
+assertion `left == right` failed
+  left: 12681216
+ right: 19021824
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 815 filtered out; finished in 0.00s
+arm restore written
+== cohort-rows-first-only
+arm cohort-rows-first-only written
+test spec::pooled_verify_cap_1266_tests::a_round_needs_its_checkpoint_columns_and_two_logits_stacks ... ok
+test spec::pooled_verify_cap_1266_tests::a_rider_is_priced_at_its_own_depth ... ok
+test spec::pooled_verify_cap_1266_tests::riders_join_only_within_the_reading ... ok
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_16384 ... ok
+test spec::pooled_verify_cap_1266_tests::a_cohort_stacked_grows_the_pool_where_no_round_alone_does ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_fa_growth_is_priced_per_same_rung_run_across_512 ... ok
+test spec::pooled_verify_cap_1266_tests::the_fa_pool_growth_counts_in_the_forward ... ok
+test spec::pooled_verify_cap_1266_tests::the_margin_exceeds_what_the_pool_could_not_deliver ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_joins_members_only_within_the_reading ... ok
+test spec::pooled_verify_cap_1266_tests::the_walk_keeps_the_row_and_readiness_stops ... ok
+test spec::pooled_verify_cap_1266_tests::two_runs_that_both_grow_the_pool_add_up ... ok
+test spec::pooled_verify_cap_1266_tests::the_mtp_lockstep_chunk_walk_applies_the_memory_cap ... ok
+thread 'spec::pooled_verify_cap_1266_tests::a_cohort_stacked_grows_the_pool_where_no_round_alone_does' (1278604) panicked at crates/memra-engine/src/spec.rs:19306:9:
+assertion `left == right` failed
+  left: [15991, 15992, 15993, 15994, 15995, 15996]
+ right: [15991, 15992, 15993, 15994, 15995, 15996, 16101, 16102, 16103, 16104, 16501, 16502]
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 815 filtered out; finished in 0.01s
+arm restore written

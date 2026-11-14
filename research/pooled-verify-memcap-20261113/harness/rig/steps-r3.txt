@@ -1,0 +1,6 @@
+# memra#1266 review 2, RTX 5090 (coordinator plan): block 1 in one lease right after landing 19, then the
+# cost bench under --perf and the take rule after the queued vLLM job. c=2 timing boots and the 5090 normal pairs dropped.
+block1 110 -- bash <lane>/tools/block_5090.sh <lane>/steps-r2-block1.txt
+bench-pooled 25 perf -- bash <lane>/tools/bench_5090.sh <lane>/runs/bench
+# After the rebase onto main d6ae4e525d (coordinator): the need-pad cell again on F7, where the reclaim's prefix rung meets memra#1221 part 2's boundary lend.
+pad2-01-F 22 -- bash <lane>/tools/rtx_cell.sh pad2 01-F <lane>/bins5090/F7/memra-server MEMRA_SPEC_COHORT_NEED_PAD_MB=1024

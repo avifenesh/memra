@@ -1,5 +1,14 @@
 # On unified memory the pre-capture guard reads the allocatable free memory (2026-11-12)
 
+**Update, 2026-11-13: admission's driver-headroom rung reads the same value (memra#1257).** The
+rung now takes `allocatable_mem_info` too, so on unified memory it reads the larger of the
+driver's free memory and `MemAvailable`, and a full page cache no longer trips it. With the page
+cache filled on GB10, main's rung fired in all 4 B cells and the fix's in none of 4. With
+`MemAvailable` itself under the floor and the prefix cache off, the fix's rung crossed its
+threshold on the allocatable reading. Receipts:
+[`research/admit-headroom-unified-20261113/`](../../research/admit-headroom-unified-20261113/).
+The graph-launch floor still reads the raw value.
+
 **Status:** adopted, memra#1221 (part: the boundary pause's trim-driven share; the plane copies
 stay). Receipts:
 [`research/spec-capture-headroom-20261112/`](../../research/spec-capture-headroom-20261112/).
@@ -93,8 +102,8 @@ the raw `cuMemGetInfo`:
   trim measured flat on GB10 and has no cell on a discrete card. The decision is one pure
   function (`capture_headroom_plan`: `Go`, `Refuse`, `TrimAll`, `TrimShortfall`) with a table
   test over the GB10 readings and discrete rows.
-- Unchanged: the 256 MiB graph-launch floor and admission's driver-headroom rung keep the raw
-  reading (`unified_memory.rs` says why).
+- Unchanged here: the 256 MiB graph-launch floor keeps the raw reading (`unified_memory.rs` says
+  why). Admission's driver-headroom rung kept it too until memra#1257 (see the update above).
 
 ## Rejected
 
@@ -121,10 +130,10 @@ the raw `cuMemGetInfo`:
   260k at the head). Removing them needs a publication that does not copy (memra#1221 part 2).
 - The publisher's time per GB of growth depends on how fast the kernel reclaims page cache: the
   same 2,400 MB cost 151-181 ms on unit 1 and 261 ms on unit 2. Cells compare only within a unit.
-- Admission's driver-headroom rung (`MEMRA_ADMIT_DRIVER_HEADROOM_MB`, 2,048 MiB) and the
-  graph-launch floor still read the raw value. On a full page cache the rung fired before the
+- The graph-launch floor still reads the raw value. Admission's driver-headroom rung
+  (`MEMRA_ADMIT_DRIVER_HEADROOM_MB`, 2,048 MiB) did too: on a full page cache it fired before the
   prime in 8 of the 14 filled-cache 260k cells (10 times) at a raw reading of 1,882-2,002 MB and
-  released 0-160 MB each time: small next to the capture trim's 1,696 MB, and left for its own item (memra#1257).
+  released 0-160 MB each time. memra#1257 closed it (the update above).
 - One model (Qwen3.8-27B with its MTP draft) on GB10. On a discrete card the guard is main's; on
   the RTX 5090 neither the trim nor a false refusal fired at 28k or 60k prompts.
 - `/proc/meminfo` is host-wide. Inside a container or a memory-cgroup-limited service,

@@ -1,0 +1,44 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); steps=128 reps=20 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 2396160 ml_len 0 -> 9360 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 2396160 -> 4792320 ml_len 9360 -> 18720 (retired kept, zero=false)
+POOLED [6, 6] R=12: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TIME [6, 6] depth=4096: serial 66.840 ms, pooled 58.790 ms, 1.14x (median of 20)
+shape 6,6 rc=0
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); steps=128 reps=20 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 2396160 ml_len 0 -> 9360 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 2396160 -> 4792320 ml_len 9360 -> 18720 (retired kept, zero=false)
+POOLED [6, 3] R=9: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TIME [6, 3] depth=4096: serial 53.866 ms, pooled 44.946 ms, 1.20x (median of 20)
+shape 6,3 rc=0
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); steps=128 reps=20 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 1198080 ml_len 0 -> 4680 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 1198080 -> 2396160 ml_len 4680 -> 9360 (retired kept, zero=false)
+POOLED [3, 3] R=6: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TIME [3, 3] depth=4096: serial 46.868 ms, pooled 33.232 ms, 1.41x (median of 20)
+shape 3,3 rc=0
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); steps=128 reps=20 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 1198080 ml_len 0 -> 4680 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 1198080 -> 2396160 ml_len 4680 -> 9360 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 2396160 -> 4866048 ml_len 9360 -> 19008 (retired kept, zero=false)
+POOLED [3, 3, 3, 3] R=12: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (4 sessions)
+POOLED-TIME [3, 3, 3, 3] depth=4096: serial 95.541 ms, pooled 57.510 ms, 1.66x (median of 20)
+shape 3,3,3,3 rc=0
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); steps=128 reps=20 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 1597440 ml_len 0 -> 6240 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 1597440 -> 3194880 ml_len 6240 -> 12480 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 3194880 -> 6488064 ml_len 12480 -> 25344 (retired kept, zero=false)
+POOLED [4, 4, 4, 4] R=16: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (4 sessions)
+POOLED-TIME [4, 4, 4, 4] depth=4096: serial 100.815 ms, pooled 64.579 ms, 1.56x (median of 20)
+shape 4,4,4,4 rc=0
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); steps=128 reps=20 batches=[1, 2, 4, 8] primary_dev=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 1597440 ml_len 0 -> 6240 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 1597440 -> 3194880 ml_len 6240 -> 12480 (retired kept, zero=false)
+POOLED [4, 4] R=8: verify rows BITWISE EQUAL / follow-up steps BITWISE EQUAL (2 sessions)
+POOLED-TIME [4, 4] depth=4096: serial 50.614 ms, pooled 42.282 ms, 1.20x (median of 20)
+shape 4,4 rc=0

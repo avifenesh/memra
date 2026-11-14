@@ -1,0 +1,12 @@
+argmax-margin-gate: model=Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf prompt=board-2048.txt window=12 decode=batch canary=0
+  device: NVIDIA GB10
+  model sha256: 72ff9600aa2b0de77a5b27041a84448c2ce88c7b2055529fc23b3cd5bf518fd3 (cached)
+  flip budget: 1 (row: default)
+  FLOOR: 4.4502 (largest gap shift over 1856 agreeing rows, set by row 306; p50 0.2364, p99 1.7071, p99.9 4.0128; no calibration flip above it; research/argmax-gate-rule-20261110/calibration/gb10/ornith-batch/probe.log)
+  SUMMARY flips=0 bad=0 near_ties=0 wide_flips=0 wide_rows=0 uncalibrated_flips=0 known_rows=0 known_rows_wider=0 floor=4.4502 budget=1
+  STORED-ROWS: identical (12 rows equal main's, measured at 031f146690; research/argmax-gate-rule-20261110/calibration/gb10/ornith-batch/probe.log)
+  SERVED-SUMMARY served=MATCH
+    SERVED-ARGMAX: rows=12 device_mismatch=0
+  PASS: no wide flip, no wide row, no known row wider than recorded, near ties within the budget
+        and every row of the window equals main's stored rows
+  raw: argmax-batch-2/gate-Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp-board-2048.batch.log

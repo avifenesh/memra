@@ -62,7 +62,7 @@ Present for the operator and completion-domain scopes.
 | `admission_drafter_refusals` | DFlash requests the VRAM gate refused their drafter and priced again as plain, once per request |
 | `admission_settle_waits`, `admission_settle_wait_ms` | admission passes that requeued an arrival because the reading, less the charges of admitted sessions that own no route state yet, did not hold it while the reading without those charges did (a settle wait, once per pass it waits), and the total milliseconds requests spent in settle waits, from a request's first settle wait to the pass that let it past, before any VRAM defer that follows (memra#1255) |
 | `prefill_deadline_ticks` | ticks whose interactive prefill used the earliest-deadline order instead of round robin |
-| `prefix_headroom_evictions` | prefix-cache entries evicted to give back the transient reserve after an insert |
+| `prefix_headroom_evictions` | prefix-cache entries evicted to give back the transient reserve after an insert, or to fund the cohort's verify before the cohorts step (memra#1266) |
 | `step_oom_parks` | successful step-OOM requeues |
 | `continuation_pool_hits`, `continuation_pool_evictions` | plain-session continuation pool |
 | `plain_affinity_rewinds` | continuation resumes rewound to a checkpoint on a turn that rewrote history (subset of hits) |
@@ -112,6 +112,11 @@ Present only for the operator scope.
 | `request_faults_total` | guarded worker calls that failed one request and kept the worker |
 | `worker_respawns_total` | worker thread respawn attempts |
 | `dspark_cold_drafter_grid_refusals_total` | cold-drafter conversions refused because the plain hit was off the prime grid or mispositioned |
+| `spec_pool_capped_forwards_total` | pooled MTP verify forwards the memory cap shortened; the members it left out verified after the forward, serially or in the next forward (memra#1266) |
+| `spec_pool_capped_rider_rows_total` | plain rider rows the pooled verify's memory cap left to the plain batched step (memra#1266) |
+| `spec_cohort_reclaims_total` | phase (a) passes where the reading could not fund the cohort's verify (the largest member's round, every member's burst snapshot, the margin), so prefix entries and then parked sessions were evicted before the cohorts stepped (memra#1266) |
+| `spec_cohort_short_total` | phase (a) passes that stayed short of the cohort's verify with nothing evictable left (memra#1266) |
+| `spec_cohort_fence_funded_total` | phase (a) passes the fence alone funded: short on the first reading, funded once the in-flight frees settled, nothing evicted (memra#1266) |
 | `constraint_compiler_fail_closed` | per model, 1 while the structured-output compiler refuses new compiles (4 timed-out compile workers still running), else 0. Absent until a compiler exists |
 | `serve_idle_seconds` | seconds the worker has been fully idle: no active session, no queued admission, no pending handoff |
 | `bg` | idle-time background job state (`state`, `yield_mode`, `launches`, `yields`, `resumes`, `preempts`, `ckpt_kills`, `last_yield_signal_us`, `job_pid`, `vram_budget_mb`). Present only when `MEMRA_BG_JOB` is set; see [deployment-binary.md](deployment-binary.md) |
@@ -309,7 +314,7 @@ dedicated route's allocations.
 | `memra_prefix_cache_hits_total`, `_misses_total`, `_inserts_total`, `_evictions_total`, `_hit_tokens_total` | counter | the same counters without labels, and the hit-token mass |
 | `memra_prefix_cache_bytes` | gauge | device prefix-cache bytes |
 | `memra_cache_hit_token_ratio` | gauge | the JSON `cache_hit_token_ratio` |
-| `memra_request_faults_total`, `memra_worker_respawns_total`, `memra_dspark_cold_drafter_grid_refusals_total` | counter | the JSON fields of the same names |
+| `memra_request_faults_total`, `memra_worker_respawns_total`, `memra_dspark_cold_drafter_grid_refusals_total`, `memra_spec_pool_capped_forwards_total`, `memra_spec_pool_capped_rider_rows_total`, `memra_spec_cohort_reclaims_total`, `memra_spec_cohort_short_total`, `memra_spec_cohort_fence_funded_total` | counter | the JSON fields of the same names |
 
 **Dedicated routes** (operator), labelled `{route}` with the route's served model name:
 

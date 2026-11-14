@@ -130,5 +130,22 @@ class ReceiptCopies(unittest.TestCase):
         self.assertEqual(self.plan('README.md')['mode'], 'full')
         self.assertIn('copies repository root', self.plan('README.md')['reason'])
 
+    def test_a_receipt_root_nested_in_another_is_listed_in_both_tree_modes(self):
+        # The dsv41 re-pin cited verify/gates.txt and verify/tiny/gates.txt: one non-recursive
+        # `git ls-tree` for both roots descended into verify/ and never listed it, so the git tree
+        # read the outer root as missing while the worktree found it.
+        (self.repo / data.RECORDS).write_text(
+            '[[record]]\nid="fixture"\n[record.gates]\nConfig="passed"\nTinyParity="passed"\n'
+            '[record.evidence]\nConfig=["research/nested/gates.txt"]\n'
+            'TinyParity=["research/nested/tiny/gates.txt"]\n')
+        self.put('research/nested/gates.txt', 'Config=passed\n')
+        self.put('research/nested/tiny/gates.txt', 'TinyParity=passed\n')
+        self.commit()
+        expected = {'research/nested', 'research/nested/tiny', LEGACY}
+        for tree in (vp.Tree(self.repo, 'HEAD'), vp.LocalTree(self.repo)):
+            with self.subTest(tree=type(tree).__name__):
+                self.assertEqual(set(data.receipt_copies(tree)['roots']), expected)
+        self.assertNotIn('copy directory is missing', self.plan('README.md').get('reason') or '')
+
 if __name__ == '__main__':
     unittest.main()

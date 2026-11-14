@@ -1,0 +1,20 @@
+# memra#1266 review round 2, RTX 5090: F5 (the round-2 head) against M3 (main a17add18f3's crates).
+# Correctness cells on a balanced lease (OOM counts, texts, capped-forward and reclaim counts; no
+# timing claim). The one timed step, the cost bench, under --perf and the take rule.
+pad-01-F 22 -- bash <lane>/tools/rtx_cell.sh pad 01-F <lane>/bins5090/F5/memra-server MEMRA_SPEC_COHORT_NEED_PAD_MB=1024
+riders-01-M 20 -- bash <lane>/tools/rider_5090.sh riders 01-M <lane>/bins5090/M3/memra-server
+riders-02-S 20 -- bash <lane>/tools/rider_5090.sh riders 02-S <lane>/bins5090/F5/memra-server MEMRA_SPEC_POOL_SERIAL=1
+riders-03-F 20 -- bash <lane>/tools/rider_5090.sh riders 03-F <lane>/bins5090/F5/memra-server
+bench-pooled 25 perf -- bash <lane>/tools/bench_5090.sh <lane>/runs/bench
+ag35-01-F 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag35 01-F <lane>/bins5090/F5/memra-server
+ag35-02-S 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag35 02-S <lane>/bins5090/F5/memra-server MEMRA_SPEC_POOL_SERIAL=1
+ag35-03-M 22 -- USERS=4 bash <lane>/tools/rtx_cell.sh ag35 03-M <lane>/bins5090/M3/memra-server
+ag5-01-M 20 -- bash <lane>/tools/rtx_cell.sh ag5 01-M <lane>/bins5090/M3/memra-server
+ag5-02-F 20 -- bash <lane>/tools/rtx_cell.sh ag5 02-F <lane>/bins5090/F5/memra-server
+ag5-03-S 20 -- bash <lane>/tools/rtx_cell.sh ag5 03-S <lane>/bins5090/F5/memra-server MEMRA_SPEC_POOL_SERIAL=1
+ag5-04-F 20 -- bash <lane>/tools/rtx_cell.sh ag5 04-F <lane>/bins5090/F5/memra-server
+ag5-05-M 20 -- bash <lane>/tools/rtx_cell.sh ag5 05-M <lane>/bins5090/M3/memra-server
+gate-inv-F5 29 -- bash <lane>/tools/gate_5090.sh inv <lane>/bins5090/F5/memra-server inv-F5 27
+gate-resend-F5 29 -- bash <lane>/tools/gate_5090.sh resend <lane>/bins5090/F5/memra-server resend-F5 27
+nc5-01-M+02-F 25 -- bash <lane>/tools/normal_5090.sh nc5 01-M <lane>/bins5090/M3/memra-server; bash <lane>/tools/normal_5090.sh nc5 02-F <lane>/bins5090/F5/memra-server
+nc5-03-F+04-M 25 -- bash <lane>/tools/normal_5090.sh nc5 03-F <lane>/bins5090/F5/memra-server; bash <lane>/tools/normal_5090.sh nc5 04-M <lane>/bins5090/M3/memra-server

@@ -1,0 +1,8 @@
+arm admits-open written
+test spec::pooled_verify_cap_1266_tests::a_round_needs_its_checkpoint_columns_and_two_logits_stacks ... ok
+test spec::pooled_verify_cap_1266_tests::the_first_member_always_joins_and_a_later_one_only_within_the_reading ... FAILED
+test spec::pooled_verify_cap_1266_tests::the_mtp_lockstep_chunk_walk_applies_the_memory_cap ... ok
+thread 'spec::pooled_verify_cap_1266_tests::the_first_member_always_joins_and_a_later_one_only_within_the_reading' (1143654) panicked at crates/memra-engine/src/spec.rs:18651:9:
+assertion failed: !pooled_verify_admits(k5, k5, 1_616 * MIB)
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 808 filtered out; finished in 0.00s
+arm restore written

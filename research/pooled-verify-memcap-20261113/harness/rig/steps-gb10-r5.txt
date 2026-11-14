@@ -1,0 +1,7 @@
+# memra#1266 review round 2, GB10 (u2): the riders cell with 1 or 2 riders beside 1 or 2 streams.
+# With 4 or more in flight the cost model runs everyone plain (griders/: n=4 and n=6 -> K=0, so no
+# rider reached the pooled forward and the forced-cap arm counted no rider row); at 2 and 3 in
+# flight the cohort speculates and the riders can join its forward. M3, F5 forced cap, F5.
+griders2-01-M 25 -- CELLS=1:1:pen,2:1:pen,1:2:pen bash box/riders_gb10.sh griders2 01-M M3
+griders2-02-S 25 -- CELLS=1:1:pen,2:1:pen,1:2:pen bash box/riders_gb10.sh griders2 02-S F5 MEMRA_SPEC_POOL_SERIAL=1
+griders2-03-F 25 -- CELLS=1:1:pen,2:1:pen,1:2:pen bash box/riders_gb10.sh griders2 03-F F5

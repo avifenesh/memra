@@ -2667,6 +2667,53 @@ impl VerifyWs {
 /// what this counts. Relaxed atomic: one increment per allocation, noise-level.
 pub static SCRATCH_ALLOC_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// The FA partial pool's growth across the launches one verify layer makes for its rows
+/// (memra#1266), pure. `t_kv_rows` are the keys each row attends, in stack order: a pooled
+/// forward's members, then its riders; one session's rows for a serial verify. The layer
+/// launches once per maximal run of consecutive rows on the same arm and split rung (`rung(t_kv)`
+/// is (the seqs arm?, keys per split); the straddle law of `pooled_fa_layer` and the serial
+/// verify), each launch sized by its own run: `rows x n_head x n_splits x head_dim` o floats and
+/// `rows x n_head x n_splits` m and l floats, `n_splits` from the run's deepest row at the run's
+/// rung. A row off the seqs arm launches alone. A launch the pool cannot hold grows all three
+/// buffers to `max(needed, 2 x current)` (`fa_part_pool_grow`), so a shallower run can grow the
+/// pool more than the deepest row's rung would. Returns the bytes the launches allocate and the
+/// pool's (o, ml) lengths in floats after them, from `current`.
+pub fn fa_rows_growth(
+    t_kv_rows: &[usize],
+    rung: &dyn Fn(usize) -> (bool, usize),
+    n_head: usize,
+    head_dim: usize,
+    current: (usize, usize),
+) -> (usize, (usize, usize)) {
+    let mut cur = current;
+    let mut bytes = 0usize;
+    let mut a = 0usize;
+    while a < t_kv_rows.len() {
+        let (seqs, keys) = rung(t_kv_rows[a]);
+        let mut b = a + 1;
+        while seqs && b < t_kv_rows.len() && rung(t_kv_rows[b]) == (true, keys) {
+            b += 1;
+        }
+        let rows = b - a;
+        let t_kv_max = t_kv_rows[a..b].iter().copied().max().unwrap_or(0);
+        let n_splits = t_kv_max.div_ceil(keys.max(1)).max(1);
+        let o_len = rows * n_head * n_splits * head_dim;
+        let ml_len = rows * n_head * n_splits;
+        if cur.0 < o_len || cur.1 < ml_len {
+            let grown = (o_len.max(2 * cur.0), ml_len.max(2 * cur.1));
+            bytes = bytes.saturating_add(
+                grown
+                    .0
+                    .saturating_add(2 * grown.1)
+                    .saturating_mul(std::mem::size_of::<f32>()),
+            );
+            cur = grown;
+        }
+        a = b;
+    }
+    (bytes, cur)
+}
+
 /// `MEMRA_FA_PART_ZERO=1`: zero every freshly grown fa partial bank. DEFAULT OFF,
 /// diagnostic only. See `fa_part_alloc` for what it discriminates and why it is not a fix.
 pub(crate) fn fa_part_zero_on() -> bool {
@@ -32747,6 +32794,44 @@ impl Engine {
                 Some(self.fa_part_alloc(o_len.max(2 * co), ml_len.max(2 * cm), co, cm)?);
         }
         Ok(())
+    }
+
+    /// The bytes the FA partial pool would allocate for one verify forward whose rows attend
+    /// `t_kv_rows` keys, in stack order (memra#1266): [`fa_rows_growth`] at each full-attention
+    /// geometry of `geoms` (n_head, n_head_kv, head_dim) in layer order, carrying the pool's
+    /// lengths from one to the next (the pool is shared and grow-only, so a later layer of a
+    /// geometry already seen grows nothing). A row takes the seqs arm when `fa_seqs_eligible`
+    /// holds at `elig_head_dim` (the config's head dim, as `pooled_fa_layer` reads it) and
+    /// launches on its own `fa_split_keys` rung; a row off it takes the per-row arm alone, priced
+    /// at the smaller of its rung and the non-vec 256-key split (the more splits, never under that
+    /// launch).
+    pub fn fa_rows_growth_bytes(
+        &self,
+        t_kv_rows: &[usize],
+        geoms: &[(usize, usize, usize)],
+        elig_head_dim: usize,
+    ) -> usize {
+        let mut cur = self
+            .fa_part_pool
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map_or((0, 0), |pp| (pp.0.len(), pp.1.len()));
+        let mut bytes = 0usize;
+        for &(n_head, n_head_kv, head_dim) in geoms {
+            let rung = |tk: usize| {
+                let keys = fa_split_keys(tk, n_head_kv);
+                if fa_seqs_eligible(tk, elig_head_dim, n_head, n_head_kv) {
+                    (true, keys)
+                } else {
+                    (false, keys.min(256))
+                }
+            };
+            let (grown, after) = fa_rows_growth(t_kv_rows, &rung, n_head, head_dim, cur);
+            bytes = bytes.saturating_add(grown);
+            cur = after;
+        }
+        bytes
     }
 
     /// Pre-grow the fa partial pool for a dcw call at (n_head, bucket_max) geometry, from
