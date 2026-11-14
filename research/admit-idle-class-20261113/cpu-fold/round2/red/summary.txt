@@ -1,0 +1,271 @@
+start 2026-11-14T07:55:43+01:00
+8946aa6a76bcb84c5df36620d9481d81578626929f6ff0616e30b413f9deb00b  ~/.cache/memra-1304/tree/crates/memra-server/src/worker.rs
+batch 1: R1 R2 R3 R4 RA R9 R13 R14 MB MC MH I1 H1 O1
+R1 applied
+R2 applied
+R3 applied
+R4 applied
+RA applied
+R9 applied
+R13 applied
+R14 applied
+MB applied
+MC applied
+MH applied
+I1 applied
+H1 applied
+O1 applied
+batch 1 build rc=0
+R1 RED-AS-STATED rc=101 an_idle_unified_box_books_no_prefix_growth test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::an_idle_unified_box_books_no_prefix_growth' (1847279) panicked at crates/memra-server/src/worker.rs:43110:9:
+assertion `left == right` failed
+  left: 52411000000
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+R2 RED-AS-STATED rc=101 an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity' (1847421) panicked at crates/memra-server/src/worker.rs:43143:9:
+assertion `left == right` failed: request context 1607 does not fit this model's KV capacity on an idle server; the largest admissible prompt plus max_tokens is 1607 tokens (1100 tokens fit the server's free memory right now). Retrying will not help: send a shorter prompt or a smaller max_tokens
+  left: ContextLength
+ right: Overloaded
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+R3 RED-AS-STATED rc=101 the_idle_refusal_is_classified_against_the_post_load_capacity test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.02s
+thread 'worker::tests::the_idle_refusal_is_classified_against_the_post_load_capacity' (1847579) panicked at crates/memra-server/src/worker.rs:43271:9:
+assertion failed: reject.contains("fail_request( req, idle_refusal(admission_cap, fits_capacity, largest, largest_now), );")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+R4 RED-AS-STATED rc=101 unified_memory_admission_books_the_prefix_caches_allowed_growth test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.02s
+thread 'worker::tests::unified_memory_admission_books_the_prefix_caches_allowed_growth' (1847769) panicked at crates/memra-server/src/worker.rs:43073:9:
+assertion failed: squashed.contains("let unified_growth = unified_prefix_growth_booking( device_is_unified(&engine), \
+             active.is_empty(), prefix_cache_budget_bytes(), px.total_bytes, );")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+RA RED-AS-STATED rc=101 a_primary_reading_takes_the_primary_devices_idle_capacity test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_primary_reading_takes_the_primary_devices_idle_capacity' (1847929) panicked at crates/memra-server/src/worker.rs:43524:9:
+assertion `left == right` failed
+  left: 2000000000
+ right: 9000000000
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+R9 NOT-RED rc=101 a_copy_publication_reserves_its_room_before_it_allocates test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_copy_publication_reserves_its_room_before_it_allocates' (1848087) panicked at crates/memra-server/src/worker.rs:43564:9:
+assertion `left == right` failed
+  left: (1, true)
+ right: (1, false)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+R13 RED-AS-STATED rc=101 a_live_memory_refusal_names_its_cause_and_keeps_the_shape_warning test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_live_memory_refusal_names_its_cause_and_keeps_the_shape_warning' (1848230) panicked at crates/memra-server/src/worker.rs:44235:9:
+assertion `left == right` failed
+  left: (2, true)
+ right: (2, false)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+R14 RED-AS-STATED rc=101 a_discrete_card_keeps_its_copy_publication_order test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_discrete_card_keeps_its_copy_publication_order' (1848416) panicked at crates/memra-server/src/worker.rs:44141:9:
+assertion `left == right` failed
+  left: Some(CopyReservation { entry: 50000000000, budget: InsertBudget { bytes: 1000000000, configured: 1000000000 } })
+ right: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+MB RED-AS-STATED rc=101 a_host_promotion_reserves_the_bytes_it_copies test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_host_promotion_reserves_the_bytes_it_copies' (1848547) panicked at crates/memra-server/src/worker.rs:43965:9:
+assertion `left == right` failed
+  left: Some(0)
+ right: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+MC RED-AS-STATED rc=101 a_copy_publication_counts_its_drafter_tail test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_copy_publication_counts_its_drafter_tail' (1848700) panicked at crates/memra-server/src/worker.rs:43799:9:
+assertion `left == right` failed
+  left: Some((5368234, 36000000))
+ right: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+MH RED-AS-STATED rc=101 a_publication_counts_its_latent_rows test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_publication_counts_its_latent_rows' (1848826) panicked at crates/memra-server/src/worker.rs:43825:9:
+assertion `left == right` failed
+  left: 0
+ right: 51200000
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+I1 RED-AS-STATED rc=101 a_promotion_that_fails_leaves_the_caller_a_live_hit test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_promotion_that_fails_leaves_the_caller_a_live_hit' (1848991) panicked at crates/memra-server/src/worker.rs:44012:9:
+assertion `left == right` failed
+  left: Some(1)
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+H1 RED-AS-STATED rc=101 the_size_hint_is_a_request_the_caller_can_send test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::the_size_hint_is_a_request_the_caller_can_send' (1849149) panicked at crates/memra-server/src/worker.rs:43393:13:
+slack 8: the hint 110927 is charged 4000221120 > 4000000000
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+O1 RED-AS-STATED rc=101 a_publication_that_overruns_its_reservation_says_so test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_publication_that_overruns_its_reservation_says_so' (1849355) panicked at crates/memra-server/src/worker.rs:44095:9:
+assertion `left == right` failed
+  left: None
+ right: Some(1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+batch 2: R5 R6 R7 R11 MA T1 I2 H2
+R5 applied
+R6 applied
+R7 applied
+R11 applied
+MA applied
+T1 applied
+I2 applied
+H2 applied
+batch 2 build rc=0
+R5 NOT-RED rc=101 an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity' (2997855) panicked at crates/memra-server/src/worker.rs:43135:9:
+request context 1607 fits this model's KV capacity but not the server's free memory right now; retry after the Retry-After delay
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+R6 RED-AS-STATED rc=101 the_idle_refusal_is_classified_against_the_post_load_capacity test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.01s
+thread 'worker::tests::the_idle_refusal_is_classified_against_the_post_load_capacity' (2997979) panicked at crates/memra-server/src/worker.rs:43239:9:
+assertion failed: reject.contains("let largest_now = largest_request_within( admission_cap, slack, \
+             &headroom.charges(primary_device, required), &context_on, );")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+R7 RED-AS-STATED rc=101 the_idle_refusal_names_the_largest_request_that_fits_now test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::the_idle_refusal_names_the_largest_request_that_fits_now' (2998105) panicked at crates/memra-server/src/worker.rs:43296:9:
+request context 150000 fits this model's KV capacity but not the server's free memory right now; retry after the Retry-After delay
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+R11 RED-AS-STATED rc=101 a_copy_publication_reserves_its_room_before_it_allocates test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_copy_publication_reserves_its_room_before_it_allocates' (2998247) panicked at crates/memra-server/src/worker.rs:43590:36:
+missing `bytes: dspark.draft_kv().tail_bytes(end),` in: fn publish_dspark_prefix_capture_inner( engine: &Engine, px: &mut PrefixCache, hpx: &mut HostPrefixCache, s: &Session, cap: memra_engine::spec::SpecBoundaryCapture, ) -> Option<(usize, u64)> { let dspark = s.dspark.as_ref()?; let end = cap.pos.
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+MA RED-AS-STATED rc=101 a_copy_publication_counts_the_planes_it_copies test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_copy_publication_counts_the_planes_it_copies' (2998378) panicked at crates/memra-server/src/worker.rs:43706:9:
+assertion `left == right` failed
+  left: (0, 36000000)
+ right: (4125179904, 36000000)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+T1 RED-AS-STATED rc=101 a_host_promotion_reserves_the_bytes_it_copies test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_host_promotion_reserves_the_bytes_it_copies' (2998504) panicked at crates/memra-server/src/worker.rs:43961:9:
+assertion `left == right` failed
+  left: Instant { tv_sec: 2806578, tv_nsec: 849973373 }
+ right: Instant { tv_sec: 2806578, tv_nsec: 849902528 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+I2 RED-AS-STATED rc=101 a_promotion_that_fails_leaves_the_caller_a_live_hit test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.01s
+thread 'worker::tests::a_promotion_that_fails_leaves_the_caller_a_live_hit' (2998646) panicked at crates/memra-server/src/worker.rs:44060:9:
+assertion failed: squashed.contains("host_promote_pin = host_promote_prefix_hit(engine, px, hpx, &pool_key, &prompt, &mut \
+             consumable_hit);")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+H2 RED-AS-STATED rc=101 the_size_hint_is_a_request_the_caller_can_send test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::the_size_hint_is_a_request_the_caller_can_send' (2998772) panicked at crates/memra-server/src/worker.rs:43452:9:
+assertion `left == right` failed
+  left: 100000
+ right: 65000
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+batch 3: R8 R15 R12 ME I3 H4
+R8 applied
+R15 applied
+R12 applied
+ME applied
+I3 applied
+H4 applied
+batch 3 build rc=0
+R8 RED-AS-STATED rc=101 the_idle_refusal_names_the_largest_request_that_fits_now test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::the_idle_refusal_names_the_largest_request_that_fits_now' (3180707) panicked at crates/memra-server/src/worker.rs:43308:9:
+request context 200000 does not fit this model's KV capacity on an idle server; the largest admissible prompt plus max_tokens is 174315 tokens. Retrying will not help: send a shorter prompt or a smaller max_tokens
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+R15 RED-AS-STATED rc=101 the_idle_refusal_is_classified_against_the_post_load_capacity test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.01s
+thread 'worker::tests::the_idle_refusal_is_classified_against_the_post_load_capacity' (3180817) panicked at crates/memra-server/src/worker.rs:43249:9:
+assertion failed: reject.contains("_ if device == primary_device => hint_costs .context_bytes(ctx, estimate_spec) \
+             .saturating_mul(choice_state_count),")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+R12 RED-AS-STATED rc=101 a_copy_publication_reserves_its_room_before_it_allocates test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_copy_publication_reserves_its_room_before_it_allocates' (3180947) panicked at crates/memra-server/src/worker.rs:43585:36:
+missing `let hi = host_promote_reserve(` in: fn host_promote_materialize( engine: &Engine, px: &mut PrefixCache, host: &mut HostPrefixCache, pool_key: &PoolKey, hi: usize, memory: &CopyMemory, ) -> Option<PrefixPin> { let prepared = host_promote_prepare(host, pool_key, hi)?; let evictions = px.evict
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+ME RED-AS-STATED rc=101 a_refused_copy_preflight_stops_the_publication test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_refused_copy_preflight_stops_the_publication' (3181094) panicked at crates/memra-server/src/worker.rs:43904:9:
+assertion failed: !prefix_copy_preflight(&mut px, &k, &memory, 4_130 * MB, 36 * MB,
+        Some(&mut sink))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+I3 RED-AS-STATED rc=101 a_promotion_that_fails_leaves_the_caller_a_live_hit test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_promotion_that_fails_leaves_the_caller_a_live_hit' (3181254) panicked at crates/memra-server/src/worker.rs:43998:9:
+assertion `left == right` failed
+  left: Some(1)
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+H4 RED-AS-STATED rc=101 the_size_hint_is_a_request_the_caller_can_send test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::the_size_hint_is_a_request_the_caller_can_send' (3181380) panicked at crates/memra-server/src/worker.rs:43478:9:
+assertion `left == right` failed
+  left: Some(0)
+ right: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+batch 4: H3 R10
+H3 applied
+R10 applied
+batch 4 build rc=0
+H3 RED-AS-STATED rc=101 the_idle_refusal_is_classified_against_the_post_load_capacity test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.01s
+thread 'worker::tests::the_idle_refusal_is_classified_against_the_post_load_capacity' (3314159) panicked at crates/memra-server/src/worker.rs:43260:9:
+assertion failed: reject.contains("_ if device == primary_device => hint_costs .context_bytes(ctx, estimate_spec) \
+             .saturating_mul(choice_state_count),")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+R10 RED-AS-STATED rc=101 a_copy_publication_reserves_its_room_before_it_allocates test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_copy_publication_reserves_its_room_before_it_allocates' (3314364) panicked at crates/memra-server/src/worker.rs:43550:9:
+assertion `left == right` failed
+  left: (4166000000, 4166000000)
+ right: (4166000000, 36000000)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+batch 5: MF P1
+MF applied
+P1 applied
+batch 5 build rc=0
+MF RED-AS-STATED rc=101 the_copy_preflight_is_held_to_the_live_reading test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::the_copy_preflight_is_held_to_the_live_reading' (3625350) panicked at crates/memra-server/src/worker.rs:43868:9:
+assertion `left == right` failed
+  left: InsertBudget { bytes: 50529000000, configured: 50529000000 }
+ right: InsertBudget { bytes: 2644000000, configured: 50529000000 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+P1 RED-AS-STATED rc=101 a_copy_publication_reserves_its_room_before_it_allocates test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.01s
+thread 'worker::tests::a_copy_publication_reserves_its_room_before_it_allocates' (3625593) panicked at crates/memra-server/src/worker.rs:43594:36:
+missing `if px.evictions > evictions { vmm_reap_for("copy preflight"); }` in: fn prefix_insert_from_spec_boundary( engine: &Engine, px: &mut PrefixCache, hpx: &mut HostPrefixCache, pool_key: &PoolKey, committed: &[u32], cache: &Cache, draft_plane: Option<(&KvPlane, &KvPlane, usize, usize)>, draft_ta
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+worker.rs restored
+8946aa6a76bcb84c5df36620d9481d81578626929f6ff0616e30b413f9deb00b  ~/.cache/memra-1304/tree/crates/memra-server/src/worker.rs
+done 2026-11-14T08:26:53+01:00

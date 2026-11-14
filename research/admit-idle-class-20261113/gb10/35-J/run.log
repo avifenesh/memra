@@ -1,0 +1,19 @@
+2026-11-14T09:31:32+02:00 start, unit idle, arm fold, target 0 MB, mode single, route mtp, request 1024, holder regulating, extra 
+MemFree:        121606556 kB
+MemAvailable:   122257352 kB
+Cached:          1294220 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 2m06s
+2026-11-14T09:33:53+02:00 before the request:
+MemFree:        85315132 kB
+MemAvailable:   101505792 kB
+Cached:         16876840 kB
+{"tag": "35-J", "req": "g1k", "status": 200, "ttft_s": 1.132, "total_s": 5.31, "completion_tokens": 127, "finish": "stop", "text_sha256": "26ca98d4733a9c67f315f2ea1af2ec45ef76cca50999476c62b771813f1ee4ca", "refusal": null}
+2026-11-14T09:33:58+02:00 after the request:
+MemFree:        84002052 kB
+MemAvailable:   100193080 kB
+Cached:         16877152 kB
+waitfor: gone 3856769 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

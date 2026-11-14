@@ -1,0 +1,25 @@
+2026-11-14T09:43:36+02:00 start, unit idle, arm fold, target 11135 MB, mode single, route dflash, request 131072, holder static, extra 
+MemFree:        101806984 kB
+MemAvailable:   122192980 kB
+Cached:         21014516 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 0m50s
+waitfor: until awk '/^MemAvailable/{exit !($2/1024 < 11135 + 48)}' /proc/meminfo (deadline 2m00s, every 2s)
+waitfor: not yet
+waitfor: TIMEOUT after 2m00s, condition not met
+2026-11-14T09:46:41+02:00 before the request:
+MemFree:          705660 kB
+MemAvailable:   11476904 kB
+Cached:         98680700 kB
+{"tag": "39-J", "req": "g131k", "status": 200, "ttft_s": 121.919, "total_s": 127.086, "completion_tokens": 95, "finish": "stop", "text_sha256": "e3b0c1e81f9ab15eb9c37b50df4934b70cae06b51dee22b0c2e624d69e504971", "refusal": null}
+2026-11-14T09:48:48+02:00 after the request:
+MemFree:         1070296 kB
+MemAvailable:    4728296 kB
+Cached:         91567544 kB
+waitfor: gone 3954266 (deadline 1m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+waitfor: gone 3949648 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

@@ -1,0 +1,21 @@
+1794641833.492469 [server] build: memra-0.141.1-f41206bfaadf (id: source-tree, git: unknown)
+1794641853.957385 [dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves ON (whole-entry restore, strict-prefix restore and boundary capture together)
+1794641863.574836 [dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+1794641863.582839 [dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+1794641863.582868 [dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+1794641863.595930 [worker] q38: DSPARK SPEC route armed (drafter attached (/data/ai-ml/models/q38-gguf/Qwen3.8-27B-DFlash2-memra); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+1794641863.596506 [dspark] q38: DFlash2 draft head TRIMMED to 32768 rows (FR-Spec d2t; verify stays full-vocab)
+1794641863.597150 [prefix-cache] on: budget 4194MB (4194304000 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794641863.597847 [admission] "q38": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+1794641863.598048 [admission] "q38": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+1794641871.105648 [admission] idle capacity (post-load, cache empty): dev0 free 5124MB (pool used 19352MB)
+1794641871.105740 [admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+1794641871.105742 [admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+1794641873.556966 [admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+1794641873.556995 [admission] request cost: model="q38" ctx=8572 path=spec = 29696 B/token x ctx + 516MB prefill-workspace + 0MB fixed = 771MB
+1794641873.557000 [admission] prefill workspace held: model="q38" prompt=7996 call=7996 stack=7996 concat=0 slab_resident=1443MB held=516MB cold=1959MB
+1794641879.864182 [prefix-cache] insert (dspark-boundary): 7968 tokens, 477.7MB (resident 477.7MB / 4194MB, model q38)
+1794641879.864186 [specpub] Copy publication why=dspark-boundary pos=7968 lent=0.0MB us=240 pool_reserved=21911044096 pool_used=20773484380 preflight_bytes=477724672 entry_bytes=477724672
+1794641881.173373 [prefix-cache] hit: 7968 of 7996 prompt tokens from cache (model q38)
+1794641881.173868 [prefix-cache] DSPARK restore: 7968 of 7996 prompt tokens + draft tail from cache (28 suffix tokens to prime) (model q38)
+1794641881.174082 [admission] fixed residual high-water: model="q38" 492MB (observed 745MB at ctx 8516 path=plain)

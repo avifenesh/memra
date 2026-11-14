@@ -1,0 +1,23 @@
+start 2026-11-14T08:33:05+01:00
+8946aa6a76bcb84c5df36620d9481d81578626929f6ff0616e30b413f9deb00b  ~/.cache/memra-1304/tree/crates/memra-server/src/worker.rs
+batch 1: R9 R5
+R9 applied
+R5 applied
+batch 1 build rc=0
+R9 RED-AS-STATED rc=101 a_copy_publication_reserves_its_room_before_it_allocates test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::a_copy_publication_reserves_its_room_before_it_allocates' (133797) panicked at crates/memra-server/src/worker.rs:43598:36:
+missing `let Some((to_allocate, held)) = spec_publication_reserve( px, pool_key, &copy_memory(engine), &geometry, pos, planes, draft_tail.as_ref(), Some(&mut demote), ) else { return; };` in: fn prefix_insert_from_spec_boundary( engine: &Engine, px: &mut PrefixCache, hpx: &mut HostPrefixCache, pool_
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+R5 RED-AS-STATED rc=101 an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+thread 'worker::tests::an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity' (133923) panicked at crates/memra-server/src/worker.rs:43179:9:
+assertion `left == right` failed
+  left: 6000000000
+ right: 5999999500
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+worker.rs restored
+8946aa6a76bcb84c5df36620d9481d81578626929f6ff0616e30b413f9deb00b  ~/.cache/memra-1304/tree/crates/memra-server/src/worker.rs
+done 2026-11-14T08:41:07+01:00
