@@ -58,6 +58,29 @@ def cell(root,record):
     output_bound=request.get('max_tokens', (opened.get('reserved_ctx',0)-reserve['prompt'])//n if reserve else None)
     return {'id':record['id'],'n':n,'seed':request.get('seed',next((r['seed'] for r in record.get('worker_rows',[]) if r['index']==0),None)),'body':body,'callbacks':callbacks,'worker_rows':record.get('worker_rows',[]),'forks':forks,'leader_prime_segments':sum(e['index']==0 for e in primes),'follower_prime_segments':sum(e['index']!=0 for e in primes),'reserve':reserve,'resolved_output_bound':output_bound,'packets':packets}
 
+def idle_refusals(logs):
+    """An idle server's refusals as its log states them (memra#1304): the class it logged and, in MB, the free memory at the refusal, the post-load capacity and the request's charge."""
+    found=[]
+    for line in logs:
+        short=re.search(r'\[admit-oom\] idle memory short: .*? fits the post-load capacity \((\d+)MB\) .*?\(available (\d+)MB, required (\d+)MB',line)
+        if short:found.append({'logged':'short','capacity':int(short[1]),'available':int(short[2]),'required':int(short[3])})
+        reject=re.search(r'\[admit-oom\] capacity reject: .*?\(available (\d+)MB, post-load capacity (\d+)MB, required (\d+)MB',line)
+        if reject:found.append({'logged':'reject','available':int(reject[1]),'capacity':int(reject[2]),'required':int(reject[3])})
+    return found
+
+def check_idle_refusal(record,sizes,boot_free):
+    """The idle refusal's contract (memra#1304), judged on the sizes and not on the class the server logged: a request the post-load capacity holds is short of the moment's memory (another process holds it) and gets a retryable 503 `overloaded` with Retry-After; only a request over that capacity gets the non-retryable 400 `context_length_exceeded`. One device: the charge is one figure."""
+    require(sizes['available']<sizes['required'] and sizes['available']<=sizes['capacity']<=boot_free,'kv_exhaustion','the refusal is short of the free memory now, and its capacity is within the boot reading')
+    error=(record.get('body') or {}).get('error',{})
+    headers={k.lower():v for k,v in record.get('headers',{}).items()}
+    retry=headers.get('retry-after','')
+    if sizes['required']<=sizes['capacity']:
+        require(record['status']==503 and error.get('code')=='overloaded' and sizes['logged']=='short','kv_exhaustion','a request the idle capacity holds is refused as retryable: 503 overloaded')
+        require(retry.isdigit() and int(retry)>0,'kv_exhaustion','the retryable refusal carries Retry-After')
+    else:
+        require(record['status']==400 and error.get('code')=='context_length_exceeded' and sizes['logged']=='reject','kv_exhaustion','a request over the idle capacity keeps the non-retryable capacity contract')
+        require(not retry and headers.get('x-should-retry')=='false','kv_exhaustion','the non-retryable refusal says so')
+
 def verify(root,baseline=None,expected=None):
     manifest=json.loads((root/'manifest.json').read_text())
     require(manifest['status']=='complete','manifest','native invocation must complete')
@@ -139,7 +162,10 @@ def verify(root,baseline=None,expected=None):
         pressure=json.loads((root/'pressure.json').read_text())
         require(pressure['allocation_code']==pressure['free_code']==pressure['own_context_reset_code']==0 and pressure['allocated']>0 and pressure['keep_free']>=1024**3,'kv_exhaustion','real lane-owned allocation is released with its own context')
         require(records['kv-warm']['status']==records['kv-recovery']['status']==200,'kv_exhaustion','same N8 states recover after owned pressure is removed')
-        require(r['status']==400 and r.get('body',{}).get('error',{}).get('code')=='context_length_exceeded','kv_exhaustion','idle native state admission uses the existing non-retryable capacity contract')
+        boot=[int(m[1]) for m in (re.search(r'\[admission\] idle capacity \(post-load, cache empty\): dev\d+ free (\d+)MB',line) for line in logs) if m]
+        sizes=idle_refusals(logs)
+        require(len(boot)==1 and len(sizes)==1,'kv_exhaustion','one boot capacity reading and one idle refusal that states its sizes (a server from before memra#1304 states neither)')
+        check_idle_refusal(r,sizes[0],boot[0])
         require(not r.get('prime_events') and not r.get('fork_lines') and not r.get('worker_rows'),'kv_exhaustion','native allocation refused before priming')
     elif manifest['phase']=='slots':
         require(records['slots-contender']['status'] in [408,429],'n_slots','four active choices prevent extra immediate admission')

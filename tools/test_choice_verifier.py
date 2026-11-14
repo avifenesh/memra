@@ -62,6 +62,51 @@ class Controls(unittest.TestCase):
         self.assertFalse(result['qualification'])
         inventory=json.loads((root/'file-sha256.json').read_text())
         for name,expected in inventory.items():self.assertEqual(hashlib.sha256((root/name).read_bytes()).hexdigest(),expected,name)
+    def idle(self,status,code,headers=None):
+        return {'status':status,'headers':headers or {},'body':{'error':{'code':code}}}
+    def test_idle_refusal_follows_the_request_size(self):
+        from replay_native_choices import check_idle_refusal, idle_refusals
+        # memra#1304: a request the idle capacity holds, short of memory another process took.
+        short={'logged':'short','capacity':15870,'available':1192,'required':1320}
+        retryable=self.idle(503,'overloaded',{'Retry-After':'5'})
+        check_idle_refusal(retryable,short,15900)
+        # The contract this replaced (400 for any idle refusal), a 503 with no delay, the shed class.
+        for bad in [self.idle(400,'context_length_exceeded',{'x-should-retry':'false'}),self.idle(503,'overloaded'),self.idle(429,'rate_limit_exceeded',{'retry-after':'5'})]:
+            with self.assertRaises(Invalid) as e:check_idle_refusal(bad,short,15900)
+            self.assertEqual(e.exception.edge,'kv_exhaustion')
+        # A request over the capacity keeps the 400, and a 503 cannot stand in for it.
+        over={'logged':'reject','capacity':6000,'available':4000,'required':6810}
+        final=self.idle(400,'context_length_exceeded',{'x-should-retry':'false'})
+        check_idle_refusal(final,over,6000)
+        for bad in [retryable,self.idle(400,'context_length_exceeded',{'x-should-retry':'false','retry-after':'5'}),self.idle(400,'context_length_exceeded')]:
+            with self.assertRaises(Invalid) as e:check_idle_refusal(bad,over,6000)
+            self.assertEqual(e.exception.edge,'kv_exhaustion')
+        # The sizes decide, not the class the server logged; and they must be a real shortfall inside the boot reading.
+        for sizes,record in [({**short,'logged':'reject'},retryable),({**over,'logged':'short'},final),({**short,'capacity':16000},retryable),({**short,'available':1400},retryable)]:
+            with self.assertRaises(Invalid) as e:check_idle_refusal(record,sizes,15900)
+            self.assertEqual(e.exception.edge,'kv_exhaustion')
+        lines=['[admit-oom] idle memory short: model="fixture" ctx=3142 fits the post-load capacity (15870MB) but not an IDLE box\'s free memory now (available 1192MB, required 1320MB, largest context that fits now 2836) — HTTP 503 overloaded, Retry-After',
+               '[admit-oom] capacity reject: model="q" ctx=200000 does not fit an IDLE box (available 4000MB, post-load capacity 6000MB, required 6810MB, largest admissible context 174315, largest context that fits now 110927) — HTTP 400 context_length_exceeded',
+               '[admit-oom] capacity reject: model="fixture" ctx=3142 does not fit an IDLE box (available 1192MB) — HTTP 400 context_length_exceeded']
+        # The last line is a server from before memra#1304: it states no capacity, so it is not a judged refusal.
+        self.assertEqual(idle_refusals(lines),[short,over])
+    def test_a_superseded_phase_replays_its_recapture_under_its_own_context(self):
+        import json
+        from replay_choice_composite import phase_receipt
+        context={'source':'a'*40,'binary_sha256':'b'*64,'model_sha256':'c'*64,'helper_sha256':{},'hardware':'card'}
+        with tempfile.TemporaryDirectory() as out:
+            root=Path(out)/'composite';later=Path(out)/'later/kv';root.mkdir();later.mkdir(parents=True)
+            self.assertEqual(phase_receipt(root,'kv',context),(root/'kv',context))
+            (root/'superseded.json').write_text(json.dumps({'kv':{'receipt':'../later/kv'}}))
+            bound={**context,'source':'d'*40,'binary_sha256':'e'*64}
+            (later/'expected-context.json').write_text(json.dumps(bound))
+            self.assertEqual(phase_receipt(root,'kv',context),(later.resolve(),bound))
+            self.assertEqual(phase_receipt(root,'budget',context),(root/'budget',context))
+            # Another model artifact, or a context that binds less, is not the same cell.
+            for wrong in [{**bound,'model_sha256':'f'*64},{k:v for k,v in bound.items() if k!='hardware'}]:
+                (later/'expected-context.json').write_text(json.dumps(wrong))
+                with self.assertRaises(Invalid) as e:phase_receipt(root,'kv',context)
+                self.assertEqual(e.exception.edge,'superseded')
     def test_stream_accumulator_compares_semantics_to_full_envelope(self):
         body=fixture()['body'];full={**deepcopy(body),'object':'chat.completion','model':'fixture','id':'ephemeral','created':1}
         check_stream_twin(body,full)
