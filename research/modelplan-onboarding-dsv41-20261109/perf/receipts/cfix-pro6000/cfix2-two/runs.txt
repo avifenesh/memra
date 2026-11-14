@@ -1,0 +1,27 @@
+gate-default start 01:32:57 drops 
+gate-default rc 0 end 01:33:22 drops 
+gate-default: 480 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1]: 19876558 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+gate-peer-pull start 01:33:22 drops 
+gate-peer-pull rc 0 end 01:33:46 drops 
+gate-peer-pull: 478 checks, 0 failed 0 FAIL lines
+gate-host-canonical start 01:33:46 drops 
+gate-host-canonical rc 0 end 01:34:10 drops 
+gate-host-canonical: 478 checks, 0 failed 0 FAIL lines
+run1-A start 01:34:10 drops 
+run1-A rc 0 end 01:34:27 drops 
+run2-B start 01:34:27 drops 
+run2-B rc 0 end 01:34:47 drops 
+run3-B start 01:34:47 drops 
+run3-B rc 0 end 01:35:08 drops 
+run4-A start 01:35:08 drops 
+run4-A rc 0 end 01:35:26 drops 
+run5-B start 01:35:26 drops 
+run5-B rc 0 end 01:35:46 drops 
+run6-A start 01:35:46 drops 
+run6-A rc 0 end 01:36:04 drops 
+run7-A start 01:36:04 drops 
+run7-A rc 0 end 01:36:21 drops 
+run8-B start 01:36:21 drops 
+run8-B rc 0 end 01:36:41 drops 
