@@ -24528,8 +24528,15 @@ pub fn run(
                             let available = headroom.limiting_free_bytes();
                             let (fits_capacity, capacity) =
                                 idle_capacity_fit.unwrap_or((false, available));
+                            // The slope is per state the request builds: one for a plain
+                            // request, a choice group's states for a group (the whole-group
+                            // charge above is `cost * choice_state_count`). Without the count
+                            // a group's overshoot shed more tokens than it has and the hint
+                            // was dropped (RTX 5090, the native-choices kv cell: an n=8 group
+                            // 324 MB short got a 503 with no size in it).
                             let per_token = (bytes_per_token as u64)
-                                .saturating_add(ring_bytes_per_token as u64);
+                                .saturating_add(ring_bytes_per_token as u64)
+                                .saturating_mul(choice_state_count as u64);
                             let largest = largest_context_within(
                                 admission_cap,
                                 required,
@@ -30134,8 +30141,7 @@ fn idle_refusal(
             ),
             None => format!(
                 "request context {admission_cap} fits this model's KV capacity but not the \
-                 server's free memory right now, which holds no request of this kind; retry \
-                 after the Retry-After delay"
+                 server's free memory right now; retry after the Retry-After delay"
             ),
         });
     }
@@ -42847,6 +42853,15 @@ mod tests {
         // The size that fits now is the same arithmetic on the reading now, and both reach the
         // refusal (review of memra#1304).
         assert!(reject.contains("let available = headroom.limiting_free_bytes();"));
+        // The slope counts every state a choice group builds, as the whole-group charge does.
+        assert!(
+            squashed
+                .contains("admission_required(cost.saturating_mul(choice_state_count), reserve);")
+        );
+        assert!(reject.contains(
+            "let per_token = (bytes_per_token as u64) .saturating_add(ring_bytes_per_token as \
+             u64) .saturating_mul(choice_state_count as u64);"
+        ));
         assert!(reject.contains(
             "let largest_now = largest_context_within( admission_cap, required, available, \
              per_token, );"
@@ -42928,6 +42943,17 @@ mod tests {
         );
         // No per-token slope: no figure.
         assert_eq!(largest_context_within(ctx, charge(ctx), capacity, 0), None);
+        // A choice group builds its rows' states and one transient snapshot (nine for n = 8), and
+        // its charge is nine times a row's: the slope is nine rows' too. With one row's slope the
+        // 187 MB this group is short of shed 6,289 tokens of its 3,142 and no size was named.
+        let states = 9;
+        let group = |ctx: usize| states * (ctx * 29_696 + 60 * MB);
+        let (ctx, now) = (3_142, 1_193 * MB);
+        assert!(group(ctx) > now);
+        assert_eq!(largest_context_within(ctx, group(ctx), now, 29_696), None);
+        let fits = largest_context_within(ctx, group(ctx), now, 29_696 * states as u64);
+        assert_eq!(fits, Some(2_443));
+        assert!(group(2_443) <= now && group(2_444) > now);
     }
 
     #[test]

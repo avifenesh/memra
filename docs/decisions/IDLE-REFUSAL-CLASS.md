@@ -73,7 +73,10 @@ With `MEMRA_PREFIX_CACHE_MB=0`, in the same state, the request was admitted and 
   and the 400's "largest admissible context" named a size that then got that 503. The same
   arithmetic on the reading now (`largest_context_within`) gives the size that fits the moment:
   the 503's message carries it ("the largest context that fits now is N tokens"), and the 400
-  carries it beside the capacity's figure when it is the smaller.
+  carries it beside the capacity's figure when it is the smaller. The slope counts every state
+  the request builds: a choice group's charge is its rows' states and one snapshot, and with one
+  row's slope its overshoot shed more tokens than the request has, so no size was named (the
+  first RTX 5090 take of the fold).
 - **A refusal by the live reading says so** (review fold). An insert the live clamp refuses is
   logged as `insert refused: entry N exceeds budget M (live free memory holds the insert budget
   under its configured C; ...)` and no longer spends the one-time "first prefix insert is larger
