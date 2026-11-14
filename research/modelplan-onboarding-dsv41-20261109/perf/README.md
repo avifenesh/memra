@@ -2440,12 +2440,50 @@ env K3_ARM_A=main24 K3_ARM_B=gather2 K3_TAG=gather2-four K3_CARDS=0123 K3_DEV=0,
 It confirms the fix if one row, 4, 8 and 9 rows are level with main (the same program: 1.000 within the pairs'
 spread) and 10, 12 and 16 rows repeat arm B (0.949, 0.946, 0.955).
 
+What can be shown without the four cards is which gathers the final build issues. `dsv41-tpbench` counts each
+call's gathers, copies and bytes, and they depend on the program, not on the card. The final code's 121a build on
+one GB10, four ranks on the card, 4 layers, device-push (`receipts/gates-cutlass-gb10/g2/tb`; the times of ranks
+sharing a card mean nothing and are not read):
+
+| rows | collectives | copies | bytes a call | bytes a row and layer | the hidden gather |
+|---|---|---|---|---|---|
+| 4 | 16 | 192 | 3,317,760 | 207,360 | bf16 |
+| 8 | 17 | 204 | 6,635,904 | 207,372 | bf16 |
+| 9 | 17 | 204 | 7,465,392 | 207,372 | bf16 |
+| 10 | 21 | 252 | 6,420,120 | 160,503 | codes and scales |
+| 11 | 21 | 252 | 7,062,132 | 160,503 | codes and scales |
+| 12 | 21 | 252 | 7,704,288 | 160,506 | codes and scales |
+| 16 | 21 | 252 | 10,272,768 | 160,512 | codes and scales |
+
+From 10 rows the build issues one collective more a layer (21 against 17 over 4 layers) and moves 0.774 of the
+bytes a row. That is the step window 3's arms show between main and `gather1` at 40 layers: 168 against 208
+collectives, and 207,377 against 160,508 bytes a row and layer at 9 and 10 rows. The line sits between 9 and 10
+rows, where the rule puts it.
+
+What this run does not give:
+
+- **No build-to-build comparison of the counters.** The same run of main's build and of `gather1`'s was refused
+  on the unit ("2.1 GiB free: does not fit", `tb/m24-0,0,0,0.log.gz`; rc 1 in `tb/runs.txt`). After the first run the page cache held the
+  checkpoint, and the route sizes its residency on the driver's raw free reading, which leaves page cache out on
+  unified memory. Giving the cache back is a box-wide act on a shared unit and was not done. The two-rank runs
+  were refused the same way.
+- **Three ranks do not run.** The route refuses them (its 64 attention heads do not split into whole 16-head
+  tiles), so the rule's three-rank line is arithmetic only.
+
 ### Gates of the fix
 
-The lib test above runs in the CPU chain. The GB10 byte gates of this commit (kernels, layer, tp at four ranks on the
-card on the three transports) and the gather counters by width of three builds (main, `gather1`, this commit) are in
-the commit after this one, with their receipts (`receipts/gates-cutlass-gb10/g2`). The gates of the first form
-(codes above 8 rows) are in `receipts/gates-cutlass-gb10/g1`, and on the PRO 6000s in `gather1-four`.
+GB10 byte gates of the final code (121a, the default dense form; `receipts/gates-cutlass-gb10/g2`: the lease
+summaries, gzipped logs, the scripts; the unit's build tags are `g3` for the final code, `m24` for main `63c351a2f4`
+and `g1b` for `c99798ef57`). The lib test's red arm is `g2/lib-test-red.txt`:
+
+| gate | result |
+|---|---|
+| kernels | 1,025 checks, 0 failed |
+| layer (needle, layers 1, 2, 14, 20, 21, 24, decode 2) | 161 / 0; the 111 saved tensors are the CUTLASS set (`fa825eee`) |
+| tp, 4 ranks on the card: peer-pull / host-canonical / default | 914 / 914 / 916, 0 failed; the 12- and 16-row passes run the codes gather, byte-identical to the single card |
+
+The gates of the first form (codes above 8 rows) are in `receipts/gates-cutlass-gb10/g1`, and on the PRO 6000s in
+`gather1-four`.
 
 ### What remains against the base after the fix
 

@@ -98,7 +98,9 @@ there. So the rule moved to the push limit after the window.
 first block). At 10 rows and above it is `gather1`'s (arm B). **The final binary itself has no
 four-card run**: its two halves were each measured, in one window. Its four-card confirm against
 main (4, 8, 9, 10, 12 and 16 rows, the kernel and tp gates first) is pending and is required
-before the fix lands.
+before the fix lands. On one GB10 (four ranks on the card, 4 layers) the final build's own gather
+counters show the bf16 gather at 4, 8 and 9 rows and the codes from 10: one collective more a
+layer and 0.774 of the bytes a row, the step between window 3's two arms.
 
 **What the decision becomes when the confirm is in.** The loss this record was written for (12
 and 16 rows) is gone, so the gather no longer holds the batch cap or drafting on a four-rank
