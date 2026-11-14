@@ -39,8 +39,9 @@ routes key on a unified-memory `120a`-family device; the rest key on the device.
 
 Boot lines state the memory defaults: `[prefix-cache] on: ... unified memory: ...` and
 `[deadline] unified memory (48 SMs, served ctx N): ...`. Prefix-cache inserts also clamp to live
-free memory, and admission books the cache's allowed growth while a session is active (an idle
-server books none, [IDLE-REFUSAL-CLASS](../decisions/IDLE-REFUSAL-CLASS.md)). The values before
+free memory (an entry that copies reserves its room before it allocates), and admission books
+the cache's allowed growth while a session is active (an idle server books none,
+[IDLE-REFUSAL-CLASS](../decisions/IDLE-REFUSAL-CLASS.md)). The values before
 the unified-memory keying are in [history/MODELS.md](../history/MODELS.md#dgx-spark-card-the-pre-unified-memory-defaults-the-was-column).
 
 ## Models measured here

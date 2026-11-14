@@ -394,8 +394,11 @@ a `[shed]` line.
   `context_length_exceeded` naming the largest context that capacity admits; retrying cannot help
   it (`[admit-oom] capacity reject:`). A request that fits that capacity but not the free memory at
   the time (host memory on unified memory, another process on the card) is a 503 `overloaded` with
-  `Retry-After` (`[admit-oom] idle memory short:`). The boot line `[admission] idle capacity`
-  states the capacity. Record: [`decisions/IDLE-REFUSAL-CLASS.md`](decisions/IDLE-REFUSAL-CLASS.md).
+  `Retry-After` (`[admit-oom] idle memory short:`). Both messages name the largest context that
+  fits the free memory at the time (the 400 when it is under the capacity's figure): memory
+  another process holds for good does not come back to a retry, and a caller that cannot wait can
+  send that size. The boot line `[admission] idle capacity` states the capacity. Record:
+  [`decisions/IDLE-REFUSAL-CLASS.md`](decisions/IDLE-REFUSAL-CLASS.md).
 - Speculation-capable models carry a flat 1.5 GiB admission reserve for the draft-graph transient,
   which is not proportional to session count. Plain models carry none.
 - A step that hits a quoted CUDA OOM despite admission parks its session at the front of the queue
@@ -544,7 +547,7 @@ unified arm; discrete cards read none of them. GB10 values and the measurements 
 | `MEMRA_STREAM_TTFT_MS_MAX` | 90,000 ms | one full served context at the derived prefill rate, at least 90,000 ms |
 | `MEMRA_SSE_PREFILL_COMMIT_MS` | off | 60,000 ms |
 | non-streaming `timeout_ms` maximum and default | 90,000 ms | the streaming value plus 8,192 open output tokens at 4 tok/s |
-| prefix-cache insert budget | the configured budget | clamped on every insert to what the cache holds plus allocatable free memory less the driver headroom and the reserve |
+| prefix-cache insert budget | the configured budget | clamped on every insert to what the cache holds plus allocatable free memory less the driver headroom and the reserve; an entry that copies (a snapshot, a DFlash or GLM-5 boundary publication with its drafter tail, a host promotion) reserves that room before it allocates |
 | admission booking of cache growth | none, except after a partial admission reclaim | the cache's allowed growth is booked as committed while a session is active; an idle server books none |
 
 Of the readers memra#1307 went through, three stay on raw `cuMemGetInfo` free on unified memory, where
