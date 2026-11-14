@@ -7743,6 +7743,16 @@ impl Dsv4Gpu {
     /// Each stage's device memory as a serving admission reads it (memra#503). Every stage
     /// stream is fenced first: a dropped slice is a stream-ordered free, and the pool keeps
     /// counting it as used until its stream passes the free.
+    ///
+    /// `driver_free` is the raw `cuMemGetInfo` reading, not
+    /// [`crate::unified_memory::allocatable_mem_info`] (memra#1307), because this route never
+    /// loads on unified memory: [`Dsv4Gpu::load`] takes exactly two CUDA devices, and the 0731
+    /// checkpoint's NVFP4 weights fill about 83 GiB of each 96 GB card (with the DSpark drafter),
+    /// more than a GB10 holds even with both stages on its one GPU. If it ever does, the door's
+    /// level (`effective_free`, the calibrated ceiling) needs the allocatable reading, and both
+    /// ends of each `occupied` delta behind the calibrated fixed terms need
+    /// [`crate::unified_memory::delta_free_bytes`], as the draft-state bracket in `spec.rs` takes
+    /// it: the raw reading moves with the page cache.
     pub fn stage_memory(&self) -> Res<Vec<StageMemory>> {
         use cudarc::driver::sys;
         let mut out = Vec::with_capacity(self.stages.len());
