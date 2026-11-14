@@ -375,10 +375,11 @@ What changed:
   larger than its reservation prints `[prefix-cache] WARNING: a ... publication holds N bytes,
   M more than it reserved` at the insert, always.
 - **The size both refusals name is a request the caller can send**: prompt plus `max_tokens`,
-  the charged context less the request's slack (8 rows, 64 on a route that can speculate). It is
-  found by bisecting the cost model's own context term, so a ring model's two slopes, a choice
-  group's states and a per-device charge (the minimum over the devices) are all taken in. When
-  nothing fits no size is named.
+  the charged context less the request's slack (64 rows for every request that pins no
+  `max_ctx`; this line first said 8, or 64 on a route that can speculate, which the third
+  review corrected). It is found by bisecting the cost model's own context term, so a ring
+  model's two slopes, a choice group's states and a per-device charge (the minimum over the
+  devices) are all taken in. When nothing fits no size is named.
 - **The kv verifier branches on the boot reading**, not on the capacity the server logs: a
   charge within what the server read free at boot must get the 503, whatever capacity the
   server says it judged at. The reviewer's probes P5 and P6 (a 400 beside a capacity collapsed

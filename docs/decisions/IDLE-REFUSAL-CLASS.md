@@ -87,11 +87,15 @@ With `MEMRA_PREFIX_CACHE_MB=0`, in the same state, the request was admitted and 
   already held them), every state a choice group builds (its rows and one snapshot: with one
   row's term a group's overshoot shed more tokens than the request has, and no size was named,
   the first RTX 5090 take), and each device's own charge and free bytes where the charge is per
-  device (the figure is what fits on all of them). It is then put in the caller's units: the
-  charged context less the request's slack over prompt plus max_tokens (8 rows, 64 on a route
-  that can speculate), because a caller that sent the charged context as prompt plus
-  max_tokens was charged the slack on top and refused again with the same figure
-  (`largest_request_within`). When nothing fits there is no figure.
+  device (the figure is what fits on all of them). It is then put in the caller's units
+  (`HintBound`). For a request that pins no `max_ctx` that is prompt plus max_tokens: the
+  charged context less the 64 rows every such request is charged over them, because a caller
+  that sent the charged context as prompt plus max_tokens was charged those rows on top and
+  refused again with the same figure. A request that pins `max_ctx` is charged it whatever its
+  prompt and max_tokens are (third review: told "prompt plus max_tokens 9,440" with 120,000
+  rows free, it sent that under the same `max_ctx` and was charged 131,072 again), so its
+  figure is the largest `max_ctx`: the context that fits, or 64 rows less when its max_tokens
+  does not leave those rows inside it. When nothing fits there is no figure.
 - **A promotion owns the caller's hit** (second review, a bug the first fold introduced). `admit`
   resolved its device hit to an index and then ran the host promotion. With the reservation in
   front of it, a promotion on unified memory could evict (a removal swaps the pool's last entry
@@ -181,7 +185,12 @@ passed the suite, ten for this fold) and the verifier's each fail for their stat
 - Memory memra holds outside its pool after boot (lazily captured graphs, driver workspaces), and
   memory another process keeps for good, count as transient, so a request within that margin of
   the capacity gets a 503 that retrying does not clear. Its message names the largest request
-  (prompt plus `max_tokens`) that fits now, which is the caller's way out.
+  (prompt plus `max_tokens`, or `max_ctx`) that fits now, which is the caller's way out.
+- On unified memory with the host tier on, the device hit is leased while a deeper host twin is
+  promoted, so a promotion that needs the shallow hit's room is refused, on every request that
+  finds the pair: the request is served from the shallow hit and the twin stays in the host
+  tier. The band is narrow (a device budget that holds the shallow entry and not both) and the
+  alternative is the stale index the lease closes (third review's design note; no action).
 - The copy preflight is unified-memory only. On a discrete card a copying publisher still
   allocates before the cache evicts for it; there the allocation fails with a CUDA out-of-memory
   error when the card is full and the publication is dropped
