@@ -1337,7 +1337,9 @@ compares the padding.
 - The padding must not be zero. A column past N lands as zeros (`v41_cp16` with its predicate off),
   so the stray chain stores exactly 0.0. With zero-filled outputs, as the review worded it, the
   mutation passed 1,025 of 1,025 in 20 of 20 passes: the padded gate could not see it at all
-  (`zero-fill/`).
+  (`zero-fill/`). `zero-fill/zero-fill-gate.patch` is the gate edit that run used, as a diff
+  against the gate file before the memra#1286 landing (blob `6616db4917`); on main `63c351a2f4` it
+  applies at an offset of 430 lines.
 - The outputs start as the byte `0xa5` instead. Under the mutation all 15 width-30 entries then fail
   in 20 of 20 passes, by the padding alone (16 bytes differ at 2 rows, 64 at 8), and the whole-block
   entries pass, as they have no chain past N.
