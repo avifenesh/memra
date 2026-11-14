@@ -1,0 +1,55 @@
+CFIX-START cfix2-four 01:06:41
+cfix2-four/lease rc 0 
+cfix2-four/lease slowdown: 1 runs, 0 flagged (cards 0123)
+cfix2-four/lease page cache: 0 runs with a drop inside; last drops seen none
+CFIX-CARDS-DONE cfix2-four 01:11:43
+kgate start 01:06:42 drops 
+kgate rc 0 end 01:06:46 drops 
+kgate: 1007 checks, 0 failed 0 FAIL lines
+gate-default start 01:06:46 drops 
+gate-default rc 0 end 01:07:14 drops 
+gate-default: 916 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1, 2, 3]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1, 2, 3]: 47230211 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+gate-peer-pull start 01:07:14 drops 
+gate-peer-pull rc 0 end 01:07:42 drops 
+gate-peer-pull: 914 checks, 0 failed 0 FAIL lines
+gate-host-canonical start 01:07:42 drops 
+gate-host-canonical rc 0 end 01:08:10 drops 
+gate-host-canonical: 914 checks, 0 failed 0 FAIL lines
+run1-A start 01:08:10 drops 
+run1-A rc 0 end 01:08:37 drops 
+run2-B start 01:08:37 drops 
+run2-B rc 0 end 01:09:04 drops 
+run3-B start 01:09:04 drops 
+run3-B rc 0 end 01:09:30 drops 
+run4-A start 01:09:30 drops 
+run4-A rc 0 end 01:09:57 drops 
+run5-B start 01:09:57 drops 
+run5-B rc 0 end 01:10:23 drops 
+run6-A start 01:10:23 drops 
+run6-A rc 0 end 01:10:50 drops 
+run7-A start 01:10:50 drops 
+run7-A rc 0 end 01:11:16 drops 
+run8-B start 01:11:16 drops 
+run8-B rc 0 end 01:11:43 drops 
+
+### runs: calls by how long the card has been busy (8 runs of 4.23 to 4.25 s)
+| arm | call | first 0.15 s: median ms (calls) | to 0.5 s | from 0.5 s: the steady figure | steady / burst |
+|---|---|---|---|---|---|
+| A | 4 rows | - | - | 12.939 (44) | - |
+| A | 8 rows | - | - | 16.925 (44) | - |
+| A | 9 rows | - | - | 19.008 (44) | - |
+| A | 12 rows | - | - | 20.687 (44) | - |
+| A | 16 rows | - | - | 23.995 (44) | - |
+| A | decode c1 | 9.923 (12) | 9.872 (132) | 9.893 (1004) | 0.997 |
+| B | 4 rows | - | - | 13.056 (44) | - |
+| B | 8 rows | - | - | 16.840 (44) | - |
+| B | 9 rows | - | - | 19.178 (44) | - |
+| B | 12 rows | - | - | 22.095 (44) | - |
+| B | 16 rows | - | - | 24.857 (44) | - |
+| B | decode c1 | 9.728 (8) | 9.716 (136) | 9.708 (1004) | 0.998 |
+decode tokens: decode-c1: 1 distinct over the runs
+slowdown: 12 runs, 0 flagged (cards 0123)
+page cache: 0 runs with a drop inside; last drops seen none
+CFIX-DONE cfix2-four 01:11:43

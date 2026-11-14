@@ -35,7 +35,10 @@ memra-server
   `research/modelplan-onboarding-dsv41-20261109/dspark/`.
 - `MEMRA_DSV41_DEVICES=a,b,...` names the cards of an N-rank split. Residency follows the cards:
   four ranks on four 96 GB cards hold the whole trunk, and the route then uses no host store.
-  That arm has no serve-gate evidence yet; the record covers one card.
+  That arm has no serve-gate evidence yet; the record covers one card. On four ranks a call above
+  8 rows is slower than before the CUTLASS GEMMs (memra#1311), so the batch limit of 8 rows and
+  drafting's default (off) stay as they are there
+  ([record](../decisions/DSV41-ROWS-ABOVE-8-FOUR-RANKS.md)).
 
 ## What the route does
 

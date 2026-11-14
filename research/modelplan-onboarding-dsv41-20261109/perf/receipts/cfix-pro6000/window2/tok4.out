@@ -1,0 +1,21 @@
+CFIX-START cfix2-tok4 01:36:42
+cfix2-tok4/lease rc 0 
+cfix2-tok4/lease slowdown: 1 runs, 0 flagged (cards 0123)
+cfix2-tok4/lease page cache: 0 runs with a drop inside; last drops seen none
+CFIX-CARDS-DONE cfix2-tok4 01:37:35
+run1-A start 01:36:43 drops 
+run1-A rc 0 end 01:37:09 drops 
+run2-B start 01:37:09 drops 
+run2-B rc 0 end 01:37:35 drops 
+
+### runs: calls by how long the card has been busy (2 runs of 3.29 to 3.69 s)
+| arm | call | first 0.15 s: median ms (calls) | to 0.5 s | from 0.5 s: the steady figure | steady / burst |
+|---|---|---|---|---|---|
+| A | 8 rows | - | - | 19.082 (11) | - |
+| A | decode c1 | 11.047 (8) | 11.030 (30) | 11.041 (249) | 0.999 |
+| B | 8 rows | - | - | 16.883 (11) | - |
+| B | decode c1 | 9.713 (10) | 9.730 (34) | 9.705 (243) | 0.999 |
+decode tokens: decode-c1: 1 distinct over the runs
+slowdown: 2 runs, 0 flagged (cards 0123)
+page cache: 0 runs with a drop inside; last drops seen none
+CFIX-DONE cfix2-tok4 01:37:35

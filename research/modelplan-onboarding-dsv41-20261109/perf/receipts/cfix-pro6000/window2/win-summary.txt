@@ -1,0 +1,145 @@
+01:06:41 route2: 8031c7ef90fa7d05e20b888b6a3d815ed0eebcc6 built 2026-11-13T21:18:23+01:00 on the dev desk, cuda 13.1, sm_120a
+01:06:41 cfix2: a05173ee2788afd283d924ffd7e7c3f36505162c built 2026-11-13T21:29:57+01:00 on the dev desk, cuda 13.1, sm_120a
+01:06:41 phase four start
+01:11:43 four rc 0
+kgate start 01:06:42 drops 
+kgate rc 0 end 01:06:46 drops 
+kgate: 1007 checks, 0 failed 0 FAIL lines
+gate-default start 01:06:46 drops 
+gate-default rc 0 end 01:07:14 drops 
+gate-default: 916 checks, 0 failed 0 FAIL lines
+gate-peer-pull start 01:07:14 drops 
+gate-peer-pull rc 0 end 01:07:42 drops 
+gate-peer-pull: 914 checks, 0 failed 0 FAIL lines
+gate-host-canonical start 01:07:42 drops 
+gate-host-canonical rc 0 end 01:08:10 drops 
+gate-host-canonical: 914 checks, 0 failed 0 FAIL lines
+Arms (median of the run medians) and each adjacent A/B pair as B / A:
+
+| call | A | B | B / A | run1-A + run2-B | run3-B + run4-A | run5-B + run6-A | run7-A + run8-B |
+|---|---|---|---|---|---|---|---|
+| 4 rows | 12.940 | 13.059 | 1.009 | 1.010 | 1.009 | 1.010 | 1.007 |
+| 8 rows | 16.926 | 16.840 | 0.995 | 0.995 | 0.995 | 0.994 | 0.995 |
+| 9 rows | 19.009 | 19.179 | 1.009 | 1.010 | 1.009 | 1.008 | 1.009 |
+| 12 rows | 20.686 | 22.091 | 1.068 | 1.069 | 1.068 | 1.068 | 1.066 |
+| 16 rows | 24.000 | 24.857 | 1.036 | 1.037 | 1.035 | 1.037 | 1.034 |
+| decode c1 | 9.893 | 9.712 | 0.982 | 0.982 | 0.982 | 0.981 | 0.981 |
+
+Decode token tapes (gen_sha256 of each round's tokens, by cell):
+
+- decode-c1: cd38e1b772b75d5a... in 8 runs (arms A, B)
+
+Telemetry inside each run (per card: median SM MHz / median W / max C / thermal-reason share):
+01:11:43 CFIX2-WIN-DONE
+01:11:43 route2: 8031c7ef90fa7d05e20b888b6a3d815ed0eebcc6 built 2026-11-13T21:18:23+01:00 on the dev desk, cuda 13.1, sm_120a
+01:11:43 cfix2: a05173ee2788afd283d924ffd7e7c3f36505162c built 2026-11-13T21:29:57+01:00 on the dev desk, cuda 13.1, sm_120a
+01:11:43 phase m1 start
+01:11:43 m1: 984 GB available
+01:16:01 m1 rc 0
+01:11:44 head a05173ee2788afd283d924ffd7e7c3f36505162c, cards: GPU-9f8ecd14-35a9-f104-1dd9-c4757538bb34, 984 GB available
+01:12:40 stream rc 0 56 s; dsv41-run: 1 forwards, 517 calls, 40 layer loads (41.8s), blocks 8.1s, total 51.4s; 
+01:13:41 host rc 0 61 s; dsv41-run: 1 forwards, 517 calls, 0 layer loads (0.0s), blocks 18.3s, total 46.3s; dsv41-run: expert cache [3840] slots: 185907 lookups, 172115 hits, 13792 misses, 9952 evictions, 259298426880 bytes H2D
+01:14:39 floor rc 0 58 s; dsv41-run: 1 forwards, 517 calls, 0 layer loads (0.0s), blocks 18.3s, total 42.7s; dsv41-run: expert cache [384] slots: 185907 lookups, 172115 hits, 13792 misses, 13408 evictions, 259298426880 bytes H2D
+01:14:39 residency host against stream: 65 / 65 files byte-identical
+01:14:39 residency floor against stream: 65 / 65 files byte-identical
+01:15:18 checkpoint rc 0 verified=Checkpoint
+01:16:01 serve rc 0 verified=Serve
+Config=passed
+TokenizerTemplate=passed
+TensorCensus=passed
+TinyParity=pending
+CheckpointParity=passed
+RewriteParity=pending
+Serve=passed
+01:16:01 M1-DONE
+01:16:01 CFIX2-WIN-DONE
+01:16:01 route2: 8031c7ef90fa7d05e20b888b6a3d815ed0eebcc6 built 2026-11-13T21:18:23+01:00 on the dev desk, cuda 13.1, sm_120a
+01:16:01 cfix2: a05173ee2788afd283d924ffd7e7c3f36505162c built 2026-11-13T21:29:57+01:00 on the dev desk, cuda 13.1, sm_120a
+01:16:01 phase prefill2 start
+01:24:15 prefill2 rc 0
+| A | 4096 | 12 | 431.71 | 467.71 | 23.386 | 8758 |
+| B | 4096 | 12 | 329.36 | 355.41 | 17.771 | 11525 |
+| A | 32768 | 12 | 3037.74 | 3169.02 | 158.451 | 10340 |
+| B | 32768 | 12 | 2388.84 | 2456.15 | 122.808 | 13341 |
+| A | 131072 | 12 | 12737.61 | 13163.58 | 658.179 | 9957 |
+| B | 131072 | 12 | 10149.95 | 10327.50 | 516.375 | 12692 |
+
+4096 tokens: B/A best 0.763 (A 431.71 ms, B 329.36 ms), median 0.760
+32768 tokens: B/A best 0.786 (A 3037.74 ms, B 2388.84 ms), median 0.775
+131072 tokens: B/A best 0.797 (A 12737.61 ms, B 10149.95 ms), median 0.785
+slowdown: 8 runs, 0 flagged (cards 23)
+page cache: 0 runs with a drop inside; last drops seen none
+01:24:15 CFIX2-WIN-DONE
+01:24:15 route2: 8031c7ef90fa7d05e20b888b6a3d815ed0eebcc6 built 2026-11-13T21:18:23+01:00 on the dev desk, cuda 13.1, sm_120a
+01:24:15 cfix2: a05173ee2788afd283d924ffd7e7c3f36505162c built 2026-11-13T21:29:57+01:00 on the dev desk, cuda 13.1, sm_120a
+01:24:15 phase prefill4 start
+01:29:12 prefill4 rc 0
+
+| arm | tokens | runs | best ms | median ms | median ms/layer | median tok/s |
+|---|---|---|---|---|---|---|
+| A | 4096 | 12 | 602.51 | 619.81 | 15.495 | 6608 |
+| B | 4096 | 12 | 499.82 | 503.95 | 12.599 | 8128 |
+| A | 32768 | 12 | 4323.83 | 4432.47 | 110.812 | 7393 |
+| B | 32768 | 12 | 3720.05 | 3767.53 | 94.188 | 8697 |
+
+4096 tokens: B/A best 0.830 (A 602.51 ms, B 499.82 ms), median 0.813
+32768 tokens: B/A best 0.860 (A 4323.83 ms, B 3720.05 ms), median 0.850
+slowdown: 8 runs, 0 flagged (cards 0123)
+page cache: 0 runs with a drop inside; last drops seen none
+01:29:12 CFIX2-WIN-DONE
+01:29:12 route2: 8031c7ef90fa7d05e20b888b6a3d815ed0eebcc6 built 2026-11-13T21:18:23+01:00 on the dev desk, cuda 13.1, sm_120a
+01:29:12 cfix2: a05173ee2788afd283d924ffd7e7c3f36505162c built 2026-11-13T21:29:57+01:00 on the dev desk, cuda 13.1, sm_120a
+01:29:12 phase stress2 start
+01:32:56 stress2 rc 0
+bins /home/access/dsv41/perf-bins/cfix2: a05173ee2788afd283d924ffd7e7c3f36505162c built 2026-11-13T21:29:57+01:00 on the dev desk, cuda 13.1, sm_120a; dsv41-gate 22172b481d8255d8; dense form: default; devices 0,1 (one rank a card)
+peer-pull-1 rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 28 01:29:40
+default-1 rc 0 1966 checks, 0 failed FAIL lines 0 passes 480 secs 28 01:30:08
+peer-pull-2 rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 28 01:30:36
+default-2 rc 0 1966 checks, 0 failed FAIL lines 0 passes 480 secs 28 01:31:04
+peer-pull-3 rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 28 01:31:32
+default-3 rc 0 1966 checks, 0 failed FAIL lines 0 passes 480 secs 28 01:32:00
+peer-pull-4 rc 0 1964 checks, 0 failed FAIL lines 0 passes 480 secs 28 01:32:28
+default-4 rc 0 1966 checks, 0 failed FAIL lines 0 passes 480 secs 28 01:32:56
+STRESS2-DONE 01:32:56
+01:32:56 CFIX2-WIN-DONE
+01:32:56 route2: 8031c7ef90fa7d05e20b888b6a3d815ed0eebcc6 built 2026-11-13T21:18:23+01:00 on the dev desk, cuda 13.1, sm_120a
+01:32:56 cfix2: a05173ee2788afd283d924ffd7e7c3f36505162c built 2026-11-13T21:29:57+01:00 on the dev desk, cuda 13.1, sm_120a
+01:32:56 phase two start
+01:36:42 two rc 0
+gate-default start 01:32:57 drops 
+gate-default rc 0 end 01:33:22 drops 
+gate-default: 480 checks, 0 failed 0 FAIL lines
+gate-peer-pull start 01:33:22 drops 
+gate-peer-pull rc 0 end 01:33:46 drops 
+gate-peer-pull: 478 checks, 0 failed 0 FAIL lines
+gate-host-canonical start 01:33:46 drops 
+gate-host-canonical rc 0 end 01:34:10 drops 
+gate-host-canonical: 478 checks, 0 failed 0 FAIL lines
+Arms (median of the run medians) and each adjacent A/B pair as B / A:
+
+| call | A | B | B / A | run1-A + run2-B | run3-B + run4-A | run5-B + run6-A | run7-A + run8-B |
+|---|---|---|---|---|---|---|---|
+| 4 rows | 8.505 | 8.593 | 1.010 | 1.010 | 1.010 | 1.011 | 1.009 |
+| 8 rows | 11.575 | 11.266 | 0.973 | 0.974 | 0.974 | 0.972 | 0.968 |
+| 9 rows | 12.717 | 12.497 | 0.983 | 0.983 | 0.984 | 0.982 | 0.981 |
+| 12 rows | 14.010 | 13.677 | 0.976 | 0.979 | 0.977 | 0.976 | 0.975 |
+| 16 rows | 16.389 | 15.601 | 0.952 | 0.956 | 0.954 | 0.950 | 0.948 |
+| decode c1 | 6.585 | 6.256 | 0.950 | 0.950 | 0.951 | 0.951 | 0.949 |
+
+Decode token tapes (gen_sha256 of each round's tokens, by cell):
+
+- decode-c1: e16ea3b78575aa90... in 4 runs (arms A)
+- decode-c1: 8ae2b9d6271154a9... in 4 runs (arms B)
+
+Telemetry inside each run (per card: median SM MHz / median W / max C / thermal-reason share):
+01:36:42 CFIX2-WIN-DONE
+01:36:42 route2: 8031c7ef90fa7d05e20b888b6a3d815ed0eebcc6 built 2026-11-13T21:18:23+01:00 on the dev desk, cuda 13.1, sm_120a
+01:36:42 cfix2: a05173ee2788afd283d924ffd7e7c3f36505162c built 2026-11-13T21:29:57+01:00 on the dev desk, cuda 13.1, sm_120a
+01:36:42 phase tok4 start
+01:37:35 tok4 rc 0
+Decode token tapes (gen_sha256 of each round's tokens, by cell):
+
+- decode-c1: cd38e1b772b75d5a... in 2 runs (arms A, B)
+
+Telemetry inside each run (per card: median SM MHz / median W / max C / thermal-reason share):
+01:37:35 CFIX2-WIN-DONE

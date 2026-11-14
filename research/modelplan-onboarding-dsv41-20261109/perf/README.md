@@ -1442,7 +1442,10 @@ route before it: 42% and 49%). k3's chat tapes on GB10 equal its tapes on the 12
 tapes of the new program are scored against the 120a tapes of k3. Both groups lean the same way (chat +6%, long
 +16% of k3's KL), and 711 steps cannot tell a shift of that size from none: the change lands only with a larger
 tape set (35 more chat-length cases) keeping the interval at zero, the prefill gain measured on the
-four cards, and decode on four cards at 1, 4 and 8 rows level with k3 or better. CheckpointParity on the pack's
+four cards, and decode on four cards at 1, 4 and 8 rows measured against k3. The bar set here was level with k3 or
+better. The measurement of 2026-11-14 against the route this lands on is 0.982 at one row, 1.009 at 4 rows and
+0.995 at 8: one row and 8 rows are under the base, 4 rows is 0.9% over it, and the lane lands on that table as
+measured ("Window 2" in the review section below). CheckpointParity on the pack's
 probe passes in its band (max abs 2.94 against k3's 2.91, band 6.4; the vendor's argmax; `receipts/ckpt-bs1`).
 
 Timing, GB10, a proxy (`receipts/time-bs1-gb10`, `receipts/verify-bs1f`; A B B A against k3, steady medians):
@@ -1899,9 +1902,10 @@ block width), and the 4-row block's +1.0% sits inside that spread (one pair +1.5
 `cfix-two` each arm writes one hash over its runs (k3 `e16ea3b7...`, this tree `8ae2b9d6...`), and in `cfix-tok23` the
 CUTLASS tree and this tree both write `8ae2b9d6...`. The CUTLASS tree's four-card block (`cutlass-four`, 40 layers, A
 B B A B A A B, all four cards in the run, 2.25-2.32 GHz, no thermal reason): B / A of each pair 1.102-1.104 at one
-row, 1.118-1.119 at 4 rows and 1.100-1.101 at 8, the README's 10 to 12% above. Owed: the four-card confirm of this
-tree (40 layers, four runs an arm), a second pair block on a quiet box, and the keys side's overlap A/B on four
-cards.
+row, 1.118-1.119 at 4 rows and 1.100-1.101 at 8, the README's 10 to 12% above. The four-card confirm of this
+tree (40 layers, four runs an arm) and the second pair block on a quiet box ran on 2026-11-14 ("Window 2" in the
+review section below: four cards 0.982 / 1.009 / 0.995 at 1 / 4 / 8 rows and 1.009 / 1.068 / 1.036 at 9 / 12 / 16).
+Owed: the keys side's overlap A/B on four cards.
 
 GB10 (121a) gates of this tree (`receipts/gates-cutlass-gb10/s5`, the lease summaries; s1 and s4 beside it): the kernel
 gate 972 checks (576 dense small-row, 20 split-path, 96 fused), 0 failed; the layer gate 161 / 0 on the default form and
@@ -2055,7 +2059,7 @@ whose answers are not the checkpoint's), so its 283 tokens a second is not a mod
 ### The review of 2026-11-13: the restack, the refusals, the race harness, the default form's gates
 
 An independent review of this lane (memra#1286) asked for evidence on eight points. This section covers what is in
-the tree; the PRO 6000 items wait for a four-card window (below).
+the tree. The PRO 6000 items ran in the four-card window of 2026-11-14 ("Window 2" below).
 
 - **Builds outside the 120a family refuse at load.** An sm_89, sm_90a or sm_100a build links the stub of
   `cu/dsv41_cutlass.cu`. Before this change it loaded the checkpoint and failed at the first GEMM, reported as "CUDA
@@ -2146,15 +2150,156 @@ No arm of this head wrote a corrupt pass. - Each arm of this head: 0 corrupt pas
 
 The fault inside CUTLASS's swapped ptr-array path stays unlocated. The shipped forms showed no corrupt pass under the harness, the 2 ms side-stream delay or the poisoned frees.
 
-Queued for a wrx window (`receipts/cfix-pro6000/window/win.sh` and its phase scripts):
-- the four-card decode A/B against the base route at 40 layers: four runs an arm, the kernel and tp gates first;
-- the prefill A/B on the pair and on four cards;
-- the residency byte check, with CheckpointParity and `verify serve` on one card. `dsv41-run --experts-host` runs
-  against the streamed runner on the 13 chat tapes, once with the cache as large as the card allows and once at its
-  floor;
-- the race harness at one rank a card on the pair: 3,840 passes, two transports;
-- a second pair block on a quiet box;
-- the four-card token tape against the CUTLASS tree.
+### Window 2 (2026-11-14): four cards against the base, the prefill, the residency, the pair stress
+
+The review's PRO 6000 items ran in one window on four RTX PRO 6000 Blackwell Max-Q cards, 01:06 to 01:37, nothing
+else on the box (power caps as the box keeps them: 250 W on cards 0 and 1, 280 W on cards 2 and 3). Two builds, both
+built on one machine with CUDA 13.1 for sm_120a:
+
+- **A** is main `8031c7ef90`, the route this lane lands on (`perf-bins/route2`).
+- **B** is this lane's head `a05173ee27` (`perf-bins/cfix2`).
+
+Seven phases ran, each with exit 0 (`receipts/cfix-pro6000/window2/`: the window's log, its summary and every
+phase's output; the kit is `receipts/cfix-pro6000/window/`). The raw runs are beside them: every run's cells and
+log, the gate logs, the 250 ms telemetry, the slowdown counters, each run's decode token files as hashes, and
+`per_run.md` from `per_run.py`.
+
+**Gates at B on the PRO 6000s, before the timed runs.** Kernel gate 1,007 checks, 0 failed. tp on four cards: 916
+(default), 914 (peer-pull), 914 (host-canonical), 0 failed. tp on the pair: 480 / 478 / 478, 0 failed.
+
+**Decode against the base (review item 1; `cfix2-four`, `cfix2-two`).** Four cards at 40 layers and the pair (cards 2
+and 3) at 20 layers, A B B A B A A B, four runs an arm. Steady calls past 0.5 s of load, ms; an arm's figure is the
+median of its four run medians (11 calls a run and width on four cards, 9 to 10 on the pair, 240 to 251 one-row
+steps); the range is B / A of the four adjacent pairs of runs:
+
+| call | four cards: A | B | B / A (pairs) | pair: A | B | B / A (pairs) |
+|---|---|---|---|---|---|---|
+| one-row decode | 9.893 | 9.712 | 0.982 (0.981-0.982) | 6.585 | 6.256 | 0.950 (0.949-0.951) |
+| 4 rows | 12.940 | 13.059 | 1.009 (1.007-1.010) | 8.505 | 8.593 | 1.010 (1.009-1.011) |
+| 8 rows | 16.926 | 16.840 | 0.995 (0.994-0.995) | 11.575 | 11.266 | 0.973 (0.968-0.974) |
+| 9 rows | 19.009 | 19.179 | 1.009 (1.008-1.010) | 12.717 | 12.497 | 0.983 (0.981-0.984) |
+| 12 rows | 20.686 | 22.091 | 1.068 (1.066-1.069) | 14.010 | 13.677 | 0.976 (0.975-0.979) |
+| 16 rows | 24.000 | 24.857 | 1.036 (1.034-1.037) | 16.389 | 15.601 | 0.952 (0.948-0.956) |
+
+What the table says, losses first:
+
+- **4 rows: this tree is slower on both layouts**, +0.9% on four cards and +1.0% on the pair, in every pair of runs.
+- **Four cards above 8 rows: this tree is slower**, +0.9% at 9 rows, +6.8% at 12 and +3.6% at 16, in every pair of
+  runs. The pair is faster at the same widths (1.7%, 2.4% and 4.8%).
+- One row: 1.8% faster on four cards, 5.0% on the pair. 8 rows: 0.5% faster on four cards, 2.7% on the pair.
+
+The bar this lane set for itself (four cards at 1, 4 and 8 rows level with the base or better) is met at one row
+and at 8 rows and missed at 4 rows by 0.9%. The lane lands on the table as measured, not on the bar.
+
+Against the CUTLASS tree before the fix (`cfix2-tok4`: `498473abd8` as A, one run an arm, four cards): 8 rows
+19.082 -> 16.883 ms, one row 11.041 -> 9.705.
+
+Conditions (`per_run.md`'s telemetry lines, per run and card): four cards 2,250 to 2,317 MHz, 206 to 244 W, at most
+74 C; the pair 2,190 to 2,272 MHz, 217 to 280 W, at most 71 C, cards 0 and 1 idle. No thermal clock reason in any
+line, no run flagged for a slowdown, no page-cache drop inside a run.
+
+**Token tapes.** On four cards at 40 layers all eight runs write one decode tape (`cd38e1b7...`), both arms: the
+base and this tree generate the same tokens there. The CUTLASS tree and this tree write that tape too (`cfix2-tok4`).
+The pair at 20 layers writes one tape an arm (A `e16ea3b7...`, B `8ae2b9d6...`), the two byte families of the first
+pair block above.
+
+**Prefill (review item 2; `prefillab-cfix2-pair`, `prefillab-cfix2-four`).** A B B A A B B A, three rounds a run, so
+12 calls an arm and length; first token, ms:
+
+| layout | tokens | A best | A median | B best | B median | B / A median | B / A best |
+|---|---|---|---|---|---|---|---|
+| pair, 20 layers | 4,096 | 431.71 | 467.71 | 329.36 | 355.41 | 0.760 | 0.763 |
+| pair, 20 layers | 32,768 | 3,037.74 | 3,169.02 | 2,388.84 | 2,456.15 | 0.775 | 0.786 |
+| pair, 20 layers | 131,072 | 12,737.61 | 13,163.58 | 10,149.95 | 10,327.50 | 0.785 | 0.797 |
+| four cards, 40 layers | 4,096 | 602.51 | 619.81 | 499.82 | 503.95 | 0.813 | 0.830 |
+| four cards, 40 layers | 32,768 | 4,323.83 | 4,432.47 | 3,720.05 | 3,767.53 | 0.850 | 0.860 |
+
+A prefill is 15 to 24% faster than the base's. No run flagged for a slowdown on either layout.
+
+**The qualified topology (review item 3; `cfix2-m1`).** One card, B's binaries (`bins.sha256`), the 13 chat tapes
+teacher-forced through `dsv41-run` three ways:
+
+- streamed (40 layer loads);
+- `--experts-host`, the serving residency, 3,840 cache slots: 13,792 misses, 9,952 evictions;
+- `--experts-host --cache-slots 384`, the floor, where every layer evicts the last: 13,792 misses, 13,408 evictions.
+
+Every file of every tape (top ids, top values, lse, argmax, the full logits of 8 steps: 65 files) is byte-identical
+to the streamed run's, in both residency arms (`run.txt`; `res.sha256` holds the three runs' hashes, the logits
+themselves stay out of the tree). Then, with the experts in host memory:
+
+- `memra model verify checkpoint` through the experts-host wrapper: `verified=Checkpoint` (max abs 2.938, the
+  vendor's argmax);
+- `memra model verify serve` with `memra-server` as the runner: `verified=Serve`.
+
+**The pair stress (review item 4; `cfix2-stress2`).** The race harness at one rank a card on the pair, the default
+dense form, layers 2 and 24, `--reps 40`: four runs on peer-pull and four on the default transport, interleaved,
+480 compared passes a run. 0 corrupt passes in 3,840 (0 in 1,920 a transport), so the per-pass rate on the pair is
+below 7.8e-4 (95%); the GB10 bound above (9.8e-5 an arm) is the tighter one.
+
+**Per-run data (review item 6).** This window is the second block the review asked for: every run's cells, the
+telemetry and the token hashes are in the tree, and the pairs of runs agree to 0.3% on four cards and 0.8% on the
+pair at every width.
+
+### Where the four-card loss at 12 and 16 rows comes from
+
+`dsv41-tpbench` records no per-launch timing. What a call's row carries is the first token, the host's time to issue
+the forward, the read-back wait and the gathers' counters (`call_fields.py`; `cfix2-four/call_fields.md`,
+`cfix2-two/call_fields.md`; 44 steady calls an arm and width). Four cards, B minus A:
+
+| rows | first token, ms | host issue, ms | gathers a call: A | B | bytes gathered, B / A |
+|---|---|---|---|---|---|
+| 4 | +0.116 | +0.027 | 160 | 160 | 1.000 |
+| 8 | -0.085 | -0.068 | 168 | 168 | 1.000 |
+| 9 | +0.170 | -0.089 | 208 | 168 | 1.292 |
+| 12 | +1.409 | +1.126 | 208 | 168 | 1.292 |
+| 16 | +0.862 | +1.100 | 208 | 168 | 1.292 |
+
+The two arms differ in their gathers only above 8 rows, and that difference is this lane's last speed change
+("Calls of 9 to 16 rows: no step at 9" above). The base gathers the split MoE's hidden rows as FP8 codes and scales
+above 8 rows (two gathers). This tree keeps one bf16 gather through 16 rows (`SPLIT_BF16_ROWS`): one gather fewer a
+layer, twice the bytes. The byte difference between the arms is exactly that: 46,872 bytes a row and layer (7 rows
+of 2,304 columns at 2 bytes against 1 byte and a scale code per 32 columns, stored into 3 peers).
+
+Under the default transport a gather stays inside kernels while what a rank stores, its region times its peers, is
+at most 224 KiB (`PUSH_LIMIT`, `dsv41_gpu/tp.rs`); a larger one goes through the kept blocks and the copy engine
+(`gather_packed`: a pack kernel, a peer copy for every pair of ranks in ring order, unpack kernels, publish and
+release event waits). The hidden rows of a call are 7 rows a call row (6 routed experts and the shared expert) of
+a rank's share of 2,304 columns:
+
+| rows | four ranks, bf16: a rank stores, KiB | in kernels | four ranks, codes | in kernels | two ranks, bf16 | in kernels |
+|---|---|---|---|---|---|---|
+| 8 | 189.0 | yes | 94.5 | yes | 126.0 | yes |
+| 9 | 212.6 | yes | 106.3 | yes | 141.8 | yes |
+| 10 | 236.2 | no | 118.1 | yes | 157.5 | yes |
+| 12 | 283.5 | no | 141.8 | yes | 189.0 | yes |
+| 16 | 378.0 | no | 189.0 | yes | 252.0 | no |
+
+So on four ranks this tree's hidden gather leaves the kernels from 10 rows: at 12 and 16 rows every layer runs one
+packed gather with 12 peer copies where the base runs two pushes. The host's issue time shows it: level at 8 and 9
+rows, +1.13 ms at 12 and +1.10 ms at 16, which is 28 us a layer, and no other choice of this tree changes between 9
+and 12 rows. On two ranks the same gather stays a push through 14 rows and is a packed gather of two copies at 16,
+where the push and the copy engine were measured level ("The push limit and the default transport"), and the pair
+is faster at every width from 8 rows.
+
+What this supports, and what it does not:
+
+- **Supported:** the loss at 12 and 16 rows on four cards is the bf16 hidden gather past the push limit. The step
+  in the host's issue time sits where the arithmetic puts the limit, it is absent on the pair, and it carries 1.13
+  of the 1.41 ms at 12 rows and all of the 0.86 ms at 16.
+- **Not shown:** how the rest divides between that gather and the kernels. There is no profile of these runs.
+- **Unexplained: +0.9% at 9 rows on four cards.** The gather there is still a push, at 212.6 KiB a rank the largest
+  one this tree issues. The host issues the call 0.09 ms sooner and the cards finish 0.17 ms later.
+- **Unexplained: +0.9% at 4 rows** on both layouts. The gathers and their bytes are the same in both arms; the
+  difference is 3 us a layer on four cards and 4.5 us on the pair, somewhere in the kernels.
+
+What follows:
+
+- The served route's batched decode call carries at most 8 rows (`MEMRA_DSV41_BATCH_ROWS`), so a plain served step
+  never issues a call above 8 rows. A drafted block's rows can (`MEMRA_DSV41_DRAFT=1`, off by default). Raising the
+  batch cap above 8 rows, or turning drafting on, on a four-rank split needs memra#1311 fixed or re-measured
+  first: `docs/decisions/DSV41-ROWS-ABOVE-8-FOUR-RANKS.md`, and the two flags' rows in `docs/FLAGS.md`.
+- The candidate fix is a split MoE that takes the base's codes gather above 8 rows on more than two ranks and keeps
+  the bf16 gather on two. It is not in this landing: it needs its own four-card A/B.
 
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
@@ -2291,6 +2436,11 @@ weight traffic: 1.1 ms.
   freed serves later allocations of other sizes without the pool growing (ctypes, no model).
   `prefill_serial.py`: a `dsv41-tpbench --nvtx` trace's serial part of each prompt before its first
   launch, by the forward's ranges.
+- `receipts/cfix-pro6000/call_fields.py`: what `dsv41-tpbench` records for each row-block call of such an A/B, by
+  arm (first token, the host's issue time, the read-back wait, the gathers' counts and bytes), and what a rank
+  stores in the split MoE's hidden gather against the push limit (`cfix2-four/call_fields.md`,
+  `cfix2-two/call_fields.md`). `receipts/cfix-pro6000/kcmp/`: the kernel-object comparison of the landing branch
+  against this lane's head (`cubin_cmp.py`, `cubin_norm.py`, the dev-desk script, the two reports).
 - `receipts/cfix-pro6000/per_run.py`: the per-run figures of a `perf_cfix_four.sh` A/B (each run's steady
   median, the arm's median of run medians, each adjacent A/B pair), the decode token hashes by arm, and
   the cards' telemetry inside each run.

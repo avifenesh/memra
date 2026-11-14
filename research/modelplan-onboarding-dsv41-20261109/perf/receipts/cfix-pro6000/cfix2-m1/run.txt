@@ -1,0 +1,16 @@
+01:11:44 head a05173ee2788afd283d924ffd7e7c3f36505162c, cards: GPU-9f8ecd14-35a9-f104-1dd9-c4757538bb34, 984 GB available
+01:12:40 stream rc 0 56 s; dsv41-run: 1 forwards, 517 calls, 40 layer loads (41.8s), blocks 8.1s, total 51.4s; 
+01:13:41 host rc 0 61 s; dsv41-run: 1 forwards, 517 calls, 0 layer loads (0.0s), blocks 18.3s, total 46.3s; dsv41-run: expert cache [3840] slots: 185907 lookups, 172115 hits, 13792 misses, 9952 evictions, 259298426880 bytes H2D
+01:14:39 floor rc 0 58 s; dsv41-run: 1 forwards, 517 calls, 0 layer loads (0.0s), blocks 18.3s, total 42.7s; dsv41-run: expert cache [384] slots: 185907 lookups, 172115 hits, 13792 misses, 13408 evictions, 259298426880 bytes H2D
+01:14:39 residency host against stream: 65 / 65 files byte-identical
+01:14:39 residency floor against stream: 65 / 65 files byte-identical
+01:15:18 checkpoint rc 0 verified=Checkpoint
+01:16:01 serve rc 0 verified=Serve
+Config=passed
+TokenizerTemplate=passed
+TensorCensus=passed
+TinyParity=pending
+CheckpointParity=passed
+RewriteParity=pending
+Serve=passed
+01:16:01 M1-DONE
