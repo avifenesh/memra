@@ -1,0 +1,33 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+warning: unused variable: `evictions`
+     --> crates/memra-server/src/worker.rs:18851:9
+      |
+18851 |     let evictions = px.evictions;
+      |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_evictions`
+      |
+      = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-server` (lib test) generated 1 warning (run `cargo fix --lib -p memra-server --tests` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 0.10s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::the_size_hint_is_a_request_the_caller_can_send ... FAILED
+
+failures:
+
+---- worker::tests::the_size_hint_is_a_request_the_caller_can_send stdout ----
+
+thread 'worker::tests::the_size_hint_is_a_request_the_caller_can_send' (1249288) panicked at crates/memra-server/src/worker.rs:43661:13:
+assertion `left == right` failed
+  left: 120000
+ right: 119936
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::the_size_hint_is_a_request_the_caller_can_send
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1307 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

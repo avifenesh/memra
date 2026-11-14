@@ -1,0 +1,93 @@
+1794605741.323009 [server] build: memra-0.141.1-daea28d7c531 (id: source-tree, git: unknown)
+1794605741.323908 [server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1794605741.324738 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1794605741.324764 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1794605741.526029 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1794605741.707986 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1794605741.708066 [worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1794605741.752130 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1794605758.492946 [mtp-draft] loading external MTP draft: ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+1794605758.651688 [mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+1794605759.248974 [frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+1794605759.437576 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1794605759.438120 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1794605759.438145 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794605759.438148 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1794605759.438151 [route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1794605801.487370 [fa-pool] grow #0 dev=0 o_len 0 -> 3244032 ml_len 0 -> 12672 (retired kept, zero=false)
+1794605801.797003 [fa-pool] grow #1 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+1794605805.143435 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":89717305344,"synchronization_errors":[]}
+1794605805.143467 [wave-probe] 32 sessions at depth 2048: two 16-row waves 261.5 ms, one 32-row wave 264.5 ms (tensor-core tier 229.8 ms) -> wave cap 32, tensor-core b32 on (45.5s; released 16288MB of cached pool to the driver)
+1794605805.143469 [worker] q38: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+1794605805.370804 [vision] tower loaded from ~/models/Qwen3.8-27B-NVFP4 (27 blocks, out_width 5120, f32-resident)
+1794605805.376505 [vision] overlay intake: tower dev0 -> intake dev0 (cross_context=false) publish=Auto servable=true
+1794605805.376537 [prefix-cache] on: budget 50484MB (50483582976 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 50483582976 B; boot driver free 104725262336 B, post-reserve clamp 100967165952 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794605805.376540 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794605856.455934 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1794605856.456024 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q4_K_mmvq
+1794605856.456030 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q6_K_mmvq
+1794605856.456758 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1794605856.456812 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1794605856.456814 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1794605856.461938 [spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794605856.475024 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1410.094
+1794605856.475055 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794605861.006184 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1431.806
+1794605861.006217 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794605862.844504 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1412.788
+1794605862.844535 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794605864.773313 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1396.733
+1794605864.773348 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794605866.589145 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1391.397
+1794605866.589178 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794605867.106160 [spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+1794605870.245696 [spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+1794605872.598571 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":87918309376,"synchronization_errors":[]}
+1794605872.598607 [spec-cost] model="q38" depth=2048 pooled=true plain_cap=32 round_overhead=11.26ms draft_step=0.00ms pooled_overhead=Some((4, 3.250454348958332)) pooled_draft_step=None verify_ms[1..16]=[75.9 73.6 73.5 74.3 75.0 75.7 77.6 79.5 82.1 84.6 87.1 89.6 91.6 93.6 95.6 97.6] plain_ms[1..]=[81.3 77.0 80.9 84.7 89.1 93.6 98.0 102.4 107.0 111.6 116.1 120.7 125.2 129.8 134.4 138.9 144.7 150.5 156.2 162.0 167.8 173.6 179.3 185.1 190.9 196.7 202.4 208.2 214.0 219.7 225.5 231.3] (67.2s)
+1794605872.598864 [prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1794605875.195394 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1794605875.195422 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1794605875.223186 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2602.921
+1794605875.223211 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794605877.823681 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":87128817664,"synchronization_errors":[]}
+1794605877.823714 [admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+1794605877.823716 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 1536MB (static was 1536MB; measured 1214MB; probe kv charge 127MB, draft-state 34MB, drafted 87 accepted 34; [dev0 peak-mapped 19808MB rest-mapped 18432MB charged 161MB -> 1214MB]; 5.2s)
+1794605877.823720 [admission] idle capacity (post-load, cache empty): dev0 free 104145MB (pool used 19178MB)
+1794605877.823721 [admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1794605877.823737 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794605877.823739 [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+1794605877.823741 [kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+1794605877.823743 [deadline] unified memory (48 SMs, served ctx 262144): streaming TTFT default/max 997311 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 3045311 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+1794605877.824077 [server] worker ready; serving models: ["q38"]
+1794605877.824929 [server] listening on http://127.0.0.1:8090
+1794605905.609899 [meter] admit id=chatcmpl-8dc341af2b1ecf2879027d2bb77aa118 tenant=default lane=interactive model="q38"
+1794605905.611793 [spec-cost] model="q38" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+1794605905.611826 [admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+1794605905.611828 [admission] request cost: model="q38" ctx=1607 path=spec = 31552 B/token x ctx + 473MB prefill-workspace + 0MB fixed = 524MB
+1794605905.612762 [admit-trim] dev0 driver_free_bytes=815738880 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=19178338256 pool_reserved_bytes=19327352832 driver_free_after=815738880 before prime
+1794605905.612792 [prefix-cache] stable-boundary capture armed at 992 of 1031 prompt tokens (model q38)
+1794605905.647034 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1031 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794605905.647073 [admission] fixed residual high-water: model="q38" 283MB (observed 332MB at ctx 1551 path=spec)
+1794605905.647076 [prefix-loan] reconcile why=tick books=0 lent_live=0 adopted=0.0MB charged=0.0MB real=0.0MB adoptions=0 compactions=0 pool_used=19538.0MB
+1794605906.763172 [spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2816MB (allocatable 2408MB + pool-cached 407MB) < required 3140MB (2x appetite 34MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+1794605906.770494 [prime-chunk] phase=mtp-trunk rows=1031 wall_ms=1123.299
+1794605906.770530 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.002 success=true
+1794605907.615490 [spec-acc] ctx=1031 burst=23/30 cum=23/30=0.767
+1794605907.615528 [tick-spec] seq=1 slot=0 trace=- start_ms=0.008 gap_ms=0.008 wall_ms=1968.251 generated=0->34 rounds=10 drafted=30 accepted=23 k=3
+1794605907.615530 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1968.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794605907.625792 [prefix-cache] unified memory: insert budget 0MB (configured 50484MB; live free 3234MB, headroom 3758MB, resident 0MB, new entry 157MB)
+1794605907.625830 [prefix-cache] WARNING: first prefix insert is larger than the entire byte budget; this shape cannot produce cross-request hits. Subsequent refusals remain visible in prefix_cache_skips_budget
+1794605907.625833 [prefix-cache] insert refused: entry 156913664 exceeds budget 0 (spec-boundary, model q38)
+1794605907.625837 [specpub] Lend publication why=spec-boundary pos=992 lent=31.3MB us=185 pool_reserved=20602421248 pool_used=19694997200
+1794605908.984353 [spec-acc] ctx=1065 burst=17/48 cum=40/78=0.513
+1794605908.984386 [tick-spec] seq=1 slot=0 trace=- start_ms=0.056 gap_ms=0.056 wall_ms=1358.373 generated=34->67 rounds=16 drafted=48 accepted=17 k=3
+1794605908.984389 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1358.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794605910.076939 [spec-acc] ctx=1098 burst=19/39 cum=59/117=0.504
+1794605910.076982 [tick-spec] seq=1 slot=0 trace=- start_ms=0.089 gap_ms=0.089 wall_ms=1092.302 generated=67->99 rounds=13 drafted=39 accepted=19 k=3
+1794605910.076984 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1092.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794605911.004393 [spec-acc] ctx=1130 burst=17/33 cum=76/150=0.507
+1794605911.004467 [tick-spec] seq=1 slot=0 trace=- start_ms=0.078 gap_ms=0.078 wall_ms=927.468 generated=99->127 rounds=11 drafted=33 accepted=17 k=3
+1794605911.004470 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=927.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794605926.051003 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1794605926.051042 [server] drain complete in 0.0s; exiting
+1794605926.159041 [server] GPU worker shutdown complete

@@ -1,0 +1,34 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+warning: unused variable: `evictions`
+     --> crates/memra-server/src/worker.rs:18851:9
+      |
+18851 |     let evictions = px.evictions;
+      |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_evictions`
+      |
+      = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-server` (lib test) generated 1 warning (run `cargo fix --lib -p memra-server --tests` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 0.11s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::the_copy_preflight_is_held_to_the_live_reading ... FAILED
+
+failures:
+
+---- worker::tests::the_copy_preflight_is_held_to_the_live_reading stdout ----
+[prefix-cache] unified memory: insert budget 2644MB (configured 50529MB; live free 6366MB, headroom 3758MB, resident 0MB, of the entry already allocated 36MB)
+
+thread 'worker::tests::the_copy_preflight_is_held_to_the_live_reading' (1248899) panicked at crates/memra-server/src/worker.rs:44247:9:
+assertion `left == right` failed
+  left: InsertBudget { bytes: 50529000000, configured: 50529000000 }
+ right: InsertBudget { bytes: 2644000000, configured: 50529000000 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::the_copy_preflight_is_held_to_the_live_reading
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1307 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

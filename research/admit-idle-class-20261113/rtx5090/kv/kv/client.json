@@ -1,0 +1,74 @@
+{
+  "name": "kv",
+  "status": 503,
+  "headers": {
+    "content-type": "application/json",
+    "retry-after": "5",
+    "retry-after-ms": "5000",
+    "x-ratelimit-limit": "8",
+    "x-ratelimit-remaining": "0",
+    "x-ratelimit-reset": "1",
+    "x-request-id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
+    "content-length": "321",
+    "date": "Sat, 14 Nov 2026 07:12:31 GMT"
+  },
+  "started": 140537.779018299,
+  "source_log_start": 43,
+  "disconnected": false,
+  "body": {
+    "error": {
+      "message": "request context 3142 fits this model's KV capacity but not the server's free memory right now; the largest prompt plus max_tokens that fits now is 659 tokens. Retry after the Retry-After delay, or send a shorter prompt or a smaller max_tokens",
+      "type": "server_error",
+      "param": null,
+      "code": "overloaded"
+    }
+  },
+  "ended": 140537.780928071,
+  "source_log_end": 60,
+  "id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
+  "callbacks": [
+    {
+      "tag": "CHOICE_OPEN",
+      "value": {
+        "id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
+        "model": "fixture",
+        "tenant": "default",
+        "max_tokens": 24576,
+        "reserved_ctx": 24582,
+        "stream": false
+      },
+      "line": 44
+    },
+    {
+      "tag": "CHOICE_TERMINAL",
+      "value": {
+        "id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
+        "kind": "reject",
+        "status": 503,
+        "code": "overloaded",
+        "prompt": 0,
+        "cached": 0,
+        "output": 0,
+        "observed_prompt": 0,
+        "observed_cached": 0,
+        "observed_output": 0
+      },
+      "line": 57
+    },
+    {
+      "tag": "CHOICE_DROP",
+      "value": {
+        "id": "cmpl-39a0a77617efdd7f10c5bccd9f7c6b7d",
+        "terminal": true,
+        "prompt": 0,
+        "cached": 0,
+        "output": 0
+      },
+      "line": 58
+    }
+  ],
+  "worker_rows": [],
+  "prime_events": [],
+  "fork_lines": [],
+  "masked_steps": 0
+}

@@ -1,0 +1,25 @@
+2026-11-13T23:29:07+02:00 start, unit idle, arm main, target 1500 MB, mode single, extra 
+MemFree:        121512648 kB
+MemAvailable:   122375160 kB
+Cached:          1694996 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 2m05s
+waitfor: until awk '/^MemAvailable/{exit !($2/1024 < 1500 + 300)}' /proc/meminfo (deadline 2m00s, every 2s)
+waitfor: not yet
+waitfor: MET after 0m26s
+2026-11-13T23:31:53+02:00 before the request:
+MemFree:          798412 kB
+MemAvailable:    1579132 kB
+Cached:         101441456 kB
+{"tag": "04-M", "req": "g1k", "status": 400, "ttft_s": 0.034, "total_s": 0.034, "completion_tokens": null, "finish": null, "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "refusal": {"status": 400, "retry_after": null, "retry_after_ms": null, "x_should_retry": "false", "body": {"error": {"message": "request context 1607 does not fit this model's available KV capacity on an idle server. Retrying will not help: send a shorter prompt or a smaller max_tokens", "type": "invalid_request_error", "param": "messages", "code": "context_length_exceeded"}}}}
+2026-11-13T23:31:53+02:00 after the request:
+MemFree:          792804 kB
+MemAvailable:    1577112 kB
+Cached:         101445060 kB
+waitfor: gone 1620109 (deadline 1m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+waitfor: gone 1615636 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

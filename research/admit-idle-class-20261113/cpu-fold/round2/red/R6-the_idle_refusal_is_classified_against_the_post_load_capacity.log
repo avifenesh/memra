@@ -1,0 +1,23 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.12s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::the_idle_refusal_is_classified_against_the_post_load_capacity ... FAILED
+
+failures:
+
+---- worker::tests::the_idle_refusal_is_classified_against_the_post_load_capacity stdout ----
+
+thread 'worker::tests::the_idle_refusal_is_classified_against_the_post_load_capacity' (2997979) panicked at crates/memra-server/src/worker.rs:43239:9:
+assertion failed: reject.contains("let largest_now = largest_request_within( admission_cap, slack, \
+             &headroom.charges(primary_device, required), &context_on, );")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::the_idle_refusal_is_classified_against_the_post_load_capacity
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p memra-server --lib`

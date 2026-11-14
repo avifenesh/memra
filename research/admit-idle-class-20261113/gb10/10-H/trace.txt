@@ -1,0 +1,39 @@
+1794606489.306541 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":90112577536,"synchronization_errors":[]}
+1794606489.541773 [prefix-cache] on: budget 50530MB (50530447360 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 50530447360 B; boot driver free 104818991104 B, post-reserve clamp 101060894720 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794606489.541776 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794606539.843469 [spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794606555.811539 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":88307822592,"synchronization_errors":[]}
+1794606560.942559 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":87520440320,"synchronization_errors":[]}
+1794606560.942604 [admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+1794606560.942606 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 1536MB (static was 1536MB; measured 1214MB; probe kv charge 127MB, draft-state 34MB, drafted 87 accepted 34; [dev0 peak-mapped 19808MB rest-mapped 18432MB charged 161MB -> 1214MB]; 5.1s)
+1794606560.942610 [admission] idle capacity (post-load, cache empty): dev0 free 104203MB (pool used 19178MB)
+1794606560.942632 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794606560.942635 [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+1794606584.995557 [admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+1794606584.995560 [admission] request cost: model="q38" ctx=28582 path=spec = 31552 B/token x ctx + 2369MB prefill-workspace + 0MB fixed = 3271MB
+1794606584.995856 [prefix-cache] stable-boundary capture armed at 27968 of 28006 prompt tokens (model q38)
+1794606585.044098 [admission] fixed residual high-water: model="q38" 382MB (observed 1283MB at ctx 28526 path=spec)
+1794606589.985687 [admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+1794606589.985710 [admission] request cost: model="q38" ctx=1607 path=spec = 31552 B/token x ctx + 473MB prefill-workspace + 382MB fixed = 906MB
+1794606589.985718 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1150MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22179MB used 21030MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606592.538485 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1133MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22179MB used 21046MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606595.183885 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1150MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22213MB used 21063MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606597.911994 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1167MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22247MB used 21080MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606600.720021 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1183MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21097MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606603.306331 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606603.329453 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606603.353106 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606603.376372 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606603.398909 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606603.421475 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606603.444018 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 854MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 21426MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606604.409244 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1427MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22280MB used 20853MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606604.409249 [prefix-cache] unified memory: insert budget 18646MB (configured 50530MB; live free 22247MB, headroom 3758MB, resident 0MB, new entry 157MB)
+1794606604.409250 [prefix-cache] insert (spec-boundary): 27968 tokens, 156.9MB (resident 156.9MB / 18646MB, model q38)
+1794606605.750938 [admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=156913664 pool_cached_gain_bytes=156893184 trim_released_bytes=134217728 driver_free_bytes 4241858560 -> 4378173440 pool_reserved_bytes 22280142848 -> 22145925120 pool_used_bytes 20852747336 -> 20695854152 pool_retained_bytes=22675456 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+1794606605.750969 [admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 0MB -> 0MB
+1794606605.750971 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1450MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22146MB used 20696MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606607.087871 [admit-oom] VRAM defer: 1 active, effective free 0MB (driver + 1450MB pool-cached) < cost 942MB + reserve 1611MB — queueing (FIFO) [pool res 22146MB used 20696MB; parked spec sessions 0; plain reuse 0; queue 0]
+1794606607.933058 [prefix-cache] stable-boundary capture armed at 992 of 1031 prompt tokens (model q38)
+1794606609.860661 [prefix-cache] unified memory: insert budget 18151MB (configured 50530MB; live free 21752MB, headroom 3758MB, resident 0MB, new entry 157MB)
+1794606609.860663 [prefix-cache] insert (spec-boundary): 992 tokens, 156.9MB (resident 156.9MB / 18151MB, model q38)

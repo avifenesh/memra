@@ -1,0 +1,27 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.10s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::a_copy_publication_reserves_its_room_before_it_allocates ... FAILED
+
+failures:
+
+---- worker::tests::a_copy_publication_reserves_its_room_before_it_allocates stdout ----
+[prefix-cache] insert refused: entry 4166000000 exceeds budget 0 (live free memory holds the insert budget under its configured 50529000000; snapshot preflight, model q38)
+[prefix-cache] insert refused: entry 4166000000 exceeds budget 1278000000 (live free memory holds the insert budget under its configured 50529000000; snapshot preflight, model q38)
+[prefix-cache] insert refused: entry 4166000000 exceeds budget 4165999999 (live free memory holds the insert budget under its configured 50529000000; snapshot preflight, model q38)
+[prefix-cache] insert (t): 1 tokens, 3000.0MB (resident 3000.0MB / 50529MB, model q38)
+[prefix-cache] evict (snapshot preflight, LRU): 1 tokens, 3000.0MB (model q38)
+
+thread 'worker::tests::a_copy_publication_reserves_its_room_before_it_allocates' (783227) panicked at crates/memra-server/src/worker.rs:43885:36:
+missing `let hi = host_promote_reserve(` in: fn host_promote_materialize( engine: &Engine, px: &mut PrefixCache, host: &mut HostPrefixCache, pool_key: &PoolKey, hi: usize, memory: &CopyMemory, ) -> Option<PrefixPin> { let prepared = host_promote_prepare(host, pool_key, hi)?; let evictions = px.evictions; let _ = (px.total_bytes, prepared.host_id, memory); if px.evictions > evictions { vmm_reap_for("promote preflight"); } let t0 = Instant::now(); let e = match device_entry_from_host(engine, &host.entries[pool_key][hi]) { Ok(e) => e, Err(err) => { host.rejected_allocs += 1; eprintln!("[prefix-host] promote failed ({err}); serving without the host entry"); return None; } }; host_promote_finish(engine, px, host, pool_key, prepared, e, t0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::a_copy_publication_reserves_its_room_before_it_allocates
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1307 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

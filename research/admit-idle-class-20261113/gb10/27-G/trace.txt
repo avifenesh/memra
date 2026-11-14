@@ -1,0 +1,17 @@
+1794623187.269200 [server] build: memra-0.141.1-408ad3a2d420 (id: source-tree, git: unknown)
+1794623241.438463 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":90306547712,"synchronization_errors":[]}
+1794623241.671421 [prefix-cache] on: budget 50551MB (50551379968 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 50551379968 B; boot driver free 104860856320 B, post-reserve clamp 101102759936 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794623241.671426 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794623291.913617 [spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794623307.861406 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":88525803520,"synchronization_errors":[]}
+1794623312.970058 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":87731585024,"synchronization_errors":[]}
+1794623312.970095 [admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+1794623312.970097 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 1536MB (static was 1536MB; measured 1214MB; probe kv charge 127MB, draft-state 34MB, drafted 87 accepted 34; [dev0 peak-mapped 19808MB rest-mapped 18432MB charged 161MB -> 1214MB]; 5.1s)
+1794623312.970100 [admission] idle capacity (post-load, cache empty): dev0 free 104264MB (pool used 19178MB)
+1794623312.970119 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794623312.970121 [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+1794623343.660962 [admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+1794623343.660964 [admission] request cost: model="q38" ctx=1607 path=spec = 31552 B/token x ctx + 473MB prefill-workspace + 0MB fixed = 524MB
+1794623343.662533 [device-trim] reason=admission-drain {"device":0,"reclaimed_bytes":0,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":791474176,"synchronization_errors":[]}
+1794623343.662540 [admit-oom] idle memory short: model="q38" ctx=1607 fits the post-load capacity (104264MB) but not an IDLE box's free memory now (available 2023MB, required 2170MB) — HTTP 503 overloaded, Retry-After
+1794623343.663325 [admission] error before admission: code=overloaded message="request context 1607 fits this model's KV capacity but not the server's free memory right now; retry after the Retry-After delay"

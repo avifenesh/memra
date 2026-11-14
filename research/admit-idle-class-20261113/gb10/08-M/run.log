@@ -1,0 +1,19 @@
+2026-11-13T23:41:42+02:00 start, unit idle, arm main, target 0 MB, mode single, extra 
+MemFree:        106259384 kB
+MemAvailable:   122339296 kB
+Cached:         16926168 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 1m55s
+2026-11-13T23:43:52+02:00 before the request:
+MemFree:        85490472 kB
+MemAvailable:   101633584 kB
+Cached:         17032180 kB
+{"tag": "08-M", "req": "g1k", "status": 200, "ttft_s": 1.137, "total_s": 5.323, "completion_tokens": 127, "finish": "stop", "text_sha256": "26ca98d4733a9c67f315f2ea1af2ec45ef76cca50999476c62b771813f1ee4ca", "refusal": null}
+2026-11-13T23:43:57+02:00 after the request:
+MemFree:        84230620 kB
+MemAvailable:   100373736 kB
+Cached:         17032180 kB
+waitfor: gone 1697609 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

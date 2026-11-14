@@ -1,0 +1,36 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+warning: method `with_hit_leased` is never used
+     --> crates/memra-server/src/worker.rs:13434:8
+      |
+12139 | impl PrefixCache {
+      | ---------------- method in this implementation
+...
+13434 |     fn with_hit_leased<R>(
+      |        ^^^^^^^^^^^^^^^
+      |
+      = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-server` (lib test) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.21s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity ... FAILED
+
+failures:
+
+---- worker::tests::an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity stdout ----
+
+thread 'worker::tests::an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity' (1847421) panicked at crates/memra-server/src/worker.rs:43143:9:
+assertion `left == right` failed: request context 1607 does not fit this model's KV capacity on an idle server; the largest admissible prompt plus max_tokens is 1607 tokens (1100 tokens fit the server's free memory right now). Retrying will not help: send a shorter prompt or a smaller max_tokens
+  left: ContextLength
+ right: Overloaded
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::an_idle_refusal_is_retryable_unless_the_request_exceeds_the_post_load_capacity
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1306 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

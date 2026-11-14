@@ -1,0 +1,22 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.16s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::a_publication_reads_every_plane_off_the_cache ... FAILED
+
+failures:
+
+---- worker::tests::a_publication_reads_every_plane_off_the_cache stdout ----
+
+thread 'worker::tests::a_publication_reads_every_plane_off_the_cache' (783942) panicked at crates/memra-server/src/worker.rs:44069:13:
+missing `publication_geometry( cache .kv .iter() .flatten() .map(|l| (l.len, l.k_tok_bytes, l.v_tok_bytes)),` in: fn spec_publication_geometry( cache: &Cache, draft_plane: Option<(&KvPlane, &KvPlane, usize, usize)>, cap: &memra_engine::spec::SpecBoundaryCapture, pos: usize, ) -> PublicationGeometry { let recurrent_floats: usize = cap .snap .conv .iter() .zip(cap.snap.ssm.iter()) .map(|(conv, ssm)| { conv.as_ref().map_or(0, |c| c.len()) + ssm.as_ref().map_or(0, |s| s.len()) }) .sum(); publication_geometry( cache .kv .iter() .flatten() .map(|l| (l.len, l.k_tok_bytes, l.v_tok_bytes)) .take(0), draft_plane.map(|(k, v, kt, vt)| (k.len(), v.len(), kt, vt)), cache .latent .iter() .zip(&cap.latent_tails) .map(|(live, tail)| (live.is_some(), tail.as_ref())), cap.last_h.len() + recurrent_floats, pos, )
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::a_publication_reads_every_plane_off_the_cache
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1307 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

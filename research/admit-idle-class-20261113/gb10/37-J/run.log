@@ -1,0 +1,19 @@
+2026-11-14T09:37:42+02:00 start, unit idle, arm fold, target 0 MB, mode single, route mtp, request 1024, holder regulating, extra MEMRA_ADMIT_RESERVE_MB=200000
+MemFree:        105511256 kB
+MemAvailable:   122127156 kB
+Cached:         17246452 kB
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 1m51s
+2026-11-14T09:39:48+02:00 before the request:
+MemFree:        85604040 kB
+MemAvailable:   102229104 kB
+Cached:         17297440 kB
+{"tag": "37-J", "req": "g1k", "status": 400, "ttft_s": 0.018, "total_s": 0.018, "completion_tokens": null, "finish": null, "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "refusal": {"status": 400, "retry_after": null, "retry_after_ms": null, "x_should_retry": "false", "body": {"error": {"message": "request context 1607 does not fit this model's KV capacity on an idle server. Retrying will not help: send a shorter prompt or a smaller max_tokens", "type": "invalid_request_error", "param": "messages", "code": "context_length_exceeded"}}}}
+2026-11-14T09:39:48+02:00 after the request:
+MemFree:        85613760 kB
+MemAvailable:   102238824 kB
+Cached:         17297440 kB
+waitfor: gone 3923613 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

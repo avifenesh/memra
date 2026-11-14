@@ -5051,6 +5051,28 @@ impl DflashKvTail {
 }
 
 impl DflashKv {
+    /// The tail [`Self::export_tail`] cuts at `upto`: the exporter's floor there and the rows
+    /// the tail holds. `None` when there is nothing to publish.
+    fn tail_rows(&self, upto: usize) -> Option<(usize, usize)> {
+        if upto == 0 || upto > self.len {
+            return None;
+        }
+        // Never below the floor: a floor-bearing KV owns no rows there (doc on `floor`), and
+        // a tail with nothing above the floor has nothing to publish.
+        let floor = self.floor.min(upto);
+        let rows = self.window_rows.min(upto - floor);
+        (rows > 0).then_some((floor, rows))
+    }
+
+    /// Device bytes [`Self::export_tail`] allocates at `upto` (`DflashKvTail::bytes` of the tail
+    /// it returns), known before the export so a publisher can reserve the room first; 0 when
+    /// the export publishes nothing.
+    pub fn tail_bytes(&self, upto: usize) -> usize {
+        self.tail_rows(upto)
+            .filter(|&(_, rows)| upto - rows >= self.base)
+            .map_or(0, |(_, rows)| self.k.len() * rows * self.row_bytes * 2)
+    }
+
     /// Copy out the readable tail ending at `upto` (see `DflashKvTail`). `None` when there is
     /// nothing to publish or an allocation fails — publication is always optional.
     ///
@@ -5060,17 +5082,8 @@ impl DflashKv {
     /// every restore was refused with `draft KV len 30364 != prompt 30329`. The trunk planes
     /// are copied at the capture `pos` for the same reason; the tail must agree with them.
     pub fn export_tail(&self, e: &Engine, upto: usize) -> Option<DflashKvTail> {
-        if upto == 0 || upto > self.len {
-            return None;
-        }
+        let (floor, rows) = self.tail_rows(upto)?;
         let rowsz = self.row_bytes / std::mem::size_of::<f32>();
-        // Never below the floor: a floor-bearing KV owns no rows there (doc on `floor`), and
-        // a tail with nothing above the floor has nothing to publish.
-        let floor = self.floor.min(upto);
-        let rows = self.window_rows.min(upto - floor);
-        if rows == 0 {
-            return None;
-        }
         let base = upto - rows;
         if base < self.base {
             // Ring: those rows were compacted away. Only reachable if a capture was not pinned

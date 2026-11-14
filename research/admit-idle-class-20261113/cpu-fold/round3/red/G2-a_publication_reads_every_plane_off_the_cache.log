@@ -1,0 +1,31 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+warning: unused variable: `hint_costs`
+     --> crates/memra-server/src/worker.rs:24871:33
+      |
+24871 | ...                   let hint_costs = &admission_costs[&model_key];
+      |                           ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_hint_costs`
+      |
+      = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-server` (lib test) generated 1 warning (run `cargo fix --lib -p memra-server --tests` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 0.09s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::a_publication_reads_every_plane_off_the_cache ... FAILED
+
+failures:
+
+---- worker::tests::a_publication_reads_every_plane_off_the_cache stdout ----
+
+thread 'worker::tests::a_publication_reads_every_plane_off_the_cache' (905678) panicked at crates/memra-server/src/worker.rs:44078:13:
+missing `cache .latent .iter() .zip(&cap.latent_tails) .map(|(live, tail)| (live.is_some(), tail.as_ref())),` in: fn spec_publication_geometry( cache: &Cache, draft_plane: Option<(&KvPlane, &KvPlane, usize, usize)>, cap: &memra_engine::spec::SpecBoundaryCapture, pos: usize, ) -> PublicationGeometry { let recurrent_floats: usize = cap .snap .conv .iter() .zip(cap.snap.ssm.iter()) .map(|(conv, ssm)| { conv.as_ref().map_or(0, |c| c.len()) + ssm.as_ref().map_or(0, |s| s.len()) }) .sum(); publication_geometry( cache .kv .iter() .flatten() .map(|l| (l.len, l.k_tok_bytes, l.v_tok_bytes)), draft_plane.map(|(k, v, kt, vt)| (k.len(), v.len(), kt, vt)), cache .latent .iter() .zip(&cap.latent_tails) .map(|(live, tail)| (live.is_some() && false, tail.as_ref())), cap.last_h.len() + recurrent_floats, pos, )
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::a_publication_reads_every_plane_off_the_cache
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1307 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

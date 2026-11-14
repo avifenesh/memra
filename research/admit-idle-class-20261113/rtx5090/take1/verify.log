@@ -1,0 +1,679 @@
+{
+  "pass": true,
+  "completed": [
+    {
+      "id": "cmpl-ef5c1aafc14043d79612d3ad0c2b61c3",
+      "n": 1,
+      "seed": 73,
+      "body": {
+        "model": "fixture",
+        "text": "\n\n1",
+        "tokens": [
+          271,
+          16,
+          248046
+        ],
+        "stop_reason": "Eos",
+        "n_tokens": 3,
+        "prompt_tokens": 6,
+        "cached_tokens": 0,
+        "elapsed_s": 0.210171974,
+        "choices": [
+          {
+            "index": 0,
+            "text": "\n\n1",
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 6,
+          "completion_tokens": 3,
+          "total_tokens": 9,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        }
+      },
+      "callbacks": [
+        {
+          "id": "cmpl-ef5c1aafc14043d79612d3ad0c2b61c3",
+          "model": "fixture",
+          "tenant": "default",
+          "max_tokens": 8,
+          "reserved_ctx": 14,
+          "stream": false,
+          "kind": "open"
+        },
+        {
+          "id": "cmpl-ef5c1aafc14043d79612d3ad0c2b61c3",
+          "prompt": 6,
+          "cached": 0,
+          "kind": "prompt"
+        },
+        {
+          "id": "cmpl-ef5c1aafc14043d79612d3ad0c2b61c3",
+          "output": 1,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-ef5c1aafc14043d79612d3ad0c2b61c3",
+          "output": 2,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-ef5c1aafc14043d79612d3ad0c2b61c3",
+          "output": 3,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-ef5c1aafc14043d79612d3ad0c2b61c3",
+          "kind": "terminal",
+          "status": 200,
+          "code": "",
+          "prompt": 6,
+          "cached": 0,
+          "output": 3,
+          "observed_prompt": 6,
+          "observed_cached": 0,
+          "observed_output": 3,
+          "outcome": "complete"
+        },
+        {
+          "id": "cmpl-ef5c1aafc14043d79612d3ad0c2b61c3",
+          "terminal": true,
+          "prompt": 6,
+          "cached": 0,
+          "output": 3,
+          "kind": "drop"
+        }
+      ],
+      "worker_rows": [],
+      "forks": [],
+      "leader_prime_segments": 0,
+      "follower_prime_segments": 0,
+      "reserve": {
+        "tenant": "default",
+        "model": "fixture",
+        "prompt": 6,
+        "output": 8,
+        "limit": 1000000,
+        "accepted": true
+      },
+      "resolved_output_bound": 8,
+      "packets": null
+    },
+    {
+      "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+      "n": 8,
+      "seed": 73,
+      "body": {
+        "object": "text_completion",
+        "model": "fixture",
+        "choices": [
+          {
+            "index": 0,
+            "text": "\n\n1",
+            "finish_reason": "stop"
+          },
+          {
+            "index": 1,
+            "text": "\n1) 20+ of",
+            "finish_reason": "length"
+          },
+          {
+            "index": 2,
+            "text": "\n\n1. Sunrise paints the sky in",
+            "finish_reason": "length"
+          },
+          {
+            "index": 3,
+            "text": "\n\n<think>\nThinking Process:\n\n1",
+            "finish_reason": "length"
+          },
+          {
+            "index": 4,
+            "text": "\nFor the item \"123",
+            "finish_reason": "length"
+          },
+          {
+            "index": 5,
+            "text": " 30 items, with short descriptions",
+            "finish_reason": "length"
+          },
+          {
+            "index": 6,
+            "text": " 100 ideas for things that",
+            "finish_reason": "length"
+          },
+          {
+            "index": 7,
+            "text": "\n\nHere is a comprehensive, long-number",
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 6,
+          "completion_tokens": 59,
+          "total_tokens": 65,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "elapsed_s": 0.252026031
+        },
+        "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+        "created": 1794620187,
+        "system_fingerprint": "memra-0.141.1-bcea3993f98b"
+      },
+      "callbacks": [
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "model": "fixture",
+          "tenant": "default",
+          "max_tokens": 64,
+          "reserved_ctx": 70,
+          "stream": false,
+          "kind": "open"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "prompt": 6,
+          "cached": 0,
+          "kind": "prompt"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 1,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 2,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 3,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 4,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 5,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 6,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 7,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 8,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 9,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 10,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 11,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 12,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 13,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 14,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 15,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 16,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 17,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 18,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 19,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 20,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 21,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 22,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 23,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 24,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 25,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 26,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 27,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 28,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 29,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 30,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 31,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 32,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 33,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 34,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 35,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 36,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 37,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 38,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 39,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 40,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 41,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 42,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 43,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 44,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 45,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 46,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 47,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 48,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 49,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 50,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 51,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 52,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 53,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 54,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 55,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 56,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 57,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 58,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "output": 59,
+          "kind": "token"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "kind": "terminal",
+          "status": 200,
+          "code": "",
+          "prompt": 6,
+          "cached": 0,
+          "output": 59,
+          "observed_prompt": 6,
+          "observed_cached": 0,
+          "observed_output": 59,
+          "outcome": "complete"
+        },
+        {
+          "id": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "terminal": true,
+          "prompt": 6,
+          "cached": 0,
+          "output": 59,
+          "kind": "drop"
+        }
+      ],
+      "worker_rows": [
+        {
+          "group": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "index": 0,
+          "seed": 73,
+          "prompt": 6,
+          "cached": 0,
+          "output": 3,
+          "token_sha256": "689f7102cc8b4b8c6df7a04722f45afad825e80e6e120920352a76896807b14e",
+          "reason": "Eos",
+          "sampling": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "repetition_penalty": 1.0
+          },
+          "think": "Default"
+        },
+        {
+          "group": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "index": 1,
+          "seed": 74,
+          "prompt": 6,
+          "cached": 0,
+          "output": 8,
+          "token_sha256": "aaa3532147ee5a54a4032b4ef7e9a9e315db77272d10e15baa6b38f3f080b5f2",
+          "reason": "MaxNew",
+          "sampling": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "repetition_penalty": 1.0
+          },
+          "think": "Default"
+        },
+        {
+          "group": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "index": 2,
+          "seed": 75,
+          "prompt": 6,
+          "cached": 0,
+          "output": 8,
+          "token_sha256": "eeb838ae6edf4766b35f18b1330650a6a38ceec7295490eb7c956429baffa0ec",
+          "reason": "MaxNew",
+          "sampling": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "repetition_penalty": 1.0
+          },
+          "think": "Default"
+        },
+        {
+          "group": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "index": 3,
+          "seed": 76,
+          "prompt": 6,
+          "cached": 0,
+          "output": 8,
+          "token_sha256": "465169c4bce24c8d49e2c5b22c524bd3cf3dc76dfe910ef8d9cd96975a7c75a0",
+          "reason": "MaxNew",
+          "sampling": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "repetition_penalty": 1.0
+          },
+          "think": "Default"
+        },
+        {
+          "group": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "index": 4,
+          "seed": 77,
+          "prompt": 6,
+          "cached": 0,
+          "output": 8,
+          "token_sha256": "fbad47697c985087422da22cd2c78a30f456f5d5e8f5097a892da45d277dc74b",
+          "reason": "MaxNew",
+          "sampling": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "repetition_penalty": 1.0
+          },
+          "think": "Default"
+        },
+        {
+          "group": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "index": 5,
+          "seed": 78,
+          "prompt": 6,
+          "cached": 0,
+          "output": 8,
+          "token_sha256": "23c310cc96b682a1d019d8d7781902240eba96ea970f230ecefac12b29fd2dad",
+          "reason": "MaxNew",
+          "sampling": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "repetition_penalty": 1.0
+          },
+          "think": "Default"
+        },
+        {
+          "group": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "index": 6,
+          "seed": 79,
+          "prompt": 6,
+          "cached": 0,
+          "output": 8,
+          "token_sha256": "d4830a88eaf559883500f3de971817d4a612a44ac65a6b8315b3ac7e04dd3f2c",
+          "reason": "MaxNew",
+          "sampling": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "repetition_penalty": 1.0
+          },
+          "think": "Default"
+        },
+        {
+          "group": "cmpl-d5d127d6583b640a01584d9ddb4ec8f8",
+          "index": 7,
+          "seed": 80,
+          "prompt": 6,
+          "cached": 0,
+          "output": 8,
+          "token_sha256": "177d4e166e5e929d9eec10ba3f4d5fe0e03b6a50d3dff1f82bd3ee7970cc709b",
+          "reason": "MaxNew",
+          "sampling": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+            "repetition_penalty": 1.0
+          },
+          "think": "Default"
+        }
+      ],
+      "forks": [
+        {
+          "choices": 8,
+          "prompt": 6,
+          "cached": 0,
+          "copies": 7,
+          "bytes": 52780032,
+          "leader": 0
+        }
+      ],
+      "leader_prime_segments": 6,
+      "follower_prime_segments": 0,
+      "reserve": {
+        "tenant": "default",
+        "model": "fixture",
+        "prompt": 6,
+        "output": 64,
+        "limit": 1000000,
+        "accepted": true
+      },
+      "resolved_output_bound": 8,
+      "packets": null
+    }
+  ],
+  "scope": "this exact native receipt and declared assertion edges; no support promotion"
+}
