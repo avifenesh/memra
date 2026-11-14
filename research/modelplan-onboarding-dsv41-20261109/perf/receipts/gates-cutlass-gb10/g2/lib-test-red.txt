@@ -1,0 +1,7 @@
+fdde842087 test(dsv41): red arm of the split MoE gather rule's test (never pushed)
+rc=101
+test dsv41_gpu::tp::tests::the_split_moe_keeps_the_bf16_gather_while_a_rank_stores_at_most_the_push_limit ... FAILED
+thread 'dsv41_gpu::tp::tests::the_split_moe_keeps_the_bf16_gather_while_a_rank_stores_at_most_the_push_limit' (3012527) panicked at crates/memra-engine/src/dsv41_gpu/tp.rs:3321:13:
+assertion `left == right` failed: 9 rows, 4 ranks
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 846 filtered out; finished in 0.00s
+ONETEST-DONE 08:08:00

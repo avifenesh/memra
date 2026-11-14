@@ -2333,10 +2333,169 @@ What follows:
 
 - The served route's batched decode call carries at most 8 rows (`MEMRA_DSV41_BATCH_ROWS`), so a plain served step
   never issues a call above 8 rows. A drafted block's rows can (`MEMRA_DSV41_DRAFT=1`, off by default). Raising the
-  batch cap above 8 rows, or turning drafting on, on a four-rank split needs memra#1311 fixed or re-measured
-  first: `docs/decisions/DSV41-ROWS-ABOVE-8-FOUR-RANKS.md`, and the two flags' rows in `docs/FLAGS.md`.
-- The candidate fix is a split MoE that takes the base's codes gather above 8 rows on more than two ranks and keeps
-  the bf16 gather on two. It is not in this landing: it needs its own four-card A/B.
+  batch cap above 8 rows, or turning drafting on, on a four-rank split waited for memra#1311:
+  `docs/decisions/DSV41-ROWS-ABOVE-8-FOUR-RANKS.md`, and the two flags' rows in `docs/FLAGS.md`, carry its state.
+- The fix is the next section: the split MoE keeps the bf16 gather while a rank's stores fit a push and takes the
+  base's codes gather when they would not. Window 3 measured it in two halves; the final binary's four-card
+  confirm is pending.
+
+### The split MoE's gather by what a rank stores: the fix for memra#1311
+
+`split_quant` (`dsv41_gpu/tp.rs`) picks the gather of the split MoE's hidden rows:
+
+- up to 8 rows: one bf16 gather, as every tree before;
+- above 16 rows: codes and scales, as every tree before;
+- 9 to 16 rows on two ranks: the bf16 gather, where the pair measured faster (Window 2);
+- 9 to 16 rows on more ranks: the bf16 gather while it stays a push, which is while a rank stores at most 224 KiB
+  (its region times its peers, `PUSH_LIMIT`), and the codes and scales when it would not.
+
+On four ranks a rank stores 212.6 KiB at 9 rows and 236.2 KiB at 10, so the line is 9 rows: bf16 through 9, codes
+from 10. On three ranks the same arithmetic puts it at 10 rows (210.0 KiB; 231.0 at 11). The bytes do not depend on
+the choice: a 32-wide quantization block lies inside a rank's columns, so the codes are those of the whole row
+either way. The lib test `the_split_moe_keeps_the_bf16_gather_while_a_rank_stores_at_most_the_push_limit` holds the
+rule at 2, 3, 4 and 8 ranks; it fails on the rule of the commit before (codes above 8 rows on more than two ranks).
+
+What a call runs by its rows, on an RTX PRO 6000 (188 SMs), on four ranks and on two. A dense call takes the
+small-row body at up to 16 rows when CUTLASS would run it on at most SMs / 12 = 15 CTAs (`memra_v41_dense_small_fits`);
+the routed experts take the small-row body at tiles of up to 8 rows (`memra_v41_moe_small_fits`):
+
+| a rank's call | four ranks | two ranks |
+|---|---|---|
+| `wq_a` + `wkv` | 1,792 columns, 14 CTAs: the small-row body, 1 to 16 rows | 3,584, 28 CTAs: CUTLASS tileN-8 to 8 rows, tileN-16 at 9 to 16 |
+| `wo_b` | 1,280, 10 CTAs: small-row body | 2,560, 20 CTAs: CUTLASS |
+| shared `w1` + `w3` | 1,152, 9 CTAs: small-row body | 2,304, 18 CTAs: CUTLASS |
+| shared `w2` | 1,280, 10 CTAs: small-row body | 2,560, 20 CTAs: CUTLASS |
+| the indexer's `wq_b`, `wq_b` | 4,096 and 8,192, 32 and 64 CTAs: CUTLASS | 8,192 and 16,384: CUTLASS |
+| routed experts | 6 pairs a call row on every rank (72 at 12 rows); one tile an expert to 8 rows, 8-row tiles at 9 to 48; the small-row body; `w1` + `w3` over 576 hidden columns, `w2` over 1,280 | the same pairs and tiles; 1,152 and 2,560 columns |
+| hidden gather, main before this fix | bf16: a push to 9 rows, packed with 12 peer copies from 10 | bf16: a push to 14 rows, packed with 2 copies at 15 and 16 |
+| hidden gather, the commit before this one (window 3's arm B) | bf16 to 8 rows, codes and scales (two pushes) from 9 | unchanged |
+| hidden gather, this commit | bf16 to 9 rows, codes and scales from 10 | unchanged |
+
+### Window 3 (2026-11-14): the codes gather above 8 rows, against main and against the base
+
+Four RTX PRO 6000 Blackwell Max-Q, 08:39 to 08:48, nothing else on the box, 40 layers, A B B A B A A B, four runs an
+arm. Three builds, each built on one machine with CUDA 13.1 for sm_120a:
+
+- `main24` is main `63c351a2f4` (the CUTLASS lane landed: the bf16 gather through 16 rows);
+- `gather1` is `c99798ef57`: the first form of this fix, codes above 8 rows on more than two ranks, as it stood on
+  main `63c351a2f4` (the commit before this one on the branch, before the branch moved onto main `0db086f87a`;
+  that move brought no change to the route's code, one doc comment in `dsv41_gpu/experts.rs`);
+- `route2` is main `8031c7ef90`, the base before the CUTLASS lane.
+
+Gates at `gather1` on the PRO 6000s before the timed runs: kernels 1,025 checks, 0 failed; tp on four cards 916
+(default), 914 (peer-pull), 914 (host-canonical), 0 failed. Steady calls past 0.5 s of load, ms; an arm's figure is the
+median of its four run medians (11 calls a run and width, 253 to 258 one-row steps); the range is B / A of the four
+adjacent pairs of runs (`receipts/cfix-pro6000/gather1-four`, `gather1-base-four`: every run's cells and log, the
+gate logs, the 250 ms telemetry, the token hashes, `per_run.md`, `call_fields.md`; the window's own outputs in
+`window3/`):
+
+| call | A: `main24` | B: `gather1` | B / A (pairs) | A: `route2` | B: `gather1` | B / A (pairs) |
+|---|---|---|---|---|---|---|
+| one-row decode | 9.709 | 9.713 | 1.000 (1.000-1.002) | 9.905 | 9.715 | 0.981 (0.979-0.981) |
+| 4 rows | 13.053 | 13.052 | 1.000 (0.998-1.001) | 13.022 | 13.047 | 1.002 (1.000-1.004) |
+| 8 rows | 16.864 | 16.870 | 1.000 (1.000-1.001) | 16.929 | 16.870 | 0.997 (0.995-0.999) |
+| 9 rows | 19.183 | 19.402 | 1.011 (1.010-1.013) | 18.985 | 19.399 | 1.022 (1.019-1.023) |
+| 10 rows | 20.871 | 19.806 | 0.949 (0.947-0.951) | 19.623 | 19.813 | 1.010 (1.008-1.012) |
+| 12 rows | 21.963 | 20.767 | 0.946 (0.943-0.947) | 20.733 | 20.758 | 1.001 (0.998-1.002) |
+| 16 rows | 24.817 | 23.703 | 0.955 (0.955-0.958) | 24.032 | 23.728 | 0.987 (0.986-0.988) |
+
+Conditions (`per_run.md`'s telemetry lines): 2,242 to 2,317 MHz, 201 to 247 W, at most 76 C, no thermal clock reason in
+any line; no run flagged for a slowdown, no page-cache drop inside a run. All 16 runs write one decode tape
+(`cd38e1b7...`), the tape of Window 2.
+
+What it says:
+
+- **10, 12 and 16 rows are fixed.** With the codes gather four cards are 5.1, 5.4 and 4.5% faster than main, and
+  against the base they are +1.0% at 10 rows, level at 12 (was +6.8%) and 1.3% faster at 16 (was +3.6%).
+- **The step sits where the arithmetic put it.** Main's 10-row call, the first width whose bf16 gather leaves the
+  kernels, is 1.69 ms above its 9-row call; with the codes the step is 0.40 ms. The host's issue time carries it
+  (`gather1-four/call_fields.md`: B minus A +0.24 ms at 9 rows, -0.98 at 10, -1.04 at 12, -1.27 at 16).
+- **9 rows got slower: +1.1% against main.** At 9 rows the bf16 gather is still a push, and `gather1` moved that
+  width to the codes too. That is why the rule changed after this window: this commit keeps bf16 at 9 rows.
+- Up to 8 rows and at one row `gather1` is main's program, and measures as it (1.000).
+
+### What the fix's binary is, and what is not measured
+
+At 4, 8 and 9 rows the four-rank program of this commit is main's: arm A of the first block above. At 10 rows and
+above it is `gather1`'s: arm B. So its two halves were each measured, in one window:
+
+| rows | this commit's four-rank program | against main | against the base |
+|---|---|---|---|
+| one row, 4, 8 | main's (and `gather1`'s: the three agree to 8 rows) | the same program | 0.981 / 1.002 / 0.997 (window 3), 0.982 / 1.009 / 0.995 (Window 2) |
+| 9 | main's: the bf16 push | the same program | 1.009 (Window 2) |
+| 10 | `gather1`'s: codes | 0.949 | 1.010 |
+| 12 | `gather1`'s: codes | 0.946 | 1.001 |
+| 16 | `gather1`'s: codes | 0.955 | 0.987 |
+
+**The final binary itself has no four-card run.** The rule was changed after the measurement, and its line is
+reachable only on more than two ranks. Its four-card confirm is pending and is required before this lands: `main` as
+arm A, this commit's build as arm B (`gather2`), the kernel and tp gates first:
+
+```bash
+env K3_ARM_A=main24 K3_ARM_B=gather2 K3_TAG=gather2-four K3_CARDS=0123 K3_DEV=0,1,2,3 K3_LAYERS=40 \
+  K3_ROWS="4 8 9 10 12 16" K3_ORDER="A B B A B A A B" K3_KGATE=1 K3_GATE_T="default peer-pull host-canonical" \
+  bash bin/perf_cfix_four.sh 840
+```
+
+It confirms the fix if one row, 4, 8 and 9 rows are level with main (the same program: 1.000 within the pairs'
+spread) and 10, 12 and 16 rows repeat arm B (0.949, 0.946, 0.955).
+
+What can be shown without the four cards is which gathers the final build issues. `dsv41-tpbench` counts each
+call's gathers, copies and bytes, and they depend on the program, not on the card. The final code's 121a build on
+one GB10, four ranks on the card, 4 layers, device-push (`receipts/gates-cutlass-gb10/g2/tb`; the times of ranks
+sharing a card mean nothing and are not read):
+
+| rows | collectives | copies | bytes a call | bytes a row and layer | the hidden gather |
+|---|---|---|---|---|---|
+| 4 | 16 | 192 | 3,317,760 | 207,360 | bf16 |
+| 8 | 17 | 204 | 6,635,904 | 207,372 | bf16 |
+| 9 | 17 | 204 | 7,465,392 | 207,372 | bf16 |
+| 10 | 21 | 252 | 6,420,120 | 160,503 | codes and scales |
+| 11 | 21 | 252 | 7,062,132 | 160,503 | codes and scales |
+| 12 | 21 | 252 | 7,704,288 | 160,506 | codes and scales |
+| 16 | 21 | 252 | 10,272,768 | 160,512 | codes and scales |
+
+From 10 rows the build issues one collective more a layer (21 against 17 over 4 layers) and moves 0.774 of the
+bytes a row. That is the step window 3's arms show between main and `gather1` at 40 layers: 168 against 208
+collectives, and 207,377 against 160,508 bytes a row and layer at 9 and 10 rows. The line sits between 9 and 10
+rows, where the rule puts it.
+
+What this run does not give:
+
+- **No build-to-build comparison of the counters.** The same run of main's build and of `gather1`'s was refused
+  on the unit ("2.1 GiB free: does not fit", `tb/m24-0,0,0,0.log.gz`; rc 1 in `tb/runs.txt`). After the first run the page cache held the
+  checkpoint, and the route sizes its residency on the driver's raw free reading, which leaves page cache out on
+  unified memory. Giving the cache back is a box-wide act on a shared unit and was not done. The two-rank runs
+  were refused the same way.
+- **Three ranks do not run.** The route refuses them (its 64 attention heads do not split into whole 16-head
+  tiles), so the rule's three-rank line is arithmetic only.
+
+### Gates of the fix
+
+GB10 byte gates of the final code (121a, the default dense form; `receipts/gates-cutlass-gb10/g2`: the lease
+summaries, gzipped logs, the scripts; the unit's build tags are `g3` for the final code, `m24` for main `63c351a2f4`
+and `g1b` for `c99798ef57`). The lib test's red arm is `g2/lib-test-red.txt`:
+
+| gate | result |
+|---|---|
+| kernels | 1,025 checks, 0 failed |
+| layer (needle, layers 1, 2, 14, 20, 21, 24, decode 2) | 161 / 0; the 111 saved tensors are the CUTLASS set (`fa825eee`) |
+| tp, 4 ranks on the card: peer-pull / host-canonical / default | 914 / 914 / 916, 0 failed; the 12- and 16-row passes run the codes gather, byte-identical to the single card |
+
+The gates of the first form (codes above 8 rows) are in `receipts/gates-cutlass-gb10/g1`, and on the PRO 6000s in
+`gather1-four`.
+
+### What remains against the base after the fix
+
+- **9 rows: +0.9%** (Window 2, the bf16 push; this commit does not change that program).
+- **10 rows: +1.0%** (window 3, the codes).
+- **4 rows: +0.9% in Window 2, +0.2% in window 3** (pairs 1.007-1.010 and 1.000-1.004; the base arm moved 0.6%
+  between the windows, this tree 0.1%).
+
+These are not the gathers. With the base's own gathers at 9 and 10 rows (`gather1`: the same collectives and bytes
+as `route2`) this tree is 2.2% and 1.0% behind, level at 12 and ahead at 16. So what is left sits in the kernels or
+the launches of calls of 9 and 10 rows, and at 4 rows. `dsv41-tpbench` records no per-launch timing: unexplained, and
+tracked in memra#1324 (a per-kernel profile of one four-rank layer in both builds).
 
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
@@ -2478,6 +2637,9 @@ weight traffic: 1.1 ms.
   stores in the split MoE's hidden gather against the push limit (`cfix2-four/call_fields.md`,
   `cfix2-two/call_fields.md`). `receipts/cfix-pro6000/kcmp/`: the kernel-object comparison of the landing branch
   against this lane's head (`cubin_cmp.py`, `cubin_norm.py`, the dev-desk script, the two reports).
+- `receipts/cfix-pro6000/gather1-four`, `gather1-base-four`, `window3/`: window 3's two blocks (memra#1311's fix:
+  the codes gather above 8 rows against main and against the base). `receipts/gates-cutlass-gb10/g1`, `g2`: the
+  GB10 gates of the two commits of that fix, and in `g2/tb` the gather counters by width of three builds.
 - `receipts/cfix-pro6000/per_run.py`: the per-run figures of a `perf_cfix_four.sh` A/B (each run's steady
   median, the arm's median of run medians, each adjacent A/B pair), the decode token hashes by arm, and
   the cards' telemetry inside each run.
