@@ -1,0 +1,19 @@
+9a476d5285 test(dsv41): the split MoE's gather line through the gather's own arithmetic; 9 and 10 rows in the tp gate (memra#1311 review)
+fmt rc=0
+engine-dsv41 rc=0 test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured;
+clippy rc=0
+red mutant-n (cc61e26724) rc=0 test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measur
+test dsv41_gpu::tp::tests::the_split_moe_asks_the_gather_what_its_ranks_store ... FAILED
+test dsv41_gpu::tp::tests::the_split_moe_keeps_the_bf16_gather_while_a_rank_stores_at_most_the_push_limit ... ok
+thread 'dsv41_gpu::tp::tests::the_split_moe_asks_the_gather_what_its_ranks_store' (2523259) panicked at crates/memra-engine/src/dsv41_gpu/tp.rs:3372:9:
+assertion `left == right` failed
+  left: 290304
+ right: 217728
+red mutant-region (ffc3344acc) rc=0 test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measur
+test dsv41_gpu::tp::tests::the_split_moe_asks_the_gather_what_its_ranks_store ... FAILED
+test dsv41_gpu::tp::tests::the_split_moe_keeps_the_bf16_gather_while_a_rank_stores_at_most_the_push_limit ... ok
+thread 'dsv41_gpu::tp::tests::the_split_moe_asks_the_gather_what_its_ranks_store' (2686123) panicked at crates/memra-engine/src/dsv41_gpu/tp.rs:3372:9:
+assertion `left == right` failed
+  left: 72576
+ right: 217728
+FOLD-DONE 10:01:59

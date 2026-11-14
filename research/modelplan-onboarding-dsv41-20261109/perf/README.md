@@ -2352,8 +2352,17 @@ What follows:
 On four ranks a rank stores 212.6 KiB at 9 rows and 236.2 KiB at 10, so the line is 9 rows: bf16 through 9, codes
 from 10. On three ranks the same arithmetic puts it at 10 rows (210.0 KiB; 231.0 at 11). The bytes do not depend on
 the choice: a 32-wide quantization block lies inside a rank's columns, so the codes are those of the whole row
-either way. The lib test `the_split_moe_keeps_the_bf16_gather_while_a_rank_stores_at_most_the_push_limit` holds the
-rule at 2, 3, 4 and 8 ranks; it fails on the rule of the commit before (codes above 8 rows on more than two ranks).
+either way. Two lib tests hold it:
+
+- `the_split_moe_keeps_the_bf16_gather_while_a_rank_stores_at_most_the_push_limit`: the rule at two and four ranks
+  and at the limit itself (a rank storing exactly 224 KiB keeps bf16, one byte more takes the codes). It fails on
+  the first form's rule (codes above 8 rows on more than two ranks).
+- `the_split_moe_asks_the_gather_what_its_ranks_store`: what `moe_split` runs. It builds the bf16 blocks of the
+  ranks' own `Part` ranges once and asks `push_stores`, a rank's region times its peers, the figure `allgather`'s
+  push test reads too: 217,728 bytes at 9 rows on four ranks, 241,920 at 10. Two mutants of that arithmetic fail
+  it, the ranks in place of the peers (290,304 at 9 rows) and the region without its peers (72,576):
+  `receipts/gates-cutlass-gb10/g4/fold-checks.txt` (the `rc` printed on its red lines is not cargo's; the test
+  result beside it is).
 
 What a call runs by its rows, on an RTX PRO 6000 (188 SMs), on four ranks and on two. A dense call takes the
 small-row body at up to 16 rows when CUTLASS would run it on at most SMs / 12 = 15 CTAs (`memra_v41_dense_small_fits`);
@@ -2428,17 +2437,25 @@ above it is `gather1`'s: arm B. So its two halves were each measured, in one win
 | 16 | `gather1`'s: codes | 0.955 | 0.987 |
 
 **The final binary itself has no four-card run.** The rule was changed after the measurement, and its line is
-reachable only on more than two ranks. Its four-card confirm is pending and is required before this lands: `main` as
-arm A, this commit's build as arm B (`gather2`), the kernel and tp gates first:
+reachable only on four ranks. Its four-card confirm is pending and is required before this lands: the branch's base
+as arm A (`main25`, main `0db086f87a`), the final code's build as arm B (`gather2`), the kernel and tp gates first:
 
 ```bash
-env K3_ARM_A=main24 K3_ARM_B=gather2 K3_TAG=gather2-four K3_CARDS=0123 K3_DEV=0,1,2,3 K3_LAYERS=40 \
+env K3_ARM_A=main25 K3_ARM_B=gather2 K3_TAG=gather2-four K3_CARDS=0123 K3_DEV=0,1,2,3 K3_LAYERS=40 \
   K3_ROWS="4 8 9 10 12 16" K3_ORDER="A B B A B A A B" K3_KGATE=1 K3_GATE_T="default peer-pull host-canonical" \
   bash bin/perf_cfix_four.sh 840
 ```
 
-It confirms the fix if one row, 4, 8 and 9 rows are level with main (the same program: 1.000 within the pairs'
-spread) and 10, 12 and 16 rows repeat arm B (0.949, 0.946, 0.955).
+What the confirm must show, on the final binary (the review's criteria):
+
+| | pass |
+|---|---|
+| gates at `gather2` | kernels 1,025 / 0; tp on four cards 1,056 (default), 1,054 (peer-pull), 1,054 (host-canonical), 0 failed (window 3's 916 / 914 / 914 plus the gate's 9- and 10-row passes); push stress 0 words differ |
+| gather counters at 40 layers, both arms (collectives / copies / bytes a call) | 4 rows 160 / 1,920 / 33,177,600; 8 rows 168 / 2,016 / 66,360,192; 9 rows 168 / 2,016 / 74,655,756 |
+| gather counters, arm B | 10 rows 208 / 2,496 / 64,203,000; 12 rows 208 / 2,496 / 77,045,472; 16 rows 208 / 2,496 / 102,732,288 |
+| the same program: one row, 4, 8 and 9 rows | 1.000 +/- 0.003, every pair of runs inside 0.996 to 1.004 (a 9-row figure near 1.011 would mean the codes were taken) |
+| the fixed widths: 10, 12 and 16 rows | at or below 0.953, 0.950 and 0.959, every pair separated |
+| outputs and conditions | argmax per call equal in both arms, one decode tape, no thermal clock reason, no slowdown flag |
 
 What can be shown without the four cards is which gathers the final build issues. `dsv41-tpbench` counts each
 call's gathers, copies and bytes, and they depend on the program, not on the card. The final code's 121a build on
@@ -2482,8 +2499,17 @@ and `g1b` for `c99798ef57`). The lib test's red arm is `g2/lib-test-red.txt`:
 | layer (needle, layers 1, 2, 14, 20, 21, 24, decode 2) | 161 / 0; the 111 saved tensors are the CUTLASS set (`fa825eee`) |
 | tp, 4 ranks on the card: peer-pull / host-canonical / default | 914 / 914 / 916, 0 failed; the 12- and 16-row passes run the codes gather, byte-identical to the single card |
 
-The gates of the first form (codes above 8 rows) are in `receipts/gates-cutlass-gb10/g1`, and on the PRO 6000s in
-`gather1-four`.
+The review's fold after the rule (`push_stores` read by `allgather` and by the rule, the bf16 blocks built once, 9
+and 10 rows in the tp gate's first round) changes no kernel and not the program. Its GB10 gates (the unit's tag `g4`,
+`receipts/gates-cutlass-gb10/g4`):
+
+| gate | result |
+|---|---|
+| kernels | 1,025 checks, 0 failed |
+| tp, 4 ranks on the card: peer-pull / host-canonical / default | 1,054 / 1,054 / 1,056, 0 failed: 140 checks more than before the fold, the 9- and 10-row passes on the five layers the wide passes run on, byte-identical to the single card (9 rows through the bf16 push, 10 rows through the codes) |
+
+The dev desk's checks of the fold are in `g4/fold-checks.txt`. The gates of the first form (codes above 8 rows) are
+in `receipts/gates-cutlass-gb10/g1`, and on the PRO 6000s in `gather1-four`.
 
 ### What remains against the base after the fix
 
@@ -2638,8 +2664,9 @@ weight traffic: 1.1 ms.
   `cfix2-two/call_fields.md`). `receipts/cfix-pro6000/kcmp/`: the kernel-object comparison of the landing branch
   against this lane's head (`cubin_cmp.py`, `cubin_norm.py`, the dev-desk script, the two reports).
 - `receipts/cfix-pro6000/gather1-four`, `gather1-base-four`, `window3/`: window 3's two blocks (memra#1311's fix:
-  the codes gather above 8 rows against main and against the base). `receipts/gates-cutlass-gb10/g1`, `g2`: the
-  GB10 gates of the two commits of that fix, and in `g2/tb` the gather counters by width of three builds.
+  the codes gather above 8 rows against main and against the base). `receipts/gates-cutlass-gb10/g1`, `g2`, `g4`:
+  the GB10 gates of that fix's first form, of its rule and of the review's fold; in `g2/tb` the rule's gather
+  counters by width.
 - `receipts/cfix-pro6000/per_run.py`: the per-run figures of a `perf_cfix_four.sh` A/B (each run's steady
   median, the arm's median of run medians, each adjacent A/B pair), the decode token hashes by arm, and
   the cards' telemetry inside each run.
