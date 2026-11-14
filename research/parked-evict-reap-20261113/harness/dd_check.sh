@@ -63,9 +63,9 @@ if [ "${SKIP_RED:-0}" != 1 ]; then
     ctd -- parked_evict_reap_1278_tests >> "$R/$1.log" 2>&1
     rc=$?
     named=$(grep -c "^test $M::$2 \.\.\. FAILED$" "$R/$1.log")
-    text=$(grep -A8 -F -- "---- $M::$2 stdout ----" "$R/$1.log" | grep -c -F -- "$3")
+    text=$(grep -A80 -F -- "---- $M::$2 stdout ----" "$R/$1.log" | grep -c -F -- "$3")
     echo "red $1 rc=$rc $(grep -E '^test result' "$R/$1.log" | tail -n 1 | cut -c1-60) | $2 failed=$named | \"$3\" in its panic=$text" | tee -a "$S"
-    grep -A8 -F -- "---- $M::$2 stdout ----" "$R/$1.log" | grep -m2 -E '^ +(left|right):|^assertion|lost, moved or new' | cut -c1-200 >> "$S"
+    grep -A80 -F -- "---- $M::$2 stdout ----" "$R/$1.log" | grep -m3 -E '^ +(left|right):|^assertion|^  found ' | cut -c1-200 >> "$S"
     python3 "$D/red_arms.py" "$T" "$R" restore >> "$R/$1.log" 2>&1
   }
   C=every_eviction_a_reading_or_a_retry_counts_on_reaps_first
@@ -78,19 +78,24 @@ if [ "${SKIP_RED:-0}" != 1 ]; then
   want retry-trim-off && red retry-trim-off a_reclaim_retry_maps_the_flushed_prefix_blocks_after_its_trim "on_demand=true"
   want flush-reap-off && red flush-reap-off a_failed_materialization_flush_is_reaped_before_the_cold_allocation "the cold allocation evicted no parked session"
   want rung-reap-off && red rung-reap-off a_failed_right_size_rung_is_reaped_before_the_next_one "on_demand=true: the second rung lands"
+  want ladder-clamp-off && red ladder-clamp-off a_failed_right_size_rung_is_reaped_before_the_next_one "the last rung is the need"
   want reap-line-always && red reap-line-always a_reap_that_released_nothing_prints_no_line_outside_the_teardowns "reap (reclaim-on-defer) released=0"
-  want main-worker && red main-worker "$C" "lost, moved or new: reclaim_parked_ladder("
-  want ladder-site-off && red ladder-site-off "$C" "lost, moved or new: pool.is_some() }, || { vmm_reap_for(\"reclaim-on-defer\");"
-  want drain-reap-off && red drain-reap-off "$C" "lost, moved or new: oom_teardown_fence(&engine, &loaded); vmm_reap_for(\"admission-drain\");"
-  want settle-reap-off && red settle-reap-off "$C" "lost, moved or new: synchronize_model_devices(engine, loaded, why); let reaped = vmm_reap_for(why);"
-  want spec-miss-reap-off && red spec-miss-reap-off "$C" "lost, moved or new: let released = vmm_retry_reap(engine, loaded, &first_err, \"spec pool miss\");"
-  want flush-site-off && red flush-site-off "$C" "lost, moved or new: let n = flush_then_reap( || px.evict_all(),"
-  want park-compact-fail-off && red park-compact-fail-off "$C" "lost, moved or new: reused = None; vmm_reap_trim_for(engine, loaded, \"park-compact grow failed\");"
-  want affinity-fail-drop-off && red affinity-fail-drop-off "$C" "lost, moved or new: drop(e); drop(ckpt); vmm_reap_trim_for(engine, loaded,"
-  want right-size-site-off && red right-size-site-off "$C" "lost, moved or new: Err(_) => None, }, || { vmm_reap_trim_for(engine, loaded, \"spec right-size\");"
-  want shed-reap-off && red shed-reap-off "$C" "lost, moved or new: self.floor as f64 / 1e6, ); vmm_reap_for(\"kv-flex shed\"); freed }"
-  want probe-prefix-reread && red probe-prefix-reread "$C" "lost, moved or new: px.evict_all()"
-  want probe-parked-reread && red probe-parked-reread "$C" "lost, moved or new: evict_oldest_parked_freeing("
+  want main-worker && red main-worker "$C" "found 0, expected 1: reclaim_parked_ladder("
+  want ladder-site-off && red ladder-site-off "$C" "found 0, expected 1: pool.is_some() }, || { vmm_reap_for(\"reclaim-on-defer\");"
+  want drain-reap-off && red drain-reap-off "$C" "found 0, expected 1: oom_teardown_fence(&engine, &loaded); vmm_reap_for(\"admission-drain\");"
+  want settle-reap-off && red settle-reap-off "$C" "found 0, expected 1: synchronize_model_devices(engine, loaded, why); let reaped = vmm_reap_for(why);"
+  want spec-miss-reap-off && red spec-miss-reap-off "$C" "found 0, expected 1: let released = vmm_retry_reap(engine, loaded, &first_err, \"spec pool miss\");"
+  want flush-site-off && red flush-site-off "$C" "found 0, expected 1: let n = flush_then_reap( || px.evict_all(),"
+  want park-compact-fail-off && red park-compact-fail-off "$C" "found 0, expected 1: reused = None; vmm_reap_trim_for(engine, loaded, \"park-compact grow failed\");"
+  want affinity-fail-drop-off && red affinity-fail-drop-off "$C" "found 0, expected 1: drop(ckpt); drop(e); vmm_reap_trim_for(engine, loaded,"
+  want evict-first-reap-off && red evict-first-reap-off "$C" "found 0, expected 1: vmm_reap_for(\"spec pool evict-first\"); }"
+  want right-size-site-off && red right-size-site-off "$C" "found 0, expected 1: Err(_) => None, }, || { vmm_reap_trim_for(engine, loaded, \"spec right-size\");"
+  want shed-reap-off && red shed-reap-off "$C" "found 0, expected 1: self.floor as f64 / 1e6, ); vmm_reap_for(\"kv-flex shed\"); freed }"
+  want probe-prefix-reread && red probe-prefix-reread "$C" "found 12, expected 11: px.evict_all()"
+  want probe-parked-reread && red probe-parked-reread "$C" "found 3, expected 2: evict_oldest_parked_freeing("
+  want probe-alias-flush && red probe-alias-flush "$C" "found 12, expected 11: .evict_all()"
+  want probe-where-alloc && red probe-where-alloc "$C" "found 3, expected 2: evict_parked_where("
+  want probe-purge-read && red probe-purge-read "$C" "found 3, expected 2: .purge_tenant("
   cmp -s "$W" "$R/fix.worker.rs" && echo "restored ok" | tee -a "$S" || echo "RESTORE MISMATCH" | tee -a "$S"
 fi
 echo "DONE $(date -Is)" | tee -a "$S"

@@ -9662,13 +9662,15 @@ fn vmm_reap_line(why: &str, released: usize, pending: usize) -> Option<String> {
         .then(|| format!("[kv-vmm] reap ({why}) released={released} pending_graves={pending}"))
 }
 
-/// The reap of a path that allocates next (memra#1278 review): the reclaim retries, the spec
-/// pool's clears and right-size rungs, and the failures in `admit` that drop a session before the
-/// cold allocation. An on-demand plane maps its granules from the driver, and the device pool
+/// The reap of a failure path that allocates next (memra#1278 review): the reclaim retries, the
+/// spec pool's miss and right-size rungs, and the failures in `admit` that drop a session before
+/// the cold allocation. An on-demand plane maps its granules from the driver, and the device pool
 /// keeps its freed blocks (the release threshold is pinned), so a dropped prefix entry's or
 /// session's pooled blocks cannot back an on-demand map until a trim: reap the graveyard, then
 /// trim the pools, as the on-demand grow's reclaim does. Returns the bytes handed to the driver.
 /// Unarmed neither runs (`reap_then_trim`): a pooled allocation reuses the pool's cached blocks.
+/// Armed is the process's state (`kv_vmm::armed`), not the route's: on a card whose planes are
+/// on, a model the on-demand planes do not cover gets the same reap, trim and retry.
 fn vmm_reap_trim_for(engine: &Engine, loaded: &HashMap<String, LoadedModel>, why: &str) -> usize {
     reap_then_trim(
         crate::kv_vmm::armed(),
@@ -11067,10 +11069,12 @@ fn step_oom_fault_fire_batch(sessions: usize) -> bool {
 /// on-demand KV planes a dropped parked session's planes, and an adopted plane whose last lend a
 /// dropped prefix entry held, wait in the graveyard until a reap, so the retry would not get
 /// their bytes. It runs when the reclaim freed nothing too (memra#1278 review): a session an
-/// earlier arm of the same `admit` dropped, and the failed attempt's own partly built planes,
-/// are graves no eviction names, and their bytes fund the retry as well. Unarmed, and for a
-/// failure that is not out of memory, the reap does nothing and returns 0 (`vmm_retry_reap`),
-/// so the retry is the reclaim's alone; a first success never reaps.
+/// earlier arm of the same `admit` dropped is a grave no eviction names, and its bytes fund the
+/// retry as well. The failed attempt's own partly built planes are graves too, and the reap
+/// cannot tell them from the rest, so where the on-demand planes are on an out-of-memory first
+/// failure is in practice retried once, whether or not anything else was released. Where they
+/// are off, and for a failure that is not out of memory, the reap does nothing and returns 0
+/// (`vmm_retry_reap`), so the retry is the reclaim's alone; a first success never reaps.
 fn alloc_with_single_reclaim_retry<T, E>(
     mut alloc: impl FnMut() -> Result<T, E>,
     mut reclaim: impl FnMut(&E) -> bool,
@@ -30586,11 +30590,11 @@ fn admit(
                         "[worker] plain-affinity resume failed ({err}); \
                                        dropping session, full prime"
                     );
-                    // The entry and its checkpoint go here, not at the end of this block, so
-                    // the reap sees their planes: the cold allocation below needs the bytes
-                    // (memra#1278 review).
-                    drop(e);
+                    // The checkpoint and the entry go here, in the order the end of this
+                    // block dropped them, so the reap sees their planes: the cold allocation
+                    // below needs the bytes (memra#1278 review).
                     drop(ckpt);
+                    drop(e);
                     vmm_reap_trim_for(engine, loaded, "plain-affinity resume failed");
                 }
             }
@@ -31160,7 +31164,7 @@ fn admit(
                     // The failed restore's partly mapped planes are graves, and so is an adopted
                     // plane whose last lend a flushed entry held; the cold allocation needs
                     // their bytes, and its on-demand maps the flushed entries' pooled blocks
-                    // (memra#1278 review, `flush_then_reap`).
+                    // (memra#1278 review, `flush_then_reap`). Both arms reap and trim.
                     if msg.starts_with("session cache alloc failed") {
                         let n = flush_then_reap(
                             || px.evict_all(),
@@ -32534,9 +32538,10 @@ fn admit(
                                    (learned VRAM-tight; model {})",
                         req.model
                     );
-                    // The allocation below needs the evicted planes' bytes (memra#1278), and
-                    // its on-demand maps the sessions' pooled blocks (`vmm_reap_trim_for`).
-                    vmm_reap_trim_for(engine, loaded, "spec pool evict-first");
+                    // The allocation below needs the evicted planes' bytes (memra#1278). The
+                    // reap alone: this is not a failure path, and if the allocation fails the
+                    // miss's own rule below reaps, trims and retries.
+                    vmm_reap_for("spec pool evict-first");
                 }
                 // WP-B day 37: with the on-demand planes on, a covered model's session is built
                 // with on-demand planes (`vmm_build_spec`); unarmed it is this call unchanged.
@@ -57934,9 +57939,9 @@ mod tests {
         // the trim) on every path that allocates next (`parked_evict_reap_1278_tests`).
         assert_eq!(
             live.matches("vmm_reap_for(\"").count(),
-            8,
-            "the four trims, the pre-cohort reclaim, the reclaim-on-defer's ladder and climb, and \
-             the kv-flex shed"
+            9,
+            "the four trims, the pre-cohort reclaim, the reclaim-on-defer's ladder and climb, the \
+             kv-flex shed and the spec pool's evict-first clear"
         );
         assert!(live.contains(
             "if !armed { return 0; } let reaped = reap(); reaped.saturating_add(trim())"
@@ -62110,6 +62115,23 @@ mod parked_evict_reap_1278_tests {
             ]
         );
         assert_eq!((dev.driver_free, dev.graveyard), (GIB, 0));
+        // Off the powers of two the last rung is the need itself, never below it (a session
+        // under the need would end ContextFull before MaxNew): 16, 8, then 6, not 4.
+        let dev = FakeDevice::new(true, 7 * GIB, &[]);
+        let asks = RefCell::new(Vec::new());
+        let landed = spec_right_size_ladder(
+            16 * GIB,
+            6 * GIB,
+            |ask| {
+                asks.borrow_mut().push(ask / GIB);
+                dev.borrow_mut().alloc(ask).ok()
+            },
+            || {
+                reap_trim(&dev);
+            },
+        );
+        assert_eq!(landed, Some(((), 6 * GIB)), "the last rung is the need");
+        assert_eq!(asks.into_inner(), [16, 8, 6]);
         // An ask already at the need is one rung.
         let dev = FakeDevice::new(true, GIB, &[]);
         let landed = spec_right_size_ladder(
@@ -62154,10 +62176,13 @@ mod parked_evict_reap_1278_tests {
     }
 
     /// The census: every eviction in the worker, parked session or prefix entry, and what follows
-    /// it. It reads the live code with comments cut and whitespace squashed. Every call of an
-    /// eviction entry point is counted and named with its reap, so a new eviction site fails a
-    /// count; if a reading or an allocation counts on its bytes, it reaps first and joins the
-    /// list.
+    /// it. It reads the live code with comments cut and whitespace squashed. Every call the
+    /// worker makes into an eviction entry point is counted and named with its reap, so a new
+    /// eviction site fails a count; if a reading or an allocation counts on its bytes, it reaps
+    /// first and joins the list. It reports every needle that does not match, not the first.
+    ///
+    /// Not counted: the evictions `PrefixCache` makes inside itself (its budget on an insert,
+    /// its preflight before a snapshot), which no reading follows.
     ///
     /// What a source scan cannot see: a drop. A session or cache that goes out of scope, is
     /// overwritten or is set to `None` buries its on-demand planes with no call to count, and a
@@ -62176,11 +62201,14 @@ mod parked_evict_reap_1278_tests {
             .join("\n");
         let live = squash(&code[..code.find("\nmod tests {").expect("the test module")]);
         let count = |needle: &str| live.matches(&squash(needle)).count();
+        let mut wrong = Vec::new();
         for (needle, sites) in [
             // The parked evictions: two that must free their planes (the reclaim-on-defer's ladder
             // and the restorable spare's climb), seven others.
             ("evict_oldest_parked_freeing(", 2),
             ("evict_oldest_parked(", 7),
+            // Both go through `evict_parked_where`, which nothing else calls.
+            ("evict_parked_where(", 2),
             // The admission reclaim's parked ladder and the restorable spare's climb: evict, reap,
             // read.
             (
@@ -62337,14 +62365,15 @@ mod parked_evict_reap_1278_tests {
                 ),
                 1,
             ),
-            // The spec pool: its two clears, the miss's retry on the same rule, and the right-size
+            // The spec pool: its two clears (the evict-first one reaps and does not trim: no
+            // allocation has failed yet), the miss's retry on the same rule, and the right-size
             // ladder, reaped before its first rung and after each failed one.
             ("p.clear(); n })", 2),
             ("vmm_new_session(", 3),
             (
                 concat!(
-                    "vmm_reap_trim_for(engine, loaded, \"spec pool evict-first\"); } let ",
-                    "vmm_new_session = |cap: usize| {",
+                    "vmm_reap_for(\"spec pool evict-first\"); } let vmm_new_session = |cap: ",
+                    "usize| {",
                 ),
                 1,
             ),
@@ -62388,7 +62417,7 @@ mod parked_evict_reap_1278_tests {
             ),
             (
                 concat!(
-                    "drop(e); drop(ckpt); vmm_reap_trim_for(engine, loaded, \"plain-affinity ",
+                    "drop(ckpt); drop(e); vmm_reap_trim_for(engine, loaded, \"plain-affinity ",
                     "resume failed\");",
                 ),
                 1,
@@ -62400,9 +62429,11 @@ mod parked_evict_reap_1278_tests {
                 ),
                 1,
             ),
-            // The prefix flushes. Every call of the four eviction entry points is one of the sites
-            // below, so a new flush fails a count and has to say what follows it.
+            // The prefix flushes. Every call the worker makes into an eviction entry point is one
+            // of the sites below, so a new flush fails a count and has to say what follows it.
+            // `.evict_all()` under any receiver: every one is `px`'s.
             ("px.evict_all()", 11),
+            (".evict_all()", 11),
             ("evict_to_bytes(", 7),
             ("evict_all_demoting(", 2),
             (".evict_entry(", 1),
@@ -62512,12 +62543,58 @@ mod parked_evict_reap_1278_tests {
             // degrade to the host bounce.
             ("let (n, freed) = self.evict_to_bytes(engine, budget);", 1),
             ("let evicted = px.evict_all(); for session in active {", 1),
+            // The entries removed one at a time from outside the cache: the demoting flush
+            // (settled above), the deploy handoff's drain on a drained slot and the pause sweep's
+            // demote at idle. The tenant purge frees for a revocation. None reads or allocates
+            // behind itself.
+            ("px.remove_at(", 3),
+            (
+                "let Some(_dead) = px.remove_at(&key, i) else { break; }; removed += 1;",
+                1,
+            ),
+            (
+                concat!(
+                    "while let Some((key, i)) = px.oldest_evictable() { let Some(mut dead) = ",
+                    "px.remove_at(&key, i) else { break; }; px.evictions += 1; if ",
+                    "host_demote_prefix_ref(engine, hpx, &mut dead) == HostDemoteOutcome::Demoted ",
+                    "{",
+                ),
+                1,
+            ),
+            (
+                concat!(
+                    "if let Some(dead) = px.remove_at(&cand.pool_key, ei) { eprintln!( ",
+                    "\"[prefix-host] pause demote: device prefix entry released",
+                ),
+                1,
+            ),
+            (".purge_tenant(", 2),
+            (
+                concat!(
+                    "let (host_namespaces, host_entries, host_bytes) = hpx.purge_tenant(&tenant); ",
+                    "let (device_entries, device_pinned_left) = px.purge_tenant(&tenant); ",
+                    "eprintln!(",
+                ),
+                1,
+            ),
             // Every reap in the worker is one of the sites above.
-            ("vmm_reap_for(\"", 8),
-            ("vmm_reap_trim_for(engine, loaded, \"", 7),
+            ("vmm_reap_for(\"", 9),
+            ("vmm_reap_trim_for(engine, loaded, \"", 6),
             ("vmm_retry_reap(engine, loaded, ", 6),
         ] {
-            assert_eq!(count(needle), sites, "lost, moved or new: {needle}");
+            let found = count(needle);
+            if found != sites {
+                wrong.push(format!("  found {found}, expected {sites}: {needle}"));
+            }
         }
+        assert!(
+            wrong.is_empty(),
+            "{} census needle(s) do not match the live code. For each one: if you added, moved \
+             or removed an eviction, a flush or a reap, decide what follows it (a free-memory \
+             reading needs `vmm_reap_for` first, an allocation `vmm_reap_trim_for` or the retry \
+             rule), then update the needle or its count here.\n{}",
+            wrong.len(),
+            wrong.join("\n")
+        );
     }
 }

@@ -19,6 +19,8 @@ The helpers' own program (a fake-device test fails):
                     review): the materialization test
   rung-reap-off     spec_right_size_ladder does not reap a failed rung (the ladder before the
                     review): the rung test
+  ladder-clamp-off  spec_right_size_ladder halves without the clamp to the need (round 2's
+                    mutation): the rung test, a session lands below the need
   reap-line-always  vmm_reap_line prints for every reap: the reap-line test
 
 The call sites (the census fails):
@@ -30,10 +32,15 @@ The call sites (the census fails):
   flush-site-off    the failed materialization's flush is handed a reap that does nothing
   park-compact-fail-off the park-compact grow's failure drops the session without a reap
   affinity-fail-drop-off the plain-affinity failure reaps before the entry drops
+  evict-first-reap-off the spec pool's evict-first clear allocates without its reap
   right-size-site-off the right-size ladder is handed a reap that does nothing
   shed-reap-off     the kv-flex shed does not reap what it shed
   probe-prefix-reread  a new prefix flush followed by a reading, no settle and no reap
   probe-parked-reread  a new parked eviction followed by a reading, no reap
+  probe-alias-flush    round 2: a flush under another receiver name (`cache.evict_all()`), then
+                       a reading
+  probe-where-alloc    round 2: a direct `evict_parked_where(...)`, then an allocation
+  probe-purge-read     round 2: `px.purge_tenant(...)`, then a reading
 """
 import pathlib
 import shutil
@@ -111,7 +118,11 @@ elif arm == "flush-site-off":
 elif arm == "park-compact-fail-off":
     sub('                vmm_reap_trim_for(engine, loaded, "park-compact grow failed");\n', "")
 elif arm == "affinity-fail-drop-off":
-    sub("                    drop(e);\n                    drop(ckpt);\n", "")
+    sub("                    drop(ckpt);\n                    drop(e);\n", "")
+elif arm == "evict-first-reap-off":
+    sub('                    vmm_reap_for("spec pool evict-first");\n', "")
+elif arm == "ladder-clamp-off":
+    sub("        ask = (ask / 2).max(need);\n    }\n}\n", "        ask /= 2;\n    }\n}\n")
 elif arm == "right-size-site-off":
     old = (
         "                                        || {\n"
@@ -147,6 +158,49 @@ elif arm == "probe-parked-reread":
         "    metrics: &mut ReuseMetrics,\n"
         ") -> Option<AdmissionHeadroom> {\n"
         "    let _ = evict_oldest_parked_freeing(reuse, spec_reuse, dspark_reuse, metrics);\n"
+        "    admission_headroom(engine, loaded, None)\n"
+        "}\n" + ANCHOR,
+    )
+elif arm == "probe-alias-flush":
+    sub(
+        ANCHOR,
+        "\n#[allow(dead_code)]\n"
+        "fn review2_probe_alias_flush(\n"
+        "    engine: &Engine,\n"
+        "    loaded: &HashMap<String, LoadedModel>,\n"
+        "    cache: &mut PrefixCache,\n"
+        ") -> Option<AdmissionHeadroom> {\n"
+        "    let _ = cache.evict_all();\n"
+        "    admission_headroom(engine, loaded, None)\n"
+        "}\n" + ANCHOR,
+    )
+elif arm == "probe-where-alloc":
+    sub(
+        ANCHOR,
+        "\n#[allow(dead_code)]\n"
+        "fn review2_probe_where_alloc<P: ParkedEntryAge, S: ParkedEntryAge, D: ParkedEntryAge>(\n"
+        "    engine: &Engine,\n"
+        "    reuse: &mut HashMap<PoolKey, Vec<P>>,\n"
+        "    spec_reuse: &mut HashMap<PoolKey, Vec<S>>,\n"
+        "    dspark_reuse: &mut HashMap<PoolKey, Vec<D>>,\n"
+        "    metrics: &mut ReuseMetrics,\n"
+        "    lm: &LoadedModel,\n"
+        "    cap: usize,\n"
+        ") -> Result<Cache, Box<dyn std::error::Error>> {\n"
+        "    let _ = evict_parked_where(reuse, spec_reuse, dspark_reuse, metrics, false);\n"
+        "    memra_engine::pp::new_cache_planned(engine, &lm.model.cfg, &lm.model.plan, cap)\n"
+        "}\n" + ANCHOR,
+    )
+elif arm == "probe-purge-read":
+    sub(
+        ANCHOR,
+        "\n#[allow(dead_code)]\n"
+        "fn review2_probe_purge_read(\n"
+        "    engine: &Engine,\n"
+        "    loaded: &HashMap<String, LoadedModel>,\n"
+        "    px: &mut PrefixCache,\n"
+        ") -> Option<AdmissionHeadroom> {\n"
+        "    let _ = px.purge_tenant(\"t\");\n"
         "    admission_headroom(engine, loaded, None)\n"
         "}\n" + ANCHOR,
     )
