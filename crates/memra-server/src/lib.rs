@@ -31,7 +31,8 @@
 //!                                     deepseek-v4.1 route only)}. stream=true => SSE
 //!                                     token-by-token; else a single JSON {text,tokens,stop_reason}.
 //!   POST /v1/chat/completions    -> OpenAI chat messages rendered by the GGUF chat template;
-//!                                     OpenAI message/chunk response shapes. `tools`/`tool_choice`
+//!                                     OpenAI message/chunk response shapes; `ignore_eos?` as on
+//!                                     completions (the deepseek-v4.1 route only). `tools`/`tool_choice`
 //!                                     (auto|none) + role:"tool" turns render through the
 //!                                     template's own <tools> branch; emitted <tool_call> blocks
 //!                                     parse into OpenAI `tool_calls` (+"tool_calls" finish);
@@ -4034,6 +4035,13 @@ struct ChatCompletionReq {
     /// completion_tokens, including inside speculative bursts; finish_reason is "stop".
     #[serde(default)]
     stop_token_ids: Vec<u32>,
+    /// Do not stop at the model's end-of-sentence token: the same field, with the same meaning, as
+    /// on `/v1/completions` (`CompletionReq::ignore_eos`). It used to be dropped here: the type has
+    /// no `deny_unknown_fields`, so `ignore_eos: true` answered 200 and stopped at the end id
+    /// (memra#1325). Served by the deepseek-v4.1 route; any other model answers `true` with a
+    /// 400 naming the field (`validate_ignore_eos`).
+    #[serde(default)]
+    ignore_eos: bool,
     #[serde(default, deserialize_with = "null_as_default")]
     stream: bool,
     #[serde(default)]
@@ -10090,7 +10098,7 @@ fn build_chat_request_with_trace(
             },
             sampler_cfg,
             stop_token_ids: req.stop_token_ids,
-            ignore_eos: false, // the chat surface always stops at the end-of-sentence token
+            ignore_eos: req.ignore_eos,
             stop_strings: {
                 // gemma4 tooluse: the model emits `<|tool_call>call:…<tool_call|>` and would
                 // then run past its handoff into a hallucinated `<|tool_response>`; stop when
@@ -11080,6 +11088,19 @@ fn validate_prompt_ids(ids: &[u32], caps: Option<&ModelCaps>) -> Result<(), Stri
 }
 
 /// Reuse the prompt-id vocabulary gate, preserving its diagnostic shape with the right field.
+/// `ignore_eos: true` is served by the deepseek-v4.1 route alone. Any other model refuses it, on
+/// `/v1/completions` and `/v1/chat/completions` alike: accepting it and stopping at the end id
+/// anyway would be a silent downgrade. `false` is accepted everywhere.
+fn validate_ignore_eos(ignore_eos: bool, caps: Option<&ModelCaps>) -> Result<(), &'static str> {
+    if ignore_eos && !caps.is_some_and(|c| c.dsv41) {
+        return Err(
+            "ignore_eos is served by the deepseek-v4.1 route only; this model stops at its \
+             end-of-sentence token",
+        );
+    }
+    Ok(())
+}
+
 fn validate_stop_token_ids(ids: &[u32], caps: Option<&ModelCaps>) -> Result<(), String> {
     if ids.len() > MAX_STOP_TOKEN_IDS {
         return Err(format!(
@@ -11133,6 +11154,70 @@ mod prompt_ids_tests {
                 .stop_token_ids
                 .is_empty()
         );
+    }
+
+    /// memra#1325: `ignore_eos` reaches the request from the chat surface as it does from
+    /// `/v1/completions`. `ChatCompletionReq` has no `deny_unknown_fields` and had no such field,
+    /// so a chat body's `ignore_eos: true` was dropped and the deepseek-v4.1 route stopped at its
+    /// end id.
+    #[test]
+    fn ignore_eos_reaches_the_request_from_both_builders() {
+        let caps = ModelCaps {
+            chat_ok: true,
+            dsv4: true,
+            dsv41: true,
+            tools_branch: true,
+            context_length: 1_048_576,
+            ..Default::default()
+        };
+        for (sent, want) in [(Some(true), true), (Some(false), false), (None, false)] {
+            let mut body = json!({"model":"v41", "prompt":"hello",
+                "messages":[{"role":"user", "content":"hello"}]});
+            if let Some(v) = sent {
+                body["ignore_eos"] = json!(v);
+            }
+            let req: CompletionReq = serde_json::from_value(body.clone()).unwrap();
+            let (tx, _rx) = worker::event_channel();
+            assert_eq!(
+                build_request(&req, tx, lanes::Lane::Interactive, None).ignore_eos,
+                want,
+                "completions, sent {sent:?}"
+            );
+            let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
+            let (tx, _rx) = worker::event_channel();
+            assert_eq!(
+                build_chat_request(req, Some(&caps), tx, lanes::Lane::Interactive, None)
+                    .unwrap()
+                    .request
+                    .ignore_eos,
+                want,
+                "chat, sent {sent:?}"
+            );
+        }
+    }
+
+    /// Only the deepseek-v4.1 route serves `ignore_eos: true`; every other model refuses it on
+    /// both surfaces (the handlers answer the error as a 400 naming the field).
+    #[test]
+    fn ignore_eos_is_refused_outside_the_deepseek_v41_route() {
+        let v41 = ModelCaps {
+            dsv41: true,
+            ..Default::default()
+        };
+        let other = ModelCaps {
+            chat_ok: true,
+            ..Default::default()
+        };
+        assert!(validate_ignore_eos(true, Some(&v41)).is_ok());
+        assert!(
+            validate_ignore_eos(true, Some(&other))
+                .unwrap_err()
+                .contains("deepseek-v4.1 route only")
+        );
+        assert!(validate_ignore_eos(true, None).is_err());
+        for caps in [None, Some(&other), Some(&v41)] {
+            assert!(validate_ignore_eos(false, caps).is_ok());
+        }
     }
 
     #[test]
@@ -11301,15 +11386,8 @@ async fn completions_with_admission(
     if let Err(msg) = validate_stop_token_ids(&req.stop_token_ids, st.caps.get(&req.model)) {
         return with_request_id(&env.id, bad_request(&msg, Some("stop_token_ids")));
     }
-    if req.ignore_eos && !st.caps.get(&req.model).is_some_and(|c| c.dsv41) {
-        return with_request_id(
-            &env.id,
-            bad_request(
-                "ignore_eos is served by the deepseek-v4.1 route only; this model stops at its \
-                 end-of-sentence token",
-                Some("ignore_eos"),
-            ),
-        );
+    if let Err(msg) = validate_ignore_eos(req.ignore_eos, st.caps.get(&req.model)) {
+        return with_request_id(&env.id, bad_request(msg, Some("ignore_eos")));
     }
     // Request deadline (lane/deadline-billing): validated with the other request params
     // (a named 400 costs no slot and opens no receipt), armed from this point on.
@@ -11896,6 +11974,9 @@ async fn chat_completions_with_admission(
     }
     if let Err(msg) = validate_stop_token_ids(&req.stop_token_ids, st.caps.get(&req.model)) {
         return with_request_id(&env.id, bad_request(&msg, Some("stop_token_ids")));
+    }
+    if let Err(msg) = validate_ignore_eos(req.ignore_eos, st.caps.get(&req.model)) {
+        return with_request_id(&env.id, bad_request(msg, Some("ignore_eos")));
     }
     let ttft = trace.and_then(|Extension(trace)| trace.0);
     if let Some(trace) = ttft.as_ref() {

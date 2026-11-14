@@ -64,8 +64,8 @@
 //! served greedy answer is `dsv41-run --gen`'s). Temperature, top-p and top-k draw through the
 //! DSv4 route's position-keyed host sampler (`dsv4_sample_row`, seeded and reproducible),
 //! penalties through `dsv4_penalize_row` over the prompt and the generated tokens; `min_p` is
-//! refused, as on the DSv4 route. Stops: the end-of-sentence id (unless the completions request
-//! sets `ignore_eos`, the benchmark field: the id is then an ordinary token), the request's stop
+//! refused, as on the DSv4 route. Stops: the end-of-sentence id (unless the request, completions
+//! or chat, sets `ignore_eos`, the benchmark field: the id is then an ordinary token), the request's stop
 //! ids, stop strings over the detokenized stream (the V4.1 DSML close stays in the stream so the
 //! parser closes the call), and the token budget.
 //!
