@@ -1,0 +1,43 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.12s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::a_promotion_that_fails_leaves_the_caller_a_live_hit ... FAILED
+
+failures:
+
+---- worker::tests::a_promotion_that_fails_leaves_the_caller_a_live_hit stdout ----
+[prefix-cache] insert (t): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+[prefix-cache] insert (t): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+[prefix-cache] evict (snapshot preflight, LRU): 1 tokens, 0.0MB (model q38)
+[prefix-cache] insert (t): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+[prefix-cache] insert (t): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+[prefix-cache] evict (snapshot preflight, LRU): 1 tokens, 0.0MB (model q38)
+[prefix-cache] insert (t): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+[prefix-cache] insert refused: entry 800 cannot fit beside 300 leased bytes (budget 1000, snapshot preflight, model q38)
+[prefix-cache] insert (t): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+[prefix-cache] insert (t): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+[prefix-cache] evict (snapshot preflight, LRU): 1 tokens, 0.0MB (model q38)
+[prefix-cache] insert (t): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+[prefix-cache] insert (t): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+[prefix-cache] evict (snapshot preflight, LRU): 1 tokens, 0.0MB (model q38)
+[prefix-cache] insert (t): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+[prefix-cache] insert (t): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+[prefix-cache] evict (snapshot preflight, LRU): 1 tokens, 0.0MB (model q38)
+[prefix-cache] insert (t): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+[prefix-cache] insert (t): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+[prefix-cache] insert (host-promote): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model q38)
+
+thread 'worker::tests::a_promotion_that_fails_leaves_the_caller_a_live_hit' (649594) panicked at crates/memra-server/src/worker.rs:44438:9:
+assertion failed: squashed.contains("host_promote_pin = host_promote_prefix_hit(engine, px, hpx, &pool_key, &prompt, &mut \
+             consumable_hit);")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::a_promotion_that_fails_leaves_the_caller_a_live_hit
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1307 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p memra-server --lib`

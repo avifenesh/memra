@@ -1,0 +1,22 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.11s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::the_idle_refusal_names_the_largest_request_that_fits_now ... FAILED
+
+failures:
+
+---- worker::tests::the_idle_refusal_names_the_largest_request_that_fits_now stdout ----
+
+thread 'worker::tests::the_idle_refusal_names_the_largest_request_that_fits_now' (1505348) panicked at crates/memra-server/src/worker.rs:43458:9:
+request context 150000 fits this model's KV capacity but not the server's free memory right now; retry after the Retry-After delay
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::the_idle_refusal_names_the_largest_request_that_fits_now
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1307 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

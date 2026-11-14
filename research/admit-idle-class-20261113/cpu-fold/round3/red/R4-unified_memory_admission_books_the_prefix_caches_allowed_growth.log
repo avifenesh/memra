@@ -1,0 +1,35 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+warning: method `with_hit_leased` is never used
+     --> crates/memra-server/src/worker.rs:13433:8
+      |
+12139 | impl PrefixCache {
+      | ---------------- method in this implementation
+...
+13433 |     fn with_hit_leased<R>(
+      |        ^^^^^^^^^^^^^^^
+      |
+      = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-server` (lib test) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.12s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::unified_memory_admission_books_the_prefix_caches_allowed_growth ... FAILED
+
+failures:
+
+---- worker::tests::unified_memory_admission_books_the_prefix_caches_allowed_growth stdout ----
+
+thread 'worker::tests::unified_memory_admission_books_the_prefix_caches_allowed_growth' (509383) panicked at crates/memra-server/src/worker.rs:43184:9:
+assertion failed: squashed.contains("let unified_growth = unified_prefix_growth_booking( device_is_unified(&engine), \
+             active.is_empty(), prefix_cache_budget_bytes(), px.total_bytes, );")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::unified_memory_admission_books_the_prefix_caches_allowed_growth
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1307 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p memra-server --lib`

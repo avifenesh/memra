@@ -178,6 +178,12 @@ Second review fold (2026-11-14), on main `0db086f87a`, measured on build id `f41
 Thirty-two source red arms (the sixteen above, the second review's six mutations that had
 passed the suite, ten for this fold) and the verifier's each fail for their stated reason.
 
+Third review fold (2026-11-14): no cell. The figure for a request that pins `max_ctx` and the
+publication's reads of the live cache are covered on the CPU (the memra-server suite, 1,290
+tests; thirty-nine source red arms, the third review's two surviving mutations among them), and
+two serving gates (`tools/spec-on-cache-hit-gate.sh`, `tools/kv-host-spill-identity-gate.sh`)
+fail on the server's warning that a publication held more than it reserved.
+
 ## Limits
 
 - The capacity is read once at boot. A server booted under host pressure has a smaller capacity,
