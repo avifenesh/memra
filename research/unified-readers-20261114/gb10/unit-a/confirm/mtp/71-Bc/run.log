@@ -1,0 +1,14 @@
+2026-11-14T06:03:42+02:00 live_fill: before MemFree: 19908 MemAvailable: 118559 Cached: 98939
+  2026-11-14T06:03:42+02:00 fill2: before MemFree: 20385916 kB;MemAvailable: 121405180 kB;Cached: 101313616 kB;
+  2026-11-14T06:04:00+02:00 fill2 done: MemFree: 2814108 kB;MemAvailable: 121784840 kB;Cached: 119251672 kB;
+2026-11-14T06:04:00+02:00 live_fill: 2 readers running until ~/.cache/memra-1307/runs/c6/mtp/71-Bc/stop (at most 1200s): 3936857 3936858
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 2m00s
+before requests: MemFree: 916716 kB;MemAvailable: 101056408 kB;Cached: 100515312 kB;
+{"tag": "71-Bc", "req": "m1", "status": 200, "prompt_tokens": 1868, "completion_tokens": 128, "finish": "length", "wall_s": 5.656, "sha256": "efa0605b9b826573a0d0a2578a63534c3cdee0c03bf5cc55ac74bc9a049690cb", "text_chars": 435, "error": null}
+{"tag": "71-Bc", "req": "m2", "status": 200, "prompt_tokens": 1868, "completion_tokens": 128, "finish": "length", "wall_s": 5.602, "sha256": "efa0605b9b826573a0d0a2578a63534c3cdee0c03bf5cc55ac74bc9a049690cb", "text_chars": 435, "error": null}
+{"tag": "71-Bc", "req": "m3", "status": 200, "prompt_tokens": 1868, "completion_tokens": 128, "finish": "length", "wall_s": 5.707, "sha256": "34ab48fa38c3f7ba7105433ef4e743d621ac5a3f6a5916024c5e274c48ca2252", "text_chars": 432, "error": null}
+waitfor: gone 3936888 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
