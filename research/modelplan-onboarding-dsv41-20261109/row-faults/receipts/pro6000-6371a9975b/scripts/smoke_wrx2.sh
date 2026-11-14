@@ -4,25 +4,28 @@
 # ignore_eos), so the second request never shared a call with the first. Here both requests are long (N tokens of an
 # essay), the second is sent once the first has run 20 steps, and the poisoned step (FS) is far enough in that both are
 # decoding. The whole-step injection is left to the GB10 smoke.
+# (Header corrected after the run, 2026-11-14: it still described the first script's steps and counts. Only
+# these comment lines changed; the commands below are the ones that ran.)
 # Serve smoke of memra#1292 (per-row attribution of the deepseek-v4.1 route's call flag) on one RTX PRO 6000:
 # memra-server on the checkpoint's whole trunk (40 layers), on the residency the card picks by itself, the
 # one-card residency (the routed experts in pinned host memory behind the device cache: the off-card MoE that
-# reads its plan back, the path #1292 changes). Greedy, ignore_eos, so every request runs exactly max_tokens
-# steps and the step numbers below are exact.
-#   boot 1, MEMRA_DSV41_CALL_FAULT=24:1,64: A (steps 0..31) and B (admitted at step 1 or later) share batched
-#     calls; step 24 poisons running request 1 (B, row 1 of the batched call): B fails alone, A completes. Then A
-#     alone (steps 32..63) is A's solo run: A's two answers must be the same bytes. Step 64 is C's prefill with
-#     the whole-step injection (a fault no row map names): C fails, D is served after it.
-#   boot 2, MEMRA_DSV41_CALL_FAULT=0:0,25:0: W's prefill (step 0, its own call) poisoned: W fails alone. A (step 1
-#     on) and B share batched calls; step 25 poisons running request 0 (A, row 0): A fails alone, B completes. Then
-#     B alone is B's solo run: B's two answers must be the same bytes.
+# reads its plan back, the path #1292 changes). Greedy; two essay prompts of N tokens (SMOKE_N, default 300), which
+# end on the budget. The requests carry ignore_eos, which the chat surface drops (memra#1325): nothing here
+# relies on it.
+#   boot 1, MEMRA_DSV41_CALL_FAULT=FS:1 (SMOKE_FS, default 150): A starts, B is sent once A has run 20 steps, and
+#     they share batched calls; step FS poisons running request 1 (B, row 1 of the batched call): B fails alone, A
+#     completes its N tokens. Then A alone is A's solo run: A's two answers must be the same bytes.
+#   boot 2, MEMRA_DSV41_CALL_FAULT=0:0,FS:0: W's prefill (step 0, its own call) poisoned: W fails alone. A and B
+#     share batched calls as in boot 1; step FS poisons running request 0 (A, row 0): A fails alone, B completes.
+#     Then B alone is B's solo run: B's two answers must be the same bytes.
+# No whole-step injection here; the GB10 smoke has it.
 # The summary also checks that each poisoned decode step was one batched call of two rows, and the residency:
-# the boot log's host-experts line and an expert cache on every step.
+# at least one host-experts line in the boot log and an expert cache on every step.
 # Run it inside a one-card lease, from any directory; it starts and stops its own server (127.0.0.1:18393, or
-# SMOKE_ADDR). Two boots of the whole checkpoint and about 160 steps: a few minutes with the checkpoint in the
-# page cache (an estimate: the 40-layer route has not run this script before).
-# PASS: s.txt ends with "SMOKE PASS" and "SMOKE-DONE", with 18 PASS lines and no FAIL line.
-# usage: smoke_wrx.sh TAG [OUT_DIR]   binaries from /home/access/dsv41/perf-bins/TAG (memra-server);
+# SMOKE_ADDR). Two boots of the whole checkpoint and about 1,200 steps: about two minutes with the checkpoint in
+# the page cache (08:53 to 08:55 in the window).
+# PASS: s.txt ends with "SMOKE PASS" and "SMOKE-DONE", with 16 PASS lines and no FAIL line.
+# usage: smoke_wrx2.sh TAG [OUT_DIR]   binaries from /home/access/dsv41/perf-bins/TAG (memra-server);
 #        receipts in OUT_DIR (default /home/access/dsv41/rowfault-1315/smoke-TAG): s.txt, server-{1,2}.log,
 #        resp-*.json, health-{1,2}.json
 set -u

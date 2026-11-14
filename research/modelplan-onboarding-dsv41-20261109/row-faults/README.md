@@ -1,9 +1,10 @@
 # DeepSeek-V4.1 route: a call flag names its rows (memra#1292, 2026-11-13)
 
 Verdict: a router row that names no expert fails its own request and nothing else. On one GB10 the
-rowfault gate passes 7 of 7 on both residencies, the serve smoke passes with the other request's answer
-byte-identical to its solo run, and the kernel gate passes 185 of 185. A draft-head stage's fault and a
-call flag no row map explains still fail the whole step.
+rowfault gate passes 9 of 9 on both residencies (7 of 7 before the review added the 50-row case), the
+serve smoke passes with the other request's answer byte-identical to its solo run, and the kernel
+gate passes: 185 of 185 on the tree before memra#1286, 1,027 of 1,027 on the tree with it. A
+draft-head stage's fault and a call flag no row map explains still fail the whole step.
 
 Scope of that evidence. On a GB10, at trunk layers 0 and 1: the rowfault gate on both residencies
 (9 of 9 each, at one rank and at two ranks on the card) and the serve smoke on the resident trunk.
@@ -202,10 +203,13 @@ MEMRA_FULL_PREC=1 for the gates), `receipts/gb10-50413a3a4d/`:
   rows 0 to 49 named and none of the clean call's, and the clean call's logits are its clean run's
   bytes. 50 rows at top-6 are 300 pairs, and the plan takes its one-block form only up to 256
   (`V41_PLAN_SMALL`), so the skipped pairs go through the three-kernel plan, and under
-  `--experts-host` through `Group::moe`. A clean run of the same two calls names nothing.
+  `--experts-host` through `Group::moe`. A clean run of the same two calls names nothing. The case is
+  three-kernel by construction (50 rows x top-6 = 300 pairs > `V41_PLAN_SMALL`): the gate does not
+  assert which plan form ran.
 - **N ranks.** Two ranks on one card run the N-rank path (each rank's plan over its expert range, the
   gathers) on one device. The fully poisoned calls, whose blocks are empty on both ranks, pass on
-  both residencies; nothing there showed a limit. Two cards are a PRO 6000 run (Open).
+  both residencies; nothing there showed a limit. Two cards ran in the PRO 6000 window (the last
+  section).
 - **The smoke's residency** is checked by the script now: both boots ran the resident trunk (72 and
   71 steps, none with an expert cache, no host-experts line). Its 18 checks are the 16 above and one
   residency check a boot.
@@ -299,4 +303,10 @@ from that commit, 120a, CUDA 13.1), RTX PRO 6000 Blackwell Max-Q cards, MEMRA_FU
 `lease/` has each run's lease summary, its 1 Hz card telemetry (gzipped; `raw.sha256` lists the
 bytes before compression) and the window's `summary.txt`; no run was flagged for a slowdown.
 `scripts/` has the window's runner (`w3_arm.sh`, whose first part is another change's four-card
-runs), both smoke scripts and the verify recipe (`m1_verify.sh`).
+runs), both smoke scripts and the verify recipe (`m1_verify.sh`). `smoke_wrx2.sh`'s header comment
+was corrected after the run (it described the first script); its commands are as they ran.
+
+The four rowfault logs are tied to the commit twice: the lease summary's source line (`lease/summary.txt`:
+`land-1315 6371a9975b... built ... on the dev desk`) and the gate binary's sha256, `10e677ff...`, read
+from that binaries directory and added to `../serve/receipts/verify-6371a9975b/bins.sha256` beside
+the three the verify recipe wrote.
