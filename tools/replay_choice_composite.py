@@ -14,6 +14,16 @@ def hashes(root,manifest):
         p=(root/name).resolve()
         require(p.is_relative_to(root.resolve()) and hashlib.sha256(p.read_bytes()).hexdigest()==expected,'retained_hash',name)
 
+def phase_receipt(root,phase,context):
+    """A phase's receipt and the execution context it is bound to: the composite's own, or the later capture `superseded.json` names for it (a path relative to the composite, with its own `expected-context.json`). A superseded phase stays where it is as the record of the server it ran on and is not replayed: its contract is that server's."""
+    pointer=root/'superseded.json'
+    entry=json.loads(pointer.read_text()).get(phase) if pointer.exists() else None
+    if entry is None:return root/phase,context
+    receipt=(root/entry['receipt']).resolve()
+    bound=json.loads((receipt/'expected-context.json').read_text())
+    require(set(bound)==set(context) and bound['model_sha256']==context['model_sha256'],'superseded',phase+' is recaptured on the same model artifact with a full context')
+    return receipt,bound
+
 def replay(root):
     expected=json.loads((root/'expected-context.json').read_text())
     before=root/'before';current=root/'baseline';candidate=root/'candidate'
@@ -24,7 +34,10 @@ def replay(root):
     for old,new in zip(b['results'],c['results']):
         require(old['name']==new['name'],'n1_identity','same endpoint controls');check_identity(old['body'],new['body'])
     context={k:expected[k] for k in ['source','binary_sha256','model_sha256','helper_sha256','hardware']}
-    phases={phase:verify(root/phase,before if phase=='candidate' else None,context) for phase in ['candidate','deadline','slots','budget','kv']}
+    phases={}
+    for phase in ['candidate','deadline','slots','budget','kv']:
+        receipt,bound=phase_receipt(root,phase,context)
+        phases[phase]=verify(receipt,before if phase=='candidate' else None,bound)
     cache_context={k:expected[k] for k in ['source','binary_sha256','model_sha256','hardware']}
     phases['cache']=verify(root/'cache',None,cache_context)
     cached=json.loads((root/'cache/manifest.json').read_text());by_name={r['name']:r for r in cached['results']}

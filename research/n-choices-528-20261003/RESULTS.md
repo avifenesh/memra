@@ -1,5 +1,13 @@
 # Bounded multi-choice acceptance
 
+> **KV exhaustion edge superseded (2026-11-14, memra#1304).** An idle server now refuses by the
+> request's size: a request its post-load capacity holds, short of memory another process took, is
+> a 503 `overloaded` with `Retry-After`; the 400 `context_length_exceeded` stays for a request
+> over that capacity. The `kv` phase of `receipts/native-final-v5/` records the 400 the `c6db`
+> server gave and stays as that server's record; the gate replays its recapture on the same card
+> and fixture, [`admit-idle-class-20261113/rtx5090/kv/`](../admit-idle-class-20261113/README.md#rtx-5090-the-idle-refusal-under-another-processs-memory),
+> named by `receipts/native-final-v5/superseded.json`. Every other edge is unchanged.
+
 Memra #528 implements n=2..8 on eligible ordinary single-device text routes. The pinned local fixture is Qwen3.5-9B Q8_0, artifact SHA256 `0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c`. This is API and lifecycle evidence for that fixture. It grants no model support state or release qualification.
 
 Runtime source: `c6db12b96bced55fa1d7b6e0b308f23f5699f1b7`. Stock ELF: `fead9d5d6acff8cb4b116b4aaaceaffe43f0ab040c4e04bf35d76cb1ea606965`. Accounting observer: `eb57d814d0f97125563c4faba98ec9ac209aad9dafc3437ce835ba406b3659f0`. The exact-base source `42e9` and stock ELF `57a19` remain the before control. [Source binding](receipts/native-final-v5/source-binding.json) records the current tuple. The directory name is the retained CI path; its contents carry the current v8 receipt.
