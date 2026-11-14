@@ -43,9 +43,9 @@
 //! between its terms: 251-263 MiB in the same 256 MiB samples, and 34 and 35 MB recorded in boots
 //! under a filling page cache where the raw reading recorded 46 and 55. That is
 //! [`delta_free_bytes`], which the measurement reads at both ends. It is still a host-wide
-//! reading, and with reclaim running it has read low: 3 of 13 boots that met a full page cache
-//! read 2, 18 and 22 MiB for the same capture (`docs/decisions/UNIFIED-MEMORY-READERS.md`). A
-//! level never takes it: not every cached page is reclaimable.
+//! reading, and with reclaim running it has read low, by up to the whole capture, in about one
+//! boot in five that met a full page cache (`docs/decisions/UNIFIED-MEMORY-READERS.md`). A level
+//! never takes it: not every cached page is reclaimable.
 
 use cudarc::driver::{CudaContext, DriverError};
 

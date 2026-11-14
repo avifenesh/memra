@@ -45,13 +45,13 @@ measurement, and the DeepSeek-V4 route's memory door. Which reading does each ne
 ## Rejected
 
 - **The allocatable figure for the delta** (this branch's first commit). `MemAvailable` is the
-  kernel's estimate from its LRU lists and moves by hundreds of MiB while reclaim runs. Across one
-  served boot bracket that parks 34 MiB it fell 433 MiB (cell `02-T`), which the high-water would
-  have kept as the charge of every later speculative session. In the allocation probe a 256 MiB
+  kernel's estimate from its LRU lists and moves by hundreds of MiB while reclaim runs. Across two
+  served boot brackets that park 34 MiB it fell 433 and 625 MiB (cells `02-T` and `72-Tc`), which
+  the high-water would have kept as the charge of every later speculative session. In the allocation probe a 256 MiB
   allocation moved it by -368 to +878 MiB.
 - **The raw reading for the delta** (main). It is `MemFree`: page cache filling lowers it and
-  reclaim raises it. Booting under a filling page cache, main recorded 55 and 46 MB where a quiet
-  boot records 33-34; the head recorded 34 and 35. With reclaim running it reads zero: 6 of 58
+  reclaim raises it. Booting under a filling page cache, main recorded 55, 46 and 16 MB where a
+  quiet boot records 33-34; the head recorded 34, 35 and 20. With reclaim running it reads zero: 6 of 58
   boots in the GB10 traces of memra#1221 and memra#1257 read 0 MiB at the first bracket. In the
   probe a 256 MiB allocation moved it by -500 to +308 MiB.
 - **`MemFree + Cached` without the slab.** One of 96 probe samples read 993 MiB for a 1 GiB
@@ -75,23 +75,27 @@ branch, both arms carrying the same diagnostic lines. Tables and conditions are 
   1,021.2 to 1,049.3 MiB; the raw reading -15.9 to +43.4, -499.5 to +308.3 and -837.8 to
   +857.4 MiB; `MemAvailable` 33.4 to 42.3, -368.0 to +877.7 and 1,025.2 to 1,624.6 MiB.
 - **The draft-state charge in serving.** A quiet boot records 33 to 34 MB. Booting under a
-  filling page cache: main 55 and 46 MB, the head 34 and 35 MB. Over 56 session brackets taken
+  filling page cache, three boots per arm: main 55, 46 and 16 MB, the head 34, 35 and 20 MB (the
+  third pair is the folded head against main with landing 24). Over 56 session brackets taken
   under the readers, where a quiet one reads 1.7 MiB: raw -218.1 to +22.6 MiB, `MemAvailable`
   -30.3 to +5.7, free plus reclaimable -11.2 to +4.8 (median 1.7).
-- **The width.** With the page cache full main's width stopped 3 of 308 planned pooled forwards
+- **The width.** With the page cache full main's width stopped 8 of 462 planned pooled forwards
   in cohorts of two and 4 of 449 in cohorts of four (the spec gate's band raised to four), at raw
-  readings of 831 to 1,543 MiB with about 95 GB available. The head stopped none of 766. With
+  readings of 669 to 1,543 MiB with about 95 GB available. The head stopped none of 933. With
   `MemAvailable` taken to 2 GB under a decoding cohort the head's headroom fell from 92,948 to
   4,065 MiB; no forward was stopped in either arm and the cohort finished.
-- **Texts.** The same in both arms in every request (142 across the routes); no OOM line in any
+- **Texts.** The same in both arms in every request (156 across the routes); no OOM line in any
   cell that booted.
+- **The landing code.** The last pair of each kind above ran main with landing 24 against the
+  head after the review's fold (the write-up's section 8); the rest ran before the fold changed
+  code.
 
 ## Limits
 
 - **The delta reading removes the page cache's share, not every host effect.** With reclaim
-  running, 3 of 13 boots that met a full, idle page cache read 2.2, 17.9 and 21.9 MiB at the
-  first bracket, where the driver's own figure for the process (`nvidia-smi
-  --query-compute-apps`) rose by 32 MiB in all eight boots that logged it. In one of them all three
+  running, 4 of 19 boots that met a full page cache (3 of 13 with it idle, 1 of 6 with it filling)
+  read 2.2, 17.9, 20.4 and 21.9 MiB at the first bracket, where the driver's own figure for the
+  process (`nvidia-smi --query-compute-apps`) rose by 32 MiB in all eight boots that logged it. In one of them all three
   host readings agreed on the low value; in another the missing part was in the counters a moment
   later. The charge then stays at 2 to 22 MB for that server's life. Each later session's capture
   parks 1.7 MiB, so the low value still covers a session; main's raw reading has the same hole (6
@@ -102,7 +106,7 @@ branch, both arms carrying the same diagnostic lines. Tables and conditions are 
 - **Other processes.** Any host-wide reading moves when another process allocates or frees
   anonymous memory during the bracket. The cells ran with nothing else on the unit.
 - **The width's effect is small here.** The pool's cached blocks (1.1 to 1.7 GB) keep the raw
-  headroom above most members' needs, so main serialized 7 of 757 forwards. No cell shows the cap
+  headroom above most members' needs, so main serialized 12 of 911 forwards. No cell shows the cap
   protecting a forward when memory is short: at 2 GB the cached blocks alone covered the need.
 - **This record covers the three readers memra#1307 named.** The deepseek-v4.1 route is outside
   it: it loads on one device by default and has its own raw readers (`dsv41_gpu/experts.rs`

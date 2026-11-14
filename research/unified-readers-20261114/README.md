@@ -20,18 +20,22 @@ so every decision there reads the value it read before.
 What the cells show (Qwen3.8-27B on two DGX Sparks, main against this branch):
 
 - **Draft-state delta.** Booting under a filling page cache, main recorded a per-session charge of
-  55 and 46 MB, the head 34 and 35 MB (a quiet boot: 33 to 34). `MemAvailable` fell 433 MiB across
-  one such bracket, which rules it out. The delta reading is not exact: while the kernel reclaims,
-  3 of 13 boots that met a full, idle page cache read 2, 18 and 22 MiB for the same capture, on
-  every host reading, though the driver's own figure for the process rose by its usual 32 MiB
-  (section 5). Each later session's capture parks 1.7 MiB, so the low value still covers a session.
-- **Width.** With the page cache full main's width stopped 7 of 757 planned pooled forwards (3 of
-  308 for cohorts of two, 4 of 449 for cohorts of four) with about 95 GB available; the head
-  stopped none. With `MemAvailable` itself at 2 GB the head's headroom fell from 92,948 to
+  55, 46 and 16 MB over three boots, the head 34, 35 and 20 MB (a quiet boot: 33 to 34).
+  `MemAvailable` moved 433 and 625 MiB across two such brackets, which rules it out. The delta
+  reading is not exact: while the kernel reclaims, 4 of the 19 boots that met a full page cache
+  read 2, 18, 20 and 22 MiB for the same capture, though the driver's own figure for the process
+  rose by its usual 32 MiB in every boot that logged it (section 5). Each later session's capture
+  parks 1.7 MiB, so the low value still covers a session.
+- **Width.** With the page cache full main's width stopped 12 of 911 planned pooled forwards (8 of
+  462 for cohorts of two, 4 of 449 for cohorts of four) with about 95 GB available; the head
+  stopped none of 933. With `MemAvailable` itself at 2 GB the head's headroom fell from 92,948 to
   4,065 MiB and the cohort finished without an OOM line.
-- **Texts.** Every request wrote the same text in both arms: 30 MTP requests, 24 DFlash2 requests
+- **Texts.** Every request wrote the same text in both arms: 36 MTP requests, 32 DFlash2 requests
   in cohorts of two, 32 in cohorts of four, 48 decoded plain four at once, 8 in the short-memory
   cells. No OOM line in any cell that booted.
+- **The landing code.** Sections 1 to 7 ran before the review's fold changed code (the delta's
+  "unified?" is now the engine's answer, read once). Section 8 is main with landing 24 against the
+  folded head: one boot per arm under a filling page cache and one DFlash2 pair cell per arm.
 - **Two boots died at `Engine::new`** with `CUDA_ERROR_OUT_OF_MEMORY` and about 122 GB available,
   one per arm and unit, each 15 s after a cell whose readers were probably still filling the page
   cache. Not this change's code: memra#1316.
@@ -212,8 +216,8 @@ is not evidence; the three deltas below are read inside the dump calls.
 - So a low first bracket is the host's counters read while reclaim is moving pages, not a smaller
   capture. No host-wide reading is exempt: in section 2's 03-T all three read 21.9 MiB. Across
   both units 3 of the 13 boots that met a full, idle page cache read low on the delta reading
-  (2.2, 17.9 and 21.9 MiB); none of the 4 boots under a filling page cache and none of the quiet
-  ones did.
+  (2.2, 17.9 and 21.9 MiB), and 1 of the 6 under a filling page cache (20.4 MiB, section 8); none
+  of the quiet ones did.
 - What it costs: the charge is 2 to 22 MB instead of 34 for that server's life. Every later
   session's own capture parks 1.7 MiB (section 2), so the low value still covers what a session
   parks.
@@ -287,6 +291,38 @@ or more live rounds, by `MemAvailable` at the forward:
   cells); section 7 takes the memory after the cohort is admitted.
 - Any model but Qwen3.8-27B, and any timing claim. These cells compare decisions and texts, not
   speed.
+
+## 8. The folded head against main with landing 24 (unit A)
+
+`gb10/unit-a/confirm`: arms Bc (main 63c351a2f4's five engine files) and Tc (this branch after the
+review's fold: `Engine::unified_memory` read once, `delta_free_from`), both with the diagnostic
+lines; `gb10/arms/Bc.sha` and `Tc.sha`. One boot per arm under a filling page cache with the three
+MTP requests (section 2's 21-B and 22-T shape), then one live DFlash2 pair cell per arm.
+
+| cell | arm | MemFree at the bracket, MB | first bracket: raw / `MemAvailable` / free + reclaimable, MiB | charge recorded, MB |
+|---|---|---:|---|---|
+| 71-Bc | main | 785 | -17.1 / 98.7 / 35.1 | 2, then 10, 11 and 16 as later brackets read 10.3, 11.6 and 16.7 MiB on the raw reading |
+| 72-Tc | head | 883 | -152.0 / 624.8 / 20.4 | 20 |
+
+| cell | arm | pooled forwards planned with 2 live rounds | stopped by the width | headroom, MiB | raw free / `MemAvailable`, MiB | rows | OOM lines |
+|---|---|---:|---:|---|---|---|---:|
+| 74-Bc | main | 154 | 5 (304 to 759 needed, 283 to 612 above the floor) | 283 to 1,635 | 655 to 1,158 / 94,476 to 95,407 | 4/4 | 0 |
+| 73-Tc | head | 167 | 0 | 94,902 to 95,043 | 652 to 1,071 / 94,500 to 95,406 | 4/4 | 0 |
+
+- **The width holds on the landing code:** main stopped 5 of 154 planned forwards with 95 GB
+  available, the head none of 167.
+- **The charge, less cleanly than section 2.** Main's first bracket read below zero and recorded
+  the pool's 2 MB; later session brackets, which park 1.7 MiB, then walked its high-water to
+  16 MB on the raw reading's noise. The head's first bracket is one of the low readings of
+  section 5 (20.4 MiB for the 34 MiB capture, with reclaim running: the raw reading moved
+  -152 MiB), and its later brackets (0.9 to 4.5 MiB) left the charge at 20 MB. `MemAvailable` moved
+  624.8 MiB across the head's bracket and 98.7 across main's: as the delta's reading it would have
+  recorded 625 and 99 MB.
+- Texts: the three MTP requests and the four DFlash2 requests wrote sections 2's and 3's texts in
+  both arms; the 48 acceptance lines of the two DFlash2 cells are the same set. 0 OOM lines.
+- One comment line in `unified_memory.rs` changed after these cells (the count of low boots, which
+  this section moved); `git diff` from the fold's code commit to the head is comment lines only
+  under `crates/`.
 
 ## Tools
 
