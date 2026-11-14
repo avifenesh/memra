@@ -2451,8 +2451,9 @@ pub struct Request {
     pub sampler_cfg: SamplerConfig,
     pub stop_strings: Vec<String>,
     pub stop_token_ids: Vec<u32>,
-    /// `/v1/completions` `ignore_eos`: generation does not stop at the model's end-of-sentence
-    /// token. The HTTP layer admits `true` only for the deepseek-v4.1 route, which honors it.
+    /// `ignore_eos` of `/v1/completions` and `/v1/chat/completions`: generation does not stop at the
+    /// model's end-of-sentence token. The HTTP layer admits `true` only for the deepseek-v4.1
+    /// route, which honors it.
     pub ignore_eos: bool,
     pub trace_id: Option<String>,
     /// The HTTP envelope's request id (`x-request-id`, the metering receipt identity).
