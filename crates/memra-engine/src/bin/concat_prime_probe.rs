@@ -1494,7 +1494,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 (Vec<f32>, Vec<f32>, Vec<u32>, usize),
                 Box<dyn std::error::Error>,
             > {
-                let mut c = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len.max(t + steps + 8))?;
+                // The cache comes from `pp::new_cache`, as in run-gen and run-spec: under
+                // MEMRA_PP_STAGES each layer's KV is allocated by its owning stage's engine. A
+                // plain `Cache::new` puts every layer on the first device, and the second
+                // stage's append then refuses it (`PP cross-device tensor access`, memra#1299's
+                // PP-2 cell). With the door shut it is `Cache::new`.
+                let mut c = memra_engine::pp::new_cache(
+                    &cx.e,
+                    &cx.model.cfg,
+                    cx.ctx_len.max(t + steps + 8),
+                )?;
                 let mut hid_all: Vec<f32> = Vec::with_capacity(t * n_embd);
                 let mut logits = Vec::new();
                 let mut fed = 0usize;
@@ -1527,7 +1536,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &mut c,
                         t - fed - take,
                     )?;
-                    hid_all.extend_from_slice(&cx.e.dtoh(&hid)?);
+                    // Read the hidden rows on the stream that owns them: on a pipeline they
+                    // come from the last stage's device.
+                    let hid_stream = hid.stream().clone();
+                    hid_all.extend_from_slice(&hid_stream.clone_dtoh(&hid)?);
+                    hid_stream.synchronize()?;
                     logits = l;
                     fed += take;
                     calls += 1;
