@@ -184,14 +184,15 @@ and any later ids in its speculative burst are neither emitted nor counted in
 `usage.completion_tokens`. Listed ids win over EOS; unlisted EOS keeps its usual accounting. String
 `stop` works independently, streaming or not.
 
-### `ignore_eos` on completions (deepseek-v4.1 route)
+### `ignore_eos` on completions and chat (deepseek-v4.1 route)
 
-`POST /v1/completions` accepts `ignore_eos: bool` (default `false`), the benchmark field of other
-OpenAI-compatible servers: with `true` the model's end-of-sentence token no longer ends generation;
-it is detokenized into the stream and fed back like any token, and the request ends at
-`max_tokens`, a stop string or a stop id. Only the deepseek-v4.1 route serves it. For any other
-model `ignore_eos: true` is a 400 with `param: "ignore_eos"`; `false` is accepted everywhere. The
-chat surface has no such field.
+`POST /v1/completions` and `POST /v1/chat/completions` accept `ignore_eos: bool` (default `false`),
+the benchmark field of other OpenAI-compatible servers: with `true` the model's end-of-sentence
+token no longer ends generation; it is detokenized into the stream and fed back like any token, and
+the request ends at `max_tokens`, a stop string or a stop id. Only the deepseek-v4.1 route serves
+it. For any other model `ignore_eos: true` is a 400 with `param: "ignore_eos"` on both surfaces;
+`false` is accepted everywhere. The chat surface dropped the field without a word until
+memra#1325: a chat request that set it stopped at the end id with `finish_reason: "stop"`.
 
 ### Multiple choices: `n`
 

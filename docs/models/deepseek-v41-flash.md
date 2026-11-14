@@ -26,7 +26,7 @@ memra-server
 - Chat requests render with `encoding_dsv41` and parse V4.1's DSML tool calls and reasoning.
   `reasoning_effort` takes `none` (chat mode), the levels, or the numeric budget `"1"`..`"100"`.
 - Greedy, temperature, top-p, top-k, seeds, penalties and stop strings are served; `min_p`,
-  `response_format` and image parts are not. `/v1/completions` takes `ignore_eos`
+  `response_format` and image parts are not. `/v1/completions` and `/v1/chat/completions` take `ignore_eos`
   ([API surfaces](../API-SURFACES.md)).
 - DSpark drafting (`MEMRA_DSV41_DRAFT=1`) is off by default. The draft head and the several-token
   verification call are gated at the engine (the head on the vendor's floor, a verification row
