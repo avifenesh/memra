@@ -3967,6 +3967,14 @@ impl Glm5SpecSession {
             _ => None,
         }
     }
+    /// Device bytes [`Self::export_draft_tail`] allocates at `upto`, known before the export
+    /// (`DflashKv::tail_bytes`); 0 on the native arm.
+    pub fn draft_tail_bytes(&self, upto: usize) -> usize {
+        match &self.draft {
+            Glm5DraftState::Dflash2 { kv, .. } => kv.tail_bytes(upto),
+            _ => 0,
+        }
+    }
     /// The session's trunk cache, for the worker's deferred prefix publication (the
     /// append-only-below-boundary slices) — never for mutation.
     pub fn cache_ref(&self) -> &Cache {
