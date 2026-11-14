@@ -1,0 +1,17 @@
+2026-11-14T07:08:08+02:00 cell g4-live4 READERS=4 N=80 GAP_MS=2000 ARMS=B T
+2026-11-14T07:08:08+02:00 host: 7.0.0-1019-nvidia NVIDIA GB10, 580.178.04 min_free_kbytes=45166
+2026-11-14T07:08:08+02:00 arm B: 5cb624e733bd084910ceed949f70762c7b2d96c21666d4cf221d23807e32de09 runtime sources: d881152e874203a915d17e23841fd01f9443ea9d898605ec3c7705b5681dc464  ctx_boot.rs ed9309ca7ebe21f9d24fd4ff79ab091b1e95e38a0bac7adbfe1a10d3fdb33d7e  lib.rs
+2026-11-14T07:08:08+02:00 arm T: 3383967009ca5903a370ebf626a38b1bc114b185de13ce35766ae67738892b1b runtime sources: 357486e4c02e93d17f9092b82299a361937971877c064e4ceb303a508881efc0  ctx_boot.rs ed9309ca7ebe21f9d24fd4ff79ab091b1e95e38a0bac7adbfe1a10d3fdb33d7e  lib.rs
+2026-11-14T07:08:08+02:00 fill_live: before MemFree: 1743 MemAvailable: 118982 Cached: 118045
+  2026-11-14T07:08:08+02:00 fill2: before MemFree: 1784352 kB;MemAvailable: 121836884 kB;Cached: 120878080 kB;
+  2026-11-14T07:08:08+02:00 fill2 done: MemFree: 1776604 kB;MemAvailable: 121829300 kB;Cached: 120878244 kB;
+2026-11-14T07:08:08+02:00 fill_live: 4 readers running until ~/.cache/memra-1316/runs/g4-live4/STOP (at most 3000s)
+2026-11-14T07:08:15+02:00 start: MemFree: 1743840 kB;MemAvailable: 121798200 kB;Cached: 120879452 kB;
+boot 5 arm T: ready 902ms [ctx-retry] device 0: context created on try 3, after 150 ms of waits
+boot 6 arm B: fatal 345ms [server] FATAL: worker init failed: Engine::new failed: cuDevicePrimaryCtxRetain (context creation) on device 0 failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") (host MemFree 1860 MiB, MemAvailable 118868 MiB, Cached 117817 MiB, free blocks of 2 MiB and larger: 0)
+arm B: fatal after a failed first try: 1
+arm B: ready: 39
+arm T: ready: 39
+arm T: ready after a failed first try: 1
+2026-11-14T07:11:38+02:00 end: MemFree: 4885584 kB;MemAvailable: 121815548 kB;Cached: 117761744 kB;
+2026-11-14T07:11:39+02:00 boots=80 died=1 first_try_failed=2 nvrm_lines=20 kgrctx=3

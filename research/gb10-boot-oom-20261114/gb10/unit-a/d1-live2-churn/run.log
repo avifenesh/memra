@@ -1,0 +1,10 @@
+2026-11-14T06:26:19+02:00 cell d1-live2-churn STATE=live MODE=churn N=300 GAP_MS=200 TRIALS=20 HOLD_GIB=0 HOLD_S=10 BURST=20 READERS=2 RETRY_MAX=200
+2026-11-14T06:26:19+02:00 host: 7.0.0-1019-nvidia NVIDIA GB10, 580.178.04 min_free_kbytes=45166
+2026-11-14T06:26:19+02:00 fill_live: before MemFree: 25226 MemAvailable: 118891 Cached: 94459
+  2026-11-14T06:26:19+02:00 fill2: before MemFree: 25831984 kB;MemAvailable: 121745200 kB;Cached: 96726676 kB;
+  2026-11-14T06:26:39+02:00 fill2 done: MemFree: 1830132 kB;MemAvailable: 121843844 kB;Cached: 120856168 kB;
+2026-11-14T06:26:39+02:00 fill_live: 2 readers running until ~/.cache/memra-1316/runs/d1-live2-churn/STOP (at most 3000s)
+2026-11-14T06:26:41+02:00 start: MemFree: 1144812 kB;MemAvailable: 121848008 kB;Cached: 121545652 kB;
+churn done: contexts=927 first-try failures=0
+2026-11-14T06:30:41+02:00 end: MemFree: 1900740 kB;MemAvailable: 121837204 kB;Cached: 120780164 kB;
+2026-11-14T06:30:42+02:00 boots=927 failed=0 nvrm_lines=0
