@@ -1,0 +1,16 @@
+red arm: check_idle_refusal branches on the logged capacity (sizes['required']<=sizes['capacity'])
+F
+======================================================================
+FAIL: test_idle_refusal_follows_the_request_size (__main__.Controls.test_idle_refusal_follows_the_request_size)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "~/.cache/memra-1304/fold/vr/tools/test_choice_verifier.py", line 86, in test_idle_refusal_follows_the_request_size
+    with self.assertRaises(Invalid) as e:check_idle_refusal(self.idle(400,'context_length_exceeded',{'x-should-retry':'false'}),sizes,15900)
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^
+AssertionError: Invalid not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.006s
+
+FAILED (failures=1)
+rc=1

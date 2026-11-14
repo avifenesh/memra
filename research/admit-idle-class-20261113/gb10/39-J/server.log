@@ -1,0 +1,264 @@
+1794642216.203987 [server] build: memra-0.141.1-f41206bfaadf (id: source-tree, git: unknown)
+1794642216.204065 [server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1794642216.204543 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1794642216.204581 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1794642216.404973 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1794642216.537204 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1794642216.537249 [worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1794642216.580983 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1794642216.581031 [mtp-skip] MEMRA_MTP_SKIP=1: skipping 1 embedded MTP/NextN block(s) blk.64..=blk.64 (~227 MiB of weights not loaded); MTP spec decode is unavailable for this model (dspark/DFlash2 drafting keeps its trimmed head via the MEMRA_FRSPEC_TRIM stub)
+1794642224.433387 [mtp-skip] FR-Spec stub draft head built: 32768 rows of main output.weight (Q5_K); DFlash2 trim serves without the embedded MTP block
+1794642224.643579 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1794642224.643627 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1794642224.643632 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794642224.643666 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1794642224.643672 [route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1794642266.725103 [fa-pool] grow #0 dev=0 o_len 0 -> 3244032 ml_len 0 -> 12672 (retired kept, zero=false)
+1794642267.030554 [fa-pool] grow #1 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+1794642270.372495 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17012097024,"still_owned_bytes":16373883904,"pool_reserved_bytes":16642998272,"pool_cached_bytes":269114368,"driver_free_bytes":85818654720,"synchronization_errors":[]}
+1794642270.372541 [wave-probe] 32 sessions at depth 2048: two 16-row waves 261.4 ms, one 32-row wave 263.1 ms (tensor-core tier 228.3 ms) -> wave cap 32, tensor-core b32 on (45.5s; released 16224MB of cached pool to the driver)
+1794642270.372546 [worker] q38: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+1794642270.372549 [dspark] prefix restore switch default ON on "NVIDIA GB10" (gb10=true): MEMRA_DSPARK_PREFIX_RESTORE resolves ON (whole-entry restore, strict-prefix restore and boundary capture together)
+1794642275.911221 [dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+1794642275.911269 [dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+1794642275.911273 [dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+1794642275.929181 [worker] q38: DSPARK SPEC route armed (drafter attached (~/models/memra-q38/Qwen3.8-27B-DFlash2-memra); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+1794642275.929216 [dspark] q38: DFlash2 draft head TRIMMED to 32768 rows (FR-Spec d2t; verify stays full-vocab)
+1794642276.160390 [vision] tower loaded from ~/models/Qwen3.8-27B-NVFP4 (27 blocks, out_width 5120, f32-resident)
+1794642276.165678 [vision] overlay intake: tower dev0 -> intake dev0 (cross_context=false) publish=Auto servable=true
+1794642276.165720 [prefix-cache] on: budget 49679MB (49678602240 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 49678602240 B; boot driver free 103115300864 B, post-reserve clamp 99357204480 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794642276.165726 [admission] "q38": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+1794642276.165730 [admission] "q38": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+1794642276.165733 [prime-walk] model="q38" route=dspark supported=false yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=false no_hyper_connections=true no_pipeline_cuts=true]
+1794642278.802842 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=2610.891
+1794642278.802881 [prime-finalize] walker=memra_engine::dflash::DflashTapWalker<'_> wall_ms=0.002 success=true
+1794642278.803514 [prime-finalize] walker=memra_engine::dflash::DsparkPrimeWalker<'_> wall_ms=0.670 success=true
+1794642278.803543 [dspark-vg] serve pool ENGAGED (vt_cap=8)
+1794642278.804176 [topk-shards] engaged: rows=7 cols=32768 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+1794642279.750976 [dflash-kv-ring] compact keep_from=2057 kept=2056 phys_rows=4120
+1794642281.153005 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1744830464,"still_owned_bytes":21209551056,"pool_reserved_bytes":21407727616,"pool_cached_bytes":198176560,"driver_free_bytes":79823405056,"synchronization_errors":[]}
+1794642281.153053 [admit-cal] post-probe pool trim: released 1664MB cached back to the driver
+1794642281.153057 [admit-cal] boot calibration done: model="q38" route=dspark transient floor 1544MB (static was 1536MB; measured 1544MB; probe kv charge 119MB, draft-state 0MB, drafted 75 accepted 39; [dev0 peak-mapped 22080MB rest-mapped 20416MB charged 119MB -> 1544MB]; 5.0s)
+1794642281.153060 [admission] idle capacity (post-load, cache empty): dev0 free 100897MB (pool used 21210MB)
+1794642281.153067 [admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1794642281.153070 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794642281.153073 [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+1794642281.153075 [kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+1794642281.153077 [deadline] unified memory (48 SMs, served ctx 262144): streaming TTFT default/max 997311 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 3045311 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+1794642281.153380 [server] worker ready; serving models: ["q38"]
+1794642281.153594 [server] listening on http://127.0.0.1:8090
+1794642401.713736 [meter] admit id=chatcmpl-69cf1702cc7ac165e652b01d9652892d tenant=default lane=interactive model="q38"
+1794642401.827014 [admission] per-session draft-state charge: model="q38" +169MB (DFlash draft plane at this cap)
+1794642401.827063 [admission] request cost: model="q38" ctx=131622 path=spec = 29696 B/token x ctx + 4479MB prefill-workspace + 0MB fixed = 8388MB
+1794642401.833938 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=131046 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794642401.835209 [prefix-loan] reconcile why=tick books=0 lent_live=0 adopted=0.0MB charged=0.0MB real=0.0MB adoptions=0 compactions=0 pool_used=21209.6MB
+1794642404.858220 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=2643.481
+1794642404.858259 [prime-yield] count=1 remaining=32 chunks=1 wall_ms=2643.481 max_chunk_ms=2643.481
+1794642404.858263 [tick-spec] seq=1 slot=0 trace=- start_ms=0.006 gap_ms=0.006 wall_ms=3023.024 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642404.858267 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3023.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.1 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642407.406842 [dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+1794642407.407698 [dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+1794642407.458473 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=2599.899
+1794642407.458511 [prime-yield] count=2 remaining=31 chunks=1 wall_ms=2599.899 max_chunk_ms=2599.899
+1794642407.458515 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=2599.911 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642407.458519 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2599.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642410.093924 [dflash-kv-ring] compact keep_from=6136 kept=2056 phys_rows=4120
+1794642410.094936 [dflash-kv-ring] compact keep_from=8184 kept=2056 phys_rows=4120
+1794642410.144310 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=2685.755
+1794642410.144351 [prime-yield] count=3 remaining=30 chunks=1 wall_ms=2685.755 max_chunk_ms=2685.755
+1794642410.144355 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=2685.766 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642410.144359 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2685.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642412.854267 [dflash-kv-ring] compact keep_from=10232 kept=2056 phys_rows=4120
+1794642412.854944 [dflash-kv-ring] compact keep_from=12280 kept=2056 phys_rows=4120
+1794642412.905366 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=2761.046
+1794642412.905406 [prime-yield] count=4 remaining=29 chunks=1 wall_ms=2761.046 max_chunk_ms=2761.046
+1794642412.905411 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=2761.056 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642412.905414 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2761.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642415.705205 [dflash-kv-ring] compact keep_from=14328 kept=2056 phys_rows=4120
+1794642415.706241 [dflash-kv-ring] compact keep_from=16376 kept=2056 phys_rows=4120
+1794642415.755592 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=2850.174
+1794642415.755630 [prime-yield] count=5 remaining=28 chunks=1 wall_ms=2850.174 max_chunk_ms=2850.174
+1794642415.755635 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=2850.184 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642415.755638 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2850.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642418.641117 [dflash-kv-ring] compact keep_from=18424 kept=2056 phys_rows=4120
+1794642418.642189 [dflash-kv-ring] compact keep_from=20472 kept=2056 phys_rows=4120
+1794642418.692730 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=2937.073
+1794642418.692773 [prime-yield] count=6 remaining=27 chunks=1 wall_ms=2937.073 max_chunk_ms=2937.073
+1794642418.692777 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=2937.083 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642418.692781 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2937.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642421.662643 [dflash-kv-ring] compact keep_from=22520 kept=2056 phys_rows=4120
+1794642421.663512 [dflash-kv-ring] compact keep_from=24568 kept=2056 phys_rows=4120
+1794642421.713755 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3020.992
+1794642421.713798 [prime-yield] count=7 remaining=26 chunks=1 wall_ms=3020.992 max_chunk_ms=3020.992
+1794642421.713803 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=3021.002 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642421.713807 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3021.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642424.753652 [dflash-kv-ring] compact keep_from=26616 kept=2056 phys_rows=4120
+1794642424.754720 [dflash-kv-ring] compact keep_from=28664 kept=2056 phys_rows=4120
+1794642424.804952 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3091.346
+1794642424.805005 [prime-yield] count=8 remaining=25 chunks=1 wall_ms=3091.346 max_chunk_ms=3091.346
+1794642424.805009 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=3091.356 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642424.805013 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3091.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642427.930408 [dflash-kv-ring] compact keep_from=30712 kept=2056 phys_rows=4120
+1794642427.931283 [dflash-kv-ring] compact keep_from=32760 kept=2056 phys_rows=4120
+1794642427.982453 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3177.267
+1794642427.982491 [prime-yield] count=9 remaining=24 chunks=1 wall_ms=3177.267 max_chunk_ms=3177.267
+1794642427.982495 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=3177.278 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642427.982498 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3177.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642431.182906 [dflash-kv-ring] compact keep_from=34808 kept=2056 phys_rows=4120
+1794642431.183755 [dflash-kv-ring] compact keep_from=36856 kept=2056 phys_rows=4120
+1794642431.234345 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3251.837
+1794642431.234382 [prime-yield] count=10 remaining=23 chunks=1 wall_ms=3251.837 max_chunk_ms=3251.837
+1794642431.234386 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=3251.848 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642431.234389 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3251.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642434.514535 [dflash-kv-ring] compact keep_from=38904 kept=2056 phys_rows=4120
+1794642434.515383 [dflash-kv-ring] compact keep_from=40952 kept=2056 phys_rows=4120
+1794642434.566417 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3332.269
+1794642434.566447 [prime-yield] count=11 remaining=22 chunks=1 wall_ms=3332.269 max_chunk_ms=3332.269
+1794642434.566452 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=3332.281 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642434.566455 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3332.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642437.919033 [dflash-kv-ring] compact keep_from=43000 kept=2056 phys_rows=4120
+1794642437.919947 [dflash-kv-ring] compact keep_from=45048 kept=2056 phys_rows=4120
+1794642437.970800 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3404.093
+1794642437.970832 [prime-yield] count=12 remaining=21 chunks=1 wall_ms=3404.093 max_chunk_ms=3404.093
+1794642437.970836 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=3404.104 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642437.970840 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3404.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642441.409846 [dflash-kv-ring] compact keep_from=47096 kept=2056 phys_rows=4120
+1794642441.410720 [dflash-kv-ring] compact keep_from=49144 kept=2056 phys_rows=4120
+1794642441.461903 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3491.051
+1794642441.461940 [prime-yield] count=13 remaining=20 chunks=1 wall_ms=3491.051 max_chunk_ms=3491.051
+1794642441.461944 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=3491.062 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642441.461947 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3491.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642444.979180 [dflash-kv-ring] compact keep_from=51192 kept=2056 phys_rows=4120
+1794642444.979964 [dflash-kv-ring] compact keep_from=53240 kept=2056 phys_rows=4120
+1794642445.030776 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3568.823
+1794642445.030818 [prime-yield] count=14 remaining=19 chunks=1 wall_ms=3568.823 max_chunk_ms=3568.823
+1794642445.030823 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=3568.833 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642445.030826 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3568.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642448.637889 [dflash-kv-ring] compact keep_from=55288 kept=2056 phys_rows=4120
+1794642448.638700 [dflash-kv-ring] compact keep_from=57336 kept=2056 phys_rows=4120
+1794642448.688699 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3658.111
+1794642448.688739 [prime-yield] count=15 remaining=18 chunks=1 wall_ms=3658.111 max_chunk_ms=3658.111
+1794642448.688744 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=3658.121 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642448.688748 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3658.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642452.371057 [dflash-kv-ring] compact keep_from=59384 kept=2056 phys_rows=4120
+1794642452.371943 [dflash-kv-ring] compact keep_from=61432 kept=2056 phys_rows=4120
+1794642452.421945 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3733.219
+1794642452.421987 [prime-yield] count=16 remaining=17 chunks=1 wall_ms=3733.219 max_chunk_ms=3733.219
+1794642452.421991 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=3733.229 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642452.422015 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3733.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642456.180477 [dflash-kv-ring] compact keep_from=63480 kept=2056 phys_rows=4120
+1794642456.181647 [dflash-kv-ring] compact keep_from=65528 kept=2056 phys_rows=4120
+1794642456.231216 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3809.220
+1794642456.231260 [prime-yield] count=17 remaining=16 chunks=1 wall_ms=3809.220 max_chunk_ms=3809.220
+1794642456.231265 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=3809.230 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642456.231269 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3809.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642460.068048 [dflash-kv-ring] compact keep_from=67576 kept=2056 phys_rows=4120
+1794642460.068943 [dflash-kv-ring] compact keep_from=69624 kept=2056 phys_rows=4120
+1794642460.118705 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3887.191
+1794642460.118745 [prime-yield] count=18 remaining=15 chunks=1 wall_ms=3887.191 max_chunk_ms=3887.191
+1794642460.118750 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=3887.201 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642460.118753 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3887.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642464.034900 [dflash-kv-ring] compact keep_from=71672 kept=2056 phys_rows=4120
+1794642464.035763 [dflash-kv-ring] compact keep_from=73720 kept=2056 phys_rows=4120
+1794642464.084934 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=3966.278
+1794642464.084969 [prime-yield] count=19 remaining=14 chunks=1 wall_ms=3966.278 max_chunk_ms=3966.278
+1794642464.084973 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=3966.289 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642464.084977 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=3966.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642468.084725 [dflash-kv-ring] compact keep_from=75768 kept=2056 phys_rows=4120
+1794642468.085581 [dflash-kv-ring] compact keep_from=77816 kept=2056 phys_rows=4120
+1794642468.135205 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=4050.124
+1794642468.135243 [prime-yield] count=20 remaining=13 chunks=1 wall_ms=4050.124 max_chunk_ms=4050.124
+1794642468.135249 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=4050.134 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642468.135253 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4050.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642472.204537 [dflash-kv-ring] compact keep_from=79864 kept=2056 phys_rows=4120
+1794642472.205708 [dflash-kv-ring] compact keep_from=81912 kept=2056 phys_rows=4120
+1794642472.255433 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=4120.425
+1794642472.255481 [prime-yield] count=21 remaining=12 chunks=1 wall_ms=4120.425 max_chunk_ms=4120.425
+1794642472.255486 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=4120.435 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642472.255491 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4120.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642476.441335 [dflash-kv-ring] compact keep_from=83960 kept=2056 phys_rows=4120
+1794642476.442309 [dflash-kv-ring] compact keep_from=86008 kept=2056 phys_rows=4120
+1794642476.492936 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=4237.412
+1794642476.492977 [prime-yield] count=22 remaining=11 chunks=1 wall_ms=4237.412 max_chunk_ms=4237.412
+1794642476.492982 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=4237.423 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642476.492985 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4237.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642480.728972 [dflash-kv-ring] compact keep_from=88056 kept=2056 phys_rows=4120
+1794642480.729963 [dflash-kv-ring] compact keep_from=90104 kept=2056 phys_rows=4120
+1794642480.780936 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=4287.864
+1794642480.780976 [prime-yield] count=23 remaining=10 chunks=1 wall_ms=4287.864 max_chunk_ms=4287.864
+1794642480.780981 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=4287.876 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642480.780985 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4287.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642485.092338 [dflash-kv-ring] compact keep_from=92152 kept=2056 phys_rows=4120
+1794642485.092941 [dflash-kv-ring] compact keep_from=94200 kept=2056 phys_rows=4120
+1794642485.143474 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=4362.375
+1794642485.143508 [prime-yield] count=24 remaining=9 chunks=1 wall_ms=4362.375 max_chunk_ms=4362.375
+1794642485.143512 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=4362.387 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642485.143516 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4362.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642489.545981 [dflash-kv-ring] compact keep_from=96248 kept=2056 phys_rows=4120
+1794642489.547048 [dflash-kv-ring] compact keep_from=98296 kept=2056 phys_rows=4120
+1794642489.596884 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=4453.361
+1794642489.596922 [prime-yield] count=25 remaining=8 chunks=1 wall_ms=4453.361 max_chunk_ms=4453.361
+1794642489.596927 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=4453.372 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642489.596931 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4453.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642494.085016 [dflash-kv-ring] compact keep_from=100344 kept=2056 phys_rows=4120
+1794642494.085943 [dflash-kv-ring] compact keep_from=102392 kept=2056 phys_rows=4120
+1794642494.137009 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=4540.301
+1794642494.137053 [prime-yield] count=26 remaining=7 chunks=1 wall_ms=4540.301 max_chunk_ms=4540.301
+1794642494.137058 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=4540.312 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642494.137062 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4540.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642498.693702 [dflash-kv-ring] compact keep_from=104440 kept=2056 phys_rows=4120
+1794642498.694574 [dflash-kv-ring] compact keep_from=106488 kept=2056 phys_rows=4120
+1794642498.745933 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=4608.778
+1794642498.745971 [prime-yield] count=27 remaining=6 chunks=1 wall_ms=4608.778 max_chunk_ms=4608.778
+1794642498.745976 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=4608.789 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642498.745979 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4608.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642503.386884 [dflash-kv-ring] compact keep_from=108536 kept=2056 phys_rows=4120
+1794642503.387792 [dflash-kv-ring] compact keep_from=110584 kept=2056 phys_rows=4120
+1794642503.439014 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=4692.902
+1794642503.439052 [prime-yield] count=28 remaining=5 chunks=1 wall_ms=4692.902 max_chunk_ms=4692.902
+1794642503.439056 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=4692.913 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642503.439059 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4692.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642508.167985 [dflash-kv-ring] compact keep_from=112632 kept=2056 phys_rows=4120
+1794642508.168944 [dflash-kv-ring] compact keep_from=114680 kept=2056 phys_rows=4120
+1794642508.220798 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=4781.734
+1794642508.220840 [prime-yield] count=29 remaining=4 chunks=1 wall_ms=4781.734 max_chunk_ms=4781.734
+1794642508.220845 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=4781.744 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642508.220848 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4781.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642513.018139 [dflash-kv-ring] compact keep_from=116728 kept=2056 phys_rows=4120
+1794642513.019023 [dflash-kv-ring] compact keep_from=118776 kept=2056 phys_rows=4120
+1794642513.070393 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=4849.541
+1794642513.070434 [prime-yield] count=30 remaining=3 chunks=1 wall_ms=4849.541 max_chunk_ms=4849.541
+1794642513.070439 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=4849.554 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642513.070443 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4849.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642517.955562 [dflash-kv-ring] compact keep_from=120824 kept=2056 phys_rows=4120
+1794642517.956446 [dflash-kv-ring] compact keep_from=122872 kept=2056 phys_rows=4120
+1794642518.006301 [prime-chunk] phase=dflash-trunk-ingest rows=4096 wall_ms=4936.102
+1794642518.006347 [prime-yield] count=31 remaining=2 chunks=1 wall_ms=4936.102 max_chunk_ms=4936.102
+1794642518.006352 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=4936.113 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642518.006356 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=4936.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642522.967547 [dflash-kv-ring] compact keep_from=124920 kept=2056 phys_rows=4120
+1794642522.968543 [dflash-kv-ring] compact keep_from=126968 kept=2056 phys_rows=4120
+1794642523.018342 [prime-chunk] phase=dflash-trunk-ingest rows=4032 wall_ms=5011.749
+1794642523.018375 [prime-yield] count=32 remaining=1 chunks=1 wall_ms=5011.749 max_chunk_ms=5011.749
+1794642523.018379 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=5011.760 generated=0->0 rounds=0 drafted=0 accepted=0 k=0
+1794642523.018396 [tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=5011.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642523.364384 [prime-chunk] phase=dflash-trunk-ingest rows=38 wall_ms=345.896
+1794642523.367296 [prime-finalize] walker=memra_engine::dflash::DflashTapWalker<'_> wall_ms=2.936 success=true
+1794642523.377786 [prime-finalize] walker=memra_engine::dflash::DsparkPrimeWalker<'_> wall_ms=13.406 success=true
+1794642523.394717 [fa-pool] grow #2 dev=0 o_len 6488064 -> 12976128 ml_len 25344 -> 50688 (retired kept, zero=false)
+1794642525.377224 [dspark-acc] ctx=131046 burst=18/42 cum=18/42=0.429
+1794642525.377269 [tick-spec] seq=1 slot=0 trace=- start_ms=0.004 gap_ms=0.004 wall_ms=2358.911 generated=0->32 rounds=14 drafted=42 accepted=18 k=0
+1794642525.377276 [tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=2358.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642525.377282 [prefix-cache] unified memory: insert budget 2718MB (configured 49679MB; live free 6319MB, headroom 3758MB, resident 0MB, of the entry already allocated 157MB)
+1794642525.387489 [prefix-cache] insert refused: entry 4131520512 exceeds budget 2717971044 (live free memory holds the insert budget under its configured 49678602240; snapshot preflight, model q38)
+1794642525.515717 [dflash-kv-ring] compact keep_from=129025 kept=2056 phys_rows=4120
+1794642527.262848 [dspark-acc] ctx=131078 burst=18/35 cum=36/77=0.468
+1794642527.262895 [tick-spec] seq=1 slot=0 trace=- start_ms=0.016 gap_ms=0.016 wall_ms=1875.281 generated=32->64 rounds=14 drafted=35 accepted=18 k=0
+1794642527.262898 [tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=1875.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642528.756553 [dspark-acc] ctx=131110 burst=20/30 cum=56/107=0.523
+1794642528.756596 [tick-spec] seq=1 slot=0 trace=- start_ms=0.017 gap_ms=0.017 wall_ms=1493.618 generated=64->95 rounds=11 drafted=30 accepted=20 k=0
+1794642528.756599 [tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=1 spec_ms=1493.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794642528.756601 [worker] dspark-park SKIPPED (grid law): a recurrent trunk's 131141 rows cannot resume exactly and it cannot rewind (the restore switch is on: the next turn restores from the prefix cache); session freed (model q38)
+1794642543.791742 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1794642543.791773 [server] drain complete in 0.0s; exiting
+1794642543.940116 [server] GPU worker shutdown complete
