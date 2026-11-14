@@ -1856,6 +1856,41 @@ fn prime_chunk_work(prefix: usize, total: usize) -> u128 {
     prefix * (prefix + (PRIME_PIPE_LINEAR_WORK as u128) * (total as u128))
 }
 
+/// Splits every range wider than `cap` into parts within it (memra#1299). The SWA ring
+/// (`swa_ring_rows`) holds the reader's window plus one prime call of at most
+/// `PRIME_CHUNK_MAX_TOKENS` rows; a wider call fails its append (`SWA ring append does not fit`).
+/// The split points are rounded down to the GDN chunk grid `grid` (<= 1: no grid), where
+/// [`align_prime_ranges_to_gdn`] places boundaries. Rounding can lengthen the next part by up to
+/// `grid - 1` rows, so the parts are sized to `cap - (grid - 1)` first, and none exceeds `cap`.
+/// A part is at least about half of that, so it clears `PRIME_MIN_T`.
+fn split_ranges_at_cap(
+    ranges: Vec<(usize, usize)>,
+    cap: usize,
+    grid: usize,
+) -> Vec<(usize, usize)> {
+    let grid = grid.max(1);
+    let room = cap.saturating_sub(grid - 1).max(1);
+    let mut out = Vec::with_capacity(ranges.len());
+    for (start, end) in ranges {
+        let width = end - start;
+        if width <= cap {
+            out.push((start, end));
+            continue;
+        }
+        let parts = width.div_ceil(room);
+        let mut previous = start;
+        for k in 1..parts {
+            let point = start + width * k / parts;
+            let on_grid = point / grid * grid;
+            let boundary = if on_grid > previous { on_grid } else { point };
+            out.push((previous, boundary));
+            previous = boundary;
+        }
+        out.push((previous, end));
+    }
+    out
+}
+
 fn dynamic_prime_chunk_ranges(
     t: usize,
     fixed_chunk: usize,
@@ -1948,9 +1983,22 @@ pub fn prime_chunk_ranges_under(
             } else {
                 fixed
             };
-            match grid {
+            let ranges = match grid {
                 Some(c) => align_prime_ranges_to_gdn(&ranges, t, c),
                 None => ranges,
+            };
+            // memra#1299: the dynamic schedule's calls after its short first one outgrow the
+            // chunk (4,809 rows at t = 32,768), and a ring plan holds one chunk of at most the
+            // cap. The split comes after the alignment, on the same grid, so no boundary it
+            // adds is off the grid and no alignment can widen a part again.
+            if ring_on {
+                split_ranges_at_cap(
+                    ranges,
+                    crate::cache::PRIME_CHUNK_MAX_TOKENS,
+                    grid.unwrap_or(1),
+                )
+            } else {
+                ranges
             }
         }
     }
@@ -2070,7 +2118,7 @@ pub fn prime_call_rows_max(t: usize, n_layers: usize, gdn_grid: bool, ring_on: b
 }
 
 /// The running maximum of [`step_gemm_prime_ranges`]' widest call.
-pub(crate) fn step_gemm_call_rows_max(t: usize) -> usize {
+pub fn step_gemm_call_rows_max(t: usize) -> usize {
     running_widest_call(t, CallRowsSchedule::StepGemm)
 }
 
@@ -32376,6 +32424,75 @@ mod prime_chunk_schedule_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn no_ring_prime_call_exceeds_the_chunk_cap() {
+        // memra#1299: with a ring plan (step35 on PP-2) no call of the pipeline schedules is
+        // wider than the cap the ring holds. The dynamic schedule made 4,097-row calls from
+        // t = 27,916 and 4,809 at t = 32,768; without a ring it keeps them.
+        use super::{PrimeScheduleKind as K, prime_chunk_ranges_under};
+        let cap = crate::cache::PRIME_CHUNK_MAX_TOKENS;
+        let widest = |r: &[(usize, usize)]| r.iter().map(|&(s, e)| e - s).max().unwrap_or(0);
+        for kind in [
+            K::Pipeline { dynamic: true },
+            K::Pipeline { dynamic: false },
+        ] {
+            // No grid (step35), and the GDN grids, should a ring plan ever carry one: the split
+            // follows the alignment and keeps to its grid.
+            for grid in [None, Some(32), Some(64)] {
+                for t in (PRIME_MIN_T..=70_000).chain((70_001..=262_144).step_by(97)) {
+                    let ranges = prime_chunk_ranges_under(t, kind, grid, true);
+                    let at = format!("t={t} {kind:?} grid={grid:?}");
+                    assert_eq!(ranges.first().map(|r| r.0), Some(0), "{at}");
+                    assert_eq!(ranges.last().map(|r| r.1), Some(t), "{at}");
+                    assert!(ranges.windows(2).all(|w| w[0].1 == w[1].0), "{at}");
+                    assert!(
+                        ranges.iter().all(
+                            |&(s, e)| e - s <= cap && (e - s >= PRIME_MIN_T || t < PRIME_MIN_T)
+                        ),
+                        "{at}: {ranges:?}"
+                    );
+                }
+            }
+        }
+        // The split itself: every part within the cap and at least PRIME_MIN_T rows, and every
+        // boundary it adds on the grid.
+        for grid in [1usize, 32, 64] {
+            for start in [0usize, 7, 4_096, 4_113] {
+                for width in (cap + 1..=3 * cap).step_by(37) {
+                    let parts = super::split_ranges_at_cap(vec![(start, start + width)], cap, grid);
+                    assert_eq!(parts.first().map(|r| r.0), Some(start));
+                    assert_eq!(parts.last().map(|r| r.1), Some(start + width));
+                    assert!(parts.windows(2).all(|w| w[0].1 == w[1].0));
+                    assert!(
+                        parts
+                            .iter()
+                            .all(|&(s, e)| e - s <= cap && e - s >= PRIME_MIN_T),
+                        "grid={grid} start={start} width={width}: {parts:?}"
+                    );
+                    assert!(
+                        parts.iter().skip(1).all(|&(s, _)| s % grid == 0),
+                        "grid={grid} start={start} width={width}: {parts:?}"
+                    );
+                }
+            }
+        }
+        // The 4,097-row call at t = 27,916 splits in two (2,048 + 2,049); at t = 32,768 the calls
+        // over the cap split (4,809 -> 2,404 + 2,405) and the widest left is 4,026.
+        let pp2 = K::Pipeline { dynamic: true };
+        assert_eq!(
+            widest(&prime_chunk_ranges_under(27_916, pp2, None, true)),
+            3_958
+        );
+        assert_eq!(
+            widest(&prime_chunk_ranges_under(32_768, pp2, None, true)),
+            4_026
+        );
+        assert_eq!(
+            widest(&prime_chunk_ranges_under(32_768, pp2, None, false)),
+            4_809
+        );
     }
 
     #[test]
