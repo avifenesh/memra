@@ -2413,6 +2413,9 @@ pub struct Engine {
     pub gpu: memra_runtime::Gpu,
     /// This engine's own device SM count, read once at construction (`Engine::sm_count`).
     sm_count: i32,
+    /// Whether this engine's device shares system memory with the host, read once at
+    /// construction (`Engine::unified_memory`).
+    unified_memory: bool,
     module: Arc<CudaModule>,
     hybrid: Arc<CudaModule>,
     /// Kimi Delta Attention kernels (cu/kda.cu) — separate fatbin, resolved through `func`.
@@ -4658,6 +4661,10 @@ impl Engine {
         };
         fa_ladder_engine_verdict(ordinal, sm_count, *FA_SM_COUNT.get_or_init(|| sm_count))?;
         FA_UNIFIED.get_or_init(|| crate::unified_memory::is_unified(&gpu.ctx));
+        // This engine's own answer, read once (memra#1307). A free-memory delta asks it at both
+        // ends, so it is never taken across two different readings, and a discrete card pays no
+        // attribute call per reading.
+        let unified_memory = crate::unified_memory::is_unified(&gpu.ctx);
         // The MoE in-token prefetch follows this device's card class. An unreadable name
         // classifies as no card and keeps it off.
         let moe_prefetch =
@@ -4733,6 +4740,7 @@ impl Engine {
         Ok(Self {
             gpu,
             sm_count,
+            unified_memory,
             module,
             hybrid,
             kda,
@@ -4786,6 +4794,15 @@ impl Engine {
 
     pub fn ctx(&self) -> &Arc<CudaContext> {
         &self.gpu.ctx
+    }
+
+    /// Whether this engine's device shares system memory with the host (an integrated GPU such as
+    /// GB10), as read once when the engine was built. The device never changes, and asking it
+    /// again goes through `CudaContext::attribute`, which first returns any stored driver error:
+    /// a reader that asked at each end of a delta could take the two ends on different readings
+    /// (memra#1307).
+    pub fn unified_memory(&self) -> bool {
+        self.unified_memory
     }
 
     /// Bytes the async pool holds MAPPED but NOT LIVE (reserved - used), i.e. freed blocks

@@ -12989,7 +12989,7 @@ impl HybridModel {
                 let cached = e.pool_cached_bytes();
                 (
                     Some(raw.saturating_add(cached)),
-                    crate::unified_memory::delta_free_bytes(e.ctx(), raw)
+                    crate::unified_memory::delta_free_bytes(e.unified_memory(), raw)
                         .map(|d| d.saturating_add(cached)),
                 )
             }
@@ -13585,7 +13585,7 @@ impl HybridModel {
         if captured_now
             && let Some(meas0) = cap_meas0
             && let Ok((raw1, _)) = e.ctx().mem_get_info()
-            && let Some(f1) = crate::unified_memory::delta_free_bytes(e.ctx(), raw1)
+            && let Some(f1) = crate::unified_memory::delta_free_bytes(e.unified_memory(), raw1)
         {
             let parked_delta = draft_state_parked_delta(meas0, f1, e.pool_cached_bytes());
             let (_res_high, used_high) = e.pool_high_water_reset();
@@ -18198,7 +18198,8 @@ mod capture_headroom_tests {
         let entry = &src[at..at + src[at..].find("Err(_) => (None, None),").unwrap()];
         assert!(
             entry.contains("Some(raw.saturating_add(cached)),")
-                && entry.contains("crate::unified_memory::delta_free_bytes(e.ctx(), raw)"),
+                && entry
+                    .contains("crate::unified_memory::delta_free_bytes(e.unified_memory(), raw)"),
             "{entry}"
         );
         let at = src
@@ -18208,8 +18209,9 @@ mod capture_headroom_tests {
         assert!(
             end.contains("&& let Some(meas0) = cap_meas0")
                 && end.contains(
-                    "&& let Some(f1) = crate::unified_memory::delta_free_bytes(e.ctx(), raw1)"
+                    "&& let Some(f1) = crate::unified_memory::delta_free_bytes(e.unified_memory(), raw1)"
                 )
+                && !end.contains("is_unified(")
                 && end.contains("draft_state_parked_delta(meas0, f1, e.pool_cached_bytes())")
                 && !end.contains("allocatable_mem_info"),
             "the draft-state bracket end does not take the delta reading: {end}"
