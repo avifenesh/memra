@@ -1,5 +1,12 @@
 # On unified memory the pre-capture guard reads the allocatable free memory (2026-11-12)
 
+**Update, 2026-11-14: the last raw readers are decided (memra#1307).** The pooled DFlash2
+verify's width reads the allocatable figure too. The per-session draft-state measurement is a
+delta, and neither the raw reading nor `MemAvailable` holds still across one: it takes
+`MemFree + Buffers + Cached + SReclaimable` at both ends. A failed capture's appetite floor and the
+DeepSeek-V4 route's memory door keep the raw reading. Record:
+[UNIFIED-MEMORY-READERS.md](UNIFIED-MEMORY-READERS.md).
+
 **Update, 2026-11-13: admission's driver-headroom rung reads the same value (memra#1257).** The
 rung now takes `allocatable_mem_info` too, so on unified memory it reads the larger of the
 driver's free memory and `MemAvailable`, and a full page cache no longer trips it. With the page

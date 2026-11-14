@@ -31,17 +31,21 @@
 //! value: the route loads only on discrete cards (`dsv4_gpu.rs` `stage_memory`).
 //!
 //! A DELTA is not a level. The per-session draft-state measurement subtracts two readings taken
-//! around a capture, and on unified memory neither the raw reading nor `MemAvailable` holds still
-//! while the kernel moves pages between the page cache and free memory (memra#1307's probe on
-//! GB10, a full page cache: a 256 MiB allocation read -500 to +308 MiB on the raw reading and
-//! -368 to +878 MiB on `MemAvailable`). The raw reading is `MemFree`: page cache filling lowers it
-//! and reclaim raises it. `MemAvailable` estimates the reclaimable cache from the kernel's LRU
-//! lists and missed the allocation by up to 620 MiB either way while reclaim shrank `Cached`.
-//! Free memory plus what reclaim turns into free memory (`MemFree + Buffers + Cached +
-//! SReclaimable`, one read of `/proc/meminfo`) moves by the allocation alone, since filling and
-//! reclaim move pages between its terms: 251-263 MiB in the same 256 MiB samples. That is
-//! [`delta_free_bytes`], which the measurement reads at both ends. A level never takes it: not
-//! every cached page is reclaimable.
+//! around a capture and keeps the result as a high-water, and on unified memory neither the raw
+//! reading nor `MemAvailable` holds still while the kernel moves pages between the page cache and
+//! free memory (memra#1307's probe on GB10, a full page cache: a 256 MiB allocation read -500 to
+//! +308 MiB on the raw reading and -368 to +878 MiB on `MemAvailable`). The raw reading is
+//! `MemFree`: page cache filling lowers it and reclaim raises it. `MemAvailable` estimates the
+//! reclaimable cache from the kernel's LRU lists and missed the allocation by up to 620 MiB either
+//! way while reclaim shrank `Cached`; across one served boot bracket that parks 34 MiB it fell
+//! 433 MiB. Free memory plus what reclaim turns into free memory (`MemFree + Buffers + Cached +
+//! SReclaimable`, one read of `/proc/meminfo`) cancels both, since filling and reclaim move pages
+//! between its terms: 251-263 MiB in the same 256 MiB samples, and 34 and 35 MB recorded in boots
+//! under a filling page cache where the raw reading recorded 46 and 55. That is
+//! [`delta_free_bytes`], which the measurement reads at both ends. It is still a host-wide
+//! reading, and with reclaim running it has read low: 3 of 13 boots that met a full page cache
+//! read 2, 18 and 22 MiB for the same capture (`docs/decisions/UNIFIED-MEMORY-READERS.md`). A
+//! level never takes it: not every cached page is reclaimable.
 
 use cudarc::driver::{CudaContext, DriverError};
 
