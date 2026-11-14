@@ -1,0 +1,25 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (~/.cache/memra-1304/tree/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 5m 29s
+     Running unittests src/lib.rs (~/.cache/memra-1304/target-check/release/deps/memra_server-0f8e45839166db94)
+
+running 1 test
+test worker::tests::a_primary_reading_takes_the_primary_devices_idle_capacity ... FAILED
+
+failures:
+
+---- worker::tests::a_primary_reading_takes_the_primary_devices_idle_capacity stdout ----
+
+thread 'worker::tests::a_primary_reading_takes_the_primary_devices_idle_capacity' (2203492) panicked at crates/memra-server/src/worker.rs:42758:9:
+assertion `left == right` failed
+  left: 2000000000
+ right: 9000000000
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::a_primary_reading_takes_the_primary_devices_idle_capacity
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1288 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

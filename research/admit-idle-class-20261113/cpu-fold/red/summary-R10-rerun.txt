@@ -1,0 +1,13 @@
+start 2026-11-14T04:36:46+01:00
+f7eb71009a7427bec661315dfd1bfc8c7e8fd4631e21fabca5f80c6cd1d33f3f  ~/.cache/memra-1304/tree/crates/memra-server/src/worker.rs
+R10 applied
+R10 RED-AS-STATED rc=101 a_copy_publication_reserves_its_room_before_it_allocates test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1288 filtered out; finished in 0.00s
+thread 'worker::tests::a_copy_publication_reserves_its_room_before_it_allocates' (1715342) panicked at crates/memra-server/src/worker.rs:42784:9:
+assertion `left == right` failed
+  left: (4166000000, 4166000000)
+ right: (4166000000, 36000000)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+worker.rs restored
+f7eb71009a7427bec661315dfd1bfc8c7e8fd4631e21fabca5f80c6cd1d33f3f  ~/.cache/memra-1304/tree/crates/memra-server/src/worker.rs
+done 2026-11-14T04:42:59+01:00

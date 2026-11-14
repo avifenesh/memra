@@ -1,0 +1,16 @@
+1794623031.713279 [server] build: memra-0.141.1-408ad3a2d420 (id: source-tree, git: unknown)
+1794623085.781269 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":90307272704,"synchronization_errors":[]}
+1794623086.006710 [prefix-cache] on: budget 50548MB (50547918848 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 50547918848 B; boot driver free 104853934080 B, post-reserve clamp 101095837696 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794623086.006720 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794623136.293834 [spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794623152.249981 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":88521023488,"synchronization_errors":[]}
+1794623152.250036 [admit-oom] WARN: MEMRA_ADMIT_RESERVE_MB=200000 overrides the 1536MB transient reserve (teeth/diagnostics door — NOT a tuning knob)
+1794623152.250042 [admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+1794623152.250045 [admission] idle capacity (post-load, cache empty): dev0 free 105007MB (pool used 18449MB)
+1794623152.250050 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794623152.250053 [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+1794623156.961327 [admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+1794623156.961331 [admission] request cost: model="q38" ctx=1607 path=spec = 31552 B/token x ctx + 473MB prefill-workspace + 0MB fixed = 524MB
+1794623156.961337 [device-trim] reason=admission-drain {"device":0,"reclaimed_bytes":0,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":88516567040,"synchronization_errors":[]}
+1794623156.961340 [admit-oom] capacity reject: model="q38" ctx=1607 does not fit an IDLE box (available 105002MB, post-load capacity 105007MB, required 210275MB) — HTTP 400 context_length_exceeded
+1794623156.961564 [admission] error before admission: code=context_length_exceeded message="request context 1607 does not fit this model's KV capacity on an idle server. Retrying will not help: send a shorter prompt or a smaller max_tokens"
