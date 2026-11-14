@@ -1,0 +1,35 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.141.1 (~/.cache/memra-1307/tree/crates/memra-engine)
+warning: field `unified_memory` is never read
+    --> crates/memra-engine/src/lib.rs:2418:5
+     |
+2412 | pub struct Engine {
+     |            ------ field in this struct
+...
+2418 |     unified_memory: bool,
+     |     ^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-engine` (lib test) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 2m 26s
+     Running unittests src/lib.rs (~/.cache/memra-1307/target/release/deps/memra_engine-d5220b04f652c299)
+
+running 1 test
+test unified_memory::tests::delta_reading_is_the_driver_free_on_a_discrete_card_and_free_plus_reclaimable_on_unified ... FAILED
+
+failures:
+
+---- unified_memory::tests::delta_reading_is_the_driver_free_on_a_discrete_card_and_free_plus_reclaimable_on_unified stdout ----
+
+thread 'unified_memory::tests::delta_reading_is_the_driver_free_on_a_discrete_card_and_free_plus_reclaimable_on_unified' (1619256) panicked at crates/memra-engine/src/unified_memory.rs:222:9:
+assertion failed: engine.contains("pub fn unified_memory(&self) -> bool {\n        self.unified_memory\n    }")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    unified_memory::tests::delta_reading_is_the_driver_free_on_a_discrete_card_and_free_plus_reclaimable_on_unified
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 849 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-engine --lib`

@@ -25,6 +25,7 @@ routes key on a unified-memory `120a`-family device; the rest key on the device.
 | Default | GB10 value | Discrete cards | Record |
 |---|---|---|---|
 | free memory for sizing | the larger of `cuMemGetInfo` free and MemAvailable (page cache counts) | `cuMemGetInfo` free | [SERVING](../SERVING.md#unified-memory-devices-gb10-dgx-spark) |
+| free memory for a delta (the draft-state measurement) | `MemFree + Buffers + Cached + SReclaimable`, one `/proc/meminfo` read | `cuMemGetInfo` free | [UNIFIED-MEMORY-READERS](../decisions/UNIFIED-MEMORY-READERS.md) |
 | `MEMRA_PREFIX_CACHE_MB` | the larger of 2 full-context entries and half of (boot free - 1.5 GiB - 2 GiB headroom - host tier): 34,048 MiB at 70 GiB free | derived from free VRAM and the session peak | [`research/gb10-defaults-20261101/`](../../research/gb10-defaults-20261101/) |
 | `MEMRA_STREAM_TTFT_MS_MAX` | 997,311 ms at 262,144 tokens (served ctx / (4118 x 48 / 188 / 4) tok/s) | 90,000 ms | same |
 | `MEMRA_SSE_PREFILL_COMMIT_MS` | 60,000 ms | off | same |

@@ -1,0 +1,22 @@
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 0m20s
+before requests: MemFree: 81202416 kB;MemAvailable: 99839732 kB;Cached: 19587580 kB;
+waitfor: until grep -q 'cohort engaged' ~/.cache/memra-1307/runs/c5/dflashshort/42-B/server.log (deadline 3m00s, every 1s)
+waitfor: not yet
+waitfor: MET after 0m14s
+2026-11-14T03:58:46+02:00 cohort engaged, holder on: MemFree: 76603140 kB;MemAvailable: 95243444 kB;Cached: 19590348 kB;
+waitfor: gone 2573247 (deadline 12m00s, every 15s)
+waitfor: not yet
+{"tag": "42-B", "req": "s1a", "status": 200, "prompt_tokens": 3713, "completion_tokens": 3072, "finish": "length", "wall_s": 186.257, "sha256": "3f8bc637f152ba965cbffbf221d6b68b90a8971435f56b159d43aadb84bdca76", "text_chars": 4317, "error": null}
+{"tag": "42-B", "req": "s1b", "status": 200, "prompt_tokens": 3713, "completion_tokens": 3072, "finish": "length", "wall_s": 189.096, "sha256": "4704ffe8a3142f7a35a01ea7ad5d7b42465f4506036bb8532ed97b62210dac4f", "text_chars": 3842, "error": null}
+{"tag": "42-B", "req": "s1c", "status": 200, "prompt_tokens": 3713, "completion_tokens": 3072, "finish": "length", "wall_s": 189.205, "sha256": "6c48f62717b3ade20b975b07577718b3ac72a53b808db0a7ebc76635fd0b040d", "text_chars": 3632, "error": null}
+{"tag": "42-B", "req": "s1d", "status": 200, "prompt_tokens": 3713, "completion_tokens": 3072, "finish": "length", "wall_s": 186.606, "sha256": "b5558d3b40e0b2e2e904401e35e0fd5de6e59dd1a805e8f44a9db4ec78f9a760", "text_chars": 5793, "error": null}
+waitfor: MET after 3m00s
+2026-11-14T04:01:46+02:00 after the requests: MemFree: 786976 kB;MemAvailable: 2074064 kB;Cached: 93882308 kB;
+waitfor: gone 2574429 (deadline 1m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+waitfor: gone 2570686 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

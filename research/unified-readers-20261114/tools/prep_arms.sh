@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Runs on the workstation (memra#1307): the two cell arms' engine files, each with the
+# [diag1307] lines (diag1307.py), into DEST/B/crates/memra-engine/src and DEST/T/... for
+# build1307.sh.
+#   B = BASE_REV's files (main with memra#1302);
+#   T = the working tree WT (the head).
+# The arms of the two campaigns (B, T, D) held the first four files; lib.rs joined for the
+# confirming arms (Bc, Tc), once the head changed it. ARMS names the pair's directories (default
+# "B T"); arm_sha.py prints the same lists from two revisions, for checking a committed arm.sha.
+# usage: prep_arms.sh WT BASE_REV DEST
+set -eu
+WT=$1; BASE=$2; DEST=$3
+H=$(cd "$(dirname "$0")" && pwd)
+F="spec.rs dflash.rs unified_memory.rs dsv4_gpu.rs lib.rs"
+set -- ${ARMS:-B T}; AB=$1; AT=$2
+for a in $AB $AT; do mkdir -p "$DEST/$a/crates/memra-engine/src"; done
+for f in $F; do
+  git -C "$WT" show "$BASE:crates/memra-engine/src/$f" > "$DEST/$AB/crates/memra-engine/src/$f"
+  cp "$WT/crates/memra-engine/src/$f" "$DEST/$AT/crates/memra-engine/src/$f"
+done
+for a in $AB $AT; do
+  python3 "$H/diag1307.py" "$DEST/$a"
+  (cd "$DEST/$a/crates/memra-engine/src" && sha256sum $F)
+done

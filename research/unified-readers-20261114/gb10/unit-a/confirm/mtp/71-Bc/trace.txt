@@ -1,0 +1,22 @@
+1794629050.113058 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794629096.793094 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":17740967936,"synchronization_errors":[]}
+1794629149.333435 [spec] draft-session state high-water: 2MB (max of parked delta 0MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794629149.333471 [diag1307] draft-bracket raw0_mb=785 avail0_mb=82676 cached0_mb=15996 raw1_mb=804 avail1_mb=82579 cached1_mb=15994 raw_delta_kib=-17552 avail_delta_kib=101040 fpr_delta_kib=35928
+1794629153.837325 [spec] draft-session state high-water: 10MB (max of parked delta 10MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794629153.837408 [diag1307] draft-bracket raw0_mb=1389 avail0_mb=82673 cached0_mb=15481 raw1_mb=1380 avail1_mb=82671 cached1_mb=15479 raw_delta_kib=10576 avail_delta_kib=3920 fpr_delta_kib=3920
+1794629155.670307 [diag1307] draft-bracket raw0_mb=1682 avail0_mb=82661 cached0_mb=14965 raw1_mb=1681 avail1_mb=82660 cached1_mb=14964 raw_delta_kib=2588 avail_delta_kib=2588 fpr_delta_kib=2588
+1794629157.584392 [diag1307] draft-bracket raw0_mb=1628 avail0_mb=82655 cached0_mb=14450 raw1_mb=1628 avail1_mb=82655 cached1_mb=14448 raw_delta_kib=1700 avail_delta_kib=1700 fpr_delta_kib=1660
+1794629159.422367 [diag1307] draft-bracket raw0_mb=1455 avail0_mb=82637 cached0_mb=13935 raw1_mb=1450 avail1_mb=82637 cached1_mb=13933 raw_delta_kib=6592 avail_delta_kib=2260 fpr_delta_kib=1716
+1794629159.961720 [spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+1794629163.177741 [spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+1794629165.636541 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":18764165120,"synchronization_errors":[]}
+1794629168.220541 [diag1307] draft-bracket raw0_mb=10543 avail0_mb=97252 cached0_mb=859 raw1_mb=10534 avail1_mb=97252 cached1_mb=858 raw_delta_kib=10164 avail_delta_kib=1688 fpr_delta_kib=1688
+1794629170.843836 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":7596593152,"synchronization_errors":[]}
+1794629175.960097 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1868 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794629177.804998 [diag1307] draft-bracket raw0_mb=1296 avail0_mb=97462 cached0_mb=632 raw1_mb=1290 avail1_mb=97462 cached1_mb=631 raw_delta_kib=8084 avail_delta_kib=1712 fpr_delta_kib=1688
+1794629181.642821 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1868 cached=0 lcp=54 active=1 wave=1 placement=single-or-non-pp2
+1794629183.435082 [spec] draft-session state high-water: 11MB (max of parked delta 11MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794629183.435150 [diag1307] draft-bracket raw0_mb=990 avail0_mb=96858 cached0_mb=582 raw1_mb=980 avail1_mb=96859 cached1_mb=580 raw_delta_kib=11892 avail_delta_kib=1464 fpr_delta_kib=1464
+1794629187.243131 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1868 cached=0 lcp=54 active=1 wave=1 placement=single-or-non-pp2
+1794629189.043505 [spec] draft-session state high-water: 16MB (max of parked delta 16MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794629189.043613 [diag1307] draft-bracket raw0_mb=1497 avail0_mb=96173 cached0_mb=595 raw1_mb=1482 avail1_mb=96173 cached1_mb=594 raw_delta_kib=17060 avail_delta_kib=1188 fpr_delta_kib=1188

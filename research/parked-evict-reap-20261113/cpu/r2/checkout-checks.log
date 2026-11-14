@@ -1,0 +1,13 @@
+== doc links rc=0: python3 tools/check-doc-links.py
+check-doc-links: 3430 relative links in 185 files, none broken
+== support records rc=0: python3 tools/check-support-states.py
+check-support-states: 22 packs (14 with a support state), 17 records, 66 doc lines, all backed
+== support records unit tests rc=0: bash tools/unittest-floor.sh tools test_check_support_states.py 21
+Ran 22 tests in 3.524s
+
+OK
+unittest-floor: OK: ran 22 tests (floor 21) for tools (test_check_support_states.py); skipped=0 expected_failures=0
+== public boundary rc=0: python3 tools/check-public-boundary.py check
+public-boundary: 630 matches (630 grandfathered, 0 new).
+== git diff --check (main..tree) rc=0: git diff --check origin/main
+CHECKOUT-CHECKS-DONE

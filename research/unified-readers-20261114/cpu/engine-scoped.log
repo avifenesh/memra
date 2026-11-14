@@ -1,0 +1,27 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.07s
+     Running unittests src/lib.rs (~/.cache/memra-1307/target/release/deps/memra_engine-d5220b04f652c299)
+
+running 20 tests
+test env_audit::tests::a_retired_door_refuses_with_its_ledger ... ok
+test env_audit::tests::os_audit_classifies_raw_prefixes_before_rendering_and_keeps_utf8_distinct ... ok
+test env_audit::tests::os_audit_preserves_utf8_retired_wildcard_and_value_ignorance ... ok
+test env_audit::tests::os_audit_refuses_owned_bytes_and_summarizes_deduplicated_unowned_names ... ok
+test env_audit::tests::registry_is_populated_sorted_and_disjoint ... ok
+test env_audit::tests::every_legal_name_passes ... ok
+test env_audit::tests::unknown_names_refuse_inside_owned_families_and_warn_outside ... ok
+test spec::capture_headroom_tests::bootstrap_estimate_scales_with_heads_and_never_underflows ... ok
+test env_audit::tests::os_audit_all_legal_names_accept_uninterpretable_values ... ok
+test spec::capture_headroom_tests::capture_oom_predicate_matches_the_quoted_driver_text ... ok
+test spec::capture_headroom_tests::capture_reserve_check_refuses_short_devices_and_counts_pool_cache ... ok
+test unified_memory::tests::free_plus_reclaimable_reads_each_field_from_its_own_line ... ok
+test unified_memory::tests::mem_available_is_parsed_in_bytes_and_only_from_its_own_line ... ok
+test unified_memory::tests::unified_free_takes_the_reclaimable_reading_and_never_lowers_the_driver_one ... ok
+test spec::capture_headroom_tests::pre_capture_guard_plan_by_reading_and_device ... ok
+test spec::capture_headroom_tests::pre_capture_trim_releases_the_shortfall_not_the_cache ... ok
+test unified_memory::tests::delta_reading_is_the_driver_free_on_a_discrete_card_and_free_plus_reclaimable_on_unified ... ok
+test spec::capture_headroom_tests::pooled_dspark_verify_headroom_reads_the_allocatable_free_memory ... ok
+test spec::capture_headroom_tests::draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one ... ok
+test env_audit::tests::retired_names_are_not_read_at_runtime ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 830 filtered out; finished in 0.16s

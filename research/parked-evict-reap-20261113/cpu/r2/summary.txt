@@ -1,0 +1,86 @@
+head a4273d7f98635f135e34de846b23d3e4e826e21c (fix/1278-parked-evict-reap on main bbc6f83aea)
+65efc1980c908fdfcdd047159054281c297f5df6f46d9bb779fdbcc3cd2f9d06  <lane>/tree/crates/memra-server/src/worker.rs
+green-1278 parked_evict_reap_1278_tests rc=0 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 1281 filtered out; finished in 0.03s
+test worker::parked_evict_reap_1278_tests::a_failed_materialization_flush_is_reaped_before_the_cold_allocation ... ok
+test worker::parked_evict_reap_1278_tests::a_failed_right_size_rung_is_reaped_before_the_next_one ... ok
+test worker::parked_evict_reap_1278_tests::a_reap_that_released_nothing_prints_no_line_outside_the_teardowns ... ok
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... ok
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_maps_the_flushed_prefix_blocks_after_its_trim ... ok
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_runs_on_the_bytes_its_reap_alone_released ... ok
+test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... ok
+green-census-1266 worker::tests::vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1289 filtered out; finished in 0.02s
+green-retry worker::tests::cache_alloc_oom_reclaim_retries_exactly_once rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1289 filtered out; finished in 0.00s
+green-lend worker::tests::a_lend_refused_rewind_survives_an_out_of_memory_fresh_cache rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1289 filtered out; finished in 0.00s
+green-lender worker::tests::the_headroom_ladder_skips_a_parked_lender rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1289 filtered out; finished in 0.00s
+green-precohort pre_cohort_reclaim_1266 rc=0 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 1283 filtered out; finished in 0.02s
+green-spare reclaim_spare rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1286 filtered out; finished in 0.02s
+green-kvflex kv_flex rc=0 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 1283 filtered out; finished in 0.01s
+server suite rc=0 test result: ok. 1272 passed; 0 failed; 18 ignored; 0 measured; 0 filtered out; finished in 14.26s
+clippy rc=0
+      1 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+rustfmt (worker.rs) rc=0
+red baseline (dev profile, the fix) rc=0 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 1281 filtered out; finished in 0.20s
+red ladder-reap-off rc=101 test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measur | the_parked_ladder_stops_after_the_one_eviction_its_reap_funds failed=1 | "on_demand=true: one eviction funds the arrival" in its panic=1
+assertion `left == right` failed: on_demand=true: one eviction funds the arrival
+  left: 3
+red climb-reap-off rc=101 test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measur | the_restorable_climb_stops_after_the_one_eviction_its_reap_funds failed=1 | "the parked-session ladder ran out" in its panic=1
+assertion `left == right` failed
+  left: Err("the parked-session ladder ran out before the longer entry's bytes covered the rest")
+red retry-reap-off rc=101 test result: FAILED. 5 passed; 4 failed; 0 ignored; 0 measur | a_reclaim_retry_gets_the_evicted_bytes_after_its_reap failed=1 | "CUDA_ERROR_OUT_OF_MEMORY" in its panic=1
+assertion `left == right` failed
+  left: Err("DriverError(CUDA_ERROR_OUT_OF_MEMORY, out of memory)")
+red retry-rule-off rc=101 test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measur | a_reclaim_retry_runs_on_the_bytes_its_reap_alone_released failed=1 | "CUDA_ERROR_OUT_OF_MEMORY" in its panic=1
+assertion `left == right` failed
+  left: Err("DriverError(CUDA_ERROR_OUT_OF_MEMORY, out of memory)")
+red retry-trim-off rc=101 test result: FAILED. 3 passed; 6 failed; 0 ignored; 0 measur | a_reclaim_retry_maps_the_flushed_prefix_blocks_after_its_trim failed=1 | "on_demand=true" in its panic=1
+assertion `left == right` failed: on_demand=true
+  left: Err("DriverError(CUDA_ERROR_OUT_OF_MEMORY, out of memory)")
+red flush-reap-off rc=101 test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measur | a_failed_materialization_flush_is_reaped_before_the_cold_allocation failed=1 | "the cold allocation evicted no parked session" in its panic=1
+assertion `left == right` failed: the cold allocation evicted no parked session
+  left: 0
+red rung-reap-off rc=101 test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measur | a_failed_right_size_rung_is_reaped_before_the_next_one failed=1 | "on_demand=true: the second rung lands" in its panic=1
+assertion `left == right` failed: on_demand=true: the second rung lands
+  left: None
+red reap-line-always rc=101 test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measur | a_reap_that_released_nothing_prints_no_line_outside_the_teardowns failed=1 | "reap (reclaim-on-defer) released=0" in its panic=1
+assertion `left == right` failed
+  left: Some("[kv-vmm] reap (reclaim-on-defer) released=0 pending_graves=0")
+red main-worker rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measur | every_eviction_a_reading_or_a_retry_counts_on_reaps_first failed=1 | "lost, moved or new: reclaim_parked_ladder(" in its panic=1
+assertion `left == right` failed: lost, moved or new: reclaim_parked_ladder( &mut headroom, |h| h.sufficient(required), || { let pool = evict_oldest_parked_freeing(
+  left: 0
+red ladder-site-off rc=101 test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measur | every_eviction_a_reading_or_a_retry_counts_on_reaps_first failed=1 | "lost, moved or new: pool.is_some() }, || { vmm_reap_for("reclaim-on-defer");" in its panic=1
+assertion `left == right` failed: lost, moved or new: pool.is_some() }, || { vmm_reap_for("reclaim-on-defer"); }, || { admission_headroom(&engine, &loaded, device_requirements.as_deref()) .map(book) }
+  left: 0
+red drain-reap-off rc=101 test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measur | every_eviction_a_reading_or_a_retry_counts_on_reaps_first failed=1 | "lost, moved or new: oom_teardown_fence(&engine, &loaded); vmm_reap_for("admission-drain");" in its panic=1
+assertion `left == right` failed: lost, moved or new: oom_teardown_fence(&engine, &loaded); vmm_reap_for("admission-drain"); trim_model_device_pools(&engine, &loaded, "admission-drain");
+  left: 0
+red settle-reap-off rc=101 test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measur | every_eviction_a_reading_or_a_retry_counts_on_reaps_first failed=1 | "lost, moved or new: synchronize_model_devices(engine, loaded, why); let reaped = vmm_reap_for(why);" in its panic=1
+assertion `left == right` failed: lost, moved or new: synchronize_model_devices(engine, loaded, why); let reaped = vmm_reap_for(why); for_each_device_engine(
+  left: 0
+red spec-miss-reap-off rc=101 test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measur | every_eviction_a_reading_or_a_retry_counts_on_reaps_first failed=1 | "lost, moved or new: let released = vmm_retry_reap(engine, loaded, &first_err, "spec pool miss");" in its panic=1
+assertion `left == right` failed: lost, moved or new: let released = vmm_retry_reap(engine, loaded, &first_err, "spec pool miss"); let retried = if evicted > 0 || released > 0 { vmm_new_session(ctx_ca
+  left: 0
+red flush-site-off rc=101 test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measur | every_eviction_a_reading_or_a_retry_counts_on_reaps_first failed=1 | "lost, moved or new: let n = flush_then_reap( || px.evict_all()," in its panic=1
+assertion `left == right` failed: lost, moved or new: let n = flush_then_reap( || px.evict_all(), || { vmm_reap_trim_for(engine, loaded, "prefix materialization flush"); }, );
+  left: 0
+red park-compact-fail-off rc=101 test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measur | every_eviction_a_reading_or_a_retry_counts_on_reaps_first failed=1 | "lost, moved or new: reused = None; vmm_reap_trim_for(engine, loaded, "park-compact grow failed");" in its panic=1
+assertion `left == right` failed: lost, moved or new: reused = None; vmm_reap_trim_for(engine, loaded, "park-compact grow failed");
+  left: 0
+red affinity-fail-drop-off rc=101 test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measur | every_eviction_a_reading_or_a_retry_counts_on_reaps_first failed=1 | "lost, moved or new: drop(e); drop(ckpt); vmm_reap_trim_for(engine, loaded," in its panic=1
+assertion `left == right` failed: lost, moved or new: drop(e); drop(ckpt); vmm_reap_trim_for(engine, loaded, "plain-affinity resume failed");
+  left: 0
+red right-size-site-off rc=101 test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measur | every_eviction_a_reading_or_a_retry_counts_on_reaps_first failed=1 | "lost, moved or new: Err(_) => None, }, || { vmm_reap_trim_for(engine, loaded, "spec right-size");" in its panic=1
+assertion `left == right` failed: lost, moved or new: Err(_) => None, }, || { vmm_reap_trim_for(engine, loaded, "spec right-size"); }, );
+  left: 0
+red shed-reap-off rc=101 test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measur | every_eviction_a_reading_or_a_retry_counts_on_reaps_first failed=1 | "lost, moved or new: self.floor as f64 / 1e6, ); vmm_reap_for("kv-flex shed"); freed }" in its panic=1
+assertion `left == right` failed: lost, moved or new: self.floor as f64 / 1e6, ); vmm_reap_for("kv-flex shed"); freed }
+  left: 0
+red probe-prefix-reread rc=101 test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measur | every_eviction_a_reading_or_a_retry_counts_on_reaps_first failed=1 | "lost, moved or new: px.evict_all()" in its panic=1
+assertion `left == right` failed: lost, moved or new: px.evict_all()
+  left: 12
+red probe-parked-reread rc=101 test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measur | every_eviction_a_reading_or_a_retry_counts_on_reaps_first failed=1 | "lost, moved or new: evict_oldest_parked_freeing(" in its panic=1
+assertion `left == right` failed: lost, moved or new: evict_oldest_parked_freeing(
+  left: 3
+restored ok
+DONE 2026-11-14T02:07:25+01:00

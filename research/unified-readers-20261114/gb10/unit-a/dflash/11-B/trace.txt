@@ -1,0 +1,240 @@
+1794616333.026416 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794616346.206202 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1778384896,"still_owned_bytes":19473817360,"pool_reserved_bytes":19595788288,"pool_cached_bytes":121970928,"driver_free_bytes":2852044800,"synchronization_errors":[]}
+1794616347.393919 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3719 cached=0 lcp=0 active=1 wave=2 placement=single-or-non-pp2
+1794616350.649077 [dspark-acc] ctx=3719 burst=25/35 cum=25/35=0.714
+1794616350.651343 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3719 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+1794616353.810453 [dspark-acc] ctx=3719 burst=25/35 cum=25/35=0.714
+1794616355.042121 [dspark-acc] ctx=3751 burst=19/37 cum=44/72=0.611
+1794616355.042200 [spec-pool] pooled DFlash2 cohort engaged: 2 sessions (model q38)
+1794616355.075892 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=456 raw_free_mb=818 mem_available_mb=95539 cached_mb=1173 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616355.205197 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=704 raw_free_mb=1091 mem_available_mb=95536 cached_mb=1149 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616355.342830 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1150 raw_free_mb=1281 mem_available_mb=94968 cached_mb=1405 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616355.464434 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1096 raw_free_mb=1227 mem_available_mb=94964 cached_mb=1405 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616355.585238 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1048 raw_free_mb=1178 mem_available_mb=94963 cached_mb=1405 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616355.704383 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=989 raw_free_mb=1120 mem_available_mb=94962 cached_mb=1405 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616355.831420 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=910 raw_free_mb=1041 mem_available_mb=94962 cached_mb=1405 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616355.958181 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=847 raw_free_mb=978 mem_available_mb=94962 cached_mb=1405 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616356.082463 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1382 raw_free_mb=1513 mem_available_mb=95271 cached_mb=1405 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616356.202418 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1306 raw_free_mb=1436 mem_available_mb=95270 cached_mb=1405 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616356.310747 [diag1307] dspark-pool lead=1 live=1 members=1 rows=5 headroom_mb=1247 raw_free_mb=1370 mem_available_mb=95265 cached_mb=1412 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616356.407945 [diag1307] dspark-pool lead=1 live=1 members=1 rows=3 headroom_mb=1203 raw_free_mb=1326 mem_available_mb=95264 cached_mb=1412 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616356.484103 [dspark-acc] ctx=3783 burst=26/34 cum=70/106=0.660
+1794616356.484147 [dspark-acc] ctx=3751 burst=20/35 cum=45/70=0.643
+1794616356.517892 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1140 raw_free_mb=1271 mem_available_mb=95263 cached_mb=1405 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616356.648675 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1054 raw_free_mb=1185 mem_available_mb=95263 cached_mb=1405 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616356.787265 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=978 raw_free_mb=1108 mem_available_mb=95263 cached_mb=1405 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616356.916113 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=921 raw_free_mb=1052 mem_available_mb=95264 cached_mb=1405 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616357.043960 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=834 raw_free_mb=964 mem_available_mb=95264 cached_mb=1405 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616357.172273 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=770 raw_free_mb=901 mem_available_mb=95264 cached_mb=1405 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616357.306000 [spec-pool] pooled DFlash2 forward capped by VRAM headroom: 759 more MB needed, 700 MB above the transient floor
+1794616357.306124 [diag1307] dspark-pool lead=0 live=2 members=1 rows=7 headroom_mb=700 raw_free_mb=831 mem_available_mb=95261 cached_mb=1404 capped_extra_mb=Some(759) extra_kib=0 col_kib=153216
+1794616357.390617 [diag1307] dspark-pool lead=1 live=1 members=1 rows=6 headroom_mb=667 raw_free_mb=790 mem_available_mb=95261 cached_mb=1412 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616357.506106 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=591 raw_free_mb=722 mem_available_mb=95261 cached_mb=1405 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616357.612711 [diag1307] dspark-pool lead=1 live=1 members=1 rows=5 headroom_mb=844 raw_free_mb=967 mem_available_mb=95261 cached_mb=1412 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616357.691915 [dspark-acc] ctx=3819 burst=26/35 cum=96/141=0.681
+1794616357.691954 [dspark-acc] ctx=3783 burst=23/30 cum=68/100=0.680
+1794616357.726340 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=770 raw_free_mb=901 mem_available_mb=95261 cached_mb=1405 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616357.859094 [diag1307] dspark-pool lead=0 live=2 members=1 rows=6 headroom_mb=700 raw_free_mb=831 mem_available_mb=95261 cached_mb=1404 capped_extra_mb=Some(759) extra_kib=0 col_kib=153216
+1794616357.943237 [diag1307] dspark-pool lead=1 live=1 members=1 rows=7 headroom_mb=666 raw_free_mb=790 mem_available_mb=95261 cached_mb=1412 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616358.060848 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=608 raw_free_mb=739 mem_available_mb=95261 cached_mb=1404 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616358.199194 [diag1307] dspark-pool lead=0 live=2 members=2 rows=14 headroom_mb=1348 raw_free_mb=1320 mem_available_mb=94921 cached_mb=1564 capped_extra_mb=None extra_kib=777720 col_kib=153216
+1794616358.349323 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1251 raw_free_mb=934 mem_available_mb=94617 cached_mb=1852 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616358.490825 [diag1307] dspark-pool lead=0 live=2 members=2 rows=6 headroom_mb=1166 raw_free_mb=848 mem_available_mb=94615 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616358.607347 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1592 raw_free_mb=1274 mem_available_mb=94807 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616358.711980 [diag1307] dspark-pool lead=0 live=1 members=1 rows=5 headroom_mb=1539 raw_free_mb=1215 mem_available_mb=94807 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616358.790953 [dspark-acc] ctx=3853 burst=26/33 cum=122/174=0.701
+1794616358.790998 [dspark-acc] ctx=3815 burst=25/33 cum=93/133=0.699
+1794616358.824730 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1462 raw_free_mb=1145 mem_available_mb=94807 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616358.960073 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1375 raw_free_mb=1058 mem_available_mb=94807 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616359.095759 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1287 raw_free_mb=970 mem_available_mb=94807 cached_mb=1852 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616359.233443 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1189 raw_free_mb=871 mem_available_mb=94806 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616359.360461 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1107 raw_free_mb=789 mem_available_mb=94805 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616359.479874 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1037 raw_free_mb=720 mem_available_mb=94806 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616359.608168 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1280 raw_free_mb=963 mem_available_mb=94806 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616359.739708 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1220 raw_free_mb=902 mem_available_mb=94806 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616359.843723 [diag1307] dspark-pool lead=1 live=1 members=1 rows=5 headroom_mb=1185 raw_free_mb=861 mem_available_mb=94806 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616359.922473 [dspark-acc] ctx=3887 burst=24/33 cum=146/207=0.705
+1794616359.922516 [dspark-acc] ctx=3847 burst=24/32 cum=117/165=0.709
+1794616359.956219 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1132 raw_free_mb=815 mem_available_mb=94806 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616360.091486 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1051 raw_free_mb=734 mem_available_mb=94805 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616360.227418 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1266 raw_free_mb=949 mem_available_mb=94801 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616360.362487 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1173 raw_free_mb=856 mem_available_mb=94804 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616360.493511 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1090 raw_free_mb=773 mem_available_mb=94804 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616360.628414 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1018 raw_free_mb=700 mem_available_mb=94804 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616360.751215 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1273 raw_free_mb=956 mem_available_mb=94804 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616360.881595 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1228 raw_free_mb=910 mem_available_mb=94805 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616360.987256 [diag1307] dspark-pool lead=1 live=1 members=1 rows=4 headroom_mb=1200 raw_free_mb=876 mem_available_mb=94805 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616361.065708 [dspark-acc] ctx=3919 burst=26/33 cum=172/240=0.717
+1794616361.065740 [dspark-acc] ctx=3880 burst=24/34 cum=141/199=0.709
+1794616361.099827 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1141 raw_free_mb=824 mem_available_mb=94805 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616361.235587 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1090 raw_free_mb=773 mem_available_mb=94805 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616361.378641 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1016 raw_free_mb=699 mem_available_mb=94805 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616361.514237 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1251 raw_free_mb=934 mem_available_mb=94805 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616361.637223 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1190 raw_free_mb=872 mem_available_mb=94803 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616361.770863 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1129 raw_free_mb=812 mem_available_mb=94803 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616361.898901 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1074 raw_free_mb=757 mem_available_mb=94803 cached_mb=1852 capped_extra_mb=None extra_kib=777720 col_kib=153216
+1794616362.054859 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1250 raw_free_mb=933 mem_available_mb=94805 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616362.155741 [dspark-acc] ctx=3953 burst=24/34 cum=196/274=0.715
+1794616362.155777 [dspark-acc] ctx=3913 burst=24/32 cum=165/231=0.714
+1794616362.190946 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1157 raw_free_mb=839 mem_available_mb=94805 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616362.318204 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1035 raw_free_mb=718 mem_available_mb=94799 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616362.453426 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1220 raw_free_mb=903 mem_available_mb=94802 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616362.579033 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1144 raw_free_mb=827 mem_available_mb=94801 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616362.711908 [diag1307] dspark-pool lead=0 live=2 members=2 rows=13 headroom_mb=1056 raw_free_mb=739 mem_available_mb=94802 cached_mb=1852 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616362.855092 [diag1307] dspark-pool lead=0 live=2 members=2 rows=13 headroom_mb=1252 raw_free_mb=935 mem_available_mb=94801 cached_mb=1852 capped_extra_mb=None extra_kib=777720 col_kib=153216
+1794616362.998601 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1143 raw_free_mb=826 mem_available_mb=94800 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616363.113130 [diag1307] dspark-pool lead=1 live=1 members=1 rows=5 headroom_mb=1053 raw_free_mb=729 mem_available_mb=94800 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616363.197092 [dspark-acc] ctx=3985 burst=26/33 cum=222/307=0.723
+1794616363.197141 [dspark-acc] ctx=3945 burst=26/33 cum=191/264=0.723
+1794616363.230931 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1238 raw_free_mb=920 mem_available_mb=94801 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616363.362342 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1142 raw_free_mb=825 mem_available_mb=94799 cached_mb=1852 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616363.504224 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1031 raw_free_mb=713 mem_available_mb=94781 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616363.633038 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1223 raw_free_mb=906 mem_available_mb=94772 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616363.754537 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1122 raw_free_mb=804 mem_available_mb=94769 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616363.883231 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1333 raw_free_mb=1016 mem_available_mb=94760 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616364.011906 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1254 raw_free_mb=936 mem_available_mb=94758 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616364.139470 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1166 raw_free_mb=849 mem_available_mb=94774 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616364.262510 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1085 raw_free_mb=768 mem_available_mb=94777 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616364.376076 [diag1307] dspark-pool lead=1 live=1 members=1 rows=4 headroom_mb=1015 raw_free_mb=691 mem_available_mb=94779 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616364.459474 [dspark-acc] ctx=4018 burst=26/33 cum=248/340=0.729
+1794616364.459514 [dspark-acc] ctx=3979 burst=24/35 cum=215/299=0.719
+1794616364.493203 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1269 raw_free_mb=952 mem_available_mb=94801 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616364.629341 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1190 raw_free_mb=873 mem_available_mb=94801 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616364.765525 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1105 raw_free_mb=788 mem_available_mb=94806 cached_mb=1852 capped_extra_mb=None extra_kib=777720 col_kib=153216
+1794616364.911139 [diag1307] dspark-pool lead=0 live=2 members=2 rows=14 headroom_mb=1301 raw_free_mb=984 mem_available_mb=94819 cached_mb=1852 capped_extra_mb=None extra_kib=932876 col_kib=153216
+1794616365.060650 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1198 raw_free_mb=881 mem_available_mb=94815 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616365.194651 [diag1307] dspark-pool lead=0 live=2 members=2 rows=13 headroom_mb=1449 raw_free_mb=1132 mem_available_mb=94809 cached_mb=1852 capped_extra_mb=None extra_kib=777720 col_kib=153216
+1794616365.337888 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1335 raw_free_mb=1018 mem_available_mb=94812 cached_mb=1852 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616365.445741 [dspark-acc] ctx=4053 burst=26/35 cum=274/375=0.731
+1794616365.445772 [dspark-acc] ctx=4013 burst=26/35 cum=241/334=0.722
+1794616365.480177 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1232 raw_free_mb=914 mem_available_mb=94812 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616365.601125 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1165 raw_free_mb=847 mem_available_mb=94811 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616365.720626 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1441 raw_free_mb=1124 mem_available_mb=94803 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616365.847947 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1369 raw_free_mb=1052 mem_available_mb=94817 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616365.971370 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1313 raw_free_mb=996 mem_available_mb=94817 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616366.069408 [spec-pool] member finished inside the cohort: route=dspark completion_tokens=384 members_running=1 reason=MaxNew request=chatcmpl-70b03a0e57a372f5fb6369b570d96d52
+1794616366.086167 [diag1307] dspark-pool lead=1 live=1 members=1 rows=5 headroom_mb=1239 raw_free_mb=915 mem_available_mb=94815 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616366.184256 [diag1307] dspark-pool lead=1 live=1 members=1 rows=6 headroom_mb=1187 raw_free_mb=863 mem_available_mb=94814 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616366.284248 [diag1307] dspark-pool lead=1 live=1 members=1 rows=7 headroom_mb=1264 raw_free_mb=942 mem_available_mb=94775 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616366.368224 [dspark-acc] ctx=4086 burst=12/17 cum=286/392=0.730
+1794616366.368263 [dspark-acc] ctx=4046 burst=26/29 cum=267/363=0.736
+1794616366.960461 [dspark-acc] ctx=4080 burst=18/27 cum=285/390=0.731
+1794616366.966214 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3719 cached=0 lcp=0 active=1 wave=2 placement=single-or-non-pp2
+1794616370.024922 [dspark-acc] ctx=3719 burst=25/35 cum=25/35=0.714
+1794616370.027170 [spec-k] model="q38" tenant="" K=0 source=eligibility-fallback prompt=3719 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+1794616373.148380 [dspark-acc] ctx=3719 burst=25/35 cum=25/35=0.714
+1794616374.399641 [dspark-acc] ctx=3751 burst=19/37 cum=44/72=0.611
+1794616374.433405 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1320 raw_free_mb=1003 mem_available_mb=94809 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616374.559762 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1201 raw_free_mb=884 mem_available_mb=94808 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616374.698142 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1351 raw_free_mb=1033 mem_available_mb=94805 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616374.818993 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1216 raw_free_mb=898 mem_available_mb=94805 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616374.939627 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1267 raw_free_mb=950 mem_available_mb=94792 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616375.058501 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1289 raw_free_mb=971 mem_available_mb=94804 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616375.186545 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1137 raw_free_mb=820 mem_available_mb=94804 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616375.314073 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1311 raw_free_mb=993 mem_available_mb=94783 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616375.436876 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1183 raw_free_mb=866 mem_available_mb=94800 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616375.543989 [diag1307] dspark-pool lead=1 live=1 members=1 rows=3 headroom_mb=1111 raw_free_mb=786 mem_available_mb=94801 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616375.638580 [diag1307] dspark-pool lead=1 live=1 members=1 rows=3 headroom_mb=1348 raw_free_mb=1023 mem_available_mb=94795 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616375.731485 [diag1307] dspark-pool lead=1 live=1 members=1 rows=4 headroom_mb=1279 raw_free_mb=954 mem_available_mb=94794 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616375.827275 [diag1307] dspark-pool lead=1 live=1 members=1 rows=3 headroom_mb=1214 raw_free_mb=890 mem_available_mb=94794 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616375.902841 [dspark-acc] ctx=3783 burst=23/31 cum=67/103=0.650
+1794616375.902880 [dspark-acc] ctx=3751 burst=19/35 cum=44/70=0.629
+1794616375.936521 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1120 raw_free_mb=803 mem_available_mb=94802 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616376.064107 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1299 raw_free_mb=981 mem_available_mb=94793 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616376.195140 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1146 raw_free_mb=829 mem_available_mb=94793 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616376.328588 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1329 raw_free_mb=1011 mem_available_mb=94794 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616376.447546 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1194 raw_free_mb=877 mem_available_mb=94802 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616376.574725 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1399 raw_free_mb=1082 mem_available_mb=94753 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616376.711582 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1237 raw_free_mb=920 mem_available_mb=94752 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616376.842766 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1091 raw_free_mb=773 mem_available_mb=94752 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616376.952361 [diag1307] dspark-pool lead=1 live=1 members=1 rows=5 headroom_mb=1368 raw_free_mb=1044 mem_available_mb=94785 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616377.031161 [dspark-acc] ctx=3815 burst=25/32 cum=92/135=0.681
+1794616377.031206 [dspark-acc] ctx=3783 burst=24/31 cum=68/101=0.673
+1794616377.066487 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1244 raw_free_mb=927 mem_available_mb=94784 cached_mb=1852 capped_extra_mb=None extra_kib=777720 col_kib=153216
+1794616377.208529 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1093 raw_free_mb=776 mem_available_mb=94798 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616377.332769 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1280 raw_free_mb=963 mem_available_mb=94787 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616377.455639 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1152 raw_free_mb=835 mem_available_mb=94788 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616377.586302 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1297 raw_free_mb=980 mem_available_mb=94793 cached_mb=1852 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616377.729365 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1113 raw_free_mb=796 mem_available_mb=94794 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616377.861331 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1261 raw_free_mb=944 mem_available_mb=94757 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616377.986652 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1117 raw_free_mb=800 mem_available_mb=94759 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616378.100875 [diag1307] dspark-pool lead=0 live=1 members=1 rows=7 headroom_mb=1313 raw_free_mb=989 mem_available_mb=94791 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616378.185928 [dspark-acc] ctx=3848 burst=28/35 cum=120/170=0.706
+1794616378.185975 [dspark-acc] ctx=3816 burst=24/33 cum=92/134=0.687
+1794616378.219940 [diag1307] dspark-pool lead=0 live=2 members=2 rows=13 headroom_mb=1130 raw_free_mb=813 mem_available_mb=94792 cached_mb=1852 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616378.365285 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1237 raw_free_mb=920 mem_available_mb=94798 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616378.498232 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1399 raw_free_mb=1082 mem_available_mb=94778 cached_mb=1852 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616378.642620 [diag1307] dspark-pool lead=0 live=2 members=2 rows=13 headroom_mb=1197 raw_free_mb=880 mem_available_mb=94790 cached_mb=1852 capped_extra_mb=None extra_kib=777720 col_kib=153216
+1794616378.790894 [diag1307] dspark-pool lead=0 live=2 members=2 rows=6 headroom_mb=1297 raw_free_mb=979 mem_available_mb=94809 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616378.910138 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1119 raw_free_mb=801 mem_available_mb=94810 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616379.033236 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1275 raw_free_mb=958 mem_available_mb=94813 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616379.165976 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1392 raw_free_mb=1074 mem_available_mb=94811 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616379.278954 [diag1307] dspark-pool lead=1 live=1 members=1 rows=5 headroom_mb=1204 raw_free_mb=880 mem_available_mb=94810 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616379.358619 [dspark-acc] ctx=3885 burst=25/37 cum=145/207=0.700
+1794616379.358672 [dspark-acc] ctx=3848 burst=24/32 cum=116/166=0.699
+1794616379.392851 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1401 raw_free_mb=1084 mem_available_mb=94797 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616379.525522 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1191 raw_free_mb=874 mem_available_mb=94790 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616379.654802 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1355 raw_free_mb=1038 mem_available_mb=94798 cached_mb=1852 capped_extra_mb=None extra_kib=777720 col_kib=153216
+1794616379.796777 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1166 raw_free_mb=849 mem_available_mb=94798 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616379.925187 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1290 raw_free_mb=973 mem_available_mb=94791 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616380.054758 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1133 raw_free_mb=816 mem_available_mb=94788 cached_mb=1852 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616380.196134 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1275 raw_free_mb=957 mem_available_mb=94785 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616380.326634 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1119 raw_free_mb=801 mem_available_mb=94782 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616380.429304 [diag1307] dspark-pool lead=1 live=1 members=1 rows=4 headroom_mb=1372 raw_free_mb=1048 mem_available_mb=94788 cached_mb=1860 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616380.507605 [dspark-acc] ctx=3918 burst=25/32 cum=170/239=0.711
+1794616380.507651 [dspark-acc] ctx=3881 burst=24/34 cum=140/200=0.700
+1794616380.541517 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1253 raw_free_mb=936 mem_available_mb=94785 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616380.674369 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1118 raw_free_mb=802 mem_available_mb=94780 cached_mb=1852 capped_extra_mb=None extra_kib=777720 col_kib=153216
+1794616380.815496 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1295 raw_free_mb=978 mem_available_mb=94790 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616380.948065 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1159 raw_free_mb=841 mem_available_mb=94792 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616381.076560 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1339 raw_free_mb=1022 mem_available_mb=94793 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616381.213012 [diag1307] dspark-pool lead=0 live=2 members=2 rows=13 headroom_mb=1198 raw_free_mb=882 mem_available_mb=94793 cached_mb=1852 capped_extra_mb=None extra_kib=777720 col_kib=153216
+1794616381.358599 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1374 raw_free_mb=1057 mem_available_mb=94817 cached_mb=1853 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616381.483724 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1225 raw_free_mb=908 mem_available_mb=94808 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616381.579849 [dspark-acc] ctx=3951 burst=26/32 cum=196/271=0.723
+1794616381.579886 [dspark-acc] ctx=3914 burst=27/35 cum=167/235=0.711
+1794616381.614362 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1395 raw_free_mb=1078 mem_available_mb=94806 cached_mb=1852 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616381.757281 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1245 raw_free_mb=927 mem_available_mb=94802 cached_mb=1853 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616381.883955 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1117 raw_free_mb=800 mem_available_mb=94802 cached_mb=1853 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616382.018795 [diag1307] dspark-pool lead=0 live=2 members=2 rows=13 headroom_mb=1279 raw_free_mb=963 mem_available_mb=94795 cached_mb=1852 capped_extra_mb=None extra_kib=777720 col_kib=153216
+1794616382.162246 [diag1307] dspark-pool lead=0 live=2 members=2 rows=15 headroom_mb=1115 raw_free_mb=799 mem_available_mb=94803 cached_mb=1852 capped_extra_mb=None extra_kib=932876 col_kib=153216
+1794616382.317347 [diag1307] dspark-pool lead=0 live=2 members=2 rows=13 headroom_mb=1310 raw_free_mb=834 mem_available_mb=94636 cached_mb=2012 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616382.460617 [diag1307] dspark-pool lead=0 live=2 members=2 rows=13 headroom_mb=1232 raw_free_mb=755 mem_available_mb=94636 cached_mb=2012 capped_extra_mb=None extra_kib=777720 col_kib=153216
+1794616382.570261 [dspark-acc] ctx=3985 burst=26/37 cum=222/308=0.721
+1794616382.570332 [dspark-acc] ctx=3949 burst=30/35 cum=197/270=0.730
+1794616382.605712 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1358 raw_free_mb=881 mem_available_mb=94639 cached_mb=2013 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616382.737770 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1126 raw_free_mb=649 mem_available_mb=94634 cached_mb=2013 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616382.858989 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1258 raw_free_mb=780 mem_available_mb=94633 cached_mb=2013 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616382.988076 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1383 raw_free_mb=906 mem_available_mb=94628 cached_mb=2013 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616383.126913 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1480 raw_free_mb=1003 mem_available_mb=94630 cached_mb=2013 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616383.249545 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1353 raw_free_mb=876 mem_available_mb=94633 cached_mb=2013 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616383.369754 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1202 raw_free_mb=725 mem_available_mb=94632 cached_mb=2013 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616383.497293 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1333 raw_free_mb=856 mem_available_mb=94632 cached_mb=2013 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616383.634401 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1141 raw_free_mb=663 mem_available_mb=94630 cached_mb=2013 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616383.740736 [diag1307] dspark-pool lead=1 live=1 members=1 rows=5 headroom_mb=1367 raw_free_mb=883 mem_available_mb=94631 cached_mb=2020 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616383.820368 [dspark-acc] ctx=4018 burst=24/31 cum=246/339=0.726
+1794616383.820408 [dspark-acc] ctx=3986 burst=23/34 cum=220/304=0.724
+1794616383.854214 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1283 raw_free_mb=806 mem_available_mb=94631 cached_mb=2013 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616383.989840 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1188 raw_free_mb=711 mem_available_mb=94632 cached_mb=2013 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616384.123453 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1392 raw_free_mb=915 mem_available_mb=94633 cached_mb=2013 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616384.255345 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1274 raw_free_mb=797 mem_available_mb=94633 cached_mb=2012 capped_extra_mb=None extra_kib=777720 col_kib=153216
+1794616384.397189 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1390 raw_free_mb=913 mem_available_mb=94632 cached_mb=2013 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616384.533359 [diag1307] dspark-pool lead=0 live=2 members=2 rows=8 headroom_mb=1220 raw_free_mb=743 mem_available_mb=94630 cached_mb=2013 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616384.656832 [diag1307] dspark-pool lead=0 live=2 members=2 rows=10 headroom_mb=1344 raw_free_mb=867 mem_available_mb=94631 cached_mb=2013 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616384.770870 [diag1307] dspark-pool lead=1 live=1 members=1 rows=5 headroom_mb=1264 raw_free_mb=780 mem_available_mb=94630 cached_mb=2020 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616384.870317 [diag1307] dspark-pool lead=1 live=1 members=1 rows=4 headroom_mb=1200 raw_free_mb=716 mem_available_mb=94630 cached_mb=2020 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616384.966840 [diag1307] dspark-pool lead=1 live=1 members=1 rows=3 headroom_mb=1195 raw_free_mb=711 mem_available_mb=94631 cached_mb=2020 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616385.060901 [diag1307] dspark-pool lead=1 live=1 members=1 rows=4 headroom_mb=1336 raw_free_mb=852 mem_available_mb=94632 cached_mb=2020 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616385.139071 [dspark-acc] ctx=4051 burst=28/33 cum=274/372=0.737
+1794616385.139118 [dspark-acc] ctx=4019 burst=24/36 cum=244/340=0.718
+1794616385.173928 [diag1307] dspark-pool lead=0 live=2 members=2 rows=12 headroom_mb=1239 raw_free_mb=762 mem_available_mb=94631 cached_mb=2012 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616385.316354 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1127 raw_free_mb=649 mem_available_mb=94631 cached_mb=2013 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616385.438742 [diag1307] dspark-pool lead=0 live=2 members=2 rows=7 headroom_mb=1245 raw_free_mb=767 mem_available_mb=94631 cached_mb=2013 capped_extra_mb=None extra_kib=312252 col_kib=153216
+1794616385.559129 [diag1307] dspark-pool lead=0 live=2 members=2 rows=9 headroom_mb=1295 raw_free_mb=818 mem_available_mb=94633 cached_mb=2013 capped_extra_mb=None extra_kib=467408 col_kib=153216
+1794616385.689297 [diag1307] dspark-pool lead=0 live=2 members=2 rows=11 headroom_mb=1377 raw_free_mb=900 mem_available_mb=94633 cached_mb=2013 capped_extra_mb=None extra_kib=622564 col_kib=153216
+1794616385.790365 [spec-pool] member finished inside the cohort: route=dspark completion_tokens=384 members_running=1 reason=MaxNew request=chatcmpl-c17823e907bf5605fb69d6b8f56fcb33
+1794616385.807563 [diag1307] dspark-pool lead=1 live=1 members=1 rows=7 headroom_mb=1468 raw_free_mb=984 mem_available_mb=94622 cached_mb=2020 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616385.909436 [diag1307] dspark-pool lead=1 live=1 members=1 rows=8 headroom_mb=1286 raw_free_mb=802 mem_available_mb=94627 cached_mb=2019 capped_extra_mb=None extra_kib=0 col_kib=153216
+1794616386.003887 [dspark-acc] ctx=4086 burst=12/18 cum=286/390=0.733
+1794616386.003932 [dspark-acc] ctx=4054 burst=28/31 cum=272/371=0.733
+1794616386.500834 [dspark-acc] ctx=4089 burst=11/20 cum=283/391=0.724

@@ -129,7 +129,9 @@ poolable and runs the eager pooled verify whether or not replay is suspended; th
   K=5 + K=2 round (extra about 320 MB against 187 MiB above the floor) that fits with about
   600 MiB to spare. It is also short of what the cohort holds besides its checkpoints (the burst
   snapshots and the FA pool's growth, above). The DFlash2 cohort keeps its rule; whether it should read the allocatable
-  figure on unified memory and drop the floor is that route's call.
+  figure on unified memory and drop the floor is that route's call. (2026-11-14, memra#1307: it
+  reads the allocatable figure, through this cap's `pooled_verify_reading`, and keeps the floor;
+  [UNIFIED-MEMORY-READERS.md](UNIFIED-MEMORY-READERS.md).)
 - **A per-session admission charge for the pooled transient.** The checkpoint of a pooled
   forward is a per-forward transient, not a per-session resident; charging each MTP session
   K columns (about 785 MB at K=5) at admission would cut c = 8 capacity on the 24 GB card to pay

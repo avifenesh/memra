@@ -1,0 +1,6 @@
+1794620682.610260 [server] build: memra-0.141.1-a6c1c07d483c (id: source-tree, git: unknown)
+1794620682.611079 [server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1794620682.611902 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1794620682.612081 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1794620682.712645 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1794620682.843680 [server] FATAL: worker init failed: Engine::new failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")

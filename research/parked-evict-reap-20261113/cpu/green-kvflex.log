@@ -1,0 +1,14 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.25s
+     Running unittests src/lib.rs (<lane>/target/release/deps/memra_server-0f8e45839166db94)
+
+running 7 tests
+test worker::tests::kv_flex_grant_policy_is_guarded_held_and_disarmed_to_zero ... ok
+test worker::tests::kv_flex_evict_to_bytes_sheds_to_the_target_and_spares_pins ... ok
+test worker::tests::kv_flex_shed_returns_borrowed_bytes_to_the_floor_and_counts_the_transition ... ok
+test worker::tests::kv_flex_shed_reaches_the_floor_through_reused_entries_and_warns_only_when_all_is_leased ... ok
+test worker::tests::kv_flex_borrowed_first_shed_precedes_the_nuclear_reclaim_ladder ... ok
+test worker::tests::kv_flex_shed_on_capture_arrival_is_wired_before_admission_math ... ok
+test worker::tests::kv_flex_single_owner_wiring ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 1283 filtered out; finished in 0.02s

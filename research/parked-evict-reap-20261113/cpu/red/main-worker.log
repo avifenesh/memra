@@ -1,0 +1,55 @@
+main-worker: main's worker.rs + the census module (19377 bytes)
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (<lane>/tree/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 27.92s
+     Running unittests src/lib.rs (<lane>/target/debug/deps/memra_server-6ed0acdcd419c06b)
+
+running 1 test
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... FAILED
+
+failures:
+
+---- worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first stdout ----
+
+thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (3834581) panicked at crates/memra-server/src/worker.rs:61905:9:
+31 census needle(s) do not match the live code. For each one: if you added, moved or removed an eviction, a flush or a reap, decide what follows it (a free-memory reading needs `vmm_reap_for` first, an allocation `vmm_reap_trim_for` or the retry rule), then update the needle or its count here.
+  found 0, expected 1: reclaim_parked_ladder( &mut headroom, |h| h.sufficient(required), || { let pool = evict_oldest_parked_freeing(
+  found 0, expected 1: pool.is_some() }, || { vmm_reap_for("reclaim-on-defer"); }, || { admission_headroom(&engine, &loaded, device_requirements.as_deref()) .map(book) }, );
+  found 0, expected 1: pool.is_some() }, || { vmm_reap_for("reclaim-on-defer climb"); }, || { let reading = primary_unbooked_shortfall(
+  found 0, expected 1: evicted += 1; reap(); let Some(next) = read() else {
+  found 0, expected 1: if !evict() { return Err(RECLAIM_KEPT_LADDER); } reap(); short = reread().ok_or(RECLAIM_KEPT_NO_READING)?;
+  found 0, expected 1: let reclaimed = reclaim(&first_err); let released = reap(&first_err); if reclaimed || released > 0 { alloc() } else { Err(first_err) }
+  found 0, expected 1: "spec grid rewind", ) }, |err| vmm_retry_reap(engine, loaded, err, "spec grid rewind"), )
+  found 0, expected 1: "spec-affinity grow", ) }, |err| vmm_retry_reap(engine, loaded, err, "spec-affinity grow"), )
+  found 0, expected 1: evicted_prefix > 0 || evicted_parked.is_some() }, |err| vmm_retry_reap(engine, loaded, err, "park-compact grow"), )?;
+  found 0, expected 1: evicted_prefix > 0 || evicted_parked.is_some() }, |err| vmm_retry_reap(engine, loaded, err, "plain-affinity grow"), ) {
+  found 0, expected 1: evicted_prefix > 0 || evicted_parked.is_some() }, |err| vmm_retry_reap(engine, loaded, err, "reclaim-on-alloc-oom"), ) {
+  found 0, expected 1: if !crate::kv_vmm::armed() || !is_cuda_oom(&err.to_string()) { return 0; } vmm_reap_trim_for(engine, loaded, why)
+  found 0, expected 1: reap_then_trim( crate::kv_vmm::armed(), || vmm_reap_for(why), || { trim_model_device_pools(engine, loaded, why)
+  found 0, expected 1: if !armed { return 0; } let reaped = reap(); reaped.saturating_add(trim())
+  found 0, expected 1: fn vmm_reap_for(why: &str) -> usize { if !crate::kv_vmm::armed() { return 0; }
+  found 0, expected 1: vmm_reap_for("spec pool evict-first"); } let vmm_new_session = |cap: usize| {
+  found 0, expected 1: let released = vmm_retry_reap(engine, loaded, &first_err, "spec pool miss"); let retried = if evicted > 0 || released > 0 { vmm_new_session(ctx_cap).ok() } else { None };
+  found 0, expected 1: None => { vmm_reap_trim_for(engine, loaded, "spec right-size"); let mut sess = None;
+  found 0, expected 1: Err(_) => None, }, || { vmm_reap_trim_for(engine, loaded, "spec right-size"); }, );
+  found 0, expected 1: if let Some(sess) = land(ask) { return Some((sess, ask)); } reap(); if ask <= need { return None; }
+  found 0, expected 1: reused = None; vmm_reap_trim_for(engine, loaded, "park-compact grow failed");
+  found 0, expected 1: drop(ckpt); drop(e); vmm_reap_trim_for(engine, loaded, "plain-affinity resume failed");
+  found 0, expected 1: eprintln!("[prefix-cache] {msg}; cold path serves"); vmm_reap_trim_for(engine, loaded, "prefix materialization failed");
+  found 0, expected 1: synchronize_model_devices(engine, loaded, why); let reaped = vmm_reap_for(why); for_each_device_engine(
+  found 0, expected 1: self.floor as f64 / 1e6, ); vmm_reap_for("kv-flex shed"); freed }
+  found 0, expected 1: let n = flush_then_reap( || px.evict_all(), || { vmm_reap_trim_for(engine, loaded, "prefix materialization flush"); }, );
+  found 0, expected 1: let evicted = flush(); reap(); evicted
+  found 0, expected 1: oom_teardown_fence(&engine, &loaded); vmm_reap_for("admission-drain"); trim_model_device_pools(&engine, &loaded, "admission-drain");
+  found 4, expected 9: vmm_reap_for("
+  found 0, expected 6: vmm_reap_trim_for(engine, loaded, "
+  found 0, expected 6: vmm_retry_reap(engine, loaded,
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1281 filtered out; finished in 0.17s
+
+error: test failed, to rerun pass `-p memra-server --lib`

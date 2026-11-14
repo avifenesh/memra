@@ -5,8 +5,17 @@ full-attention K/V planes of a covered session (the MTP spec route and the plain
 device, no SWA ring, no latent planes, no ppN or TP stage ownership) as on-demand VMM planes. Each
 plane reserves its whole capacity as a fixed virtual range and maps physical granules only as the
 session's rows grow, inline on the owner thread. Releases run after an owner-stream event and are
-reaped at the tick top. The admission gate subtracts the reserved-but-unbacked bytes of active
-on-demand sessions (`vmm_owed`). No numeric program changes: the same kernels touch the same
+reaped at the tick top; every reclaim path, and every eviction whose bytes a later free-memory
+reading or allocation retry counts on, also reaps before that reading or retry, since the reading
+leaves the graveyard out (memra#1278). A failure path that allocates next (a reclaim retry, a
+failed resume or restore before the cold allocation, the speculative pool's miss and right-size
+rungs) also trims the device pools after its reap: an on-demand plane maps its granules from the
+driver, and the pool keeps the blocks a dropped prefix entry or session freed. An allocation
+retries once when its reclaim evicted something or its reap released bytes; the failed attempt's
+own planes count, so on this card an out-of-memory first failure is in practice retried once.
+This holds per process: a model the planes do not cover gets the same reap, trim and retry on
+this card. The admission gate subtracts the
+reserved-but-unbacked bytes of active on-demand sessions (`vmm_owed`). No numeric program changes: the same kernels touch the same
 bytes at addresses a session keeps for its life. `MEMRA_KV_ALLOCATOR` and `MEMRA_KV_VMM_GROW`
 are deleted. `MEMRA_KV_VMM_FAULT` stays as the fault door of the A5 cells and of
 `tools/health-fault-gate.sh` arm k, the tracked gate that reruns A5-ENSURE's shape on that card. If

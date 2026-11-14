@@ -1,0 +1,19 @@
+1794610844.282764 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794610890.887202 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":19175198720,"synchronization_errors":[]}
+1794610942.172955 [spec] draft-session state high-water: 33MB (max of parked delta 33MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794610942.172999 [diag1307] draft-bracket raw0_mb=1630 avail0_mb=82729 cached0_mb=15996 raw1_mb=1598 avail1_mb=82697 cached1_mb=15994 raw_delta_kib=34660 avail_delta_kib=34660 fpr_delta_kib=34656
+1794610946.571362 [diag1307] draft-bracket raw0_mb=1597 avail0_mb=82697 cached0_mb=15481 raw1_mb=1597 avail1_mb=82697 cached1_mb=15479 raw_delta_kib=1700 avail_delta_kib=1700 fpr_delta_kib=1700
+1794610948.375269 [diag1307] draft-bracket raw0_mb=1596 avail0_mb=82696 cached0_mb=14965 raw1_mb=1596 avail1_mb=82696 cached1_mb=14964 raw_delta_kib=1700 avail_delta_kib=1700 fpr_delta_kib=1700
+1794610950.271379 [diag1307] draft-bracket raw0_mb=1595 avail0_mb=82695 cached0_mb=14450 raw1_mb=1595 avail1_mb=82695 cached1_mb=14448 raw_delta_kib=1700 avail_delta_kib=1700 fpr_delta_kib=1700
+1794610952.076462 [diag1307] draft-bracket raw0_mb=1595 avail0_mb=82695 cached0_mb=13935 raw1_mb=1595 avail1_mb=82695 cached1_mb=13933 raw_delta_kib=1700 avail_delta_kib=1700 fpr_delta_kib=1700
+1794610952.601955 [spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+1794610955.741317 [spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+1794610958.088281 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":19248586752,"synchronization_errors":[]}
+1794610960.644710 [diag1307] draft-bracket raw0_mb=16204 avail0_mb=97305 cached0_mb=859 raw1_mb=16204 avail1_mb=97305 cached1_mb=858 raw_delta_kib=1700 avail_delta_kib=1700 fpr_delta_kib=1700
+1794610963.188303 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":18455822336,"synchronization_errors":[]}
+1794610981.386238 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1868 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794610983.619897 [diag1307] draft-bracket raw0_mb=912 avail0_mb=97516 cached0_mb=632 raw1_mb=925 avail1_mb=97533 cached1_mb=631 raw_delta_kib=-11400 avail_delta_kib=-15616 fpr_delta_kib=-11516
+1794610987.412310 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1868 cached=0 lcp=54 active=1 wave=1 placement=single-or-non-pp2
+1794610989.212816 [diag1307] draft-bracket raw0_mb=1038 avail0_mb=96898 cached0_mb=582 raw1_mb=1038 avail1_mb=96898 cached1_mb=580 raw_delta_kib=1952 avail_delta_kib=1832 fpr_delta_kib=1768
+1794610993.006870 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=1868 cached=0 lcp=54 active=1 wave=1 placement=single-or-non-pp2
+1794610994.799714 [diag1307] draft-bracket raw0_mb=1308 avail0_mb=96220 cached0_mb=595 raw1_mb=1300 avail1_mb=96220 cached1_mb=594 raw_delta_kib=9380 avail_delta_kib=1700 fpr_delta_kib=1700
