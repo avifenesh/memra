@@ -1,29 +1,42 @@
 ladder-reap-off: replaced '        evicted += 1;\n        reap();\n' -> '        evicted += 1;\n        let _ = &mut reap;\n'
 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
    Compiling memra-server v0.141.1 (<lane>/tree/crates/memra-server)
-    Finished `release` profile [optimized] target(s) in 4m 29s
-     Running unittests src/lib.rs (<lane>/target/release/deps/memra_server-0f8e45839166db94)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.13s
+     Running unittests src/lib.rs (<lane>/target/debug/deps/memra_server-6ed0acdcd419c06b)
 
-running 4 tests
+running 9 tests
+test worker::parked_evict_reap_1278_tests::a_failed_materialization_flush_is_reaped_before_the_cold_allocation ... ok
+test worker::parked_evict_reap_1278_tests::a_failed_right_size_rung_is_reaped_before_the_next_one ... ok
+test worker::parked_evict_reap_1278_tests::a_reap_that_released_nothing_prints_no_line_outside_the_teardowns ... ok
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... ok
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_maps_the_flushed_prefix_blocks_after_its_trim ... ok
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_runs_on_the_bytes_its_reap_alone_released ... ok
 test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
 test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... FAILED
-test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... ok
-test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... ok
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... FAILED
 
 failures:
 
 ---- worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds stdout ----
 
-thread 'worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds' (3189652) panicked at crates/memra-server/src/worker.rs:61585:13:
+thread 'worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds' (3950897) panicked at crates/memra-server/src/worker.rs:61870:13:
 assertion `left == right` failed: on_demand=true: one eviction funds the arrival
   left: 3
  right: 1
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
+---- worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first stdout ----
+
+thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (3950896) panicked at crates/memra-server/src/worker.rs:62520:13:
+assertion `left == right` failed: lost, moved or new: evicted += 1; reap(); let Some(next) = read() else {
+  left: 0
+ right: 1
+
 
 failures:
+    worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first
     worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds
 
-test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 0.03s
+test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 1281 filtered out; finished in 0.10s
 
 error: test failed, to rerun pass `-p memra-server --lib`
