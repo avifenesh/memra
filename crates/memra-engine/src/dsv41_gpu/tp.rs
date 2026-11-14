@@ -64,11 +64,28 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// The most rows of a split MoE call that gather the bf16 hidden rows (one gather) rather than their
-/// codes and scales (two gathers, a quantization a rank, the placing kernels): a decode or verify
-/// step of up to 16 rows keeps the small-row path of the 8-row step. Speed only: the codes are
-/// those of the whole row either way.
+/// The most rows of a split MoE call on two ranks that gather the bf16 hidden rows (one gather)
+/// rather than their codes and scales (two gathers, a quantization a rank, the placing kernels): a
+/// decode or verify step of up to 16 rows keeps the small-row path of the 8-row step. Speed only:
+/// the codes are those of the whole row either way.
 pub const SPLIT_BF16_ROWS: usize = 16;
+
+/// Whether a split MoE call of `rows` rows on `ranks` ranks gathers its hidden rows as codes and
+/// scales instead of bf16 rows. Two ranks keep the bf16 gather through [`SPLIT_BF16_ROWS`] rows
+/// (the pair is 1.7 to 4.8% faster than the codes path's tree at 9, 12 and 16 rows). More ranks
+/// leave it above [`super::SMALL_M`] rows. A rank stores its region once a peer, so on four ranks
+/// the bf16 rows (7 a call row of a quarter of the hidden width) are 212.6 KiB at 9 rows and pass
+/// [`PUSH_LIMIT`] at 10; the gather then leaves the kernels for the kept blocks and 12 peer
+/// copies a layer. Four cards with the bf16 gather through 16 rows ran 0.9, 6.8 and 3.6% behind
+/// the codes path's tree at 9, 12 and 16 rows (memra#1311). The codes are a push through 18 rows
+/// on four ranks. Speed only: the codes are those of the whole row either way.
+pub fn split_quant(rows: usize, ranks: usize) -> bool {
+    rows > if ranks > 2 {
+        super::SMALL_M
+    } else {
+        SPLIT_BF16_ROWS
+    }
+}
 
 /// A byte region of a rank buffer: `rows` rows of `width` bytes, `pitch` apart, from `off`. A
 /// gather copies a producer's region into the same region of every other rank's buffer.
@@ -2258,11 +2275,11 @@ impl Group {
         let (ne, topk, d, inter) = (g.n_experts, g.topk, g.dim, g.moe_inter);
         let np = rows * topk;
         let trace = self.trace || self.route_log.is_some();
-        // up to SPLIT_BF16_ROWS rows: one bf16 gather of the hidden columns (a gather's latency, not
-        // its bytes), and the rows quantized whole after it; more: each rank quantizes its own columns
-        // and the codes and scales are gathered (the same codes: a 32-wide block lies inside a rank's
-        // columns)
-        let quant = rows > SPLIT_BF16_ROWS;
+        // a few rows (`split_quant`: 16 on two ranks, 8 on more): one bf16 gather of the hidden
+        // columns (a gather's latency, not its bytes), and the rows quantized whole after it; more:
+        // each rank quantizes its own columns and the codes and scales are gathered (the same codes:
+        // a 32-wide block lies inside a rank's columns)
+        let quant = split_quant(rows, self.n());
         let parts = {
             let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
             self.each_mut(&mut trs, |r, c, trr| {
@@ -3280,6 +3297,35 @@ pub fn split_hidden_shared(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_split_moe_gathers_codes_above_8_rows_past_two_ranks_and_above_16_on_two() {
+        for rows in 1..=64 {
+            assert_eq!(split_quant(rows, 2), rows > 16, "{rows} rows, 2 ranks");
+            for ranks in [3, 4, 8] {
+                assert_eq!(
+                    split_quant(rows, ranks),
+                    rows > 8,
+                    "{rows} rows, {ranks} ranks"
+                );
+            }
+        }
+        // what a rank stores in the hidden gather: 7 rows a call row (6 routed experts and the
+        // shared one) of its share of the hidden width, codes or bf16, once a peer
+        let stores = |rows: usize, ranks: usize, quant: bool| {
+            7 * rows * (2304 / ranks) * if quant { 1 } else { 2 } * (ranks - 1)
+        };
+        // on four ranks the gather the rule picks stays inside kernels through 16 rows
+        for rows in 1..=16 {
+            assert!(
+                stores(rows, 4, split_quant(rows, 4)) <= PUSH_LIMIT,
+                "{rows} rows"
+            );
+        }
+        // the bf16 rows would leave them at 10 rows
+        assert!(stores(9, 4, false) <= PUSH_LIMIT);
+        assert!(stores(10, 4, false) > PUSH_LIMIT);
+    }
 
     #[test]
     fn moe_plan_orders_pairs_by_expert_then_token_and_tokens_by_expert() {

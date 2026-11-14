@@ -2336,7 +2336,81 @@ What follows:
   batch cap above 8 rows, or turning drafting on, on a four-rank split needs memra#1311 fixed or re-measured
   first: `docs/decisions/DSV41-ROWS-ABOVE-8-FOUR-RANKS.md`, and the two flags' rows in `docs/FLAGS.md`.
 - The candidate fix is a split MoE that takes the base's codes gather above 8 rows on more than two ranks and keeps
-  the bf16 gather on two. It is not in this landing: it needs its own four-card A/B.
+  the bf16 gather on two (next section). It needs its own four-card A/B.
+
+### The split MoE's gather by ranks: the candidate for memra#1311 (its four-card A/B is owed)
+
+`split_quant` (`dsv41_gpu/tp.rs`) picks the hidden gather by the ranks of the split:
+
+- two ranks keep the one bf16 gather through 16 rows (`SPLIT_BF16_ROWS`), where the pair measured faster;
+- more ranks take the codes and scales above 8 rows, the base's rule there.
+
+On four ranks every gather of a call of up to 16 rows then stays inside kernels (the codes are 189.0 KiB a rank at
+16 rows, a push through 18). The bytes do not depend on the choice: a 32-wide quantization block lies inside a rank's
+columns, so the codes are those of the whole row either way.
+
+What a call runs by its rows, on an RTX PRO 6000 (188 SMs), on four ranks and on two. A dense call takes the
+small-row body at up to 16 rows when CUTLASS would run it on at most SMs / 12 = 15 CTAs (`memra_v41_dense_small_fits`);
+the routed experts take the small-row body at tiles of up to 8 rows (`memra_v41_moe_small_fits`); a gather is a push
+while a rank stores at most 224 KiB:
+
+| a rank's call | four ranks | two ranks |
+|---|---|---|
+| `wq_a` + `wkv` | 1,792 columns, 14 CTAs: the small-row body, 1 to 16 rows | 3,584, 28 CTAs: CUTLASS tileN-8 to 8 rows, tileN-16 at 9 to 16 |
+| `wo_b` | 1,280, 10 CTAs: small-row body | 2,560, 20 CTAs: CUTLASS |
+| shared `w1` + `w3` | 1,152, 9 CTAs: small-row body | 2,304, 18 CTAs: CUTLASS |
+| shared `w2` | 1,280, 10 CTAs: small-row body | 2,560, 20 CTAs: CUTLASS |
+| the indexer's `wq_b`, `wq_b` | 4,096 and 8,192, 32 and 64 CTAs: CUTLASS | 8,192 and 16,384: CUTLASS |
+| routed experts | 6 pairs a call row on every rank (72 at 12 rows); one tile an expert to 8 rows, 8-row tiles at 9 to 48; the small-row body; `w1` + `w3` over 576 hidden columns, `w2` over 1,280 | the same pairs and tiles; 1,152 and 2,560 columns |
+| hidden gather before this commit | bf16: a push to 9 rows (212.6 KiB), packed with 12 peer copies from 10 | bf16: a push to 14 rows, packed with 2 copies at 15 and 16 |
+| hidden gather, this commit | bf16 to 8 rows, codes and scales (two pushes) from 9 | unchanged |
+
+So above 8 rows four ranks differ from two in two ways: the dense calls stay on the small-row body, and the bf16
+gather passes the push limit. The window's data points at the gather: the dense body is the same from 9 to 16 rows
+and a slower kernel shows in the cards' time, while the loss steps between 9 and 12 rows and sits in the host's
+issue time. It does not rule the dense body out at 9 rows (+0.9%): the window below has a base arm for that.
+
+**Not measured on four cards.** What is known is the other side: with the bf16 gather through 16 rows, four cards ran
+0.9, 6.8 and 3.6% behind the base at 9, 12 and 16 rows (Window 2). This path keeps this tree's dense bodies and
+small-row expert body, and pays the codes path's launches again (a quantization a rank, the scale-row and placing
+kernels, one gather more a layer). Whether it is level with the base at those widths, or better, is the A/B's
+question. One and two ranks, and every call of up to 8 rows, run the code of the commit before.
+
+GB10 byte gates (121a, four ranks on the card, the default dense form; `receipts/gates-cutlass-gb10/g1`: the lease
+summaries, gzipped logs, the scripts):
+
+| gate | result |
+|---|---|
+| kernels | 1,007 checks, 0 failed |
+| layer (needle, layers 1, 2, 14, 20, 21, 24, decode 2) | 161 / 0; the 111 saved tensors are the CUTLASS set (`fa825eee`) |
+| tp, 4 ranks: peer-pull / host-canonical / default | 914 / 914 / 916, 0 failed; the 12- and 16-row passes now run the codes gather, byte-identical to the single card |
+
+The lib test `the_split_moe_gathers_codes_above_8_rows_past_two_ranks_and_above_16_on_two` holds the rule and the
+push-limit arithmetic behind it.
+
+The window that decides it, on four RTX PRO 6000s at 40 layers (`perf_cfix_four.sh` of the window kit; arm names are
+`perf-bins` directories: `route2` is main `8031c7ef90`, `cfix2` is `a05173ee27`, `gather1` is this commit's build):
+
+```bash
+# this commit against the lane's head, then against the base; 10 rows added, the first width past the push limit
+env K3_ARM_A=cfix2 K3_ARM_B=gather1 K3_TAG=gather1-four K3_CARDS=0123 K3_DEV=0,1,2,3 K3_LAYERS=40 \
+  K3_ROWS="4 8 9 10 12 16" K3_ORDER="A B B A B A A B" K3_KGATE=1 K3_GATE_T="default peer-pull host-canonical" \
+  bash bin/perf_cfix_four.sh 840
+env K3_ARM_A=route2 K3_ARM_B=gather1 K3_TAG=gather1-base-four K3_CARDS=0123 K3_DEV=0,1,2,3 K3_LAYERS=40 \
+  K3_ROWS="4 8 9 10 12 16" K3_ORDER="A B B A B A A B" K3_GATES=0 bash bin/perf_cfix_four.sh 660
+```
+
+Each run inside them is one `dsv41-tpbench` process under `MEMRA_FULL_PREC=1 MEMRA_DSV41_TP_ISSUE=parallel
+MEMRA_TP_TRANSPORT=device-push`:
+
+```bash
+dsv41-tpbench DeepSeek-V4.1-Flash-1017 --token-map engram_constants.token_map.i32 --devices 0,1,2,3 \
+  --layers 40 --resident 40 --prefill rows4.i32,rows8.i32,rows9.i32,rows10.i32,rows12.i32,rows16.i32 \
+  --decode capital.prompt.i32 --decode-steps 24 --rounds 12 --out runs/runN-ARM
+```
+
+It lands if four cards are level with the base or better at 9 to 16 rows and the pair block (`K3_CARDS=23
+K3_DEV=0,1 K3_LAYERS=20`) does not move.
 
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 

@@ -1,0 +1,58 @@
+== lease-cb33-build.sh-020823.log
+02:08:24 queueing on cb33: build g1 (121a)
+02:08:26 lease claude-code-20261114T020824-762830
+started pgid 2143311
+build g1 start 02:08:26
+g1 engine build rc 0 02:13:18
+2f34abb8628143fe32da4ff03f5122df33ae9665aa72e038a581ee459797013a  /home/avifenesh/.cache/dsv41-cfix2/bins/g1/dsv41-bench
+6f688d662279ba6c3439b1e37bade3b0acf9ba64f2a7b7c8c0df6540ba927a32  /home/avifenesh/.cache/dsv41-cfix2/bins/g1/dsv41-gate
+20fba1121d6d7afdd701e36854bb78c2759f807621395d4d5deb901b8b3759f1  /home/avifenesh/.cache/dsv41-cfix2/bins/g1/dsv41-run
+6284147c615b682c9e0ad5d8f869273923517555351474714f77abf18cb37d02  /home/avifenesh/.cache/dsv41-cfix2/bins/g1/dsv41-tpbench
+BUILD-DONE 02:13:18
+cb33: released
+02:13:32 released; LEASE-DONE
+== lease-cb33-ga.sh-021333.log
+02:13:33 queueing on cb33: g1 gates A (kernels, layer default form)
+02:13:35 lease claude-code-20261114T021333-921490
+started pgid 2154486
+NVIDIA GB10, 208 MHz, 44
+6f688d662279ba6c3439b1e37bade3b0acf9ba64f2a7b7c8c0df6540ba927a32  /home/avifenesh/.cache/dsv41-cfix2/bins/g1/dsv41-gate
+kernels (every form, by construction) rc 0 1007 checks, 0 failed 0 FAIL lines
+kernels: 576 dense_small PASS, 20 split-path PASS, 96 fused PASS
+layer, dense form default rc 0 161 checks, 0 failed 0 FAIL lines
+fa825eeaa1bc5b0f98f0c957120022ce863718fc81b72d2495b899ce23ebf161  /home/avifenesh/.cache/dsv41-cfix2/out/gates-g1/save.sha256
+layer, dense form default, saved tensors against the CUTLASS set: IDENTICAL (111 files; ref sha fa825eeaa1bc5b0f)
+GATES-A-DONE 02:18:03
+cb33: released
+02:18:08 released; LEASE-DONE
+== lease-cb33-gb.sh-021808.log
+02:18:09 queueing on cb33: g1 gates B2 (tp 4 ranks peer-pull, host-canonical)
+02:18:10 lease claude-code-20261114T021809-1057688
+started pgid 2163919
+6f688d662279ba6c3439b1e37bade3b0acf9ba64f2a7b7c8c0df6540ba927a32  /home/avifenesh/.cache/dsv41-cfix2/bins/g1/dsv41-gate
+tp 0,0,0,0 peer-pull, dense form default rc 0 914 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+tp 0,0,0,0 host-canonical, dense form default rc 0 914 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+GATES-B2-DONE 02:28:23
+cb33: released
+02:28:38 released; LEASE-DONE
+== lease-cb33-gb.sh-022838.log
+02:28:38 queueing on cb33: g1 gates B3 (tp 4 ranks default transport)
+02:28:41 lease claude-code-20261114T022838-1472908
+started pgid 2183915
+6f688d662279ba6c3439b1e37bade3b0acf9ba64f2a7b7c8c0df6540ba927a32  /home/avifenesh/.cache/dsv41-cfix2/bins/g1/dsv41-gate
+tp 0,0,0,0 default, dense form default rc 0 916 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+GATES-B3-DONE 02:33:53
+cb33: released
+02:34:04 released; LEASE-DONE
