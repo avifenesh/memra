@@ -395,10 +395,11 @@ a `[shed]` line.
   it (`[admit-oom] capacity reject:`). A request that fits that capacity but not the free memory at
   the time (host memory on unified memory, another process on the card) is a 503 `overloaded` with
   `Retry-After` (`[admit-oom] idle memory short:`). Both messages name the largest request, as
-  prompt plus `max_tokens`, that fits the free memory at the time (the 400 when it is under the
-  capacity's figure): memory another process holds for good does not come back to a retry, and a
-  caller that cannot wait can send that size and be admitted. The figure is absent when nothing
-  fits. The boot line `[admission] idle capacity` states the capacity. Record:
+  prompt plus `max_tokens` (as `max_ctx` for a request that pins one, which is charged it
+  whatever its prompt and `max_tokens` are), that fits the free memory at the time (the 400 when
+  it is under the capacity's figure): memory another process holds for good does not come back
+  to a retry, and a caller that cannot wait can send that size and be admitted. The figure is
+  absent when nothing fits. The boot line `[admission] idle capacity` states the capacity. Record:
   [`decisions/IDLE-REFUSAL-CLASS.md`](decisions/IDLE-REFUSAL-CLASS.md).
 - Speculation-capable models carry a flat 1.5 GiB admission reserve for the draft-graph transient,
   which is not proportional to session count. Plain models carry none.

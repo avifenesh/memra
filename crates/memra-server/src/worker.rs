@@ -17163,37 +17163,72 @@ struct PublicationGeometry {
     held: usize,
 }
 
-/// [`PublicationGeometry`] of a publication at `pos`.
+/// [`PublicationGeometry`] of a publication at `pos`: the four reads of the live cache and its
+/// capture, handed to [`publication_geometry`] as plain sizes. Each trunk layer's rows and
+/// per-token K and V bytes; the draft plane's K and V bytes with its per-token bytes; each
+/// latent layer's live plane beside the capture's tail; and the `f32`s the capture holds (the
+/// boundary hidden row and the recurrent state).
 fn spec_publication_geometry(
     cache: &Cache,
     draft_plane: Option<(&KvPlane, &KvPlane, usize, usize)>,
     cap: &memra_engine::spec::SpecBoundaryCapture,
     pos: usize,
 ) -> PublicationGeometry {
-    let f32_bytes = std::mem::size_of::<f32>();
-    let mut geometry = PublicationGeometry {
-        trunk: cache
+    let recurrent_floats: usize = cap
+        .snap
+        .conv
+        .iter()
+        .zip(cap.snap.ssm.iter())
+        .map(|(conv, ssm)| {
+            conv.as_ref().map_or(0, |c| c.len()) + ssm.as_ref().map_or(0, |s| s.len())
+        })
+        .sum();
+    publication_geometry(
+        cache
             .kv
             .iter()
             .flatten()
-            .filter(|l| l.len > 0)
-            .map(|l| (l.k_tok_bytes, l.v_tok_bytes))
+            .map(|l| (l.len, l.k_tok_bytes, l.v_tok_bytes)),
+        draft_plane.map(|(k, v, kt, vt)| (k.len(), v.len(), kt, vt)),
+        cache
+            .latent
+            .iter()
+            .zip(&cap.latent_tails)
+            .map(|(live, tail)| (live.is_some(), tail.as_ref())),
+        cap.last_h.len() + recurrent_floats,
+        pos,
+    )
+}
+
+/// The count's inputs from plain sizes: the seam `spec_publication_geometry` reads the live
+/// cache through, so a test drives it with known planes. `trunk` is each layer's rows and
+/// per-token K and V bytes (a layer with no rows was not executed and is not published);
+/// `draft` the draft plane's K and V bytes and its per-token bytes (published only when it
+/// covers `pos`); `latent` each latent layer's live plane and captured tail (slicing needs
+/// both); `held_floats` the `f32`s the capture already holds.
+fn publication_geometry<'a>(
+    trunk: impl Iterator<Item = (usize, usize, usize)>,
+    draft: Option<(usize, usize, usize, usize)>,
+    latent: impl Iterator<Item = (bool, Option<&'a memra_engine::cache::LatentTailCapture>)>,
+    held_floats: usize,
+    pos: usize,
+) -> PublicationGeometry {
+    let mut geometry = PublicationGeometry {
+        trunk: trunk
+            .filter(|&(len, _, _)| len > 0)
+            .map(|(_, k_tok_bytes, v_tok_bytes)| (k_tok_bytes, v_tok_bytes))
             .collect(),
-        draft: draft_plane
-            .filter(|(k, v, kt, vt)| k.len() >= pos * kt && v.len() >= pos * vt)
+        draft: draft
+            .filter(|&(k, v, kt, vt)| k >= pos * kt && v >= pos * vt)
             .map(|(_, _, kt, vt)| (kt, vt)),
         latent_floats: 0,
-        held: cap.last_h.len() * f32_bytes,
+        held: held_floats * std::mem::size_of::<f32>(),
     };
-    for (live, tail) in cache.latent.iter().zip(&cap.latent_tails) {
-        if let (Some(_), Some(tail)) = (live, tail) {
+    for (live, tail) in latent {
+        if let (true, Some(tail)) = (live, tail) {
             geometry.latent_floats += latent_publish_floats(tail);
             geometry.held += tail.bytes();
         }
-    }
-    for (conv, ssm) in cap.snap.conv.iter().zip(cap.snap.ssm.iter()) {
-        geometry.held += conv.as_ref().map_or(0, |c| c.len() * f32_bytes);
-        geometry.held += ssm.as_ref().map_or(0, |s| s.len() * f32_bytes);
     }
     geometry
 }
@@ -24816,10 +24851,12 @@ pub fn run(
                             // held (`largest_request_within`): the cost model's exact context
                             // allocation, ring geometry included, for every state the request
                             // builds (a choice group's rows and its snapshot), on each device
-                            // the charge is per device. The figure is in the caller's units,
-                            // prompt plus max_tokens: the charged context less this request's
-                            // slack over them, so a caller that sends it is charged what was
-                            // just found to fit. On the post-load capacity it is the largest
+                            // the charge is per device. The figure is in the caller's units
+                            // (`HintBound`): prompt plus max_tokens, the charged context less
+                            // this request's slack over them, or `max_ctx` for a request that
+                            // pins one and is charged it whatever its prompt and output are;
+                            // either way a caller that sends it is charged what was just found
+                            // to fit. On the post-load capacity it is the largest
                             // admissible request; on the reading now it is the largest that
                             // fits this moment. The 503 names that one, because memory another
                             // process holds for good never comes back to a retry, and the 400
@@ -24857,21 +24894,28 @@ pub fn run(
                             };
                             let slack = admission_cap
                                 .saturating_sub(prompt_len.saturating_add(shape.budget));
+                            let hint = HintBound::of(
+                                req.params.max_ctx,
+                                prompt_len,
+                                req.params.max_new,
+                                slack,
+                            );
+                            let (_, hint_name) = hint.names();
                             let largest = largest_request_within(
                                 admission_cap,
-                                slack,
+                                hint,
                                 &at_capacity.charges(primary_device, required),
                                 &context_on,
                             );
                             let largest_now = largest_request_within(
                                 admission_cap,
-                                slack,
+                                hint,
                                 &headroom.charges(primary_device, required),
                                 &context_on,
                             );
                             let fits_now = match largest_now {
                                 Some(n) => {
-                                    format!(", largest prompt+max_tokens that fits now {n}")
+                                    format!(", largest {hint_name} that fits now {n}")
                                 }
                                 None => String::new(),
                             };
@@ -24898,7 +24942,7 @@ pub fn run(
                                     required as f64 / 1e6,
                                     match largest {
                                         Some(n) => {
-                                            format!(", largest admissible prompt+max_tokens {n}")
+                                            format!(", largest admissible {hint_name} {n}")
                                         }
                                         None => String::new(),
                                     },
@@ -24906,7 +24950,13 @@ pub fn run(
                             }
                             fail_request(
                                 req,
-                                idle_refusal(admission_cap, fits_capacity, largest, largest_now),
+                                idle_refusal(
+                                    admission_cap,
+                                    fits_capacity,
+                                    hint,
+                                    largest,
+                                    largest_now,
+                                ),
                             );
                             continue;
                         }
@@ -30462,9 +30512,13 @@ fn largest_context_within(
     devices: &[HintDevice],
     context: &dyn Fn(usize, usize) -> usize,
 ) -> Option<usize> {
+    let full: Vec<usize> = devices
+        .iter()
+        .map(|d| context(d.device, admission_cap))
+        .collect();
     let fits = |ctx: usize| {
-        devices.iter().all(|d| {
-            let shed = context(d.device, admission_cap).saturating_sub(context(d.device, ctx));
+        devices.iter().zip(&full).all(|(d, full)| {
+            let shed = full.saturating_sub(context(d.device, ctx));
             d.required.saturating_sub(shed) <= d.free
         })
     };
@@ -30484,26 +30538,87 @@ fn largest_context_within(
     Some(lo)
 }
 
-/// [`largest_context_within`] in the caller's units: prompt plus max_tokens. A request is charged
-/// its prompt and output plus `slack` rows (`RequestShape::admission_cap`), so a caller told the
-/// charged context and sending it as prompt plus max_tokens would be charged `slack` more and
-/// refused again with the same figure. `None` when nothing fits or the slack is all of it.
+/// What a size hint counts: the bound the caller has to lower for its request to be charged a
+/// context that fits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HintBound {
+    /// Prompt plus max_tokens. The request is charged them plus `slack` rows
+    /// (`RequestShape::admission_cap`; 64 for every request that pins no `max_ctx`), so a
+    /// caller told the charged context and sending it as prompt plus max_tokens would be
+    /// charged `slack` more and refused again with the same figure.
+    Request { slack: usize },
+    /// `max_ctx`. A request that pins it is charged it whatever its prompt and max_tokens are
+    /// (`request_ctx_cap`), so a smaller prompt plus max_tokens under the same `max_ctx` is
+    /// charged the same and refused again: the caller has to lower `max_ctx`.
+    MaxCtx { prompt: usize, max_new: usize },
+}
+
+impl HintBound {
+    /// The bound of a request: its `max_ctx` when it pins one, else its prompt and output.
+    fn of(max_ctx: Option<usize>, prompt: usize, max_new: usize, slack: usize) -> Self {
+        match max_ctx {
+            Some(_) => HintBound::MaxCtx { prompt, max_new },
+            None => HintBound::Request { slack },
+        }
+    }
+
+    /// The largest value of the bound whose request is charged at most `fits` rows. With
+    /// `max_ctx = m` the charge is the larger of `m` and prompt plus output plus 64 rows, the
+    /// output being max_tokens or what `m` leaves after the prompt (`RequestShape`): `fits`
+    /// itself when the request's own prompt and max_tokens leave those 64 rows inside it, 64
+    /// rows less when they do not. `None` when the figure would be no tokens at all.
+    fn within(self, fits: usize) -> Option<usize> {
+        let largest = match self {
+            HintBound::Request { slack } => fits.checked_sub(slack),
+            HintBound::MaxCtx { prompt, max_new } => {
+                let need = prompt
+                    .saturating_add(max_new)
+                    .saturating_add(SPEC_SHRINK_SLACK);
+                if need <= fits {
+                    Some(fits)
+                } else {
+                    fits.checked_sub(SPEC_SHRINK_SLACK)
+                }
+            }
+        };
+        largest.filter(|&n| n > 0)
+    }
+
+    /// The bound's name in a message, and in a log line.
+    fn names(self) -> (&'static str, &'static str) {
+        match self {
+            HintBound::Request { .. } => ("prompt plus max_tokens", "prompt+max_tokens"),
+            HintBound::MaxCtx { .. } => ("max_ctx", "max_ctx"),
+        }
+    }
+
+    /// What the caller is told to send.
+    fn advice(self) -> &'static str {
+        match self {
+            HintBound::Request { .. } => "send a shorter prompt or a smaller max_tokens",
+            HintBound::MaxCtx { .. } => "send a smaller max_ctx",
+        }
+    }
+}
+
+/// [`largest_context_within`] in the caller's units (`bound`): the largest prompt plus
+/// max_tokens, or the largest `max_ctx` for a request that pins one, that is charged a context
+/// that fits. `None` when nothing fits or the figure would be no tokens.
 fn largest_request_within(
     admission_cap: usize,
-    slack: usize,
+    bound: HintBound,
     devices: &[HintDevice],
     context: &dyn Fn(usize, usize) -> usize,
 ) -> Option<usize> {
-    largest_context_within(admission_cap, devices, context)?
-        .checked_sub(slack)
-        .filter(|&n| n > 0)
+    largest_context_within(admission_cap, devices, context).and_then(|fits| bound.within(fits))
 }
 
 /// The refusal an idle, drained box gives a request it cannot hold now (memra#1304).
 /// `fits_capacity` says whether the request fits the box at its post-load capacity
 /// (`at_idle_capacity`); `largest` is the largest request that does and `largest_now` the largest
-/// that fits the free memory of the moment (`largest_request_within`: prompt plus max_tokens,
-/// what a caller can send; never above `largest`). A request that fits the capacity is short
+/// that fits the free memory of the moment (`largest_request_within`, in the units of `bound`:
+/// prompt plus max_tokens, or `max_ctx` for a request that pins one, what a caller can send;
+/// never above `largest`). A request that fits the capacity is short
 /// only of the moment's memory, so it gets a retryable 503 (`Overloaded`, `Retry-After`) that
 /// names `largest_now`: memory another process holds for good does not come back to a retry, and
 /// a caller that cannot wait can send that size. One that does not fit gets the 400
@@ -30513,16 +30628,18 @@ fn largest_request_within(
 fn idle_refusal(
     admission_cap: usize,
     fits_capacity: bool,
+    bound: HintBound,
     largest: Option<usize>,
     largest_now: Option<usize>,
 ) -> EngineError {
+    let (name, _) = bound.names();
+    let advice = bound.advice();
     if fits_capacity {
         return EngineError::overloaded(match largest_now {
             Some(n) => format!(
                 "request context {admission_cap} fits this model's KV capacity but not the \
-                 server's free memory right now; the largest prompt plus max_tokens that fits \
-                 now is {n} tokens. Retry after the Retry-After delay, or send a shorter prompt \
-                 or a smaller max_tokens"
+                 server's free memory right now; the largest {name} that fits now is {n} \
+                 tokens. Retry after the Retry-After delay, or {advice}"
             ),
             None => format!(
                 "request context {admission_cap} fits this model's KV capacity but not the \
@@ -30540,12 +30657,12 @@ fn idle_refusal(
     EngineError::context_length(match largest {
         Some(n) => format!(
             "request context {admission_cap} does not fit this model's KV capacity on an idle \
-             server; the largest admissible prompt plus max_tokens is {n} tokens{now}. Retrying \
-             will not help: send a shorter prompt or a smaller max_tokens"
+             server; the largest admissible {name} is {n} tokens{now}. Retrying will not help: \
+             {advice}"
         ),
         None => format!(
             "request context {admission_cap} does not fit this model's KV capacity on an idle \
-             server. Retrying will not help: send a shorter prompt or a smaller max_tokens"
+             server. Retrying will not help: {advice}"
         ),
     })
 }
@@ -43136,7 +43253,13 @@ mod tests {
         assert!(!now.sufficient(required));
         let at_capacity = now.clone().at_idle_capacity(&[boot], 0, 19_178 * MB);
         assert!(at_capacity.sufficient(required));
-        let err = idle_refusal(1_607, true, Some(1_607), Some(1_100));
+        let err = idle_refusal(
+            1_607,
+            true,
+            super::HintBound::Request { slack: 64 },
+            Some(1_607),
+            Some(1_100),
+        );
         assert_eq!(err.class, ErrClass::Overloaded, "{}", err.message);
         assert!(err.message.contains("Retry after"), "{}", err.message);
         assert!(
@@ -43162,7 +43285,13 @@ mod tests {
                 .at_idle_capacity(&[card], 0, 17_000 * MB)
                 .sufficient(big)
         );
-        let err = idle_refusal(185_055, false, Some(123_456), Some(123_456));
+        let err = idle_refusal(
+            185_055,
+            false,
+            super::HintBound::Request { slack: 64 },
+            Some(123_456),
+            Some(123_456),
+        );
         assert_eq!(err.class, ErrClass::ContextLength);
         assert!(
             err.message
@@ -43170,7 +43299,13 @@ mod tests {
             "{}",
             err.message
         );
-        let err = idle_refusal(185_055, false, None, None);
+        let err = idle_refusal(
+            185_055,
+            false,
+            super::HintBound::Request { slack: 64 },
+            None,
+            None,
+        );
         assert_eq!(err.class, ErrClass::ContextLength);
         // The capacity is the boot reading less what memra itself has come to hold at rest
         // since; never below the reading now; the reading now when the boot read failed.
@@ -43239,17 +43374,20 @@ mod tests {
         // The size hint (review of memra#1304): the capacity's and the moment's are the same
         // arithmetic on the two readings, each device's own charge and free bytes.
         assert!(reject.contains(
-            "let largest = largest_request_within( admission_cap, slack, \
+            "let largest = largest_request_within( admission_cap, hint, \
              &at_capacity.charges(primary_device, required), &context_on, );"
         ));
         assert!(reject.contains(
-            "let largest_now = largest_request_within( admission_cap, slack, \
+            "let largest_now = largest_request_within( admission_cap, hint, \
              &headroom.charges(primary_device, required), &context_on, );"
         ));
         // In the caller's units: the charged context less this request's slack over its prompt
-        // and output.
+        // and output, or `max_ctx` for a request that pins one (round-3 review).
         assert!(reject.contains(
             "let slack = admission_cap .saturating_sub(prompt_len.saturating_add(shape.budget));"
+        ));
+        assert!(reject.contains(
+            "let hint = HintBound::of( req.params.max_ctx, prompt_len, req.params.max_new, slack, );"
         ));
         // The context term is the cost model's own (ring geometry included), once per state a
         // choice group builds, as the whole-group charge counts them; per stage under PP.
@@ -43266,7 +43404,8 @@ mod tests {
         );
         assert!(!reject.contains("bytes_per_token"));
         assert!(reject.contains(
-            "fail_request( req, idle_refusal(admission_cap, fits_capacity, largest, largest_now), );"
+            "fail_request( req, idle_refusal( admission_cap, fits_capacity, hint, largest, \
+             largest_now, ), );"
         ));
         assert!(!reject.contains("EngineError::context_length("));
     }
@@ -43293,11 +43432,27 @@ mod tests {
         // 150,000 tokens fit the capacity and not the moment: the 503, naming what fits now.
         let ctx = 150_000;
         assert!(charge(ctx) <= capacity && charge(ctx) > now);
-        let largest = largest_request_within(ctx, 0, &on(capacity, ctx), &context);
-        let largest_now = largest_request_within(ctx, 0, &on(now, ctx), &context);
+        let largest = largest_request_within(
+            ctx,
+            super::HintBound::Request { slack: 0 },
+            &on(capacity, ctx),
+            &context,
+        );
+        let largest_now = largest_request_within(
+            ctx,
+            super::HintBound::Request { slack: 0 },
+            &on(now, ctx),
+            &context,
+        );
         assert_eq!((largest, largest_now), (Some(150_000), Some(110_927)));
         assert!(charge(110_927) <= now && charge(110_928) > now);
-        let err = idle_refusal(ctx, true, largest, largest_now);
+        let err = idle_refusal(
+            ctx,
+            true,
+            super::HintBound::Request { slack: 64 },
+            largest,
+            largest_now,
+        );
         assert_eq!(err.class, ErrClass::Overloaded);
         assert!(
             err.message.contains(
@@ -43310,11 +43465,27 @@ mod tests {
         // the figure the 503 would give a caller who sends that is beside it.
         let ctx = 200_000;
         assert!(charge(ctx) > capacity);
-        let largest = largest_request_within(ctx, 0, &on(capacity, ctx), &context);
-        let largest_now = largest_request_within(ctx, 0, &on(now, ctx), &context);
+        let largest = largest_request_within(
+            ctx,
+            super::HintBound::Request { slack: 0 },
+            &on(capacity, ctx),
+            &context,
+        );
+        let largest_now = largest_request_within(
+            ctx,
+            super::HintBound::Request { slack: 0 },
+            &on(now, ctx),
+            &context,
+        );
         assert_eq!((largest, largest_now), (Some(174_315), Some(110_927)));
         assert!(charge(174_315) <= capacity && charge(174_316) > capacity);
-        let err = idle_refusal(ctx, false, largest, largest_now);
+        let err = idle_refusal(
+            ctx,
+            false,
+            super::HintBound::Request { slack: 64 },
+            largest,
+            largest_now,
+        );
         assert_eq!(err.class, ErrClass::ContextLength);
         assert!(
             err.message.contains(
@@ -43326,21 +43497,44 @@ mod tests {
         );
         // The caller that shortens to the 400's 174,315 is told the same 110,927 by the 503.
         assert_eq!(
-            largest_request_within(174_315, 0, &on(now, 174_315), &context),
+            largest_request_within(
+                174_315,
+                super::HintBound::Request { slack: 0 },
+                &on(now, 174_315),
+                &context
+            ),
             Some(110_927)
         );
         // Nothing else holding memory: one figure, said once.
-        let err = idle_refusal(ctx, false, largest, largest);
+        let err = idle_refusal(
+            ctx,
+            false,
+            super::HintBound::Request { slack: 64 },
+            largest,
+            largest,
+        );
         assert!(!err.message.contains("right now"), "{}", err.message);
         // No figure: neither message invents one.
-        let err = idle_refusal(1_000, true, Some(1_000), None);
+        let err = idle_refusal(
+            1_000,
+            true,
+            super::HintBound::Request { slack: 64 },
+            Some(1_000),
+            None,
+        );
         assert_eq!(err.class, ErrClass::Overloaded);
         assert!(
             !err.message.contains("largest") && err.message.contains("retry after"),
             "{}",
             err.message
         );
-        let err = idle_refusal(ctx, false, largest, None);
+        let err = idle_refusal(
+            ctx,
+            false,
+            super::HintBound::Request { slack: 64 },
+            largest,
+            None,
+        );
         assert!(
             err.message.contains(
                 "174315 tokens (the server's free memory right now holds none). Retrying"
@@ -43350,16 +43544,41 @@ mod tests {
         );
     }
 
+    /// The charged context and the hint's bound of a request, as `prepare_request` and the idle
+    /// refusal derive them, on a server and a model of 262,144 context.
+    fn hint_shape(
+        prompt: usize,
+        max_ctx: Option<usize>,
+        max_new: usize,
+    ) -> (usize, super::HintBound) {
+        use super::{HintBound, RequestShape, SPEC_SHRINK_SLACK, request_budget, request_ctx_cap};
+        let ctx_cap = request_ctx_cap(262_144, 262_144, prompt, max_ctx, max_new, None);
+        assert!(prompt < ctx_cap, "prompt {prompt} >= context cap {ctx_cap}");
+        let budget = request_budget(ctx_cap, prompt, max_ctx, max_new, None);
+        let need = prompt
+            .saturating_add(budget)
+            .saturating_add(SPEC_SHRINK_SLACK);
+        let cap = RequestShape {
+            ctx_cap,
+            budget,
+            need,
+        }
+        .admission_cap();
+        let slack = cap.saturating_sub(prompt.saturating_add(budget));
+        (cap, HintBound::of(max_ctx, prompt, max_new, slack))
+    }
+
     #[test]
     fn the_size_hint_is_a_request_the_caller_can_send() {
         // Round-2 review of memra#1304. The figure was in charged-context units, on one row's
         // slope plus the ring term a second time, against the scalar charge. A caller that sent
         // it as prompt plus max_tokens was charged its slack more and refused again with the
         // same figure; on a ring model it was charged more than the free bytes; with a
-        // per-device charge another device could still be short.
+        // per-device charge another device could still be short. Round 3: a request that pins
+        // `max_ctx` is charged it, and was told a prompt plus max_tokens it could not use.
         use super::{
-            HintDevice, context_cache_bytes, largest_context_within, largest_request_within,
-            request_ctx_cap,
+            HintBound, HintDevice, context_cache_bytes, idle_refusal, largest_context_within,
+            largest_request_within,
         };
         const MB: usize = 1_000_000;
         let one = |free: usize, required: usize| {
@@ -43370,36 +43589,101 @@ mod tests {
             }]
         };
 
-        // SLACK. A bounded request is charged prompt + max_tokens + 8 (`request_ctx_cap`), 64 on
-        // a route that can speculate (`RequestShape::need`). The caller keeps its prompt and
-        // lowers max_tokens so that prompt + max_tokens is the hint: it must be admitted.
+        // SLACK. A request that pins no `max_ctx` is charged its prompt and output plus 64 rows
+        // (`RequestShape::need`, the larger of that and its `ctx_cap`), whether it bounds its
+        // output or not. The caller keeps its prompt and lowers max_tokens so that prompt +
+        // max_tokens is the hint: it must be admitted.
         let charge = |cap: usize| cap * 31_552 + 500 * MB;
         let context = |_: usize, ctx: usize| ctx * 31_552;
         let free = 4_000 * MB;
         let prompt = 1_000usize;
-        for slack in [8usize, 64] {
-            let cap = |max_tokens: usize| {
-                request_ctx_cap(262_144, 262_144, prompt, None, max_tokens, None) - 8 + slack
-            };
-            let cap0 = cap(149_000);
+        for max_new in [149_000usize, super::MAX_NEW_CTX_BOUNDED] {
+            let (cap0, bound) = hint_shape(prompt, None, max_new);
+            assert_eq!(bound, HintBound::Request { slack: 64 });
             assert!(charge(cap0) > free);
-            let hint = largest_request_within(cap0, slack, &one(free, charge(cap0)), &context)
+            let hint = largest_request_within(cap0, bound, &one(free, charge(cap0)), &context)
                 .expect("a request fits");
-            let cap1 = cap(hint - prompt);
-            assert_eq!(cap1, hint + slack);
+            let (cap1, bound1) = hint_shape(prompt, None, hint - prompt);
+            assert_eq!((cap1, bound1), (hint + 64, bound));
             assert!(
                 charge(cap1) <= free,
-                "slack {slack}: the hint {hint} is charged {} > {free}",
+                "slack 64: the hint {hint} is charged {} > {free}",
                 charge(cap1)
             );
             // And it is the largest: one token more is refused.
-            assert!(charge(cap(hint + 1 - prompt)) > free);
+            assert!(charge(hint_shape(prompt, None, hint + 1 - prompt).0) > free);
             // Sent again, the hint is its own answer.
             assert_eq!(
-                largest_request_within(cap1, slack, &one(free, charge(cap1)), &context),
+                largest_request_within(cap1, bound1, &one(free, charge(cap1)), &context),
                 Some(hint)
             );
         }
+
+        // MAX_CTX (round-3 review). A request that pins `max_ctx` is charged it whatever its
+        // prompt and max_tokens are: prompt 20,000, max_tokens 512, max_ctx 131,072, and
+        // 120,000 rows fit now. "Prompt plus max_tokens 9,440" (the charged context less the
+        // 110,560 rows the request leaves unused) is a size that caller sends under the same
+        // max_ctx and is charged 131,072 again. The figure is the largest max_ctx.
+        let (prompt, max_ctx, max_new) = (20_000usize, 131_072usize, 512usize);
+        let (cap0, bound) = hint_shape(prompt, Some(max_ctx), max_new);
+        assert_eq!(
+            (cap0, bound),
+            (max_ctx, HintBound::MaxCtx { prompt, max_new })
+        );
+        let free = charge(120_000);
+        let devices = one(free, charge(cap0));
+        assert_eq!(
+            largest_context_within(cap0, &devices, &context),
+            Some(120_000)
+        );
+        let hint = largest_request_within(cap0, bound, &devices, &context).expect("a figure");
+        assert_eq!(hint, 120_000);
+        // The caller does what the message says and is admitted; one row more is refused.
+        let (cap1, _) = hint_shape(prompt, Some(hint), max_new);
+        assert!(
+            charge(cap1) <= free,
+            "max_ctx: the hint {hint} is charged context {cap1}: {} > {free}",
+            charge(cap1)
+        );
+        assert!(charge(hint_shape(prompt, Some(hint + 1), max_new).0) > free);
+        // The old figure, sent as prompt plus max_tokens under the same max_ctx, is refused.
+        let old = HintBound::Request {
+            slack: cap0 - (prompt + max_new),
+        }
+        .within(120_000);
+        assert_eq!(old, Some(9_440));
+        assert!(charge(hint_shape(8_928, Some(max_ctx), 512).0) > free);
+        // A max_tokens that does not leave 64 rows inside the context that fits is charged
+        // those rows on top of max_ctx (`need`), bounded or not: the figure is 64 rows less,
+        // and it too is admitted with one row more refused.
+        for max_new in [110_000usize, super::MAX_NEW_CTX_BOUNDED] {
+            let (cap0, bound) = hint_shape(prompt, Some(max_ctx), max_new);
+            let hint = largest_request_within(cap0, bound, &one(free, charge(cap0)), &context)
+                .expect("a figure");
+            assert_eq!(hint, 120_000 - 64);
+            assert!(charge(hint_shape(prompt, Some(hint), max_new).0) <= free);
+            assert!(charge(hint_shape(prompt, Some(hint + 1), max_new).0) > free);
+        }
+        // Both messages name it, and what to send.
+        let msg = |fits_capacity: bool| {
+            idle_refusal(max_ctx, fits_capacity, bound, Some(125_000), Some(120_000)).message
+        };
+        assert!(
+            msg(true).contains(
+                "the largest max_ctx that fits now is 120000 tokens. Retry after the \
+                 Retry-After delay, or send a smaller max_ctx"
+            ),
+            "{}",
+            msg(true)
+        );
+        assert!(
+            msg(false).contains(
+                "the largest admissible max_ctx is 125000 tokens (120000 tokens fit the server's \
+                 free memory right now). Retrying will not help: send a smaller max_ctx"
+            ),
+            "{}",
+            msg(false)
+        );
 
         // RING. Past the ring's rows a token costs `bytes_per_token - ring_bytes_per_token`; the
         // ring term is inside `bytes_per_token`, not beside it. The hint's charge must fit.
@@ -43427,8 +43711,13 @@ mod tests {
         let group_context = |_: usize, ctx: usize| states * ctx * 14_848;
         let (ctx, free, slack) = (3_142usize, 1_193 * MB, 64usize);
         assert!(group(ctx) > free);
-        let hint = largest_request_within(ctx, slack, &one(free, group(ctx)), &group_context)
-            .expect("a smaller group fits");
+        let hint = largest_request_within(
+            ctx,
+            super::HintBound::Request { slack },
+            &one(free, group(ctx)),
+            &group_context,
+        )
+        .expect("a smaller group fits");
         assert_eq!(hint, 654);
         assert!(group(hint + slack) <= free && group(hint + slack + 1) > free);
 
@@ -43475,19 +43764,28 @@ mod tests {
         assert_eq!(largest_context_within(ctx, &stuck, &share), None);
 
         // NOTHING FITS: what the charge holds besides its context is over the free bytes; and a
-        // figure that is all slack is no figure.
+        // figure that is all slack is no figure, in either unit.
         let charge = |cap: usize| cap * 31_552 + 500 * MB;
+        let request = HintBound::Request { slack: 64 };
         assert_eq!(
-            largest_request_within(1_000, 8, &one(400 * MB, charge(1_000)), &context),
+            largest_request_within(1_000, request, &one(400 * MB, charge(1_000)), &context),
             None
         );
-        let tight = 500 * MB + 8 * 31_552;
+        let tight = 500 * MB + 64 * 31_552;
         assert_eq!(
             largest_context_within(1_000, &one(tight, charge(1_000)), &context),
-            Some(8)
+            Some(64)
         );
         assert_eq!(
-            largest_request_within(1_000, 8, &one(tight, charge(1_000)), &context),
+            largest_request_within(1_000, request, &one(tight, charge(1_000)), &context),
+            None
+        );
+        let pinned = HintBound::MaxCtx {
+            prompt: 20,
+            max_new: 512,
+        };
+        assert_eq!(
+            largest_request_within(1_000, pinned, &one(tight, charge(1_000)), &context),
             None
         );
     }
@@ -43697,6 +43995,87 @@ mod tests {
             draft: None,
             latent_floats: 0,
             held: 36_000_000,
+        }
+    }
+
+    #[test]
+    fn a_publication_reads_every_plane_off_the_cache() {
+        // Round-3 review, mutations MA2 and MH3: a geometry read off the live cache with no
+        // trunk plane, or with no latent rows, passed the suite, because every test built the
+        // geometry by hand. The reader's reads are plain sizes here (`publication_geometry`),
+        // and the adapter that takes them off the cache is pinned below.
+        use super::{
+            SpecPlanes, latent_publish_floats, publication_geometry, spec_publication_bytes,
+        };
+        let pos = 1_000usize;
+        let tail = memra_engine::cache::LatentTailCapture {
+            len: pos,
+            width: 512,
+            index_width: 256,
+            index_pool: 64,
+            index_pools_ready: 15,
+            index_tail: None,
+        };
+        // Three trunk layers, the middle one never executed; a draft plane that covers the
+        // boundary; three latent layers: live with a tail, a tail with no live plane, a live
+        // plane with no tail; 4,096 floats held by the capture.
+        let trunk = [(pos, 544usize, 384usize), (0, 544, 384), (pos, 272, 192)];
+        let latent = [(true, Some(&tail)), (false, Some(&tail)), (true, None)];
+        let geometry = publication_geometry(
+            trunk.into_iter(),
+            Some((pos * 34, pos * 24, 34, 24)),
+            latent.into_iter(),
+            4_096,
+            pos,
+        );
+        assert_eq!(geometry.trunk, vec![(544, 384), (272, 192)]);
+        assert_eq!(geometry.draft, Some((34, 24)));
+        assert_eq!(geometry.latent_floats, latent_publish_floats(&tail));
+        assert_eq!(geometry.latent_floats, pos * 512 + 15 * 128);
+        assert_eq!(geometry.held, 4_096 * 4);
+        // What the copy is counted at: every executed trunk plane, the draft plane and the
+        // latent rows.
+        assert_eq!(
+            spec_publication_bytes(&geometry, pos, SpecPlanes::Copy, 0),
+            (
+                pos * (544 + 384 + 272 + 192) + pos * (34 + 24) + geometry.latent_floats * 4,
+                4_096 * 4
+            )
+        );
+        // A draft plane one byte short of the boundary is not published; no draft plane, none.
+        let short = publication_geometry(
+            trunk.into_iter(),
+            Some((pos * 34 - 1, pos * 24, 34, 24)),
+            latent.into_iter(),
+            0,
+            pos,
+        );
+        assert_eq!((short.draft, short.held), (None, 0));
+        let none = publication_geometry(trunk.into_iter(), None, latent.into_iter(), 0, pos);
+        assert_eq!(none.draft, None);
+
+        // The adapter's four reads of the live cache and its capture.
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let a = production
+            .find("fn spec_publication_geometry(")
+            .expect("the reader");
+        let reader = production[a..a + production[a..].find("\n}\n").expect("the function ends")]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        for read in [
+            "publication_geometry( cache .kv .iter() .flatten() .map(|l| (l.len, l.k_tok_bytes, \
+             l.v_tok_bytes)),",
+            "draft_plane.map(|(k, v, kt, vt)| (k.len(), v.len(), kt, vt)),",
+            "cache .latent .iter() .zip(&cap.latent_tails) .map(|(live, tail)| (live.is_some(), \
+             tail.as_ref())),",
+            "cap.last_h.len() + recurrent_floats, pos, )",
+            "let recurrent_floats: usize = cap .snap .conv .iter() .zip(cap.snap.ssm.iter()) \
+             .map(|(conv, ssm)| { conv.as_ref().map_or(0, |c| c.len()) + \
+             ssm.as_ref().map_or(0, |s| s.len()) }) .sum();",
+        ] {
+            assert!(reader.contains(read), "missing `{read}` in: {reader}");
         }
     }
 
