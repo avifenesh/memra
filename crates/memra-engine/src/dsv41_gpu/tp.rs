@@ -64,27 +64,32 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// The most rows of a split MoE call on two ranks that gather the bf16 hidden rows (one gather)
-/// rather than their codes and scales (two gathers, a quantization a rank, the placing kernels): a
-/// decode or verify step of up to 16 rows keeps the small-row path of the 8-row step. Speed only:
-/// the codes are those of the whole row either way.
+/// The most rows of a split MoE call that gather the bf16 hidden rows (one gather) rather than
+/// their codes and scales (two gathers, a quantization a rank, the placing kernels): a decode or
+/// verify step of up to 16 rows can keep the small-row path of the 8-row step ([`split_quant`]
+/// says when it does). Speed only: the codes are those of the whole row either way.
 pub const SPLIT_BF16_ROWS: usize = 16;
 
 /// Whether a split MoE call of `rows` rows on `ranks` ranks gathers its hidden rows as codes and
-/// scales instead of bf16 rows. Two ranks keep the bf16 gather through [`SPLIT_BF16_ROWS`] rows
-/// (the pair is 1.7 to 4.8% faster than the codes path's tree at 9, 12 and 16 rows). More ranks
-/// leave it above [`super::SMALL_M`] rows. A rank stores its region once a peer, so on four ranks
-/// the bf16 rows (7 a call row of a quarter of the hidden width) are 212.6 KiB at 9 rows and pass
-/// [`PUSH_LIMIT`] at 10; the gather then leaves the kernels for the kept blocks and 12 peer
-/// copies a layer. Four cards with the bf16 gather through 16 rows ran 0.9, 6.8 and 3.6% behind
-/// the codes path's tree at 9, 12 and 16 rows (memra#1311). The codes are a push through 18 rows
-/// on four ranks. Speed only: the codes are those of the whole row either way.
-pub fn split_quant(rows: usize, ranks: usize) -> bool {
-    rows > if ranks > 2 {
-        super::SMALL_M
-    } else {
-        SPLIT_BF16_ROWS
+/// scales instead of bf16 rows. `stores` is what a rank would store in the bf16 gather: its
+/// region (the call's hidden rows over its share of the hidden width, 2 bytes an element) times
+/// its peers, the quantity [`PUSH_LIMIT`] bounds.
+/// - Up to [`super::SMALL_M`] rows: bf16, as every tree before.
+/// - Above [`SPLIT_BF16_ROWS`] rows: codes.
+/// - Between, on two ranks: bf16. The pair measured 1.7 to 4.8% faster with it than the codes
+///   path's tree at 9, 12 and 16 rows, the packed gather of 15 and 16 rows (two copies) included.
+/// - Between, on more ranks: bf16 while the gather stays a push, codes when it would not. On
+///   four ranks a rank stores 212.6 KiB at 9 rows and 236.2 KiB at 10, so the line is 9 rows; on
+///   three ranks it is 10. Four cards, 40 layers (memra#1311): at 9 rows the bf16 push ran 1.1%
+///   ahead of the codes; at 10, 12 and 16 rows the packed bf16 gather (12 peer copies a layer)
+///   ran 5.4, 5.8 and 4.7% behind them.
+///
+/// The line is the push limit's arithmetic on every transport. Speed only.
+pub fn split_quant(rows: usize, ranks: usize, stores: usize) -> bool {
+    if rows <= super::SMALL_M {
+        return false;
     }
+    rows > SPLIT_BF16_ROWS || (ranks > 2 && stores > PUSH_LIMIT)
 }
 
 /// A byte region of a rank buffer: `rows` rows of `width` bytes, `pitch` apart, from `off`. A
@@ -2275,11 +2280,13 @@ impl Group {
         let (ne, topk, d, inter) = (g.n_experts, g.topk, g.dim, g.moe_inter);
         let np = rows * topk;
         let trace = self.trace || self.route_log.is_some();
-        // a few rows (`split_quant`: 16 on two ranks, 8 on more): one bf16 gather of the hidden
-        // columns (a gather's latency, not its bytes), and the rows quantized whole after it; more:
-        // each rank quantizes its own columns and the codes and scales are gathered (the same codes:
-        // a 32-wide block lies inside a rank's columns)
-        let quant = split_quant(rows, self.n());
+        // a few rows (`split_quant`: through 16 on two ranks; on more, while a rank's stores fit a
+        // push): one bf16 gather of the hidden columns (a gather's latency, not its bytes), and the
+        // rows quantized whole after it; more: each rank quantizes its own columns and the codes and
+        // scales are gathered (the same codes: a 32-wide block lies inside a rank's columns)
+        let widest = lw.iter().map(|w| w.hid_l).max().unwrap_or(0);
+        let stores = (np + rows) * widest * 2 * self.n().saturating_sub(1);
+        let quant = split_quant(rows, self.n(), stores);
         let parts = {
             let mut trs: Vec<&mut Trace> = tr.iter_mut().collect();
             self.each_mut(&mut trs, |r, c, trr| {
@@ -3299,32 +3306,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_split_moe_gathers_codes_above_8_rows_past_two_ranks_and_above_16_on_two() {
+    fn the_split_moe_keeps_the_bf16_gather_while_a_rank_stores_at_most_the_push_limit() {
+        // what a rank stores in the bf16 hidden gather: 7 rows a call row (6 routed experts and
+        // the shared one) of its share of the 2,304 hidden columns, 2 bytes an element, once a peer
+        let stores = |rows: usize, ranks: usize| 7 * rows * (2304 / ranks) * 2 * (ranks - 1);
+        let quant = |rows: usize, ranks: usize| split_quant(rows, ranks, stores(rows, ranks));
         for rows in 1..=64 {
-            assert_eq!(split_quant(rows, 2), rows > 16, "{rows} rows, 2 ranks");
-            for ranks in [3, 4, 8] {
-                assert_eq!(
-                    split_quant(rows, ranks),
-                    rows > 8,
-                    "{rows} rows, {ranks} ranks"
-                );
-            }
+            // two ranks: bf16 through 16 rows, as measured on the pair
+            assert_eq!(quant(rows, 2), rows > 16, "{rows} rows, 2 ranks");
+            // four ranks: 212.6 KiB at 9 rows is a push, 236.2 KiB at 10 is not
+            assert_eq!(quant(rows, 4), rows > 9, "{rows} rows, 4 ranks");
+            // three ranks: 210.0 KiB at 10 rows, 231.0 KiB at 11
+            assert_eq!(quant(rows, 3), rows > 10, "{rows} rows, 3 ranks");
+            // eight ranks: 220.5 KiB at 8 rows, 248.1 KiB at 9
+            assert_eq!(quant(rows, 8), rows > 8, "{rows} rows, 8 ranks");
         }
-        // what a rank stores in the hidden gather: 7 rows a call row (6 routed experts and the
-        // shared one) of its share of the hidden width, codes or bf16, once a peer
-        let stores = |rows: usize, ranks: usize, quant: bool| {
-            7 * rows * (2304 / ranks) * if quant { 1 } else { 2 } * (ranks - 1)
-        };
-        // on four ranks the gather the rule picks stays inside kernels through 16 rows
+        // a call of up to 8 rows keeps the bf16 gather whatever a rank stores, as every tree before
+        assert!(!split_quant(8, 16, PUSH_LIMIT + 1));
+        // on four ranks the gather the rule picks stays inside kernels through 16 rows (the
+        // codes are half the bf16 rows' bytes)
         for rows in 1..=16 {
-            assert!(
-                stores(rows, 4, split_quant(rows, 4)) <= PUSH_LIMIT,
-                "{rows} rows"
-            );
+            let bytes = stores(rows, 4) / if quant(rows, 4) { 2 } else { 1 };
+            assert!(bytes <= PUSH_LIMIT, "{rows} rows");
         }
-        // the bf16 rows would leave them at 10 rows
-        assert!(stores(9, 4, false) <= PUSH_LIMIT);
-        assert!(stores(10, 4, false) > PUSH_LIMIT);
     }
 
     #[test]
