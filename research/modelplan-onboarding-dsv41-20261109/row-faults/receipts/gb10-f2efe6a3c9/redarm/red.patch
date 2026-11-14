@@ -1,0 +1,13 @@
+diff --git a/crates/memra-engine/src/dsv41_gpu/tp.rs b/crates/memra-engine/src/dsv41_gpu/tp.rs
+index 2654f7d696..fbce423c5a 100644
+--- a/crates/memra-engine/src/dsv41_gpu/tp.rs
++++ b/crates/memra-engine/src/dsv41_gpu/tp.rs
+@@ -2204,7 +2204,7 @@ impl Group {
+         // skipped those pairs (their order slots -1), counted them and marked their rows in the
+         // call's row map and the call flag, which the call's reads report; the placed pairs are
+         // complete, and the ranks' ranges, gathers and combine cover exactly them
+-        if off[ne] > rows * topk {
++        if off[ne] != rows * topk {
+             return Err(format!(
+                 "route: {} of {} pairs placed",
+                 off[ne],

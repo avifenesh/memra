@@ -1,0 +1,10 @@
+[server] build: memra-0.141.1-e3b02c617f1d (id: source-tree, git: unknown)
+[server] starting; models config = [("v41", "$CKPT", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "v41" <- $CKPT
+[dsv41-serve] v41: MEMRA_DSV41_TRUNK_LAYERS: 2 of the 40 trunk layers run. The answers are NOT the checkpoint's; this is a rehearsal of the route's memory and serving loop
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+[server] FATAL: worker init failed: load v41: deepseek-v4.1 model "v41": device 0: 3.0 GiB free after the load, the runs need 5.5 GiB (+0.0 GiB for a streamed layer): does not fit

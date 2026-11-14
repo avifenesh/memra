@@ -1,0 +1,9 @@
+NVIDIA GB10, 305 MHz, 44
+73bef9350a8bd4d31e110a8c46ad3f1a743baef1987463f6df012fe944f843dc  $RUN/bins/rowflag4/dsv41-gate
+kernels rowflag4 rc 0 185 checks, 0 failed 0 FAIL lines
+PASS schedule/moe_plan/out_of_range_id: err 1, flag 1, 1 skips, 17 of 18 placed, rows marked [38] (want [38]) [ids outside [0, ne): counted, call flag bit 0 set, the pairs skipped (order -1, one pair fewer placed each), exactly their rows marked in the row map at row0]
+PASS schedule/moe_plan/out_of_range_id_rows700: err 4, flag 1, 4 skips, 4196 of 4200 placed, rows marked [5, 650, 651] (want [5, 650, 651]) [ids outside [0, ne): counted, call flag bit 0 set, the pairs skipped (order -1, one pair fewer placed each), exactly their rows marked in the row map at row0]
+PASS schedule/gemm_ffma_ring_partial/m2_n30_k5120: 240 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_partial/m2_n30_k5120/first: 240 bytes, 0 differ [byte-identical to the reference schedule]
+PASS schedule/gemm_ffma2_partial/m2_n30_k5120/second: 240 bytes, 0 differ [byte-identical to the reference schedule]
+KGATE-DONE 01:48:45

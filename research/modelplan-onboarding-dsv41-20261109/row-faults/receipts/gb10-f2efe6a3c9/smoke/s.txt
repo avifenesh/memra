@@ -1,0 +1,47 @@
+d2d5a63c1540bef13eee2acebb910969af0cb1fc10e5f70be8fdbc32de46d225  $RUN/bins/rowflag3/memra-server
+NVIDIA GB10, 208 MHz, 48
+Mem:             121           5         117           0           0         116
+boot 1 (8:1,64): ready=1 after 128s
+request B1: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request A1: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":" Informal Gron GronGaz/match匹配 Callingattention Weapon Coastal/MODISuker Charm Foregreorealindiaweights PronúnciaisphereoflifeTreeNodeikit Sorihara packingratio Mul infl有话
+request A1solo: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":" Informal Gron GronGaz/match匹配 Callingattention Weapon Coastal/MODISuker Charm Foregreorealindiaweights PronúnciaisphereoflifeTreeNodeikit Sorihara packingratio Mul infl有话
+request C1: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request D1: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":" Mass controllable Minds Durant FeldmanMatches numbersaplenty凑","reasoning_details":[{"type":"reasoning.text","text":" Mass controllable Minds Durant FeldmanMatches numbersaplent
+Mem:             121           4         117           0           0         116
+boot 2 (0:0,9:0): ready=1 after 127s
+request W2: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request A2: http 500 {"error":{"message":"the engine could not complete this request; retry, and report the request id if it persists","type":"server_error","param":null,"code":"engine_error"}}
+request B2: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":" Informal體的供求關係hyde prescriptions exempt Humphreys533 refin不對ycinFLDᱚFliproots Geophysical الجرم السماлуа Earlex Dict loretait Takah有限的 Peel Co
+request B2solo: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":" Informal體的供求關係hyde prescriptions exempt Humphreys533 refin不對ycinFLDᱚFliproots Geophysical الجرم السماлуа Earlex Dict loretait Takah有限的 Peel Co
+PASS boot1: A beside the poisoned B completes 32 tokens ('', ' Informal Gron GronGaz/match匹配 Callingattention Weapon Coastal/MODISuker Charm Foregreorealindiaweights PronúnciaisphereoflifeTreeNodeikit Sorihara packingratio Mul infl有话Inflater уде', 'length'
+PASS boot1: A's answer beside the poisoned B is its solo answer, byte for byte 
+PASS boot1: the poisoned B fails {"error": {"message": "the engine could not complete this request; retry, and report the request id if it persists", "type": "server_error", "param": null, "code": "engine_error"}}
+PASS boot1: C (whole-step injection) fails 
+PASS boot1: D after it is served 
+PASS boot2: W (prefill poisoned) fails 
+PASS boot2: the poisoned A fails 
+PASS boot2: B beside the poisoned A completes 32 tokens ('', ' Informal體的供求關係hyde prescriptions exempt Humphreys533 refin不對ycinFLDᱚFliproots Geophysical الجرم السماлуа Earlex Dict loretait Takah有限的 Peel Cobb Durantizi', 'length', 32)
+PASS boot2: B's answer beside the poisoned A is its solo answer, byte for byte 
+PASS A and B answer differently (the comparison can fail) 
+boot 1 route v41 phase idle requests 5 request_faults 2 dead_reason None
+PASS boot1: the route is alive with 2 request faults 
+boot 2 route v41 phase idle requests 4 request_faults 2 dead_reason None
+PASS boot2: the route is alive with 2 request faults 
+boot1: 1 request(s) failed alone, 1 whole-step failure(s)
+   [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+   [dsv41-serve] v41: MEMRA_DSV41_CALL_FAULT: [(8, Some(1)), (64, None)] (step, request): an injected call flag fails its step, a poisoned request fails alone (a fault gate, not serving)
+   [dsv41-serve] MEMRA_DSV41_CALL_FAULT: step 8 poisons request_id="chatcmpl-04e7a2a263685f041c07a727a1fd6434" (running request 1)
+   [dsv41-serve] request_id="chatcmpl-04e7a2a263685f041c07a727a1fd6434": route fault: a router row selected an expert outside the model's (a non-finite router row): row(s) 1 of a batched call; failing it alone
+   [dsv41-serve] deepseek-v4.1 step: route: a router row selected an expert outside the model's (a non-finite router row) and no call's row map names it; failing 1 request(s)
+   [dsv41-serve] the ranks probe clean after the fault: serving on
+boot2: 2 request(s) failed alone, 0 whole-step failure(s)
+   [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+   [dsv41-serve] v41: MEMRA_DSV41_CALL_FAULT: [(0, Some(0)), (9, Some(0))] (step, request): an injected call flag fails its step, a poisoned request fails alone (a fault gate, not serving)
+   [dsv41-serve] MEMRA_DSV41_CALL_FAULT: step 0 poisons request_id="chatcmpl-aee501f1dc9830843b0900ba5fb2921b" (running request 0)
+   [dsv41-serve] request_id="chatcmpl-aee501f1dc9830843b0900ba5fb2921b": route fault: a router row selected an expert outside the model's (a non-finite router row): row(s) 0-33 of its own call; failing it alone
+   [dsv41-serve] MEMRA_DSV41_CALL_FAULT: step 9 poisons request_id="chatcmpl-af483d313a3c874d5f7c953ff4f72b45" (running request 0)
+   [dsv41-serve] request_id="chatcmpl-af483d313a3c874d5f7c953ff4f72b45": route fault: a router row selected an expert outside the model's (a non-finite router row): row(s) 0 of a batched call; failing it alone
+PASS boot1: one request failed alone, one whole step failed 
+PASS boot2: two requests failed alone, no whole step failed 
+SMOKE PASS
+SMOKE-DONE 01:20:44

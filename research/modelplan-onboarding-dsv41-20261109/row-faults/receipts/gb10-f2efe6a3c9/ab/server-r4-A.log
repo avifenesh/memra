@@ -1,0 +1,163 @@
+[server] build: memra-0.141.1-13a11ea95fcd (id: source-tree, git: unknown)
+[server] starting; models config = [("v41", "$CKPT", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "v41" <- $CKPT
+[dsv41-serve] v41: MEMRA_DSV41_TRUNK_LAYERS: 2 of the 40 trunk layers run. The answers are NOT the checkpoint's; this is a rehearsal of the route's memory and serving loop
+[dsv41-tp] ranks=1 devices=[0] transport=host-canonical (MEMRA_TP_TRANSPORT) issue=serial gathers-only=true
+[dsv41-resident] device 0 ranks [0]: 2 of 2 layers + head resident, 91.00 GiB (91.00 GiB a rank); free 116.24 -> 25.24 GiB of 121.69 GiB; reserve 5.50 GiB; load 121.8s
+[dsv41-serve] v41: card 0 ranks [0]: weights 91.00 GiB resident (91.00 GiB a rank) in 121.8s, 25.24 GiB of 121.69 GiB left for requests (25.24 GiB a rank)
+[dsv41-serve] v41: warm-up in 0.1s; one-token call 20.4 ms
+[dsv41-serve] v41: 1 rank(s) on devices [0]; routed experts on the cards; resident weights [97709952944] bytes per rank; ceiling [27098213960] bytes; expert cache [] slots of 18800640 bytes (floor 0 slots, all 0); max_seq 8192; 64 session(s); prefill slices of 8192 rows
+[dsv41-serve] v41: capacity: the longest session with the route idle is 8192 positions (max_seq 8192); at once: 4096 sessions of 1,536 positions (1,024-token prompts), 4096 of 4,608 (4,096-token prompts), 4096 of 32,768, 4096 of 131,072; MEMRA_MAX_SESSIONS 64
+[dsv41-serve] v41: up in 125.4s
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[route-contract] model="v41" route=dsv41-thread capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,service-metrics] refused=[prime-fairness: a prompt's prefill is one call of one runner forward; it does not yield, and the running requests' decode calls ride the same forward]
+[prefix-cache] on: budget 48070MB (48069992448 B, derived: 2 x 0 B max entry for model "(none)" at served ctx 0 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 48069992448 B; boot driver free 99898081280 B, post-reserve clamp 96139984896 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+[admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[deadline] unified memory: operator deadline doors set; streaming TTFT max 90000 ms, SSE prefill commit off
+[server] worker ready; serving models: ["v41"]
+[server] listening on http://127.0.0.1:18394
+[meter] admit id=chatcmpl-14e72c3c04973685400b3dd48303782a tenant=default lane=interactive model="v41"
+[dsv41-step] calls=1 prefill=42 decode_rows=0 step_s=0.364 transient_peak=14338304 predicted_live_need=1632877907 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.028 transient_peak=229889 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[meter] admit id=chatcmpl-3046ba7457fb275627590addd058efa2 tenant=default lane=interactive model="v41"
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.023 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=2 prefill=35 decode_rows=1 step_s=0.100 transient_peak=12180572 predicted_live_need=1629210736 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.027 transient_peak=1296400 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.034 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.037 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.035 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.034 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.032 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.031 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.032 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.030 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.036 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.029 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.031 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.030 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.036 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.033 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.032 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.030 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.032 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.033 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.031 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.031 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.031 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.034 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.038 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.033 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.030 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.036 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.031 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.036 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.034 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.031 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.030 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.032 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.033 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.030 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.035 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.036 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.032 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.035 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.033 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.027 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.030 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.024 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.029 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.025 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.025 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.024 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.025 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.024 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.026 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.030 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.034 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.037 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.030 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.031 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.033 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.033 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.037 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.032 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=2 step_s=0.032 transient_peak=0 predicted_live_need=1075222967 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.025 transient_peak=0 predicted_live_need=1074482388 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.019 transient_peak=0 predicted_live_need=1074482388 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.022 transient_peak=0 predicted_live_need=1074482388 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[meter] admit id=chatcmpl-aa3ab51bcc031e99a067278ae9521ed6 tenant=default lane=interactive model="v41"
+[dsv41-step] calls=1 prefill=42 decode_rows=0 step_s=0.041 transient_peak=9074688 predicted_live_need=1632877907 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.015 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=1 prefill=0 decode_rows=1 step_s=0.016 transient_peak=0 predicted_live_need=1074482403 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

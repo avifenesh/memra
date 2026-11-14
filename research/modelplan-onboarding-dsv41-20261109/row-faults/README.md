@@ -1,6 +1,9 @@
 # DeepSeek-V4.1 route: a call flag names its rows (memra#1292, 2026-11-13)
 
-Verdict: PENDING (GB10 serve smoke and kernel gate).
+Verdict: a router row that names no expert fails its own request and nothing else. On one GB10 the
+rowfault gate passes 7 of 7 on both residencies, the serve smoke passes with the other request's answer
+byte-identical to its solo run, and the kernel gate passes 185 of 185. A draft-head stage's fault and a
+call flag no row map explains still fail the whole step.
 
 Since #1281 the route stays alive after a request-caused numeric fault, but the call flag only said
 that some router row of the step named no expert, so the route failed every request of that step.
@@ -72,4 +75,93 @@ live one.
 
 ## Gates
 
-PENDING.
+One GB10 (121a, CUDA 13.1), the gates with MEMRA_FULL_PREC=1. Two sets: the change's tree on main
+`df1d23a764` (`f2efe6a3c9`, `receipts/gb10-f2efe6a3c9/`), then the code commit rebased onto main
+`bbc6f83aea` (`52f869186c`, `receipts/gb10-52f869186c/`). The rebase brought in an admission change
+for unified memory (memra#1257: `unified_memory.rs`, the server's `worker.rs`); `dsv41-gate` built from
+both trees is the same binary (sha256 `73bef935...`), and `memra-server` differs.
+
+| gate | on `df1d23a764` | rebased, `52f869186c` |
+|---|---|---|
+| kernels (`fixtures-gpu/rand`) | 185 of 185 (main: 184 of 184, `kernels/base-main/`) | 185 of 185 |
+| rowfault, resident trunk (2 layers) | 7 of 7 | 7 of 7 |
+| rowfault, `--experts-host` (the served one-card residency) | 7 of 7 | 7 of 7 |
+| serve smoke (2 boots) | PASS, 14 checks | PASS, 16 checks (`smoke/`), after a harness miss (`smoke-try1/`) |
+| red arm: the off-card MoE's old check restored | resident 7 of 7, `--experts-host` fails | |
+| serving-step A/B against main | no difference at the log's 1 ms | |
+
+**Kernels.** The new check is `schedule/moe_plan/out_of_range_id_rows700` (the three-kernel plan: 4
+out-of-range pairs in 700 rows, rows 5, 650 and 651 marked and no other); `out_of_range_id` (the
+one-block plan) now also checks the marked row, at a non-zero `row0`.
+
+**`dsv41-gate rowfault`** runs the serving route's runner on the checkpoint's first 2 trunk layers,
+with a request poisoned the way the fault door does it (`Runner::poison`):
+
+- two own calls in one forward, the second poisoned: every row of the second call is named and none
+  of the first, and the first call's last-row logits (129,280) are its clean run's bytes;
+- a batched call of two rows, row 1 poisoned: row 1 alone is named, row 0's logits are its clean
+  run's bytes, and so are the logits of row 0's next step, run alone;
+- a call flag with no row named fails the step, and clean steps name nothing.
+
+`rowfault-try1/` keeps the gate's first run (the tree one gate fix earlier): the resident arm passed
+7 of 7 and the `--experts-host` arm stopped before its first check, because the gate reserved 16 GiB
+beside the weights and the expert cache got no slot ("the expert cache needs 384 slots (7219445760
+bytes) for one slice and 0 fit beside the resident weights and the 17179869184-byte reserve"). The
+gate now reserves what its forwards need plus 1 GiB.
+
+**The red arm** (`redarm/`, `red.patch`: one line of `Group::moe` back to main's check, placed pairs
+`!=` the rows' top-k): the resident arm still passes 7 of 7, as that path never had the check; the
+`--experts-host` arm passes the clean-steps check and then fails at the first poisoned forward with
+`route: 0 of 174 pairs placed` (the poisoned call's 29 rows, top-6, none placed), before any flag is
+read. That is main's behaviour on the served residency: the forward's error carries no request, so the
+route fails every request of the step. With the change the same arm passes 7 of 7.
+
+**Serve smoke** (`memra-server`, the route on a 2-layer trunk, `MEMRA_DSV41_TRUNK_LAYERS=2`: a
+rehearsal of the serving loop, not the checkpoint's answers; MEMRA_CTX=8192, greedy, `ignore_eos`, 32
+tokens for A and B, 8 for the others, the checkpoint's page cache dropped before each boot):
+
+- boot 1, `MEMRA_DSV41_CALL_FAULT=24:1,64`: requests A and B share batched calls; step 24 poisons B
+  (row 1 of a two-row call). B fails alone (HTTP 500, `engine_error`), A completes its 32 tokens, and
+  A's answer is byte for byte the answer of A sent alone afterwards. Step 64, the whole-step
+  injection, fails request C; D is served after it. The log: 1 request failed alone, 1 whole-step
+  failure, `the ranks probe clean after the fault: serving on`; health: 5 requests, 2 request faults,
+  no dead reason.
+- boot 2, `MEMRA_DSV41_CALL_FAULT=0:0,25:0`: W's prefill (its own call, rows 0-33) is poisoned and W
+  fails alone; then A and B share batched calls, step 25 poisons A (row 0), A fails alone and B
+  completes with its solo answer's bytes. 2 requests failed alone, no whole-step failure; health: 4
+  requests, 2 request faults, no dead reason.
+- A's and B's answers differ, so the byte comparison can fail.
+
+The first set's smoke used steps 8 and 9 (`scripts/smoke.sh`) and passed its 14 checks. On the rebased
+head the same script missed (`smoke-try1/`, SMOKE FAIL): B reached the server at step 11, after the
+door's step, so nobody was poisoned (`MEMRA_DSV41_CALL_FAULT: step 8 has no running request 1`), B
+ran on and the step-64 injection landed on A's solo request. The route did what the door asked; the
+harness lost a race. `smoke3.sh` moves the poisoned steps to 24 and 25 and checks that each was one
+batched call of two rows; that run is the 16-check pass.
+
+**Serving-step A/B** (`ab/`; `memra-server` of main `df1d23a764` against `f2efe6a3c9`'s, no fault
+door, the 2-layer trunk, one boot a run in the order A B B A B A, the page cache dropped before every
+boot; a run is two 64-token requests sharing batched calls, then one alone). Median `step_s` of the
+decode steps per run, logged in whole milliseconds:
+
+| arm | 1-row steps (n 66 to 86 a run) | 2-row steps (n 51 to 61 a run) |
+|---|---|---|
+| main | 16, 16, 16 ms | 24, 32, 32 ms |
+| this change | 16, 16, 16 ms | 25, 32, 24 ms |
+
+The card idled at 47 to 49 C before a run and read 51 to 52 C at 2,184 to 2,190 MHz after its last
+request; no run was dropped. A clean step adds no read (above), and the step time shows nothing at
+this resolution. Each prompt's answer is the same text in all six runs, so the change moves no token of
+a clean request. `ab-try1/` is the first attempt, with the server one gate fix earlier and no cache drop: its
+fifth boot refused ("device 0: 3.0 GiB free after the load, the runs need 5.5 GiB (+0.0 GiB for a
+streamed layer): does not fit"; GB10 memory is the host's, so the checkpoint's cached pages count as
+used), and its five runs read 14, 14, 22 against 16, 16 ms at one row and 20, 44.5, 33 against 22, 29 ms
+at two.
+
+CPU, `52f869186c`'s crates on the build box (120a, toolchain 1.97.1, `receipts/cpu/`): `cargo fmt --all
+-- --check` and `cargo clippy --workspace --all-targets -- -D warnings` pass. memra-engine's dsv41 lib
+tests pass 19 of 19; `step_faults_name_the_faulted_rows_of_each_call_or_fail_the_step` is new (the
+call word with a row map, with the unowned word, with no row, and clean). memra-server's lib tests:
+1,264 passed, 18 ignored; `a_step_with_a_fault_on_one_row_fails_only_that_rows_request` is new (a
+two-request batched step with row 1 faulted fails request 1 and not request 0), and the door's parse
+test now covers `step:request`.
