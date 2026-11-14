@@ -1,0 +1,111 @@
+diff --git a/crates/memra-engine/src/bin/dsv41_gate.rs b/crates/memra-engine/src/bin/dsv41_gate.rs
+index 6616db4917..9c23ec7585 100644
+--- a/crates/memra-engine/src/bin/dsv41_gate.rs
++++ b/crates/memra-engine/src/bin/dsv41_gate.rs
+@@ -1946,8 +1946,10 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+     // K in parts, so its first rows hold the same chains from another kernel. The pair's two outputs
+     // against the same 24-row calls. Widths 30 (the last 4-column block partial) and 32 (whole
+     // blocks); K 5,120 fills the ring's 4 stages many times over, K 256 and 512 are one and two
+-    // stages, fewer than the 3 its prologue lands (the prologue's guard and the loop's refill guard
+-    // both skip); 8 rows is every lane of the warp.
++    // stages, fewer than the 3 its prologue lands, so the prologue's guard skips and its trailing
++    // commit groups are empty (the refill guard already skips on K 5,120's last three stages); 8
++    // rows is every lane of the warp. K 256 is the shape with a red arm: a prologue that commits a
++    // group only for a stage it lands fails every K 256 entry.
+     for &(m, n, k) in &[
+         (2usize, 30usize, 5120usize),
+         (2, 30, 256),
+@@ -1960,7 +1962,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+         let a24 = Buf::from_bytes(&st, &rng.bf16(24 * k))?;
+         let b0 = Buf::from_bytes(&st, &rng.bf16(n * k))?;
+         let b1 = Buf::from_bytes(&st, &rng.bf16(n * k))?;
+-        let ffma = |b: &Buf, c: &Buf, rows: usize| {
++        let ffma = |b: &Buf, c: &Buf, rows: usize, ldc: usize| {
+             ck("gemm_ffma", unsafe {
+                 ffi::memra_v41_gemm_ffma(
+                     a24.p(&st).c(),
+@@ -1968,7 +1970,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+                     b.p(&st).c(),
+                     k as i64,
+                     c.p(&st).fm(),
+-                    n as i64,
++                    ldc as i64,
+                     rows as i32,
+                     n as i32,
+                     k as i32,
+@@ -1976,15 +1978,27 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+                 )
+             })
+         };
++        // the ring's outputs sit in rows two columns wider than N over zero-filled buffers, and the
++        // comparison covers the padding: a chain past N (the last block of a partial width) would
++        // store there, where no other chain's store can cover it
++        let ldc = n + 2;
+         let (ring, mid0, mid1) = (
+-            ops.buf(m * n * 4)?,
++            ops.buf(m * ldc * 4)?,
+             ops.buf(24 * n * 4)?,
+             ops.buf(24 * n * 4)?,
+         );
+-        ffma(&b0, &ring, m)?;
+-        ffma(&b0, &mid0, 24)?;
+-        ffma(&b1, &mid1, 24)?;
+-        let (h0, h1) = (mid0.host(&st)?, mid1.host(&st)?);
++        ffma(&b0, &ring, m, ldc)?;
++        ffma(&b0, &mid0, 24, n)?;
++        ffma(&b1, &mid1, 24, n)?;
++        // the reference's first m rows, each followed by the two untouched padding columns
++        let padded = |h: &[u8]| {
++            let mut v = vec![0u8; m * ldc * 4];
++            for r in 0..m {
++                v[r * ldc * 4..r * ldc * 4 + n * 4].copy_from_slice(&h[r * n * 4..(r + 1) * n * 4]);
++            }
++            v
++        };
++        let (h0, h1) = (padded(&mid0.host(&st)?), padded(&mid1.host(&st)?));
+         // the entry names of the (2, 30, 5120) shape stay as they were
+         let (form, pair) = if n % 4 == 0 {
+             ("ring", "ring")
+@@ -1995,9 +2009,9 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+             rep,
+             &format!("schedule/gemm_ffma_{form}/m{m}_n{n}_k{k}"),
+             &ring.host(&st)?,
+-            &h0[..m * n * 4],
++            &h0,
+         );
+-        let (p0, p1) = (ops.buf(m * n * 4)?, ops.buf(m * n * 4)?);
++        let (p0, p1) = (ops.buf(m * ldc * 4)?, ops.buf(m * ldc * 4)?);
+         ck("gemm_ffma2", unsafe {
+             ffi::memra_v41_gemm_ffma2(
+                 a24.p(&st).c(),
+@@ -2005,12 +2019,12 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+                 b0.p(&st).c(),
+                 k as i64,
+                 p0.p(&st).fm(),
+-                n as i64,
++                ldc as i64,
+                 n as i32,
+                 b1.p(&st).c(),
+                 k as i64,
+                 p1.p(&st).fm(),
+-                n as i64,
++                ldc as i64,
+                 n as i32,
+                 m as i32,
+                 k as i32,
+@@ -2021,13 +2035,13 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+             rep,
+             &format!("schedule/gemm_ffma2_{pair}/m{m}_n{n}_k{k}/first"),
+             &p0.host(&st)?,
+-            &h0[..m * n * 4],
++            &h0,
+         );
+         same(
+             rep,
+             &format!("schedule/gemm_ffma2_{pair}/m{m}_n{n}_k{k}/second"),
+             &p1.host(&st)?,
+-            &h1[..m * n * 4],
++            &h1,
+         );
+     }
+     // the embedding gather on the device against the host's rows (`Runner::embed` and its hc
