@@ -69,16 +69,16 @@ def idle_refusals(logs):
     return found
 
 def check_idle_refusal(record,sizes,boot_free):
-    """The idle refusal's contract (memra#1304), judged on the sizes and not on the class the server logged: a request the post-load capacity holds is short of the moment's memory (another process holds it) and gets a retryable 503 `overloaded` with Retry-After; only a request over that capacity gets the non-retryable 400 `context_length_exceeded`. One device: the charge is one figure."""
+    """The idle refusal's contract in the kv phase (memra#1304), judged on the sizes and not on the class the server logged: the server is fresh, so a charge within what it read free at boot is short only of the moment's memory (another process holds it) and gets a retryable 503 `overloaded` with Retry-After; only a charge over the boot reading gets the non-retryable 400 `context_length_exceeded`. The capacity the server logs must sit inside the boot reading, and it does not decide the branch: a server that under-reads its capacity (collapsed to the reading now, or just under the charge) and answers 400 is refused here. One device: the charge is one figure."""
     require(sizes['available']<sizes['required'] and sizes['available']<=sizes['capacity']<=boot_free,'kv_exhaustion','the refusal is short of the free memory now, and its capacity is within the boot reading')
     error=(record.get('body') or {}).get('error',{})
     headers={k.lower():v for k,v in record.get('headers',{}).items()}
     retry=headers.get('retry-after','')
-    if sizes['required']<=sizes['capacity']:
-        require(record['status']==503 and error.get('code')=='overloaded' and sizes['logged']=='short','kv_exhaustion','a request the idle capacity holds is refused as retryable: 503 overloaded')
+    if sizes['required']<=boot_free:
+        require(record['status']==503 and error.get('code')=='overloaded' and sizes['logged']=='short' and sizes['required']<=sizes['capacity'],'kv_exhaustion','a request the boot reading holds is refused as retryable: 503 overloaded, judged by the server at a capacity that holds it')
         require(retry.isdigit() and int(retry)>0,'kv_exhaustion','the retryable refusal carries Retry-After')
     else:
-        require(record['status']==400 and error.get('code')=='context_length_exceeded' and sizes['logged']=='reject','kv_exhaustion','a request over the idle capacity keeps the non-retryable capacity contract')
+        require(record['status']==400 and error.get('code')=='context_length_exceeded' and sizes['logged']=='reject','kv_exhaustion','a request over the boot reading keeps the non-retryable capacity contract')
         require(not retry and headers.get('x-should-retry')=='false','kv_exhaustion','the non-retryable refusal says so')
 
 def verify(root,baseline=None,expected=None):
