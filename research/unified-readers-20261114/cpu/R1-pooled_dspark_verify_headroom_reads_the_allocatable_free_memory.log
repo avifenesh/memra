@@ -1,0 +1,29 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.141.1 (~/.cache/memra-1307/tree/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 2m 58s
+     Running unittests src/lib.rs (~/.cache/memra-1307/target/release/deps/memra_engine-d5220b04f652c299)
+
+running 1 test
+test spec::capture_headroom_tests::pooled_dspark_verify_headroom_reads_the_allocatable_free_memory ... FAILED
+
+failures:
+
+---- spec::capture_headroom_tests::pooled_dspark_verify_headroom_reads_the_allocatable_free_memory stdout ----
+
+thread 'spec::capture_headroom_tests::pooled_dspark_verify_headroom_reads_the_allocatable_free_memory' (3819204) panicked at crates/memra-engine/src/spec.rs:18116:9:
+the pooled DFlash2 width reads the raw driver free memory: pub(crate) fn pooled_verify_headroom(e: &Engine) -> usize {
+    match e.ctx().mem_get_info() {
+        Ok((free, _total)) => free
+            .saturating_add(e.pool_cached_bytes())
+            .saturating_sub(CAPTURE_HEADROOM_FLOOR),
+        Err(_) => 0,
+    }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    spec::capture_headroom_tests::pooled_dspark_verify_headroom_reads_the_allocatable_free_memory
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 847 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-engine --lib`

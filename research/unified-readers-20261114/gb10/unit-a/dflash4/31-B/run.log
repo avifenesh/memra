@@ -1,0 +1,19 @@
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 0m05s
+2026-11-14T02:39:54+02:00 live_fill: before MemFree: 79061 MemAvailable: 97506 Cached: 19368
+  2026-11-14T02:39:54+02:00 fill2: before MemFree: 80958492 kB;MemAvailable: 99846788 kB;Cached: 19833688 kB;
+  2026-11-14T02:40:44+02:00 fill2 done: MemFree: 2727924 kB;MemAvailable: 100501656 kB;Cached: 98718068 kB;
+2026-11-14T02:40:44+02:00 live_fill: 2 readers running until ~/.cache/memra-1307/runs/c4/dflash4/31-B/stop (at most 900s): 3142913 3142914
+before requests: MemFree: 2977416 kB;MemAvailable: 100503640 kB;Cached: 98470484 kB;
+{"tag": "31-B", "req": "q1a", "status": 200, "prompt_tokens": 3719, "completion_tokens": 384, "finish": "length", "wall_s": 43.952, "sha256": "741d776aeef28da11399943d3773d15e9b6241db73dd73f3b31e1da95a3f7d30", "text_chars": 688, "error": null}
+{"tag": "31-B", "req": "q1b", "status": 200, "prompt_tokens": 3719, "completion_tokens": 384, "finish": "length", "wall_s": 43.951, "sha256": "909d65540627aa138205494a1b96ef0f9c9bdedc9e8b0ba16044b3f35c07454d", "text_chars": 656, "error": null}
+{"tag": "31-B", "req": "q1c", "status": 200, "prompt_tokens": 3719, "completion_tokens": 384, "finish": "length", "wall_s": 43.636, "sha256": "909d65540627aa138205494a1b96ef0f9c9bdedc9e8b0ba16044b3f35c07454d", "text_chars": 656, "error": null}
+{"tag": "31-B", "req": "q1d", "status": 200, "prompt_tokens": 3719, "completion_tokens": 384, "finish": "length", "wall_s": 43.95, "sha256": "f3c4baa2f2b18af36bfa13522b67770ba0b03164ca9315ae901fa4201d8ffcf4", "text_chars": 655, "error": null}
+{"tag": "31-B", "req": "q2a", "status": 200, "prompt_tokens": 3719, "completion_tokens": 384, "finish": "length", "wall_s": 43.984, "sha256": "b897ef9e30f58186578c003b2b623f20b7b8a5995399d55e148859edc05544d3", "text_chars": 685, "error": null}
+{"tag": "31-B", "req": "q2b", "status": 200, "prompt_tokens": 3719, "completion_tokens": 384, "finish": "length", "wall_s": 43.67, "sha256": "741d776aeef28da11399943d3773d15e9b6241db73dd73f3b31e1da95a3f7d30", "text_chars": 688, "error": null}
+{"tag": "31-B", "req": "q2c", "status": 200, "prompt_tokens": 3719, "completion_tokens": 384, "finish": "length", "wall_s": 43.982, "sha256": "b180229f86d0429c37eb06d6012585f4fc4375d59b10309f0dfdbaf978bda78e", "text_chars": 678, "error": null}
+{"tag": "31-B", "req": "q2d", "status": 200, "prompt_tokens": 3719, "completion_tokens": 384, "finish": "length", "wall_s": 43.981, "sha256": "f3c4baa2f2b18af36bfa13522b67770ba0b03164ca9315ae901fa4201d8ffcf4", "text_chars": 655, "error": null}
+waitfor: gone 3138995 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

@@ -1,0 +1,10 @@
+waitfor: until curl -sf -o /dev/null http://127.0.0.1:8090/readyz && exit 0 || exit 1 (deadline 15m00s, every 5s)
+waitfor: not yet
+waitfor: MET after 2m05s
+before requests: MemFree: 85239848 kB;MemAvailable: 100714040 kB;Cached: 16865168 kB;
+{"tag": "05-B", "req": "m1", "status": 200, "prompt_tokens": 1868, "completion_tokens": 128, "finish": "length", "wall_s": 5.412, "sha256": "efa0605b9b826573a0d0a2578a63534c3cdee0c03bf5cc55ac74bc9a049690cb", "text_chars": 435, "error": null}
+{"tag": "05-B", "req": "m2", "status": 200, "prompt_tokens": 1868, "completion_tokens": 128, "finish": "length", "wall_s": 5.435, "sha256": "efa0605b9b826573a0d0a2578a63534c3cdee0c03bf5cc55ac74bc9a049690cb", "text_chars": 435, "error": null}
+{"tag": "05-B", "req": "m3", "status": 200, "prompt_tokens": 1868, "completion_tokens": 128, "finish": "length", "wall_s": 5.538, "sha256": "34ab48fa38c3f7ba7105433ef4e743d621ac5a3f6a5916024c5e274c48ca2252", "text_chars": 432, "error": null}
+waitfor: gone 2999238 (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
