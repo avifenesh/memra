@@ -54,7 +54,11 @@ With `MEMRA_PREFIX_CACHE_MB=0`, in the same state, the request was admitted and 
   `prefix_copy_preflight` now counts what the publication will allocate
   (`spec_publication_bytes`, the tail's size from `DflashKv::tail_bytes`) and makes room with the
   snapshot's own preflight before the first byte; the publisher hands the tail's export to the
-  publication, which runs it after the reservation. A refused publication prints its typed
+  publication, which runs it after the reservation. The counting and the reservation are
+  engine-free (the publisher passes the cache's geometry and the device's reading in), so the
+  tests drive them with 31-G's numbers; what a reservation evicted is reaped before the copy
+  allocates on it (memra#1278), and an entry that ends up larger than its reservation is said
+  aloud at the insert. A refused publication prints its typed
   `[prefix-cache] insert refused:` line and the request is served unpublished. A discrete card
   keeps its path (copy, then evict to the budget): a copy that does not fit a full card fails as
   a CUDA out-of-memory error, which the publisher already handles by dropping the publication.
@@ -68,16 +72,35 @@ With `MEMRA_PREFIX_CACHE_MB=0`, in the same state, the request was admitted and 
   the moment's memory and gets 503 `overloaded` with `Retry-After` (5 s), the class the server
   already uses for running out of VRAM; `[admit-oom] idle memory short:` logs it. The boot line
   `[admission] idle capacity (post-load, cache empty)` states the reading.
-- **Both refusals name the largest context that fits now** (review fold). The capacity subtracts
+- **Both refusals name the largest request that fits now** (review fold). The capacity subtracts
   only what memra itself has come to hold, so memory another process keeps for good (another
   process on a discrete card) left a request near the capacity with a 503 that no retry clears,
   and the 400's "largest admissible context" named a size that then got that 503. The same
-  arithmetic on the reading now (`largest_context_within`) gives the size that fits the moment:
-  the 503's message carries it ("the largest context that fits now is N tokens"), and the 400
-  carries it beside the capacity's figure when it is the smaller. The slope counts every state
-  the request builds: a choice group's charge is its rows' states and one snapshot, and with one
-  row's slope its overshoot shed more tokens than the request has, so no size was named (the
-  first RTX 5090 take of the fold).
+  arithmetic on the reading now gives the size that fits the moment: the 503's message carries
+  it ("the largest prompt plus max_tokens that fits now is N tokens"), and the 400 carries it
+  beside the capacity's figure when it is the smaller.
+- **The figure is one the caller can send** (second review). It is found by re-keying the
+  charge's context term, the cost model's own exact context allocation, to a smaller context
+  with everything else held, and bisecting (`largest_context_within`); no slope is assumed. That
+  takes in the ring geometry (the first fold added the ring's bytes per token to a slope that
+  already held them), every state a choice group builds (its rows and one snapshot: with one
+  row's term a group's overshoot shed more tokens than the request has, and no size was named,
+  the first RTX 5090 take), and each device's own charge and free bytes where the charge is per
+  device (the figure is what fits on all of them). It is then put in the caller's units: the
+  charged context less the request's slack over prompt plus max_tokens (8 rows, 64 on a route
+  that can speculate), because a caller that sent the charged context as prompt plus
+  max_tokens was charged the slack on top and refused again with the same figure
+  (`largest_request_within`). When nothing fits there is no figure.
+- **A promotion owns the caller's hit** (second review, a bug the first fold introduced). `admit`
+  resolved its device hit to an index and then ran the host promotion. With the reservation in
+  front of it, a promotion on unified memory could evict (a removal swaps the pool's last entry
+  into the hole) and then fail, where before a failed promotion had evicted nothing; the caller
+  read its old index: outside the pool, or at another prompt's entry. `host_promote_prefix_hit`
+  now takes the hit by reference and leaves it at the promoted entry or at the same entry's
+  current index. On unified memory the hit is leased across the promotion, so the reservation
+  cannot take the entry the request would otherwise be served from; on a discrete card it is
+  followed by its id and no lease is taken (a lease's release moves recency). The candidate's
+  recency in the host tier moves only when the reservation will go ahead.
 - **A refusal by the live reading says so** (review fold). An insert the live clamp refuses is
   logged as `insert refused: entry N exceeds budget M (live free memory holds the insert budget
   under its configured C; ...)` and no longer spends the one-time "first prefix insert is larger
