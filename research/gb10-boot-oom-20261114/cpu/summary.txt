@@ -1,0 +1,21 @@
+3f7d5b5c87d20d027658d585958d53359fb5a5a559a60447695fc4418cdc308c  crates/memra-runtime/src/ctx_boot.rs
+ed9309ca7ebe21f9d24fd4ff79ab091b1e95e38a0bac7adbfe1a10d3fdb33d7e  crates/memra-runtime/src/lib.rs
+76db54253afc0288873947536068a0dde53064cfe5f7bf8d4e22760830621b7c  crates/memra-engine/src/lib.rs
+green memra-runtime rc=0 (rebuilt) test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+red budget-zero rc=101 (rebuilt) test result: FAILED. 5 passed; 7 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s failing: a_host_that_is_really_short_is_not_retried another_error_ends_the_retry_at_once the_budget_bounds_elapsed_time_not_the_sleeps the_host_reading_is_taken_again_before_every_retry the_waits_double_to_the_cap_and_stop_at_the_budget the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor unified_boot_survives_an_out_of_memory_answer_the_page_cache_contradicts
+red budget-ge rc=101 (rebuilt) test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s failing: the_waits_double_to_the_cap_and_stop_at_the_budget
+red bound-sleeps-only rc=101 (rebuilt) test result: FAILED. 10 passed; 2 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s failing: the_budget_bounds_elapsed_time_not_the_sleeps the_waits_double_to_the_cap_and_stop_at_the_budget
+red retry-discrete rc=101 (rebuilt) test result: FAILED. 10 passed; 2 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s failing: discrete_card_keeps_its_first_answer the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor
+red any-error rc=101 (rebuilt) test result: FAILED. 10 passed; 2 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s failing: another_error_ends_the_retry_at_once the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor
+red no-floor rc=101 (rebuilt) test result: FAILED. 9 passed; 3 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s failing: a_host_that_is_really_short_is_not_retried the_host_reading_is_taken_again_before_every_retry the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor
+red no-reread rc=101 (rebuilt) test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s failing: the_host_reading_is_taken_again_before_every_retry
+red wiring-unified-always rc=101 (rebuilt) test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s failing: the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor
+red wiring-any-error rc=101 (rebuilt) test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s failing: the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor
+red wiring-no-floor rc=101 (rebuilt) test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s failing: the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor
+red attr-error-is-unified rc=101 (rebuilt) test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s failing: the_wiring_retries_only_a_unified_device_only_out_of_memory_only_above_the_floor
+red line-names-the-error rc=101 (rebuilt) test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s failing: the_lines_of_a_boot_that_recovers_carry_no_phrase_the_log_gates_scan_for
+fmt rc=0
+clippy rc=0
+engine lib suite rc=0 test result: ok. 784 passed; 0 failed; 66 ignored; 0 measured; 0 filtered out; finished in 15.38s
+server lib suite rc=0 test result: ok. 1272 passed; 0 failed; 18 ignored; 0 measured; 0 filtered out; finished in 14.21s
+CHECKS-DONE 2026-11-14T11:14:57+01:00

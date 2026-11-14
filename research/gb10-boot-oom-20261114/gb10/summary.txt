@@ -1,0 +1,251 @@
+# unit-a: tab_probe.py
+== gb10/unit-a/d0-asis-churn
+   boots 151  first-try failures 0  by call {}
+   MemFree before the context, MB: min 25146 median 25201 max 25217
+   free blocks of order >= 9 before the context: min 4426 median 4428 max 4429
+   retries after a failure (call, tries, final rc, ms): []
+   kernel NVRM lines: big-page fallback 0, UVM system memory (nv_gpu_ops.c) 0, context buffer (kgrctxAllocCtxBuffers) 0
+== gb10/unit-a/d1-live2-churn
+   boots 927  first-try failures 0  by call {}
+   MemFree before the context, MB: min 1291 median 2026 max 2584
+   free blocks of order >= 9 before the context: min 0 median 6 max 101
+   retries after a failure (call, tries, final rc, ms): []
+   kernel NVRM lines: big-page fallback 0, UVM system memory (nv_gpu_ops.c) 0, context buffer (kgrctxAllocCtxBuffers) 0
+== gb10/unit-a/d2-live4-churn
+   boots 149  first-try failures 1  by call {'cuCtxCreate': 1}
+   MemFree before the context, MB: min 1078 median 1642 max 1858
+   free blocks of order >= 9 before the context: min 0 median 2 max 21
+   retries after a failure (call, tries, final rc, ms): [('cuCtxCreate', 1, 0, 237.3)]
+   MemFree before the failed ones, MB: [1568]
+   free blocks of order >= 9 before the failed ones: [3]
+   kernel NVRM lines: big-page fallback 0, UVM system memory (nv_gpu_ops.c) 0, context buffer (kgrctxAllocCtxBuffers) 1
+== gb10/unit-a/e1-live2-gap4
+   boots 225  first-try failures 0  by call {}
+   MemFree before the context, MB: min 1445 median 9122 max 14985
+   free blocks of order >= 9 before the context: min 0 median 6 max 135
+   retries after a failure (call, tries, final rc, ms): []
+   kernel NVRM lines: big-page fallback 3, UVM system memory (nv_gpu_ops.c) 3, context buffer (kgrctxAllocCtxBuffers) 0
+
+# unit-a: tab_boots.py
+== gb10/unit-a/g-main-live4: 159 boots
+   arm B: MemFree at the boot, MB: min 4623 median 7984 max 9778; boots under 3000 MB: 0, of them died 0, first creation failed 0
+   arm B: boots 80, came up 80, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+   arm T: MemFree at the boot, MB: min 4240 median 7931 max 9589; boots under 3000 MB: 0, of them died 0, first creation failed 0
+   arm T: boots 79, came up 79, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+== gb10/unit-a/g-smoke: 2 boots
+   arm T: boots 2, came up 2, died 0, first context creation failed 1, recovered (try, ms, of waits or elapsed) [(5, 750, 'waits')]
+      01-T ready host
+         1794638553.292926 [ctx-retry] device 0: context creation answered out of memory on unified memory (try 1, 0 ms waited so far; host MemFree 1091 MiB, MemAvailable 118394 MiB, Cached 118530 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 50 ms
+         1794638553.371532 [ctx-retry] device 0: context creation answered out of memory on unified memory (try 2, 50 ms waited so far; host MemFree 1134 MiB, MemAvailable 118408 MiB, Cached 118500 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 100 ms
+         1794638553.499913 [ctx-retry] device 0: context creation answered out of memory on unified memory (try 3, 150 ms waited so far; host MemFree 1145 MiB, MemAvailable 118409 MiB, Cached 118491 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 200 ms
+         1794638553.727038 [ctx-retry] device 0: context creation answered out of memory on unified memory (try 4, 350 ms waited so far; host MemFree 1125 MiB, MemAvailable 118409 MiB, Cached 118510 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 400 ms
+         1794638554.475491 [ctx-retry] device 0: context created on try 5, after 750 ms of waits
+== gb10/unit-a/g-smoke-final: 2 boots
+   arm T: boots 2, came up 2, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+== gb10/unit-a/g-smoke-final3: 2 boots
+   arm T: boots 2, came up 2, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+== gb10/unit-a/g-smoke-fold: 2 boots
+   arm T: boots 2, came up 2, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+== gb10/unit-a/g0-asis: 40 boots
+   arm B: MemFree at the boot, MB: min 9422 median 9626 max 9664; boots under 3000 MB: 0, of them died 0, first creation failed 0
+   arm B: boots 20, came up 20, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+   arm T: MemFree at the boot, MB: min 9484 median 9613 max 9670; boots under 3000 MB: 0, of them died 0, first creation failed 0
+   arm T: boots 20, came up 20, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+== gb10/unit-a/g2-live2: 80 boots
+   arm B: MemFree at the boot, MB: min 1020 median 1920 max 3359; boots under 3000 MB: 39, of them died 0, first creation failed 0
+   arm B: boots 40, came up 40, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+   arm T: MemFree at the boot, MB: min 1714 median 1917 max 3384; boots under 3000 MB: 38, of them died 0, first creation failed 0
+   arm T: boots 40, came up 40, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+== gb10/unit-a/g4-live4: 80 boots
+   arm B: MemFree at the boot, MB: min 1259 median 5147 max 5418; boots under 3000 MB: 5, of them died 1, first creation failed 1
+   arm B: boots 40, came up 39, died 1, first context creation failed 1, recovered (try, ms, of waits or elapsed) []
+      6 fatal host {'MemFree_mb': 1326, 'MemAvailable_mb': 118996, 'Cached_mb': 118479, 'hi': [0, 0, 0, 0, 0]}
+         345ms [ctx-retry] device 0: context creation still out of memory after 1 tries and 0 ms of waits (host MemFree 1861 MiB, MemAvailable 118868 MiB, Cached 117817 MiB, free blocks of 2 MiB and larger: 0); giving up
+         345ms [server] FATAL: worker init failed: Engine::new failed: cuDevicePrimaryCtxRetain (context creation) on device 0 failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") (host MemFree 1860 MiB, MemAvailable 118868 MiB, Cached 117817 MiB, free blocks of 2 MiB and larger: 0)
+   arm T: MemFree at the boot, MB: min 1142 median 5077 max 5314; boots under 3000 MB: 5, of them died 0, first creation failed 1
+   arm T: boots 40, came up 40, died 0, first context creation failed 1, recovered (try, ms, of waits or elapsed) [(3, 150, 'waits')]
+      5 ready host {'MemFree_mb': 1663, 'MemAvailable_mb': 118974, 'Cached_mb': 118120, 'hi': [1, 0, 0, 0, 0]}
+         566ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 1, 0 ms waited so far; host MemFree 1479 MiB, MemAvailable 118843 MiB, Cached 118202 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 50 ms
+         636ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 2, 50 ms waited so far; host MemFree 2075 MiB, MemAvailable 118867 MiB, Cached 117602 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 100 ms
+         902ms [ctx-retry] device 0: context created on try 3, after 150 ms of waits
+== gb10/unit-a/g8-live8: 80 boots
+   arm B: MemFree at the boot, MB: min 908 median 9377 max 11562; boots under 3000 MB: 5, of them died 0, first creation failed 0
+   arm B: boots 40, came up 40, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+   arm T: MemFree at the boot, MB: min 895 median 9480 max 11956; boots under 3000 MB: 5, of them died 0, first creation failed 0
+   arm T: boots 40, came up 40, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+== gb10/unit-a/h1-01: 12 boots
+   arm B: MemFree at the boot, MB: min 4113 median 4513 max 4726; boots under 3000 MB: 0, of them died 0, first creation failed 0
+   arm B: boots 6, came up 6, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+   arm T: MemFree at the boot, MB: min 4049 median 4495 max 4810; boots under 3000 MB: 0, of them died 0, first creation failed 0
+   arm T: boots 6, came up 6, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+== gb10/unit-a/t0-live4: 32 boots
+   arm B: MemFree at the boot, MB: min 1005 median 1966 max 8777; boots under 3000 MB: 12, of them died 0, first creation failed 0
+   arm B: first boots of a round (MemFree just back under the threshold): 2, of them died 0, first creation failed 0
+   arm B: boots 16, came up 16, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+   arm T: MemFree at the boot, MB: min 1183 median 1993 max 8816; boots under 3000 MB: 12, of them died 0, first creation failed 0
+   arm T: first boots of a round (MemFree just back under the threshold): 2, of them died 0, first creation failed 0
+   arm T: boots 16, came up 16, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+== gb10/unit-a/t1-live4: 102 boots (9 rounds skipped: MemFree stayed high)
+   arm B: MemFree at the boot, MB: min 995 median 2646 max 14628; boots under 3000 MB: 28, of them died 1, first creation failed 1
+   arm B: first boots of a round (MemFree just back under the threshold): 8, of them died 1, first creation failed 1
+   arm B: boots 51, came up 50, died 1, first context creation failed 1, recovered (try, ms, of waits or elapsed) []
+      0 fatal host {'MemFree_mb': 2482, 'MemAvailable_mb': 119021, 'Cached_mb': 117378, 'hi': [0, 0, 0, 0, 0]}
+         640ms [ctx-retry] device 0: context creation still out of memory after 1 tries and 0 ms of waits (host MemFree 2076 MiB, MemAvailable 118836 MiB, Cached 117660 MiB, free blocks of 2 MiB and larger: 0); giving up
+         640ms [server] FATAL: worker init failed: Engine::new failed: cuDevicePrimaryCtxRetain (context creation) on device 0 failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") (host MemFree 2076 MiB, MemAvailable 118835 MiB, Cached 117660 MiB, free blocks of 2 MiB and larger: 0)
+   arm T: MemFree at the boot, MB: min 938 median 2619 max 15735; boots under 3000 MB: 26, of them died 0, first creation failed 1
+   arm T: first boots of a round (MemFree just back under the threshold): 9, of them died 0, first creation failed 1
+   arm T: boots 51, came up 51, died 0, first context creation failed 1, recovered (try, ms, of waits or elapsed) [(3, 150, 'waits')]
+      0 ready host {'MemFree_mb': 2490, 'MemAvailable_mb': 119000, 'Cached_mb': 117324, 'hi': [0, 0, 0, 0, 0]}
+         590ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 1, 0 ms waited so far; host MemFree 1207 MiB, MemAvailable 118713 MiB, Cached 118480 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 50 ms
+         664ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 2, 50 ms waited so far; host MemFree 2078 MiB, MemAvailable 118873 MiB, Cached 117608 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 100 ms
+         975ms [ctx-retry] device 0: context created on try 3, after 150 ms of waits
+== gb10/unit-a/t2-plain4: 8 boots
+   arm B: MemFree at the boot, MB: min 914 median 2376 max 3778; boots under 3000 MB: 3, of them died 0, first creation failed 0
+   arm B: first boots of a round (MemFree just back under the threshold): 1, of them died 0, first creation failed 0
+   arm B: boots 4, came up 4, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+   arm T: MemFree at the boot, MB: min 1577 median 2567 max 4088; boots under 3000 MB: 3, of them died 0, first creation failed 0
+   arm T: first boots of a round (MemFree just back under the threshold): 1, of them died 0, first creation failed 0
+   arm T: boots 4, came up 4, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+== gb10/unit-a/t3-plain4: 12 boots
+   arm B: MemFree at the boot, MB: min 1184 median 1206 max 1269; boots under 3000 MB: 6, of them died 0, first creation failed 0
+   arm B: first boots of a round (MemFree just back under the threshold): 2, of them died 0, first creation failed 0
+   arm B: boots 6, came up 6, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+   arm T: MemFree at the boot, MB: min 1148 median 1204 max 1264; boots under 3000 MB: 6, of them died 0, first creation failed 0
+   arm T: first boots of a round (MemFree just back under the threshold): 1, of them died 0, first creation failed 0
+   arm T: boots 6, came up 6, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+== gb10/unit-a/t5-live4: 26 boots (5 rounds skipped: MemFree stayed high)
+   arm B: MemFree at the boot, MB: min 1034 median 2446 max 2498; boots under 3000 MB: 13, of them died 1, first creation failed 1
+   arm B: first boots of a round (MemFree just back under the threshold): 7, of them died 1, first creation failed 1
+   arm B: boots 13, came up 12, died 1, first context creation failed 1, recovered (try, ms, of waits or elapsed) []
+      0 fatal host {'MemFree_mb': 2483, 'MemAvailable_mb': 118965, 'Cached_mb': 117270, 'hi': [0, 0, 0, 0, 0]}
+         581ms [ctx-retry] device 0: context creation still out of memory after 1 tries and 0 ms of waits (host MemFree 1438 MiB, MemAvailable 118816 MiB, Cached 118197 MiB, free blocks of 2 MiB and larger: 0); giving up
+         581ms [server] FATAL: worker init failed: Engine::new failed: cuDevicePrimaryCtxRetain (context creation) on device 0 failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") (host MemFree 1438 MiB, MemAvailable 118816 MiB, Cached 118197 MiB, free blocks of 2 MiB and larger: 0)
+   arm T: MemFree at the boot, MB: min 1492 median 2466 max 5280; boots under 3000 MB: 11, of them died 0, first creation failed 2
+   arm T: first boots of a round (MemFree just back under the threshold): 6, of them died 0, first creation failed 2
+   arm T: boots 13, came up 13, died 0, first context creation failed 2, recovered (try, ms, of waits or elapsed) [(3, 150, 'waits'), (5, 750, 'waits')]
+      0 ready host {'MemFree_mb': 2498, 'MemAvailable_mb': 118987, 'Cached_mb': 117303, 'hi': [0, 0, 0, 0, 0]}
+         296ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 1, 0 ms waited so far; host MemFree 1749 MiB, MemAvailable 118576 MiB, Cached 117933 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 50 ms
+         423ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 2, 50 ms waited so far; host MemFree 1581 MiB, MemAvailable 118434 MiB, Cached 118103 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 100 ms
+         690ms [ctx-retry] device 0: context created on try 3, after 150 ms of waits
+      0 ready host {'MemFree_mb': 2466, 'MemAvailable_mb': 118960, 'Cached_mb': 117285, 'hi': [0, 0, 0, 0, 0]}
+         571ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 1, 0 ms waited so far; host MemFree 1557 MiB, MemAvailable 118388 MiB, Cached 118058 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 50 ms
+         690ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 2, 50 ms waited so far; host MemFree 1432 MiB, MemAvailable 118394 MiB, Cached 118189 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 100 ms
+         827ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 3, 150 ms waited so far; host MemFree 1582 MiB, MemAvailable 118401 MiB, Cached 118046 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 200 ms
+         1059ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 4, 350 ms waited so far; host MemFree 2614 MiB, MemAvailable 118842 MiB, Cached 117016 MiB, free blocks of 2 MiB and larger: 0); the kernel has not freed a block for the context buffers yet, trying again in 400 ms
+         1697ms [ctx-retry] device 0: context created on try 5, after 750 ms of waits
+== gb10/unit-a/t7-live8: 36 boots (6 rounds skipped: MemFree stayed high)
+   arm B: MemFree at the boot, MB: min 770 median 2455 max 12510; boots under 3000 MB: 15, of them died 2, first creation failed 2
+   arm B: first boots of a round (MemFree just back under the threshold): 6, of them died 1, first creation failed 1
+   arm B: boots 18, came up 16, died 2, first context creation failed 2, recovered (try, ms, of waits or elapsed) []
+      0 fatal host {'MemFree_mb': 2484, 'MemAvailable_mb': 118948, 'Cached_mb': 117243, 'hi': [0, 0, 0, 0, 0]}
+         283ms [ctx-retry] device 0: context creation still out of memory after 1 tries and 0 ms of waits (host MemFree 1972 MiB, MemAvailable 118511 MiB, Cached 117631 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); giving up
+         284ms [server] FATAL: worker init failed: Engine::new failed: cuDevicePrimaryCtxRetain (context creation) on device 0 failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") (host MemFree 1971 MiB, MemAvailable 118511 MiB, Cached 117631 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0)
+      2 fatal host {'MemFree_mb': 1249, 'MemAvailable_mb': 118925, 'Cached_mb': 118450, 'hi': [0, 0, 0, 0, 0]}
+         1045ms [ctx-retry] device 0: context creation still out of memory after 1 tries and 0 ms of waits (host MemFree 1052 MiB, MemAvailable 118388 MiB, Cached 118556 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); giving up
+         1045ms [server] FATAL: worker init failed: Engine::new failed: cuDevicePrimaryCtxRetain (context creation) on device 0 failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") (host MemFree 1054 MiB, MemAvailable 118388 MiB, Cached 118554 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0)
+   arm T: MemFree at the boot, MB: min 806 median 1677 max 17974; boots under 3000 MB: 13, of them died 0, first creation failed 1
+   arm T: boots 18, came up 18, died 0, first context creation failed 1, recovered (try, ms, of waits or elapsed) [(14, 7950, 'waits')]
+      1 ready host {'MemFree_mb': 964, 'MemAvailable_mb': 118520, 'Cached_mb': 118771, 'hi': [0, 0, 0, 0, 0]}
+         253ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 1, 0 ms waited so far; host MemFree 1130 MiB, MemAvailable 118386 MiB, Cached 118472 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 50 ms
+         329ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 2, 50 ms waited so far; host MemFree 1156 MiB, MemAvailable 118391 MiB, Cached 118452 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 100 ms
+         457ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 3, 150 ms waited so far; host MemFree 1157 MiB, MemAvailable 118395 MiB, Cached 118454 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 200 ms
+         686ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 4, 350 ms waited so far; host MemFree 1107 MiB, MemAvailable 118395 MiB, Cached 118504 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 400 ms
+         1115ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 5, 750 ms waited so far; host MemFree 1037 MiB, MemAvailable 118394 MiB, Cached 118572 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 800 ms
+         1942ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 6, 1550 ms waited so far; host MemFree 1036 MiB, MemAvailable 118395 MiB, Cached 118575 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 800 ms
+         2773ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 7, 2350 ms waited so far; host MemFree 1094 MiB, MemAvailable 118385 MiB, Cached 118507 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 800 ms
+         3606ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 8, 3150 ms waited so far; host MemFree 1103 MiB, MemAvailable 118392 MiB, Cached 118506 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 800 ms
+         4439ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 9, 3950 ms waited so far; host MemFree 1078 MiB, MemAvailable 118355 MiB, Cached 118493 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 800 ms
+         5272ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 10, 4750 ms waited so far; host MemFree 1107 MiB, MemAvailable 118395 MiB, Cached 118504 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 800 ms
+         6106ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 11, 5550 ms waited so far; host MemFree 1080 MiB, MemAvailable 118374 MiB, Cached 118509 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 800 ms
+         6937ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 12, 6350 ms waited so far; host MemFree 1108 MiB, MemAvailable 118395 MiB, Cached 118502 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 800 ms
+         7763ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 13, 7150 ms waited so far; host MemFree 1079 MiB, MemAvailable 118384 MiB, Cached 118520 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 800 ms
+         8767ms [ctx-retry] device 0: context created on try 14, after 7950 ms of waits
+== gb10/unit-a/t8-live8: 42 boots (7 rounds skipped: MemFree stayed high)
+   arm B: MemFree at the boot, MB: min 821 median 1907 max 22798; boots under 3000 MB: 12, of them died 1, first creation failed 1
+   arm B: first boots of a round (MemFree just back under the threshold): 2, of them died 0, first creation failed 0
+   arm B: boots 21, came up 20, died 1, first context creation failed 1, recovered (try, ms, of waits or elapsed) []
+      3 fatal host {'MemFree_mb': 1362, 'MemAvailable_mb': 118933, 'Cached_mb': 118339, 'hi': [11, 0, 0, 0, 0]}
+         149ms [ctx-retry] device 0: context creation still out of memory after 1 tries and 0 ms of waits (host MemFree 2505 MiB, MemAvailable 118830 MiB, Cached 117093 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); giving up
+         149ms [server] FATAL: worker init failed: Engine::new failed: cuDevicePrimaryCtxRetain (context creation) on device 0 failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") (host MemFree 2505 MiB, MemAvailable 118829 MiB, Cached 117093 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0)
+   arm T: MemFree at the boot, MB: min 847 median 2487 max 31093; boots under 3000 MB: 12, of them died 0, first creation failed 2
+   arm T: first boots of a round (MemFree just back under the threshold): 5, of them died 0, first creation failed 1
+   arm T: boots 21, came up 21, died 0, first context creation failed 3, recovered (try, ms, of waits or elapsed) [(2, 50, 'waits'), (5, 750, 'waits'), (6, 1550, 'waits')]
+      1 ready host {'MemFree_mb': 847, 'MemAvailable_mb': 118794, 'Cached_mb': 118870, 'hi': [0, 0, 0, 0, 0]}
+         2478ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 1, 0 ms waited so far; host MemFree 861 MiB, MemAvailable 118795 MiB, Cached 118698 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 50 ms
+         2567ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 2, 50 ms waited so far; host MemFree 862 MiB, MemAvailable 118819 MiB, Cached 118721 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 100 ms
+         2689ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 3, 150 ms waited so far; host MemFree 923 MiB, MemAvailable 118822 MiB, Cached 118662 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 200 ms
+         2912ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 4, 350 ms waited so far; host MemFree 838 MiB, MemAvailable 118828 MiB, Cached 118753 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 400 ms
+         6881ms [ctx-retry] device 0: context created on try 5, after 750 ms of waits
+      0 ready host {'MemFree_mb': 2487, 'MemAvailable_mb': 118945, 'Cached_mb': 117230, 'hi': [0, 0, 0, 0, 0]}
+         320ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 1, 0 ms waited so far; host MemFree 2750 MiB, MemAvailable 118611 MiB, Cached 116848 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 50 ms
+         540ms [ctx-retry] device 0: context created on try 2, after 50 ms of waits
+      4 ready host {'MemFree_mb': 7267, 'MemAvailable_mb': 118940, 'Cached_mb': 112437, 'hi': [0, 0, 0, 0, 0]}
+         2712ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 1, 0 ms waited so far; host MemFree 4971 MiB, MemAvailable 118750 MiB, Cached 114629 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 50 ms
+         2851ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 2, 50 ms waited so far; host MemFree 4897 MiB, MemAvailable 118750 MiB, Cached 114704 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 100 ms
+         3217ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 3, 150 ms waited so far; host MemFree 4591 MiB, MemAvailable 118766 MiB, Cached 115011 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 200 ms
+         3586ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 4, 350 ms waited so far; host MemFree 4330 MiB, MemAvailable 118690 MiB, Cached 115269 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 400 ms
+         4130ms [ctx-retry] device 0: context creation answered out of memory on unified memory (try 5, 750 ms waited so far; host MemFree 6730 MiB, MemAvailable 118774 MiB, Cached 112871 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 800 ms
+         5241ms [ctx-retry] device 0: context created on try 6, after 1550 ms of waits
+== gb10/unit-a/u1-live8: 48 boots (7 rounds skipped: MemFree stayed high)
+   arm B: MemFree at the boot, MB: min 1086 median 2486 max 11800; boots under 3000 MB: 16, of them died 1, first creation failed 1
+   arm B: first boots of a round (MemFree just back under the threshold): 3, of them died 0, first creation failed 0
+   arm B: boots 24, came up 23, died 1, first context creation failed 1, recovered (try, ms, of waits or elapsed) []
+      3 fatal host {'MemFree_mb': 1173, 'MemAvailable_mb': 118942, 'Cached_mb': 118468, 'hi': [9, 0, 0, 0, 0]}
+         165ms [ctx-retry] device 0: context creation still out of memory after 1 tries and 26 ms (host MemFree 1843 MiB, MemAvailable 118819 MiB, Cached 117675 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); giving up
+         165ms [server] FATAL: worker init failed: Engine::new failed: cuDevicePrimaryCtxRetain (context creation) on device 0 failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") (host MemFree 1844 MiB, MemAvailable 118820 MiB, Cached 117674 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0)
+   arm T: MemFree at the boot, MB: min 1044 median 2475 max 11980; boots under 3000 MB: 17, of them died 0, first creation failed 1
+   arm T: first boots of a round (MemFree just back under the threshold): 5, of them died 0, first creation failed 1
+   arm T: boots 24, came up 24, died 0, first context creation failed 2, recovered (try, ms, of waits or elapsed) [(2, 738, 'elapsed'), (5, 2862, 'elapsed')]
+      2 ready host {'MemFree_mb': 6812, 'MemAvailable_mb': 118909, 'Cached_mb': 112551, 'hi': [0, 0, 0, 0, 0]}
+         835ms [ctx-retry] device 0: context creation returned driver code 2 (no memory) on unified memory (try 1, 88 ms since the first try began; host MemFree 6035 MiB, MemAvailable 118682 MiB, Cached 113207 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 50 ms
+         1485ms [ctx-retry] device 0: context created on try 2, after 738 ms
+      0 ready host {'MemFree_mb': 2489, 'MemAvailable_mb': 118935, 'Cached_mb': 117009, 'hi': [0, 0, 0, 0, 0]}
+         392ms [ctx-retry] device 0: context creation returned driver code 2 (no memory) on unified memory (try 1, 92 ms since the first try began; host MemFree 1738 MiB, MemAvailable 118436 MiB, Cached 117637 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 50 ms
+         505ms [ctx-retry] device 0: context creation returned driver code 2 (no memory) on unified memory (try 2, 205 ms since the first try began; host MemFree 1576 MiB, MemAvailable 118260 MiB, Cached 117796 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 100 ms
+         700ms [ctx-retry] device 0: context creation returned driver code 2 (no memory) on unified memory (try 3, 399 ms since the first try began; host MemFree 1325 MiB, MemAvailable 118258 MiB, Cached 118045 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 200 ms
+         983ms [ctx-retry] device 0: context creation returned driver code 2 (no memory) on unified memory (try 4, 683 ms since the first try began; host MemFree 1120 MiB, MemAvailable 118261 MiB, Cached 118253 MiB, free blocks of order 9 and up (2 MiB with 4 KiB pages): 0); trying again in 400 ms
+         3162ms [ctx-retry] device 0: context created on try 5, after 2862 ms
+== total over the boot-only cells above
+   arm B: boots 379, died 7, first context creation failed 7; boots under 3000 MB 154 (first creation failed 7); first boots of a round 31 (first creation failed 3)
+   arm T: boots 378, died 0, first context creation failed 10; boots under 3000 MB 148 (first creation failed 8); first boots of a round 29 (first creation failed 5)
+
+# unit-b: tab_probe.py
+== gb10/unit-b/a0-asis-loop
+   boots 200  first-try failures 0  by call {}
+   MemFree before the context, MB: min 48833 median 48976 max 49130
+   free blocks of order >= 9 before the context: min 3795 median 3809 max 3818
+   retries after a failure (call, tries, final rc, ms): []
+   kernel NVRM lines: big-page fallback 0, UVM system memory (nv_gpu_ops.c) 0, context buffer (kgrctxAllocCtxBuffers) 0
+== gb10/unit-b/a1-live2-loop
+   boots 400  first-try failures 0  by call {}
+   MemFree before the context, MB: min 987 median 2063 max 20385
+   free blocks of order >= 9 before the context: min 0 median 16 max 1296
+   retries after a failure (call, tries, final rc, ms): []
+   kernel NVRM lines: big-page fallback 8, UVM system memory (nv_gpu_ops.c) 5, context buffer (kgrctxAllocCtxBuffers) 0
+== gb10/unit-b/a2-live2-exit
+   boots 187  first-try failures 0  by call {}
+   MemFree before the context, MB: min 1389 median 5075 max 33425
+   free blocks of order >= 9 before the context: min 0 median 51 max 6971
+   retries after a failure (call, tries, final rc, ms): []
+   kernel NVRM lines: big-page fallback 14, UVM system memory (nv_gpu_ops.c) 2, context buffer (kgrctxAllocCtxBuffers) 0
+== gb10/unit-b/b1-live2-dip
+   boots 5  first-try failures 0  by call {}
+   MemFree before the context, MB: min 1696 median 3140 max 13863
+   free blocks of order >= 9 before the context: min 0 median 2 max 823
+   retries after a failure (call, tries, final rc, ms): []
+   kernel NVRM lines: big-page fallback 0, UVM system memory (nv_gpu_ops.c) 0, context buffer (kgrctxAllocCtxBuffers) 0
+
+# unit-b: tab_boots.py
+== gb10/unit-b/c1-cycles: 13 boots
+   arm B: boots 6, came up 6, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+   arm T: boots 7, came up 7, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+== gb10/unit-b/t1-live4: 12 boots (1 rounds skipped: MemFree stayed high)
+   arm B: MemFree at the boot, MB: min 1419 median 4764 max 17485; boots under 3000 MB: 2, of them died 0, first creation failed 0
+   arm B: first boots of a round (MemFree just back under the threshold): 1, of them died 0, first creation failed 0
+   arm B: boots 6, came up 6, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+   arm T: MemFree at the boot, MB: min 943 median 5693 max 14132; boots under 3000 MB: 2, of them died 0, first creation failed 0
+   arm T: first boots of a round (MemFree just back under the threshold): 1, of them died 0, first creation failed 0
+   arm T: boots 6, came up 6, died 0, first context creation failed 0, recovered (try, ms, of waits or elapsed) []
+== total over the boot-only cells above
+   arm B: boots 6, died 0, first context creation failed 0; boots under 3000 MB 2 (first creation failed 0); first boots of a round 1 (first creation failed 0)
+   arm T: boots 6, died 0, first context creation failed 0; boots under 3000 MB 2 (first creation failed 0); first boots of a round 1 (first creation failed 0)

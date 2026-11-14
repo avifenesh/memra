@@ -26,6 +26,7 @@ routes key on a unified-memory `120a`-family device; the rest key on the device.
 |---|---|---|---|
 | free memory for sizing | the larger of `cuMemGetInfo` free and MemAvailable (page cache counts) | `cuMemGetInfo` free | [SERVING](../SERVING.md#unified-memory-devices-gb10-dgx-spark) |
 | free memory for a delta (the draft-state measurement) | `MemFree + Buffers + Cached + SReclaimable`, one `/proc/meminfo` read | `cuMemGetInfo` free | [UNIFIED-MEMORY-READERS](../decisions/UNIFIED-MEMORY-READERS.md) |
+| context creation at boot | retried while it answers out of memory and MemAvailable is at least 256 MiB (waits of 50 ms doubling to 800 ms, until 90 s have passed since the first try) | one call | [GB10-CONTEXT-CREATE-RETRY](../decisions/GB10-CONTEXT-CREATE-RETRY.md) |
 | `MEMRA_PREFIX_CACHE_MB` | the larger of 2 full-context entries and half of (boot free - 1.5 GiB - 2 GiB headroom - host tier): 34,048 MiB at 70 GiB free | derived from free VRAM and the session peak | [`research/gb10-defaults-20261101/`](../../research/gb10-defaults-20261101/) |
 | `MEMRA_STREAM_TTFT_MS_MAX` | 997,311 ms at 262,144 tokens (served ctx / (4118 x 48 / 188 / 4) tok/s) | 90,000 ms | same |
 | `MEMRA_SSE_PREFILL_COMMIT_MS` | 60,000 ms | off | same |
@@ -41,6 +42,10 @@ Boot lines state the memory defaults: `[prefix-cache] on: ... unified memory: ..
 `[deadline] unified memory (48 SMs, served ctx N): ...`. Prefix-cache inserts also clamp to live
 free memory, and admission books the cache's allowed growth. The values before the unified-memory
 keying are in [history/MODELS.md](../history/MODELS.md#dgx-spark-card-the-pre-unified-memory-defaults-the-was-column).
+
+A boot on a host whose page cache is full and filling can log `[ctx-retry]` lines before
+`[worker] Engine ready`: the driver found no free 2 MiB block for the context buffer and the boot
+tried again ([serving](../SERVING.md#unified-memory-devices-gb10-dgx-spark)).
 
 ## Models measured here
 
@@ -87,3 +92,4 @@ Qwen3.8-27B 41.90 tok/s aggregate, Qwen3.6-35B-A3B 131.41.
 - Tuning and defaults: [`research/gb10-tuning-20261102/`](../../research/gb10-tuning-20261102/),
   [`research/gb10-defaults-20261101/`](../../research/gb10-defaults-20261101/).
 - The unified-memory mechanism: [serving](../SERVING.md#unified-memory-devices-gb10-dgx-spark).
+- Boot on a full page cache: [`research/gb10-boot-oom-20261114/`](../../research/gb10-boot-oom-20261114/README.md).

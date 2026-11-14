@@ -5,6 +5,8 @@ use cudarc::cublaslt::{CudaBlasLT, Matmul, MatmulConfig};
 use cudarc::driver::{CudaContext, CudaStream, sys as cu};
 use std::sync::Arc;
 
+pub mod ctx_boot;
+
 pub use memra_gguf;
 
 /// CPU reference matmul for a linear layer y = x @ W^T.
@@ -218,13 +220,20 @@ impl Gpu {
 
 impl Gpu {
     pub fn new(ordinal: usize) -> Result<Self, Box<dyn std::error::Error>> {
-        let ctx = CudaContext::new(ordinal)?;
+        // Context creation names its driver call on failure and, on a unified-memory device,
+        // retries an out-of-memory answer the host's reclaimable memory contradicts
+        // (memra#1316, `ctx_boot`).
+        let ctx = ctx_boot::create_context(ordinal)?;
         // A NON-BLOCKING created stream (NOT the legacy NULL/default stream): the NULL stream cannot be
         // CUDA-graph captured (cuStreamBeginCapture -> CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED). All
         // engine kernels launch on this stream, so making it capturable enables the decode CUDA-graph
         // capture/replay path (CUDA-GRAPH-PLAN Phase 3). Behaviorally identical for the existing single-
         // stream paths (just a real stream id instead of NULL).
-        let stream = ctx.new_stream()?;
+        let stream = ctx_boot::boot_step(
+            ordinal,
+            "cuStreamCreate (the compute stream)",
+            ctx.new_stream(),
+        )?;
         // DETERMINISM FIX (decode bit-stability): the default stream-ordered async memory pool
         // (cuMemAllocAsync/cuMemFreeAsync, used by cudarc's `alloc`/`alloc_zeros`) reuses freed
         // blocks OPPORTUNISTICALLY — it hands a freed block to the next alloc as soon as the HOST
@@ -272,7 +281,11 @@ impl Gpu {
                 );
             }
         }
-        let blas = Arc::new(CudaBlasLT::new(stream.clone())?);
+        let blas = Arc::new(ctx_boot::boot_step(
+            ordinal,
+            "cublasLtCreate (the cuBLASLt handle)",
+            CudaBlasLT::new(stream.clone()),
+        )?);
         Ok(Self {
             ctx,
             stream,

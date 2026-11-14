@@ -1,0 +1,39 @@
+2026-11-14T08:21:27+02:00 cell t5-live4 READERS=4 K=2 GAP_MS=1000 ARMS=B T HOLD_GIB=24 HOLD_S=2 ARM_MB=2500 PAUSE_S=60 SETTLE_S=45 EP_ROUNDS=100000 ROUNDS=100000 UNTIL=1794638517
+2026-11-14T08:21:27+02:00 host: 7.0.0-1019-nvidia NVIDIA GB10, 580.178.04 min_free_kbytes=45166
+2026-11-14T08:21:28+02:00 arm B: 5cb624e733bd084910ceed949f70762c7b2d96c21666d4cf221d23807e32de09 runtime sources: d881152e874203a915d17e23841fd01f9443ea9d898605ec3c7705b5681dc464  ctx_boot.rs ed9309ca7ebe21f9d24fd4ff79ab091b1e95e38a0bac7adbfe1a10d3fdb33d7e  lib.rs
+2026-11-14T08:21:28+02:00 arm T: 3383967009ca5903a370ebf626a38b1bc114b185de13ce35766ae67738892b1b runtime sources: 357486e4c02e93d17f9092b82299a361937971877c064e4ceb303a508881efc0  ctx_boot.rs ed9309ca7ebe21f9d24fd4ff79ab091b1e95e38a0bac7adbfe1a10d3fdb33d7e  lib.rs
+2026-11-14T08:21:28+02:00 fill_live: before MemFree: 33084 MemAvailable: 118961 Cached: 86687
+  2026-11-14T08:21:28+02:00 fill2: before MemFree: 33866552 kB;MemAvailable: 121816256 kB;Cached: 88779652 kB;
+  2026-11-14T08:22:58+02:00 fill2 done: MemFree: 9821708 kB;MemAvailable: 121848012 kB;Cached: 112858428 kB;
+2026-11-14T08:22:58+02:00 fill_live: 4 readers running until ~/.cache/memra-1316/runs/t5-live4/stop.1 (at most 3000s)
+2026-11-14T08:24:53+02:00 episode 1 ends at round 2: MemFree stayed over 2500 MB
+2026-11-14T08:25:53+02:00 fill_live: before MemFree: 12220 MemAvailable: 118918 Cached: 107510
+  2026-11-14T08:25:53+02:00 fill2: before MemFree: 12513536 kB;MemAvailable: 121772016 kB;Cached: 110090964 kB;
+  2026-11-14T08:26:09+02:00 fill2 done: MemFree: 2111676 kB;MemAvailable: 121840944 kB;Cached: 120562264 kB;
+2026-11-14T08:26:10+02:00 fill_live: 4 readers running until ~/.cache/memra-1316/runs/t5-live4/stop.2 (at most 3000s)
+round 4 boot 0 arm T: ready 690ms [ctx-retry] device 0: context created on try 3, after 150 ms of waits
+2026-11-14T08:28:56+02:00 episode 2 ends at round 6: MemFree stayed over 2500 MB
+2026-11-14T08:29:56+02:00 fill_live: before MemFree: 9867 MemAvailable: 118903 Cached: 109841
+  2026-11-14T08:29:56+02:00 fill2: before MemFree: 10104464 kB;MemAvailable: 121757408 kB;Cached: 112477760 kB;
+  2026-11-14T08:30:02+02:00 fill2 done: MemFree: 3072304 kB;MemAvailable: 121818524 kB;Cached: 119565188 kB;
+2026-11-14T08:30:02+02:00 fill_live: 4 readers running until ~/.cache/memra-1316/runs/t5-live4/stop.3 (at most 3000s)
+2026-11-14T08:33:12+02:00 episode 3 ends at round 11: MemFree stayed over 2500 MB
+2026-11-14T08:34:12+02:00 fill_live: before MemFree: 5807 MemAvailable: 118929 Cached: 113919
+  2026-11-14T08:34:12+02:00 fill2: before MemFree: 5947208 kB;MemAvailable: 121784180 kB;Cached: 116653776 kB;
+  2026-11-14T08:34:17+02:00 fill2 done: MemFree: 2371996 kB;MemAvailable: 121828676 kB;Cached: 120268484 kB;
+2026-11-14T08:34:17+02:00 fill_live: 4 readers running until ~/.cache/memra-1316/runs/t5-live4/stop.4 (at most 3000s)
+2026-11-14T08:35:52+02:00 round 14: holder failed: hold: cuDevicePrimaryCtxRetain CUresult 2
+2026-11-14T08:36:48+02:00 episode 4 ends at round 15: MemFree stayed over 2500 MB
+2026-11-14T08:37:49+02:00 fill_live: before MemFree: 7690 MemAvailable: 118748 Cached: 111842
+  2026-11-14T08:37:49+02:00 fill2: before MemFree: 7875356 kB;MemAvailable: 121598420 kB;Cached: 114526056 kB;
+  2026-11-14T08:37:55+02:00 fill2 done: MemFree: 2139312 kB;MemAvailable: 121745392 kB;Cached: 120407588 kB;
+2026-11-14T08:37:55+02:00 fill_live: 4 readers running until ~/.cache/memra-1316/runs/t5-live4/stop.5 (at most 3000s)
+round 16 boot 0 arm T: ready 1697ms [ctx-retry] device 0: context created on try 5, after 750 ms of waits
+round 17 boot 0 arm B: fatal 581ms [server] FATAL: worker init failed: Engine::new failed: cuDevicePrimaryCtxRetain (context creation) on device 0 failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") (host MemFree 1438 MiB, MemAvailable 118816 MiB, Cached 118197 MiB, free blocks of 2 MiB and larger: 0)
+2026-11-14T08:40:40+02:00 episode 5 ends at round 18: MemFree stayed over 2500 MB
+2026-11-14T08:41:40+02:00 fill_live: before MemFree: 7826 MemAvailable: 118882 Cached: 111842
+  2026-11-14T08:41:40+02:00 fill2: before MemFree: 8014332 kB;MemAvailable: 121735844 kB;Cached: 114526476 kB;
+  2026-11-14T08:41:44+02:00 fill2 done: MemFree: 2148640 kB;MemAvailable: 121737256 kB;Cached: 120389000 kB;
+2026-11-14T08:41:44+02:00 fill_live: 4 readers running until ~/.cache/memra-1316/runs/t5-live4/stop.6 (at most 3000s)
+2026-11-14T08:42:32+02:00 end: rounds=18 episodes=6 MemFree: 818452 kB;MemAvailable: 121552268 kB;Cached: 121820620 kB;
+2026-11-14T08:42:32+02:00 boots=31 died=1 first_try_failed=3 nvrm_lines=84 kgrctx=8
