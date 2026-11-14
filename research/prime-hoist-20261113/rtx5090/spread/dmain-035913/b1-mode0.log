@@ -1,0 +1,49 @@
+i 0: status 200 prompt 8155 path spec need 1593 growth 1216 unused0 376 calls [(1593, 1216), (1657, 64)] trims 0 oom 0 text abc602789283635d
+i 1: status 200 prompt 8142 path spec need 1617 growth 864 unused0 752 calls [(1617, 864), (1681, 64)] trims 0 oom 0 text 5a5a57553fc0ed6d
+i 2: status 200 prompt 8150 path spec need 1616 growth 864 unused0 751 calls [(1616, 864), (1680, 64)] trims 0 oom 0 text 216f7ffc16a0be97
+i 3: status 200 prompt 8134 path spec need 1617 growth 864 unused0 752 calls [(1617, 864), (1713, 96)] trims 0 oom 0 text 6c848cf321f51476
+i 4: status 200 prompt 8183 path spec need 1615 growth 864 unused0 750 calls [(1615, 864), (1871, 256)] trims 0 oom 0 text 4dd81dbce4ca8c66
+i 5: status 200 prompt 8172 path spec need 1616 growth 864 unused0 751 calls [(1616, 864), (1648, 32)] trims 0 oom 0 text d8cd36072329e063
+i 6: status 200 prompt 8177 path spec need 1615 growth 864 unused0 750 calls [(1615, 864), (1647, 32)] trims 0 oom 0 text abc602789283635d
+i 7: status 200 prompt 8097 path spec need 1586 growth 832 unused0 753 calls [(1586, 832), (1682, 96)] trims 0 oom 0 text 760a5263136fcf4c
+i 8: status 200 prompt 8169 path spec need 1616 growth 864 unused0 751 calls [(1616, 864), (1648, 32)] trims 0 oom 0 text 1c5c2c33c3f9bf24
+i 9: status 200 prompt 8170 path spec need 1616 growth 864 unused0 751 calls [(1616, 864), (1616, 0)] trims 0 oom 0 text 216f7ffc16a0be97
+Exception in thread Thread-1 (<lambda>):
+Traceback (most recent call last):
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "~/.cache/memra-1258/b-spread.py", line 62, in <lambda>
+    t = threading.Thread(target=lambda: keeper.update(server.complete(g.keeper_prompt(), 20000)),
+                                                      ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "~/.cache/memra-1258/harness/same-pass-admission-gate.py", line 290, in complete
+    with urllib.request.urlopen(req, timeout=300) as f:
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 487, in open
+    response = self._open(req, data)
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 1350, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/urllib/request.py", line 1325, in do_open
+    r = h.getresponse()
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/http/client.py", line 1450, in getresponse
+    response.begin()
+    ~~~~~~~~~~~~~~^^
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/http/client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ~~~~~~~~~~~~~~~~~^^
+  File "~/.local/share/uv/python/cpython-3.14.4-linux-x86_64-gnu/lib/python3.14/http/client.py", line 305, in _read_status
+    raise RemoteDisconnected("Remote end closed connection without"
+                             " response")
+http.client.RemoteDisconnected: Remote end closed connection without response

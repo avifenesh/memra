@@ -1,0 +1,23 @@
+2026-11-14T02:00:29+02:00
+2ba23319c9f347292378c4e83e58d70142c807683e3a6a5d833c312cd0c09970  ~/.cache/memra-1255/bin/run-gen-m6-120a
+210819834ee14c09884cd9fd7b03f40b94f4736c3b22b163affb4316db2fbaee  ~/.cache/memra-1255/bin/run-spec-m6-120a
+28f04067b3b764ecf1f1bc5f8f658b3bb4fe3a6de750cf56d8bdb2743c2278d4  ~/.cache/memra-1255/bin/dspark-q38-gate-m6-120a
+8e57c0530a51a26a13b6741ccc23a1922bb0221f9af66f152d44637e52f6f5fc  ~/.cache/memra-1255/bin/run-gen-s2f-120a
+5dba7cbbd16c1749e01f8350c50d87353c17572fdae503f0c795b23c4c11d7c5  ~/.cache/memra-1255/bin/run-spec-s2f-120a
+56ecb62a6fc864d6a86808b444fb93258ff163b681325e97bdd6171b9990ef7a  ~/.cache/memra-1255/bin/dspark-q38-gate-s2f-120a
+NVIDIA GeForce RTX 5090 Laptop GPU, 615.71.09, 73, 1252 MHz, 33.29 W, 175.00 W, 72 MiB
+profile=balanced
+p2000: 8527 bytes, last ids [17173, 12489, 55893]
+p4106: 17183 bytes, last ids [3045, 32709, 3045]
+p8200: 34417 bytes, last ids [95027, 220, 862]
+p16500: 69431 bytes, last ids [12489, 49813, 324]
+m6 run-gen 4106 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=1.727e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.851e-1  MATCH
+m6 run-gen 8200 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=2.147e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.759e-1  MATCH
+m6 run-spec 8200 rc=0 STEP-IDENTITY: 4 batched plain steps against one 4-column verify, 2 rounds after 211 primed tokens: 0 of 1986560 logits differ (max |diff| 0), 0 argmax differ - === SELF-CONSISTENCY PASS ===
+m6 dspark rc=0 == dspark_q38_gate: ALL EXACT | mean plain 13.1 tok/s | mean spec 93.2 tok/s | 384 tokens ==
+s2f run-gen 4106 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=1.727e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.851e-1  MATCH
+s2f run-gen 8200 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=2.147e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.759e-1  MATCH
+s2f run-spec 8200 rc=0 STEP-IDENTITY: 4 batched plain steps against one 4-column verify, 2 rounds after 211 primed tokens: 0 of 1986560 logits differ (max |diff| 0), 0 argmax differ - === SELF-CONSISTENCY PASS ===
+s2f dspark rc=0 == dspark_q38_gate: ALL EXACT | mean plain 13.0 tok/s | mean spec 92.4 tok/s | 384 tokens ==
+ARMS-EQUAL
+EXACT2-DONE rc=0 2026-11-14T02:23:21+02:00

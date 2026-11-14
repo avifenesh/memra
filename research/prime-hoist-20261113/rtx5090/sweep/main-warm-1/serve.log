@@ -1,0 +1,1333 @@
+[server] build: memra-0.141.1-f5fac26f3bf9 (id: source-tree, git: unknown)
+[env-audit] warning: 2 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_DIAG_CALL_TRIM, MEMRA_DIAG_TRIM_BEFORE_PRIME. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] starting; models config = [("gate", "~/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "gate" <- ~/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves OFF (whole-entry restore, strict-prefix restore and boundary capture together)
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] gate: DSPARK SPEC route armed (drafter attached (~/models/q38-gguf/Qwen3.8-27B-DFlash2-memra); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] gate: DFlash2 draft head FULL target vocab (external_mtp_d2t_ignored=false; set MEMRA_FRSPEC_TRIM=<ranks.txt> to trim)
+[admission] "gate": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+[admission] "gate": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=dspark supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[dspark-vg] serve pool ENGAGED (vt_cap=8)
+[topk-shards] engaged: rows=7 cols=248320 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+[dflash-kv-ring] compact keep_from=2064 kept=2056 phys_rows=4120
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1778384896,"still_owned_bytes":19475431184,"pool_reserved_bytes":19595788288,"pool_cached_bytes":120357104,"driver_free_bytes":4923392000,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1696MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=dspark transient floor 1576MB (static was 1536MB; measured 1576MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 20384MB rest-mapped 18688MB charged 119MB -> 1576MB]; 5.6s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18181
+[meter] admit id=cmpl-8132398ee714241bb1417953df4c6ca4 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=5829 path=spec = 29696 B/token x ctx + 470MB prefill-workspace + 0MB fixed = 643MB
+[admission] prefill workspace held: model="gate" prompt=5749 call=5749 stack=5749 concat=0 slab_resident=1443MB held=470MB cold=1913MB
+[diag1255] gate-pass id=cmpl-8132398ee714241bb1417953df4c6ca4 prompt=5749 path=spec cost=774MB draft=160MB reserve=1576MB required=2350MB required_eager=2189MB eager_arm=false booked=0MB limiting_free=4810MB active=0
+[diag1255] after-admit-trim: driver_free=4695MB pool_res=18688MB pool_used=18573MB pool_unused=114MB eff_free=4810MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=5749 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[diag1255] after-admit id=cmpl-8132398ee714241bb1417953df4c6ca4 spec=false dspark_on=true cache=false dspark_sess=false: driver_free=4695MB pool_res=18688MB pool_used=18573MB pool_unused=114MB eff_free=4810MB
+[diag1255] tick start: driver_free=4695MB pool_res=18688MB pool_used=18573MB eff_free=4810MB (moved 4810MB)
+[diag1255] dspark-prime-start-before id=cmpl-8132398ee714241bb1417953df4c6ca4 rows=5749: driver_free=4695MB pool_res=18688MB pool_used=18573MB pool_unused=114MB eff_free=4810MB
+[diag1255] dspark-prime-chunk-before id=cmpl-8132398ee714241bb1417953df4c6ca4: driver_free=4119MB pool_res=19264MB pool_used=19226MB pool_unused=37MB eff_free=4156MB
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=2789.376 max_chunk_ms=2789.376
+[diag1255] dspark-prime-chunk-after id=cmpl-8132398ee714241bb1417953df4c6ca4: driver_free=2551MB pool_res=20832MB pool_used=19226MB pool_unused=1605MB eff_free=4156MB
+[diag1255] tick start: driver_free=2551MB pool_res=20832MB pool_used=19226MB eff_free=4156MB (moved -654MB)
+[diag1255] dspark-prime-chunk-before id=cmpl-8132398ee714241bb1417953df4c6ca4: driver_free=2551MB pool_res=20832MB pool_used=19226MB pool_unused=1605MB eff_free=4156MB
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[diag1255] dspark-prime-done id=cmpl-8132398ee714241bb1417953df4c6ca4: driver_free=2551MB pool_res=20832MB pool_used=19207MB pool_unused=1624MB eff_free=4175MB
+[fa-pool] grow #1 dev=0 o_len 3194880 -> 6389760 ml_len 12480 -> 24960 (retired kept, zero=false)
+[dspark-acc] ctx=5749 burst=9/21 cum=9/21=0.429
+[meter] admit id=cmpl-f3ed528e4b113936a5b379f1e013359c tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=20555 path=spec = 29696 B/token x ctx + 52MB prefill-workspace + 0MB fixed = 663MB
+[admission] prefill workspace held: model="gate" prompt=491 call=491 stack=491 concat=0 slab_resident=1443MB held=52MB cold=225MB
+[diag1255] gate-pass id=cmpl-f3ed528e4b113936a5b379f1e013359c prompt=491 path=spec cost=792MB draft=160MB reserve=1576MB required=2369MB required_eager=2208MB eager_arm=false booked=0MB limiting_free=4779MB active=0
+[diag1255] after-admit-trim: driver_free=2551MB pool_res=20832MB pool_used=18604MB pool_unused=2227MB eff_free=4779MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=491 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[diag1255] after-admit id=cmpl-f3ed528e4b113936a5b379f1e013359c spec=false dspark_on=true cache=false dspark_sess=false: driver_free=2551MB pool_res=20832MB pool_used=18604MB pool_unused=2227MB eff_free=4779MB
+[diag1255] tick start: driver_free=2551MB pool_res=20832MB pool_used=18604MB eff_free=4779MB (moved 622MB)
+[diag1255] dspark-prime-start-before id=cmpl-f3ed528e4b113936a5b379f1e013359c rows=491: driver_free=2551MB pool_res=20832MB pool_used=18604MB pool_unused=2227MB eff_free=4779MB
+[diag1255] dspark-prime-chunk-before id=cmpl-f3ed528e4b113936a5b379f1e013359c: driver_free=2551MB pool_res=20832MB pool_used=19700MB pool_unused=1131MB eff_free=3682MB
+[diag1255] dspark-prime-done id=cmpl-f3ed528e4b113936a5b379f1e013359c: driver_free=2551MB pool_res=20832MB pool_used=19675MB pool_unused=1156MB eff_free=3707MB
+[dspark-acc] ctx=491 burst=28/28 cum=28/28=1.000
+[diag1255] tick start: driver_free=2485MB pool_res=20896MB pool_used=19825MB eff_free=3556MB (moved -1224MB)
+[dspark-acc] ctx=523 burst=28/28 cum=56/56=1.000
+[dspark-acc] ctx=555 burst=28/28 cum=84/84=1.000
+[dspark-acc] ctx=587 burst=28/28 cum=112/112=1.000
+[dspark-acc] ctx=619 burst=28/28 cum=140/140=1.000
+[dspark-acc] ctx=651 burst=28/28 cum=168/168=1.000
+[dspark-acc] ctx=683 burst=28/28 cum=196/196=1.000
+[dspark-acc] ctx=715 burst=28/28 cum=224/224=1.000
+[dspark-acc] ctx=747 burst=28/28 cum=252/252=1.000
+[dspark-acc] ctx=779 burst=28/28 cum=280/280=1.000
+[dspark-acc] ctx=811 burst=28/28 cum=308/308=1.000
+[dspark-acc] ctx=843 burst=28/28 cum=336/336=1.000
+[dspark-acc] ctx=875 burst=28/28 cum=364/364=1.000
+[dspark-acc] ctx=907 burst=28/28 cum=392/392=1.000
+[dspark-acc] ctx=939 burst=28/28 cum=420/420=1.000
+[dspark-acc] ctx=971 burst=28/28 cum=448/448=1.000
+[dspark-acc] ctx=1003 burst=28/28 cum=476/476=1.000
+[dspark-acc] ctx=1035 burst=28/28 cum=504/504=1.000
+[dspark-acc] ctx=1067 burst=28/28 cum=532/532=1.000
+[dspark-acc] ctx=1099 burst=28/28 cum=560/560=1.000
+[dspark-acc] ctx=1131 burst=28/28 cum=588/588=1.000
+[dspark-acc] ctx=1163 burst=28/28 cum=616/616=1.000
+[dspark-acc] ctx=1195 burst=28/28 cum=644/644=1.000
+[dspark-acc] ctx=1227 burst=28/28 cum=672/672=1.000
+[dspark-acc] ctx=1259 burst=28/28 cum=700/700=1.000
+[dspark-acc] ctx=1291 burst=28/28 cum=728/728=1.000
+[dspark-acc] ctx=1323 burst=28/28 cum=756/756=1.000
+[dspark-acc] ctx=1355 burst=28/28 cum=784/784=1.000
+[dspark-acc] ctx=1387 burst=28/28 cum=812/812=1.000
+[dspark-acc] ctx=1419 burst=28/28 cum=840/840=1.000
+[dspark-acc] ctx=1451 burst=28/28 cum=868/868=1.000
+[diag1255] tick start: driver_free=2226MB pool_res=20896MB pool_used=19825MB eff_free=3296MB (moved -245MB)
+[dspark-acc] ctx=1483 burst=28/28 cum=896/896=1.000
+[dspark-acc] ctx=1515 burst=28/28 cum=924/924=1.000
+[dspark-acc] ctx=1547 burst=28/28 cum=952/952=1.000
+[dspark-acc] ctx=1579 burst=28/28 cum=980/980=1.000
+[dspark-acc] ctx=1611 burst=28/28 cum=1008/1008=1.000
+[dspark-acc] ctx=1643 burst=28/28 cum=1036/1036=1.000
+[dspark-acc] ctx=1675 burst=28/28 cum=1064/1064=1.000
+[dspark-acc] ctx=1707 burst=28/28 cum=1092/1092=1.000
+[dspark-acc] ctx=1739 burst=28/28 cum=1120/1120=1.000
+[dspark-acc] ctx=1771 burst=28/28 cum=1148/1148=1.000
+[dspark-acc] ctx=1803 burst=28/28 cum=1176/1176=1.000
+[dspark-acc] ctx=1835 burst=28/28 cum=1204/1204=1.000
+[dspark-acc] ctx=1867 burst=28/28 cum=1232/1232=1.000
+[dspark-acc] ctx=1899 burst=28/28 cum=1260/1260=1.000
+[dspark-acc] ctx=1931 burst=28/28 cum=1288/1288=1.000
+[dspark-acc] ctx=1963 burst=28/28 cum=1316/1316=1.000
+[dspark-acc] ctx=1995 burst=28/28 cum=1344/1344=1.000
+[dspark-acc] ctx=2027 burst=28/28 cum=1372/1372=1.000
+[dspark-acc] ctx=2059 burst=28/28 cum=1400/1400=1.000
+[dspark-acc] ctx=2091 burst=28/28 cum=1428/1428=1.000
+[dspark-acc] ctx=2123 burst=28/28 cum=1456/1456=1.000
+[dspark-acc] ctx=2155 burst=28/28 cum=1484/1484=1.000
+[dspark-acc] ctx=2187 burst=28/28 cum=1512/1512=1.000
+[dspark-acc] ctx=2219 burst=28/28 cum=1540/1540=1.000
+[dspark-acc] ctx=2251 burst=28/28 cum=1568/1568=1.000
+[dspark-acc] ctx=2283 burst=28/28 cum=1596/1596=1.000
+[dspark-acc] ctx=2315 burst=28/28 cum=1624/1624=1.000
+[dspark-acc] ctx=2347 burst=28/28 cum=1652/1652=1.000
+[dspark-acc] ctx=2379 burst=28/28 cum=1680/1680=1.000
+[dspark-acc] ctx=2411 burst=28/28 cum=1708/1708=1.000
+[dspark-acc] ctx=2443 burst=28/28 cum=1736/1736=1.000
+[dspark-acc] ctx=2475 burst=28/28 cum=1764/1764=1.000
+[diag1255] tick start: driver_free=1278MB pool_res=20896MB pool_used=19825MB eff_free=2348MB (moved -948MB)
+[dspark-acc] ctx=2507 burst=28/28 cum=1792/1792=1.000
+[dspark-acc] ctx=2539 burst=28/28 cum=1820/1820=1.000
+[dspark-acc] ctx=2571 burst=28/28 cum=1848/1848=1.000
+[dspark-acc] ctx=2603 burst=28/28 cum=1876/1876=1.000
+[dspark-acc] ctx=2635 burst=28/28 cum=1904/1904=1.000
+[dspark-acc] ctx=2667 burst=28/28 cum=1932/1932=1.000
+[dspark-acc] ctx=2699 burst=28/28 cum=1960/1960=1.000
+[dspark-acc] ctx=2731 burst=28/28 cum=1988/1988=1.000
+[dspark-acc] ctx=2763 burst=28/28 cum=2016/2016=1.000
+[dspark-acc] ctx=2795 burst=28/28 cum=2044/2044=1.000
+[dspark-acc] ctx=2827 burst=28/28 cum=2072/2072=1.000
+[dspark-acc] ctx=2859 burst=28/28 cum=2100/2100=1.000
+[dspark-acc] ctx=2891 burst=28/28 cum=2128/2128=1.000
+[dspark-acc] ctx=2923 burst=28/28 cum=2156/2156=1.000
+[dspark-acc] ctx=2955 burst=28/28 cum=2184/2184=1.000
+[dspark-acc] ctx=2987 burst=28/28 cum=2212/2212=1.000
+[dspark-acc] ctx=3019 burst=28/28 cum=2240/2240=1.000
+[dspark-acc] ctx=3051 burst=28/28 cum=2268/2268=1.000
+[dspark-acc] ctx=3083 burst=28/28 cum=2296/2296=1.000
+[dspark-acc] ctx=3115 burst=28/28 cum=2324/2324=1.000
+[dspark-acc] ctx=3147 burst=28/28 cum=2352/2352=1.000
+[dspark-acc] ctx=3179 burst=28/28 cum=2380/2380=1.000
+[dspark-acc] ctx=3211 burst=28/28 cum=2408/2408=1.000
+[dspark-acc] ctx=3243 burst=28/28 cum=2436/2436=1.000
+[dspark-acc] ctx=3275 burst=28/28 cum=2464/2464=1.000
+[dspark-acc] ctx=3307 burst=28/28 cum=2492/2492=1.000
+[dspark-acc] ctx=3339 burst=28/28 cum=2520/2520=1.000
+[dspark-acc] ctx=3371 burst=28/28 cum=2548/2548=1.000
+[dspark-acc] ctx=3403 burst=28/28 cum=2576/2576=1.000
+[dspark-acc] ctx=3435 burst=28/28 cum=2604/2604=1.000
+[dspark-acc] ctx=3467 burst=28/28 cum=2632/2632=1.000
+[meter] admit id=cmpl-ce68b9bda728ecb0308fda982f9c1aeb tenant=default lane=interactive model="gate"
+[dspark-acc] ctx=3499 burst=28/28 cum=2660/2660=1.000
+[admission] per-session draft-state charge: model="gate" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=5813 path=spec = 29696 B/token x ctx + 470MB prefill-workspace + 0MB fixed = 642MB
+[admission] prefill workspace held: model="gate" prompt=5733 call=5733 stack=5733 concat=0 slab_resident=1443MB held=470MB cold=1913MB
+[diag1255] gate-pass id=cmpl-ce68b9bda728ecb0308fda982f9c1aeb prompt=5733 path=spec cost=773MB draft=160MB reserve=1576MB required=2349MB required_eager=2188MB eager_arm=false booked=0MB limiting_free=2350MB active=1
+[admit-trim] dev0 driver_free_bytes=1308622848 floor_bytes=2147483648 reclaimed_bytes=838860800 still_owned_bytes=20788283428 pool_reserved_bytes=21105737728 driver_free_after=2147483648 before prime
+[diag1255] after-admit-trim: driver_free=2048MB pool_res=20128MB pool_used=19825MB pool_unused=302MB eff_free=2350MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=5733 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[diag1255] after-admit id=cmpl-ce68b9bda728ecb0308fda982f9c1aeb spec=false dspark_on=true cache=false dspark_sess=false: driver_free=2048MB pool_res=20128MB pool_used=19825MB pool_unused=302MB eff_free=2350MB
+[diag1255] dspark-prime-start-before id=cmpl-ce68b9bda728ecb0308fda982f9c1aeb rows=5733: driver_free=2048MB pool_res=20128MB pool_used=19825MB pool_unused=302MB eff_free=2350MB
+[diag1255] dspark-prime-chunk-before id=cmpl-ce68b9bda728ecb0308fda982f9c1aeb: driver_free=1664MB pool_res=20512MB pool_used=20478MB pool_unused=33MB eff_free=1697MB
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=2994.207 max_chunk_ms=2994.207
+[diag1255] dspark-prime-chunk-after id=cmpl-ce68b9bda728ecb0308fda982f9c1aeb: driver_free=96MB pool_res=22080MB pool_used=20478MB pool_unused=1601MB eff_free=1697MB
+[dspark-acc] ctx=3531 burst=7/7 cum=2667/2667=1.000
+[diag1255] tick start: driver_free=96MB pool_res=22080MB pool_used=20478MB eff_free=1697MB (moved -653MB)
+[dspark-acc] ctx=3539 burst=7/7 cum=2674/2674=1.000
+[diag1255] dspark-prime-chunk-before id=cmpl-ce68b9bda728ecb0308fda982f9c1aeb: driver_free=96MB pool_res=22080MB pool_used=20478MB pool_unused=1601MB eff_free=1697MB
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[diag1255] dspark-prime-done id=cmpl-ce68b9bda728ecb0308fda982f9c1aeb: driver_free=96MB pool_res=22080MB pool_used=20453MB pool_unused=1626MB eff_free=1722MB
+[dspark-acc] ctx=5733 burst=9/26 cum=9/26=0.346
+[diag1255] tick start: driver_free=96MB pool_res=22080MB pool_used=19825MB eff_free=2350MB (moved 652MB)
+[dspark-acc] ctx=3547 burst=28/28 cum=2702/2702=1.000
+[dspark-acc] ctx=3579 burst=28/28 cum=2730/2730=1.000
+[dspark-acc] ctx=3611 burst=28/28 cum=2758/2758=1.000
+[dspark-acc] ctx=3643 burst=28/28 cum=2786/2786=1.000
+[dspark-acc] ctx=3675 burst=28/28 cum=2814/2814=1.000
+[dspark-acc] ctx=3707 burst=28/28 cum=2842/2842=1.000
+[dspark-acc] ctx=3739 burst=28/28 cum=2870/2870=1.000
+[dspark-acc] ctx=3771 burst=28/28 cum=2898/2898=1.000
+[dspark-acc] ctx=3803 burst=28/28 cum=2926/2926=1.000
+[dspark-acc] ctx=3835 burst=28/28 cum=2954/2954=1.000
+[dspark-acc] ctx=3867 burst=28/28 cum=2982/2982=1.000
+[dspark-acc] ctx=3899 burst=28/28 cum=3010/3010=1.000
+[dspark-acc] ctx=3931 burst=28/28 cum=3038/3038=1.000
+[dspark-acc] ctx=3963 burst=28/28 cum=3066/3066=1.000
+[dspark-acc] ctx=3995 burst=28/28 cum=3094/3094=1.000
+[dspark-acc] ctx=4027 burst=28/28 cum=3122/3122=1.000
+[dspark-acc] ctx=4059 burst=28/28 cum=3150/3150=1.000
+[dflash-kv-ring] compact keep_from=2059 kept=2056 phys_rows=4120
+[dspark-acc] ctx=4091 burst=28/28 cum=3178/3178=1.000
+[dspark-acc] ctx=4123 burst=28/28 cum=3206/3206=1.000
+[dspark-acc] ctx=4155 burst=28/28 cum=3234/3234=1.000
+[dspark-acc] ctx=4187 burst=28/28 cum=3262/3262=1.000
+[dspark-acc] ctx=4219 burst=28/28 cum=3290/3290=1.000
+[dspark-acc] ctx=4251 burst=28/28 cum=3318/3318=1.000
+[dspark-acc] ctx=4283 burst=28/28 cum=3346/3346=1.000
+[dspark-acc] ctx=4315 burst=28/28 cum=3374/3374=1.000
+[dspark-acc] ctx=4347 burst=28/28 cum=3402/3402=1.000
+[dspark-acc] ctx=4379 burst=28/28 cum=3430/3430=1.000
+[dspark-acc] ctx=4411 burst=28/28 cum=3458/3458=1.000
+[dspark-acc] ctx=4443 burst=28/28 cum=3486/3486=1.000
+[dspark-acc] ctx=4475 burst=28/28 cum=3514/3514=1.000
+[dspark-acc] ctx=4507 burst=28/28 cum=3542/3542=1.000
+[dspark-acc] ctx=4539 burst=28/28 cum=3570/3570=1.000
+[dspark-acc] ctx=4571 burst=28/28 cum=3598/3598=1.000
+[dspark-acc] ctx=4603 burst=28/28 cum=3626/3626=1.000
+[dspark-acc] ctx=4635 burst=28/28 cum=3654/3654=1.000
+[dspark-acc] ctx=4667 burst=28/28 cum=3682/3682=1.000
+[dspark-acc] ctx=4699 burst=28/28 cum=3710/3710=1.000
+[dspark-acc] ctx=4731 burst=28/28 cum=3738/3738=1.000
+[dspark-acc] ctx=4763 burst=28/28 cum=3766/3766=1.000
+[dspark-acc] ctx=4795 burst=28/28 cum=3794/3794=1.000
+[dspark-acc] ctx=4827 burst=28/28 cum=3822/3822=1.000
+[dspark-acc] ctx=4859 burst=28/28 cum=3850/3850=1.000
+[dspark-acc] ctx=4891 burst=28/28 cum=3878/3878=1.000
+[dspark-acc] ctx=4923 burst=28/28 cum=3906/3906=1.000
+[dspark-acc] ctx=4955 burst=28/28 cum=3934/3934=1.000
+[dspark-acc] ctx=4987 burst=28/28 cum=3962/3962=1.000
+[dspark-acc] ctx=5019 burst=28/28 cum=3990/3990=1.000
+[dspark-acc] ctx=5051 burst=28/28 cum=4018/4018=1.000
+[dspark-acc] ctx=5083 burst=28/28 cum=4046/4046=1.000
+[dspark-acc] ctx=5115 burst=28/28 cum=4074/4074=1.000
+[dspark-acc] ctx=5147 burst=28/28 cum=4102/4102=1.000
+[dspark-acc] ctx=5179 burst=28/28 cum=4130/4130=1.000
+[dspark-acc] ctx=5211 burst=28/28 cum=4158/4158=1.000
+[dspark-acc] ctx=5243 burst=28/28 cum=4186/4186=1.000
+[dspark-acc] ctx=5275 burst=28/28 cum=4214/4214=1.000
+[dspark-acc] ctx=5307 burst=28/28 cum=4242/4242=1.000
+[dspark-acc] ctx=5339 burst=28/28 cum=4270/4270=1.000
+[dspark-acc] ctx=5371 burst=28/28 cum=4298/4298=1.000
+[dspark-acc] ctx=5403 burst=28/28 cum=4326/4326=1.000
+[dspark-acc] ctx=5435 burst=28/28 cum=4354/4354=1.000
+[dspark-acc] ctx=5467 burst=28/28 cum=4382/4382=1.000
+[meter] admit id=cmpl-0f94767f53a1308a3245a2081e2f5d29 tenant=default lane=interactive model="gate"
+[dspark-acc] ctx=5499 burst=28/28 cum=4410/4410=1.000
+[admission] per-session draft-state charge: model="gate" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=5871 path=spec = 29696 B/token x ctx + 471MB prefill-workspace + 0MB fixed = 645MB
+[admission] prefill workspace held: model="gate" prompt=5791 call=5791 stack=5791 concat=0 slab_resident=1443MB held=471MB cold=1914MB
+[diag1255] gate-pass id=cmpl-0f94767f53a1308a3245a2081e2f5d29 prompt=5791 path=spec cost=776MB draft=160MB reserve=1576MB required=2352MB required_eager=2191MB eager_arm=false booked=0MB limiting_free=2374MB active=1
+[admit-trim] dev0 driver_free_bytes=125829120 floor_bytes=2147483648 reclaimed_bytes=2013265920 still_owned_bytes=20788283428 pool_reserved_bytes=21139292160 driver_free_after=2139095040 before prime
+[diag1255] after-admit-trim: driver_free=2040MB pool_res=20160MB pool_used=19825MB pool_unused=334MB eff_free=2374MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=5791 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[diag1255] after-admit id=cmpl-0f94767f53a1308a3245a2081e2f5d29 spec=false dspark_on=true cache=false dspark_sess=false: driver_free=2040MB pool_res=20160MB pool_used=19825MB pool_unused=334MB eff_free=2374MB
+[diag1255] dspark-prime-start-before id=cmpl-0f94767f53a1308a3245a2081e2f5d29 rows=5791: driver_free=2040MB pool_res=20160MB pool_used=19825MB pool_unused=334MB eff_free=2374MB
+[diag1255] dspark-prime-chunk-before id=cmpl-0f94767f53a1308a3245a2081e2f5d29: driver_free=1688MB pool_res=20512MB pool_used=20479MB pool_unused=32MB eff_free=1720MB
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=3186.574 max_chunk_ms=3186.574
+[diag1255] dspark-prime-chunk-after id=cmpl-0f94767f53a1308a3245a2081e2f5d29: driver_free=120MB pool_res=22080MB pool_used=20479MB pool_unused=1600MB eff_free=1720MB
+[dspark-acc] ctx=5531 burst=7/7 cum=4417/4417=1.000
+[diag1255] tick start: driver_free=120MB pool_res=22080MB pool_used=20479MB eff_free=1720MB (moved -655MB)
+[dspark-acc] ctx=5539 burst=7/7 cum=4424/4424=1.000
+[diag1255] dspark-prime-chunk-before id=cmpl-0f94767f53a1308a3245a2081e2f5d29: driver_free=120MB pool_res=22080MB pool_used=20479MB pool_unused=1600MB eff_free=1720MB
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[diag1255] dspark-prime-done id=cmpl-0f94767f53a1308a3245a2081e2f5d29: driver_free=120MB pool_res=22080MB pool_used=20454MB pool_unused=1625MB eff_free=1745MB
+[dspark-acc] ctx=5791 burst=8/24 cum=8/24=0.333
+[diag1255] tick start: driver_free=120MB pool_res=22080MB pool_used=19825MB eff_free=2374MB (moved 654MB)
+[dspark-acc] ctx=5547 burst=28/28 cum=4452/4452=1.000
+[dspark-acc] ctx=5579 burst=28/28 cum=4480/4480=1.000
+[dspark-acc] ctx=5611 burst=28/28 cum=4508/4508=1.000
+[dspark-acc] ctx=5643 burst=28/28 cum=4536/4536=1.000
+[dspark-acc] ctx=5675 burst=28/28 cum=4564/4564=1.000
+[dspark-acc] ctx=5707 burst=28/28 cum=4592/4592=1.000
+[dspark-acc] ctx=5739 burst=28/28 cum=4620/4620=1.000
+[dspark-acc] ctx=5771 burst=28/28 cum=4648/4648=1.000
+[dspark-acc] ctx=5803 burst=28/28 cum=4676/4676=1.000
+[dspark-acc] ctx=5835 burst=28/28 cum=4704/4704=1.000
+[dspark-acc] ctx=5867 burst=28/28 cum=4732/4732=1.000
+[dspark-acc] ctx=5899 burst=28/28 cum=4760/4760=1.000
+[dspark-acc] ctx=5931 burst=28/28 cum=4788/4788=1.000
+[dspark-acc] ctx=5963 burst=28/28 cum=4816/4816=1.000
+[dspark-acc] ctx=5995 burst=28/28 cum=4844/4844=1.000
+[dspark-acc] ctx=6027 burst=28/28 cum=4872/4872=1.000
+[dspark-acc] ctx=6059 burst=28/28 cum=4900/4900=1.000
+[dspark-acc] ctx=6091 burst=28/28 cum=4928/4928=1.000
+[dspark-acc] ctx=6123 burst=28/28 cum=4956/4956=1.000
+[dflash-kv-ring] compact keep_from=4123 kept=2056 phys_rows=4120
+[dspark-acc] ctx=6155 burst=28/28 cum=4984/4984=1.000
+[dspark-acc] ctx=6187 burst=28/28 cum=5012/5012=1.000
+[dspark-acc] ctx=6219 burst=28/28 cum=5040/5040=1.000
+[dspark-acc] ctx=6251 burst=28/28 cum=5068/5068=1.000
+[dspark-acc] ctx=6283 burst=28/28 cum=5096/5096=1.000
+[dspark-acc] ctx=6315 burst=28/28 cum=5124/5124=1.000
+[dspark-acc] ctx=6347 burst=28/28 cum=5152/5152=1.000
+[dspark-acc] ctx=6379 burst=28/28 cum=5180/5180=1.000
+[dspark-acc] ctx=6411 burst=28/28 cum=5208/5208=1.000
+[dspark-acc] ctx=6443 burst=28/28 cum=5236/5236=1.000
+[dspark-acc] ctx=6475 burst=28/28 cum=5264/5264=1.000
+[dspark-acc] ctx=6507 burst=28/28 cum=5292/5292=1.000
+[dspark-acc] ctx=6539 burst=28/28 cum=5320/5320=1.000
+[dspark-acc] ctx=6571 burst=28/28 cum=5348/5348=1.000
+[dspark-acc] ctx=6603 burst=28/28 cum=5376/5376=1.000
+[dspark-acc] ctx=6635 burst=28/28 cum=5404/5404=1.000
+[dspark-acc] ctx=6667 burst=28/28 cum=5432/5432=1.000
+[dspark-acc] ctx=6699 burst=28/28 cum=5460/5460=1.000
+[dspark-acc] ctx=6731 burst=28/28 cum=5488/5488=1.000
+[dspark-acc] ctx=6763 burst=28/28 cum=5516/5516=1.000
+[dspark-acc] ctx=6795 burst=28/28 cum=5544/5544=1.000
+[dspark-acc] ctx=6827 burst=28/28 cum=5572/5572=1.000
+[dspark-acc] ctx=6859 burst=28/28 cum=5600/5600=1.000
+[dspark-acc] ctx=6891 burst=28/28 cum=5628/5628=1.000
+[dspark-acc] ctx=6923 burst=28/28 cum=5656/5656=1.000
+[dspark-acc] ctx=6955 burst=28/28 cum=5684/5684=1.000
+[dspark-acc] ctx=6987 burst=28/28 cum=5712/5712=1.000
+[dspark-acc] ctx=7019 burst=28/28 cum=5740/5740=1.000
+[dspark-acc] ctx=7051 burst=28/28 cum=5768/5768=1.000
+[dspark-acc] ctx=7083 burst=28/28 cum=5796/5796=1.000
+[dspark-acc] ctx=7115 burst=28/28 cum=5824/5824=1.000
+[dspark-acc] ctx=7147 burst=28/28 cum=5852/5852=1.000
+[dspark-acc] ctx=7179 burst=28/28 cum=5880/5880=1.000
+[dspark-acc] ctx=7211 burst=28/28 cum=5908/5908=1.000
+[dspark-acc] ctx=7243 burst=28/28 cum=5936/5936=1.000
+[dspark-acc] ctx=7275 burst=28/28 cum=5964/5964=1.000
+[dspark-acc] ctx=7307 burst=28/28 cum=5992/5992=1.000
+[dspark-acc] ctx=7339 burst=28/28 cum=6020/6020=1.000
+[dspark-acc] ctx=7371 burst=28/28 cum=6048/6048=1.000
+[dspark-acc] ctx=7403 burst=28/28 cum=6076/6076=1.000
+[dspark-acc] ctx=7435 burst=28/28 cum=6104/6104=1.000
+[dspark-acc] ctx=7467 burst=28/28 cum=6132/6132=1.000
+[meter] admit id=cmpl-c765e8051832d51e3490048ff5b314b0 tenant=default lane=interactive model="gate"
+[dspark-acc] ctx=7499 burst=28/28 cum=6160/6160=1.000
+[admission] per-session draft-state charge: model="gate" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=5854 path=spec = 29696 B/token x ctx + 471MB prefill-workspace + 0MB fixed = 644MB
+[admission] prefill workspace held: model="gate" prompt=5774 call=5774 stack=5774 concat=0 slab_resident=1443MB held=471MB cold=1913MB
+[diag1255] gate-pass id=cmpl-c765e8051832d51e3490048ff5b314b0 prompt=5774 path=spec cost=775MB draft=160MB reserve=1576MB required=2351MB required_eager=2190MB eager_arm=false booked=0MB limiting_free=2398MB active=1
+[admit-trim] dev0 driver_free_bytes=150994944 floor_bytes=2147483648 reclaimed_bytes=1979711488 still_owned_bytes=20788455460 pool_reserved_bytes=21172846592 driver_free_after=2130706432 before prime
+[diag1255] after-admit-trim: driver_free=2032MB pool_res=20192MB pool_used=19825MB pool_unused=366MB eff_free=2398MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=5774 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[diag1255] after-admit id=cmpl-c765e8051832d51e3490048ff5b314b0 spec=false dspark_on=true cache=false dspark_sess=false: driver_free=2032MB pool_res=20192MB pool_used=19825MB pool_unused=366MB eff_free=2398MB
+[diag1255] dspark-prime-start-before id=cmpl-c765e8051832d51e3490048ff5b314b0 rows=5774: driver_free=2032MB pool_res=20192MB pool_used=19825MB pool_unused=366MB eff_free=2398MB
+[diag1255] dspark-prime-chunk-before id=cmpl-c765e8051832d51e3490048ff5b314b0: driver_free=1680MB pool_res=20544MB pool_used=20479MB pool_unused=64MB eff_free=1744MB
+[diag1255] step-oom id=cmpl-c765e8051832d51e3490048ff5b314b0: driver_free=16MB pool_res=22208MB pool_used=20879MB pool_unused=1328MB eff_free=1344MB
+[diag1255-ring] step-oom: 192 entries (last is the newest)
+[diag1255-ring] seq=2100123 t_ms=87718.441 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100124 t_ms=87718.443 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100125 t_ms=87718.446 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100126 t_ms=87718.448 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100127 t_ms=87718.450 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100128 t_ms=87718.452 bytes=6308232 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100129 t_ms=87718.485 bytes=4452872 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100130 t_ms=87718.487 bytes=4 at crates/memra-engine/src/lib.rs:36250
+[diag1255-ring] seq=2100131 t_ms=87718.490 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100132 t_ms=87718.492 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100133 t_ms=87718.494 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100134 t_ms=87718.496 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100135 t_ms=87718.499 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100136 t_ms=87718.501 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100137 t_ms=87718.503 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100138 t_ms=87718.505 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100139 t_ms=87718.507 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100140 t_ms=87718.509 bytes=6308232 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100141 t_ms=87718.544 bytes=4452872 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100142 t_ms=87718.546 bytes=4 at crates/memra-engine/src/lib.rs:36250
+[diag1255-ring] seq=2100143 t_ms=87718.549 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100144 t_ms=87718.551 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100145 t_ms=87718.554 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100146 t_ms=87718.556 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100147 t_ms=87718.558 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100148 t_ms=87718.560 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100149 t_ms=87718.562 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100150 t_ms=87718.564 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100151 t_ms=87718.566 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100152 t_ms=87718.569 bytes=6308232 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100153 t_ms=87718.571 bytes=4452872 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100154 t_ms=87718.574 bytes=4 at crates/memra-engine/src/lib.rs:36250
+[diag1255-ring] seq=2100155 t_ms=87718.577 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100156 t_ms=87718.580 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100157 t_ms=87718.582 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100158 t_ms=87718.584 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100159 t_ms=87718.586 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100160 t_ms=87718.588 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100161 t_ms=87718.591 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100162 t_ms=87718.593 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100163 t_ms=87718.595 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100164 t_ms=87718.597 bytes=6308232 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100165 t_ms=87718.600 bytes=4452872 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100166 t_ms=87718.602 bytes=4 at crates/memra-engine/src/lib.rs:36250
+[diag1255-ring] seq=2100167 t_ms=87718.604 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100168 t_ms=87718.606 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100169 t_ms=87718.608 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100170 t_ms=87718.610 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100171 t_ms=87718.612 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100172 t_ms=87718.614 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100173 t_ms=87718.616 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100174 t_ms=87718.618 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100175 t_ms=87718.620 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100176 t_ms=87718.622 bytes=6308232 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100177 t_ms=87718.624 bytes=4452872 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100178 t_ms=87718.686 bytes=4 at crates/memra-engine/src/lib.rs:36250
+[diag1255-ring] seq=2100179 t_ms=87718.688 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100180 t_ms=87718.691 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100181 t_ms=87718.693 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100182 t_ms=87718.695 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100183 t_ms=87718.697 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100184 t_ms=87718.699 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100185 t_ms=87718.701 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100186 t_ms=87718.703 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100187 t_ms=87718.705 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100188 t_ms=87718.707 bytes=6308232 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100189 t_ms=87718.709 bytes=4452872 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100190 t_ms=87718.740 bytes=4 at crates/memra-engine/src/lib.rs:36250
+[diag1255-ring] seq=2100191 t_ms=87718.743 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100192 t_ms=87718.745 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100193 t_ms=87718.747 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100194 t_ms=87718.749 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100195 t_ms=87718.751 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100196 t_ms=87718.753 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100197 t_ms=87718.755 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100198 t_ms=87718.757 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100199 t_ms=87718.759 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100200 t_ms=87718.761 bytes=6308232 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100201 t_ms=87718.763 bytes=4452872 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100202 t_ms=87718.765 bytes=4 at crates/memra-engine/src/lib.rs:36250
+[diag1255-ring] seq=2100203 t_ms=87718.767 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100204 t_ms=87718.770 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100205 t_ms=87718.772 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100206 t_ms=87718.814 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100207 t_ms=87718.816 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100208 t_ms=87718.818 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100209 t_ms=87718.821 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100210 t_ms=87718.823 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100211 t_ms=87718.825 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100212 t_ms=87718.827 bytes=6308232 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100213 t_ms=87718.829 bytes=4452872 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100214 t_ms=87718.831 bytes=4 at crates/memra-engine/src/lib.rs:36250
+[diag1255-ring] seq=2100215 t_ms=87718.834 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100216 t_ms=87718.836 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100217 t_ms=87718.838 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100218 t_ms=87718.840 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100219 t_ms=87718.842 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100220 t_ms=87718.873 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100221 t_ms=87718.875 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100222 t_ms=87718.877 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100223 t_ms=87718.879 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100224 t_ms=87718.881 bytes=6308232 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100225 t_ms=87718.883 bytes=4452872 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100226 t_ms=87718.885 bytes=4 at crates/memra-engine/src/lib.rs:36250
+[diag1255-ring] seq=2100227 t_ms=87718.888 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100228 t_ms=87718.890 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100229 t_ms=87718.892 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100230 t_ms=87718.894 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100231 t_ms=87718.896 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100232 t_ms=87718.898 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100233 t_ms=87718.927 bytes=122880 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100234 t_ms=87718.929 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100235 t_ms=87718.931 bytes=3145728 at crates/memra-engine/src/lib.rs:36241
+[diag1255-ring] seq=2100236 t_ms=87718.934 bytes=6308232 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100237 t_ms=87718.936 bytes=4452872 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100238 t_ms=87718.938 bytes=4 at crates/memra-engine/src/lib.rs:36250
+[diag1255-ring] seq=2100239 t_ms=87718.940 bytes=6308232 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100240 t_ms=87718.943 bytes=4452872 at crates/memra-engine/src/lib.rs:36247
+[diag1255-ring] seq=2100241 t_ms=87718.945 bytes=4 at crates/memra-engine/src/lib.rs:36250
+[diag1255-ring] seq=2100242 t_ms=87718.949 bytes=16875520 at crates/memra-engine/src/dflash.rs:3175
+[diag1255-ring] seq=2100243 t_ms=87718.978 bytes=16875520 at crates/memra-engine/src/dflash.rs:3176
+[diag1255-ring] seq=2100244 t_ms=87718.979 bytes=16875520 at crates/memra-engine/src/dflash.rs:3175
+[diag1255-ring] seq=2100245 t_ms=87719.006 bytes=16875520 at crates/memra-engine/src/dflash.rs:3176
+[diag1255-ring] seq=2100246 t_ms=87719.007 bytes=16875520 at crates/memra-engine/src/dflash.rs:3175
+[diag1255-ring] seq=2100247 t_ms=87719.033 bytes=16875520 at crates/memra-engine/src/dflash.rs:3176
+[diag1255-ring] seq=2100248 t_ms=87719.034 bytes=16875520 at crates/memra-engine/src/dflash.rs:3175
+[diag1255-ring] seq=2100249 t_ms=87719.060 bytes=16875520 at crates/memra-engine/src/dflash.rs:3176
+[diag1255-ring] seq=2100250 t_ms=87719.061 bytes=16875520 at crates/memra-engine/src/dflash.rs:3175
+[diag1255-ring] seq=2100251 t_ms=87719.087 bytes=16875520 at crates/memra-engine/src/dflash.rs:3176
+[diag1255-ring] seq=2100252 t_ms=87719.088 bytes=26214400 at crates/memra-engine/src/dflash.rs:5509
+[diag1255-ring] seq=2100253 t_ms=87719.167 bytes=419430400 at crates/memra-engine/src/dflash.rs:5594
+[diag1255-ring] seq=2100254 t_ms=87719.509 bytes=16384 at crates/memra-engine/src/hybrid_forward.rs:7245
+[diag1255-ring] seq=2100255 t_ms=87719.518 bytes=83886080 at crates/memra-engine/src/lib.rs:14929
+[diag1255-ring] seq=2100256 t_ms=87719.609 bytes=167772160 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=2100257 t_ms=87719.738 bytes=23611392 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=2100258 t_ms=87719.757 bytes=100663296 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=2100259 t_ms=87719.856 bytes=23611392 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=2100260 t_ms=87719.862 bytes=20971520 at crates/memra-engine/src/lib.rs:12713
+[diag1255-ring] seq=2100261 t_ms=87719.863 bytes=2621440 at crates/memra-engine/src/lib.rs:12713
+[diag1255-ring] seq=2100262 t_ms=87719.866 bytes=786432 at crates/memra-engine/src/lib.rs:12723
+[diag1255-ring] seq=2100263 t_ms=87719.871 bytes=786432 at crates/memra-engine/src/lib.rs:12723
+[diag1255-ring] seq=2100264 t_ms=87719.875 bytes=33554432 at crates/memra-engine/src/hybrid_forward.rs:10033
+[diag1255-ring] seq=2100265 t_ms=87719.915 bytes=33554432 at crates/memra-engine/src/hybrid_forward.rs:10034
+[diag1255-ring] seq=2100266 t_ms=87719.952 bytes=100663296 at crates/memra-engine/src/hybrid_forward.rs:10035
+[diag1255-ring] seq=2100267 t_ms=87720.061 bytes=33554432 at crates/memra-engine/src/hybrid_forward.rs:10054
+[diag1255-ring] seq=2100268 t_ms=87720.095 bytes=33554432 at crates/memra-engine/src/hybrid_forward.rs:10066
+[diag1255-ring] seq=2100269 t_ms=87720.129 bytes=16777216 at crates/memra-engine/src/hybrid_forward.rs:10069
+[diag1255-ring] seq=2100270 t_ms=87720.131 bytes=786432 at crates/memra-engine/src/hybrid_forward.rs:10076
+[diag1255-ring] seq=2100271 t_ms=87720.134 bytes=786432 at crates/memra-engine/src/hybrid_forward.rs:10078
+[diag1255-ring] seq=2100272 t_ms=87720.138 bytes=100663296 at crates/memra-engine/src/hybrid_forward.rs:10439
+[diag1255-ring] seq=2100273 t_ms=87720.242 bytes=50331648 at crates/memra-engine/src/lib.rs:35154
+[diag1255-ring] seq=2100274 t_ms=87720.243 bytes=786432 at crates/memra-engine/src/lib.rs:34199
+[diag1255-ring] seq=2100275 t_ms=87720.244 bytes=25165824 at crates/memra-engine/src/lib.rs:34200
+[diag1255-ring] seq=2100276 t_ms=87720.245 bytes=25165824 at crates/memra-engine/src/lib.rs:34201
+[diag1255-ring] seq=2100277 t_ms=87720.285 bytes=100663296 at crates/memra-engine/src/lib.rs:34202
+[diag1255-ring] seq=2100278 t_ms=87720.361 bytes=100663296 at crates/memra-engine/src/lib.rs:34203
+[diag1255-ring] seq=2100279 t_ms=87720.447 bytes=50331648 at crates/memra-engine/src/lib.rs:35401
+[diag1255-ring] seq=2100280 t_ms=87720.499 bytes=201326592 at crates/memra-engine/src/lib.rs:35402
+[diag1255-ring] seq=2100281 t_ms=87720.668 bytes=100663296 at crates/memra-engine/src/hybrid_forward.rs:10470
+[diag1255-ring] seq=2100282 t_ms=87720.675 bytes=83886080 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=2100283 t_ms=87720.676 bytes=28329984 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=2100284 t_ms=87720.685 bytes=285212672 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=2100285 t_ms=87720.686 bytes=23611392 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=2100286 t_ms=87720.690 bytes=285212672 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=2100287 t_ms=87720.691 bytes=23611392 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=2100288 t_ms=87720.697 bytes=83886080 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=2100289 t_ms=87720.698 bytes=80234496 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=2100290 t_ms=87720.706 bytes=167772160 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=2100291 t_ms=87720.707 bytes=23611392 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=2100292 t_ms=87720.711 bytes=100663296 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=2100293 t_ms=87720.711 bytes=23611392 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=2100294 t_ms=87720.716 bytes=20971520 at crates/memra-engine/src/lib.rs:12713
+[diag1255-ring] seq=2100295 t_ms=87720.716 bytes=2621440 at crates/memra-engine/src/lib.rs:12713
+[diag1255-ring] seq=2100296 t_ms=87720.718 bytes=786432 at crates/memra-engine/src/lib.rs:12723
+[diag1255-ring] seq=2100297 t_ms=87720.721 bytes=786432 at crates/memra-engine/src/lib.rs:12723
+[diag1255-ring] seq=2100298 t_ms=87720.724 bytes=33554432 at crates/memra-engine/src/hybrid_forward.rs:10033
+[diag1255-ring] seq=2100299 t_ms=87720.724 bytes=33554432 at crates/memra-engine/src/hybrid_forward.rs:10034
+[diag1255-ring] seq=2100300 t_ms=87720.725 bytes=100663296 at crates/memra-engine/src/hybrid_forward.rs:10035
+[diag1255-ring] seq=2100301 t_ms=87720.729 bytes=33554432 at crates/memra-engine/src/hybrid_forward.rs:10054
+[diag1255-ring] seq=2100302 t_ms=87720.731 bytes=33554432 at crates/memra-engine/src/hybrid_forward.rs:10066
+[diag1255-ring] seq=2100303 t_ms=87720.731 bytes=16777216 at crates/memra-engine/src/hybrid_forward.rs:10069
+[diag1255-ring] seq=2100304 t_ms=87720.733 bytes=786432 at crates/memra-engine/src/hybrid_forward.rs:10076
+[diag1255-ring] seq=2100305 t_ms=87720.735 bytes=786432 at crates/memra-engine/src/hybrid_forward.rs:10078
+[diag1255-ring] seq=2100306 t_ms=87720.738 bytes=100663296 at crates/memra-engine/src/hybrid_forward.rs:10439
+[diag1255-ring] seq=2100307 t_ms=87720.739 bytes=50331648 at crates/memra-engine/src/lib.rs:35154
+[diag1255-ring] seq=2100308 t_ms=87720.739 bytes=786432 at crates/memra-engine/src/lib.rs:34199
+[diag1255-ring] seq=2100309 t_ms=87720.739 bytes=25165824 at crates/memra-engine/src/lib.rs:34200
+[diag1255-ring] seq=2100310 t_ms=87720.740 bytes=25165824 at crates/memra-engine/src/lib.rs:34201
+[diag1255-ring] seq=2100311 t_ms=87720.741 bytes=100663296 at crates/memra-engine/src/lib.rs:34202
+[diag1255-ring] seq=2100312 t_ms=87720.741 bytes=100663296 at crates/memra-engine/src/lib.rs:34203
+[diag1255-ring] seq=2100313 t_ms=87720.748 bytes=50331648 at crates/memra-engine/src/lib.rs:35401
+[diag1255-ring] seq=2100314 t_ms=87720.748 bytes=201326592 at crates/memra-engine/src/lib.rs:35402
+[diag1255-ring] step-oom: sum 4495521628 bytes
+[admit-oom] step OOM parked session back to queue (model gate, retry 1/3, 2 active) [dev0 free 16MB pool-res 22208MB pool-used 20879MB]: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[dspark-acc] ctx=7531 burst=7/7 cum=6167/6167=1.000
+[admit-oom] step-OOM reclaim: parked reuse=0 spec=0 dspark=0 dropped; prefix cache evicted 0 entries (0MB) 0MB -> 0MB (oom tick streak 1)
+[device-trim] reason=oom-teardown {"device":0,"reclaimed_bytes":2382364672,"still_owned_bytes":20788455460,"pool_reserved_bytes":20904411136,"pool_cached_bytes":115955676,"driver_free_bytes":2399141888,"synchronization_errors":[]}
+[admit-oom] step-OOM teardown complete: 1 session(s) dropped behind a device fence; pool trim released 2272MB across 1 device(s)
+[admission] request cost: model="gate" ctx=5854 path=plain = 29696 B/token x ctx + 477MB prefill-workspace + 0MB fixed = 650MB
+[admission] prefill workspace held: model="gate" prompt=5774 call=1039 stack=1039 concat=1039 slab_resident=1443MB held=477MB cold=1913MB
+[diag1255] gate-pass id=cmpl-c765e8051832d51e3490048ff5b314b0 prompt=5774 path=plain cost=620MB draft=0MB reserve=1576MB required=2196MB required_eager=2196MB eager_arm=false booked=0MB limiting_free=2398MB active=1
+[diag1255] after-admit-trim: driver_free=2288MB pool_res=19936MB pool_used=19825MB pool_unused=110MB eff_free=2398MB
+[dspark] declined: admission priced this request plain (no draft plane charged, a step-OOM park replay); serving PLAIN (prompt=5774 decode_budget=16)
+[spec-k] model="gate" tenant="" K=0 source=oom-replay prompt=5774 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 319MB (observed 491MB at ctx 5798 path=plain)
+[diag1255] after-admit id=cmpl-c765e8051832d51e3490048ff5b314b0 spec=false dspark_on=false cache=true dspark_sess=false: driver_free=1872MB pool_res=20352MB pool_used=20293MB pool_unused=58MB eff_free=1930MB
+[diag1255] tick start: driver_free=1872MB pool_res=20352MB pool_used=20293MB eff_free=1930MB (moved -469MB)
+[dspark-acc] ctx=7539 burst=28/28 cum=6195/6195=1.000
+[dspark-acc] ctx=7571 burst=28/28 cum=6223/6223=1.000
+[dspark-acc] ctx=7603 burst=28/28 cum=6251/6251=1.000
+[dspark-acc] ctx=7635 burst=28/28 cum=6279/6279=1.000
+[dspark-acc] ctx=7667 burst=28/28 cum=6307/6307=1.000
+[dspark-acc] ctx=7699 burst=28/28 cum=6335/6335=1.000
+[dspark-acc] ctx=7731 burst=28/28 cum=6363/6363=1.000
+[dspark-acc] ctx=7763 burst=28/28 cum=6391/6391=1.000
+[dspark-acc] ctx=7795 burst=28/28 cum=6419/6419=1.000
+[dspark-acc] ctx=7827 burst=28/28 cum=6447/6447=1.000
+[dspark-acc] ctx=7859 burst=28/28 cum=6475/6475=1.000
+[dspark-acc] ctx=7891 burst=28/28 cum=6503/6503=1.000
+[dspark-acc] ctx=7923 burst=28/28 cum=6531/6531=1.000
+[dspark-acc] ctx=7955 burst=28/28 cum=6559/6559=1.000
+[dspark-acc] ctx=7987 burst=28/28 cum=6587/6587=1.000
+[dspark-acc] ctx=8019 burst=28/28 cum=6615/6615=1.000
+[dspark-acc] ctx=8051 burst=28/28 cum=6643/6643=1.000
+[dspark-acc] ctx=8083 burst=28/28 cum=6671/6671=1.000
+[dspark-acc] ctx=8115 burst=28/28 cum=6699/6699=1.000
+[dspark-acc] ctx=8147 burst=28/28 cum=6727/6727=1.000
+[dspark-acc] ctx=8179 burst=28/28 cum=6755/6755=1.000
+[dspark-acc] ctx=8211 burst=28/28 cum=6783/6783=1.000
+[diag1255] tick start: driver_free=848MB pool_res=21376MB pool_used=19825MB eff_free=2398MB (moved 469MB)
+[dflash-kv-ring] compact keep_from=6187 kept=2056 phys_rows=4120
+[dspark-acc] ctx=8243 burst=28/28 cum=6811/6811=1.000
+[dspark-acc] ctx=8275 burst=28/28 cum=6839/6839=1.000
+[fa-pool] grow #2 dev=0 o_len 6389760 -> 12779520 ml_len 24960 -> 49920 (retired kept, zero=false)
+[dspark-acc] ctx=8307 burst=28/28 cum=6867/6867=1.000
+[diag1255] tick start: driver_free=848MB pool_res=21376MB pool_used=19874MB eff_free=2349MB (moved -50MB)
+[dspark-acc] ctx=8339 burst=28/28 cum=6895/6895=1.000
+[dspark-acc] ctx=8371 burst=28/28 cum=6923/6923=1.000
+[dspark-acc] ctx=8403 burst=28/28 cum=6951/6951=1.000
+[dspark-acc] ctx=8435 burst=28/28 cum=6979/6979=1.000
+[dspark-acc] ctx=8467 burst=28/28 cum=7007/7007=1.000
+[dspark-acc] ctx=8499 burst=28/28 cum=7035/7035=1.000
+[diag1255] tick start: driver_free=924MB pool_res=21376MB pool_used=19874MB eff_free=2425MB (moved 76MB)
+[dspark-acc] ctx=8531 burst=28/28 cum=7063/7063=1.000
+[dspark-acc] ctx=8563 burst=28/28 cum=7091/7091=1.000
+[dspark-acc] ctx=8595 burst=28/28 cum=7119/7119=1.000
+[dspark-acc] ctx=8627 burst=28/28 cum=7147/7147=1.000
+[dspark-acc] ctx=8659 burst=28/28 cum=7175/7175=1.000
+[dspark-acc] ctx=8691 burst=28/28 cum=7203/7203=1.000
+[dspark-acc] ctx=8723 burst=28/28 cum=7231/7231=1.000
+[dspark-acc] ctx=8755 burst=28/28 cum=7259/7259=1.000
+[dspark-acc] ctx=8787 burst=28/28 cum=7287/7287=1.000
+[dspark-acc] ctx=8819 burst=28/28 cum=7315/7315=1.000
+[dspark-acc] ctx=8851 burst=28/28 cum=7343/7343=1.000
+[dspark-acc] ctx=8883 burst=28/28 cum=7371/7371=1.000
+[dspark-acc] ctx=8915 burst=28/28 cum=7399/7399=1.000
+[dspark-acc] ctx=8947 burst=28/28 cum=7427/7427=1.000
+[dspark-acc] ctx=8979 burst=28/28 cum=7455/7455=1.000
+[dspark-acc] ctx=9011 burst=28/28 cum=7483/7483=1.000
+[dspark-acc] ctx=9043 burst=28/28 cum=7511/7511=1.000
+[dspark-acc] ctx=9075 burst=28/28 cum=7539/7539=1.000
+[dspark-acc] ctx=9107 burst=28/28 cum=7567/7567=1.000
+[dspark-acc] ctx=9139 burst=28/28 cum=7595/7595=1.000
+[dspark-acc] ctx=9171 burst=28/28 cum=7623/7623=1.000
+[dspark-acc] ctx=9203 burst=28/28 cum=7651/7651=1.000
+[dspark-acc] ctx=9235 burst=28/28 cum=7679/7679=1.000
+[dspark-acc] ctx=9267 burst=28/28 cum=7707/7707=1.000
+[dspark-acc] ctx=9299 burst=28/28 cum=7735/7735=1.000
+[dspark-acc] ctx=9331 burst=28/28 cum=7763/7763=1.000
+[dspark-acc] ctx=9363 burst=28/28 cum=7791/7791=1.000
+[dspark-acc] ctx=9395 burst=28/28 cum=7819/7819=1.000
+[dspark-acc] ctx=9427 burst=28/28 cum=7847/7847=1.000
+[dspark-acc] ctx=9459 burst=28/28 cum=7875/7875=1.000
+[dspark-acc] ctx=9491 burst=28/28 cum=7903/7903=1.000
+[meter] admit id=cmpl-b14ff589ebf72d849255e307c85112da tenant=default lane=interactive model="gate"
+[dspark-acc] ctx=9523 burst=28/28 cum=7931/7931=1.000
+[admission] per-session draft-state charge: model="gate" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=5799 path=spec = 29696 B/token x ctx + 469MB prefill-workspace + 319MB fixed = 960MB
+[admission] prefill workspace held: model="gate" prompt=5719 call=5719 stack=5719 concat=0 slab_resident=1443MB held=469MB cold=1912MB
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9555 burst=28/28 cum=7959/7959=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9587 burst=28/28 cum=7987/7987=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9619 burst=28/28 cum=8015/8015=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9651 burst=28/28 cum=8043/8043=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9683 burst=28/28 cum=8071/8071=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9715 burst=28/28 cum=8099/8099=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9747 burst=28/28 cum=8127/8127=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9779 burst=28/28 cum=8155/8155=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9811 burst=28/28 cum=8183/8183=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9843 burst=28/28 cum=8211/8211=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9875 burst=28/28 cum=8239/8239=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9907 burst=28/28 cum=8267/8267=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9939 burst=28/28 cum=8295/8295=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=9971 burst=28/28 cum=8323/8323=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10003 burst=28/28 cum=8351/8351=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10035 burst=28/28 cum=8379/8379=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10067 burst=28/28 cum=8407/8407=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10099 burst=28/28 cum=8435/8435=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10131 burst=28/28 cum=8463/8463=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10163 burst=28/28 cum=8491/8491=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10195 burst=28/28 cum=8519/8519=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10227 burst=28/28 cum=8547/8547=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10259 burst=28/28 cum=8575/8575=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dflash-kv-ring] compact keep_from=8251 kept=2056 phys_rows=4120
+[dspark-acc] ctx=10291 burst=28/28 cum=8603/8603=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10323 burst=28/28 cum=8631/8631=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10355 burst=28/28 cum=8659/8659=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10387 burst=28/28 cum=8687/8687=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10419 burst=28/28 cum=8715/8715=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10451 burst=28/28 cum=8743/8743=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10483 burst=28/28 cum=8771/8771=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10515 burst=28/28 cum=8799/8799=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10547 burst=28/28 cum=8827/8827=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10579 burst=28/28 cum=8855/8855=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10611 burst=28/28 cum=8883/8883=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10643 burst=28/28 cum=8911/8911=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10675 burst=28/28 cum=8939/8939=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10707 burst=28/28 cum=8967/8967=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10739 burst=28/28 cum=8995/8995=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10771 burst=28/28 cum=9023/9023=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10803 burst=28/28 cum=9051/9051=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10835 burst=28/28 cum=9079/9079=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10867 burst=28/28 cum=9107/9107=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10899 burst=28/28 cum=9135/9135=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10931 burst=28/28 cum=9163/9163=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10963 burst=28/28 cum=9191/9191=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=10995 burst=28/28 cum=9219/9219=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11027 burst=28/28 cum=9247/9247=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11059 burst=28/28 cum=9275/9275=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11091 burst=28/28 cum=9303/9303=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11123 burst=28/28 cum=9331/9331=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11155 burst=28/28 cum=9359/9359=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11187 burst=28/28 cum=9387/9387=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11219 burst=28/28 cum=9415/9415=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11251 burst=28/28 cum=9443/9443=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11283 burst=28/28 cum=9471/9471=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11315 burst=28/28 cum=9499/9499=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11347 burst=28/28 cum=9527/9527=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11379 burst=28/28 cum=9555/9555=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11411 burst=28/28 cum=9583/9583=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11443 burst=28/28 cum=9611/9611=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11475 burst=28/28 cum=9639/9639=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11507 burst=28/28 cum=9667/9667=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11539 burst=28/28 cum=9695/9695=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11571 burst=28/28 cum=9723/9723=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11603 burst=28/28 cum=9751/9751=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11635 burst=28/28 cum=9779/9779=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11667 burst=28/28 cum=9807/9807=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11699 burst=28/28 cum=9835/9835=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11731 burst=28/28 cum=9863/9863=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11763 burst=28/28 cum=9891/9891=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11795 burst=28/28 cum=9919/9919=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11827 burst=28/28 cum=9947/9947=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11859 burst=28/28 cum=9975/9975=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11891 burst=28/28 cum=10003/10003=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11923 burst=28/28 cum=10031/10031=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11955 burst=28/28 cum=10059/10059=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=11987 burst=28/28 cum=10087/10087=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12019 burst=28/28 cum=10115/10115=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12051 burst=28/28 cum=10143/10143=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12083 burst=28/28 cum=10171/10171=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12115 burst=28/28 cum=10199/10199=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12147 burst=28/28 cum=10227/10227=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12179 burst=28/28 cum=10255/10255=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12211 burst=28/28 cum=10283/10283=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12243 burst=28/28 cum=10311/10311=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12275 burst=28/28 cum=10339/10339=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12307 burst=28/28 cum=10367/10367=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12339 burst=28/28 cum=10395/10395=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dflash-kv-ring] compact keep_from=10315 kept=2056 phys_rows=4120
+[dspark-acc] ctx=12371 burst=28/28 cum=10423/10423=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12403 burst=28/28 cum=10451/10451=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12435 burst=28/28 cum=10479/10479=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12467 burst=28/28 cum=10507/10507=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12499 burst=28/28 cum=10535/10535=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12531 burst=28/28 cum=10563/10563=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12563 burst=28/28 cum=10591/10591=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12595 burst=28/28 cum=10619/10619=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12627 burst=28/28 cum=10647/10647=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12659 burst=28/28 cum=10675/10675=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12691 burst=28/28 cum=10703/10703=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12723 burst=28/28 cum=10731/10731=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12755 burst=28/28 cum=10759/10759=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12787 burst=28/28 cum=10787/10787=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12819 burst=28/28 cum=10815/10815=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12851 burst=28/28 cum=10843/10843=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12883 burst=28/28 cum=10871/10871=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12915 burst=28/28 cum=10899/10899=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12947 burst=28/28 cum=10927/10927=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=12979 burst=28/28 cum=10955/10955=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13011 burst=28/28 cum=10983/10983=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13043 burst=28/28 cum=11011/11011=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13075 burst=28/28 cum=11039/11039=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13107 burst=28/28 cum=11067/11067=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13139 burst=28/28 cum=11095/11095=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13171 burst=28/28 cum=11123/11123=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13203 burst=28/28 cum=11151/11151=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13235 burst=28/28 cum=11179/11179=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13267 burst=28/28 cum=11207/11207=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13299 burst=28/28 cum=11235/11235=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13331 burst=28/28 cum=11263/11263=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13363 burst=28/28 cum=11291/11291=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13395 burst=28/28 cum=11319/11319=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13427 burst=28/28 cum=11347/11347=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13459 burst=28/28 cum=11375/11375=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13491 burst=28/28 cum=11403/11403=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13523 burst=28/28 cum=11431/11431=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13555 burst=28/28 cum=11459/11459=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13587 burst=28/28 cum=11487/11487=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13619 burst=28/28 cum=11515/11515=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13651 burst=28/28 cum=11543/11543=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13683 burst=28/28 cum=11571/11571=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13715 burst=28/28 cum=11599/11599=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13747 burst=28/28 cum=11627/11627=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13779 burst=28/28 cum=11655/11655=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13811 burst=28/28 cum=11683/11683=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13843 burst=28/28 cum=11711/11711=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13875 burst=28/28 cum=11739/11739=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13907 burst=28/28 cum=11767/11767=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13939 burst=28/28 cum=11795/11795=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=13971 burst=28/28 cum=11823/11823=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14003 burst=28/28 cum=11851/11851=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14035 burst=28/28 cum=11879/11879=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14067 burst=28/28 cum=11907/11907=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14099 burst=28/28 cum=11935/11935=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14131 burst=28/28 cum=11963/11963=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14163 burst=28/28 cum=11991/11991=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14195 burst=28/28 cum=12019/12019=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14227 burst=28/28 cum=12047/12047=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14259 burst=28/28 cum=12075/12075=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14291 burst=28/28 cum=12103/12103=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14323 burst=28/28 cum=12131/12131=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14355 burst=28/28 cum=12159/12159=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14387 burst=28/28 cum=12187/12187=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dflash-kv-ring] compact keep_from=12379 kept=2056 phys_rows=4120
+[dspark-acc] ctx=14419 burst=28/28 cum=12215/12215=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14451 burst=28/28 cum=12243/12243=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14483 burst=28/28 cum=12271/12271=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14515 burst=28/28 cum=12299/12299=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14547 burst=28/28 cum=12327/12327=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14579 burst=28/28 cum=12355/12355=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14611 burst=28/28 cum=12383/12383=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14643 burst=28/28 cum=12411/12411=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14675 burst=28/28 cum=12439/12439=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14707 burst=28/28 cum=12467/12467=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14739 burst=28/28 cum=12495/12495=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14771 burst=28/28 cum=12523/12523=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14803 burst=28/28 cum=12551/12551=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14835 burst=28/28 cum=12579/12579=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14867 burst=28/28 cum=12607/12607=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14899 burst=28/28 cum=12635/12635=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14931 burst=28/28 cum=12663/12663=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14963 burst=28/28 cum=12691/12691=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=14995 burst=28/28 cum=12719/12719=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15027 burst=28/28 cum=12747/12747=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15059 burst=28/28 cum=12775/12775=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15091 burst=28/28 cum=12803/12803=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15123 burst=28/28 cum=12831/12831=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15155 burst=28/28 cum=12859/12859=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15187 burst=28/28 cum=12887/12887=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15219 burst=28/28 cum=12915/12915=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15251 burst=28/28 cum=12943/12943=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15283 burst=28/28 cum=12971/12971=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15315 burst=28/28 cum=12999/12999=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15347 burst=28/28 cum=13027/13027=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15379 burst=28/28 cum=13055/13055=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15411 burst=28/28 cum=13083/13083=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15443 burst=28/28 cum=13111/13111=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15475 burst=28/28 cum=13139/13139=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15507 burst=28/28 cum=13167/13167=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15539 burst=28/28 cum=13195/13195=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15571 burst=28/28 cum=13223/13223=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15603 burst=28/28 cum=13251/13251=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15635 burst=28/28 cum=13279/13279=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15667 burst=28/28 cum=13307/13307=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15699 burst=28/28 cum=13335/13335=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15731 burst=28/28 cum=13363/13363=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15763 burst=28/28 cum=13391/13391=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15795 burst=28/28 cum=13419/13419=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15827 burst=28/28 cum=13447/13447=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15859 burst=28/28 cum=13475/13475=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15891 burst=28/28 cum=13503/13503=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15923 burst=28/28 cum=13531/13531=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15955 burst=28/28 cum=13559/13559=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=15987 burst=28/28 cum=13587/13587=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16019 burst=28/28 cum=13615/13615=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16051 burst=28/28 cum=13643/13643=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16083 burst=28/28 cum=13671/13671=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16115 burst=28/28 cum=13699/13699=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16147 burst=28/28 cum=13727/13727=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16179 burst=28/28 cum=13755/13755=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16211 burst=28/28 cum=13783/13783=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16243 burst=28/28 cum=13811/13811=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16275 burst=28/28 cum=13839/13839=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16307 burst=28/28 cum=13867/13867=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16339 burst=28/28 cum=13895/13895=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16371 burst=28/28 cum=13923/13923=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16403 burst=28/28 cum=13951/13951=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16435 burst=28/28 cum=13979/13979=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16467 burst=28/28 cum=14007/14007=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dflash-kv-ring] compact keep_from=14443 kept=2056 phys_rows=4120
+[dspark-acc] ctx=16499 burst=28/28 cum=14035/14035=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16531 burst=28/28 cum=14063/14063=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16563 burst=28/28 cum=14091/14091=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16595 burst=28/28 cum=14119/14119=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16627 burst=28/28 cum=14147/14147=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16659 burst=28/28 cum=14175/14175=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16691 burst=28/28 cum=14203/14203=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16723 burst=28/28 cum=14231/14231=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16755 burst=28/28 cum=14259/14259=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16787 burst=28/28 cum=14287/14287=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16819 burst=28/28 cum=14315/14315=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16851 burst=28/28 cum=14343/14343=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16883 burst=28/28 cum=14371/14371=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16915 burst=28/28 cum=14399/14399=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16947 burst=28/28 cum=14427/14427=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=16979 burst=28/28 cum=14455/14455=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17011 burst=28/28 cum=14483/14483=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17043 burst=28/28 cum=14511/14511=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17075 burst=28/28 cum=14539/14539=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17107 burst=28/28 cum=14567/14567=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17139 burst=28/28 cum=14595/14595=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17171 burst=28/28 cum=14623/14623=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17203 burst=28/28 cum=14651/14651=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17235 burst=28/28 cum=14679/14679=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17267 burst=28/28 cum=14707/14707=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17299 burst=28/28 cum=14735/14735=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17331 burst=28/28 cum=14763/14763=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17363 burst=28/28 cum=14791/14791=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17395 burst=28/28 cum=14819/14819=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17427 burst=28/28 cum=14847/14847=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17459 burst=28/28 cum=14875/14875=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17491 burst=28/28 cum=14903/14903=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17523 burst=28/28 cum=14931/14931=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17555 burst=28/28 cum=14959/14959=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17587 burst=28/28 cum=14987/14987=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17619 burst=28/28 cum=15015/15015=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17651 burst=28/28 cum=15043/15043=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17683 burst=28/28 cum=15071/15071=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17715 burst=28/28 cum=15099/15099=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17747 burst=28/28 cum=15127/15127=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17779 burst=28/28 cum=15155/15155=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17811 burst=28/28 cum=15183/15183=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17843 burst=28/28 cum=15211/15211=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17875 burst=28/28 cum=15239/15239=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17907 burst=28/28 cum=15267/15267=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17939 burst=28/28 cum=15295/15295=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=17971 burst=28/28 cum=15323/15323=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18003 burst=28/28 cum=15351/15351=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18035 burst=28/28 cum=15379/15379=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18067 burst=28/28 cum=15407/15407=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18099 burst=28/28 cum=15435/15435=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18131 burst=28/28 cum=15463/15463=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18163 burst=28/28 cum=15491/15491=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18195 burst=28/28 cum=15519/15519=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18227 burst=28/28 cum=15547/15547=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18259 burst=28/28 cum=15575/15575=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18291 burst=28/28 cum=15603/15603=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18323 burst=28/28 cum=15631/15631=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18355 burst=28/28 cum=15659/15659=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18387 burst=28/28 cum=15687/15687=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18419 burst=28/28 cum=15715/15715=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18451 burst=28/28 cum=15743/15743=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18483 burst=28/28 cum=15771/15771=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18515 burst=28/28 cum=15799/15799=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dflash-kv-ring] compact keep_from=16507 kept=2056 phys_rows=4120
+[dspark-acc] ctx=18547 burst=28/28 cum=15827/15827=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18579 burst=28/28 cum=15855/15855=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18611 burst=28/28 cum=15883/15883=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18643 burst=28/28 cum=15911/15911=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18675 burst=28/28 cum=15939/15939=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18707 burst=28/28 cum=15967/15967=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18739 burst=28/28 cum=15995/15995=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18771 burst=28/28 cum=16023/16023=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18803 burst=28/28 cum=16051/16051=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18835 burst=28/28 cum=16079/16079=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18867 burst=28/28 cum=16107/16107=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18899 burst=28/28 cum=16135/16135=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18931 burst=28/28 cum=16163/16163=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18963 burst=28/28 cum=16191/16191=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=18995 burst=28/28 cum=16219/16219=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19027 burst=28/28 cum=16247/16247=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19059 burst=28/28 cum=16275/16275=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19091 burst=28/28 cum=16303/16303=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19123 burst=28/28 cum=16331/16331=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19155 burst=28/28 cum=16359/16359=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19187 burst=28/28 cum=16387/16387=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19219 burst=28/28 cum=16415/16415=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19251 burst=34/35 cum=16449/16450=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19290 burst=28/28 cum=16477/16478=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19322 burst=28/28 cum=16505/16506=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19354 burst=28/28 cum=16533/16534=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19386 burst=28/28 cum=16561/16562=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19418 burst=28/28 cum=16589/16590=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19450 burst=28/28 cum=16617/16618=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19482 burst=28/28 cum=16645/16646=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19514 burst=28/28 cum=16673/16674=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19546 burst=28/28 cum=16701/16702=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19578 burst=28/28 cum=16729/16730=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19610 burst=28/28 cum=16757/16758=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19642 burst=28/28 cum=16785/16786=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19674 burst=28/28 cum=16813/16814=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19706 burst=28/28 cum=16841/16842=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19738 burst=28/28 cum=16869/16870=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19770 burst=28/28 cum=16897/16898=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19802 burst=28/28 cum=16925/16926=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19834 burst=28/28 cum=16953/16954=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19866 burst=28/28 cum=16981/16982=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19898 burst=28/28 cum=17009/17010=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19930 burst=28/28 cum=17037/17038=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19962 burst=28/28 cum=17065/17066=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=19994 burst=28/28 cum=17093/17094=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20026 burst=28/28 cum=17121/17122=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20058 burst=28/28 cum=17149/17150=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20090 burst=28/28 cum=17177/17178=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20122 burst=28/28 cum=17205/17206=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20154 burst=28/28 cum=17233/17234=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20186 burst=28/28 cum=17261/17262=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20218 burst=28/28 cum=17289/17290=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20250 burst=28/28 cum=17317/17318=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20282 burst=28/28 cum=17345/17346=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20314 burst=28/28 cum=17373/17374=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20346 burst=28/28 cum=17401/17402=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20378 burst=28/28 cum=17429/17430=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20410 burst=28/28 cum=17457/17458=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20442 burst=28/28 cum=17485/17486=1.000
+[admit-oom] VRAM defer: 1 active, effective free 2541MB (driver + 1574MB pool-cached) < cost 1129MB + reserve 1653MB — queueing (FIFO) [pool res 22414MB used 20840MB; parked spec sessions 0; plain reuse 0; queue 0]
+[dspark-acc] ctx=20474 burst=21/21 cum=17506/17507=1.000
+[diag1255] gate-pass id=cmpl-b14ff589ebf72d849255e307c85112da prompt=5719 path=spec cost=1076MB draft=160MB reserve=1576MB required=2653MB required_eager=2492MB eager_arm=false booked=0MB limiting_free=3644MB active=0
+[admit-trim] dev0 driver_free_bytes=966787072 floor_bytes=2147483648 reclaimed_bytes=1174405120 still_owned_bytes=19559650064 pool_reserved_bytes=21239955456 driver_free_after=2141192192 before prime
+[diag1255] after-admit-trim: driver_free=2042MB pool_res=20256MB pool_used=18653MB pool_unused=1602MB eff_free=3644MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=5719 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[diag1255] after-admit id=cmpl-b14ff589ebf72d849255e307c85112da spec=false dspark_on=true cache=false dspark_sess=false: driver_free=2042MB pool_res=20256MB pool_used=18653MB pool_unused=1602MB eff_free=3644MB
+[diag1255] tick start: driver_free=2042MB pool_res=20256MB pool_used=18653MB eff_free=3644MB (moved 1221MB)
+[diag1255] dspark-prime-start-before id=cmpl-b14ff589ebf72d849255e307c85112da rows=5719: driver_free=2042MB pool_res=20256MB pool_used=18653MB pool_unused=1602MB eff_free=3644MB
+[diag1255] dspark-prime-chunk-before id=cmpl-b14ff589ebf72d849255e307c85112da: driver_free=2042MB pool_res=20256MB pool_used=19305MB pool_unused=950MB eff_free=2992MB
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=3211.471 max_chunk_ms=3211.471
+[diag1255] dspark-prime-chunk-after id=cmpl-b14ff589ebf72d849255e307c85112da: driver_free=1306MB pool_res=20992MB pool_used=19305MB pool_unused=1686MB eff_free=2992MB
+[diag1255] tick start: driver_free=1306MB pool_res=20992MB pool_used=19305MB eff_free=2992MB (moved -653MB)
+[diag1255] dspark-prime-chunk-before id=cmpl-b14ff589ebf72d849255e307c85112da: driver_free=1306MB pool_res=20992MB pool_used=19305MB pool_unused=1686MB eff_free=2992MB
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[diag1255] dspark-prime-done id=cmpl-b14ff589ebf72d849255e307c85112da: driver_free=1306MB pool_res=20992MB pool_used=19280MB pool_unused=1711MB eff_free=3017MB
+[dspark-acc] ctx=5719 burst=9/22 cum=9/22=0.409
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete
