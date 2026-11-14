@@ -1,0 +1,24 @@
+--- a/crates/memra-engine/src/hybrid_forward.rs
++++ b/crates/memra-engine/src/hybrid_forward.rs
+@@ -6481,10 +6481,12 @@
+             let mut hiddens = e.uninit(t * n_embd)?;
+             let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
+             // Every chunk clears PRIME_MIN_T and none is wider than the cap (memra#1275).
++            let mut call_widths: Vec<usize> = Vec::new();
+             for (chunk_idx, (start, end)) in step_gemm_prime_ranges(t, self.swa_ring_on())
+                 .into_iter()
+                 .enumerate()
+             {
++                call_widths.push(end - start);
+                 let mut out = self.step35_prime_cache_batch(
+                     e,
+                     &[&tokens[start..end]],
+@@ -6516,7 +6518,7 @@
+             // GEMM trunk — the arm this lane added. The declining twin below counts the other
+             // direction, so a log that shows neither line is an instrument fault, not a pass.
+             eprintln!(
+-                "[gemm-prime] ENGAGED t={t} base={base} seq_end={seq_end} chunks<={width} (GEMM trunk + grouped MoE)"
++                "[gemm-prime] ENGAGED t={t} base={base} seq_end={seq_end} chunks<={width} calls={call_widths:?} (GEMM trunk + grouped MoE)"
+             );
+             return Ok((logits, h_seed, hiddens));
+         }

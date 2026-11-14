@@ -1327,10 +1327,27 @@ fences stage 0, and a chain reads a stage before it has landed.
   with K 5,120. A refill guard off by one (`REVIEW_MUT=5`) is caught at K 1,024, 1,280 and 5,120 and
   missed at 256, 512 and 768.
 
-Not in this change: the partial block's column guard (`REVIEW_MUT=3`) is detected through a race, 19
-to 20 of 20 passes on the single-call K 256 and 512 entries and 4 of 20 on
-`gemm_ffma2_partial/m2_n30_k512/second`. Outputs two columns wider than N over zero-filled buffers,
-with the padding compared, would make that deterministic.
+The partial block's column guard (2026-11-14, one GB10, 121a, `receipts/r2-ring-pad-gb10`, the
+memra#1312 review's optional item). With the outputs as wide as N, a chain past N (`REVIEW_MUT=3`:
+the column guard dropped, so a partial last block stores past N) was caught only through a race.
+Over the review's 20 passes, of the gate's 15 width-30 entries 8 failed in 19 or 20 passes, two in 4
+and in 10, and five never. The gate now gives the ring's outputs rows two columns wider than N and
+compares the padding.
+
+- The padding must not be zero. A column past N lands as zeros (`v41_cp16` with its predicate off),
+  so the stray chain stores exactly 0.0. With zero-filled outputs, as the review worded it, the
+  mutation passed 1,025 of 1,025 in 20 of 20 passes: the padded gate could not see it at all
+  (`zero-fill/`). `zero-fill/zero-fill-gate.patch` is the gate edit that run used, as a diff
+  against the gate file before the memra#1286 landing (blob `6616db4917`); on main `63c351a2f4` it
+  applies at an offset of 430 lines.
+- The outputs start as the byte `0xa5` instead. Under the mutation all 15 width-30 entries then fail
+  in 20 of 20 passes, by the padding alone (16 bytes differ at 2 rows, 64 at 8), and the whole-block
+  entries pass, as they have no chain past N.
+- The gate on the tree's own kernels: 1,025 of 1,025 in 4 passes on main `63c351a2f4`, and in 3
+  passes on the mutation build with `REVIEW_MUT=0`. `REVIEW_MUT=1` still fails every K 256 entry (3
+  of 3 passes).
+- `mut.patch` is the review's mutation source (`../r2-ring-k256-k512-gb10/review-redarm/make_mut.py`)
+  applied to this tree's kernels. The gate run over it is this change's, not the review's wider one.
 
 ### A four-card prefill's copies, and the copy call that was slow
 
