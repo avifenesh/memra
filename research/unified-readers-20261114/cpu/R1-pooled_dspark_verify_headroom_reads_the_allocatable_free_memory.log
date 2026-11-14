@@ -1,6 +1,6 @@
 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
    Compiling memra-engine v0.141.1 (~/.cache/memra-1307/tree/crates/memra-engine)
-    Finished `release` profile [optimized] target(s) in 2m 58s
+    Finished `release` profile [optimized] target(s) in 3m 46s
      Running unittests src/lib.rs (~/.cache/memra-1307/target/release/deps/memra_engine-d5220b04f652c299)
 
 running 1 test
@@ -10,7 +10,7 @@ failures:
 
 ---- spec::capture_headroom_tests::pooled_dspark_verify_headroom_reads_the_allocatable_free_memory stdout ----
 
-thread 'spec::capture_headroom_tests::pooled_dspark_verify_headroom_reads_the_allocatable_free_memory' (3819204) panicked at crates/memra-engine/src/spec.rs:18116:9:
+thread 'spec::capture_headroom_tests::pooled_dspark_verify_headroom_reads_the_allocatable_free_memory' (1470455) panicked at crates/memra-engine/src/spec.rs:18119:9:
 the pooled DFlash2 width reads the raw driver free memory: pub(crate) fn pooled_verify_headroom(e: &Engine) -> usize {
     match e.ctx().mem_get_info() {
         Ok((free, _total)) => free
