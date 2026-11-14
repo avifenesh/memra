@@ -1,0 +1,26 @@
+main-worker: main's worker.rs + the census module (16716 bytes)
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (<lane>/tree/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 31.97s
+     Running unittests src/lib.rs (<lane>/target/debug/deps/memra_server-6ed0acdcd419c06b)
+
+running 1 test
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... FAILED
+
+failures:
+
+---- worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first stdout ----
+
+thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (73946) panicked at crates/memra-server/src/worker.rs:61857:13:
+assertion `left == right` failed: lost, moved or new: reclaim_parked_ladder( &mut headroom, |h| h.sufficient(required), || { let pool = evict_oldest_parked_freeing(
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1281 filtered out; finished in 0.10s
+
+error: test failed, to rerun pass `-p memra-server --lib`

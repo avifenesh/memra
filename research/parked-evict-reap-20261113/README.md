@@ -20,14 +20,16 @@ call names it, and one more of the same family (memra#1314). Folded: an allocati
 when its reclaim evicted something or its reap released bytes, so a session an earlier arm of the
 same `admit` dropped funds the retry; the failed prefix materialization's flush, the park-compact
 and plain-affinity failures and each failed right-size rung reap before the next allocation; and a
-path that allocates next trims the device pools after its reap, because an on-demand plane maps
-from the driver and the pool keeps the blocks a flushed prefix entry freed. Every red arm fails
+failure path that allocates next trims the device pools after its reap, because an on-demand plane
+maps from the driver and the pool keeps the blocks a flushed prefix entry freed. A second review
+pinned the ladder's clamp to the need, took the trim off the spec pool's evict-first clear (no
+allocation has failed there) and widened the census. Every red arm fails
 its named test; the memra-server suite, clippy and rustfmt pass on the head.
 
 ## The instances
 
 Each row evicts or drops, then reads free memory or allocates what needs those bytes. Found on
-main `df1d23a764` (the first cut) and by the review; the head is rebased on main `bbc6f83aea`.
+main `df1d23a764` (the first cut) and by the reviews; the head is rebased on main `63c351a2f4`.
 
 | site | what it evicts or drops | what counts on the bytes | the reap now |
 |---|---|---|---|
@@ -35,12 +37,12 @@ main `df1d23a764` (the first cut) and by the review; the head is rebased on main
 | restorable spare's climb (admission) | the same, one at a time | the unbooked shortfall re-read after each drop | `reclaim_climb` reaps between them (`"reclaim-on-defer climb"`) |
 | park-compact grow, plain-affinity grow, cold cache allocation (`admit`) | all unleased prefix entries and the oldest parked session | the one cache-allocation retry | `alloc_with_single_reclaim_retry` runs `vmm_retry_reap` (reap, then trim) before its retry |
 | speculative grid rewind and affinity grow (`spec_rewind_oom_reclaim` through `spec_lend_rewind`) | the same | the one retry | the same |
-| spec pool, learned evict-first (`admit`) | the request's whole spec pool | the session allocation right after | `"spec pool evict-first"`, reap then trim |
+| spec pool, learned evict-first (`admit`) | the request's whole spec pool | the session allocation right after | `"spec pool evict-first"`, the reap alone: no allocation has failed yet, and if this one fails the miss's rule reaps, trims and retries |
 | spec pool miss (`admit`) | the request's whole spec pool | the one retry | `vmm_retry_reap` (`"spec pool miss"`), on the retry rule below |
 | admission drain (idle reject) | nothing itself: the graves of the last tick's retires and evictions, which the tick-top reap releases only after admission | the drained re-read after the fence and trim | between the fence and the trim (`"admission-drain"`), as on every reclaim path |
 | prefix reclaim settle (`settle_reclaimed_prefix_bytes`) | prefix entries; one that held the last lend of an adopted plane (memra#1221 part 2) sends that plane to the graveyard | the re-read after the settle | after the settle's fence; the receipt prints `graveyard_reaped_bytes` |
-| **review:** failed prefix materialization (`admit`) | the restore's partly mapped planes; on an allocation failure every unleased prefix entry too | the cold cache allocation | `flush_then_reap`: flush, reap, trim (`"prefix materialization flush"`); a restore that failed otherwise reaps and trims too |
-| **review:** any session an earlier arm of the same `admit` dropped, and a failed attempt's own planes | no eviction call: a drop | the allocation's one retry | the retry rule: reclaim, reap, and retry when the reclaim evicted something **or the reap released bytes** |
+| **review:** failed prefix materialization (`admit`) | the restore's partly mapped planes; on an allocation failure every unleased prefix entry too | the cold cache allocation | `flush_then_reap`: flush, reap, trim (`"prefix materialization flush"`); a restore that failed otherwise reaps and trims as well (`"prefix materialization failed"`) |
+| **review:** any session an earlier arm of the same `admit` dropped | no eviction call: a drop | the allocation's one retry | the retry rule: reclaim, reap, and retry when the reclaim evicted something **or the reap released bytes**. The failed attempt's own partly built planes are graves too, so where the planes are on an out-of-memory first failure is in practice retried once |
 | **review:** park-compact grow failure, plain-affinity resume failure (`admit`) | the parked session (and a grown cache its restore failed into) | the cold cache allocation | after the drop (`"park-compact grow failed"`, `"plain-affinity resume failed"`); the plain-affinity arm drops its entry before the reap, not at the end of its block |
 | **review:** right-size ladder (`spec_right_size_ladder`) | each failed rung's partly mapped planes, or the session a headroom-less landing drops | the next rung, and the tokenwise path's allocation after the last | before the first rung and after each failed one (`"spec right-size"`) |
 | **review:** every reclaim retry above (memra#1314) | prefix entries: their blocks go to the device pool, whose release threshold is pinned | the retry's on-demand maps, which take memory from the driver alone | `vmm_reap_trim_for`: the reap, then the pool trim (the on-demand grow reclaim's order) |
@@ -52,9 +54,16 @@ the pre-cohort reclaim (memra#1266 review 2). The park cap (`prepare_park`) evic
 reads nothing; the prefix budget's hold and the peer probe's degrade flush and read nothing.
 
 Pooled planes, which is every card but the full-power RTX PRO 6000 Blackwell Workstation Edition:
-`vmm_reap_for` returns 0 on its first line (`kv_vmm::armed()`, a `OnceLock` read),
-`vmm_reap_trim_for` and `vmm_retry_reap` return before the reap and the trim, and nothing was added
-to a path where the first allocation succeeds. A retry there is the reclaim's alone, as on main.
+`vmm_reap_for` returns 0 on its first line (`kv_vmm::armed()`, a `OnceLock` read), and
+`vmm_reap_trim_for` and `vmm_retry_reap` return before the reap and the trim. A retry there is
+the reclaim's alone, as on main. Where a first allocation succeeds, the only additions are that
+read after the spec pool's evict-first clear and after a kv-flex shed.
+
+Armed is the process's state, not the route's: the planes arm for the card, and a model they do
+not cover (an SWA ring, latent planes, ppN or TP stages) still runs through these sites on that
+card. Its failed allocations get the same reap, trim and one retry; the trim is what they gain,
+since their planes are pooled. On the armed card the evict-first clear's reap waits on the
+graves' fences before a first allocation that may succeed; it does not trim there.
 
 The reap's line: a reap after an eviction that released nothing and left nothing pending prints
 nothing. The three teardowns keep their line on every call, because the day-49 readers count one
@@ -92,20 +101,26 @@ it takes the pool's cached blocks first.
   trim the cold allocation fits on its first attempt and the parked session stays.
 - `a_failed_right_size_rung_is_reaped_before_the_next_one` (review): 10 GiB free, a ladder from
   16 GiB to 4 GiB: the 16 GiB rung fails, the 8 GiB rung lands. Nothing fitting down to the need
-  tries each rung once and reaps each, the last too.
+  tries each rung once and reaps each, the last too. Off the powers of two (16 GiB down to a
+  need of 6 GiB, 7 GiB free) the rungs are 16, 8, 6 and the session lands at the need, never
+  below it.
 - `a_reap_that_released_nothing_prints_no_line_outside_the_teardowns` (review): the reap's line
   and the settle receipt's `graveyard_reaped_bytes` note.
-- `every_eviction_a_reading_or_a_retry_counts_on_reaps_first` (the census): 63 needles over the
-  live code with comments cut. Every call of an eviction entry point is counted (2
-  `evict_oldest_parked_freeing(`, 7 `evict_oldest_parked(`, 11 `px.evict_all()`, 7
-  `evict_to_bytes(`, 2 `evict_all_demoting(`, 1 `.evict_entry(`, 2 `.shed(`, the spec pool's 2
-  clears, the 3 whole-pool teardowns) and each is named with the reap that follows it; so are
-  the retry rule, the reap helpers' bodies, the drops reviewed in `admit`, and the three kinds of
-  reap call (8 `vmm_reap_for("`, 7 `vmm_reap_trim_for(`, 6 `vmm_retry_reap(`). A new parked
-  eviction or prefix flush fails a count. The census cannot see a drop: a session or cache that
-  goes out of scope or is set to `None` has no call to count. For those the retry rule is the
-  net at an allocation; a drop a free-memory reading follows has none. The memra#1266 census
-  counts 8 `vmm_reap_for("` sites and pins the reap-then-trim order.
+- `every_eviction_a_reading_or_a_retry_counts_on_reaps_first` (the census): 71 needles over the
+  live code with comments cut. Every call the worker makes into an eviction entry point is
+  counted (2 `evict_oldest_parked_freeing(`, 7 `evict_oldest_parked(`, the 2
+  `evict_parked_where(` under them, 11 `px.evict_all()` and 11 `.evict_all()` under any receiver,
+  7 `evict_to_bytes(`, 2 `evict_all_demoting(`, 1 `.evict_entry(`, 3 `px.remove_at(`, 2
+  `.purge_tenant(`, 2 `.shed(`, the spec pool's 2 clears, the 3 whole-pool teardowns) and each is
+  named with the reap that follows it; so are the retry rule, the reap helpers' bodies, the
+  drops reviewed in `admit`, and the three kinds of reap call (9 `vmm_reap_for("`, 6
+  `vmm_reap_trim_for(`, 6 `vmm_retry_reap(`). A new parked eviction or prefix flush fails a
+  count, and the failure lists every needle that does not match with what to do about it. Not
+  counted: the evictions `PrefixCache` makes inside itself (its budget on an insert, its
+  preflight before a snapshot), which no reading follows. The census cannot see a drop: a
+  session or cache that goes out of scope or is set to `None` has no call to count. For those
+  the retry rule is the net at an allocation; a drop a free-memory reading follows has none.
+  The memra#1266 census counts 9 `vmm_reap_for("` sites and pins the reap-then-trim order.
 
 Changed existing tests: `cache_alloc_oom_reclaim_retries_exactly_once` (the reap runs after every
 first failure; a third case retries on the reap alone) and the lend-refused rewind's closure.
@@ -113,8 +128,8 @@ first failure; a third case retries on the reap alone) and the lend-refused rewi
 ## CPU evidence (`cpu/`)
 
 On the CPU build host (`harness/dd_check.sh`, cores 14 to 31), `MEMRA_CUDA_ARCH=120a`, on
-`a4273d7f98`, the fold's commit on main `bbc6f83aea` (`worker.rs` sha256 `65efc1980c908fdf...`,
-`cpu/summary.txt`). Green in the release profile:
+`1195e91cfe`, the second review's fold on main `63c351a2f4` (`worker.rs` sha256
+`20ca6fdfe85ec477...`, `cpu/summary.txt`). Green in the release profile:
 
 - the nine lane tests: 9 passed; the touched tests (the memra#1266 census, the one-retry bound,
   the lend-refused rewind, the lender-skipping ladder, the pre-cohort reclaim's 7, the restorable
@@ -125,8 +140,9 @@ On the CPU build host (`harness/dd_check.sh`, cores 14 to 31), `MEMRA_CUDA_ARCH=
 
 In the checkout (`cpu/checkout-checks.log`; these read git): the doc links, the public boundary,
 the support-records contract with its unit tests, and `git diff --check` against main. The logs
-are the tools' output with the lane's scratch path written `<lane>` and the blank lines at the
-end of each file removed (what `git diff --check` refuses).
+are the tools' output with the lane's scratch path written `<lane>`, and with the blank lines at
+the end of each file and the spaces at the end of a line removed (what `git diff --check`
+refuses; one census needle ends in a space).
 
 Red arms (`harness/red_arms.py`): each changes one thing, the fix is restored after each (the
 restored file compares equal), and the named test fails with cargo exit 101 and its own panic
@@ -143,21 +159,30 @@ text it was checked for.
 | `retry-trim-off` | `reap_then_trim` does not trim (the first cut's retries, memra#1314) | `a_reclaim_retry_maps_the_flushed_prefix_blocks_after_its_trim`: `on_demand=true`, the same `Err` against `Ok(())` |
 | `flush-reap-off` | `flush_then_reap` does not reap (the first cut's materialization flush) | `a_failed_materialization_flush_is_reaped_before_the_cold_allocation`: `the cold allocation evicted no parked session`, `left: 0, right: 1` |
 | `rung-reap-off` | `spec_right_size_ladder` does not reap a failed rung (the first cut's ladder) | `a_failed_right_size_rung_is_reaped_before_the_next_one`: `on_demand=true: the second rung lands`, `None` against `Some(((), 8589934592))` |
+| `ladder-clamp-off` | `spec_right_size_ladder` halves without the clamp to the need (review 2's mutation) | the same test: `the last rung is the need`, `Some(((), 4294967296))` against `Some(((), 6442450944))`: a session below the need |
 | `reap-line-always` | `vmm_reap_line` prints for every reap | `a_reap_that_released_nothing_prints_no_line_outside_the_teardowns`: `Some("[kv-vmm] reap (reclaim-on-defer) released=0 pending_graves=0")` against `None` |
-| `main-worker` | main's `worker.rs` (`bbc6f83aea`) with the census module alone appended | the census: `lost, moved or new: reclaim_parked_ladder( ...`, `left: 0, right: 1` |
-| `ladder-site-off` | the reclaim-on-defer ladder is handed a reap that does nothing | the census, on that site's needle |
+| `main-worker` | main's `worker.rs` (`63c351a2f4`) with the census module alone appended | the census: `found 0, expected 1: reclaim_parked_ladder( ...` among its mismatches |
+| `ladder-site-off` | the reclaim-on-defer ladder is handed a reap that does nothing | the census: `found 0, expected 1:` that site's needle |
 | `drain-reap-off` | the admission drain trims without its reap | the census |
 | `settle-reap-off` | the prefix reclaim's settle does not reap | the census |
 | `spec-miss-reap-off` | the spec pool's miss retries without its reap | the census |
 | `flush-site-off` | the materialization flush is handed a reap that does nothing | the census |
 | `park-compact-fail-off` | the park-compact grow's failure drops the session without a reap | the census |
-| `affinity-fail-drop-off` | the plain-affinity failure reaps before its entry drops | the census |
+| `affinity-fail-drop-off` | the plain-affinity failure reaps before its checkpoint and entry drop | the census |
+| `evict-first-reap-off` | the spec pool's evict-first clear allocates without its reap | the census |
 | `right-size-site-off` | the right-size ladder is handed a reap that does nothing | the census |
 | `shed-reap-off` | kv-flex's shed does not reap what it shed | the census |
-| `probe-prefix-reread` | the review's probe: a new `px.evict_all()` then `admission_headroom`, no settle and no reap | the census: `lost, moved or new: px.evict_all()`, `left: 12, right: 11` |
-| `probe-parked-reread` | a new `evict_oldest_parked_freeing` then `admission_headroom`, no reap | the census: `lost, moved or new: evict_oldest_parked_freeing(`, `left: 3, right: 2` |
+| `probe-prefix-reread` | the review's probe: a new `px.evict_all()` then `admission_headroom`, no settle and no reap | the census: `found 12, expected 11: px.evict_all()` |
+| `probe-parked-reread` | a new `evict_oldest_parked_freeing` then `admission_headroom`, no reap | the census: `found 3, expected 2: evict_oldest_parked_freeing(` |
+| `probe-alias-flush` | review 2's probe: the flush under another receiver name (`cache.evict_all()`), then `admission_headroom` | the census: `found 12, expected 11: .evict_all()` |
+| `probe-where-alloc` | review 2's probe: a direct `evict_parked_where(...)`, then a cache allocation | the census: `found 3, expected 2: evict_parked_where(` |
+| `probe-purge-read` | review 2's probe: `px.purge_tenant(...)`, then `admission_headroom` | the census: `found 3, expected 2: .purge_tenant(` |
 
-Earlier rounds, kept as they ran. Round 1 (`cpu/r1/`): the first cut, main `df1d23a764` with
+Earlier rounds, kept as they ran. Round 2 (`cpu/r2/`): the first review's fold, on `a4273d7f98`
+(that fold's commit on main `bbc6f83aea`, before this branch moved to `63c351a2f4`; `worker.rs`
+sha256 `65efc1980c908fdf...`): 9 lane tests, suite 1,272 passed, 0 failed, 18 ignored, clippy and
+rustfmt clean, 20 red arms, with the harness of that commit (its census stopped at the first
+mismatch, `lost, moved or new: ...`). Round 1 (`cpu/r1/`): the first cut, main `df1d23a764` with
 `6ebd6493ea`'s `worker.rs` (sha256 `587120d661c80bc4...`), with the harness of that commit: 4 lane
 tests, suite 1,266 passed, 0 failed, 18 ignored, clippy and fmt clean, eight red arms. Round 0
 (`cpu/r0/`): the same checks on a census that wrapped two single needles in `concat!`; clippy
@@ -200,6 +225,7 @@ eviction, until the settle's trim).
   settle's fence, so entry frees still in flight read as used.
 - **The trim is the whole cache.** The paths that allocate next trim the pools to zero, the
   on-demand grow reclaim's form, where the settle keeps the blocks parked before the reclaim.
-  They are failure paths; a kept-blocks form was not measured.
+  Every one runs after an allocation or a restore failed (the evict-first clear, which precedes
+  a first allocation, reaps and does not trim); a kept-blocks form was not measured.
 - **No hardware reading.** The defect and the fix, memra#1314's included, run only on the
   full-power Workstation Edition (see GPU cells).

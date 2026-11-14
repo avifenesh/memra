@@ -1,0 +1,42 @@
+rung-reap-off: replaced '        reap();\n        if ask <= need {\n' -> '        let _ = &mut reap;\n        if ask <= need {\n'
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-server v0.141.1 (<lane>/tree/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.81s
+     Running unittests src/lib.rs (<lane>/target/debug/deps/memra_server-6ed0acdcd419c06b)
+
+running 9 tests
+test worker::parked_evict_reap_1278_tests::a_failed_materialization_flush_is_reaped_before_the_cold_allocation ... ok
+test worker::parked_evict_reap_1278_tests::a_reap_that_released_nothing_prints_no_line_outside_the_teardowns ... ok
+test worker::parked_evict_reap_1278_tests::a_failed_right_size_rung_is_reaped_before_the_next_one ... FAILED
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_maps_the_flushed_prefix_blocks_after_its_trim ... ok
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... ok
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_runs_on_the_bytes_its_reap_alone_released ... ok
+test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... FAILED
+
+failures:
+
+---- worker::parked_evict_reap_1278_tests::a_failed_right_size_rung_is_reaped_before_the_next_one stdout ----
+
+thread 'worker::parked_evict_reap_1278_tests::a_failed_right_size_rung_is_reaped_before_the_next_one' (28961) panicked at crates/memra-server/src/worker.rs:62081:13:
+assertion `left == right` failed: on_demand=true: the second rung lands
+  left: None
+ right: Some(((), 8589934592))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first stdout ----
+
+thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (28966) panicked at crates/memra-server/src/worker.rs:62520:13:
+assertion `left == right` failed: lost, moved or new: if let Some(sess) = land(ask) { return Some((sess, ask)); } reap(); if ask <= need { return None; }
+  left: 0
+ right: 1
+
+
+failures:
+    worker::parked_evict_reap_1278_tests::a_failed_right_size_rung_is_reaped_before_the_next_one
+    worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first
+
+test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 1281 filtered out; finished in 0.15s
+
+error: test failed, to rerun pass `-p memra-server --lib`

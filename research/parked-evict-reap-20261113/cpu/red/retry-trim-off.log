@@ -1,32 +1,39 @@
 retry-trim-off: replaced '    reaped.saturating_add(trim())\n' -> '    let _ = trim;\n    reaped\n'
 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
    Compiling memra-server v0.141.1 (<lane>/tree/crates/memra-server)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 23.20s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.73s
      Running unittests src/lib.rs (<lane>/target/debug/deps/memra_server-6ed0acdcd419c06b)
 
 running 9 tests
+test worker::parked_evict_reap_1278_tests::a_reap_that_released_nothing_prints_no_line_outside_the_teardowns ... ok
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... FAILED
 test worker::parked_evict_reap_1278_tests::a_failed_materialization_flush_is_reaped_before_the_cold_allocation ... FAILED
 test worker::parked_evict_reap_1278_tests::a_failed_right_size_rung_is_reaped_before_the_next_one ... FAILED
 test worker::parked_evict_reap_1278_tests::a_reclaim_retry_maps_the_flushed_prefix_blocks_after_its_trim ... FAILED
 test worker::parked_evict_reap_1278_tests::a_reclaim_retry_runs_on_the_bytes_its_reap_alone_released ... FAILED
-test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... FAILED
-test worker::parked_evict_reap_1278_tests::a_reap_that_released_nothing_prints_no_line_outside_the_teardowns ... ok
 test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... ok
 test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
 test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... FAILED
 
 failures:
 
+---- worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap stdout ----
+
+thread 'worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap' (3788975) panicked at crates/memra-server/src/worker.rs:61952:9:
+assertion `left == right` failed
+  left: ["alloc", "evict", "reap", "alloc"]
+ right: ["alloc", "evict", "reap", "trim", "alloc"]
+
 ---- worker::parked_evict_reap_1278_tests::a_failed_materialization_flush_is_reaped_before_the_cold_allocation stdout ----
 
-thread 'worker::parked_evict_reap_1278_tests::a_failed_materialization_flush_is_reaped_before_the_cold_allocation' (4099580) panicked at crates/memra-server/src/worker.rs:62053:13:
+thread 'worker::parked_evict_reap_1278_tests::a_failed_materialization_flush_is_reaped_before_the_cold_allocation' (3788971) panicked at crates/memra-server/src/worker.rs:62058:13:
 assertion `left == right` failed: the cold allocation evicted no parked session
   left: 0
  right: 1
 
 ---- worker::parked_evict_reap_1278_tests::a_failed_right_size_rung_is_reaped_before_the_next_one stdout ----
 
-thread 'worker::parked_evict_reap_1278_tests::a_failed_right_size_rung_is_reaped_before_the_next_one' (4099581) panicked at crates/memra-server/src/worker.rs:62092:13:
+thread 'worker::parked_evict_reap_1278_tests::a_failed_right_size_rung_is_reaped_before_the_next_one' (3788973) panicked at crates/memra-server/src/worker.rs:62097:13:
 assertion `left == right` failed: on_demand=true
   left: ["alloc", "reap", "alloc"]
  right: ["alloc", "reap", "trim", "alloc"]
@@ -34,31 +41,23 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 ---- worker::parked_evict_reap_1278_tests::a_reclaim_retry_maps_the_flushed_prefix_blocks_after_its_trim stdout ----
 
-thread 'worker::parked_evict_reap_1278_tests::a_reclaim_retry_maps_the_flushed_prefix_blocks_after_its_trim' (4099584) panicked at crates/memra-server/src/worker.rs:62006:13:
+thread 'worker::parked_evict_reap_1278_tests::a_reclaim_retry_maps_the_flushed_prefix_blocks_after_its_trim' (3788976) panicked at crates/memra-server/src/worker.rs:62011:13:
 assertion `left == right` failed: on_demand=true
   left: Err("DriverError(CUDA_ERROR_OUT_OF_MEMORY, out of memory)")
  right: Ok(())
 
 ---- worker::parked_evict_reap_1278_tests::a_reclaim_retry_runs_on_the_bytes_its_reap_alone_released stdout ----
 
-thread 'worker::parked_evict_reap_1278_tests::a_reclaim_retry_runs_on_the_bytes_its_reap_alone_released' (4099585) panicked at crates/memra-server/src/worker.rs:61968:9:
+thread 'worker::parked_evict_reap_1278_tests::a_reclaim_retry_runs_on_the_bytes_its_reap_alone_released' (3788977) panicked at crates/memra-server/src/worker.rs:61973:9:
 assertion `left == right` failed
   left: ["alloc", "reap", "alloc"]
  right: ["alloc", "reap", "trim", "alloc"]
 
----- worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap stdout ----
-
-thread 'worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap' (4099583) panicked at crates/memra-server/src/worker.rs:61947:9:
-assertion `left == right` failed
-  left: ["alloc", "evict", "reap", "alloc"]
- right: ["alloc", "evict", "reap", "trim", "alloc"]
-
 ---- worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first stdout ----
 
-thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (4099586) panicked at crates/memra-server/src/worker.rs:62521:13:
-assertion `left == right` failed: lost, moved or new: if !armed { return 0; } let reaped = reap(); reaped.saturating_add(trim())
-  left: 0
- right: 1
+thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (3788978) panicked at crates/memra-server/src/worker.rs:62591:9:
+1 census needle(s) do not match the live code. For each one: if you added, moved or removed an eviction, a flush or a reap, decide what follows it (a free-memory reading needs `vmm_reap_for` first, an allocation `vmm_reap_trim_for` or the retry rule), then update the needle or its count here.
+  found 0, expected 1: if !armed { return 0; } let reaped = reap(); reaped.saturating_add(trim())
 
 
 failures:
@@ -69,6 +68,6 @@ failures:
     worker::parked_evict_reap_1278_tests::a_reclaim_retry_runs_on_the_bytes_its_reap_alone_released
     worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first
 
-test result: FAILED. 3 passed; 6 failed; 0 ignored; 0 measured; 1281 filtered out; finished in 0.19s
+test result: FAILED. 3 passed; 6 failed; 0 ignored; 0 measured; 1281 filtered out; finished in 0.18s
 
 error: test failed, to rerun pass `-p memra-server --lib`

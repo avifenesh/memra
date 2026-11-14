@@ -1,34 +1,34 @@
 flush-site-off: replaced 'vmm_reap_trim_for(engine, loaded, "prefix materialization flush");\n' -> '\n'
 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
    Compiling memra-server v0.141.1 (<lane>/tree/crates/memra-server)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.75s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.05s
      Running unittests src/lib.rs (<lane>/target/debug/deps/memra_server-6ed0acdcd419c06b)
 
 running 9 tests
+test worker::parked_evict_reap_1278_tests::a_failed_materialization_flush_is_reaped_before_the_cold_allocation ... ok
 test worker::parked_evict_reap_1278_tests::a_failed_right_size_rung_is_reaped_before_the_next_one ... ok
 test worker::parked_evict_reap_1278_tests::a_reap_that_released_nothing_prints_no_line_outside_the_teardowns ... ok
+test worker::parked_evict_reap_1278_tests::a_reclaim_retry_maps_the_flushed_prefix_blocks_after_its_trim ... ok
 test worker::parked_evict_reap_1278_tests::a_reclaim_retry_gets_the_evicted_bytes_after_its_reap ... ok
 test worker::parked_evict_reap_1278_tests::a_reclaim_retry_runs_on_the_bytes_its_reap_alone_released ... ok
-test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... ok
-test worker::parked_evict_reap_1278_tests::a_failed_materialization_flush_is_reaped_before_the_cold_allocation ... ok
 test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
-test worker::parked_evict_reap_1278_tests::a_reclaim_retry_maps_the_flushed_prefix_blocks_after_its_trim ... ok
+test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one_eviction_its_reap_funds ... ok
 test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... FAILED
 
 failures:
 
 ---- worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first stdout ----
 
-thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (89687) panicked at crates/memra-server/src/worker.rs:62520:13:
-assertion `left == right` failed: lost, moved or new: let n = flush_then_reap( || px.evict_all(), || { vmm_reap_trim_for(engine, loaded, "prefix materialization flush"); }, );
-  left: 0
- right: 1
+thread 'worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first' (3868721) panicked at crates/memra-server/src/worker.rs:62590:9:
+2 census needle(s) do not match the live code. For each one: if you added, moved or removed an eviction, a flush or a reap, decide what follows it (a free-memory reading needs `vmm_reap_for` first, an allocation `vmm_reap_trim_for` or the retry rule), then update the needle or its count here.
+  found 0, expected 1: let n = flush_then_reap( || px.evict_all(), || { vmm_reap_trim_for(engine, loaded, "prefix materialization flush"); }, );
+  found 5, expected 6: vmm_reap_trim_for(engine, loaded, "
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 
 
 failures:
     worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first
 
-test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 1281 filtered out; finished in 0.18s
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 1281 filtered out; finished in 0.10s
 
 error: test failed, to rerun pass `-p memra-server --lib`

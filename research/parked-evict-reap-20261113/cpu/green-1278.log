@@ -1,6 +1,10 @@
-warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling memra-engine v0.141.1 (<lane>/tree/crates/memra-engine)
    Compiling memra-server v0.141.1 (<lane>/tree/crates/memra-server)
-    Finished `release` profile [optimized] target(s) in 5m 22s
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 16m 38s
      Running unittests src/lib.rs (<lane>/target/release/deps/memra_server-0f8e45839166db94)
 
 running 9 tests
@@ -14,4 +18,4 @@ test worker::parked_evict_reap_1278_tests::the_parked_ladder_stops_after_the_one
 test worker::parked_evict_reap_1278_tests::the_restorable_climb_stops_after_the_one_eviction_its_reap_funds ... ok
 test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 1281 filtered out; finished in 0.03s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 1281 filtered out; finished in 0.05s
