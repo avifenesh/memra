@@ -580,6 +580,94 @@ On the dev desk, the rebased head's source (`worker.rs` sha256 `8946aa6a...`), l
   test_check_support_states.py 21`, `tools/check-support-states.py`), `tools/test_validation_plan.py`
   and `git diff --check` clean.
 
+## Third review fold (2026-11-14)
+
+The third independent review, of `29de38903b`, approved the branch and left two small fixes and
+three nits; CPU only, no new cell. The fold is one code commit on that head, `da4113c9de`, on
+main `0db086f87a` still.
+
+The cells above were not rerun. They bind this head by source: against the code they ran
+(build id `f41206bfaadf`) only `worker.rs` differs, and its changes are these:
+
+- **A request that pins `max_ctx` is told the largest `max_ctx`.** It is charged `max_ctx`
+  whatever its prompt and `max_tokens` are, so the second fold's figure was one it could not
+  use: with prompt 20,000, `max_tokens` 512, `max_ctx` 131,072 and 120,000 rows free it was
+  told "the largest prompt plus max_tokens that fits now is 9440 tokens", sent that under the
+  same `max_ctx` and was charged 131,072 again. `HintBound` carries the unit: prompt plus
+  `max_tokens` (the charged context less 64 rows) for a request that pins no `max_ctx`, and
+  `max_ctx` for one that does, in the 503 and the 400 ("the largest max_ctx that fits now is
+  120000 tokens ... or send a smaller max_ctx"). The largest `max_ctx` is the context that
+  fits, or 64 rows less when the request's `max_tokens` does not leave those rows inside it
+  (it is then charged them on top of `max_ctx`). No admission decision changes: only the
+  figure and its wording, and only for a request with `max_ctx`. None of this record's cells
+  sends `max_ctx`, so their messages are byte for byte what the head writes.
+- **The publication's reads of the live cache are tested.** `spec_publication_geometry` took
+  its sizes off device-backed types no CPU test can build, so a reader that dropped the trunk
+  planes or the latent rows passed the suite (the reviewer's MA2 and MH3). The count now runs
+  on plain sizes (`publication_geometry`), driven by a test with known planes, and the
+  adapter's four reads of the cache and its capture are pinned in the source. Same numbers:
+  the function is the old body with the reads lifted out.
+- **Two serving gates fail on a publication that held more than it reserved.**
+  `tools/spec-on-cache-hit-gate.sh` (the device battery's cache-hit gate: every spec-on and
+  spec-off server log goes through its entry census) and `tools/kv-host-spill-identity-gate.sh`
+  (its host-tier ON boot, whose seeds are copies with the drafter tail in the drafter arm) now
+  fail on the server's `its count missed a plane` warning. The gates were not rerun; the check
+  was read against this record's 47 stored server logs (none has the line) and against a copy
+  of the host gate's log with the line appended, which fails it
+  (`cpu-fold/round3/gate-overrun-check.log`, `tools/gate-overrun-check.sh`).
+- Nits: the slack is 64 rows for every request that pins no `max_ctx`, not "8, or 64 on a
+  route that can speculate" (the decision record, the section above and the test's comment and
+  cases); the bisection reads each device's full context term once instead of at every step.
+  The reviewer's design note is in the decision record's limits: on unified memory with the
+  host tier on, the lease on the device hit refuses a deeper host twin that needs the hit's
+  room.
+
+### CPU (third fold)
+
+On the dev desk, this head's source (`worker.rs` sha256 `0b88620d...`), logs in
+`cpu-fold/round3/`. The tree there carried the two engine files of a landing in progress
+(memra#1297 and memra#1320: `hybrid_forward.rs` and the DSv4.1 gate binary), which is the tree
+this branch has once that landing is on main; nothing under `crates/memra-server` differs
+from the head.
+
+- The memra-server library suite: 1,290 passed, 0 failed, 18 ignored (`checks/suite.log`),
+  memra#1310's two censuses among them. The memra-engine library suite: 785 passed, 0 failed,
+  66 ignored (`checks/engine-lib.log`). Clippy (`memra-engine` and `memra-server`, all targets,
+  `-D warnings`) clean; `rustfmt --edition 2024 --check` on the touched files clean.
+- New test: `a_publication_reads_every_plane_off_the_cache`. Extended:
+  `the_size_hint_is_a_request_the_caller_can_send` (request shapes built as `prepare_request`
+  builds them; the reviewer's `max_ctx` scenario: the figure is 120,000, a caller that sends
+  it as `max_ctx` is admitted and one row more is refused, the old figure sent under the same
+  `max_ctx` is refused; a `max_tokens` past the context, bounded or not, gets 64 rows less;
+  both messages) and the wiring pins of
+  `the_idle_refusal_is_classified_against_the_post_load_capacity`.
+- Red arms: the thirty-two above again on this source and seven new (`red/summary.txt`), each
+  failing the test it names with the string in the last column:
+
+| arm | from | behavior restored or broken | test that fails | its failure says |
+|---|---|---|---|---|
+| X1 | fold 3 | a request that pins `max_ctx` is still told a prompt plus max_tokens | `the_size_hint_is_a_request_the_caller_can_send` | `left: (131072, Request { slack: 110560 })` |
+| X2 | fold 3 | the `max_ctx` figure ignores the 64 rows a `max_tokens` past the context is charged | `the_size_hint_is_a_request_the_caller_can_send` | `right: 119936` |
+| X3 | fold 3 | the reject branch hands the bound no `max_ctx` | `the_idle_refusal_is_classified_against_the_post_load_capacity` | `let hint = HintBound::of( req.params.max_ctx` |
+| MA2 | review 3 | the geometry read off the cache has no trunk plane | `a_publication_reads_every_plane_off_the_cache` | `left: []` |
+| MH3 | review 3 | the geometry read off the cache has no latent rows | `a_publication_reads_every_plane_off_the_cache` | `left: 0` |
+| G1 | fold 3 | the adapter takes no trunk layer off the live cache | `a_publication_reads_every_plane_off_the_cache` | `missing 'publication_geometry( cache .kv .iter() .flatten()` |
+| G2 | fold 3 | the adapter reports no latent layer as live | `a_publication_reads_every_plane_off_the_cache` | `missing 'cache .latent .iter() .zip(&cap.latent_tails)` |
+
+  Of the thirty-two, R3, R6, H1, H2 and H4 follow the lines this fold moved (H1's string is now
+  `slack 64: the hint`, R3's `largest_now, ), );`, R6's `largest_request_within(
+  admission_cap, hint,`).
+  `red/summary.txt` marks H4 `NOT-RED`, the batching error of the second fold again: R8 sat in
+  H4's build, and R8 changes the 400's message, which H4's test now reads for the `max_ctx`
+  wording at an assertion before H4's. R8 has a build of its own in `mutate.py` now, and H4
+  rerun alone is red as stated (`red-rerun/summary.txt`).
+- On the rig: the CPU tests that read the two gate scripts (`tools/drafter-attach-wiring-gate.sh`,
+  `tools/test_spec_on_cache_hit_gate_lock.sh`, `tools/test_local_ci_lock.sh`,
+  `tools/test_generate_arch_gates.py`), `tools/check-doc-links.py`,
+  `tools/check-public-boundary.py` (0 new), `tools/check-flags.sh`, the support-records
+  contract, `tools/test_validation_plan.py`, `tools/test_choice_verifier.py` (25) and
+  `git diff --check` clean.
+
 ## Tools
 
 `tools/`: `build.sh` (the sm_121a builds on the unit), `cell.sh` and `campaign.sh` /
@@ -600,3 +688,6 @@ The second fold's: `campaign5.sh` (cells `32-J` to `39-J` and the host-tier gate
 `pub5090.sh` (the RTX 5090 publisher cell), `dd-main.sh` (main's server from the head's tree on
 the dev desk), `vr-red.sh` (the verifier's red arm), and `mutate.py` with its thirty-two arms
 and their batches.
+
+The third fold's: `gate-overrun-check.sh` (the two gates' new check read against the stored
+server logs), and `mutate.py` with thirty-nine arms.

@@ -271,6 +271,8 @@ ARMS = {
 # The third fold's arms sit where they break no other arm's test: MA2, MH3, G1 and G2 fail
 # T_READ only (MA, beside MH3, breaks T_READ's later count assertion, after MH3's); X1 and X2
 # fail T_HINT only; X3 edits the reject branch's bound, which only T_WIRE reads.
+# R7 and R8 change the two messages, which T_HINT reads for the max_ctx wording after the third
+# fold: neither sits with a T_HINT arm (H1, H2, H4, X1, X2).
 # No two arms of a batch name the same test, and none breaks a test another arm of the batch
 # names (R2 and R7 break T_RETRY or T_NOW; R13 breaks T_COPY and T_PLANES, which read the shape
 # warning; MA breaks T_DISCRETE; R10 breaks T_PLANES, T_TAIL, T_LATENT, T_HELD, T_STOP and
@@ -278,10 +280,11 @@ ARMS = {
 BATCHES = [
     ["R1", "R2", "R3", "R4", "RA", "R9", "R14", "MB", "MC", "MH", "I1", "H1", "O1", "MA2"],
     ["R5", "R6", "R11", "MA", "T1", "I2", "H2", "MH3"],
-    ["R8", "R15", "R12", "ME", "I3", "H4", "G1"],
+    ["R15", "R12", "ME", "I3", "H4", "G1"],
     ["H3", "R10", "X1", "G2"],
     ["MF", "P1", "X2"],
     ["R13", "R7", "X3"],
+    ["R8"],
 ]
 
 if sys.argv[1] == "--list":
