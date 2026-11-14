@@ -555,6 +555,26 @@ pub(crate) fn capture_trim_keep(reserved: usize, driver_free: usize, required: u
     reserved.saturating_sub(required.saturating_sub(driver_free))
 }
 
+/// The parked half of the per-session draft-state measurement: effective free at the bracket's
+/// entry (`entry`, the delta reading plus the pool's cached blocks) less effective free at its end
+/// (`free_end`, the delta reading, plus `pool_cached_end`). It holds the keepers and the
+/// instantiated graphs' driver-side backing the pool's own peak does not see.
+///
+/// Both ends take [`crate::unified_memory::delta_free_bytes`] (memra#1307): `cuMemGetInfo` free on
+/// a discrete card, as before, and on unified memory free memory plus what reclaim turns into free
+/// memory (`MemFree + Buffers + Cached + SReclaimable`). There the raw reading is `MemFree` and
+/// moves with the page cache: with the page cache full on GB10 a 34 MiB allocation read -16 to
+/// +43 MiB and a 256 MiB one -500 to +308 MiB, and the served brackets of memra#1221's and
+/// memra#1257's cells read 0-4 MiB where an emptier cache read 33-34 MiB. The delta reading moved
+/// by 33-39 and 251-263 MiB in the same samples (`research/unified-readers-20261114/`).
+pub(crate) fn draft_state_parked_delta(
+    entry: usize,
+    free_end: usize,
+    pool_cached_end: usize,
+) -> usize {
+    entry.saturating_sub(free_end.saturating_add(pool_cached_end))
+}
+
 /// What the pre-capture guard does, from its readings (pure, table-tested).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CaptureHeadroomPlan {
@@ -713,13 +733,20 @@ pub(crate) fn graph_launch_headroom_ok(e: &Engine) -> bool {
 /// round's transients; the extra members of a pooled forward hold their checkpoints at the same
 /// time, which admission never charged. An unreadable device reads as no headroom (pool
 /// nothing; serial is the same bytes).
+///
+/// The reading is [`pooled_verify_reading`], the pooled MTP verify's (memra#1307): `cuMemGetInfo`
+/// on a discrete card, as before, and on unified memory the larger of it and `MemAvailable`. The
+/// raw reading there leaves out the page cache the kernel hands to the forward's allocations on
+/// demand, so with a full page cache it held the pool to the members its 1.5 GiB floor left room
+/// for on a host with about 100 GB available.
 pub(crate) fn pooled_verify_headroom(e: &Engine) -> usize {
-    match e.ctx().mem_get_info() {
-        Ok((free, _total)) => free
-            .saturating_add(e.pool_cached_bytes())
-            .saturating_sub(CAPTURE_HEADROOM_FLOOR),
-        Err(_) => 0,
-    }
+    pooled_verify_headroom_bytes(pooled_verify_reading(e))
+}
+
+/// [`pooled_verify_headroom`] from its reading (allocatable free plus the pool's cached blocks;
+/// `None` when the device cannot be read).
+pub(crate) fn pooled_verify_headroom_bytes(reading: Option<usize>) -> usize {
+    reading.map_or(0, |r| r.saturating_sub(CAPTURE_HEADROOM_FLOOR))
 }
 
 /// What a verify round allocates on the device (memra#1266), pooled or serial: the
@@ -12951,11 +12978,20 @@ impl HybridModel {
         // refused capture trips the same LOUD once-per-flip WARN class as a failed one, but
         // with the card's headroom still intact (the owner's single-session OOM was a capture
         // attempt walking the card to the edge and stranding the eager fallback at 5 MiB free).
-        let cap_eff0 = e
-            .ctx()
-            .mem_get_info()
-            .ok()
-            .map(|(f, _)| f.saturating_add(e.pool_cached_bytes()));
+        // Two entry readings, one value on a discrete card (memra#1307): `cap_eff0` is the raw
+        // driver reading a failed capture records as its appetite floor, `cap_meas0` opens the
+        // delta on the delta reading (see `draft_state_parked_delta`).
+        let (cap_eff0, cap_meas0) = match e.ctx().mem_get_info() {
+            Ok((raw, _)) => {
+                let cached = e.pool_cached_bytes();
+                (
+                    Some(raw.saturating_add(cached)),
+                    crate::unified_memory::delta_free_bytes(e.ctx(), raw)
+                        .map(|d| d.saturating_add(cached)),
+                )
+            }
+            Err(_) => (None, None),
+        };
         // Peak instrument for the same bracket: the CAPTURE-TIME peak (warmup transients +
         // instantiate scratch, alive together) dwarfs the parked delta — measured on the
         // owner shape: a capture whose PARKED state reads ~2.6GB walked a ~7GB-free card to
@@ -13541,13 +13577,14 @@ impl HybridModel {
         // capture landed in THIS call, the effective-free delta across the capture section is
         // this session's parked draft-graph state (keepers + instantiated graphs'
         // backing). Recorded as a model-owned high-water; admission charges it per
-        // spec-capable session (see `draft_session_admission_bytes`).
+        // spec-capable session (see `draft_session_admission_bytes`). Both ends take the delta
+        // reading (memra#1307, `draft_state_parked_delta`).
         if captured_now
-            && let Some(eff0) = cap_eff0
-            && let Ok((f1, _)) = e.ctx().mem_get_info()
+            && let Some(meas0) = cap_meas0
+            && let Ok((raw1, _)) = e.ctx().mem_get_info()
+            && let Some(f1) = crate::unified_memory::delta_free_bytes(e.ctx(), raw1)
         {
-            let eff1 = f1.saturating_add(e.pool_cached_bytes());
-            let parked_delta = eff0.saturating_sub(eff1);
+            let parked_delta = draft_state_parked_delta(meas0, f1, e.pool_cached_bytes());
             let (_res_high, used_high) = e.pool_high_water_reset();
             let peak_delta = used_high.saturating_sub(cap_used0);
             let observed = parked_delta.max(peak_delta);
@@ -13567,7 +13604,11 @@ impl HybridModel {
         // FAILURE IS AN OBSERVATION TOO: a capture that OOM'd at entry-effective E proved
         // the capture-time peak exceeds E. Feed E into the gauge so every future gate
         // refuses at or below the headroom that just failed (self-healing even when the
-        // boot probe is disarmed and the bootstrap estimate was blind).
+        // boot probe is disarmed and the bootstrap estimate was blind). E is the raw driver
+        // reading (memra#1307): on unified memory it is at most what the capture could get, so
+        // the bound it records is proven; `MemAvailable` is the kernel's estimate, and an
+        // estimate above what the driver could reclaim would stick in this high-water as an
+        // over-charge on every later speculative session.
         if let Some(entry_eff) = capture_oom_entry_eff
             && let Some(hw) = self.record_draft_state_bytes(entry_eff)
         {
@@ -18028,13 +18069,154 @@ mod capture_headroom_tests {
 
     /// The production body of `capture_headroom_refusal`, for the wiring pins below.
     fn guard_body() -> &'static str {
+        production_fn_body("pub(crate) fn capture_headroom_refusal(")
+    }
+
+    /// The production source, up to this test module.
+    fn production_src() -> &'static str {
         let src = include_str!("spec.rs");
-        let production = &src[..src.find("mod capture_headroom_tests").unwrap()];
-        let at = production
-            .find("pub(crate) fn capture_headroom_refusal(")
-            .unwrap();
-        let body = &production[at..];
+        &src[..src.find("mod capture_headroom_tests").unwrap()]
+    }
+
+    /// The body of the production function whose signature starts with `sig`.
+    fn production_fn_body(sig: &str) -> &'static str {
+        let production = production_src();
+        let body = &production[production.find(sig).unwrap()..];
         &body[..body.find("\n}\n").unwrap()]
+    }
+
+    /// memra#1307: the pooled DFlash2 verify's width reads the allocatable free memory, as the
+    /// pooled MTP verify's cap does: on unified memory the larger of the driver's reading and
+    /// `MemAvailable`. With a full page cache on GB10 the raw reading was 1,882 MiB with about
+    /// 100 GB available (memra#1221's cell); above the 1.5 GiB transient floor that left 346 MiB
+    /// plus the pool's cached blocks, less than one more member's checkpoint columns.
+    #[test]
+    fn pooled_dspark_verify_headroom_reads_the_allocatable_free_memory() {
+        use super::pooled_verify_headroom_bytes;
+        use crate::unified_memory::unified_free_bytes;
+        const MIB: usize = 1 << 20;
+        let raw = 1_882 * MIB;
+        assert_eq!(pooled_verify_headroom_bytes(Some(raw)), 346 * MIB);
+        let allocatable = unified_free_bytes(raw, Some(100 * 1024 * MIB));
+        assert_eq!(
+            pooled_verify_headroom_bytes(Some(allocatable)),
+            (100 * 1024 - 1_536) * MIB
+        );
+        // Under the floor or unreadable: no headroom, so the forward pools nothing.
+        assert_eq!(pooled_verify_headroom_bytes(Some(1_000 * MIB)), 0);
+        assert_eq!(pooled_verify_headroom_bytes(None), 0);
+        // Wiring: the width reads the pooled MTP verify's reading, which reads
+        // `allocatable_mem_info`; neither reads the raw driver free memory.
+        let body = production_fn_body("pub(crate) fn pooled_verify_headroom(");
+        assert!(
+            body.contains("pooled_verify_headroom_bytes(pooled_verify_reading(e))")
+                && !body.contains("mem_get_info"),
+            "the pooled DFlash2 width reads the raw driver free memory: {body}"
+        );
+        let reading = production_fn_body("pub fn pooled_verify_reading(");
+        assert!(
+            reading.contains("crate::unified_memory::allocatable_mem_info(e.ctx())")
+                && !reading.contains(".mem_get_info()"),
+            "{reading}"
+        );
+    }
+
+    /// memra#1307: the per-session draft-state measurement takes its delta on the delta reading at
+    /// both ends (free memory plus what reclaim turns into free memory, on unified memory), and a
+    /// failed capture still records the raw entry reading. The unified readings are two of the
+    /// GB10 probe's 256 MiB samples with the page cache full
+    /// (`research/unified-readers-20261114/`), in kB as `/proc/meminfo` prints them.
+    #[test]
+    fn draft_state_delta_reads_free_plus_reclaimable_and_the_oom_floor_the_raw_one() {
+        use super::draft_state_parked_delta;
+        use crate::unified_memory::{
+            parse_free_plus_reclaimable_bytes, parse_mem_available_bytes, unified_free_bytes,
+        };
+        const MIB: usize = 1 << 20;
+        let kb = |n: usize| n << 10;
+        // A discrete card: `delta_free_bytes` is the driver reading, as before; the capture parks
+        // 34 MiB with 300 MiB cached in the pool at both ends.
+        let cached = 300 * MIB;
+        assert_eq!(
+            draft_state_parked_delta(5_000 * MIB + cached, 4_966 * MIB, cached),
+            34 * MIB
+        );
+        let meminfo = |free: usize, cache: usize, avail: usize| {
+            format!(
+                "MemFree: {free} kB\nMemAvailable: {avail} kB\nBuffers: 3891 kB\n\
+                 Cached: {cache} kB\nSReclaimable: 734413 kB\n"
+            )
+        };
+        // The three readings of one sample, each as the bracket would subtract it (nothing cached
+        // in the pool): (delta reading, raw = MemFree, allocatable).
+        let readings = |m: &str| {
+            let free = kb(m
+                .lines()
+                .next()
+                .unwrap()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .parse()
+                .unwrap());
+            (
+                parse_free_plus_reclaimable_bytes(m).unwrap(),
+                free,
+                unified_free_bytes(free, parse_mem_available_bytes(m)),
+            )
+        };
+        // Two readers filling the page cache: reclaim freed 543 MiB of it during the bracket, so
+        // MemFree rose 285 MiB and MemAvailable 368 MiB across a 256 MiB allocation. Both read
+        // nothing parked; the delta reading reads 258.8 MiB.
+        let (d0, r0, a0) = readings(&meminfo(1_003_827, 121_012_122, 120_910_950));
+        let (d1, r1, a1) = readings(&meminfo(1_295_155, 120_455_782, 121_287_782));
+        assert_eq!(draft_state_parked_delta(d0, d1, 0), kb(265_012));
+        assert_eq!(draft_state_parked_delta(r0, r1, 0), 0);
+        assert_eq!(draft_state_parked_delta(a0, a1, 0), 0);
+        // No reader: MemAvailable fell 877.7 MiB across the same allocation, an over-charge of
+        // 620 MiB that would stick in the high-water; the raw reading fell 226.8 MiB. The delta
+        // reading reads 256.7 MiB.
+        let m0 = "MemFree: 8468480 kB\nMemAvailable: 121544602 kB\nBuffers: 5018 kB\n\
+                  Cached: 113551053 kB\nSReclaimable: 720896 kB\n";
+        let m1 = "MemFree: 8236237 kB\nMemAvailable: 120645837 kB\nBuffers: 5018 kB\n\
+                  Cached: 113520435 kB\nSReclaimable: 720896 kB\n";
+        let ((d0, r0, a0), (d1, r1, a1)) = (readings(m0), readings(m1));
+        assert_eq!(draft_state_parked_delta(d0, d1, 0), kb(262_861));
+        assert_eq!(draft_state_parked_delta(r0, r1, 0), kb(232_243));
+        assert_eq!(draft_state_parked_delta(a0, a1, 0), kb(898_765));
+
+        // Wiring: one driver reading at the entry gives the raw floor and, through
+        // `delta_free_bytes`, the delta's entry; the bracket end takes the delta reading too; every
+        // failed capture's floor is the raw entry reading.
+        let src = production_src();
+        let at = src
+            .find("let (cap_eff0, cap_meas0) = match e.ctx().mem_get_info() {")
+            .expect("the bracket entry");
+        let entry = &src[at..at + src[at..].find("Err(_) => (None, None),").unwrap()];
+        assert!(
+            entry.contains("Some(raw.saturating_add(cached)),")
+                && entry.contains("crate::unified_memory::delta_free_bytes(e.ctx(), raw)"),
+            "{entry}"
+        );
+        let at = src
+            .find("PER-SESSION DRAFT-STATE MEASUREMENT bracket end")
+            .expect("the bracket end");
+        let end = &src[at..at + src[at..].find("FAILURE IS AN OBSERVATION TOO").unwrap()];
+        assert!(
+            end.contains("&& let Some(meas0) = cap_meas0")
+                && end.contains(
+                    "&& let Some(f1) = crate::unified_memory::delta_free_bytes(e.ctx(), raw1)"
+                )
+                && end.contains("draft_state_parked_delta(meas0, f1, e.pool_cached_bytes())")
+                && !end.contains("allocatable_mem_info"),
+            "the draft-state bracket end does not take the delta reading: {end}"
+        );
+        assert_eq!(
+            src.matches("capture_oom_entry_eff = capture_oom_entry_eff.max(cap_eff0);")
+                .count(),
+            4
+        );
+        assert!(!src.contains(".max(cap_meas0)"));
     }
 
     /// memra#1221: the guard's decision, as a table. A unified-memory device compares the
