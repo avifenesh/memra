@@ -1,0 +1,7 @@
+argmax-margin-gate: model=Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf prompt=board-2048.txt window=12 decode=eager canary=0
+  device: NVIDIA GeForce RTX 5090 Laptop GPU
+  model sha256: 72ff9600aa2b0de77a5b27041a84448c2ce88c7b2055529fc23b3cd5bf518fd3 (cached)
+  flip budget: 1 (row: default)
+argmax-margin-gate: SKIP (GPU out of memory — not an exactness signal)
+  quoted: embed table upload: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  concurrent-GPU: 2996758, 4882 MiB
