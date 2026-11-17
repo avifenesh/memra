@@ -1,0 +1,211 @@
+## range
+5a6ae2438e data(qualification): sm_120a and sm_121a records for 8acfc44829 (the landing of memra#1297 and memra#1320)
+8acfc44829 docs(dsv41): what the zero-fill gate patch is a diff against (the memra#1320 review)
+603d5d6792 data(dsv41): GB10 kernel gate with the ring's padded outputs: 1,025 of 1,025, the column-guard mutation caught in 20 of 20
+4486867b9e test(dsv41): the ring gate's outputs carry two sentinel-filled padding columns, so a store past N is always seen
+1970767ec8 docs(research): step-gemm-tail-20261113, the Step-3.7 PP-2 check of the tail split on the landing pair (memra#1275)
+f21b7bb8aa fix(prime): the step35 batched prime splits its tail like every other prime (memra#1275)
+
+## files changed under crates/, docs/, tools/, cu/
+crates/memra-engine/src/bin/dsv41_gate.rs
+crates/memra-engine/src/hybrid_forward.rs
+
+## files changed outside them, by top directories
+      1 research/INDEX.md
+     18 research/modelplan-onboarding-dsv41-20261109
+     80 research/release-qualification
+     39 research/step-gemm-tail-20261113
+
+## tools/change_impact.py --base 0db086f87a --head 5a6ae2438e
+  cell sm_120a:numeric  [push-gated]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_120a:perf     [push-gated]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_121a:numeric  [push-gated]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_121a:perf     [push-gated]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_100a:numeric  [daily/pre-tag]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_100a:perf     [daily/pre-tag]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_90a:numeric  [daily/pre-tag]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_90a:perf     [daily/pre-tag]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_89:numeric  [daily/pre-tag]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_89:perf     [daily/pre-tag]  <- crates/memra-engine/src/hybrid_forward.rs
+  sm_100a: battery, perf evidence, daily regression / pre-tag only
+  sm_120a: battery, perf evidence, required at push
+  sm_121a: battery, perf evidence, required at push
+  sm_89: battery, perf evidence, daily regression / pre-tag only
+  sm_90a: battery, perf evidence, daily regression / pre-tag only
+
+## tools/cell_evidence.py need --base 0db086f87a --head 5a6ae2438e
+  cell sm_120a:numeric  [push-gated]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_120a:perf     [push-gated]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_121a:numeric  [push-gated]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_121a:perf     [push-gated]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_100a:numeric  [daily/pre-tag]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_100a:perf     [daily/pre-tag]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_90a:numeric  [daily/pre-tag]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_90a:perf     [daily/pre-tag]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_89:numeric  [daily/pre-tag]  <- crates/memra-engine/src/hybrid_forward.rs
+  cell sm_89:perf     [daily/pre-tag]  <- crates/memra-engine/src/hybrid_forward.rs
+  sm_100a: battery,perf (daily/pre-tag)
+  sm_120a: battery,perf (push-gated)
+  sm_121a: battery,perf (push-gated)
+  sm_89: battery,perf (daily/pre-tag)
+  sm_90a: battery,perf (daily/pre-tag)
+
+## route files changed in the range
+# (end of list)
+
+## the route files at 5a6ae2438e
+crates/memra-engine/src/dsv41_gpu.rs
+crates/memra-engine/src/dsv41_gpu/decode.rs
+crates/memra-engine/src/dsv41_gpu/draft.rs
+crates/memra-engine/src/dsv41_gpu/engram.rs
+crates/memra-engine/src/dsv41_gpu/experts.rs
+crates/memra-engine/src/dsv41_gpu/graph.rs
+crates/memra-engine/src/dsv41_gpu/tp.rs
+crates/memra-engine/src/dsv4_gpu.rs
+crates/memra-server/src/dsv41_serve.rs
+crates/memra-server/src/dsv4_admit.rs
+crates/memra-server/src/dsv4_serve.rs
+
+## crates/memra-engine/src/hybrid_forward.rs: the diff's hunks (the enclosing item of each)
+@@ -1832,23 +1832,13 @@ pub(crate) fn single_device_prime_ranges(
+@@ -1970,8 +1960,8 @@ fn widest_prime_call(ranges: &[(usize, usize)]) -> usize {
+@@ -1985,7 +1975,7 @@ impl CallRowsSchedule {
+@@ -2007,7 +1997,7 @@ impl CallRowsSchedule {
+@@ -2070,8 +2060,8 @@ pub fn prime_call_rows_max(t: usize, n_layers: usize, gdn_grid: bool, ring_on: b
+@@ -2228,7 +2218,7 @@ impl PrimeWorkspaceShape {
+@@ -6490,9 +6480,11 @@ impl HybridModel {
+@@ -32239,6 +32231,53 @@ mod prime_chunk_schedule_tests {
+@@ -32289,7 +32328,8 @@ mod prime_chunk_schedule_tests {
+@@ -32334,16 +32374,13 @@ mod prime_chunk_schedule_tests {
+
+## crates/memra-engine/src/hybrid_forward.rs: added and removed lines outside its test module (old lines below 32000)
+-/// The step35 batched GEMM prime's schedule (`prime_cache_overlaid_inner`'s GEMM entry): ranges
+-/// of `PRIME_CHUNK_MAX_TOKENS` rows whatever the chunk geometry, with a trailing remainder shorter
+-/// than `PRIME_MIN_T` folded into the last range whatever its width (memra#1275 tracks that
+-/// overrun). Admission reads the same schedule (`PrimeWorkspaceShape::call_rows`).
+-pub(crate) fn step_gemm_prime_ranges(t: usize) -> Vec<(usize, usize)> {
+-    let width = crate::cache::PRIME_CHUNK_MAX_TOKENS;
+-    let mut ranges = Vec::with_capacity(t.div_ceil(width));
+-    let mut start = 0usize;
+-    while start < t {
+-        let mut end = (start + width).min(t);
+-        if t - end > 0 && t - end < PRIME_MIN_T {
+-            end = t;
+-        }
+-        ranges.push((start, end));
+-        start = end;
+-    }
+-    ranges
++/// The step35 batched GEMM prime's schedule (`prime_cache_overlaid_inner`'s GEMM entry): fixed
++/// ranges at `PRIME_CHUNK_MAX_TOKENS` under the model's ring contract, whatever the chunk
++/// geometry. It used to fold a tail shorter than `PRIME_MIN_T` into the last call whatever its
++/// width, so a cold prompt of k * 4,096 + 1 to 15 tokens made a last call of up to 4,111 rows
++/// (memra#1275, the class of memra#1258).
++pub(crate) fn step_gemm_prime_ranges(t: usize, ring_on: bool) -> Vec<(usize, usize)> {
++    fixed_prime_chunk_ranges(t, crate::cache::PRIME_CHUNK_MAX_TOKENS, ring_on)
+-    /// [`step_gemm_prime_ranges`].
+-    StepGemm,
++    /// [`step_gemm_prime_ranges`] under this ring contract.
++    StepGemm(bool),
+-            Self::StepGemm => widest_prime_call(&step_gemm_prime_ranges(t)),
++            Self::StepGemm(ring_on) => widest_prime_call(&step_gemm_prime_ranges(t, ring_on)),
+-            Self::Prime(PrimeScheduleKind::SingleDevice, _, _) | Self::StepGemm => {
++            Self::Prime(PrimeScheduleKind::SingleDevice, _, _) | Self::StepGemm(_) => {
+-pub(crate) fn step_gemm_call_rows_max(t: usize) -> usize {
+-    running_widest_call(t, CallRowsSchedule::StepGemm)
++pub(crate) fn step_gemm_call_rows_max(t: usize, ring_on: bool) -> usize {
++    running_widest_call(t, CallRowsSchedule::StepGemm(ring_on))
+-            rows = rows.max(step_gemm_call_rows_max(prompt_rows));
++            rows = rows.max(step_gemm_call_rows_max(prompt_rows, self.swa_ring));
+-            // A trailing chunk below the walk floor folds into the previous one; every chunk
+-            // this entry sees must clear PRIME_MIN_T on its own.
+-            for (chunk_idx, (start, end)) in step_gemm_prime_ranges(t).into_iter().enumerate() {
++            // Every chunk clears PRIME_MIN_T and none is wider than the cap (memra#1275).
++            for (chunk_idx, (start, end)) in step_gemm_prime_ranges(t, self.swa_ring_on())
++                .into_iter()
++                .enumerate()
++            {
+
+## the items those lines change, and every file under crates/ and cu/ that names each at 5a6ae2438e (file:count)
+# step_gemm_prime_ranges
+crates/memra-engine/src/hybrid_forward.rs:9
+# step_gemm_call_rows_max
+crates/memra-engine/src/hybrid_forward.rs:2
+# CallRowsSchedule
+crates/memra-engine/src/hybrid_forward.rs:6
+# StepGemm
+crates/memra-engine/src/hybrid_forward.rs:4
+# fixed_prime_chunk_ranges
+crates/memra-engine/src/hybrid_forward.rs:22
+crates/memra-engine/tests/glm5_chunked_prime_gpu.rs:1
+crates/memra-engine/tests/glm5_prime_capacity.rs:1
+# prime_cache_overlaid_inner
+crates/memra-engine/src/hybrid_forward.rs:3
+crates/memra-engine/src/progress.rs:2
+# PrimeWorkspaceShape
+crates/memra-engine/src/hybrid_forward.rs:8
+crates/memra-server/src/worker.rs:13
+# step_gemm
+crates/memra-engine/src/hybrid_forward.rs:11
+crates/memra-server/src/worker.rs:8
+
+## where step_gemm is set to anything but the literal false, and where a PrimeWorkspaceShape is made from a model
+crates/memra-engine/src/hybrid_forward.rs:2203:    pub step_gemm: bool,
+crates/memra-engine/src/hybrid_forward.rs:3118:            step_gemm: self.uses_sliding_gated_moe_program(),
+crates/memra-engine/src/hybrid_forward.rs:32292:        let shape = |gdn_grid: bool, swa_ring: bool, step_gemm: bool| PrimeWorkspaceShape {
+crates/memra-engine/src/model_memory.rs:124:            if let Some(shape) = self.hyper_prime_workspace_shape() {
+crates/memra-engine/src/model_memory.rs:136:                    .prime_workspace_shape()
+crates/memra-server/src/worker.rs:3988:            model.hyper_prime_workspace_shape()
+crates/memra-server/src/worker.rs:3993:            model.prime_workspace_shape()
+
+## the receiver of prime_workspace_shape and of the GEMM prime entry: the impl blocks that hold them
+crates/memra-engine/src/hybrid_forward.rs:3077: pub fn prime_workspace_shape(&self) -> Option<PrimeWorkspaceShape> {   <- in `impl HybridModel {` (line 2475)
+crates/memra-engine/src/hybrid_forward.rs:6400: fn prime_cache_overlaid_inner(   <- in `impl HybridModel {` (line 2475)
+crates/memra-engine/src/hybrid.rs:4316: pub fn uses_sliding_gated_moe_program(&self) -> bool {   <- in `impl HybridModel {` (line 4093)
+
+## non-comment lines of the route files at 5a6ae2438e that name the hybrid model or any of the changed items
+# (end of list)
+# the same names in comment lines of the route files (for the reader)
+crates/memra-server/src/dsv41_serve.rs:3://! through `HybridModel` or the DSv4 stack. The HTTP surface (OpenAI routes, the `encoding_dsv41`
+crates/memra-server/src/dsv4_serve.rs:3://! (`Dsv4Gpu`), NOT through `HybridModel`.
+crates/memra-server/src/dsv4_serve.rs:63:/// model name, a nested field) loads through `HybridModel` rather than a refusing dsv4 thread.
+# (end of list)
+
+## crate::worker items the server's route files use, and worker.rs in the range
+crates/memra-server/src/dsv41_serve.rs:       1 worker::release_request_reservation
+crates/memra-server/src/dsv41_serve.rs:       1 worker::resolve_env_ctx
+crates/memra-server/src/dsv41_serve.rs:       1 worker::stop_token_reason
+crates/memra-server/src/dsv41_serve.rs:       1 worker::utf8_delta
+crates/memra-server/src/dsv4_serve.rs:       2 worker::EventSender
+crates/memra-server/src/dsv4_serve.rs:       1 worker::meminfo_available_bytes
+crates/memra-server/src/dsv4_serve.rs:       1 worker::plain_chat_render_path
+crates/memra-server/src/dsv4_serve.rs:       1 worker::prompt_source_limit_error
+crates/memra-server/src/dsv4_serve.rs:       1 worker::release_request_reservation
+crates/memra-server/src/dsv4_serve.rs:       1 worker::resolve_env_ctx
+crates/memra-server/src/dsv4_serve.rs:       1 worker::stop_token_reason
+crates/memra-server/src/dsv4_serve.rs:       1 worker::utf8_delta
+worker.rs changed in the range: 0 file(s)
+# every call of PrimeWorkspaceShape::call_rows in worker.rs (line: the call   <- the fn that holds it; tests included)
+9042: .map(|o| shape.call_rows(o.rows))   <- fn pending_prime_for_model(
+22667: shape.call_rows(prompt_len)   <- pub fn run(
+42410: let call = |r: usize| shape.call_row_bytes * shape.call_rows(r);   <- fn the_armed_door_books_the_whole_prompt_stack_of_an_unbuilt_session() {
+42428: shape.prompt_row_bytes * rows.iter().map(|&r| shape.call_rows(r)).max().unwrap();   <- fn the_armed_door_books_the_whole_prompt_stack_of_an_unbuilt_session() {
+42477: shape.call_row_bytes * shape.call_rows(5_741) + shape.prompt_row_bytes * 5_741;   <- fn an_unbuilt_session_is_booked_once_and_left_out_of_the_reading_without_the_booking() {
+51153: assert_eq!(shape.call_rows(8192), 4096);   <- fn a_prime_call_needs_the_cold_charge_of_its_rows() {
+58120: let slab = |rows: usize| 400_000 * shape.call_rows(rows);   <- fn corrected_pending_prime_books_one_call_once_and_unstarted_walker_stacks() {
+58121: let returned = |rows: usize| 20_480 * shape.call_rows(rows);   <- fn corrected_pending_prime_books_one_call_once_and_unstarted_walker_stacks() {
+
+## crates/memra-engine/src/bin/dsv41_gate.rs: the gate binary. Where its name appears outside its own file at 5a6ae2438e (non-comment lines)
+crates/memra-engine/Cargo.toml:70:name = "dsv41-gate"
+crates/memra-engine/Cargo.toml:71:path = "src/bin/dsv41_gate.rs"
+# (end of list)
+# its diff's hunks
+@@ -2376,8 +2376,10 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+@@ -2390,7 +2392,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+@@ -2398,7 +2400,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+@@ -2406,15 +2408,30 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+@@ -2425,9 +2442,9 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+@@ -2435,12 +2452,12 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+@@ -2451,13 +2468,13 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
+# does the library or the server include the file (mod, #[path], include!)
+# (end of list)

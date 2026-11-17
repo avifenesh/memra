@@ -26,8 +26,12 @@ topology (record `deepseek_v41-gpu-1x-pro6000`).
 > earlier pins': `receipts/verify-6371a9975b-tiny/`. In the same window the row-fault gate over all 40 layers and
 > the serve smoke with a poisoned row passed on this topology (`../row-faults/receipts/pro6000-6371a9975b/`). The
 > two commits after the pin are receipts and docs, and the merge of main `0db086f87a` after them changes no code
-> line of this route (`receipts/verify-6371a9975b-reach/`: one doc comment in `dsv41_gpu/experts.rs`). RewriteParity
-> stays pending.
+> line of this route (`receipts/verify-6371a9975b-reach/`: one doc comment in `dsv41_gpu/experts.rs`). After it,
+> `36fb6c17ba` (the round-2 review's nits) and the commit that adds this sentence change research files and the
+> record's notes only, and the merge of main `5a6ae2438e` (the landing of memra#1297 and memra#1320) changes
+> `hybrid_forward.rs` and the gate binary `dsv41_gate.rs`: no file of this route, nothing a line of this route names,
+> and no source the server builds from the gate binary (`receipts/verify-6371a9975b-reach-5a6ae2438e/`). The
+> checkpoint and serve gates were not rerun on either merged head. RewriteParity stays pending.
 >
 > **Earlier pin (2026-11-14, the CUTLASS lane).** The record pinned `a05173ee27`, the head of the
 > CUTLASS lane (the route's FP8 and MXFP4 GEMMs on the block-scaled MMA and on vendored CUTLASS 4.8.1, with
@@ -313,7 +317,8 @@ Every script reads the run box's paths, card and lease wrapper from the file `LA
   receipt, gates, serve receipt and response, logs); `verify-0d074a7055/` (the same gates at `0d074a7055`, with the
   run, the binaries' sha256, the plan, the census and the tiny gate, the large tables gzipped);
   `verify-6371a9975b/` (the same gates at `6371a9975b`, `raw.sha256` for the gzipped tables);
-  `verify-6371a9975b-reach/` (what main's commits merged after that pin reach in this route: the script and its output);
+  `verify-6371a9975b-reach/` and `verify-6371a9975b-reach-5a6ae2438e/` (what main's commits merged after that pin reach in
+  this route, one directory per merge: the script and its output);
   `verify-0d074a7055-tiny/`, `verify-a05173ee27-tiny/` and `verify-6371a9975b-tiny/` (`memra model verify tiny` at each pin's tree: gates,
   the tiny gate receipt, the oracles gzipped, the log; the last two also have the gate test's log); `serve_gate_all.out` (the binaries' sha256
   and the three gate steps); `chat/` (`chat-gate.json`, the client and server logs, `rates.json`);

@@ -298,7 +298,11 @@ from that commit, 120a, CUDA 13.1), RTX PRO 6000 Blackwell Max-Q cards, MEMRA_FU
   on one card (`../serve/receipts/verify-6371a9975b/`: Config, TokenizerTemplate, TensorCensus,
   CheckpointParity with argmax 51119 on both sides and max abs 2.94, and Serve), and the tiny gate
   passes on the same tree (`../serve/receipts/verify-6371a9975b-tiny/`). The record
-  `deepseek_v41-gpu-1x-pro6000` pins this head.
+  `deepseek_v41-gpu-1x-pro6000` pins this head. Its notes name every commit after the pin: receipts,
+  docs, the review's nits (`36fb6c17ba`, research files only) and two merges of main (`0db086f87a`,
+  then `5a6ae2438e`), with what each merge reaches in this route
+  (`../serve/receipts/verify-6371a9975b-reach/` and `verify-6371a9975b-reach-5a6ae2438e/`): no code
+  line of it. The gates above were not rerun on the merged heads.
 
 `lease/` has each run's lease summary, its 1 Hz card telemetry (gzipped; `raw.sha256` lists the
 bytes before compression) and the window's `summary.txt`; no run was flagged for a slowdown.
