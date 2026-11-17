@@ -1773,25 +1773,28 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
 
     // the device plan against the host plan, then the grouped GEMM in every form against the dense
     // normal form run per expert, on a 16-expert slice
-    // (rows, experts, top-k, tile rows, output columns): 576 is a rank's share of the hidden columns at 4
-    // ranks, whose last 128-column tile is half full
-    for &(rows, ne, topk, bm, n) in &[
-        (1usize, 16usize, 6usize, 1usize, 2304usize),
-        (1, 16, 6, 4, 2304),
-        (3, 16, 6, 4, 2304),
-        (6, 16, 6, 8, 2304),
-        (12, 16, 6, 8, 2304),
-        (40, 16, 6, 64, 2304),
-        (700, 16, 6, 64, 2304),
-        (900, 16, 6, 128, 2304),
-        (6, 16, 6, 8, 576),
-        (700, 16, 6, 64, 576),
-        (900, 16, 6, 128, 576),
+    // (rows, experts, top-k, tile rows, output columns, inputs): 576 is a rank's share of the hidden columns at
+    // 4 ranks, whose last 128-column tile is half full; 1280 x 2304 a rank's share of w2 at 4 ranks (72 K
+    // blocks: the block ring's 16-block stages end on a short one)
+    for &(rows, ne, topk, bm, n, k) in &[
+        (1usize, 16usize, 6usize, 1usize, 2304usize, 5120usize),
+        (1, 16, 6, 4, 2304, 5120),
+        (3, 16, 6, 4, 2304, 5120),
+        (6, 16, 6, 8, 2304, 5120),
+        (12, 16, 6, 8, 2304, 5120),
+        (40, 16, 6, 64, 2304, 5120),
+        (700, 16, 6, 64, 2304, 5120),
+        (900, 16, 6, 128, 2304, 5120),
+        (6, 16, 6, 8, 576, 5120),
+        (700, 16, 6, 64, 576, 5120),
+        (900, 16, 6, 128, 576, 5120),
+        (2, 16, 6, 2, 1280, 2304),
+        (12, 16, 6, 8, 1280, 2304),
     ] {
-        let nt = if n == 2304 {
-            String::new()
-        } else {
-            format!("_n{n}")
+        let nt = match (n, k) {
+            (2304, 5120) => String::new(),
+            (_, 5120) => format!("_n{n}"),
+            _ => format!("_n{n}_k{k}"),
         };
         let mut sel = Vec::with_capacity(rows * topk);
         let mut selw = Vec::with_capacity(rows * topk);
@@ -1960,9 +1963,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 ),
             );
         }
-        // w1-shaped MXFP4 experts (k 5120): the pairs' codes, row-major scale codes placed through
-        // each pair's scale row
-        let k = 5120usize;
+        // MXFP4 experts: the pairs' codes, row-major scale codes placed through each pair's scale row
         let kb = k / 32;
         let a = Buf::from_bytes(&st, &rng.e4m3(np * k))?;
         let a_rows = rng.range(np * kb, 118, 130);
@@ -2127,15 +2128,23 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 &want,
             );
         }
-        // the small-row body over the tile list (plans of tiles of at most 8 rows): the same bytes
+        // the small-row body over the tile list (plans of tiles of at most 8 rows), on each of its rings
+        // (the warp ring under the old names, the block ring under `blk`): the same bytes
+        let rings = [(1, ""), (2, "_blk")];
         if bm <= 8 {
-            let (got, _, _) = grouped(0, ne, 0, &tabd, (0, 0), true)?;
-            same(
-                rep,
-                &format!("schedule/moe_small/rows{rows}_bm{bm}{nt}"),
-                &got,
-                &want,
-            );
+            for (ring, rn) in rings {
+                // SAFETY: a plain store of the launcher's ring choice
+                unsafe { ffi::memra_v41_moe_small_ring(ring) };
+                let (got, _, _) = grouped(0, ne, 0, &tabd, (0, 0), true)?;
+                same(
+                    rep,
+                    &format!("schedule/moe_small/rows{rows}_bm{bm}{nt}{rn}"),
+                    &got,
+                    &want,
+                );
+            }
+            // SAFETY: as above, back to the card's ring
+            unsafe { ffi::memra_v41_moe_small_ring(0) };
         }
         // a rank's range of experts [4, 12): its pairs' rows as above, every other row untouched
         {
@@ -2169,60 +2178,66 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             let (g1, _, _) = grouped(0, ne, 0, &tab2, (0, 0), false)?;
             let (u1, _, _) = grouped(0, ne, 0, &tab2, (2, 2), false)?;
             if bm <= 8 {
-                // the small-row body's two projections in one launch == CUTLASS's
-                let (gs, us, _) = grouped(0, ne, 0, &tab2, (0, 2), true)?;
-                same(
-                    rep,
-                    &format!("schedule/moe_small_pair/rows{rows}_w1{nt}"),
-                    &gs,
-                    &g2,
-                );
-                same(
-                    rep,
-                    &format!("schedule/moe_small_pair/rows{rows}_w3{nt}"),
-                    &us,
-                    &u2,
-                );
-                // the split MoE's small-row path: the pairs' scales in a layout of their own (pair p
-                // at scale row p, no scale-row kernel)
-                let asf_np = Buf::from_bytes(&st, &sfp(np, k, &a_rows))?;
-                let fill = vec![0xA5u8; np * n * 2];
-                let (d0, d1) = (Buf::from_bytes(&st, &fill)?, Buf::from_bytes(&st, &fill)?);
-                ck("moe_small", unsafe {
-                    ffi::memra_v41_moe_small(
-                        a.p(&st).c(),
-                        k as i64,
-                        asf_np.p(&st).c(),
-                        std::ptr::null(),
-                        tiles.p(&st).c(),
-                        ntiles.p(&st).i(),
-                        max_tiles as i32,
-                        tab2.p(&st).c(),
-                        2,
-                        0,
-                        2,
-                        (k / 2) as i64,
-                        d0.p(&st).m(),
-                        d1.p(&st).m(),
-                        n as i64,
-                        n as i32,
-                        k as i32,
-                        bm as i32,
-                        sv,
-                    )
-                })?;
-                same(
-                    rep,
-                    &format!("schedule/moe_small_own_layout/rows{rows}_w1{nt}"),
-                    &d0.host(&st)?,
-                    &gs,
-                );
-                same(
-                    rep,
-                    &format!("schedule/moe_small_own_layout/rows{rows}_w3{nt}"),
-                    &d1.host(&st)?,
-                    &us,
-                );
+                for (ring, rn) in rings {
+                    // SAFETY: a plain store of the launcher's ring choice
+                    unsafe { ffi::memra_v41_moe_small_ring(ring) };
+                    // the small-row body's two projections in one launch == CUTLASS's
+                    let (gs, us, _) = grouped(0, ne, 0, &tab2, (0, 2), true)?;
+                    same(
+                        rep,
+                        &format!("schedule/moe_small_pair/rows{rows}_w1{nt}{rn}"),
+                        &gs,
+                        &g2,
+                    );
+                    same(
+                        rep,
+                        &format!("schedule/moe_small_pair/rows{rows}_w3{nt}{rn}"),
+                        &us,
+                        &u2,
+                    );
+                    // the split MoE's small-row path: the pairs' scales in a layout of their own (pair p
+                    // at scale row p, no scale-row kernel)
+                    let asf_np = Buf::from_bytes(&st, &sfp(np, k, &a_rows))?;
+                    let fill = vec![0xA5u8; np * n * 2];
+                    let (d0, d1) = (Buf::from_bytes(&st, &fill)?, Buf::from_bytes(&st, &fill)?);
+                    ck("moe_small", unsafe {
+                        ffi::memra_v41_moe_small(
+                            a.p(&st).c(),
+                            k as i64,
+                            asf_np.p(&st).c(),
+                            std::ptr::null(),
+                            tiles.p(&st).c(),
+                            ntiles.p(&st).i(),
+                            max_tiles as i32,
+                            tab2.p(&st).c(),
+                            2,
+                            0,
+                            2,
+                            (k / 2) as i64,
+                            d0.p(&st).m(),
+                            d1.p(&st).m(),
+                            n as i64,
+                            n as i32,
+                            k as i32,
+                            bm as i32,
+                            sv,
+                        )
+                    })?;
+                    same(
+                        rep,
+                        &format!("schedule/moe_small_own_layout/rows{rows}_w1{nt}{rn}"),
+                        &d0.host(&st)?,
+                        &gs,
+                    );
+                    same(
+                        rep,
+                        &format!("schedule/moe_small_own_layout/rows{rows}_w3{nt}{rn}"),
+                        &d1.host(&st)?,
+                        &us,
+                    );
+                }
+                // SAFETY: as above, back to the card's ring
+                unsafe { ffi::memra_v41_moe_small_ring(0) };
             }
             same(
                 rep,

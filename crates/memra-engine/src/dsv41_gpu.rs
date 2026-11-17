@@ -657,6 +657,9 @@ pub mod ffi {
         /// Whether a grouped call of at most `max_tiles` tiles takes the small-row body (speed
         /// only: the bodies give the same bytes).
         pub fn memra_v41_moe_small_fits(max_tiles: i32, n: i32, nproj: i32, bm: i32) -> i32;
+        /// A gate's or bench's choice of the small-row body's ring (speed only: the same bytes):
+        /// 0 by the card, 1 the six-stage warp ring, 2 the two-stage block ring.
+        pub fn memra_v41_moe_small_ring(ring: i32);
         /// A bench's choice of the most rows of a call that keep a family's small-row body in
         /// groups of 8 (0 block-scaled dense, 1 bf16, 2 fp32 FMA, 3 the one-pass mHC kernel).
         pub fn memra_v41_wide_rows(family: i32, rows: i32);
