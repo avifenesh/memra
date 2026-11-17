@@ -19,6 +19,12 @@ every other arm once), DSpark (`MEMRA_DSV4_DRAFTER=dspark`) then plain. Cells
 c1 with `ignore_eos` (4), 256 output tokens each, after a 32-token warmup. The checkpoint bytes were
 verified before the first row (`summary.txt`, `hashchk files=77 lfs=48 bad=0`).
 
+Note, 2026-11-17 (memra#1325): the `ignore_eos` cell never ignored the end id. The chat surface
+dropped the field when these rows ran and the DeepSeek-V4-Flash route does not serve it; every
+completed request of the cell ended at the 256-token budget. `bench.py --ignore-eos` is retired
+(accepted, sends nothing), since the chat surface now answers the field with a 400 on this route.
+`../BASELINE.md` has the same note for every such cell of the lane.
+
 `lane_tab.py short <arm>` prints one arm's rows, medians and deltas against base, per-cell hash
 identity across all rows of both arms, and the thermal regime.
 

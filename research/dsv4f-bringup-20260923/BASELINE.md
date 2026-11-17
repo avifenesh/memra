@@ -40,6 +40,16 @@ c1 and the queue shows up as TTFT. At c16, 23 of 32 requests got 429 from the ad
 Receipts: `raw/base-plain-r1/`, `raw/spec-dspark-r1/` (cells.jsonl, per-request rows with text,
 serve.log, /metrics snapshots between cells, telemetry).
 
+Note, 2026-11-17 (memra#1325). The cells labeled ignore-eos under this directory
+(`greedy-c1-ignore-eos`, `ieos-a` to `ieos-d`, `prof-greedy`) never ignored the end id. Their client
+sent `ignore_eos: true` to `/v1/chat/completions`, which dropped the field at the time, and the
+DeepSeek-V4-Flash route does not serve it. The numbers stand as measured: the label names a flag
+that did nothing, and every completed request of those cells ended at the 256-token budget (2,064
+request rows in 346 cells), so none met the end id first. The chat surface now answers
+`ignore_eos: true` with a 400 on this route, so `bench.py --ignore-eos` (here and in
+`kernel-ab-short/`) is retired: the flag is accepted and sends nothing, which is what the server
+did with it when these rows ran.
+
 ## Correctness: served DSpark greedy != plain greedy
 
 Greedy text sha256, same prompts, same binary:
