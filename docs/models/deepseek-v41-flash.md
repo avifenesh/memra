@@ -37,9 +37,11 @@ memra-server
   four ranks on four 96 GB cards hold the whole trunk, and the route then uses no host store.
   That arm has no serve-gate evidence yet; the record covers one card. On four ranks a call above
   8 rows was slower than before the CUTLASS GEMMs (memra#1311). Its fix is measured level at 12
-  rows and ahead at 16 in two halves, with the final binary's four-card confirm pending; 9 and 10
-  rows stay about 1% behind (memra#1324). The batch limit of 8 rows and drafting's default (off)
-  stay as they are there ([record](../decisions/DSV41-ROWS-ABOVE-8-FOUR-RANKS.md)).
+  rows and ahead at 16 against that route, and its final binary passed a four-card confirm
+  against main (4.6 to 5.6% faster at 10 to 16 rows, level at 9 rows and below; timed on the
+  default transport only); 9 and 10 rows stay about 1% behind the route before the CUTLASS GEMMs
+  (memra#1324). The batch limit of 8 rows and drafting's default (off) stay as they are there
+  ([record](../decisions/DSV41-ROWS-ABOVE-8-FOUR-RANKS.md)).
 
 ## What the route does
 

@@ -1,0 +1,26 @@
+10:38:08 main25 0db086f87acc5d5fa2da6d34b43ccc7ffbcc2468 built 2026-11-14T09:19:23+01:00 on the dev desk, cuda 13.1, sm_120a
+10:38:08 gather2 059c8add76020bff1a4b2130d8fb4aaf5b75e500 built 2026-11-14T09:35:38+01:00 on the dev desk, cuda 13.1, sm_120a
+10:38:08 waiting for agy's window-open; give up 23:30
+10:41:09 main25 0db086f87acc5d5fa2da6d34b43ccc7ffbcc2468 built 2026-11-14T09:19:23+01:00 on the dev desk, cuda 13.1, sm_120a
+10:41:09 gather2 059c8add76020bff1a4b2130d8fb4aaf5b75e500 built 2026-11-14T09:35:38+01:00 on the dev desk, cuda 13.1, sm_120a
+10:41:09 waiting for agy's window-open; give up 23:30
+11:21:57 main25 0db086f87acc5d5fa2da6d34b43ccc7ffbcc2468 built 2026-11-14T09:19:23+01:00 on the dev desk, cuda 13.1, sm_120a
+11:21:57 gather2 9a476d5285a60168272f3eadf7b4048cb83a1728 built 2026-11-14T10:20:56+01:00 on the dev desk, cuda 13.1, sm_120a
+11:21:57 waiting for agy's window-open; give up 23:30
+23:35:36 main25 0db086f87acc5d5fa2da6d34b43ccc7ffbcc2468 built 2026-11-14T09:19:23+01:00 on the dev desk, cuda 13.1, sm_120a
+23:35:36 gather2 9a476d5285a60168272f3eadf7b4048cb83a1728 built 2026-11-14T10:20:56+01:00 on the dev desk, cuda 13.1, sm_120a
+23:35:36 waiting for agy's window-open; give up 00:30
+23:36:06 W4-START:  owner_open=1; all four box locks held; host free 920 GiB; load 5.72 2.66 1.11
+23:41:11 gather2 vs main25 (four cards) rc 0; load 3.31 3.24 1.82
+gather2-four/lease slowdown: 1 runs, 0 flagged (cards 0123)
+kgate: 1025 checks, 0 failed 0 FAIL lines
+gate-default: 1056 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1, 2, 3]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1, 2, 3]: 49128265 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+gate-peer-pull: 1054 checks, 0 failed 0 FAIL lines
+gate-host-canonical: 1054 checks, 0 failed 0 FAIL lines
+decode tokens: decode-c1: 1 distinct over the runs
+slowdown: 12 runs, 0 flagged (cards 0123)
+23:41:11 all four box locks released
+23:41:11 touched dsv41.w4-4card-done
+23:41:11 W4-DONE
