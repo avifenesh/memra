@@ -1,0 +1,15 @@
+[tensor-contract] bound 754 semantic tensors (pack step35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[step37-defaults] serving doors armed ON for the SlidingGatedMoe program (per-flag =0 kills, =1 forces; owner flip 2026-08-27)
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.881
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=470.343
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.94GB (expert budget 95.02GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.81GB (expert budget 94.90GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[q8rp] split-plane decode mirrors built: 1 tensors
+loaded step35 (45 layers)
+tickinv: T=32832 chat=false budgets=[0] splits=[64] steps=16 PRIME_MIN_T=16 (budget 0 = single monolithic call)
+[step35-prime-batch] first concat prime: B=1 tokens=4096
+Error: "PP cross-device tensor access at append_kv_quantized_rows.k_cache: tensor on dev0, stream on dev1"

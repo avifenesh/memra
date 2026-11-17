@@ -1,0 +1,17 @@
+base: T=32832 continuation=32768 rc=1
+ok   base: the continuation is at least 27,916 tokens
+base: continuation calls None
+ok   base: the probe exits non-zero and not by the timeout (rc 1)
+FAIL base: the log has `SWA ring append does not fit`
+FAIL base: a call wider than 4,096 rows (widest None)
+head: T=32832 continuation=32768 rc=1
+ok   head: the continuation is at least 27,916 tokens
+head: continuation calls None
+FAIL head: the probe exits 0 (rc 1)
+ok   head: no ring error
+FAIL head: every call within 4,096 rows and at least 16, summing to the continuation (widest None, narrowest None, sum None)
+FAIL head: the sp64 row is printed
+reported, not judged (the walk continuation against the one-call batched prime):
+      no ref line
+      no sp64 row
+VERDICT FAIL

@@ -1,0 +1,8 @@
+base: T=32832 continuation=32768 rc=1
+ok   base: the continuation is at least 27,916 tokens
+base: continuation calls [2048, 4809, 4646, 4499, 4366, 4243, 4131, 4026]
+ok   base: the probe exits non-zero and not by the timeout (rc 1)
+ok   base: the log has `SWA ring append does not fit`
+      Error: "SWA ring append does not fit (keep 512 + append 4809 > 5151) [append len=2112 retain_from=1600 append_rows=4809 base=Some(0) called from crates/memra-engine/src/hybrid_forward.rs:27853:39]"
+ok   base: a call wider than 4,096 rows (widest 4809)
+BASE PASS

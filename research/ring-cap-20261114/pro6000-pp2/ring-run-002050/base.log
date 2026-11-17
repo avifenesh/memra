@@ -1,0 +1,21 @@
+[tensor-contract] bound 754 semantic tensors (pack step35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[step37-defaults] serving doors armed ON for the SlidingGatedMoe program (per-flag =0 kills, =1 forces; owner flip 2026-08-27)
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.843
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=422.296
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.94GB (expert budget 95.02GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.81GB (expert budget 94.90GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[q8rp] split-plane decode mirrors built: 1 tensors
+loaded step35 (45 layers)
+tickinv: T=32832 chat=false budgets=[0] splits=[64] steps=0 PRIME_MIN_T=16 (budget 0 = single monolithic call)
+[step35-prime-batch] first concat prime: B=1 tokens=4096
+[gemm-prime] ENGAGED t=32832 base=0 seq_end=32832 chunks<=4096 calls=[4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 64] (GEMM trunk + grouped MoE)
+ref budget=0 calls=1 argmax=294
+ budget | calls | logits | first_div_row | maxdiff   | argmax | stream_div
+[gemm-prime] ENGAGED t=64 base=0 seq_end=32832 chunks<=4096 calls=[64] (GEMM trunk + grouped MoE)
+[gemm-prime] WALK t=32768 base=64 seq_end=32832 (batched prime declined)
+[prime-walk] t=32768 base=64 calls=[2048, 4809, 4646, 4499, 4366, 4243, 4131, 4026]
+Error: "SWA ring append does not fit (keep 512 + append 4809 > 5151) [append len=2112 retain_from=1600 append_rows=4809 base=Some(0) called from crates/memra-engine/src/hybrid_forward.rs:27853:39]"
