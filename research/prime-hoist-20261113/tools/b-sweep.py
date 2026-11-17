@@ -43,6 +43,12 @@ def main() -> None:
                     help="MEMRA_DIAG_TRIM_BEFORE_PRIME: drain the pool's cached bytes before each cold prime")
     ap.add_argument("--call-trim", choices=("0", "1"), default="0",
                     help="MEMRA_DIAG_CALL_TRIM (diag5): the per-call driver-headroom trim prototype")
+    ap.add_argument("--ring", action="store_true",
+                    help="MEMRA_DIAG_RING=1 (ring builds): dump the allocations made in the gap between two "
+                         "calls of a prime before the next call")
+    ap.add_argument("--pre-words", type=int, default=0,
+                    help="before each placed row: drop the ballast and run one cold prime of this many words "
+                         "unplaced (a long prime that parks its workspace on a roomy device), then place the row")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     log = args.out / "serve.log"
@@ -54,6 +60,8 @@ def main() -> None:
         if env is not None and cmd == [args.bin]:
             env["MEMRA_DIAG_TRIM_BEFORE_PRIME"] = args.trim
             env["MEMRA_DIAG_CALL_TRIM"] = args.call_trim
+            if args.ring:
+                env["MEMRA_DIAG_RING"] = "1"
             env.pop("MEMRA_SPEC_GATE_LOW", None)
         return _popen(cmd, *a, **kw)
 
@@ -89,6 +97,17 @@ def main() -> None:
                     # The ballast leaves no room for a new keeper's admission: drop it first.
                     ballast.set(0)
                     kt = start_keeper()
+                pre = None
+                if args.pre_words:
+                    # The long prime runs with nothing placed, so the device holds the park floor
+                    # at its end; the row that follows is then placed with the workspace parked.
+                    ballast.set(0)
+                    pre_start = len(log.read_text(errors="replace").splitlines())
+                    pr = server.complete(g.prose(seed + 5000, args.pre_words), 16)
+                    time.sleep(0.5)
+                    pre_lines = g.log_lines(log, pre_start)
+                    pre = {"status": pr["status"], "prompt_tokens": pr["prompt_tokens"],
+                           "prime_ws_lines": [l for l in pre_lines if l.startswith("[prime-ws]")][-2:]}
                 target = required + margin * MIB
                 # Two corrections on fresh snapshots: the keeper and the last prime move the reading.
                 for _ in range(2):
@@ -114,6 +133,9 @@ def main() -> None:
                     "oom_lines": sum(1 for l in lines if "out of memory" in l),
                     "trim_fires": sum(1 for l in lines if l.startswith("[diag1258] call-trim") and " fire " in l),
                     "ring_tail": [l for l in lines if l.startswith("[diag1255-ring]")][-3:],
+                    "prime_ws": [l for l in lines if l.startswith("[prime-ws]")],
+                    "admit_trim": [l for l in lines if l.startswith("[admit-trim]")][:6],
+                    "pre": pre,
                 }
                 rows.append(row)
                 with (args.out / "rows.jsonl").open("a") as f:

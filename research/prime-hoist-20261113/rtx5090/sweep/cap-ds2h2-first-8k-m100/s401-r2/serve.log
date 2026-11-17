@@ -1,0 +1,1479 @@
+[server] build: memra-0.141.1-ff2926e27af4 (id: source-tree, git: unknown)
+[env-audit] warning: 3 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_DIAG_CALL_TRIM, MEMRA_DIAG_RING, MEMRA_DIAG_TRIM_BEFORE_PRIME. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] starting; models config = [("gate", "~/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "gate" <- ~/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[dspark] prefix restore switch default OFF on "NVIDIA GeForce RTX 5090 Laptop GPU" (gb10=false): MEMRA_DSPARK_PREFIX_RESTORE resolves OFF (whole-entry restore, strict-prefix restore and boundary capture together)
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] gate: DSPARK SPEC route armed (drafter attached (~/models/q38-gguf/Qwen3.8-27B-DFlash2-memra); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] gate: DFlash2 draft head FULL target vocab (external_mtp_d2t_ignored=false; set MEMRA_FRSPEC_TRIM=<ranks.txt> to trim)
+[admission] "gate": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+[admission] "gate": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=dspark supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[dspark-vg] serve pool ENGAGED (vt_cap=8)
+[topk-shards] engaged: rows=7 cols=248320 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+[dflash-kv-ring] compact keep_from=2064 kept=2056 phys_rows=4120
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2248146944,"still_owned_bytes":19475431184,"pool_reserved_bytes":19629342720,"pool_cached_bytes":153911536,"driver_free_bytes":4845731840,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 2144MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=dspark transient floor 1543MB (static was 1536MB; measured 1543MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 20864MB parked-gdn-ws 480MB rest-mapped 18720MB charged 119MB -> 1543MB]; 4.8s)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18181
+[meter] admit id=cmpl-3a81b7de5fb14cb1fe44776395b5c37b tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=8230 path=spec = 29696 B/token x ctx + 519MB prefill-workspace + 0MB fixed = 764MB
+[admission] prefill workspace held: model="gate" prompt=8150 call=8150 stack=8150 concat=0 slab_resident=1443MB held=519MB cold=1962MB
+[diag1255] gate-pass id=cmpl-3a81b7de5fb14cb1fe44776395b5c37b prompt=8150 path=spec cost=889MB draft=160MB reserve=1543MB required=2432MB required_eager=2271MB eager_arm=false booked=0MB limiting_free=4768MB active=0
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=8150 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[diag1255] dspark-prime-start-before id=cmpl-3a81b7de5fb14cb1fe44776395b5c37b rows=8150: driver_free=4621MB pool_res=18720MB pool_used=18573MB pool_unused=146MB eff_free=4768MB
+[diag1255] dspark-prime-chunk-before id=cmpl-3a81b7de5fb14cb1fe44776395b5c37b: driver_free=4013MB pool_res=19328MB pool_used=19298MB pool_unused=29MB eff_free=4042MB
+[diag1255-ring] gap-before-chunk id=cmpl-3a81b7de5fb14cb1fe44776395b5c37b: 256 entries (last is the newest)
+[diag1255-ring] seq=43072 t_ms=37149.987 bytes=16 at crates/memra-engine/src/dflash.rs:1269
+[diag1255-ring] seq=43073 t_ms=37149.989 bytes=16 at crates/memra-engine/src/dflash.rs:1269
+[diag1255-ring] seq=43074 t_ms=37149.991 bytes=544 at crates/memra-engine/src/lib.rs:5462
+[diag1255-ring] seq=43075 t_ms=37149.997 bytes=16 at crates/memra-engine/src/dflash.rs:1274
+[diag1255-ring] seq=43076 t_ms=37177.263 bytes=993280 at crates/memra-engine/src/dflash.rs:1333
+[diag1255-ring] seq=43077 t_ms=37177.277 bytes=4 at crates/memra-engine/src/lib.rs:15063
+[diag1255-ring] seq=43078 t_ms=37177.285 bytes=64 at crates/memra-engine/src/dflash.rs:1373
+[diag1255-ring] seq=43079 t_ms=37177.563 bytes=768 at crates/memra-engine/src/spec.rs:10879
+[diag1255-ring] seq=43080 t_ms=37177.566 bytes=768 at crates/memra-engine/src/spec.rs:10884
+[diag1255-ring] seq=43081 t_ms=37177.962 bytes=204800 at crates/memra-engine/src/dflash.rs:7165
+[diag1255-ring] seq=43082 t_ms=37177.968 bytes=51200 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43083 t_ms=37177.970 bytes=6400 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43084 t_ms=37177.976 bytes=40960 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=43085 t_ms=37177.981 bytes=40960 at crates/memra-engine/src/dflash.rs:2632
+[diag1255-ring] seq=43086 t_ms=37177.985 bytes=8 at crates/memra-engine/src/dflash.rs:3409
+[diag1255-ring] seq=43087 t_ms=37177.989 bytes=10240 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43088 t_ms=37177.990 bytes=1280 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43089 t_ms=37177.992 bytes=8192 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=43090 t_ms=37177.997 bytes=10240 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43091 t_ms=37177.997 bytes=1280 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43092 t_ms=37177.999 bytes=8192 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=43093 t_ms=37178.002 bytes=8192 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=43094 t_ms=37178.014 bytes=10240 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43095 t_ms=37178.015 bytes=1280 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43096 t_ms=37178.017 bytes=8192 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=43097 t_ms=37178.020 bytes=10240 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43098 t_ms=37178.020 bytes=1280 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43099 t_ms=37178.022 bytes=8192 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=43100 t_ms=37178.025 bytes=8192 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=43101 t_ms=37178.034 bytes=10240 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43102 t_ms=37178.034 bytes=1280 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43103 t_ms=37178.036 bytes=8192 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=43104 t_ms=37178.039 bytes=10240 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43105 t_ms=37178.040 bytes=1280 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43106 t_ms=37178.042 bytes=8192 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=43107 t_ms=37178.044 bytes=8192 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=43108 t_ms=37178.053 bytes=10240 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43109 t_ms=37178.053 bytes=1280 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43110 t_ms=37178.055 bytes=8192 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=43111 t_ms=37178.058 bytes=10240 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43112 t_ms=37178.058 bytes=1280 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43113 t_ms=37178.060 bytes=8192 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=43114 t_ms=37178.063 bytes=8192 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=43115 t_ms=37178.072 bytes=10240 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43116 t_ms=37178.072 bytes=1280 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43117 t_ms=37178.074 bytes=8192 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=43118 t_ms=37178.077 bytes=10240 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43119 t_ms=37178.077 bytes=1280 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=43120 t_ms=37178.079 bytes=8192 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=43121 t_ms=37178.082 bytes=8192 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=43122 t_ms=38266.849 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43123 t_ms=38266.886 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43124 t_ms=38266.894 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43125 t_ms=38266.897 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43126 t_ms=38266.902 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43127 t_ms=38266.905 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43128 t_ms=38266.908 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43129 t_ms=38266.911 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43130 t_ms=38266.914 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43131 t_ms=38266.917 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43132 t_ms=38266.920 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43133 t_ms=38266.923 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43134 t_ms=38266.936 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43135 t_ms=38266.939 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43136 t_ms=38266.942 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43137 t_ms=38266.947 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43138 t_ms=38266.950 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43139 t_ms=38266.953 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43140 t_ms=38266.955 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43141 t_ms=38266.958 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43142 t_ms=38266.960 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43143 t_ms=38266.962 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43144 t_ms=38266.964 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43145 t_ms=38266.968 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43146 t_ms=38266.972 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43147 t_ms=38266.975 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43148 t_ms=38266.977 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43149 t_ms=38266.980 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43150 t_ms=38266.984 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43151 t_ms=38266.986 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43152 t_ms=38266.989 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43153 t_ms=38266.991 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43154 t_ms=38266.994 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43155 t_ms=38266.996 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43156 t_ms=38267.168 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43157 t_ms=38267.171 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43158 t_ms=38267.175 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43159 t_ms=38267.178 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43160 t_ms=38267.180 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43161 t_ms=38267.183 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43162 t_ms=38267.185 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43163 t_ms=38267.188 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43164 t_ms=38267.190 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43165 t_ms=38267.192 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43166 t_ms=38267.195 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43167 t_ms=38267.197 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43168 t_ms=38267.240 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43169 t_ms=38267.243 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43170 t_ms=38267.246 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43171 t_ms=38267.248 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43172 t_ms=38267.250 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43173 t_ms=38267.252 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43174 t_ms=38267.255 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43175 t_ms=38267.257 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43176 t_ms=38267.259 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43177 t_ms=38267.261 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43178 t_ms=38267.263 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43179 t_ms=38267.266 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43180 t_ms=38267.303 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43181 t_ms=38267.305 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43182 t_ms=38267.308 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43183 t_ms=38267.310 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43184 t_ms=38267.313 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43185 t_ms=38267.315 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43186 t_ms=38267.318 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43187 t_ms=38267.320 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43188 t_ms=38267.322 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43189 t_ms=38267.325 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43190 t_ms=38267.327 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43191 t_ms=38267.332 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43192 t_ms=38267.367 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43193 t_ms=38267.370 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43194 t_ms=38267.373 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43195 t_ms=38267.375 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43196 t_ms=38267.377 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43197 t_ms=38267.379 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43198 t_ms=38267.382 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43199 t_ms=38267.384 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43200 t_ms=38267.386 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43201 t_ms=38267.389 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43202 t_ms=38267.391 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43203 t_ms=38267.393 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43204 t_ms=38267.437 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43205 t_ms=38267.439 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43206 t_ms=38267.442 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43207 t_ms=38267.444 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43208 t_ms=38267.447 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43209 t_ms=38267.449 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43210 t_ms=38267.452 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43211 t_ms=38267.454 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43212 t_ms=38267.456 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43213 t_ms=38267.458 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43214 t_ms=38267.460 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43215 t_ms=38267.463 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43216 t_ms=38267.498 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43217 t_ms=38267.500 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43218 t_ms=38267.503 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43219 t_ms=38267.506 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43220 t_ms=38267.508 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43221 t_ms=38267.510 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43222 t_ms=38267.513 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43223 t_ms=38267.515 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43224 t_ms=38267.517 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43225 t_ms=38267.523 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43226 t_ms=38267.526 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43227 t_ms=38267.528 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43228 t_ms=38267.564 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43229 t_ms=38267.566 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43230 t_ms=38267.569 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43231 t_ms=38267.571 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43232 t_ms=38267.574 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43233 t_ms=38267.576 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43234 t_ms=38267.578 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43235 t_ms=38267.580 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43236 t_ms=38267.582 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43237 t_ms=38267.585 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43238 t_ms=38267.587 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43239 t_ms=38267.590 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43240 t_ms=38267.624 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43241 t_ms=38267.627 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43242 t_ms=38267.629 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43243 t_ms=38267.632 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43244 t_ms=38267.634 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43245 t_ms=38267.636 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43246 t_ms=38267.638 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43247 t_ms=38267.641 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43248 t_ms=38267.643 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43249 t_ms=38267.645 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43250 t_ms=38267.647 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43251 t_ms=38267.650 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43252 t_ms=38267.685 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43253 t_ms=38267.688 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43254 t_ms=38267.690 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43255 t_ms=38267.693 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43256 t_ms=38267.695 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43257 t_ms=38267.697 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43258 t_ms=38267.700 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43259 t_ms=38267.702 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43260 t_ms=38267.704 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43261 t_ms=38267.706 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43262 t_ms=38267.709 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43263 t_ms=38267.711 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43264 t_ms=38267.748 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43265 t_ms=38267.750 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43266 t_ms=38267.753 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43267 t_ms=38267.755 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43268 t_ms=38267.757 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43269 t_ms=38267.760 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43270 t_ms=38267.762 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43271 t_ms=38267.764 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43272 t_ms=38267.766 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43273 t_ms=38267.769 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43274 t_ms=38267.771 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43275 t_ms=38267.773 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43276 t_ms=38267.808 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43277 t_ms=38267.810 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43278 t_ms=38267.813 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43279 t_ms=38267.815 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43280 t_ms=38267.818 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43281 t_ms=38267.820 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43282 t_ms=38267.822 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43283 t_ms=38267.824 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43284 t_ms=38267.826 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43285 t_ms=38267.829 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43286 t_ms=38267.831 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43287 t_ms=38267.833 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43288 t_ms=38267.868 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43289 t_ms=38267.870 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43290 t_ms=38267.873 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43291 t_ms=38267.875 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43292 t_ms=38267.878 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43293 t_ms=38267.880 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43294 t_ms=38267.882 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43295 t_ms=38267.885 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43296 t_ms=38267.887 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43297 t_ms=38267.889 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43298 t_ms=38267.891 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43299 t_ms=38267.894 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43300 t_ms=38267.929 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43301 t_ms=38267.931 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43302 t_ms=38267.934 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43303 t_ms=38267.936 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43304 t_ms=38267.939 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43305 t_ms=38267.941 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43306 t_ms=38267.943 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43307 t_ms=38267.945 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43308 t_ms=38267.947 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43309 t_ms=38267.949 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43310 t_ms=38267.952 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=43311 t_ms=38267.954 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43312 t_ms=38267.989 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43313 t_ms=38267.991 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43314 t_ms=38267.995 bytes=8893320 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43315 t_ms=38267.997 bytes=6277640 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=43316 t_ms=38267.999 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=43317 t_ms=38268.003 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=43318 t_ms=38268.037 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=43319 t_ms=38268.038 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=43320 t_ms=38268.069 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=43321 t_ms=38268.070 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=43322 t_ms=38268.101 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=43323 t_ms=38268.102 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=43324 t_ms=38268.133 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=43325 t_ms=38268.134 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=43326 t_ms=38268.135 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=43327 t_ms=38268.136 bytes=26214400 at crates/memra-engine/src/dflash.rs:5513
+[diag1255-ring] gap-before-chunk id=cmpl-3a81b7de5fb14cb1fe44776395b5c37b: sum 762342000 bytes
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=3055.925 max_chunk_ms=3055.925
+[diag1255] dspark-prime-chunk-after id=cmpl-3a81b7de5fb14cb1fe44776395b5c37b: driver_free=2381MB pool_res=20960MB pool_used=19795MB pool_unused=1164MB eff_free=3545MB
+[diag1255] dspark-prime-chunk-before id=cmpl-3a81b7de5fb14cb1fe44776395b5c37b: driver_free=2381MB pool_res=20960MB pool_used=19795MB pool_unused=1164MB eff_free=3545MB
+[diag1255-ring] gap-before-chunk id=cmpl-3a81b7de5fb14cb1fe44776395b5c37b: 0 entries (last is the newest)
+[diag1255-ring] gap-before-chunk id=cmpl-3a81b7de5fb14cb1fe44776395b5c37b: sum 0 bytes
+[dflash-kv-ring] compact keep_from=2040 kept=2056 phys_rows=4120
+[dflash-kv-ring] compact keep_from=4088 kept=2056 phys_rows=4120
+[diag1255] dspark-prime-done id=cmpl-3a81b7de5fb14cb1fe44776395b5c37b: driver_free=2381MB pool_res=20960MB pool_used=19770MB pool_unused=1189MB eff_free=3570MB
+[fa-pool] grow #1 dev=0 o_len 3194880 -> 6389760 ml_len 12480 -> 24960 (retired kept, zero=false)
+[dspark-acc] ctx=8150 burst=10/24 cum=10/24=0.417
+[meter] admit id=cmpl-44868d8dd0f58fbfd5ffd4eab28c1209 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=20555 path=spec = 29696 B/token x ctx + 52MB prefill-workspace + 0MB fixed = 663MB
+[admission] prefill workspace held: model="gate" prompt=491 call=491 stack=491 concat=0 slab_resident=1443MB held=52MB cold=225MB
+[diag1255] gate-pass id=cmpl-44868d8dd0f58fbfd5ffd4eab28c1209 prompt=491 path=spec cost=792MB draft=160MB reserve=1543MB required=2336MB required_eager=2175MB eager_arm=false booked=0MB limiting_free=4727MB active=0
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=491 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[diag1255] dspark-prime-start-before id=cmpl-44868d8dd0f58fbfd5ffd4eab28c1209 rows=491: driver_free=2317MB pool_res=21024MB pool_used=19094MB pool_unused=1929MB eff_free=4246MB
+[diag1255] dspark-prime-chunk-before id=cmpl-44868d8dd0f58fbfd5ffd4eab28c1209: driver_free=2317MB pool_res=21024MB pool_used=20190MB pool_unused=833MB eff_free=3150MB
+[diag1255-ring] gap-before-chunk id=cmpl-44868d8dd0f58fbfd5ffd4eab28c1209: 256 entries (last is the newest)
+[diag1255-ring] seq=64768 t_ms=44971.268 bytes=6528 at crates/memra-engine/src/lib.rs:18239
+[diag1255-ring] seq=64769 t_ms=44971.271 bytes=61440 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=64770 t_ms=44971.276 bytes=61440 at crates/memra-engine/src/spec.rs:10173
+[diag1255-ring] seq=64771 t_ms=44971.282 bytes=61440 at crates/memra-engine/src/spec.rs:1420
+[diag1255-ring] seq=64772 t_ms=44971.289 bytes=15360 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=64773 t_ms=44971.289 bytes=1920 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=64774 t_ms=44971.292 bytes=2979840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=64775 t_ms=44994.832 bytes=768 at crates/memra-engine/src/spec.rs:10879
+[diag1255-ring] seq=64776 t_ms=44994.836 bytes=768 at crates/memra-engine/src/spec.rs:10884
+[diag1255-ring] seq=64777 t_ms=44995.247 bytes=102400 at crates/memra-engine/src/dflash.rs:7165
+[diag1255-ring] seq=64778 t_ms=44995.252 bytes=25600 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64779 t_ms=44995.253 bytes=3200 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64780 t_ms=44995.257 bytes=20480 at crates/memra-engine/src/lib.rs:22719
+[diag1255-ring] seq=64781 t_ms=44995.262 bytes=20480 at crates/memra-engine/src/dflash.rs:2632
+[diag1255-ring] seq=64782 t_ms=44995.266 bytes=4 at crates/memra-engine/src/dflash.rs:3409
+[diag1255-ring] seq=64783 t_ms=44995.270 bytes=5120 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64784 t_ms=44995.270 bytes=640 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64785 t_ms=44995.273 bytes=4096 at crates/memra-engine/src/lib.rs:22719
+[diag1255-ring] seq=64786 t_ms=44995.277 bytes=5120 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64787 t_ms=44995.278 bytes=640 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64788 t_ms=44995.281 bytes=4096 at crates/memra-engine/src/lib.rs:22719
+[diag1255-ring] seq=64789 t_ms=44995.285 bytes=4096 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=64790 t_ms=44995.298 bytes=5120 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64791 t_ms=44995.298 bytes=640 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64792 t_ms=44995.301 bytes=4096 at crates/memra-engine/src/lib.rs:22719
+[diag1255-ring] seq=64793 t_ms=44995.305 bytes=5120 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64794 t_ms=44995.305 bytes=640 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64795 t_ms=44995.307 bytes=4096 at crates/memra-engine/src/lib.rs:22719
+[diag1255-ring] seq=64796 t_ms=44995.311 bytes=4096 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=64797 t_ms=44995.322 bytes=5120 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64798 t_ms=44995.323 bytes=640 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64799 t_ms=44995.325 bytes=4096 at crates/memra-engine/src/lib.rs:22719
+[diag1255-ring] seq=64800 t_ms=44995.329 bytes=5120 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64801 t_ms=44995.329 bytes=640 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64802 t_ms=44995.332 bytes=4096 at crates/memra-engine/src/lib.rs:22719
+[diag1255-ring] seq=64803 t_ms=44995.335 bytes=4096 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=64804 t_ms=44995.347 bytes=5120 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64805 t_ms=44995.347 bytes=640 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64806 t_ms=44995.349 bytes=4096 at crates/memra-engine/src/lib.rs:22719
+[diag1255-ring] seq=64807 t_ms=44995.353 bytes=5120 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64808 t_ms=44995.353 bytes=640 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64809 t_ms=44995.356 bytes=4096 at crates/memra-engine/src/lib.rs:22719
+[diag1255-ring] seq=64810 t_ms=44995.359 bytes=4096 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=64811 t_ms=44995.371 bytes=5120 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64812 t_ms=44995.371 bytes=640 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64813 t_ms=44995.373 bytes=4096 at crates/memra-engine/src/lib.rs:22719
+[diag1255-ring] seq=64814 t_ms=44995.377 bytes=5120 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64815 t_ms=44995.377 bytes=640 at crates/memra-engine/src/lib.rs:18621
+[diag1255-ring] seq=64816 t_ms=44995.380 bytes=4096 at crates/memra-engine/src/lib.rs:22719
+[diag1255-ring] seq=64817 t_ms=44995.383 bytes=4096 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=64818 t_ms=46005.713 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64819 t_ms=46005.751 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64820 t_ms=46005.757 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64821 t_ms=46005.760 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64822 t_ms=46005.764 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64823 t_ms=46005.769 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64824 t_ms=46005.771 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64825 t_ms=46005.775 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64826 t_ms=46005.779 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64827 t_ms=46005.782 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64828 t_ms=46005.786 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64829 t_ms=46005.788 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64830 t_ms=46005.801 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64831 t_ms=46005.803 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64832 t_ms=46005.806 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64833 t_ms=46005.808 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64834 t_ms=46005.811 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64835 t_ms=46005.816 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64836 t_ms=46005.818 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64837 t_ms=46005.820 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64838 t_ms=46005.823 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64839 t_ms=46005.825 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64840 t_ms=46005.829 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64841 t_ms=46005.832 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64842 t_ms=46005.835 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64843 t_ms=46005.838 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64844 t_ms=46005.840 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64845 t_ms=46005.843 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64846 t_ms=46005.845 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64847 t_ms=46005.847 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64848 t_ms=46005.850 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64849 t_ms=46005.852 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64850 t_ms=46005.854 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64851 t_ms=46005.857 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64852 t_ms=46005.861 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64853 t_ms=46005.863 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64854 t_ms=46005.866 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64855 t_ms=46005.868 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64856 t_ms=46005.870 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64857 t_ms=46005.873 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64858 t_ms=46005.875 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64859 t_ms=46005.877 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64860 t_ms=46005.880 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64861 t_ms=46005.882 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64862 t_ms=46005.884 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64863 t_ms=46005.887 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64864 t_ms=46005.889 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64865 t_ms=46005.892 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64866 t_ms=46005.894 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64867 t_ms=46005.896 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64868 t_ms=46005.899 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64869 t_ms=46005.901 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64870 t_ms=46005.904 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64871 t_ms=46005.906 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64872 t_ms=46005.909 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64873 t_ms=46005.911 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64874 t_ms=46005.913 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64875 t_ms=46005.915 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64876 t_ms=46005.918 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64877 t_ms=46005.921 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64878 t_ms=46005.924 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64879 t_ms=46005.926 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64880 t_ms=46005.928 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64881 t_ms=46005.931 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64882 t_ms=46005.933 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64883 t_ms=46005.936 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64884 t_ms=46005.938 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64885 t_ms=46005.940 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64886 t_ms=46005.943 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64887 t_ms=46005.945 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64888 t_ms=46005.948 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64889 t_ms=46005.950 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64890 t_ms=46005.953 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64891 t_ms=46005.955 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64892 t_ms=46005.957 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64893 t_ms=46005.960 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64894 t_ms=46005.963 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64895 t_ms=46005.965 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64896 t_ms=46005.967 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64897 t_ms=46005.969 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64898 t_ms=46005.971 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64899 t_ms=46005.974 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64900 t_ms=46005.976 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64901 t_ms=46005.978 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64902 t_ms=46005.981 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64903 t_ms=46005.983 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64904 t_ms=46005.987 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64905 t_ms=46005.989 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64906 t_ms=46005.992 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64907 t_ms=46005.994 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64908 t_ms=46005.996 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64909 t_ms=46005.999 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64910 t_ms=46006.001 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64911 t_ms=46006.004 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64912 t_ms=46006.006 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64913 t_ms=46006.008 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64914 t_ms=46006.011 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64915 t_ms=46006.013 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64916 t_ms=46006.016 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64917 t_ms=46006.018 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64918 t_ms=46006.020 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64919 t_ms=46006.022 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64920 t_ms=46006.024 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64921 t_ms=46006.027 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64922 t_ms=46006.029 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64923 t_ms=46006.031 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64924 t_ms=46006.033 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64925 t_ms=46006.036 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64926 t_ms=46006.038 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64927 t_ms=46006.041 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64928 t_ms=46006.043 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64929 t_ms=46006.045 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64930 t_ms=46006.048 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64931 t_ms=46006.050 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64932 t_ms=46006.053 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64933 t_ms=46006.055 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64934 t_ms=46006.057 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64935 t_ms=46006.060 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64936 t_ms=46006.062 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64937 t_ms=46006.065 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64938 t_ms=46006.067 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64939 t_ms=46006.070 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64940 t_ms=46006.072 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64941 t_ms=46006.075 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64942 t_ms=46006.077 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64943 t_ms=46006.079 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64944 t_ms=46006.082 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64945 t_ms=46006.084 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64946 t_ms=46006.087 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64947 t_ms=46006.090 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64948 t_ms=46006.092 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64949 t_ms=46006.095 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64950 t_ms=46006.097 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64951 t_ms=46006.099 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64952 t_ms=46006.102 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64953 t_ms=46006.104 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64954 t_ms=46006.106 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64955 t_ms=46006.108 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64956 t_ms=46006.111 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64957 t_ms=46006.113 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64958 t_ms=46006.115 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64959 t_ms=46006.117 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64960 t_ms=46006.120 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64961 t_ms=46006.122 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64962 t_ms=46006.125 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64963 t_ms=46006.127 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64964 t_ms=46006.130 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64965 t_ms=46006.132 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64966 t_ms=46006.135 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64967 t_ms=46006.138 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64968 t_ms=46006.141 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64969 t_ms=46006.143 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64970 t_ms=46006.147 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64971 t_ms=46006.150 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64972 t_ms=46006.152 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64973 t_ms=46006.155 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64974 t_ms=46006.159 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64975 t_ms=46006.162 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64976 t_ms=46006.165 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64977 t_ms=46006.168 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64978 t_ms=46006.171 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64979 t_ms=46006.174 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64980 t_ms=46006.177 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64981 t_ms=46006.179 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64982 t_ms=46006.182 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64983 t_ms=46006.185 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64984 t_ms=46006.188 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64985 t_ms=46006.191 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64986 t_ms=46006.194 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64987 t_ms=46006.196 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64988 t_ms=46006.199 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64989 t_ms=46006.201 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64990 t_ms=46006.204 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64991 t_ms=46006.207 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64992 t_ms=46006.209 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64993 t_ms=46006.212 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64994 t_ms=46006.215 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64995 t_ms=46006.218 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64996 t_ms=46006.220 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=64997 t_ms=46006.224 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=64998 t_ms=46006.227 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=64999 t_ms=46006.229 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=65000 t_ms=46006.232 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=65001 t_ms=46006.235 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=65002 t_ms=46006.238 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=65003 t_ms=46006.241 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=65004 t_ms=46006.244 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=65005 t_ms=46006.247 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=65006 t_ms=46006.249 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=65007 t_ms=46006.252 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=65008 t_ms=46006.255 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=65009 t_ms=46006.258 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=65010 t_ms=46006.262 bytes=22302920 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=65011 t_ms=46006.265 bytes=15743240 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=65012 t_ms=46006.268 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=65013 t_ms=46006.273 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=65014 t_ms=46006.275 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=65015 t_ms=46006.276 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=65016 t_ms=46006.276 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=65017 t_ms=46006.278 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=65018 t_ms=46006.278 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=65019 t_ms=46006.279 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=65020 t_ms=46006.280 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=65021 t_ms=46006.281 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=65022 t_ms=46006.282 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=65023 t_ms=46006.283 bytes=26214400 at crates/memra-engine/src/dflash.rs:5513
+[diag1255-ring] gap-before-chunk id=cmpl-44868d8dd0f58fbfd5ffd4eab28c1209: sum 1153123224 bytes
+[diag1255] dspark-prime-done id=cmpl-44868d8dd0f58fbfd5ffd4eab28c1209: driver_free=2317MB pool_res=21024MB pool_used=20165MB pool_unused=858MB eff_free=3175MB
+[dspark-acc] ctx=491 burst=28/28 cum=28/28=1.000
+[dspark-acc] ctx=523 burst=28/28 cum=56/56=1.000
+[dspark-acc] ctx=555 burst=28/28 cum=84/84=1.000
+[dspark-acc] ctx=587 burst=28/28 cum=112/112=1.000
+[dspark-acc] ctx=619 burst=28/28 cum=140/140=1.000
+[dspark-acc] ctx=651 burst=28/28 cum=168/168=1.000
+[dspark-acc] ctx=683 burst=28/28 cum=196/196=1.000
+[dspark-acc] ctx=715 burst=28/28 cum=224/224=1.000
+[dspark-acc] ctx=747 burst=28/28 cum=252/252=1.000
+[dspark-acc] ctx=779 burst=28/28 cum=280/280=1.000
+[dspark-acc] ctx=811 burst=28/28 cum=308/308=1.000
+[dspark-acc] ctx=843 burst=28/28 cum=336/336=1.000
+[dspark-acc] ctx=875 burst=28/28 cum=364/364=1.000
+[dspark-acc] ctx=907 burst=28/28 cum=392/392=1.000
+[dspark-acc] ctx=939 burst=28/28 cum=420/420=1.000
+[dspark-acc] ctx=971 burst=28/28 cum=448/448=1.000
+[dspark-acc] ctx=1003 burst=28/28 cum=476/476=1.000
+[dspark-acc] ctx=1035 burst=28/28 cum=504/504=1.000
+[dspark-acc] ctx=1067 burst=28/28 cum=532/532=1.000
+[dspark-acc] ctx=1099 burst=28/28 cum=560/560=1.000
+[dspark-acc] ctx=1131 burst=28/28 cum=588/588=1.000
+[dspark-acc] ctx=1163 burst=28/28 cum=616/616=1.000
+[dspark-acc] ctx=1195 burst=28/28 cum=644/644=1.000
+[dspark-acc] ctx=1227 burst=28/28 cum=672/672=1.000
+[dspark-acc] ctx=1259 burst=28/28 cum=700/700=1.000
+[dspark-acc] ctx=1291 burst=28/28 cum=728/728=1.000
+[dspark-acc] ctx=1323 burst=28/28 cum=756/756=1.000
+[dspark-acc] ctx=1355 burst=28/28 cum=784/784=1.000
+[dspark-acc] ctx=1387 burst=28/28 cum=812/812=1.000
+[dspark-acc] ctx=1419 burst=28/28 cum=840/840=1.000
+[dspark-acc] ctx=1451 burst=28/28 cum=868/868=1.000
+[dspark-acc] ctx=1483 burst=28/28 cum=896/896=1.000
+[dspark-acc] ctx=1515 burst=28/28 cum=924/924=1.000
+[dspark-acc] ctx=1547 burst=28/28 cum=952/952=1.000
+[dspark-acc] ctx=1579 burst=28/28 cum=980/980=1.000
+[dspark-acc] ctx=1611 burst=28/28 cum=1008/1008=1.000
+[dspark-acc] ctx=1643 burst=28/28 cum=1036/1036=1.000
+[dspark-acc] ctx=1675 burst=28/28 cum=1064/1064=1.000
+[dspark-acc] ctx=1707 burst=28/28 cum=1092/1092=1.000
+[dspark-acc] ctx=1739 burst=28/28 cum=1120/1120=1.000
+[dspark-acc] ctx=1771 burst=28/28 cum=1148/1148=1.000
+[dspark-acc] ctx=1803 burst=28/28 cum=1176/1176=1.000
+[dspark-acc] ctx=1835 burst=28/28 cum=1204/1204=1.000
+[dspark-acc] ctx=1867 burst=28/28 cum=1232/1232=1.000
+[dspark-acc] ctx=1899 burst=28/28 cum=1260/1260=1.000
+[dspark-acc] ctx=1931 burst=28/28 cum=1288/1288=1.000
+[dspark-acc] ctx=1963 burst=28/28 cum=1316/1316=1.000
+[dspark-acc] ctx=1995 burst=28/28 cum=1344/1344=1.000
+[dspark-acc] ctx=2027 burst=28/28 cum=1372/1372=1.000
+[dspark-acc] ctx=2059 burst=28/28 cum=1400/1400=1.000
+[dspark-acc] ctx=2091 burst=28/28 cum=1428/1428=1.000
+[dspark-acc] ctx=2123 burst=28/28 cum=1456/1456=1.000
+[dspark-acc] ctx=2155 burst=28/28 cum=1484/1484=1.000
+[dspark-acc] ctx=2187 burst=28/28 cum=1512/1512=1.000
+[dspark-acc] ctx=2219 burst=28/28 cum=1540/1540=1.000
+[dspark-acc] ctx=2251 burst=28/28 cum=1568/1568=1.000
+[dspark-acc] ctx=2283 burst=28/28 cum=1596/1596=1.000
+[dspark-acc] ctx=2315 burst=28/28 cum=1624/1624=1.000
+[dspark-acc] ctx=2347 burst=28/28 cum=1652/1652=1.000
+[dspark-acc] ctx=2379 burst=28/28 cum=1680/1680=1.000
+[dspark-acc] ctx=2411 burst=28/28 cum=1708/1708=1.000
+[dspark-acc] ctx=2443 burst=28/28 cum=1736/1736=1.000
+[dspark-acc] ctx=2475 burst=28/28 cum=1764/1764=1.000
+[dspark-acc] ctx=2507 burst=28/28 cum=1792/1792=1.000
+[dspark-acc] ctx=2539 burst=28/28 cum=1820/1820=1.000
+[dspark-acc] ctx=2571 burst=28/28 cum=1848/1848=1.000
+[dspark-acc] ctx=2603 burst=28/28 cum=1876/1876=1.000
+[dspark-acc] ctx=2635 burst=28/28 cum=1904/1904=1.000
+[dspark-acc] ctx=2667 burst=28/28 cum=1932/1932=1.000
+[dspark-acc] ctx=2699 burst=28/28 cum=1960/1960=1.000
+[dspark-acc] ctx=2731 burst=28/28 cum=1988/1988=1.000
+[dspark-acc] ctx=2763 burst=28/28 cum=2016/2016=1.000
+[dspark-acc] ctx=2795 burst=28/28 cum=2044/2044=1.000
+[dspark-acc] ctx=2827 burst=28/28 cum=2072/2072=1.000
+[dspark-acc] ctx=2859 burst=28/28 cum=2100/2100=1.000
+[dspark-acc] ctx=2891 burst=28/28 cum=2128/2128=1.000
+[dspark-acc] ctx=2923 burst=28/28 cum=2156/2156=1.000
+[dspark-acc] ctx=2955 burst=28/28 cum=2184/2184=1.000
+[dspark-acc] ctx=2987 burst=28/28 cum=2212/2212=1.000
+[dspark-acc] ctx=3019 burst=28/28 cum=2240/2240=1.000
+[dspark-acc] ctx=3051 burst=28/28 cum=2268/2268=1.000
+[dspark-acc] ctx=3083 burst=28/28 cum=2296/2296=1.000
+[dspark-acc] ctx=3115 burst=28/28 cum=2324/2324=1.000
+[dspark-acc] ctx=3147 burst=28/28 cum=2352/2352=1.000
+[dspark-acc] ctx=3179 burst=28/28 cum=2380/2380=1.000
+[dspark-acc] ctx=3211 burst=28/28 cum=2408/2408=1.000
+[dspark-acc] ctx=3243 burst=28/28 cum=2436/2436=1.000
+[dspark-acc] ctx=3275 burst=28/28 cum=2464/2464=1.000
+[dspark-acc] ctx=3307 burst=28/28 cum=2492/2492=1.000
+[dspark-acc] ctx=3339 burst=28/28 cum=2520/2520=1.000
+[dspark-acc] ctx=3371 burst=28/28 cum=2548/2548=1.000
+[dspark-acc] ctx=3403 burst=28/28 cum=2576/2576=1.000
+[dspark-acc] ctx=3435 burst=28/28 cum=2604/2604=1.000
+[dspark-acc] ctx=3467 burst=28/28 cum=2632/2632=1.000
+[meter] admit id=cmpl-23e0159a85afdf99b9d4c2f6ebda8266 tenant=default lane=interactive model="gate"
+[dspark-acc] ctx=3499 burst=28/28 cum=2660/2660=1.000
+[admission] per-session draft-state charge: model="gate" +169MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=8253 path=spec = 29696 B/token x ctx + 520MB prefill-workspace + 0MB fixed = 765MB
+[admission] prefill workspace held: model="gate" prompt=8173 call=8173 stack=8173 concat=0 slab_resident=1443MB held=520MB cold=1963MB
+[diag1255] gate-pass id=cmpl-23e0159a85afdf99b9d4c2f6ebda8266 prompt=8173 path=spec cost=890MB draft=160MB reserve=1543MB required=2433MB required_eager=2272MB eager_arm=false booked=0MB limiting_free=2531MB active=1
+[admit-trim] dev0 driver_free_bytes=1004470272 floor_bytes=2147483648 reclaimed_bytes=1140850688 still_owned_bytes=20798117924 pool_reserved_bytes=21307064320 driver_free_after=2145320960 reading=driver before prime
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=8173 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[diag1255] dspark-prime-start-before id=cmpl-23e0159a85afdf99b9d4c2f6ebda8266 rows=8173: driver_free=2045MB pool_res=20320MB pool_used=19834MB pool_unused=485MB eff_free=2531MB
+[diag1255] dspark-prime-chunk-before id=cmpl-23e0159a85afdf99b9d4c2f6ebda8266: driver_free=1789MB pool_res=20576MB pool_used=20560MB pool_unused=15MB eff_free=1805MB
+[diag1255-ring] gap-before-chunk id=cmpl-23e0159a85afdf99b9d4c2f6ebda8266: 256 entries (last is the newest)
+[diag1255-ring] seq=925039 t_ms=66798.066 bytes=557056 at crates/memra-engine/src/spec.rs:7719
+[diag1255-ring] seq=925040 t_ms=66798.212 bytes=139264 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=925041 t_ms=66798.212 bytes=17408 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=925042 t_ms=66798.216 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=925043 t_ms=66798.336 bytes=163840 at crates/memra-engine/src/spec.rs:10173
+[diag1255-ring] seq=925044 t_ms=66798.343 bytes=163840 at crates/memra-engine/src/spec.rs:1420
+[diag1255-ring] seq=925045 t_ms=66798.351 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925046 t_ms=66798.352 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925047 t_ms=66798.355 bytes=7946240 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=925048 t_ms=66836.375 bytes=819200 at crates/memra-engine/src/dflash.rs:7165
+[diag1255-ring] seq=925049 t_ms=66836.384 bytes=204800 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925050 t_ms=66836.384 bytes=25600 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925051 t_ms=66836.390 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=925052 t_ms=66836.394 bytes=163840 at crates/memra-engine/src/dflash.rs:2632
+[diag1255-ring] seq=925053 t_ms=66836.398 bytes=32 at crates/memra-engine/src/dflash.rs:3409
+[diag1255-ring] seq=925054 t_ms=66836.404 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925055 t_ms=66836.404 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925056 t_ms=66836.408 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=925057 t_ms=66836.412 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925058 t_ms=66836.413 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925059 t_ms=66836.416 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=925060 t_ms=66836.419 bytes=32768 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=925061 t_ms=66836.433 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925062 t_ms=66836.433 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925063 t_ms=66836.436 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=925064 t_ms=66836.440 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925065 t_ms=66836.440 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925066 t_ms=66836.443 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=925067 t_ms=66836.446 bytes=32768 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=925068 t_ms=66836.458 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925069 t_ms=66836.459 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925070 t_ms=66836.461 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=925071 t_ms=66836.465 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925072 t_ms=66836.466 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925073 t_ms=66836.468 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=925074 t_ms=66836.472 bytes=32768 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=925075 t_ms=66836.483 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925076 t_ms=66836.484 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925077 t_ms=66836.486 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=925078 t_ms=66836.490 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925079 t_ms=66836.490 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925080 t_ms=66836.493 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=925081 t_ms=66836.497 bytes=32768 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=925082 t_ms=66836.509 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925083 t_ms=66836.509 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925084 t_ms=66836.512 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=925085 t_ms=66836.515 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925086 t_ms=66836.516 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=925087 t_ms=66836.521 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=925088 t_ms=66836.525 bytes=32768 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=925089 t_ms=66851.833 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925090 t_ms=66851.868 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925091 t_ms=66851.874 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925092 t_ms=66851.878 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925093 t_ms=66851.882 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925094 t_ms=66851.889 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925095 t_ms=66851.893 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925096 t_ms=66851.897 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925097 t_ms=66851.900 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925098 t_ms=66851.904 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925099 t_ms=66851.910 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925100 t_ms=66851.914 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925101 t_ms=66851.931 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925102 t_ms=66851.936 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925103 t_ms=66851.939 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925104 t_ms=66851.943 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925105 t_ms=66851.946 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925106 t_ms=66851.951 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925107 t_ms=66851.954 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925108 t_ms=66851.957 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925109 t_ms=66851.960 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925110 t_ms=66851.964 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925111 t_ms=66851.970 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925112 t_ms=66851.973 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925113 t_ms=66851.978 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925114 t_ms=66851.981 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925115 t_ms=66851.985 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925116 t_ms=66851.990 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925117 t_ms=66851.993 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925118 t_ms=66851.997 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925119 t_ms=66852.001 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925120 t_ms=66852.004 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925121 t_ms=66852.007 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925122 t_ms=66852.011 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925123 t_ms=66852.014 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925124 t_ms=66852.018 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925125 t_ms=66852.022 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925126 t_ms=66852.026 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925127 t_ms=66852.031 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925128 t_ms=66852.034 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925129 t_ms=66852.038 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925130 t_ms=66852.042 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925131 t_ms=66852.046 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925132 t_ms=66852.049 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925133 t_ms=66852.053 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925134 t_ms=66852.057 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925135 t_ms=66852.060 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925136 t_ms=66852.064 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925137 t_ms=66852.070 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925138 t_ms=66852.074 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925139 t_ms=66852.079 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925140 t_ms=66852.082 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925141 t_ms=66852.086 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925142 t_ms=66852.090 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925143 t_ms=66852.094 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925144 t_ms=66852.097 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925145 t_ms=66852.100 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925146 t_ms=66852.104 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925147 t_ms=66852.107 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925148 t_ms=66852.111 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925149 t_ms=66852.115 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925150 t_ms=66852.118 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925151 t_ms=66852.122 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925152 t_ms=66852.126 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925153 t_ms=66852.130 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925154 t_ms=66852.133 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925155 t_ms=66852.136 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925156 t_ms=66852.141 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925157 t_ms=66852.144 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925158 t_ms=66852.148 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925159 t_ms=66852.151 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925160 t_ms=66852.155 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925161 t_ms=66852.159 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925162 t_ms=66852.163 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925163 t_ms=66852.167 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925164 t_ms=66852.171 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925165 t_ms=66852.174 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925166 t_ms=66852.178 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925167 t_ms=66852.181 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925168 t_ms=66852.185 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925169 t_ms=66852.188 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925170 t_ms=66852.192 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925171 t_ms=66852.195 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925172 t_ms=66852.199 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925173 t_ms=66852.203 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925174 t_ms=66852.207 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925175 t_ms=66852.211 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925176 t_ms=66852.214 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925177 t_ms=66852.217 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925178 t_ms=66852.221 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925179 t_ms=66852.225 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925180 t_ms=66852.230 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925181 t_ms=66852.233 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925182 t_ms=66852.237 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925183 t_ms=66852.240 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925184 t_ms=66852.244 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925185 t_ms=66852.248 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925186 t_ms=66852.252 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925187 t_ms=66852.256 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925188 t_ms=66852.260 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925189 t_ms=66852.263 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925190 t_ms=66852.266 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925191 t_ms=66852.269 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925192 t_ms=66852.273 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925193 t_ms=66852.276 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925194 t_ms=66852.280 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925195 t_ms=66852.283 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925196 t_ms=66852.287 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925197 t_ms=66852.291 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925198 t_ms=66852.294 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925199 t_ms=66852.298 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925200 t_ms=66852.302 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925201 t_ms=66852.305 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925202 t_ms=66852.309 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925203 t_ms=66852.312 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925204 t_ms=66852.316 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925205 t_ms=66852.319 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925206 t_ms=66852.322 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925207 t_ms=66852.326 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925208 t_ms=66852.330 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925209 t_ms=66852.335 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925210 t_ms=66852.339 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925211 t_ms=66852.343 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925212 t_ms=66852.346 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925213 t_ms=66852.351 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925214 t_ms=66852.354 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925215 t_ms=66852.358 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925216 t_ms=66852.361 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925217 t_ms=66852.365 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925218 t_ms=66852.368 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925219 t_ms=66852.371 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925220 t_ms=66852.375 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925221 t_ms=66852.379 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925222 t_ms=66852.384 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925223 t_ms=66852.388 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925224 t_ms=66852.392 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925225 t_ms=66852.395 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925226 t_ms=66852.399 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925227 t_ms=66852.402 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925228 t_ms=66852.405 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925229 t_ms=66852.408 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925230 t_ms=66852.412 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925231 t_ms=66852.415 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925232 t_ms=66852.419 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925233 t_ms=66852.423 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925234 t_ms=66852.426 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925235 t_ms=66852.431 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925236 t_ms=66852.434 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925237 t_ms=66852.438 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925238 t_ms=66852.441 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925239 t_ms=66852.445 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925240 t_ms=66852.449 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925241 t_ms=66852.452 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925242 t_ms=66852.455 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925243 t_ms=66852.458 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925244 t_ms=66852.462 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925245 t_ms=66852.466 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925246 t_ms=66852.470 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925247 t_ms=66852.474 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925248 t_ms=66852.477 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925249 t_ms=66852.481 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925250 t_ms=66852.484 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925251 t_ms=66852.488 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925252 t_ms=66852.491 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925253 t_ms=66852.495 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925254 t_ms=66852.498 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925255 t_ms=66852.502 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925256 t_ms=66852.685 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925257 t_ms=66852.690 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925258 t_ms=66852.693 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925259 t_ms=66852.697 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925260 t_ms=66852.701 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925261 t_ms=66852.705 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925262 t_ms=66852.708 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925263 t_ms=66852.712 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925264 t_ms=66852.715 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925265 t_ms=66852.719 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925266 t_ms=66852.722 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925267 t_ms=66852.726 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925268 t_ms=66852.731 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925269 t_ms=66852.735 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925270 t_ms=66852.738 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925271 t_ms=66852.742 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925272 t_ms=66852.746 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925273 t_ms=66852.749 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925274 t_ms=66852.752 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925275 t_ms=66852.756 bytes=122880 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925276 t_ms=66852.759 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925277 t_ms=66852.814 bytes=3145728 at crates/memra-engine/src/lib.rs:36889
+[diag1255-ring] seq=925278 t_ms=66852.818 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925279 t_ms=66852.821 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925280 t_ms=66852.825 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925281 t_ms=66852.829 bytes=8918344 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925282 t_ms=66852.833 bytes=6295304 at crates/memra-engine/src/lib.rs:36895
+[diag1255-ring] seq=925283 t_ms=66852.880 bytes=4 at crates/memra-engine/src/lib.rs:36898
+[diag1255-ring] seq=925284 t_ms=66852.887 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=925285 t_ms=66852.889 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=925286 t_ms=66852.933 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=925287 t_ms=66852.934 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=925288 t_ms=66852.975 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=925289 t_ms=66852.976 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=925290 t_ms=66853.032 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=925291 t_ms=66853.033 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=925292 t_ms=66853.073 bytes=16875520 at crates/memra-engine/src/dflash.rs:3177
+[diag1255-ring] seq=925293 t_ms=66853.074 bytes=16875520 at crates/memra-engine/src/dflash.rs:3178
+[diag1255-ring] seq=925294 t_ms=66853.118 bytes=26214400 at crates/memra-engine/src/dflash.rs:5513
+[diag1255-ring] gap-before-chunk id=cmpl-23e0159a85afdf99b9d4c2f6ebda8266: sum 773017012 bytes
+[prime-yield] count=1 remaining=1 chunks=1 wall_ms=3689.273 max_chunk_ms=3689.273
+[diag1255] dspark-prime-chunk-after id=cmpl-23e0159a85afdf99b9d4c2f6ebda8266: driver_free=285MB pool_res=22080MB pool_used=21041MB pool_unused=1038MB eff_free=1324MB
+[dspark-acc] ctx=3531 burst=7/7 cum=2667/2667=1.000
+[dspark-acc] ctx=3539 burst=7/7 cum=2674/2674=1.000
+[diag1255] dspark-prime-chunk-before id=cmpl-23e0159a85afdf99b9d4c2f6ebda8266: driver_free=221MB pool_res=22144MB pool_used=21041MB pool_unused=1102MB eff_free=1324MB
+[diag1255-ring] gap-before-chunk id=cmpl-23e0159a85afdf99b9d4c2f6ebda8266: 256 entries (last is the newest)
+[diag1255-ring] seq=931477 t_ms=70623.101 bytes=24 at crates/memra-engine/src/spec.rs:10273
+[diag1255-ring] seq=931478 t_ms=70623.104 bytes=196608 at crates/memra-engine/src/spec.rs:10280
+[diag1255-ring] seq=931479 t_ms=70623.104 bytes=860160 at crates/memra-engine/src/spec.rs:10306
+[diag1255-ring] seq=931480 t_ms=70623.105 bytes=22020096 at crates/memra-engine/src/spec.rs:10307
+[diag1255-ring] seq=931481 t_ms=70623.106 bytes=327680 at crates/memra-engine/src/spec.rs:10309
+[diag1255-ring] seq=931482 t_ms=70623.106 bytes=196608 at crates/memra-engine/src/spec.rs:10310
+[diag1255-ring] seq=931483 t_ms=70623.107 bytes=196608 at crates/memra-engine/src/spec.rs:10311
+[diag1255-ring] seq=931484 t_ms=70623.107 bytes=196608 at crates/memra-engine/src/spec.rs:10312
+[diag1255-ring] seq=931485 t_ms=70623.107 bytes=1536 at crates/memra-engine/src/spec.rs:10313
+[diag1255-ring] seq=931486 t_ms=70623.108 bytes=1536 at crates/memra-engine/src/spec.rs:10314
+[diag1255-ring] seq=931487 t_ms=70623.117 bytes=49152 at crates/memra-engine/src/lib.rs:36635
+[diag1255-ring] seq=931488 t_ms=70623.118 bytes=6144 at crates/memra-engine/src/lib.rs:36636
+[diag1255-ring] seq=931489 t_ms=70623.120 bytes=0 at crates/memra-engine/src/spec.rs:10443
+[diag1255-ring] seq=931490 t_ms=70623.121 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931491 t_ms=70623.124 bytes=163840 at crates/memra-engine/src/spec.rs:10461
+[diag1255-ring] seq=931492 t_ms=70623.124 bytes=163840 at crates/memra-engine/src/spec.rs:10462
+[diag1255-ring] seq=931493 t_ms=70623.127 bytes=40960 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931494 t_ms=70623.127 bytes=5120 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931495 t_ms=70623.130 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931496 t_ms=70623.133 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931497 t_ms=70623.136 bytes=557056 at crates/memra-engine/src/spec.rs:7719
+[diag1255-ring] seq=931498 t_ms=70623.139 bytes=139264 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931499 t_ms=70623.140 bytes=17408 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931500 t_ms=70623.143 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931501 t_ms=70623.148 bytes=163840 at crates/memra-engine/src/spec.rs:10488
+[diag1255-ring] seq=931502 t_ms=70623.156 bytes=163840 at crates/memra-engine/src/spec.rs:10220
+[diag1255-ring] seq=931503 t_ms=70623.236 bytes=40960 at crates/memra-engine/src/spec.rs:10222
+[diag1255-ring] seq=931504 t_ms=70623.237 bytes=5120 at crates/memra-engine/src/spec.rs:10222
+[diag1255-ring] seq=931505 t_ms=70623.241 bytes=327680 at crates/memra-engine/src/lib.rs:19480
+[diag1255-ring] seq=931506 t_ms=70623.242 bytes=196608 at crates/memra-engine/src/lib.rs:19481
+[diag1255-ring] seq=931507 t_ms=70623.242 bytes=1536 at crates/memra-engine/src/lib.rs:19482
+[diag1255-ring] seq=931508 t_ms=70623.243 bytes=1536 at crates/memra-engine/src/lib.rs:19485
+[diag1255-ring] seq=931509 t_ms=70623.245 bytes=24 at crates/memra-engine/src/spec.rs:10273
+[diag1255-ring] seq=931510 t_ms=70623.248 bytes=196608 at crates/memra-engine/src/spec.rs:10280
+[diag1255-ring] seq=931511 t_ms=70623.249 bytes=860160 at crates/memra-engine/src/spec.rs:10306
+[diag1255-ring] seq=931512 t_ms=70623.249 bytes=22020096 at crates/memra-engine/src/spec.rs:10307
+[diag1255-ring] seq=931513 t_ms=70623.250 bytes=327680 at crates/memra-engine/src/spec.rs:10309
+[diag1255-ring] seq=931514 t_ms=70623.250 bytes=196608 at crates/memra-engine/src/spec.rs:10310
+[diag1255-ring] seq=931515 t_ms=70623.251 bytes=196608 at crates/memra-engine/src/spec.rs:10311
+[diag1255-ring] seq=931516 t_ms=70623.251 bytes=196608 at crates/memra-engine/src/spec.rs:10312
+[diag1255-ring] seq=931517 t_ms=70623.252 bytes=1536 at crates/memra-engine/src/spec.rs:10313
+[diag1255-ring] seq=931518 t_ms=70623.252 bytes=1536 at crates/memra-engine/src/spec.rs:10314
+[diag1255-ring] seq=931519 t_ms=70623.262 bytes=49152 at crates/memra-engine/src/lib.rs:36635
+[diag1255-ring] seq=931520 t_ms=70623.262 bytes=6144 at crates/memra-engine/src/lib.rs:36636
+[diag1255-ring] seq=931521 t_ms=70623.265 bytes=0 at crates/memra-engine/src/spec.rs:10443
+[diag1255-ring] seq=931522 t_ms=70623.266 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931523 t_ms=70623.269 bytes=163840 at crates/memra-engine/src/spec.rs:10461
+[diag1255-ring] seq=931524 t_ms=70623.269 bytes=163840 at crates/memra-engine/src/spec.rs:10462
+[diag1255-ring] seq=931525 t_ms=70623.272 bytes=40960 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931526 t_ms=70623.273 bytes=5120 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931527 t_ms=70623.276 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931528 t_ms=70623.279 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931529 t_ms=70623.282 bytes=557056 at crates/memra-engine/src/spec.rs:7719
+[diag1255-ring] seq=931530 t_ms=70623.344 bytes=139264 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931531 t_ms=70623.345 bytes=17408 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931532 t_ms=70623.351 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931533 t_ms=70623.356 bytes=163840 at crates/memra-engine/src/spec.rs:10488
+[diag1255-ring] seq=931534 t_ms=70623.485 bytes=163840 at crates/memra-engine/src/spec.rs:9844
+[diag1255-ring] seq=931535 t_ms=70623.602 bytes=40960 at crates/memra-engine/src/spec.rs:9846
+[diag1255-ring] seq=931536 t_ms=70623.603 bytes=5120 at crates/memra-engine/src/spec.rs:9846
+[diag1255-ring] seq=931537 t_ms=70623.607 bytes=393216 at crates/memra-engine/src/lib.rs:19480
+[diag1255-ring] seq=931538 t_ms=70623.607 bytes=32768 at crates/memra-engine/src/lib.rs:19481
+[diag1255-ring] seq=931539 t_ms=70623.608 bytes=32768 at crates/memra-engine/src/lib.rs:19482
+[diag1255-ring] seq=931540 t_ms=70623.609 bytes=4 at crates/memra-engine/src/lib.rs:19485
+[diag1255-ring] seq=931541 t_ms=70623.612 bytes=196608 at crates/memra-engine/src/spec.rs:9887
+[diag1255-ring] seq=931542 t_ms=70623.613 bytes=196608 at crates/memra-engine/src/spec.rs:9888
+[diag1255-ring] seq=931543 t_ms=70623.770 bytes=196608 at crates/memra-engine/src/spec.rs:9894
+[diag1255-ring] seq=931544 t_ms=70623.774 bytes=32768 at crates/memra-engine/src/spec.rs:9897
+[diag1255-ring] seq=931545 t_ms=70623.781 bytes=196608 at crates/memra-engine/src/spec.rs:9911
+[diag1255-ring] seq=931546 t_ms=70623.782 bytes=128 at crates/memra-engine/src/spec.rs:9928
+[diag1255-ring] seq=931547 t_ms=70623.928 bytes=196608 at crates/memra-engine/src/spec.rs:10129
+[diag1255-ring] seq=931548 t_ms=70623.931 bytes=196608 at crates/memra-engine/src/spec.rs:10131
+[diag1255-ring] seq=931549 t_ms=70623.934 bytes=49152 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931550 t_ms=70623.935 bytes=6144 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931551 t_ms=70623.937 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931552 t_ms=70623.944 bytes=163840 at crates/memra-engine/src/spec.rs:10146
+[diag1255-ring] seq=931553 t_ms=70623.944 bytes=163840 at crates/memra-engine/src/spec.rs:10147
+[diag1255-ring] seq=931554 t_ms=70623.947 bytes=40960 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931555 t_ms=70623.947 bytes=5120 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931556 t_ms=70623.950 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931557 t_ms=70623.953 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931558 t_ms=70623.961 bytes=557056 at crates/memra-engine/src/spec.rs:7719
+[diag1255-ring] seq=931559 t_ms=70623.965 bytes=139264 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931560 t_ms=70623.966 bytes=17408 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931561 t_ms=70624.029 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931562 t_ms=70624.040 bytes=163840 at crates/memra-engine/src/spec.rs:10173
+[diag1255-ring] seq=931563 t_ms=70624.046 bytes=163840 at crates/memra-engine/src/spec.rs:10220
+[diag1255-ring] seq=931564 t_ms=70624.166 bytes=40960 at crates/memra-engine/src/spec.rs:10222
+[diag1255-ring] seq=931565 t_ms=70624.166 bytes=5120 at crates/memra-engine/src/spec.rs:10222
+[diag1255-ring] seq=931566 t_ms=70624.292 bytes=327680 at crates/memra-engine/src/lib.rs:19480
+[diag1255-ring] seq=931567 t_ms=70624.292 bytes=196608 at crates/memra-engine/src/lib.rs:19481
+[diag1255-ring] seq=931568 t_ms=70624.293 bytes=1536 at crates/memra-engine/src/lib.rs:19482
+[diag1255-ring] seq=931569 t_ms=70624.293 bytes=1536 at crates/memra-engine/src/lib.rs:19485
+[diag1255-ring] seq=931570 t_ms=70624.297 bytes=24 at crates/memra-engine/src/spec.rs:10273
+[diag1255-ring] seq=931571 t_ms=70624.299 bytes=196608 at crates/memra-engine/src/spec.rs:10280
+[diag1255-ring] seq=931572 t_ms=70624.300 bytes=860160 at crates/memra-engine/src/spec.rs:10306
+[diag1255-ring] seq=931573 t_ms=70624.301 bytes=22020096 at crates/memra-engine/src/spec.rs:10307
+[diag1255-ring] seq=931574 t_ms=70624.302 bytes=327680 at crates/memra-engine/src/spec.rs:10309
+[diag1255-ring] seq=931575 t_ms=70624.302 bytes=196608 at crates/memra-engine/src/spec.rs:10310
+[diag1255-ring] seq=931576 t_ms=70624.303 bytes=196608 at crates/memra-engine/src/spec.rs:10311
+[diag1255-ring] seq=931577 t_ms=70624.303 bytes=196608 at crates/memra-engine/src/spec.rs:10312
+[diag1255-ring] seq=931578 t_ms=70624.304 bytes=1536 at crates/memra-engine/src/spec.rs:10313
+[diag1255-ring] seq=931579 t_ms=70624.304 bytes=1536 at crates/memra-engine/src/spec.rs:10314
+[diag1255-ring] seq=931580 t_ms=70624.588 bytes=49152 at crates/memra-engine/src/lib.rs:36635
+[diag1255-ring] seq=931581 t_ms=70624.588 bytes=6144 at crates/memra-engine/src/lib.rs:36636
+[diag1255-ring] seq=931582 t_ms=70624.592 bytes=0 at crates/memra-engine/src/spec.rs:10443
+[diag1255-ring] seq=931583 t_ms=70624.593 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931584 t_ms=70624.596 bytes=163840 at crates/memra-engine/src/spec.rs:10461
+[diag1255-ring] seq=931585 t_ms=70624.596 bytes=163840 at crates/memra-engine/src/spec.rs:10462
+[diag1255-ring] seq=931586 t_ms=70624.599 bytes=40960 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931587 t_ms=70624.599 bytes=5120 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931588 t_ms=70624.602 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931589 t_ms=70624.605 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931590 t_ms=70624.608 bytes=557056 at crates/memra-engine/src/spec.rs:7719
+[diag1255-ring] seq=931591 t_ms=70624.611 bytes=139264 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931592 t_ms=70624.612 bytes=17408 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931593 t_ms=70624.615 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931594 t_ms=70624.620 bytes=163840 at crates/memra-engine/src/spec.rs:10488
+[diag1255-ring] seq=931595 t_ms=70624.758 bytes=163840 at crates/memra-engine/src/spec.rs:10220
+[diag1255-ring] seq=931596 t_ms=70624.767 bytes=40960 at crates/memra-engine/src/spec.rs:10222
+[diag1255-ring] seq=931597 t_ms=70624.768 bytes=5120 at crates/memra-engine/src/spec.rs:10222
+[diag1255-ring] seq=931598 t_ms=70624.772 bytes=327680 at crates/memra-engine/src/lib.rs:19480
+[diag1255-ring] seq=931599 t_ms=70624.773 bytes=196608 at crates/memra-engine/src/lib.rs:19481
+[diag1255-ring] seq=931600 t_ms=70624.773 bytes=1536 at crates/memra-engine/src/lib.rs:19482
+[diag1255-ring] seq=931601 t_ms=70624.774 bytes=1536 at crates/memra-engine/src/lib.rs:19485
+[diag1255-ring] seq=931602 t_ms=70624.777 bytes=24 at crates/memra-engine/src/spec.rs:10273
+[diag1255-ring] seq=931603 t_ms=70624.779 bytes=196608 at crates/memra-engine/src/spec.rs:10280
+[diag1255-ring] seq=931604 t_ms=70624.780 bytes=860160 at crates/memra-engine/src/spec.rs:10306
+[diag1255-ring] seq=931605 t_ms=70624.780 bytes=22020096 at crates/memra-engine/src/spec.rs:10307
+[diag1255-ring] seq=931606 t_ms=70624.781 bytes=327680 at crates/memra-engine/src/spec.rs:10309
+[diag1255-ring] seq=931607 t_ms=70624.782 bytes=196608 at crates/memra-engine/src/spec.rs:10310
+[diag1255-ring] seq=931608 t_ms=70624.782 bytes=196608 at crates/memra-engine/src/spec.rs:10311
+[diag1255-ring] seq=931609 t_ms=70624.782 bytes=196608 at crates/memra-engine/src/spec.rs:10312
+[diag1255-ring] seq=931610 t_ms=70624.783 bytes=1536 at crates/memra-engine/src/spec.rs:10313
+[diag1255-ring] seq=931611 t_ms=70624.783 bytes=1536 at crates/memra-engine/src/spec.rs:10314
+[diag1255-ring] seq=931612 t_ms=70624.850 bytes=49152 at crates/memra-engine/src/lib.rs:36635
+[diag1255-ring] seq=931613 t_ms=70624.850 bytes=6144 at crates/memra-engine/src/lib.rs:36636
+[diag1255-ring] seq=931614 t_ms=70624.974 bytes=0 at crates/memra-engine/src/spec.rs:10443
+[diag1255-ring] seq=931615 t_ms=70624.975 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931616 t_ms=70625.404 bytes=163840 at crates/memra-engine/src/spec.rs:10461
+[diag1255-ring] seq=931617 t_ms=70625.405 bytes=163840 at crates/memra-engine/src/spec.rs:10462
+[diag1255-ring] seq=931618 t_ms=70625.408 bytes=40960 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931619 t_ms=70625.408 bytes=5120 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931620 t_ms=70625.412 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931621 t_ms=70625.415 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931622 t_ms=70625.418 bytes=557056 at crates/memra-engine/src/spec.rs:7719
+[diag1255-ring] seq=931623 t_ms=70625.421 bytes=139264 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931624 t_ms=70625.422 bytes=17408 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931625 t_ms=70625.425 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931626 t_ms=70625.430 bytes=163840 at crates/memra-engine/src/spec.rs:10488
+[diag1255-ring] seq=931627 t_ms=70625.656 bytes=163840 at crates/memra-engine/src/spec.rs:10220
+[diag1255-ring] seq=931628 t_ms=70626.078 bytes=40960 at crates/memra-engine/src/spec.rs:10222
+[diag1255-ring] seq=931629 t_ms=70626.079 bytes=5120 at crates/memra-engine/src/spec.rs:10222
+[diag1255-ring] seq=931630 t_ms=70626.083 bytes=327680 at crates/memra-engine/src/lib.rs:19480
+[diag1255-ring] seq=931631 t_ms=70626.084 bytes=196608 at crates/memra-engine/src/lib.rs:19481
+[diag1255-ring] seq=931632 t_ms=70626.084 bytes=1536 at crates/memra-engine/src/lib.rs:19482
+[diag1255-ring] seq=931633 t_ms=70626.085 bytes=1536 at crates/memra-engine/src/lib.rs:19485
+[diag1255-ring] seq=931634 t_ms=70626.088 bytes=24 at crates/memra-engine/src/spec.rs:10273
+[diag1255-ring] seq=931635 t_ms=70626.091 bytes=196608 at crates/memra-engine/src/spec.rs:10280
+[diag1255-ring] seq=931636 t_ms=70626.091 bytes=860160 at crates/memra-engine/src/spec.rs:10306
+[diag1255-ring] seq=931637 t_ms=70626.092 bytes=22020096 at crates/memra-engine/src/spec.rs:10307
+[diag1255-ring] seq=931638 t_ms=70626.093 bytes=327680 at crates/memra-engine/src/spec.rs:10309
+[diag1255-ring] seq=931639 t_ms=70626.093 bytes=196608 at crates/memra-engine/src/spec.rs:10310
+[diag1255-ring] seq=931640 t_ms=70626.094 bytes=196608 at crates/memra-engine/src/spec.rs:10311
+[diag1255-ring] seq=931641 t_ms=70626.094 bytes=196608 at crates/memra-engine/src/spec.rs:10312
+[diag1255-ring] seq=931642 t_ms=70626.095 bytes=1536 at crates/memra-engine/src/spec.rs:10313
+[diag1255-ring] seq=931643 t_ms=70626.095 bytes=1536 at crates/memra-engine/src/spec.rs:10314
+[diag1255-ring] seq=931644 t_ms=70626.105 bytes=49152 at crates/memra-engine/src/lib.rs:36635
+[diag1255-ring] seq=931645 t_ms=70626.105 bytes=6144 at crates/memra-engine/src/lib.rs:36636
+[diag1255-ring] seq=931646 t_ms=70626.108 bytes=0 at crates/memra-engine/src/spec.rs:10443
+[diag1255-ring] seq=931647 t_ms=70626.109 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931648 t_ms=70626.112 bytes=163840 at crates/memra-engine/src/spec.rs:10461
+[diag1255-ring] seq=931649 t_ms=70626.113 bytes=163840 at crates/memra-engine/src/spec.rs:10462
+[diag1255-ring] seq=931650 t_ms=70626.115 bytes=40960 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931651 t_ms=70626.116 bytes=5120 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931652 t_ms=70626.119 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931653 t_ms=70626.122 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931654 t_ms=70626.125 bytes=557056 at crates/memra-engine/src/spec.rs:7719
+[diag1255-ring] seq=931655 t_ms=70626.189 bytes=139264 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931656 t_ms=70626.190 bytes=17408 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931657 t_ms=70626.196 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931658 t_ms=70626.201 bytes=163840 at crates/memra-engine/src/spec.rs:10488
+[diag1255-ring] seq=931659 t_ms=70626.332 bytes=163840 at crates/memra-engine/src/spec.rs:9844
+[diag1255-ring] seq=931660 t_ms=70626.758 bytes=40960 at crates/memra-engine/src/spec.rs:9846
+[diag1255-ring] seq=931661 t_ms=70626.759 bytes=5120 at crates/memra-engine/src/spec.rs:9846
+[diag1255-ring] seq=931662 t_ms=70626.763 bytes=393216 at crates/memra-engine/src/lib.rs:19480
+[diag1255-ring] seq=931663 t_ms=70626.764 bytes=32768 at crates/memra-engine/src/lib.rs:19481
+[diag1255-ring] seq=931664 t_ms=70626.764 bytes=32768 at crates/memra-engine/src/lib.rs:19482
+[diag1255-ring] seq=931665 t_ms=70626.765 bytes=4 at crates/memra-engine/src/lib.rs:19485
+[diag1255-ring] seq=931666 t_ms=70626.768 bytes=196608 at crates/memra-engine/src/spec.rs:9887
+[diag1255-ring] seq=931667 t_ms=70626.769 bytes=196608 at crates/memra-engine/src/spec.rs:9888
+[diag1255-ring] seq=931668 t_ms=70626.771 bytes=196608 at crates/memra-engine/src/spec.rs:9894
+[diag1255-ring] seq=931669 t_ms=70626.774 bytes=32768 at crates/memra-engine/src/spec.rs:9897
+[diag1255-ring] seq=931670 t_ms=70626.781 bytes=196608 at crates/memra-engine/src/spec.rs:9911
+[diag1255-ring] seq=931671 t_ms=70626.782 bytes=128 at crates/memra-engine/src/spec.rs:9928
+[diag1255-ring] seq=931672 t_ms=70626.798 bytes=196608 at crates/memra-engine/src/spec.rs:10129
+[diag1255-ring] seq=931673 t_ms=70626.802 bytes=196608 at crates/memra-engine/src/spec.rs:10131
+[diag1255-ring] seq=931674 t_ms=70626.869 bytes=49152 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931675 t_ms=70626.870 bytes=6144 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931676 t_ms=70626.875 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931677 t_ms=70626.882 bytes=163840 at crates/memra-engine/src/spec.rs:10146
+[diag1255-ring] seq=931678 t_ms=70626.883 bytes=163840 at crates/memra-engine/src/spec.rs:10147
+[diag1255-ring] seq=931679 t_ms=70627.005 bytes=40960 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931680 t_ms=70627.006 bytes=5120 at crates/memra-engine/src/spec.rs:7697
+[diag1255-ring] seq=931681 t_ms=70627.130 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931682 t_ms=70627.134 bytes=557056 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931683 t_ms=70627.136 bytes=557056 at crates/memra-engine/src/spec.rs:7719
+[diag1255-ring] seq=931684 t_ms=70627.294 bytes=139264 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931685 t_ms=70627.295 bytes=17408 at crates/memra-engine/src/spec.rs:7723
+[diag1255-ring] seq=931686 t_ms=70627.298 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931687 t_ms=70627.425 bytes=163840 at crates/memra-engine/src/spec.rs:10173
+[diag1255-ring] seq=931688 t_ms=70627.433 bytes=163840 at crates/memra-engine/src/spec.rs:1420
+[diag1255-ring] seq=931689 t_ms=70627.442 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931690 t_ms=70627.443 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931691 t_ms=70627.446 bytes=7946240 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931692 t_ms=70669.815 bytes=819200 at crates/memra-engine/src/dflash.rs:7165
+[diag1255-ring] seq=931693 t_ms=70669.824 bytes=204800 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931694 t_ms=70669.825 bytes=25600 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931695 t_ms=70669.829 bytes=163840 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931696 t_ms=70669.833 bytes=163840 at crates/memra-engine/src/dflash.rs:2632
+[diag1255-ring] seq=931697 t_ms=70669.837 bytes=32 at crates/memra-engine/src/dflash.rs:3409
+[diag1255-ring] seq=931698 t_ms=70669.842 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931699 t_ms=70669.843 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931700 t_ms=70669.846 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931701 t_ms=70669.851 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931702 t_ms=70669.852 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931703 t_ms=70669.854 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931704 t_ms=70669.858 bytes=32768 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=931705 t_ms=70669.883 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931706 t_ms=70669.884 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931707 t_ms=70669.886 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931708 t_ms=70669.890 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931709 t_ms=70669.891 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931710 t_ms=70669.893 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931711 t_ms=70669.896 bytes=32768 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=931712 t_ms=70669.909 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931713 t_ms=70669.909 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931714 t_ms=70669.912 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931715 t_ms=70669.916 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931716 t_ms=70669.916 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931717 t_ms=70669.918 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931718 t_ms=70669.922 bytes=32768 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=931719 t_ms=70669.934 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931720 t_ms=70669.934 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931721 t_ms=70669.937 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931722 t_ms=70669.940 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931723 t_ms=70669.941 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931724 t_ms=70669.943 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931725 t_ms=70669.946 bytes=32768 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] seq=931726 t_ms=70669.958 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931727 t_ms=70669.959 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931728 t_ms=70669.961 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931729 t_ms=70669.965 bytes=40960 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931730 t_ms=70669.965 bytes=5120 at crates/memra-engine/src/lib.rs:18676
+[diag1255-ring] seq=931731 t_ms=70669.968 bytes=32768 at crates/memra-engine/src/lib.rs:24286
+[diag1255-ring] seq=931732 t_ms=70669.971 bytes=32768 at crates/memra-engine/src/dflash.rs:3413
+[diag1255-ring] gap-before-chunk id=cmpl-23e0159a85afdf99b9d4c2f6ebda8266: sum 156423584 bytes
+[prime-ws] dev0 GDN scan workspace not parked: free_bytes=31391744 floor_bytes=2147483648 workspace_bytes=504102912
+[diag1255] step-oom id=cmpl-23e0159a85afdf99b9d4c2f6ebda8266: driver_free=29MB pool_res=22336MB pool_used=20959MB pool_unused=1376MB eff_free=1406MB
+[diag1255-ring] step-oom: 84 entries (last is the newest)
+[diag1255-ring] seq=931733 t_ms=70671.306 bytes=417484800 at crates/memra-engine/src/dflash.rs:5598
+[diag1255-ring] seq=931734 t_ms=70671.331 bytes=16308 at crates/memra-engine/src/hybrid_forward.rs:7632
+[diag1255-ring] seq=931735 t_ms=70671.343 bytes=83496960 at crates/memra-engine/src/lib.rs:15264
+[diag1255-ring] seq=931736 t_ms=70671.380 bytes=166993920 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=931737 t_ms=70671.381 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=931738 t_ms=70671.410 bytes=100196352 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=931739 t_ms=70671.411 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=931740 t_ms=70671.419 bytes=20874240 at crates/memra-engine/src/lib.rs:13044
+[diag1255-ring] seq=931741 t_ms=70671.420 bytes=2609280 at crates/memra-engine/src/lib.rs:13044
+[diag1255-ring] seq=931742 t_ms=70671.424 bytes=782784 at crates/memra-engine/src/lib.rs:13054
+[diag1255-ring] seq=931743 t_ms=70671.431 bytes=782784 at crates/memra-engine/src/lib.rs:13054
+[diag1255-ring] seq=931744 t_ms=70671.437 bytes=33398784 at crates/memra-engine/src/hybrid_forward.rs:10474
+[diag1255-ring] seq=931745 t_ms=70671.439 bytes=33398784 at crates/memra-engine/src/hybrid_forward.rs:10475
+[diag1255-ring] seq=931746 t_ms=70671.440 bytes=100196352 at crates/memra-engine/src/hybrid_forward.rs:10476
+[diag1255-ring] seq=931747 t_ms=70671.449 bytes=33398784 at crates/memra-engine/src/hybrid_forward.rs:10495
+[diag1255-ring] seq=931748 t_ms=70676.025 bytes=33398784 at crates/memra-engine/src/hybrid_forward.rs:10507
+[diag1255-ring] seq=931749 t_ms=70676.179 bytes=16699392 at crates/memra-engine/src/hybrid_forward.rs:10510
+[diag1255-ring] seq=931750 t_ms=70676.188 bytes=782784 at crates/memra-engine/src/hybrid_forward.rs:10517
+[diag1255-ring] seq=931751 t_ms=70676.195 bytes=782784 at crates/memra-engine/src/hybrid_forward.rs:10519
+[diag1255-ring] seq=931752 t_ms=70676.215 bytes=100196352 at crates/memra-engine/src/hybrid_forward.rs:10880
+[diag1255-ring] seq=931753 t_ms=70676.412 bytes=4 at crates/memra-engine/src/lib.rs:35811
+[diag1255-ring] seq=931754 t_ms=70676.450 bytes=100196352 at crates/memra-engine/src/hybrid_forward.rs:10911
+[diag1255-ring] seq=931755 t_ms=70676.467 bytes=83496960 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=931756 t_ms=70676.469 bytes=28198656 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=931757 t_ms=70676.509 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3654
+[diag1255-ring] seq=931758 t_ms=70676.517 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3654
+[diag1255-ring] seq=931759 t_ms=70676.534 bytes=79862400 at crates/memra-engine/src/mmq_ffi.rs:3654
+[diag1255-ring] seq=931760 t_ms=70676.547 bytes=166993920 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=931761 t_ms=70676.548 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=931762 t_ms=70676.555 bytes=100196352 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=931763 t_ms=70676.556 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=931764 t_ms=70676.564 bytes=20874240 at crates/memra-engine/src/lib.rs:13044
+[diag1255-ring] seq=931765 t_ms=70676.565 bytes=2609280 at crates/memra-engine/src/lib.rs:13044
+[diag1255-ring] seq=931766 t_ms=70676.570 bytes=782784 at crates/memra-engine/src/lib.rs:13054
+[diag1255-ring] seq=931767 t_ms=70676.577 bytes=782784 at crates/memra-engine/src/lib.rs:13054
+[diag1255-ring] seq=931768 t_ms=70676.583 bytes=33398784 at crates/memra-engine/src/hybrid_forward.rs:10474
+[diag1255-ring] seq=931769 t_ms=70676.584 bytes=33398784 at crates/memra-engine/src/hybrid_forward.rs:10475
+[diag1255-ring] seq=931770 t_ms=70676.585 bytes=100196352 at crates/memra-engine/src/hybrid_forward.rs:10476
+[diag1255-ring] seq=931771 t_ms=70676.595 bytes=33398784 at crates/memra-engine/src/hybrid_forward.rs:10495
+[diag1255-ring] seq=931772 t_ms=70676.598 bytes=33398784 at crates/memra-engine/src/hybrid_forward.rs:10507
+[diag1255-ring] seq=931773 t_ms=70676.599 bytes=16699392 at crates/memra-engine/src/hybrid_forward.rs:10510
+[diag1255-ring] seq=931774 t_ms=70676.602 bytes=782784 at crates/memra-engine/src/hybrid_forward.rs:10517
+[diag1255-ring] seq=931775 t_ms=70676.605 bytes=782784 at crates/memra-engine/src/hybrid_forward.rs:10519
+[diag1255-ring] seq=931776 t_ms=70676.610 bytes=100196352 at crates/memra-engine/src/hybrid_forward.rs:10880
+[diag1255-ring] seq=931777 t_ms=70676.611 bytes=4 at crates/memra-engine/src/lib.rs:35811
+[diag1255-ring] seq=931778 t_ms=70676.630 bytes=100196352 at crates/memra-engine/src/hybrid_forward.rs:10911
+[diag1255-ring] seq=931779 t_ms=70676.637 bytes=83496960 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=931780 t_ms=70676.638 bytes=28198656 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=931781 t_ms=70676.648 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3654
+[diag1255-ring] seq=931782 t_ms=70676.655 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3654
+[diag1255-ring] seq=931783 t_ms=70676.663 bytes=79862400 at crates/memra-engine/src/mmq_ffi.rs:3654
+[diag1255-ring] seq=931784 t_ms=70676.673 bytes=166993920 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=931785 t_ms=70676.674 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=931786 t_ms=70676.680 bytes=100196352 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=931787 t_ms=70676.681 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=931788 t_ms=70676.687 bytes=20874240 at crates/memra-engine/src/lib.rs:13044
+[diag1255-ring] seq=931789 t_ms=70676.688 bytes=2609280 at crates/memra-engine/src/lib.rs:13044
+[diag1255-ring] seq=931790 t_ms=70676.690 bytes=782784 at crates/memra-engine/src/lib.rs:13054
+[diag1255-ring] seq=931791 t_ms=70676.694 bytes=782784 at crates/memra-engine/src/lib.rs:13054
+[diag1255-ring] seq=931792 t_ms=70676.699 bytes=33398784 at crates/memra-engine/src/hybrid_forward.rs:10474
+[diag1255-ring] seq=931793 t_ms=70676.699 bytes=33398784 at crates/memra-engine/src/hybrid_forward.rs:10475
+[diag1255-ring] seq=931794 t_ms=70676.700 bytes=100196352 at crates/memra-engine/src/hybrid_forward.rs:10476
+[diag1255-ring] seq=931795 t_ms=70676.705 bytes=33398784 at crates/memra-engine/src/hybrid_forward.rs:10495
+[diag1255-ring] seq=931796 t_ms=70676.708 bytes=33398784 at crates/memra-engine/src/hybrid_forward.rs:10507
+[diag1255-ring] seq=931797 t_ms=70676.709 bytes=16699392 at crates/memra-engine/src/hybrid_forward.rs:10510
+[diag1255-ring] seq=931798 t_ms=70676.711 bytes=782784 at crates/memra-engine/src/hybrid_forward.rs:10517
+[diag1255-ring] seq=931799 t_ms=70676.714 bytes=782784 at crates/memra-engine/src/hybrid_forward.rs:10519
+[diag1255-ring] seq=931800 t_ms=70676.718 bytes=100196352 at crates/memra-engine/src/hybrid_forward.rs:10880
+[diag1255-ring] seq=931801 t_ms=70676.719 bytes=4 at crates/memra-engine/src/lib.rs:35811
+[diag1255-ring] seq=931802 t_ms=70676.735 bytes=100196352 at crates/memra-engine/src/hybrid_forward.rs:10911
+[diag1255-ring] seq=931803 t_ms=70676.741 bytes=83496960 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=931804 t_ms=70676.742 bytes=28198656 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=931805 t_ms=70676.752 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3654
+[diag1255-ring] seq=931806 t_ms=70676.758 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3654
+[diag1255-ring] seq=931807 t_ms=70676.766 bytes=79862400 at crates/memra-engine/src/mmq_ffi.rs:3654
+[diag1255-ring] seq=931808 t_ms=70676.782 bytes=200392704 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=931809 t_ms=70676.783 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=931810 t_ms=70676.789 bytes=16699392 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=931811 t_ms=70676.790 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=931812 t_ms=70676.796 bytes=16699392 at crates/memra-engine/src/mmq_ffi.rs:3471
+[diag1255-ring] seq=931813 t_ms=70676.797 bytes=23501952 at crates/memra-engine/src/mmq_ffi.rs:3505
+[diag1255-ring] seq=931814 t_ms=70676.805 bytes=100196352 at crates/memra-engine/src/hybrid_forward.rs:10023
+[diag1255-ring] seq=931815 t_ms=70676.806 bytes=100196352 at crates/memra-engine/src/hybrid_forward.rs:10024
+[diag1255-ring] seq=931816 t_ms=70676.811 bytes=100196352 at crates/memra-engine/src/hybrid_forward.rs:10032
+[diag1255-ring] step-oom: sum 4196647488 bytes
+[admit-oom] step OOM parked session back to queue (model gate, retry 1/3, 2 active) [dev0 free 29MB pool-res 22336MB pool-used 20959MB]: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[admit-oom] step-OOM reclaim: parked reuse=0 spec=0 dspark=0 dropped; prefix cache evicted 0 entries (0MB) 0MB -> 0MB (oom tick streak 1)
+[device-trim] reason=oom-teardown {"device":0,"reclaimed_bytes":2483027968,"still_owned_bytes":20798212132,"pool_reserved_bytes":20937965568,"pool_cached_bytes":139753436,"driver_free_bytes":2514419712,"synchronization_errors":[]}
+[admit-oom] step-OOM teardown complete: 1 session(s) dropped behind a device fence; pool trim released 2368MB across 1 device(s)
+[admission] request cost: model="gate" ctx=8253 path=plain = 29696 B/token x ctx + 477MB prefill-workspace + 0MB fixed = 722MB
+[admission] prefill workspace held: model="gate" prompt=8173 call=1039 stack=1039 concat=1039 slab_resident=1443MB held=477MB cold=1963MB
+[diag1255] gate-pass id=cmpl-23e0159a85afdf99b9d4c2f6ebda8266 prompt=8173 path=plain cost=688MB draft=0MB reserve=1543MB required=2231MB required_eager=2231MB eager_arm=false booked=0MB limiting_free=2531MB active=1
+[dspark] declined: admission priced this request plain (no draft plane charged, a step-OOM park replay); serving PLAIN (prompt=8173 decode_budget=16)
+[spec-k] model="gate" tenant="" K=0 source=oom-replay prompt=8173 cached=0 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 323MB (observed 567MB at ctx 8197 path=plain)
+[dspark-acc] ctx=3547 burst=28/28 cum=2702/2702=1.000
+[dspark-acc] ctx=3579 burst=28/28 cum=2730/2730=1.000
+[dspark-acc] ctx=3611 burst=28/28 cum=2758/2758=1.000
+[dspark-acc] ctx=3643 burst=28/28 cum=2786/2786=1.000
+[dspark-acc] ctx=3675 burst=28/28 cum=2814/2814=1.000
+[dspark-acc] ctx=3707 burst=28/28 cum=2842/2842=1.000
+[dspark-acc] ctx=3739 burst=28/28 cum=2870/2870=1.000
+[dspark-acc] ctx=3771 burst=28/28 cum=2898/2898=1.000
+[dspark-acc] ctx=3803 burst=28/28 cum=2926/2926=1.000
+[dspark-acc] ctx=3835 burst=28/28 cum=2954/2954=1.000
+[dspark-acc] ctx=3867 burst=28/28 cum=2982/2982=1.000
+[dspark-acc] ctx=3899 burst=28/28 cum=3010/3010=1.000
+[dspark-acc] ctx=3931 burst=28/28 cum=3038/3038=1.000
+[dspark-acc] ctx=3963 burst=28/28 cum=3066/3066=1.000
+[dspark-acc] ctx=3995 burst=28/28 cum=3094/3094=1.000
+[dspark-acc] ctx=4027 burst=28/28 cum=3122/3122=1.000
+[dspark-acc] ctx=4059 burst=28/28 cum=3150/3150=1.000
+[dflash-kv-ring] compact keep_from=2059 kept=2056 phys_rows=4120
+[dspark-acc] ctx=4091 burst=28/28 cum=3178/3178=1.000
+[dspark-acc] ctx=4123 burst=28/28 cum=3206/3206=1.000
+[dspark-acc] ctx=4155 burst=28/28 cum=3234/3234=1.000
+[dspark-acc] ctx=4187 burst=28/28 cum=3262/3262=1.000
+[dspark-acc] ctx=4219 burst=28/28 cum=3290/3290=1.000
+[dspark-acc] ctx=4251 burst=28/28 cum=3318/3318=1.000
+[dspark-acc] ctx=4283 burst=28/28 cum=3346/3346=1.000
+[dspark-acc] ctx=4315 burst=28/28 cum=3374/3374=1.000
+[dspark-acc] ctx=4347 burst=28/28 cum=3402/3402=1.000
+[server] SIGTERM: draining (1 in flight, deadline 30s)
+[dspark-acc] ctx=4379 burst=28/28 cum=3430/3430=1.000
+[dspark-acc] ctx=4411 burst=28/28 cum=3458/3458=1.000
+[dspark-acc] ctx=4443 burst=28/28 cum=3486/3486=1.000
+[dspark-acc] ctx=4475 burst=28/28 cum=3514/3514=1.000
+[dspark-acc] ctx=4507 burst=28/28 cum=3542/3542=1.000
+[dspark-acc] ctx=4539 burst=28/28 cum=3570/3570=1.000
+[dspark-acc] ctx=4571 burst=28/28 cum=3598/3598=1.000
+[dspark-acc] ctx=4603 burst=28/28 cum=3626/3626=1.000
+[dspark-acc] ctx=4635 burst=28/28 cum=3654/3654=1.000
+[dspark-acc] ctx=4667 burst=28/28 cum=3682/3682=1.000
+[dspark-acc] ctx=4699 burst=28/28 cum=3710/3710=1.000
+[dspark-acc] ctx=4731 burst=28/28 cum=3738/3738=1.000
+[dspark-acc] ctx=4763 burst=28/28 cum=3766/3766=1.000
+[dspark-acc] ctx=4795 burst=28/28 cum=3794/3794=1.000
+[dspark-acc] ctx=4827 burst=28/28 cum=3822/3822=1.000
+[dspark-acc] ctx=4859 burst=28/28 cum=3850/3850=1.000
+[dspark-acc] ctx=4891 burst=28/28 cum=3878/3878=1.000
+[dspark-acc] ctx=4923 burst=28/28 cum=3906/3906=1.000
+[dspark-acc] ctx=4955 burst=28/28 cum=3934/3934=1.000
+[dspark-acc] ctx=4987 burst=28/28 cum=3962/3962=1.000
+[dspark-acc] ctx=5019 burst=28/28 cum=3990/3990=1.000
+[dspark-acc] ctx=5051 burst=28/28 cum=4018/4018=1.000
+[dspark-acc] ctx=5083 burst=28/28 cum=4046/4046=1.000
+[dspark-acc] ctx=5115 burst=28/28 cum=4074/4074=1.000
+[dspark-acc] ctx=5147 burst=28/28 cum=4102/4102=1.000
+[dspark-acc] ctx=5179 burst=28/28 cum=4130/4130=1.000
+[dspark-acc] ctx=5211 burst=28/28 cum=4158/4158=1.000
+[dspark-acc] ctx=5243 burst=28/28 cum=4186/4186=1.000
+[dspark-acc] ctx=5275 burst=28/28 cum=4214/4214=1.000
+[dspark-acc] ctx=5307 burst=28/28 cum=4242/4242=1.000
+[dspark-acc] ctx=5339 burst=28/28 cum=4270/4270=1.000
+[dspark-acc] ctx=5371 burst=28/28 cum=4298/4298=1.000
+[dspark-acc] ctx=5403 burst=28/28 cum=4326/4326=1.000
+[dspark-acc] ctx=5435 burst=28/28 cum=4354/4354=1.000
+[dspark-acc] ctx=5467 burst=28/28 cum=4382/4382=1.000
+[dspark-acc] ctx=5499 burst=28/28 cum=4410/4410=1.000
+[dspark-acc] ctx=5531 burst=28/28 cum=4438/4438=1.000
+[dspark-acc] ctx=5563 burst=28/28 cum=4466/4466=1.000
+[dspark-acc] ctx=5595 burst=28/28 cum=4494/4494=1.000
+[dspark-acc] ctx=5627 burst=28/28 cum=4522/4522=1.000
+[dspark-acc] ctx=5659 burst=28/28 cum=4550/4550=1.000
+[dspark-acc] ctx=5691 burst=28/28 cum=4578/4578=1.000
+[dspark-acc] ctx=5723 burst=28/28 cum=4606/4606=1.000
+[dspark-acc] ctx=5755 burst=28/28 cum=4634/4634=1.000
+[dspark-acc] ctx=5787 burst=28/28 cum=4662/4662=1.000
+[dspark-acc] ctx=5819 burst=28/28 cum=4690/4690=1.000
+[dspark-acc] ctx=5851 burst=28/28 cum=4718/4718=1.000
+[dspark-acc] ctx=5883 burst=28/28 cum=4746/4746=1.000
+[dspark-acc] ctx=5915 burst=28/28 cum=4774/4774=1.000
+[dspark-acc] ctx=5947 burst=28/28 cum=4802/4802=1.000
+[dspark-acc] ctx=5979 burst=28/28 cum=4830/4830=1.000
+[dspark-acc] ctx=6011 burst=28/28 cum=4858/4858=1.000
+[dspark-acc] ctx=6043 burst=28/28 cum=4886/4886=1.000
+[dspark-acc] ctx=6075 burst=28/28 cum=4914/4914=1.000
+[dspark-acc] ctx=6107 burst=28/28 cum=4942/4942=1.000
+[dspark-acc] ctx=6139 burst=28/28 cum=4970/4970=1.000
+[dflash-kv-ring] compact keep_from=4123 kept=2056 phys_rows=4120
+[dspark-acc] ctx=6171 burst=28/28 cum=4998/4998=1.000
+[dspark-acc] ctx=6203 burst=28/28 cum=5026/5026=1.000
+[dspark-acc] ctx=6235 burst=28/28 cum=5054/5054=1.000
+[dspark-acc] ctx=6267 burst=28/28 cum=5082/5082=1.000
+[dspark-acc] ctx=6299 burst=28/28 cum=5110/5110=1.000
+[dspark-acc] ctx=6331 burst=28/28 cum=5138/5138=1.000
+[dspark-acc] ctx=6363 burst=28/28 cum=5166/5166=1.000
+[dspark-acc] ctx=6395 burst=28/28 cum=5194/5194=1.000
+[dspark-acc] ctx=6427 burst=28/28 cum=5222/5222=1.000
+[dspark-acc] ctx=6459 burst=28/28 cum=5250/5250=1.000
+[dspark-acc] ctx=6491 burst=28/28 cum=5278/5278=1.000
+[dspark-acc] ctx=6523 burst=28/28 cum=5306/5306=1.000
+[dspark-acc] ctx=6555 burst=28/28 cum=5334/5334=1.000
+[dspark-acc] ctx=6587 burst=28/28 cum=5362/5362=1.000
+[dspark-acc] ctx=6619 burst=28/28 cum=5390/5390=1.000
+[dspark-acc] ctx=6651 burst=28/28 cum=5418/5418=1.000
+[dspark-acc] ctx=6683 burst=28/28 cum=5446/5446=1.000
+[dspark-acc] ctx=6715 burst=28/28 cum=5474/5474=1.000
+[dspark-acc] ctx=6747 burst=28/28 cum=5502/5502=1.000
+[dspark-acc] ctx=6779 burst=28/28 cum=5530/5530=1.000
+[dspark-acc] ctx=6811 burst=28/28 cum=5558/5558=1.000
+[dspark-acc] ctx=6843 burst=28/28 cum=5586/5586=1.000
+[dspark-acc] ctx=6875 burst=28/28 cum=5614/5614=1.000
+[dspark-acc] ctx=6907 burst=28/28 cum=5642/5642=1.000
+[dspark-acc] ctx=6939 burst=28/28 cum=5670/5670=1.000
+[dspark-acc] ctx=6971 burst=28/28 cum=5698/5698=1.000
+[dspark-acc] ctx=7003 burst=28/28 cum=5726/5726=1.000
+[dspark-acc] ctx=7035 burst=28/28 cum=5754/5754=1.000
+[dspark-acc] ctx=7067 burst=28/28 cum=5782/5782=1.000
+[dspark-acc] ctx=7099 burst=28/28 cum=5810/5810=1.000
+[dspark-acc] ctx=7131 burst=28/28 cum=5838/5838=1.000
+[dspark-acc] ctx=7163 burst=28/28 cum=5866/5866=1.000
+[dspark-acc] ctx=7195 burst=28/28 cum=5894/5894=1.000
+[dspark-acc] ctx=7227 burst=28/28 cum=5922/5922=1.000
+[dspark-acc] ctx=7259 burst=28/28 cum=5950/5950=1.000
+[dspark-acc] ctx=7291 burst=28/28 cum=5978/5978=1.000
+[dspark-acc] ctx=7323 burst=28/28 cum=6006/6006=1.000
+[dspark-acc] ctx=7355 burst=28/28 cum=6034/6034=1.000
+[dspark-acc] ctx=7387 burst=28/28 cum=6062/6062=1.000
+[dspark-acc] ctx=7419 burst=28/28 cum=6090/6090=1.000
+[dspark-acc] ctx=7451 burst=28/28 cum=6118/6118=1.000
+[dspark-acc] ctx=7483 burst=28/28 cum=6146/6146=1.000
+[dspark-acc] ctx=7515 burst=28/28 cum=6174/6174=1.000
+[dspark-acc] ctx=7547 burst=28/28 cum=6202/6202=1.000
+[dspark-acc] ctx=7579 burst=28/28 cum=6230/6230=1.000
+[dspark-acc] ctx=7611 burst=28/28 cum=6258/6258=1.000
+[dspark-acc] ctx=7643 burst=28/28 cum=6286/6286=1.000
+[dspark-acc] ctx=7675 burst=28/28 cum=6314/6314=1.000
+[dspark-acc] ctx=7707 burst=28/28 cum=6342/6342=1.000
+[dspark-acc] ctx=7739 burst=28/28 cum=6370/6370=1.000
+[dspark-acc] ctx=7771 burst=28/28 cum=6398/6398=1.000
+[dspark-acc] ctx=7803 burst=28/28 cum=6426/6426=1.000
+[dspark-acc] ctx=7835 burst=28/28 cum=6454/6454=1.000
+[dspark-acc] ctx=7867 burst=28/28 cum=6482/6482=1.000
+[dspark-acc] ctx=7899 burst=28/28 cum=6510/6510=1.000
+[dspark-acc] ctx=7931 burst=28/28 cum=6538/6538=1.000
+[dspark-acc] ctx=7963 burst=28/28 cum=6566/6566=1.000
+[dspark-acc] ctx=7995 burst=28/28 cum=6594/6594=1.000
+[dspark-acc] ctx=8027 burst=28/28 cum=6622/6622=1.000
+[dspark-acc] ctx=8059 burst=28/28 cum=6650/6650=1.000
+[dspark-acc] ctx=8091 burst=28/28 cum=6678/6678=1.000
+[dspark-acc] ctx=8123 burst=28/28 cum=6706/6706=1.000
+[dspark-acc] ctx=8155 burst=28/28 cum=6734/6734=1.000
+[dspark-acc] ctx=8187 burst=28/28 cum=6762/6762=1.000
+[dflash-kv-ring] compact keep_from=6187 kept=2056 phys_rows=4120
+[dspark-acc] ctx=8219 burst=28/28 cum=6790/6790=1.000
+[server] drain deadline (30s) hit with 1 in flight; exiting
+[dspark-acc] ctx=8251 burst=28/28 cum=6818/6818=1.000
+[dspark-acc] ctx=8283 burst=28/28 cum=6846/6846=1.000
+[fa-pool] grow #2 dev=0 o_len 6389760 -> 12779520 ml_len 24960 -> 49920 (retired kept, zero=false)
+[dspark-acc] ctx=8315 burst=28/28 cum=6874/6874=1.000
+[dspark-acc] ctx=8347 burst=28/28 cum=6902/6902=1.000
+[dspark-acc] ctx=8379 burst=28/28 cum=6930/6930=1.000
+[dspark-acc] ctx=8411 burst=28/28 cum=6958/6958=1.000
+[dspark-acc] ctx=8443 burst=28/28 cum=6986/6986=1.000
+[dspark-acc] ctx=8475 burst=28/28 cum=7014/7014=1.000
+[dspark-acc] ctx=8507 burst=28/28 cum=7042/7042=1.000
+[dspark-acc] ctx=8539 burst=28/28 cum=7070/7070=1.000
+[dspark-acc] ctx=8571 burst=28/28 cum=7098/7098=1.000
+[dspark-acc] ctx=8603 burst=28/28 cum=7126/7126=1.000
+[dspark-acc] ctx=8635 burst=28/28 cum=7154/7154=1.000
+[dspark-acc] ctx=8667 burst=28/28 cum=7182/7182=1.000
+[dspark-acc] ctx=8699 burst=28/28 cum=7210/7210=1.000
+[dspark-acc] ctx=8731 burst=28/28 cum=7238/7238=1.000
+[dspark-acc] ctx=8763 burst=28/28 cum=7266/7266=1.000
+[dspark-acc] ctx=8795 burst=28/28 cum=7294/7294=1.000
+[dspark-acc] ctx=8827 burst=28/28 cum=7322/7322=1.000
+[server] WARN: HTTP connections exceeded the 5s graceful close deadline
+[dspark-acc] ctx=8859 burst=21/21 cum=7343/7343=1.000
+[abort] client disconnected: model "gate", prompt 491 (0 cached, 8883 fed), 8392 generated — billed to abort point, 74.20s
+[server] GPU worker shutdown complete
