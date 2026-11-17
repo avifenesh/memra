@@ -1,0 +1,127 @@
+--- a/crates/memra-engine/cu/dsv41_gpu.cu
++++ b/crates/memra-engine/cu/dsv41_gpu.cu
+@@ -1650,6 +1650,25 @@
+ // warp (22 us: the hand-over costs more than the widening).
+ #define V41_RING_KC 256
+ #define V41_RING_NS 4
++#include <stdio.h>
++#include <stdlib.h>
++static int v41_review_env(const char* name) {
++    const char* e = getenv(name);
++    return e ? atoi(e) : 0;
++}
++static int v41_review_mut() {
++    static int m = v41_review_env("REVIEW_MUT");
++    return m;
++}
++static int v41_review_trace() {
++    static int m = v41_review_env("REVIEW_TRACE");
++    return m;
++}
++#define V41_REVIEW_FORM(form, kp)                                                                \
++    do {                                                                                         \
++        if (v41_review_trace())                                                                  \
++            fprintf(stderr, "REVIEW ffma m=%d n=%d k=%d form=%s kp=%d\n", m, n, k, form, (int)(kp)); \
++    } while (0)
+ #define V41_RING_PITCH (V41_RING_KC + 8)  // elements: a stage's rows 16 bytes apart in the bank map
+ 
+ // one output of a ring launch: the weight, the output and its width; `nblk` blocks of 4 columns
+@@ -1662,6 +1681,7 @@
+     int nblk;
+ };
+ 
++template <int MUT>
+ __global__ void __launch_bounds__(32) v41_gemv_ffma_ring_kernel(const v41_bf* __restrict__ A, long lda, V41RingOut o0,
+                                                                 V41RingOut o1, int M, int K) {
+     extern __shared__ __align__(16) uint8_t v41_ffma_sm[];
+@@ -1684,21 +1704,31 @@
+             bool ok = n0 + row < N;
+             v41_cp16(base + row * V41_RING_PITCH + lane * 8, B + (long)(ok ? n0 + row : 0) * ldb + k0, ok);
+         }
+-        for (int row = 0; row < M; ++row)
++        for (int row = 0; row < (MUT == 4 && M > 7 ? 7 : M); ++row)
+             v41_cp16(base + (V41_SMF_NC + row) * V41_RING_PITCH + lane * 8, A + (long)row * lda + k0, true);
+     };
+ #pragma unroll
+     for (int t = 0; t < V41_RING_NS - 1; ++t) {
+-        if (t < nk) land(t);
+-        v41_cp_commit();
++        if (MUT == 1) {
++            if (t < nk) {
++                land(t);
++                v41_cp_commit();
++            }
++        } else {
++            if (MUT == 2 || t < nk) land(t);
++            v41_cp_commit();
++        }
+     }
+     const int r = lane / V41_SMF_NC, cc = lane % V41_SMF_NC;
+-    const bool chain = r < M && n0 + cc < N;
++    const bool chain = r < M && (MUT == 3 || n0 + cc < N);
+     float acc = 0.f;
+     for (int t = 0; t < nk; ++t) {
+-        v41_cp_wait<V41_RING_NS - 2>();
++        if (MUT == 6)
++            v41_cp_wait<V41_RING_NS - 1>();
++        else
++            v41_cp_wait<V41_RING_NS - 2>();
+         __syncwarp();  // stage t landed by every lane; every lane is done with stage t - 1's slot
+-        if (t + V41_RING_NS - 1 < nk) land(t + V41_RING_NS - 1);
++        if (MUT == 2 || t + V41_RING_NS - (MUT == 5 ? 0 : 1) < nk) land(t + V41_RING_NS - 1);
+         v41_cp_commit();
+         if (chain) {
+             const v41_bf* base = sm + (t % V41_RING_NS) * rows * V41_RING_PITCH;
+@@ -1739,8 +1769,18 @@
+ 
+ static int v41_ring_launch(const void* a, long lda, V41RingOut o0, V41RingOut o1, int m, int k, void* stream) {
+     int smem = V41_RING_NS * (V41_SMF_NC + m) * V41_RING_PITCH * 2;
+-    v41_gemv_ffma_ring_kernel<<<o0.nblk + o1.nblk, 32, smem, (cudaStream_t)stream>>>((const v41_bf*)a, lda, o0, o1, m,
+-                                                                                     k);
++    cudaStream_t rst = (cudaStream_t)stream;
++    const v41_bf* ra = (const v41_bf*)a;
++    int grid = o0.nblk + o1.nblk;
++    switch (v41_review_mut()) {
++        case 1: v41_gemv_ffma_ring_kernel<1><<<grid, 32, smem, rst>>>(ra, lda, o0, o1, m, k); break;
++        case 2: v41_gemv_ffma_ring_kernel<2><<<grid, 32, smem, rst>>>(ra, lda, o0, o1, m, k); break;
++        case 3: v41_gemv_ffma_ring_kernel<3><<<grid, 32, smem, rst>>>(ra, lda, o0, o1, m, k); break;
++        case 4: v41_gemv_ffma_ring_kernel<4><<<grid, 32, smem, rst>>>(ra, lda, o0, o1, m, k); break;
++        case 5: v41_gemv_ffma_ring_kernel<5><<<grid, 32, smem, rst>>>(ra, lda, o0, o1, m, k); break;
++        case 6: v41_gemv_ffma_ring_kernel<6><<<grid, 32, smem, rst>>>(ra, lda, o0, o1, m, k); break;
++        default: v41_gemv_ffma_ring_kernel<0><<<grid, 32, smem, rst>>>(ra, lda, o0, o1, m, k); break;
++    }
+     V41_ERR();
+ }
+ 
+@@ -1750,6 +1790,7 @@
+     if (m == 0) return 0;
+     if (v41_ring_fits(a, lda, b, ldb, m, n, k)) {
+         // a narrow output (the router's gate, the compressor) of up to 8 rows: the chain with K streamed
++        V41_REVIEW_FORM("ring", 256);
+         V41RingOut o0{(const v41_bf*)b, ldb, c, ldc, n, (n + V41_SMF_NC - 1) / V41_SMF_NC}, o1{nullptr, 0, nullptr, 0,
+                                                                                             0, 0};
+         return v41_ring_launch(a, lda, o0, o1, m, k, stream);
+@@ -1766,6 +1807,7 @@
+             if (k % parts == 0 && kp % 8 == 0 && smem <= 99 * 1024) {
+                 cudaStream_t st = (cudaStream_t)stream;
+                 if (smem > 48 * 1024) V41_SMEM_LIMIT(v41_gemv_ffma_narrow_parts_kernel, 99 * 1024);
++                V41_REVIEW_FORM("narrow_parts_9to32", kp);
+                 v41_gemv_ffma_narrow_parts_kernel<<<(n + V41_SMF_NC - 1) / V41_SMF_NC, 128, smem, st>>>(
+                     (const v41_bf*)a, lda, (const v41_bf*)b, ldb, c, ldc, m, n, k, kp);
+                 V41_ERR();
+@@ -1774,6 +1816,7 @@
+     }
+     if (m > V41_SM_MAX && m <= v41_wide(2) && al) {
+         // the small-row body, a launch a group of rows
++        V41_REVIEW_FORM("groups_of_8", 0);
+         for (int m0 = 0; m0 < m; m0 += V41_SM_MAX) {
+             int mm = m - m0 < V41_SM_MAX ? m - m0 : V41_SM_MAX;
+             int rc = memra_v41_gemm_ffma((const v41_bf*)a + (long)m0 * lda, lda, b, ldb, c + (long)m0 * ldc, ldc, mm, n,
+@@ -1807,6 +1850,7 @@
+         V41_ERR();
+     }
+     dim3 grid((n + 63) / 64, (m + 63) / 64);
++    V41_REVIEW_FORM("tile", 0);
+     if (al)
+         v41_gemm_ffma_kernel<true><<<grid, 256, 0, (cudaStream_t)stream>>>((const v41_bf*)a, lda, (const v41_bf*)b, ldb,
+                                                                            c, ldc, m, n, k);
