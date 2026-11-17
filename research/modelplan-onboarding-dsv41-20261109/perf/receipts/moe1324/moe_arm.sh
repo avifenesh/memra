@@ -2,6 +2,7 @@
 # The four-card box, memra#1324: one four-card step of the lane through bin/perf_cfix_four.sh, every box lock held with flock -n
 # (a held lock aborts: nothing run), a hard budget under 15 minutes, all four released at the end.
 #   gates: arm B's dsv41-gate kernels (first card) and tp gates (default, peer-pull), no timed runs
+#   gatehc: arm B's tp gate on host-canonical
 #   ab:    A B B A B A A B, device-push, one-row decode + rows 4 8 9 10 12 16, 40 layers, no gates
 # usage: moe_arm.sh PHASE TAG ARM_A ARM_B
 # Start: (cd /home/access/dsv41 && nohup setsid bash moe1324/moe_arm.sh ab moe1324-ab1 main25 moe1324a) > LOG 2>&1 < /dev/null &
@@ -23,7 +24,11 @@ done
 export TP4_HELD=1
 say "MOE-START $PHASE $TAG A=$A B=$B: all four box locks held; load $(cut -d' ' -f1-3 /proc/loadavg)"
 nvidia-smi --query-gpu=index,power.limit,clocks.max.sm,temperature.gpu --format=csv,noheader
-if [ $PHASE = gates ]; then
+if [ $PHASE = gatehc ]; then
+  # the tp gate on the third transport only (no kernel gate, no timed runs)
+  env K3_ARM_A=$A K3_ARM_B=$B K3_TAG=$TAG K3_KGATE=0 K3_GATE_T="host-canonical" K3_ORDER=" " K3_ROWS="4" \
+    bash bin/perf_cfix_four.sh 300
+elif [ $PHASE = gates ]; then
   env K3_ARM_A=$A K3_ARM_B=$B K3_TAG=$TAG K3_KGATE=1 K3_ORDER=" " K3_ROWS="4" bash bin/perf_cfix_four.sh 600
 else
   env K3_ARM_A=$A K3_ARM_B=$B K3_TAG=$TAG K3_GATES=0 K3_ORDER="A B B A B A A B" K3_ROWS="4 8 9 10 12 16" \
