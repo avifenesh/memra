@@ -1,0 +1,10 @@
+# build base device 0 NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition SMs 188 L2 128 MB smem optin 101376
+# rows 1 pairs 6 bm 1 max_tiles 6 tiles mean 6.0 max 6, tiles of 2+ rows 0.00 a routing
+cell base rows  1 w13+swiglu    24.91 us w2    10.99 us sum    35.89 us
+# rows 4 pairs 24 bm 4 max_tiles 24 tiles mean 23.3 max 24, tiles of 2+ rows 0.66 a routing
+cell base rows  4 w13+swiglu    72.39 us w2    34.02 us sum   106.41 us
+# rows 9 pairs 54 bm 8 max_tiles 61 tiles mean 50.7 max 54, tiles of 2+ rows 3.23 a routing
+cell base rows  9 w13+swiglu   177.20 us w2    85.93 us sum   263.13 us
+# rows 16 pairs 96 bm 8 max_tiles 108 tiles mean 84.9 max 94, tiles of 2+ rows 10.36 a routing
+cell base rows 16 w13+swiglu   295.03 us w2   144.05 us sum   439.08 us
+# done
