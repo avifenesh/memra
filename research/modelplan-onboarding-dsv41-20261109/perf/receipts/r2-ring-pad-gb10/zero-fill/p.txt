@@ -1,0 +1,49 @@
+build ringpad rc 0 06:44:03
+e061662e102aff7c5180b2b950c0a9f6ebb7cd3375a7b5496cf64b86c9ad7926  $RUN/bins/ringpad/dsv41-gate
+NVIDIA GB10, 305 MHz, 44
+green pass 1 rc 0 1025 checks, 0 failed
+green pass 2 rc 0 1025 checks, 0 failed
+green pass 3 rc 0 1025 checks, 0 failed
+green pass 4 rc 0 1025 checks, 0 failed
+build ringpad-mut rc 0 06:49:04
+b1d35d96119b4810d5ce86f2bc4a1f8543e6a54abbf01c38a345a58a2da79cee  $RUN/bins/ringpad-mut/dsv41-gate
+mut0 pass 1 rc 0 1025 checks, 0 failed
+mut0 pass 2 rc 0 1025 checks, 0 failed
+mut0 pass 3 rc 0 1025 checks, 0 failed
+mut3 pass 1 rc 0 1025 checks, 0 failed
+mut3 pass 2 rc 0 1025 checks, 0 failed
+mut3 pass 3 rc 0 1025 checks, 0 failed
+mut3 pass 4 rc 0 1025 checks, 0 failed
+mut3 pass 5 rc 0 1025 checks, 0 failed
+mut3 pass 6 rc 0 1025 checks, 0 failed
+mut3 pass 7 rc 0 1025 checks, 0 failed
+mut3 pass 8 rc 0 1025 checks, 0 failed
+mut3 pass 9 rc 0 1025 checks, 0 failed
+mut3 pass 10 rc 0 1025 checks, 0 failed
+mut3 pass 11 rc 0 1025 checks, 0 failed
+mut3 pass 12 rc 0 1025 checks, 0 failed
+mut3 pass 13 rc 0 1025 checks, 0 failed
+mut3 pass 14 rc 0 1025 checks, 0 failed
+mut3 pass 15 rc 0 1025 checks, 0 failed
+mut3 pass 16 rc 0 1025 checks, 0 failed
+mut3 pass 17 rc 0 1025 checks, 0 failed
+mut3 pass 18 rc 0 1025 checks, 0 failed
+mut3 pass 19 rc 0 1025 checks, 0 failed
+mut3 pass 20 rc 0 1025 checks, 0 failed
+mut1 pass 1 rc 1 1025 checks, 11 failed
+mut1 pass 2 rc 1 1025 checks, 11 failed
+mut1 pass 3 rc 1 1025 checks, 10 failed
+== entries failing under REVIEW_MUT=3, passes out of 20
+== entries failing under REVIEW_MUT=1, passes out of 3
+      3 schedule/gemm_ffma2_partial/m2_n30_k256/first
+      3 schedule/gemm_ffma2_partial/m2_n30_k256/second
+      3 schedule/gemm_ffma2_partial/m8_n30_k256/first
+      3 schedule/gemm_ffma2_partial/m8_n30_k256/second
+      2 schedule/gemm_ffma2_partial/m8_n30_k512/first
+      3 schedule/gemm_ffma2_partial/m8_n30_k512/second
+      3 schedule/gemm_ffma2_ring/m2_n32_k256/first
+      3 schedule/gemm_ffma2_ring/m2_n32_k256/second
+      3 schedule/gemm_ffma_ring/m2_n32_k256
+      3 schedule/gemm_ffma_ring_partial/m2_n30_k256
+      3 schedule/gemm_ffma_ring_partial/m8_n30_k256
+PADGATE-DONE 06:50:41

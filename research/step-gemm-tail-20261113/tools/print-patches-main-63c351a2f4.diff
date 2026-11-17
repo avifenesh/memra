@@ -1,0 +1,33 @@
+--- main.orig	2026-11-14 06:29:31.972402799 +0200
++++ main/hybrid_forward.rs	2026-11-14 06:29:32.009139270 +0200
+@@ -6492,7 +6492,9 @@
+             let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
+             // A trailing chunk below the walk floor folds into the previous one; every chunk
+             // this entry sees must clear PRIME_MIN_T on its own.
++            let mut call_widths: Vec<usize> = Vec::new();
+             for (chunk_idx, (start, end)) in step_gemm_prime_ranges(t).into_iter().enumerate() {
++                call_widths.push(end - start);
+                 let mut out = self.step35_prime_cache_batch(
+                     e,
+                     &[&tokens[start..end]],
+@@ -6524,7 +6526,7 @@
+             // GEMM trunk — the arm this lane added. The declining twin below counts the other
+             // direction, so a log that shows neither line is an instrument fault, not a pass.
+             eprintln!(
+-                "[gemm-prime] ENGAGED t={t} base={base} seq_end={seq_end} chunks<={width} (GEMM trunk + grouped MoE)"
++                "[gemm-prime] ENGAGED t={t} base={base} seq_end={seq_end} chunks<={width} calls={call_widths:?} (GEMM trunk + grouped MoE)"
+             );
+             return Ok((logits, h_seed, hiddens));
+         }
+@@ -6621,6 +6623,11 @@
+                 self.swa_ring_on(),
+             )
+         };
++        eprintln!(
++            "[prime-walk] t={t} base={} calls={:?}",
++            cache.pos,
++            ranges.iter().map(|&(a, b)| b - a).collect::<Vec<usize>>()
++        );
+         // CHUNK-ORDER INVARIANCE (lane/chunk-invariance, 2026-08-05; vLLM #38561 shape).
+         // MEMRA_PRIME_CHUNK is documented as a memory-transient knob, but it also decides
+         // the prefill's ARITHMETIC, so two rigs with different values produced different
