@@ -1,0 +1,8 @@
+A /home/access/dsv41/perf-bins/main25 device-push eb7f30916f4e279f args [] 0db086f87acc5d5fa2da6d34b43ccc7ffbcc2468 built 2026-11-14T09:19:23+01:00 on the dev desk, cuda 13.1, sm_120a
+B /home/access/dsv41/perf-bins/gather2 device-push 028cf2b7f2b8cbd3 95bbcd51d5872c65 args [] 9a476d5285a60168272f3eadf7b4048cb83a1728 built 2026-11-14T10:20:56+01:00 on the dev desk, cuda 13.1, sm_120a
+note (2026-11-17 23:45, coordinator): this take ran 23:36-23:41 IST on 2026-11-17 on wrx, all four cards held, owner-opened
+window (no agy marker). Host load 5.7 at the start, 3.3 at the end, from another project's CPU-only cargo build
+(no GPU process on any card at the start: two free reads 30 s apart). Arm A main25 = 0db086f87a was main at the take;
+main moved during the take to 5a6ae2438e (landing 26: #1297 hybrid_forward.rs step35 prime tail split, #1320
+dsv41_gate.rs ring gate padding = test binary, receipts). No engine file the DSv4.1 decode route calls changed in
+0db086f87a..5a6ae2438e besides the test binary dsv41_gate.rs, so arm A stands for current main on this route.

@@ -1,0 +1,122 @@
+== lease-cb33-build.sh-090203.log
+09:02:04 queueing on cb33: build g2 (121a)
+09:02:05 lease claude-code-20261114T090204-1640591
+started pgid 3755530
+build g2 start 09:02:06
+g2 engine build rc 0 09:06:54
+2a9f34f6bf469721c07f985f0fcf167cd89a6bf905279b94f214e34714a2e18e  /home/avifenesh/.cache/dsv41-cfix2/bins/g2/dsv41-bench
+2b437ec7ee19c7f34ca150f168cfa68f5c94bdbeed5cac2ef3c84ce5f0d20b98  /home/avifenesh/.cache/dsv41-cfix2/bins/g2/dsv41-gate
+c5c1e5d532f70b87358520392cc9896bcdf2ab434dd48066643f096179efd5de  /home/avifenesh/.cache/dsv41-cfix2/bins/g2/dsv41-run
+a617a9a8c8d172667b647787b968ac81b186fbc329d662af537afd6f1f2cb6ef  /home/avifenesh/.cache/dsv41-cfix2/bins/g2/dsv41-tpbench
+BUILD-DONE 09:06:55
+cb33: released
+09:06:57 released; LEASE-DONE
+== lease-cb33-build.sh-090658.log
+09:06:59 queueing on cb33: build m24 (121a)
+09:07:00 lease claude-code-20261114T090659-1703822
+started pgid 3766395
+build m24 start 09:07:01
+m24 engine build rc 0 09:11:49
+ddad30b570858a4d0d20d1705d229f32fa536f6cbceca3ae8dfb8e910d493035  /home/avifenesh/.cache/dsv41-cfix2/bins/m24/dsv41-bench
+44cb577e8067e4e4966b46a57a9d0e77e72c5c3dccde69756f4624728cb8356f  /home/avifenesh/.cache/dsv41-cfix2/bins/m24/dsv41-gate
+34224c69c38d52700bedf5a113f8cb39eb819728fe6ebeed3b9a22766c851b08  /home/avifenesh/.cache/dsv41-cfix2/bins/m24/dsv41-run
+5a755aa40729484c71845c5bffad99c6c4c72ef53b73392cbf6701dd6290fb9b  /home/avifenesh/.cache/dsv41-cfix2/bins/m24/dsv41-tpbench
+BUILD-DONE 09:11:49
+cb33: released
+09:11:53 released; LEASE-DONE
+== lease-cb33-build.sh-091242.log
+09:12:42 queueing on cb33: build g3 (121a)
+09:54:36 lease claude-code-20261114T091242-1838587
+started pgid 4012858
+build g3 start 09:54:36
+g3 engine build rc 0 09:59:26
+ce0ab03384988997fc1ba57f3266648d65decf5142af332db6b8efc08d4d4b9d  /home/avifenesh/.cache/dsv41-cfix2/bins/g3/dsv41-bench
+40ba842a89f3979c18267063b3a8a0f7d3cf673de3973d5acc8dc040d2a2792c  /home/avifenesh/.cache/dsv41-cfix2/bins/g3/dsv41-gate
+cccfc87241f7312e3dca7c239666907ac4e41880ce912d37c9e329f29822180e  /home/avifenesh/.cache/dsv41-cfix2/bins/g3/dsv41-run
+c83a3129b43e8a8a4f58dd1991d8c173d17661e07b4ce885869725f221b240ef  /home/avifenesh/.cache/dsv41-cfix2/bins/g3/dsv41-tpbench
+BUILD-DONE 09:59:26
+cb33: released
+09:59:42 released; LEASE-DONE
+== lease-cb33-build.sh-095947.log
+09:59:49 queueing on cb33: build g1b (121a)
+09:59:50 lease claude-code-20261114T095949-2399858
+started pgid 4025634
+build g1b start 09:59:51
+g1b engine build rc 0 10:04:40
+a2effd573bf75bd6df46ac4a613e9c7bbc40d273bbb86206fbffeba53415f429  /home/avifenesh/.cache/dsv41-cfix2/bins/g1b/dsv41-bench
+f0f00113223f64e89bdd6b33da0c2f175ae61e2a7a4889b92945e06bf3abdd38  /home/avifenesh/.cache/dsv41-cfix2/bins/g1b/dsv41-gate
+ed8403baad51c378304ac75aaf989777458183d49bdc40651ad6922c55eb531a  /home/avifenesh/.cache/dsv41-cfix2/bins/g1b/dsv41-run
+da7538bccf70cac61ed9bf9e78e99a0e30f50a43cc68adb6d2458f6bdb0ec0d4  /home/avifenesh/.cache/dsv41-cfix2/bins/g1b/dsv41-tpbench
+BUILD-DONE 10:04:40
+cb33: released
+10:04:46 released; LEASE-DONE
+== lease-cb33-ga.sh-100447.log
+10:04:49 queueing on cb33: g3 gates A (kernels, layer default form)
+10:05:08 lease claude-code-20261114T100449-2504612
+started pgid 4043521
+NVIDIA GB10, 208 MHz, 47
+40ba842a89f3979c18267063b3a8a0f7d3cf673de3973d5acc8dc040d2a2792c  /home/avifenesh/.cache/dsv41-cfix2/bins/g3/dsv41-gate
+kernels (every form, by construction) rc 0 1025 checks, 0 failed 0 FAIL lines
+kernels: 576 dense_small PASS, 20 split-path PASS, 96 fused PASS
+layer, dense form default rc 0 161 checks, 0 failed 0 FAIL lines
+fa825eeaa1bc5b0f98f0c957120022ce863718fc81b72d2495b899ce23ebf161  /home/avifenesh/.cache/dsv41-cfix2/out/gates-g3/save.sha256
+layer, dense form default, saved tensors against the CUTLASS set: IDENTICAL (111 files; ref sha fa825eeaa1bc5b0f)
+GATES-A-DONE 10:09:30
+cb33: released
+10:09:43 released; LEASE-DONE
+== lease-cb33-gb.sh-100943.log
+10:09:44 queueing on cb33: g3 gates B2 (tp 4 ranks peer-pull, host-canonical)
+10:10:02 lease claude-code-20261114T100944-2667997
+started pgid 4056943
+40ba842a89f3979c18267063b3a8a0f7d3cf673de3973d5acc8dc040d2a2792c  /home/avifenesh/.cache/dsv41-cfix2/bins/g3/dsv41-gate
+tp 0,0,0,0 peer-pull, dense form default rc 0 914 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+tp 0,0,0,0 host-canonical, dense form default rc 0 914 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+GATES-B2-DONE 10:20:55
+cb33: released
+10:20:57 released; LEASE-DONE
+== lease-cb33-gb.sh-102057.log
+10:20:58 queueing on cb33: g3 gates B3 (tp 4 ranks default transport)
+10:20:59 lease claude-code-20261114T102058-3018014
+started pgid 4080445
+40ba842a89f3979c18267063b3a8a0f7d3cf673de3973d5acc8dc040d2a2792c  /home/avifenesh/.cache/dsv41-cfix2/bins/g3/dsv41-gate
+tp 0,0,0,0 default, dense form default rc 0 916 checks, 0 failed 0 FAIL lines
+      1 HASH layer2/prefill/single/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/single/moe_out f3cf05d6209a3893
+      1 HASH layer2/prefill/rank3/out_stream 529cef5959129bd1
+      1 HASH layer2/prefill/rank3/moe_out f3cf05d6209a3893
+GATES-B3-DONE 10:26:23
+cb33: released
+10:26:42 released; LEASE-DONE
+== lease-cb33-tb.sh-102642.log
+10:26:46 queueing on cb33: gather counters by width: g3, m24, g1b at 4, 2 and 3 ranks on the card, 4 layers
+10:27:05 lease claude-code-20261114T102646-3182414
+started pgid 4101312
+c83a3129b43e8a8a4f58dd1991d8c173d17661e07b4ce885869725f221b240ef  /home/avifenesh/.cache/dsv41-cfix2/bins/g3/dsv41-tpbench
+g3 0,0,0,0 layers 4 rc 0 rows 14 [dsv41-tp] ranks=4 devices=[0, 0, 0, 0] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true 10:29:13
+5a755aa40729484c71845c5bffad99c6c4c72ef53b73392cbf6701dd6290fb9b  /home/avifenesh/.cache/dsv41-cfix2/bins/m24/dsv41-tpbench
+m24 0,0,0,0 layers 4 rc 1 rows  [dsv41-tp] ranks=4 devices=[0, 0, 0, 0] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true 10:30:25
+da7538bccf70cac61ed9bf9e78e99a0e30f50a43cc68adb6d2458f6bdb0ec0d4  /home/avifenesh/.cache/dsv41-cfix2/bins/g1b/dsv41-tpbench
+g1b 0,0,0,0 layers 4 rc 1 rows  [dsv41-tp] ranks=4 devices=[0, 0, 0, 0] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true 10:31:18
+c83a3129b43e8a8a4f58dd1991d8c173d17661e07b4ce885869725f221b240ef  /home/avifenesh/.cache/dsv41-cfix2/bins/g3/dsv41-tpbench
+g3 0,0 layers 4 rc 1 rows  [dsv41-tp] ranks=2 devices=[0, 0] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true 10:32:54
+5a755aa40729484c71845c5bffad99c6c4c72ef53b73392cbf6701dd6290fb9b  /home/avifenesh/.cache/dsv41-cfix2/bins/m24/dsv41-tpbench
+m24 0,0 layers 4 rc 1 rows  [dsv41-tp] ranks=2 devices=[0, 0] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true 10:34:23
+da7538bccf70cac61ed9bf9e78e99a0e30f50a43cc68adb6d2458f6bdb0ec0d4  /home/avifenesh/.cache/dsv41-cfix2/bins/g1b/dsv41-tpbench
+g1b 0,0 layers 4 rc 1 rows  [dsv41-tp] ranks=2 devices=[0, 0] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true 10:36:03
+c83a3129b43e8a8a4f58dd1991d8c173d17661e07b4ce885869725f221b240ef  /home/avifenesh/.cache/dsv41-cfix2/bins/g3/dsv41-tpbench
+g3 0,0,0 layers 4 rc 1 rows   10:36:03
+5a755aa40729484c71845c5bffad99c6c4c72ef53b73392cbf6701dd6290fb9b  /home/avifenesh/.cache/dsv41-cfix2/bins/m24/dsv41-tpbench
+m24 0,0,0 layers 4 rc 1 rows   10:36:03
+da7538bccf70cac61ed9bf9e78e99a0e30f50a43cc68adb6d2458f6bdb0ec0d4  /home/avifenesh/.cache/dsv41-cfix2/bins/g1b/dsv41-tpbench
+g1b 0,0,0 layers 4 rc 1 rows   10:36:04
+TB-DONE 10:36:04
+cb33: released
+10:36:15 released; LEASE-DONE
