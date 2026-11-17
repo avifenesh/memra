@@ -668,6 +668,27 @@ from the head.
   contract, `tools/test_validation_plan.py`, `tools/test_choice_verifier.py` (25) and
   `git diff --check` clean.
 
+### The checks again on main `5a6ae2438e` (2026-11-17)
+
+The landing of memra#1297 and memra#1320 is on main and the branch is rebased onto it (conflict:
+`research/INDEX.md` only, every row kept). Under `crates`, `tools`, `Cargo.toml` and
+`Cargo.lock` the rebased tree is byte for byte the tree the third fold's checks ran on: the
+commit ids changed and the code did not (`worker.rs` sha256 `0b88620d...`). The checks ran
+again on it on the dev desk (`cpu-fold/round3/rebased/`, `summary.txt`). No red arm and no cell
+was rerun.
+
+- The memra-server library suite: 1,290 passed, 0 failed, 18 ignored (`suite.log`), memra#1310's
+  two censuses among them. The memra-engine library suite: 785 passed, 0 failed, 66 ignored
+  (`engine-lib.log`). Clippy (`memra-engine` and `memra-server`, all targets, `-D warnings`)
+  clean; `rustfmt --edition 2024 --check` on the touched files clean.
+- `tools/test_choice_verifier.py`: 25 pass (`choice-verifier.log`).
+- `tools/test_validation_plan.py`: 99 pass in the checkout (`validation-plan-checkout.log`). The
+  dev desk tree is a copy of the tracked files, not a checkout, and the first run there carried
+  the checks' `CARGO_TARGET_DIR`, so two tests failed there for those two reasons
+  (`validation-plan.log`: the test that builds a small workspace looks for its binary under its
+  own `target/`, and the test that reads the head's tree asks git for it). Without the variable
+  98 pass there and the git one still errors (`validation-plan-no-target-dir.log`).
+
 ## Tools
 
 `tools/`: `build.sh` (the sm_121a builds on the unit), `cell.sh` and `campaign.sh` /
@@ -691,3 +712,6 @@ and their batches.
 
 The third fold's: `gate-overrun-check.sh` (the two gates' new check read against the stored
 server logs), and `mutate.py` with thirty-nine arms.
+
+After the rebase onto main `5a6ae2438e`: `dd-land26.sh` (the dev desk checks again, with the
+whole engine suite and the two Python suites).

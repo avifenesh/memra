@@ -1,0 +1,28 @@
+................................................................E..................................
+======================================================================
+ERROR: test_real_repo_full_plan_does_not_duplicate_dedicated_workflow_suites (__main__.ValidationPlanTests.test_real_repo_full_plan_does_not_duplicate_dedicated_workflow_suites)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "~/.cache/memra-1304/tree/tools/test_validation_plan.py", line 964, in test_real_repo_full_plan_does_not_duplicate_dedicated_workflow_suites
+    vp.preserve_contract_obligations(plan, tree, tree)
+  File "~/.cache/memra-1304/tree/tools/validation_plan.py", line 1631, in preserve_contract_obligations
+    paths = set(before.paths('tools', 'research', 'docs')) | set(after.paths('tools', 'research', 'docs'))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "~/.cache/memra-1304/tree/tools/validation_plan.py", line 823, in paths
+    return [x.decode() for x in git(self.repo, 'ls-tree', '-r', '--name-only', '-z',
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "~/.cache/memra-1304/tree/tools/validation_plan.py", line 660, in git
+    return subprocess.check_output(['git', '-C', str(repo), *args], stderr=subprocess.PIPE)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 466, in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['git', '-C', '~/.cache/memra-1304/tree', 'ls-tree', '-r', '--name-only', '-z', 'HEAD', '--', 'tools', 'research', 'docs']' returned non-zero exit status 128.
+
+----------------------------------------------------------------------
+Ran 99 tests in 31.581s
+
+FAILED (errors=1)
+rc=1

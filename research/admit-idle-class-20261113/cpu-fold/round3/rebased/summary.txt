@@ -1,0 +1,22 @@
+start 2026-11-17T22:51:45+01:00
+0b88620d8d34747fcc94c6e49486747da3e086953c786b9e1cb62d5282a4812e  crates/memra-server/src/worker.rs
+8a3a2bae6ef2b500185eb9bbb9c36fb13cebd4077aa17159a81f6bc2a2f30d5c  crates/memra-server/src/worker/host_glm.rs
+0209b1c7cf6d52557873469c063b0c0df6dbf3b0246db017569b615d59b57c20  crates/memra-engine/src/dflash.rs
+37c1f11e738ca7587bd69720e1d9c7479b6f19a6ce22a97836089773a906f05f  crates/memra-engine/src/glm_spec.rs
+093d84794848042f009bd33eedb45581cb9a1018a13759bf51537701289761ea  crates/memra-engine/src/hybrid_forward.rs
+5676a03cc4c7f221e0090fe1840e32712c15f42d306246eafbf71ec796d0d6df  crates/memra-engine/src/bin/dsv41_gate.rs
+server suite rc=0 test result: ok. 1290 passed; 0 failed; 18 ignored; 0 measured; 0 filtered out; finished in 14.98s
+test worker::parked_evict_reap_1278_tests::every_eviction_a_reading_or_a_retry_counts_on_reaps_first ... ok
+test worker::tests::vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap ... ok
+server crates compiled: 1
+engine lib suite rc=0 test result: ok. 785 passed; 0 failed; 66 ignored; 0 measured; 0 filtered out; finished in 27.72s
+engine dflash tests in it: 66 ok
+clippy rc=0 1 warning/error lines
+      1 warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+rustfmt (touched files) rc=0
+tools/test_validation_plan.py rc=1 Ran 99 tests in 29.878s FAILED (failures=1, errors=1)
+tools/test_choice_verifier.py rc=0 Ran 25 tests in 0.566s OK
+done 2026-11-17T23:04:09+01:00
+appended on the workstation (the first validation-plan run above carried the checks' CARGO_TARGET_DIR, and the dev desk tree is a copy, not a checkout):
+tools/test_validation_plan.py on the dev desk without CARGO_TARGET_DIR rc=1 Ran 99 tests in 31.581s FAILED (errors=1) (validation-plan-no-target-dir.log)
+tools/test_validation_plan.py in the checkout at abeea378d3 rc=0 Ran 99 tests in 20.642s OK (validation-plan-checkout.log)
