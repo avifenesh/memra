@@ -56,8 +56,9 @@ ring's w1 + w3, SwiGLU and w2 take 0.66-0.78 of the base kernels' time at 3 to 6
 
 Byte identity: every probe variant against the warp ring on 64 routings a cell (0 differences);
 `dsv41-gate kernels` 1089 of 1089 with every small-row check on both rings (40 on the block ring, two
-cases at w2's shape with a short last stage); `dsv41-gate tp` 916 of 916 (default) and 914 of 914
-(peer-pull), whose 180 layer hashes a transport equal main's.
+cases at w2's shape with a short last stage); `dsv41-gate tp` on four ranks (needle capture, layers
+1,2,14,20,21,24, two decode steps) 916 of 916 (default), 914 of 914 (peer-pull) and 914 of 914
+(host-canonical), whose 180 layer hashes a transport equal main's binary's on the same command.
 
 Receipts: `research/modelplan-onboarding-dsv41-20261109/perf/receipts/moe1324/` (probe, gates, both
 A/Bs, the trace).

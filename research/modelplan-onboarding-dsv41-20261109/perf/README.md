@@ -2659,9 +2659,10 @@ an SM. w1 + w3, SwiGLU and w2 together, against the base's kernels (`receipts/mo
 `v41_moe_small_blk_kernel` (`cu/dsv41_gpu.cu`) is that shape; the launcher takes it on sm_120 cards with 188 SMs
 (the PRO 6000 family) and every other card keeps the warp ring and its rule. `memra_v41_moe_small_ring` forces
 either for a gate or a bench. Bytes: `dsv41-gate kernels` 1,089 of 1,089, every small-row check on both rings,
-two new cases at w2's shape (72 K blocks: a short last stage on the 16-block stages); `dsv41-gate tp` 916 of 916
-and 914 of 914, the 180 layer hashes a transport equal to main's (`receipts/moe1324/moe1324-gates`,
-`moe1324-gates-main`).
+two new cases at w2's shape (72 K blocks: a short last stage on the 16-block stages); `dsv41-gate tp` on four ranks
+(needle capture, layers 1,2,14,20,21,24, two decode steps) 916 of 916 (default), 914 of 914 (peer-pull) and 914 of
+914 (host-canonical), the 180 layer hashes a transport equal to main's binary's on the same command
+(`receipts/moe1324/moe1324-gates`, `moe1324-gates-main`, `moe1324-gatehc`, `moe1324-gatehc-main`).
 
 Four cards, 40 layers, device-push, A B B A B A A B, four runs an arm, steady calls past 0.5 s, ms (B / A over the
 four adjacent pairs; `receipts/moe1324/moe1324-ab`, `moe1324-ab-base`, `per_run.md` in each):
