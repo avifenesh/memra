@@ -160,6 +160,11 @@ slowdown.
   and the rule reads it on every transport; on those two this run has the byte gates only.
 - What the host's load cost either arm. The pairs' ranges are 0.002 to 0.005 wide, against
   0.001 to 0.004 in window 3 on a quiet box.
+- Main after the take. Arm A is one landing behind: main moved from `0db086f87a` to
+  `5a6ae2438e` during the take. That range changes the step35 prime's schedule in
+  `hybrid_forward.rs` and the gate binary `bin/dsv41_gate.rs`, and nothing a deepseek-v4.1 call
+  runs, so arm A's program on this route is main's at `5a6ae2438e` too (the lane README has the
+  check).
 
 **What the decision becomes.** With this fix landed, the 12- and 16-row loss no longer holds the
 batch cap or drafting on a four-rank split. Neither limit moves in the fix's change: the cap

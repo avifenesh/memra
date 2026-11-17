@@ -2523,6 +2523,24 @@ and every run found the same 618 MiB used on each card before its load (`runs/*/
 of that summary are the attempts of 2026-11-14 that waited for the cards and were cancelled before any run; at
 10:38 and 10:41 of that day `gather2` was still the build of `059c8add76`. The take starts at its 23:35:36 lines.
 
+Arm A is one landing behind main. Main moved during the take, from `0db086f87a` to `5a6ae2438e` (memra#1297,
+memra#1320 and their records), and this branch merged it afterwards; `9a476d5285`, the commit `gather2` was built
+from, stays in its history unchanged. That range changes two crate files, and neither is in the program the take
+timed:
+
+- `hybrid_forward.rs`: the schedule of the step35 batched GEMM prime (`step_gemm_prime_ranges` and its admission
+  twin `step_gemm_call_rows_max`). Their callers are in that file, on `HybridModel`'s prime. The deepseek-v4.1
+  route never goes through `HybridModel`: no file under `dsv41_gpu/`, nor `dsv41_gpu.rs`, `dsv41_serve.rs` or a
+  `bin/dsv41_*.rs`, names that module or those functions.
+- `bin/dsv41_gate.rs`: the kernel gate's ring cases write two padding columns. It is the gate binary, not the
+  route. The confirm's gates ran the gate as built at `9a476d5285`, before that change; the kernel gate counts
+  1,025 checks either way.
+
+So main's four-rank program on this route at `5a6ae2438e` is the one arm A timed. The impact map
+(`tools/change_impact.py`, `tools/cell_evidence.py need`) works by file: over that range it names
+`hybrid_forward.rs` for the numeric and perf cells and gives the gate binary none. The range's own landing
+carries those cells' records.
+
 Gates at `gather2` on the four cards before the timed runs (`gather2-four/kgate.log.gz`, `gate-*.log.gz`): kernels
 1,025 checks, 0 failed; tp 1,056 (default), 1,054 (peer-pull), 1,054 (host-canonical), 0 failed; the push stress
 20,000 gathers, 0 words differ.
