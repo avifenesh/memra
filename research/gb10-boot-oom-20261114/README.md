@@ -310,6 +310,13 @@ Dev desk, CPU only (`tools/dd_checks.sh` on the head, logs in `cpu/`, `cpu/summa
   --all-targets -- -D warnings` are clean; the engine library suite passes 784 tests
   and the server's 1,272 (`cpu/engine.log`, `cpu/server.log`; `cpu/clippy.log` is
   kept without cargo's `Compiling` and `Checking` progress lines).
+- **Again on main `5a6ae2438e` (2026-11-17).** The landing of memra#1297 and memra#1320 is on
+  main and the branch is rebased onto it (conflict: `research/INDEX.md` only, both rows kept).
+  The landing changed `hybrid_forward.rs` and the DSv4.1 gate binary, none of this change's
+  files. `dd_checks.sh` ran again on the rebased head (`cpu/rebased/`, `summary.txt`): the 13
+  `memra-runtime` tests pass, all 12 red arms fail the tests they failed before, fmt and clippy
+  are clean, the engine library suite passes 785 tests (one more than above: the landing's)
+  and the server's 1,272. No cell was rerun.
 - Two reviewers with clean contexts read the change: one after build 1 (its findings are
   build 2), one after build 3 (its findings are build 4 and the corrections of this record:
   the first-boot stratum, the builds' bases, the test count).
