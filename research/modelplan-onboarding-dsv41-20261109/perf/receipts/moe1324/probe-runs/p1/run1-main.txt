@@ -1,0 +1,242 @@
+# build main device 0 NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition SMs 188 L2 128 MB smem optin 101376
+# rows 1 pairs 6 bm 1 max_tiles 6 tiles mean 6.0 max 6, tiles of 2+ rows 0.00 a routing
+cell main rows  1 w1w3  n   576 k  5120 main    27.94 us (rule takes small 1)
+cell main rows  1 swiglu     1.80 us
+var rows  1 w1w3  cw16_pk4_ps6_nw4        36.02 us  /main 1.289  occ 2  bytes differ 0
+var rows  1 w1w3  cw8_pk4_ps6_nw4         30.23 us  /main 1.082  occ 4  bytes differ 0
+var rows  1 w1w3  cw4_pk4_ps6_nw4         34.59 us  /main 1.238  occ 7  bytes differ 0
+var rows  1 w1w3  cw16_pk4_ps3_nw4        35.71 us  /main 1.278  occ 5  bytes differ 0
+var rows  1 w1w3  cw16_pk4_ps4_nw4        35.69 us  /main 1.278  occ 4  bytes differ 0
+var rows  1 w1w3  cw16_pk4_ps8_nw4        35.82 us  /main 1.282  occ 2  bytes differ 0
+var rows  1 w1w3  cw8_pk4_ps3_nw4         30.78 us  /main 1.102  occ 9  bytes differ 0
+var rows  1 w1w3  cw8_pk4_ps4_nw4         30.08 us  /main 1.077  occ 7  bytes differ 0
+var rows  1 w1w3  cw16_pk8_ps2_nw4        29.45 us  /main 1.054  occ 4  bytes differ 0
+var rows  1 w1w3  cw16_pk8_ps3_nw4        28.29 us  /main 1.013  occ 3  bytes differ 0
+var rows  1 w1w3  cw16_pk8_ps4_nw4        27.85 us  /main 0.997  occ 2  bytes differ 0
+var rows  1 w1w3  cw16_pk8_ps6_nw4        28.04 us  /main 1.004  occ 1  bytes differ 0
+var rows  1 w1w3  cw8_pk8_ps2_nw4         24.22 us  /main 0.867  occ 7  bytes differ 0
+var rows  1 w1w3  cw8_pk8_ps3_nw4         23.74 us  /main 0.850  occ 5  bytes differ 0
+var rows  1 w1w3  cw8_pk8_ps4_nw4         23.66 us  /main 0.847  occ 4  bytes differ 0
+var rows  1 w1w3  cw8_pk8_ps6_nw4         23.88 us  /main 0.855  occ 2  bytes differ 0
+var rows  1 w1w3  cw4_pk8_ps3_nw4         26.94 us  /main 0.964  occ 8  bytes differ 0
+var rows  1 w1w3  cw4_pk8_ps4_nw4         26.38 us  /main 0.944  occ 6  bytes differ 0
+var rows  1 w1w3  cw16_pk16_ps2_nw4       24.33 us  /main 0.871  occ 2  bytes differ 0
+var rows  1 w1w3  cw16_pk16_ps3_nw4       23.82 us  /main 0.853  occ 1  bytes differ 0
+var rows  1 w1w3  cw8_pk16_ps2_nw4        20.46 us  /main 0.732  occ 4  bytes differ 0
+var rows  1 w1w3  cw8_pk16_ps3_nw4        19.27 us  /main 0.690  occ 2  bytes differ 0
+var rows  1 w1w3  cw8_pk16_ps4_nw4        20.08 us  /main 0.719  occ 2  bytes differ 0
+var rows  1 w1w3  cw4_pk16_ps3_nw4        23.62 us  /main 0.845  occ 4  bytes differ 0
+var rows  1 w1w3  cw16_pk4_ps6_nw2        35.25 us  /main 1.262  occ 5  bytes differ 0
+var rows  1 w1w3  cw16_pk8_ps3_nw2        28.27 us  /main 1.012  occ 5  bytes differ 0
+var rows  1 w1w3  cw8_pk8_ps4_nw8         23.78 us  /main 0.851  occ 2  bytes differ 0
+var rows  1 w1w3  cw16_pk4_ps4_nw8        41.14 us  /main 1.473  occ 2  bytes differ 0
+cell main rows  1 w2    n  1280 k  2304 main    11.14 us (rule takes small 1)
+var rows  1 w2    cw16_pk4_ps6_nw4        17.30 us  /main 1.552  occ 2  bytes differ 0
+var rows  1 w2    cw8_pk4_ps6_nw4         14.76 us  /main 1.324  occ 4  bytes differ 0
+var rows  1 w2    cw4_pk4_ps6_nw4         16.68 us  /main 1.497  occ 7  bytes differ 0
+var rows  1 w2    cw16_pk4_ps3_nw4        17.10 us  /main 1.534  occ 5  bytes differ 0
+var rows  1 w2    cw16_pk4_ps4_nw4        17.12 us  /main 1.536  occ 4  bytes differ 0
+var rows  1 w2    cw16_pk4_ps8_nw4        17.26 us  /main 1.548  occ 2  bytes differ 0
+var rows  1 w2    cw8_pk4_ps3_nw4         15.02 us  /main 1.348  occ 9  bytes differ 0
+var rows  1 w2    cw8_pk4_ps4_nw4         14.72 us  /main 1.321  occ 7  bytes differ 0
+var rows  1 w2    cw16_pk8_ps2_nw4        14.53 us  /main 1.304  occ 4  bytes differ 0
+var rows  1 w2    cw16_pk8_ps3_nw4        13.86 us  /main 1.243  occ 3  bytes differ 0
+var rows  1 w2    cw16_pk8_ps4_nw4        13.65 us  /main 1.225  occ 2  bytes differ 0
+var rows  1 w2    cw16_pk8_ps6_nw4        13.80 us  /main 1.238  occ 1  bytes differ 0
+var rows  1 w2    cw8_pk8_ps2_nw4         12.18 us  /main 1.093  occ 7  bytes differ 0
+var rows  1 w2    cw8_pk8_ps3_nw4         11.85 us  /main 1.063  occ 5  bytes differ 0
+var rows  1 w2    cw8_pk8_ps4_nw4         11.85 us  /main 1.063  occ 4  bytes differ 0
+var rows  1 w2    cw8_pk8_ps6_nw4         11.98 us  /main 1.075  occ 2  bytes differ 0
+var rows  1 w2    cw4_pk8_ps3_nw4         13.35 us  /main 1.198  occ 8  bytes differ 0
+var rows  1 w2    cw4_pk8_ps4_nw4         13.03 us  /main 1.169  occ 6  bytes differ 0
+var rows  1 w2    cw16_pk16_ps2_nw4       12.84 us  /main 1.152  occ 2  bytes differ 0
+var rows  1 w2    cw16_pk16_ps3_nw4       12.54 us  /main 1.126  occ 1  bytes differ 0
+var rows  1 w2    cw8_pk16_ps2_nw4        11.13 us  /main 0.999  occ 4  bytes differ 0
+var rows  1 w2    cw8_pk16_ps3_nw4        10.67 us  /main 0.957  occ 2  bytes differ 0
+var rows  1 w2    cw8_pk16_ps4_nw4        10.74 us  /main 0.964  occ 2  bytes differ 0
+var rows  1 w2    cw4_pk16_ps3_nw4        12.29 us  /main 1.103  occ 4  bytes differ 0
+var rows  1 w2    cw16_pk4_ps6_nw2        16.94 us  /main 1.520  occ 5  bytes differ 0
+var rows  1 w2    cw16_pk8_ps3_nw2        13.86 us  /main 1.243  occ 5  bytes differ 0
+var rows  1 w2    cw8_pk8_ps4_nw8         11.93 us  /main 1.070  occ 2  bytes differ 0
+var rows  1 w2    cw16_pk4_ps4_nw8        19.62 us  /main 1.761  occ 2  bytes differ 0
+# rows 4 pairs 24 bm 4 max_tiles 24 tiles mean 23.3 max 24, tiles of 2+ rows 0.66 a routing
+cell main rows  4 w1w3  n   576 k  5120 main    92.08 us (rule takes small 1)
+cell main rows  4 swiglu     1.80 us
+var rows  4 w1w3  cw16_pk4_ps6_nw4       101.98 us  /main 1.108  occ 2  bytes differ 0
+var rows  4 w1w3  cw8_pk4_ps6_nw4         91.38 us  /main 0.992  occ 3  bytes differ 0
+var rows  4 w1w3  cw4_pk4_ps6_nw4        134.99 us  /main 1.466  occ 4  bytes differ 0
+var rows  4 w1w3  cw16_pk4_ps3_nw4        76.66 us  /main 0.832  occ 4  bytes differ 0
+var rows  4 w1w3  cw16_pk4_ps4_nw4        80.05 us  /main 0.869  occ 3  bytes differ 0
+var rows  4 w1w3  cw16_pk4_ps8_nw4       111.62 us  /main 1.212  occ 1  bytes differ 0
+var rows  4 w1w3  cw8_pk4_ps3_nw4         82.70 us  /main 0.898  occ 6  bytes differ 0
+var rows  4 w1w3  cw8_pk4_ps4_nw4        102.72 us  /main 1.116  occ 4  bytes differ 0
+var rows  4 w1w3  cw16_pk8_ps2_nw4        58.40 us  /main 0.634  occ 3  bytes differ 0
+var rows  4 w1w3  cw16_pk8_ps3_nw4        78.46 us  /main 0.852  occ 2  bytes differ 0
+var rows  4 w1w3  cw16_pk8_ps4_nw4        86.58 us  /main 0.940  occ 1  bytes differ 0
+var rows  4 w1w3  cw16_pk8_ps6_nw4        86.82 us  /main 0.943  occ 1  bytes differ 0
+var rows  4 w1w3  cw8_pk8_ps2_nw4         65.97 us  /main 0.716  occ 5  bytes differ 0
+var rows  4 w1w3  cw8_pk8_ps3_nw4         73.76 us  /main 0.801  occ 3  bytes differ 0
+var rows  4 w1w3  cw8_pk8_ps4_nw4         84.59 us  /main 0.919  occ 2  bytes differ 0
+var rows  4 w1w3  cw8_pk8_ps6_nw4        110.26 us  /main 1.197  occ 1  bytes differ 0
+var rows  4 w1w3  cw4_pk8_ps3_nw4        105.81 us  /main 1.149  occ 4  bytes differ 0
+var rows  4 w1w3  cw4_pk8_ps4_nw4        107.91 us  /main 1.172  occ 3  bytes differ 0
+var rows  4 w1w3  cw16_pk16_ps2_nw4       77.09 us  /main 0.837  occ 1  bytes differ 0
+var rows  4 w1w3  cw16_pk16_ps3_nw4       76.11 us  /main 0.827  occ 1  bytes differ 0
+var rows  4 w1w3  cw8_pk16_ps2_nw4        74.42 us  /main 0.808  occ 2  bytes differ 0
+var rows  4 w1w3  cw8_pk16_ps3_nw4        87.33 us  /main 0.948  occ 1  bytes differ 0
+var rows  4 w1w3  cw8_pk16_ps4_nw4        86.45 us  /main 0.939  occ 1  bytes differ 0
+var rows  4 w1w3  cw4_pk16_ps3_nw4       108.77 us  /main 1.181  occ 2  bytes differ 0
+var rows  4 w1w3  cw16_pk4_ps6_nw2       101.59 us  /main 1.103  occ 4  bytes differ 0
+var rows  4 w1w3  cw16_pk8_ps3_nw2        78.58 us  /main 0.853  occ 4  bytes differ 0
+var rows  4 w1w3  cw8_pk8_ps4_nw8         84.32 us  /main 0.916  occ 1  bytes differ 0
+var rows  4 w1w3  cw16_pk4_ps4_nw8       102.17 us  /main 1.110  occ 1  bytes differ 0
+cell main rows  4 w2    n  1280 k  2304 main    38.97 us (rule takes small 1)
+var rows  4 w2    cw16_pk4_ps6_nw4        43.54 us  /main 1.117  occ 2  bytes differ 0
+var rows  4 w2    cw8_pk4_ps6_nw4         41.41 us  /main 1.063  occ 3  bytes differ 0
+var rows  4 w2    cw4_pk4_ps6_nw4         64.40 us  /main 1.653  occ 4  bytes differ 0
+var rows  4 w2    cw16_pk4_ps3_nw4        32.98 us  /main 0.846  occ 4  bytes differ 0
+var rows  4 w2    cw16_pk4_ps4_nw4        34.05 us  /main 0.874  occ 3  bytes differ 0
+var rows  4 w2    cw16_pk4_ps8_nw4        50.82 us  /main 1.304  occ 1  bytes differ 0
+var rows  4 w2    cw8_pk4_ps3_nw4         37.60 us  /main 0.965  occ 6  bytes differ 0
+var rows  4 w2    cw8_pk4_ps4_nw4         43.34 us  /main 1.112  occ 4  bytes differ 0
+var rows  4 w2    cw16_pk8_ps2_nw4        27.55 us  /main 0.707  occ 3  bytes differ 0
+var rows  4 w2    cw16_pk8_ps3_nw4        35.56 us  /main 0.912  occ 2  bytes differ 0
+var rows  4 w2    cw16_pk8_ps4_nw4        40.44 us  /main 1.038  occ 1  bytes differ 0
+var rows  4 w2    cw16_pk8_ps6_nw4        40.50 us  /main 1.039  occ 1  bytes differ 0
+var rows  4 w2    cw8_pk8_ps2_nw4         32.91 us  /main 0.845  occ 5  bytes differ 0
+var rows  4 w2    cw8_pk8_ps3_nw4         34.30 us  /main 0.880  occ 3  bytes differ 0
+var rows  4 w2    cw8_pk8_ps4_nw4         40.28 us  /main 1.034  occ 2  bytes differ 0
+var rows  4 w2    cw8_pk8_ps6_nw4         56.52 us  /main 1.450  occ 1  bytes differ 0
+var rows  4 w2    cw4_pk8_ps3_nw4         50.82 us  /main 1.304  occ 4  bytes differ 0
+var rows  4 w2    cw4_pk8_ps4_nw4         56.54 us  /main 1.451  occ 3  bytes differ 0
+var rows  4 w2    cw16_pk16_ps2_nw4       38.18 us  /main 0.980  occ 1  bytes differ 0
+var rows  4 w2    cw16_pk16_ps3_nw4       37.32 us  /main 0.958  occ 1  bytes differ 0
+var rows  4 w2    cw8_pk16_ps2_nw4        37.54 us  /main 0.963  occ 2  bytes differ 0
+var rows  4 w2    cw8_pk16_ps3_nw4        45.82 us  /main 1.176  occ 1  bytes differ 0
+var rows  4 w2    cw8_pk16_ps4_nw4        45.49 us  /main 1.167  occ 1  bytes differ 0
+var rows  4 w2    cw4_pk16_ps3_nw4        56.92 us  /main 1.461  occ 2  bytes differ 0
+var rows  4 w2    cw16_pk4_ps6_nw2        43.28 us  /main 1.111  occ 4  bytes differ 0
+var rows  4 w2    cw16_pk8_ps3_nw2        35.75 us  /main 0.917  occ 4  bytes differ 0
+var rows  4 w2    cw8_pk8_ps4_nw8         40.00 us  /main 1.026  occ 1  bytes differ 0
+var rows  4 w2    cw16_pk4_ps4_nw8        44.40 us  /main 1.139  occ 1  bytes differ 0
+# rows 9 pairs 54 bm 8 max_tiles 61 tiles mean 50.7 max 54, tiles of 2+ rows 3.23 a routing
+cell main rows  9 w1w3  n   576 k  5120 main   179.09 us (rule takes small 1)
+cell main rows  9 swiglu     1.81 us
+var rows  9 w1w3  cw16_pk4_ps6_nw4       217.26 us  /main 1.213  occ 1  bytes differ 0
+var rows  9 w1w3  cw8_pk4_ps6_nw4        203.37 us  /main 1.136  occ 2  bytes differ 0
+var rows  9 w1w3  cw4_pk4_ps6_nw4        363.24 us  /main 2.028  occ 2  bytes differ 0
+var rows  9 w1w3  cw16_pk4_ps3_nw4       165.09 us  /main 0.922  occ 3  bytes differ 0
+var rows  9 w1w3  cw16_pk4_ps4_nw4       179.97 us  /main 1.005  occ 2  bytes differ 0
+var rows  9 w1w3  cw16_pk4_ps8_nw4       215.23 us  /main 1.202  occ 1  bytes differ 0
+var rows  9 w1w3  cw8_pk4_ps3_nw4        189.17 us  /main 1.056  occ 4  bytes differ 0
+var rows  9 w1w3  cw8_pk4_ps4_nw4        191.80 us  /main 1.071  occ 3  bytes differ 0
+var rows  9 w1w3  cw16_pk8_ps2_nw4       140.35 us  /main 0.784  occ 2  bytes differ 0
+var rows  9 w1w3  cw16_pk8_ps3_nw4       173.15 us  /main 0.967  occ 1  bytes differ 0
+var rows  9 w1w3  cw16_pk8_ps4_nw4       169.79 us  /main 0.948  occ 1  bytes differ 0
+var rows  9 w1w3  cw16_pk8_ps6_nw4     does not fit
+var rows  9 w1w3  cw8_pk8_ps2_nw4        159.61 us  /main 0.891  occ 3  bytes differ 0
+var rows  9 w1w3  cw8_pk8_ps3_nw4        162.64 us  /main 0.908  occ 2  bytes differ 0
+var rows  9 w1w3  cw8_pk8_ps4_nw4        234.74 us  /main 1.311  occ 1  bytes differ 0
+var rows  9 w1w3  cw8_pk8_ps6_nw4        235.35 us  /main 1.314  occ 1  bytes differ 0
+var rows  9 w1w3  cw4_pk8_ps3_nw4        281.16 us  /main 1.570  occ 2  bytes differ 0
+var rows  9 w1w3  cw4_pk8_ps4_nw4        279.35 us  /main 1.560  occ 2  bytes differ 0
+var rows  9 w1w3  cw16_pk16_ps2_nw4      151.47 us  /main 0.846  occ 1  bytes differ 0
+var rows  9 w1w3  cw16_pk16_ps3_nw4    does not fit
+var rows  9 w1w3  cw8_pk16_ps2_nw4       201.81 us  /main 1.127  occ 1  bytes differ 0
+var rows  9 w1w3  cw8_pk16_ps3_nw4       189.42 us  /main 1.058  occ 1  bytes differ 0
+var rows  9 w1w3  cw8_pk16_ps4_nw4     does not fit
+var rows  9 w1w3  cw4_pk16_ps3_nw4       339.46 us  /main 1.896  occ 1  bytes differ 0
+var rows  9 w1w3  cw16_pk4_ps6_nw2       190.61 us  /main 1.064  occ 3  bytes differ 0
+var rows  9 w1w3  cw16_pk8_ps3_nw2       154.08 us  /main 0.860  occ 3  bytes differ 0
+var rows  9 w1w3  cw8_pk8_ps4_nw8      does not fit
+var rows  9 w1w3  cw16_pk4_ps4_nw8       176.31 us  /main 0.984  occ 1  bytes differ 0
+cell main rows  9 w2    n  1280 k  2304 main    90.24 us (rule takes small 1)
+var rows  9 w2    cw16_pk4_ps6_nw4       107.54 us  /main 1.192  occ 1  bytes differ 0
+var rows  9 w2    cw8_pk4_ps6_nw4        104.67 us  /main 1.160  occ 2  bytes differ 0
+var rows  9 w2    cw4_pk4_ps6_nw4        180.45 us  /main 2.000  occ 2  bytes differ 0
+var rows  9 w2    cw16_pk4_ps3_nw4        71.80 us  /main 0.796  occ 3  bytes differ 0
+var rows  9 w2    cw16_pk4_ps4_nw4        76.27 us  /main 0.845  occ 2  bytes differ 0
+var rows  9 w2    cw16_pk4_ps8_nw4       106.79 us  /main 1.183  occ 1  bytes differ 0
+var rows  9 w2    cw8_pk4_ps3_nw4         88.03 us  /main 0.975  occ 4  bytes differ 0
+var rows  9 w2    cw8_pk4_ps4_nw4         87.07 us  /main 0.965  occ 3  bytes differ 0
+var rows  9 w2    cw16_pk8_ps2_nw4        64.80 us  /main 0.718  occ 2  bytes differ 0
+var rows  9 w2    cw16_pk8_ps3_nw4        87.20 us  /main 0.966  occ 1  bytes differ 0
+var rows  9 w2    cw16_pk8_ps4_nw4        85.54 us  /main 0.948  occ 1  bytes differ 0
+var rows  9 w2    cw16_pk8_ps6_nw4     does not fit
+var rows  9 w2    cw8_pk8_ps2_nw4         74.59 us  /main 0.827  occ 3  bytes differ 0
+var rows  9 w2    cw8_pk8_ps3_nw4         84.66 us  /main 0.938  occ 2  bytes differ 0
+var rows  9 w2    cw8_pk8_ps4_nw4        118.74 us  /main 1.316  occ 1  bytes differ 0
+var rows  9 w2    cw8_pk8_ps6_nw4        118.76 us  /main 1.316  occ 1  bytes differ 0
+var rows  9 w2    cw4_pk8_ps3_nw4        142.01 us  /main 1.574  occ 2  bytes differ 0
+var rows  9 w2    cw4_pk8_ps4_nw4        140.77 us  /main 1.560  occ 2  bytes differ 0
+var rows  9 w2    cw16_pk16_ps2_nw4       80.66 us  /main 0.894  occ 1  bytes differ 0
+var rows  9 w2    cw16_pk16_ps3_nw4    does not fit
+var rows  9 w2    cw8_pk16_ps2_nw4       105.48 us  /main 1.169  occ 1  bytes differ 0
+var rows  9 w2    cw8_pk16_ps3_nw4        97.76 us  /main 1.083  occ 1  bytes differ 0
+var rows  9 w2    cw8_pk16_ps4_nw4     does not fit
+var rows  9 w2    cw4_pk16_ps3_nw4       185.03 us  /main 2.050  occ 1  bytes differ 0
+var rows  9 w2    cw16_pk4_ps6_nw2        87.06 us  /main 0.965  occ 3  bytes differ 0
+var rows  9 w2    cw16_pk8_ps3_nw2        72.56 us  /main 0.804  occ 3  bytes differ 0
+var rows  9 w2    cw8_pk8_ps4_nw8      does not fit
+var rows  9 w2    cw16_pk4_ps4_nw8        78.63 us  /main 0.871  occ 1  bytes differ 0
+# rows 16 pairs 96 bm 8 max_tiles 108 tiles mean 84.9 max 94, tiles of 2+ rows 10.36 a routing
+cell main rows 16 w1w3  n   576 k  5120 main   307.01 us (rule takes small 1)
+cell main rows 16 swiglu     1.81 us
+var rows 16 w1w3  cw16_pk4_ps6_nw4       376.27 us  /main 1.226  occ 1  bytes differ 0
+var rows 16 w1w3  cw8_pk4_ps6_nw4        350.81 us  /main 1.143  occ 2  bytes differ 0
+var rows 16 w1w3  cw4_pk4_ps6_nw4        624.32 us  /main 2.034  occ 2  bytes differ 0
+var rows 16 w1w3  cw16_pk4_ps3_nw4       279.36 us  /main 0.910  occ 3  bytes differ 0
+var rows 16 w1w3  cw16_pk4_ps4_nw4       297.01 us  /main 0.967  occ 2  bytes differ 0
+var rows 16 w1w3  cw16_pk4_ps8_nw4       372.85 us  /main 1.214  occ 1  bytes differ 0
+var rows 16 w1w3  cw8_pk4_ps3_nw4        318.85 us  /main 1.039  occ 4  bytes differ 0
+var rows 16 w1w3  cw8_pk4_ps4_nw4        319.73 us  /main 1.041  occ 3  bytes differ 0
+var rows 16 w1w3  cw16_pk8_ps2_nw4       239.44 us  /main 0.780  occ 2  bytes differ 0
+var rows 16 w1w3  cw16_pk8_ps3_nw4       300.42 us  /main 0.979  occ 1  bytes differ 0
+var rows 16 w1w3  cw16_pk8_ps4_nw4       294.91 us  /main 0.961  occ 1  bytes differ 0
+var rows 16 w1w3  cw16_pk8_ps6_nw4     does not fit
+var rows 16 w1w3  cw8_pk8_ps2_nw4        271.42 us  /main 0.884  occ 3  bytes differ 0
+var rows 16 w1w3  cw8_pk8_ps3_nw4        285.62 us  /main 0.930  occ 2  bytes differ 0
+var rows 16 w1w3  cw8_pk8_ps4_nw4        406.38 us  /main 1.324  occ 1  bytes differ 0
+var rows 16 w1w3  cw8_pk8_ps6_nw4        406.86 us  /main 1.325  occ 1  bytes differ 0
+var rows 16 w1w3  cw4_pk8_ps3_nw4        479.88 us  /main 1.563  occ 2  bytes differ 0
+var rows 16 w1w3  cw4_pk8_ps4_nw4        476.20 us  /main 1.551  occ 2  bytes differ 0
+var rows 16 w1w3  cw16_pk16_ps2_nw4      259.77 us  /main 0.846  occ 1  bytes differ 0
+var rows 16 w1w3  cw16_pk16_ps3_nw4    does not fit
+var rows 16 w1w3  cw8_pk16_ps2_nw4       349.06 us  /main 1.137  occ 1  bytes differ 0
+var rows 16 w1w3  cw8_pk16_ps3_nw4       325.43 us  /main 1.060  occ 1  bytes differ 0
+var rows 16 w1w3  cw8_pk16_ps4_nw4     does not fit
+var rows 16 w1w3  cw4_pk16_ps3_nw4       575.20 us  /main 1.874  occ 1  bytes differ 0
+var rows 16 w1w3  cw16_pk4_ps6_nw2       305.62 us  /main 0.995  occ 3  bytes differ 0
+var rows 16 w1w3  cw16_pk8_ps3_nw2       253.90 us  /main 0.827  occ 3  bytes differ 0
+var rows 16 w1w3  cw8_pk8_ps4_nw8      does not fit
+var rows 16 w1w3  cw16_pk4_ps4_nw8       297.82 us  /main 0.970  occ 1  bytes differ 0
+cell main rows 16 w2    n  1280 k  2304 main   151.72 us (rule takes small 1)
+var rows 16 w2    cw16_pk4_ps6_nw4       183.52 us  /main 1.210  occ 1  bytes differ 0
+var rows 16 w2    cw8_pk4_ps6_nw4        175.33 us  /main 1.156  occ 2  bytes differ 0
+var rows 16 w2    cw4_pk4_ps6_nw4        315.70 us  /main 2.081  occ 2  bytes differ 0
+var rows 16 w2    cw16_pk4_ps3_nw4       131.77 us  /main 0.869  occ 3  bytes differ 0
+var rows 16 w2    cw16_pk4_ps4_nw4       134.16 us  /main 0.884  occ 2  bytes differ 0
+var rows 16 w2    cw16_pk4_ps8_nw4       183.53 us  /main 1.210  occ 1  bytes differ 0
+var rows 16 w2    cw8_pk4_ps3_nw4        154.75 us  /main 1.020  occ 4  bytes differ 0
+var rows 16 w2    cw8_pk4_ps4_nw4        154.22 us  /main 1.017  occ 3  bytes differ 0
+var rows 16 w2    cw16_pk8_ps2_nw4       115.76 us  /main 0.763  occ 2  bytes differ 0
+var rows 16 w2    cw16_pk8_ps3_nw4       150.13 us  /main 0.990  occ 1  bytes differ 0
+var rows 16 w2    cw16_pk8_ps4_nw4       147.46 us  /main 0.972  occ 1  bytes differ 0
+var rows 16 w2    cw16_pk8_ps6_nw4     does not fit
+var rows 16 w2    cw8_pk8_ps2_nw4        133.01 us  /main 0.877  occ 3  bytes differ 0
+var rows 16 w2    cw8_pk8_ps3_nw4        143.51 us  /main 0.946  occ 2  bytes differ 0
+var rows 16 w2    cw8_pk8_ps4_nw4        204.78 us  /main 1.350  occ 1  bytes differ 0
+var rows 16 w2    cw8_pk8_ps6_nw4        205.65 us  /main 1.355  occ 1  bytes differ 0
+var rows 16 w2    cw4_pk8_ps3_nw4        247.92 us  /main 1.634  occ 2  bytes differ 0
+var rows 16 w2    cw4_pk8_ps4_nw4        245.40 us  /main 1.617  occ 2  bytes differ 0
+var rows 16 w2    cw16_pk16_ps2_nw4      137.25 us  /main 0.905  occ 1  bytes differ 0
+var rows 16 w2    cw16_pk16_ps3_nw4    does not fit
+var rows 16 w2    cw8_pk16_ps2_nw4       184.80 us  /main 1.218  occ 1  bytes differ 0
+var rows 16 w2    cw8_pk16_ps3_nw4       173.88 us  /main 1.146  occ 1  bytes differ 0
+var rows 16 w2    cw8_pk16_ps4_nw4     does not fit
+var rows 16 w2    cw4_pk16_ps3_nw4       313.56 us  /main 2.067  occ 1  bytes differ 0
+var rows 16 w2    cw16_pk4_ps6_nw2       149.92 us  /main 0.988  occ 3  bytes differ 0
+var rows 16 w2    cw16_pk8_ps3_nw2       125.82 us  /main 0.829  occ 3  bytes differ 0
+var rows 16 w2    cw8_pk8_ps4_nw8      does not fit
+var rows 16 w2    cw16_pk4_ps4_nw8       135.92 us  /main 0.896  occ 1  bytes differ 0
+# done

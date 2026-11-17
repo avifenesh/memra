@@ -2630,6 +2630,61 @@ as `route2`) this tree is 2.2% and 1.0% behind, level at 12 and ahead at 16. So 
 the launches of calls of 9 and 10 rows, and at 4 rows. `dsv41-tpbench` records no per-launch timing: unexplained, and
 tracked in memra#1324 (a per-kernel profile of one four-rank layer in both builds).
 
+### The routed experts on four PRO 6000s: a block-staged ring (memra#1324, 2026-11-18)
+
+A per-kernel trace of one four-rank layer (memra#1324, `receipts/moe1324/t1324/`) put the 4-row remainder in the
+routed experts: the grouped small-row body (`v41_moe_small_kernel`, two launches) cost 92.0 / 167.3 / 171.7 us a
+layer a rank at 4 / 9 / 10 rows against 77.3 / 142.9 / 148.1 for the base's `gemv_f4s_tiles` + `swiglu_f4s_tiles`.
+The base kernels split K over warps, another numeric program, so the fix had to stay inside the chain.
+
+Why the warp ring is slow on this card: each warp holds six stages of 4 K blocks (64 bytes of a weight row a stage)
+and its own copy of the tile's activation rows, sized for the plan's tile rows. A block takes 46.5 KB at 4 rows
+(two blocks an SM; the w1 + w3 call is 432 blocks on 376 slots) and 60.7 KB from 9 rows, where the plan's tiles are
+8 rows high though most hold one (one block an SM, four warps).
+
+The probe (`receipts/moe1324/probe/`, one card): the split route's w1 + w3 (n 576, k 5120) and w2 (n 1280, k 2304)
+calls on the device plan's tile list, 384 experts, 64 routings a cell rotated through a graph so each call reads
+DRAM, every launch shape's outputs compared with the warp ring's on all 64 routings (0 differences in every run),
+then timed in rounds of alternating order against each other and against the base's kernels. The winner stages
+the activation rows once a block and runs two stages of 2 KB of weights a warp (16 columns x 8 K blocks, or 8 x 16
+while that launch is one wave of four blocks an SM), a block barrier a stage: 21.7 to 27.1 KB a block, four blocks
+an SM. w1 + w3, SwiGLU and w2 together, against the base's kernels (`receipts/moe1324/probe-runs/p3r`, `p3p`):
+
+| rows | warp ring / base | block ring / base |
+|---|---|---|
+| 1-2 | 0.99-1.27 | 0.81-0.92 |
+| 3-16 | 0.91-1.13 | 0.66-0.77 |
+| 24-64 | 1.01-1.04 | 0.72-0.73 |
+
+`v41_moe_small_blk_kernel` (`cu/dsv41_gpu.cu`) is that shape; the launcher takes it on sm_120 cards with 188 SMs
+(the PRO 6000 family) and every other card keeps the warp ring and its rule. `memra_v41_moe_small_ring` forces
+either for a gate or a bench. Bytes: `dsv41-gate kernels` 1,089 of 1,089, every small-row check on both rings,
+two new cases at w2's shape (72 K blocks: a short last stage on the 16-block stages); `dsv41-gate tp` 916 of 916
+and 914 of 914, the 180 layer hashes a transport equal to main's (`receipts/moe1324/moe1324-gates`,
+`moe1324-gates-main`).
+
+Four cards, 40 layers, device-push, A B B A B A A B, four runs an arm, steady calls past 0.5 s, ms (B / A over the
+four adjacent pairs; `receipts/moe1324/moe1324-ab`, `moe1324-ab-base`, `per_run.md` in each):
+
+| call | main | B | B / main | base | B | B / base |
+|---|---|---|---|---|---|---|
+| one-row decode | 9.695 | 9.320 | 0.961 (0.960-0.962) | 9.915 | 9.313 | 0.939 (0.939-0.941) |
+| 4 rows | 13.037 | 11.834 | 0.908 (0.907-0.908) | 13.027 | 11.828 | 0.908 (0.907-0.910) |
+| 8 rows | 16.839 | 14.713 | 0.874 (0.873-0.874) | 16.886 | 14.716 | 0.871 (0.871-0.872) |
+| 9 rows | 19.144 | 16.960 | 0.886 (0.885-0.887) | 18.975 | 16.953 | 0.893 (0.892-0.894) |
+| 10 rows | 20.822 | 18.708 | 0.898 (0.898-0.902) | 19.574 | 18.721 | 0.956 (0.955-0.958) |
+| 12 rows | 21.957 | 19.773 | 0.901 (0.900-0.903) | 20.651 | 19.761 | 0.957 (0.955-0.959) |
+| 16 rows | 24.803 | 22.307 | 0.899 (0.897-0.902) | 23.975 | 22.291 | 0.930 (0.929-0.931) |
+
+The decode cell's token tape is one hash over all 16 runs. No card showed a thermal reason in any run. The same
+traced block as memra#1324's (`receipts/moe1324/t1324b/`): the routed experts' two launches cost 62.2 / 112.3 /
+117.2 us a layer a rank at 4 / 9 / 10 rows, 0.80 / 0.79 / 0.79 of the base's kernels.
+
+So the four-rank remainders at 4, 9 and 10 rows against the base are gone, and the 12- and 16-row losses of
+"Where the four-card loss at 12 and 16 rows comes from" are now gains of 4.3% and 7.0% as well; the record that
+keeps served calls at 8 rows on four ranks (`docs/decisions/DSV41-ROWS-ABOVE-8-FOUR-RANKS.md`) is not changed by
+this lane. Record: `docs/decisions/DSV41-MOE-BLOCK-RING-PRO6000.md`.
+
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
 Every change in this lane keeps the bytes of the one-card route. At one row on four ranks three
@@ -2779,6 +2834,9 @@ weight traffic: 1.1 ms.
 - `receipts/cfix-pro6000/per_run.py`: the per-run figures of a `perf_cfix_four.sh` A/B (each run's steady
   median, the arm's median of run medians, each adjacent A/B pair), the decode token hashes by arm, and
   the cards' telemetry inside each run.
+- `receipts/moe1324/`: memra#1324, the routed experts' block ring: the one-card probe of the grouped small-row
+  body's launch shapes (`probe/`, raw runs in `probe-runs/`), the four-card gates and A/Bs, the traced block
+  (`t1324` before, `t1324b` after; nsys files kept on the box, their digests in `traces.sha256`); `INDEX.txt`.
 - `steady.py`: the calls of `dsv41-tpbench` runs by how long the card has been busy (the first
   0.15 s, to 0.5 s, from 0.5 s on): the steady figure a served step pays next to the burst one.
   `trace_rot.py`: kernel time by name of a mixed-width trace against the sum of its widths traced
