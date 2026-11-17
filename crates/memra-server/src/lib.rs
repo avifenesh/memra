@@ -3800,8 +3800,9 @@ struct CompletionReq {
     stop_token_ids: Vec<u32>,
     /// Do not stop at the model's end-of-sentence token (the vLLM/SGLang benchmark field): the
     /// request decodes until `max_tokens`, a stop string or a stop id. Served by the
-    /// deepseek-v4.1 route; any other model answers `true` with a 400 naming the field.
-    #[serde(default)]
+    /// deepseek-v4.1 route; any other model answers `true` with a 400 naming the field. An
+    /// explicit `null` is `false`, as on the chat surface.
+    #[serde(default, deserialize_with = "null_as_default")]
     ignore_eos: bool,
     /// Unsupported-but-semantic fields (gap-scan F4): captured so they 400 loudly instead
     /// of being silently swallowed by serde (policy: clean 400s, not silent downgrades).
@@ -3913,8 +3914,10 @@ impl ChatCompletionReq {
 /// An explicit JSON `null` deserializes as the field's `Default`, the same as an omitted field
 /// (`#[serde(default)]` covers that case). For chat and text fields the upstream OpenAI schema
 /// declares nullable (`Optional[...]` in openai-python's create params) and memra models
-/// without an `Option`: `stream`, and text `prompt`. Any other value deserializes as `T`, so a
-/// type error (`"stream": "true"`) is still the extractor's 400 naming the field.
+/// without an `Option`: `stream`, and text `prompt`. Also for `ignore_eos`, which is not an
+/// OpenAI field: the chat surface took it as an unknown key, null included, before it declared
+/// the field (memra#1325). Any other value deserializes as `T`, so a type error
+/// (`"stream": "true"`) is still the extractor's 400 naming the field.
 fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -4039,8 +4042,9 @@ struct ChatCompletionReq {
     /// on `/v1/completions` (`CompletionReq::ignore_eos`). It used to be dropped here: the type has
     /// no `deny_unknown_fields`, so `ignore_eos: true` answered 200 and stopped at the end id
     /// (memra#1325). Served by the deepseek-v4.1 route; any other model answers `true` with a
-    /// 400 naming the field (`validate_ignore_eos`).
-    #[serde(default)]
+    /// 400 naming the field (`validate_ignore_eos`). An explicit `null` is `false`: while the
+    /// field was an unknown key here, a body that carried `"ignore_eos": null` was served.
+    #[serde(default, deserialize_with = "null_as_default")]
     ignore_eos: bool,
     #[serde(default, deserialize_with = "null_as_default")]
     stream: bool,
@@ -11087,7 +11091,6 @@ fn validate_prompt_ids(ids: &[u32], caps: Option<&ModelCaps>) -> Result<(), Stri
     Ok(())
 }
 
-/// Reuse the prompt-id vocabulary gate, preserving its diagnostic shape with the right field.
 /// `ignore_eos: true` is served by the deepseek-v4.1 route alone. Any other model refuses it, on
 /// `/v1/completions` and `/v1/chat/completions` alike: accepting it and stopping at the end id
 /// anyway would be a silent downgrade. `false` is accepted everywhere.
@@ -11101,6 +11104,7 @@ fn validate_ignore_eos(ignore_eos: bool, caps: Option<&ModelCaps>) -> Result<(),
     Ok(())
 }
 
+/// Reuse the prompt-id vocabulary gate, preserving its diagnostic shape with the right field.
 fn validate_stop_token_ids(ids: &[u32], caps: Option<&ModelCaps>) -> Result<(), String> {
     if ids.len() > MAX_STOP_TOKEN_IDS {
         return Err(format!(
@@ -11170,11 +11174,17 @@ mod prompt_ids_tests {
             context_length: 1_048_576,
             ..Default::default()
         };
-        for (sent, want) in [(Some(true), true), (Some(false), false), (None, false)] {
+        // A JSON null is an absent field on both surfaces (`null_as_default`).
+        for (sent, want) in [
+            (Some(json!(true)), true),
+            (Some(json!(false)), false),
+            (Some(json!(null)), false),
+            (None, false),
+        ] {
             let mut body = json!({"model":"v41", "prompt":"hello",
                 "messages":[{"role":"user", "content":"hello"}]});
-            if let Some(v) = sent {
-                body["ignore_eos"] = json!(v);
+            if let Some(v) = &sent {
+                body["ignore_eos"] = v.clone();
             }
             let req: CompletionReq = serde_json::from_value(body.clone()).unwrap();
             let (tx, _rx) = worker::event_channel();
@@ -33036,6 +33046,61 @@ request = "0"
                         .starts_with("stop_token_ids")
                 );
             }
+        }
+    }
+
+    /// The refusal of `ignore_eos: true` is wired into both handlers: a model outside the
+    /// deepseek-v4.1 route answers it with a 400 naming the field, on `/v1/completions` and on
+    /// `/v1/chat/completions`. `validate_ignore_eos`'s own test calls the function, so without
+    /// this one a handler that lost its call would serve the request, stop at the end id and
+    /// leave every test green (the memra#1332 review).
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK orders this handler test against the admission-counter writers (DAY56 section 3)
+    async fn ignore_eos_handlers_return_named_400s() {
+        let _l = drain_lock();
+        let mut st = fake_worker_state();
+        let model = st.models[0].clone();
+        Arc::make_mut(&mut st.caps).insert(
+            model.clone(),
+            ModelCaps {
+                chat_ok: true,
+                ..Default::default()
+            },
+        );
+        for chat in [false, true] {
+            let body = json!({"model":model, "prompt":"hello", "max_tokens":4,
+                "messages":[{"role":"user", "content":"hello"}], "ignore_eos":true});
+            let response = if chat {
+                chat_completions(
+                    State(st.clone()),
+                    Default::default(),
+                    None,
+                    Json(serde_json::from_value(body).unwrap()),
+                )
+                .await
+            } else {
+                completions(
+                    State(st.clone()),
+                    Default::default(),
+                    None,
+                    Json(serde_json::from_value(body).unwrap()),
+                )
+                .await
+            };
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "chat={chat}");
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(body["error"]["param"], "ignore_eos", "chat={chat}");
+            assert_eq!(body["error"]["type"], "invalid_request_error");
+            assert!(
+                body["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("ignore_eos is served by the deepseek-v4.1 route only"),
+                "chat={chat}"
+            );
         }
     }
 

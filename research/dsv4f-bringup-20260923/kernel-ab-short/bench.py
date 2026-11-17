@@ -57,8 +57,10 @@ def one(a, idx, seed):
         body["temperature"] = 0.0
     else:
         body["seed"] = seed
-    if a.ignore_eos:
-        body["ignore_eos"] = True
+    # --ignore-eos sends nothing (retired 2026-11-17, memra#1325). The chat surface dropped the
+    # field when these cells ran, so the server never ignored the end id for them, and it now
+    # answers `ignore_eos: true` with a 400 on this route. The flag stays accepted so the cells
+    # files run as they did: each request ends at --max-tokens or at the end id.
     req = urllib.request.Request(
         "http://127.0.0.1:%s/v1/chat/completions" % a.port, data=json.dumps(body).encode(),
         headers={"content-type": "application/json", "authorization": "Bearer " + a.key})
@@ -115,7 +117,8 @@ def main():
     ap.add_argument("--n", type=int, default=4, help="requests per worker")
     ap.add_argument("--max-tokens", type=int, default=256)
     ap.add_argument("--greedy", action="store_true")
-    ap.add_argument("--ignore-eos", action="store_true")
+    ap.add_argument("--ignore-eos", action="store_true",
+                    help="retired: accepted and not sent (the DSv4-Flash route does not serve ignore_eos)")
     ap.add_argument("--keep-text", action="store_true")
     ap.add_argument("--timeout", type=float, default=1800)
     ap.add_argument("--label", default="")

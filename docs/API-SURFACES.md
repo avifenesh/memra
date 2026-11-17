@@ -74,10 +74,10 @@ The stock server has no `/admin/*` route; a deployment binary adds its own throu
   routes that parse through the server's JSON extractor (chat, completions, embeddings, rerank,
   tokenize, detokenize, audio); `/v1/messages` and `/v1/responses` parse their own bodies.
 - On chat and text completions an explicit `null` means absent for every field openai-python
-  declares nullable (`stream: null` runs non-streaming, `prompt: null` is an omitted prompt). Null
-  is a 400 only where it has no absent meaning: `model`, chat `messages` and `tools`, and memra's
-  own `background` and `stop_token_ids`. `max_tokens` and `max_completion_tokens` name one cap; a
-  body that sets both to values is a 400.
+  declares nullable (`stream: null` runs non-streaming, `prompt: null` is an omitted prompt), and
+  for memra's `ignore_eos` (`null` is `false`). Null is a 400 only where it has no absent meaning:
+  `model`, chat `messages` and `tools`, and memra's own `background` and `stop_token_ids`.
+  `max_tokens` and `max_completion_tokens` name one cap; a body that sets both to values is a 400.
 - While the server drains after SIGTERM, new generation requests get a 503 with `Retry-After`.
 
 ### Lanes, concurrency and session affinity
@@ -157,6 +157,7 @@ shape is what the validation harnesses read.
 | `model`, `max_tokens`, `stream`, `stream_options`, `temperature`, `top_p`, `top_k`, `min_p`, `frequency_penalty`, `presence_penalty`, `repetition_penalty`, `seed`, `stop`, `stop_token_ids`, `n`, `background`, `cache_salt`, `session_id`, `user`, `timeout_ms`, `max_ctx` | yes | yes | supported |
 | `messages`, `max_completion_tokens`, `tools`, `tool_choice`, `parallel_tool_calls`, `response_format`, reasoning fields | yes | | supported |
 | `prompt` or `prompt_ids`, `chat` (wrap the prompt in the chat template as one user turn) | | yes | supported; `prompt_ids` are checked against the vocabulary |
+| `ignore_eos` | yes | yes | `true` is served by the deepseek-v4.1 route only; any other model answers it with a 400 ([below](#ignore_eos-on-completions-and-chat-deepseek-v41-route)) |
 | `logit_bias` | 400 | 400 | no device-side bias hook |
 | `logprobs` | 400 unless `false` | 400 | not implemented |
 | `top_logprobs` | 400 | | not implemented |
@@ -191,8 +192,13 @@ the benchmark field of other OpenAI-compatible servers: with `true` the model's 
 token no longer ends generation; it is detokenized into the stream and fed back like any token, and
 the request ends at `max_tokens`, a stop string or a stop id. Only the deepseek-v4.1 route serves
 it. For any other model `ignore_eos: true` is a 400 with `param: "ignore_eos"` on both surfaces;
-`false` is accepted everywhere. The chat surface dropped the field without a word until
-memra#1325: a chat request that set it stopped at the end id with `finish_reason: "stop"`.
+`false` is accepted everywhere, and an explicit `null` is `false`. The chat surface dropped the
+field without a word until memra#1325: a chat request that set it stopped at the end id with
+`finish_reason: "stop"`.
+
+Without `max_tokens`, a request that sets `ignore_eos: true` and meets no stop string or stop id
+runs to the output bound of any request that omits `max_tokens` (the rest of the context, or the
+model's declared output cap) and ends with `finish_reason: "length"`. Send `max_tokens` with it.
 
 ### Multiple choices: `n`
 
