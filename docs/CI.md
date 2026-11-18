@@ -81,6 +81,9 @@ commit fails it. It is not a required check until a branch protection rule requi
 static merge guard inputs, so a changed command or a missing mapping cannot silently drop coverage;
 a deliberate workflow edit updates its hashes in the same change.
 `python3 tools/test_public_ci_integration.py` drives routing and execution against real Git events.
+Its hang guard reads CPU progress, not the wall clock: the run is stopped when it and its children
+use no CPU for 300 seconds (120 for one child) or more than an hour of CPU in all, and never for
+being slow on a busy host. The hosted step keeps its own `timeout-minutes`.
 `tools/check-workflow-keys.py` (CI `gates` job and the pre-push hook, no skip switch) refuses a
 duplicate mapping key at any depth, since GitHub runs zero jobs for such a file; it reports a
 construct outside its scope as "cannot answer" (exit 2), never as green.
