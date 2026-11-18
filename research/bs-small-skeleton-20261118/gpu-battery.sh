@@ -8,7 +8,7 @@
 #
 # usage: gpu-battery.sh PHASE        PHASE: build | kgate | tp4 | pair | all
 # env (no defaults; the script refuses an unset one):
-#   OUT        receipt dir (created; one subdir a phase)
+#   OUT        receipt dir, an absolute path (created; one subdir a phase)
 #   SRC_BASE, SRC_HEAD   source trees of the two arms (full checkouts)
 #   DATA       the V4.1 lane's data dir: fixtures-gpu/rand, captures-v2/needle, oracle/engram_constants.token_map.i32
 #   CKPT       DeepSeek-V4.1-Flash-1017 checkpoint dir (rev 1bae0e10)
@@ -16,8 +16,9 @@
 #   CARDS4     four RTX PRO 6000 of one box, comma-separated, for the tensor-parallel gates
 #   PAIR       two RTX PRO 6000 sharing a box, comma-separated, for the pair battery (not a serving box)
 #   BOARD      a TSV of the board models: name <TAB> model path <TAB> token-ids file [<TAB> run-spec env words,
-#              such as MEMRA_MTP_DRAFT=PATH] (every model of research/tune-data/current-board.json
-#              `supported_models`; a row whose model file is absent fails the phase)
+#              such as MEMRA_MTP_DRAFT=PATH]; name is the `model` of research/tune-data/current-board.json
+#              `supported_models`. A missing or empty BOARD, an absent model or ids file, and any supported model
+#              without a passing row fail the phase.
 #   MEMRA_MODELS_DIR   as tools/release-battery.sh and tools/local-ci.sh read it
 # Locks: the script takes the box lock AGENTS.md names for a 2x RTX PRO 6000 pair or a multi-card box
 # (/tmp/memra-gpu.lock, MEMRA_GPU_LOCK the override) for every GPU phase, waits up to 30 minutes for it, and prints
@@ -32,16 +33,19 @@
 #          MEMRA_DSV41_TP_ISSUE=parallel: default 916 checks 0 failed, peer-pull 914 / 0, host-canonical 914 / 0;
 #          180 HASH lines a transport, equal between the arms
 #   pair   the full battery of AGENTS.md on the pair: kernel-check with both cells manifests "ALL GREEN (<n>
-#          cells, <m> skipped)", m <= 11 and n, m equal between the arms; tools/release-battery.sh exit 0 (the
-#          argmax margin gate on every roster row, both decode programs, and run-spec K=1..8 with its
-#          STEP-IDENTITY line); run-gen argmax "MATCH" on every BOARD model; run-spec K=1..8 on every BOARD model
-#          with a drafter: eight "self-consistency: PASS" lines and "=== SELF-CONSISTENCY PASS ===".
+#          cells, <m> skipped)", m <= 11 and n, m equal between the arms; tools/release-battery.sh exit 0 on each
+#          card of the pair (the argmax margin gate on every roster row, both decode programs, and run-spec K=1..8
+#          with its STEP-IDENTITY line); run-gen argmax "  MATCH" and no MISMATCH on every board model
+#          (FLIP-NEARTIE reported, passing); run-spec K=1..8 on every board model: eight "self-consistency: PASS"
+#          lines and "=== SELF-CONSISTENCY PASS ===".
 #          No board model reaches the V4.1 route's kernels (only cu/dsv41_gpu.cu and cu/dsv41_cutlass.cu include
 #          the headers), so this phase is expected green on both arms; it is run because AGENTS.md asks the full
 #          battery of every .cu kernel and kernel dispatch change.
 set -u
 PHASE=${1:?usage: gpu-battery.sh build|kgate|tp4|pair|all}
 for v in OUT SRC_BASE SRC_HEAD; do [ -n "${!v:-}" ] || { echo "set $v"; exit 2; }; done
+# the phases cd into the source trees: a relative OUT would point somewhere else there
+case $OUT in /*) ;; *) echo "OUT must be an absolute path (got $OUT)"; exit 2 ;; esac
 mkdir -p "$OUT"
 FAILS=0
 say() { echo "$(date +%T) $*" | tee -a "$OUT/battery.log"; }
@@ -58,7 +62,7 @@ count() { grep -a -o '[0-9]* checks, [0-9]* failed' "$1" | tail -1; }
 # phase runs under it; MEMRA_GPU_LOCK is the override seam AGENTS.md names.
 LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-gpu.lock}
 gpu_lock() {
-  exec {LFD}>>"$LOCK"
+  exec {LFD}>>"$LOCK" || { fail "box lock $LOCK cannot be opened"; return 1; }
   flock -w 1800 "$LFD" || { fail "box lock $LOCK not taken in 30 minutes"; return 1; }
   say "box lock $LOCK held"
 }
@@ -69,8 +73,10 @@ build() {
     say "build $a $(git -C "$s" rev-parse HEAD)"
     (cd "$s" && MEMRA_CUDA_ARCH=120a CARGO_TARGET_DIR="$OUT/target-$a" \
       cargo build --release --locked -p memra-engine --bins) > "$OUT/build-$a.log" 2>&1 || { fail "build $a"; return 1; }
-    sha256sum "$(bin "$a" dsv41-gate)" "$(bin "$a" kernel-check)" "$(bin "$a" run-gen)" "$(bin "$a" run-spec)" \
-      | tee -a "$OUT/battery.log"
+    for b in dsv41-gate kernel-check run-gen run-spec argmax-margin-probe; do
+      if [ -x "$(bin "$a" "$b")" ]; then sha256sum "$(bin "$a" "$b")" | tee -a "$OUT/battery.log"
+      else fail "build $a: binary $b missing ($(bin "$a" "$b"))"; fi
+    done
   done
 }
 
@@ -136,29 +142,51 @@ pair() {
   done
   cmp -s "$OUT/pair/kernel-check-BASE.green" "$OUT/pair/kernel-check-HEAD.green" \
     || fail "kernel-check: cell or skip counts differ between the arms"
-  (cd "$SRC_HEAD" && CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$PAIR CARGO_TARGET_DIR="$OUT/target-HEAD" \
-    tools/release-battery.sh) > "$OUT/pair/release-battery-HEAD.log" 2>&1
-  rc=$?; say "release-battery HEAD rc $rc"; [ $rc -eq 0 ] || fail "release-battery HEAD rc $rc"
-  while IFS=$'\t' read -r name model ids spec_env; do
+  # tools/release-battery.sh is a one-card gate: it resolves CUDA's logical device 0 to its physical card
+  # (tools/resolve-physical-gpu.py, CUDA_DEVICE_ORDER=PCI_BUS_ID exported by the script) and reads that card's
+  # free memory and tenants before each cell, and it takes no lock (the box lock above covers it). So it runs once
+  # a card of the pair, each run seeing one card.
+  for card in ${PAIR//,/ }; do
+    (cd "$SRC_HEAD" && CUDA_VISIBLE_DEVICES=$card CARGO_TARGET_DIR="$OUT/target-HEAD" tools/release-battery.sh) \
+      > "$OUT/pair/release-battery-HEAD-card$card.log" 2>&1 < /dev/null
+    rc=$?; say "release-battery HEAD card $card rc $rc"; [ $rc -eq 0 ] || fail "release-battery HEAD card $card rc $rc"
+  done
+  # every supported model of the board must run (research/tune-data/current-board.json `supported_models`)
+  if [ ! -r "$BOARD" ] || [ ! -s "$BOARD" ]; then fail "BOARD $BOARD missing, unreadable or empty"; return 1; fi
+  python3 -c 'import json, sys; [print(m["model"]) for m in json.load(open(sys.argv[1]))["supported_models"]]' \
+    "$SRC_HEAD/research/tune-data/current-board.json" > "$OUT/pair/board-required.txt" \
+    || { fail "cannot read the board's supported models"; return 1; }
+  : > "$OUT/pair/board-run.txt"
+  while IFS=$'\t' read -r name model ids spec_env || [ -n "$name" ]; do
     [ -z "$name" ] || [ "${name#\#}" != "$name" ] && continue
-    # the full battery needs every board model: an absent one fails the phase
     if [ ! -e "$model" ]; then fail "board $name: model ABSENT ($model)"; continue; fi
+    if [ ! -r "${ids:-}" ]; then fail "board $name: token-ids file missing (${ids:-none})"; continue; fi
+    ok=1
     CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=${PAIR%%,*} "$(bin HEAD run-gen)" "$model" $(cat "$ids") \
-      > "$OUT/pair/run-gen-$name.log" 2>&1
+      > "$OUT/pair/run-gen-$name.log" 2>&1 < /dev/null
     rc=$?
-    # the argmax line ends in two spaces and MATCH; MISMATCH (and MISMATCH-STRUCTURED) counted on their own
+    # The prefill/decode argmax line ends in two spaces and MATCH; MISMATCH (plain or -STRUCTURED) fails.
+    # FLIP-NEARTIE on the batched-prime line passes and is reported: run-gen itself treats it as not fatal (only
+    # MISMATCH-STRUCTURED errors), as docs/TESTING.md's run-gen row and tools/argmax-margin-gate.sh (a near-tie flip
+    # inside the calibrated bound) do.
     mt=$(grep -a -c '  MATCH$' "$OUT/pair/run-gen-$name.log"); mm=$(grep -a -c 'MISMATCH' "$OUT/pair/run-gen-$name.log")
-    say "run-gen $name rc $rc: $mt MATCH, $mm MISMATCH"
-    [ $rc -eq 0 ] && [ "$mt" -ge 1 ] && [ "$mm" -eq 0 ] || fail "run-gen $name: rc $rc, $mt MATCH, $mm MISMATCH"
+    nt=$(grep -a -c 'FLIP-NEARTIE' "$OUT/pair/run-gen-$name.log")
+    say "run-gen $name rc $rc: $mt MATCH, $mm MISMATCH, $nt FLIP-NEARTIE (reported, passes)"
+    [ $rc -eq 0 ] && [ "$mt" -ge 1 ] && [ "$mm" -eq 0 ] || { ok=0; fail "run-gen $name: rc $rc, $mt MATCH, $mm MISMATCH"; }
     # shellcheck disable=SC2086  # spec_env: the model's run-spec settings, NAME=VALUE words
     env ${spec_env:-} CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=${PAIR%%,*} MEMRA_SPEC_TEMP=0 \
-      "$(bin HEAD run-spec)" "$model" $(cat "$ids") > "$OUT/pair/run-spec-$name.log" 2>&1
+      "$(bin HEAD run-spec)" "$model" $(cat "$ids") > "$OUT/pair/run-spec-$name.log" 2>&1 < /dev/null
     rc=$?
     pk=$(grep -a -c 'self-consistency: PASS' "$OUT/pair/run-spec-$name.log")
     ov=$(grep -a -c '=== SELF-CONSISTENCY PASS ===' "$OUT/pair/run-spec-$name.log")
     say "run-spec $name rc $rc: $pk per-K PASS, $ov overall"
-    [ $rc -eq 0 ] && [ "$pk" -eq 8 ] && [ "$ov" -eq 1 ] || fail "run-spec $name: rc $rc, $pk per-K PASS, $ov overall"
+    [ $rc -eq 0 ] && [ "$pk" -eq 8 ] && [ "$ov" -eq 1 ] || { ok=0; fail "run-spec $name: rc $rc, $pk per-K PASS, $ov overall"; }
+    [ $ok = 1 ] && echo "$name" >> "$OUT/pair/board-run.txt"
   done < "$BOARD"
+  while IFS= read -r m || [ -n "$m" ]; do
+    grep -Fxq -- "$m" "$OUT/pair/board-run.txt" || fail "board model $m: not run to a pass"
+  done < "$OUT/pair/board-required.txt"
+  say "board: $(wc -l < "$OUT/pair/board-run.txt") of $(wc -l < "$OUT/pair/board-required.txt") supported models passed"
 }
 
 case $PHASE in

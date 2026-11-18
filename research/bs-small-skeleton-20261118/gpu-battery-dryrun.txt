@@ -1,0 +1,63 @@
+pass (pair): rc=0  last: 08:13:23 BATTERY PASS pair
+    08:13:23 release-battery HEAD card 0 rc 0
+    08:13:23 release-battery HEAD card 1 rc 0
+    08:13:23 run-gen M1 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    08:13:23 run-gen M 2 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    08:13:23 board: 2 of 2 supported models passed
+  kgate rc=0 08:13:24 BATTERY PASS kgate
+pass-all (tp4): rc=0  last: 08:13:24 BATTERY PASS tp4
+board-missing (pair): rc=1  last: 08:13:24 BATTERY FAIL pair: 1 failure(s), the FAIL lines above
+    08:13:24 FAIL: BOARD ~/.cache/bs-small/dry/w-board-missing/nope.tsv missing, unreadable or empty
+    08:13:24 release-battery HEAD card 0 rc 0
+    08:13:24 release-battery HEAD card 1 rc 0
+board-partial (pair): rc=1  last: 08:13:24 BATTERY FAIL pair: 1 failure(s), the FAIL lines above
+    08:13:24 FAIL: board model M 2: not run to a pass
+    08:13:24 release-battery HEAD card 0 rc 0
+    08:13:24 release-battery HEAD card 1 rc 0
+    08:13:24 run-gen M1 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    08:13:24 board: 1 of 2 supported models passed
+board-nonl (pair): rc=0  last: 08:13:24 BATTERY PASS pair
+    08:13:24 release-battery HEAD card 0 rc 0
+    08:13:24 release-battery HEAD card 1 rc 0
+    08:13:24 run-gen M1 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    08:13:24 run-gen M 2 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    08:13:24 board: 2 of 2 supported models passed
+model-absent (pair): rc=1  last: 08:13:24 BATTERY FAIL pair: 2 failure(s), the FAIL lines above
+    08:13:24 FAIL: board M 2: model ABSENT (~/.cache/bs-small/dry/w-model-absent/models/m2.gguf)
+    08:13:24 FAIL: board model M 2: not run to a pass
+    08:13:24 release-battery HEAD card 0 rc 0
+    08:13:24 release-battery HEAD card 1 rc 0
+    08:13:24 run-gen M1 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    08:13:24 board: 1 of 2 supported models passed
+lock-unopenable (pair): rc=1  last: 08:13:24 BATTERY FAIL pair: 1 failure(s), the FAIL lines above
+    08:13:24 FAIL: box lock ~/.cache/bs-small/dry/w-lock-unopenable/no-such-dir/gpu.lock cannot be opened
+binary-missing (build): rc=1  last: 08:13:24 BATTERY FAIL build: 1 failure(s), the FAIL lines above
+    08:13:24 FAIL: build HEAD: binary run-spec missing (~/.cache/bs-small/dry/w-binary-missing/out/target-HEAD/release/run-spec)
+rg-mismatch (pair): rc=1  last: 08:13:25 BATTERY FAIL pair: 4 failure(s), the FAIL lines above
+    08:13:25 FAIL: run-gen M1: rc 1, 0 MATCH, 1 MISMATCH
+    08:13:25 FAIL: run-gen M 2: rc 1, 0 MATCH, 1 MISMATCH
+    08:13:25 FAIL: board model M1: not run to a pass
+    08:13:25 FAIL: board model M 2: not run to a pass
+    08:13:24 release-battery HEAD card 0 rc 0
+    08:13:24 release-battery HEAD card 1 rc 0
+    08:13:25 run-gen M1 rc 1: 0 MATCH, 1 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    08:13:25 run-gen M 2 rc 1: 0 MATCH, 1 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    08:13:25 board: 0 of 2 supported models passed
+rg-neartie (pair): rc=0  last: 08:13:25 BATTERY PASS pair
+    08:13:25 release-battery HEAD card 0 rc 0
+    08:13:25 release-battery HEAD card 1 rc 0
+    08:13:25 run-gen M1 rc 0: 1 MATCH, 0 MISMATCH, 1 FLIP-NEARTIE (reported, passes)
+    08:13:25 run-gen M 2 rc 0: 1 MATCH, 0 MISMATCH, 1 FLIP-NEARTIE (reported, passes)
+    08:13:25 board: 2 of 2 supported models passed
+rb-fail (pair): rc=1  last: 08:13:25 BATTERY FAIL pair: 2 failure(s), the FAIL lines above
+    08:13:25 FAIL: release-battery HEAD card 0 rc 1
+    08:13:25 FAIL: release-battery HEAD card 1 rc 1
+    08:13:25 release-battery HEAD card 0 rc 1
+    08:13:25 FAIL: release-battery HEAD card 0 rc 1
+    08:13:25 release-battery HEAD card 1 rc 1
+    08:13:25 FAIL: release-battery HEAD card 1 rc 1
+    08:13:25 run-gen M1 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    08:13:25 run-gen M 2 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+kgate-differ (kgate): rc=1  last: 08:13:25 BATTERY FAIL kgate: 1 failure(s), the FAIL lines above
+    08:13:25 FAIL: kgate: check lines differ between the arms (diff lines-BASE.txt lines-HEAD.txt)
+relative-out (pair): rc=2  last: OUT must be an absolute path (got relative/out)
