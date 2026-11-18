@@ -58,7 +58,10 @@ Byte identity: every probe variant against the warp ring on 64 routings a cell (
 `dsv41-gate kernels` 1089 of 1089 with every small-row check on both rings (40 on the block ring, two
 cases at w2's shape with a short last stage); `dsv41-gate tp` on four ranks (needle capture, layers
 1,2,14,20,21,24, two decode steps) 916 of 916 (default), 914 of 914 (peer-pull) and 914 of 914
-(host-canonical), whose 180 layer hashes a transport equal main's binary's on the same command.
+(host-canonical), whose 180 layer hashes a transport equal main's binary's on the same command; on two
+ranks (cards 0 and 1) 480 of 480, 478 of 478 and 478 of 478, the 108 layer hashes of each equal main's default.
+One card: the layer gate (161 of 161), the decode gates (gsm, straddle126, capital) and `memra model verify`
+checkpoint and serve (verified=Serve) pass on a full-binary build of the change.
 
 Receipts: `research/modelplan-onboarding-dsv41-20261109/perf/receipts/moe1324/` (probe, gates, both
 A/Bs, the trace).

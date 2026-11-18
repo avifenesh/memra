@@ -1,0 +1,5 @@
+The summary's layer-gate lines (layer-needle 161 checks 17 failed; needle1200 and needle4800 1 check 1 failed)
+are a harness error of this run, the same in both arms: the layer gate ran without --floor, and the needle1200 and
+needle4800 captures hold layer 20 only while the run asked for the default layer list. Their files are left out.
+moe1324-one2 reruns the needle layer gate with the floor (161/0 both arms) and moe1324-one3 runs layer 20 on
+needle1200 and needle4800 (6/0 both arms). The decode gates here (dec-*) are valid.

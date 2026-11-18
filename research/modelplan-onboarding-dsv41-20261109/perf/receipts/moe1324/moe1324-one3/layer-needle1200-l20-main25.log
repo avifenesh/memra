@@ -1,0 +1,7 @@
+PASS layer20/attn_out: rel_l2=2.462e-2 maxabs/max=4.886e-2 worst_tok=9.419e-2 cos=0.99969683 [rel_l2 <= 2 x floor (3.311e-2) + 1e-4]
+PASS layer20/mid_stream: rel_l2=2.233e-3 maxabs/max=1.744e-5 worst_tok=1.653e-2 cos=0.99999751 [rel_l2 <= 2 x floor (2.954e-3) + 1e-4]
+PASS layer20/moe_out: rel_l2=4.164e-3 maxabs/max=2.232e-4 worst_tok=6.506e-1 cos=0.99999133 [rel_l2 <= 2 x floor (4.789e-3) + 1e-4]
+PASS layer20/route: 17119/18343 token sets equal [token expert sets agree within 1% of the floor's 16637/18343]
+PASS layer20/out_stream: rel_l2=2.295e-3 maxabs/max=1.594e-4 worst_tok=1.560e-1 cos=0.99999737 load 0.7s fwd 0.10s [rel_l2 <= 2 x floor (2.621e-3) + 1e-4]
+PASS layer20/out_pre_mix: rel_l2=1.338e-3 max_abs=6.158e-3 [rel_l2 <= 2 x floor (1.834e-3) + 1e-4]
+dsv41-gate: 6 checks, 0 failed
