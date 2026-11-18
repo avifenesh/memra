@@ -28958,7 +28958,7 @@ pub fn run(
             oom_evict_streak += 1;
             eprintln!(
                 "[admit-oom] step-OOM reclaim: parked reuse={} spec={} dspark={} dropped; \
-                 prefix cache evicted {} entries ({}MB) {}MB -> {}MB (oom tick streak {})",
+                 prefix cache evicted {} entries ({}MiB) {}MiB -> {}MiB (oom tick streak {})",
                 parked.0,
                 parked.1,
                 parked.2,
@@ -56048,9 +56048,9 @@ mod tests {
         );
     }
 
-    /// memra#1358: the wave probe's and the step-OOM teardown's trim figures are `>> 20` and
-    /// `/ (1 << 20)`, so MiB; an admission line's `MB` is decimal megabytes. Neither prints a
-    /// MiB figure under an `MB` label.
+    /// memra#1358: the wave probe's and the step-OOM teardown's trim figures, and the step-OOM
+    /// reclaim's prefix-cache figures (review), are `>> 20` and `/ (1 << 20)`, so MiB; an
+    /// admission line's `MB` is decimal megabytes. None prints a MiB figure under an `MB` label.
     #[test]
     fn the_pool_trim_lines_label_their_figures_mib() {
         let src = include_str!("worker.rs");
@@ -56067,6 +56067,12 @@ mod tests {
             1
         );
         assert!(!prod.contains("pool trim released {}MB"));
+        assert_eq!(
+            prod.matches("prefix cache evicted {} entries ({}MiB) {}MiB -> {}MiB (oom tick")
+                .count(),
+            1
+        );
+        assert!(!prod.contains("entries ({}MB) {}MB -> {}MB (oom tick"));
     }
 
     /// The boot wave probe hands its pool back to the driver on both arms before the cap is
