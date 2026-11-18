@@ -56334,13 +56334,6 @@ mod tests {
         assert!(body.contains("Ok(active != 0)") && body.contains("cuDeviceGraphMemTrim(device)"));
     }
 
-    /// memra#524 (lane/spill-b-20260919 day 24): readiness waits for the one warmup the
-    /// server itself runs. In `run`, the boot calibration probe (one spec-shaped generation
-    /// through the real serving path: chunked prime, draft capture, sampled verify, pool
-    /// high-water read) precedes the `ready_tx` send, and `/readyz` cannot flip before that
-    /// send because `health.mark_ready()` follows it; until then `WorkerHealth` is in
-    /// PHASE_LOADING (`health::tests::loading_is_not_live_and_not_ready`). Anchored on the
-    /// comment-stripped production text so a reorder is a red test, not a log archaeology.
     /// memra#1360 review wiring: every worker caller of the draft-state charge passes the graph
     /// pool's live reading, so a trim by anyone is charged until the pool holds the reserve again.
     #[test]
@@ -56357,6 +56350,13 @@ mod tests {
         );
     }
 
+    /// memra#524 (lane/spill-b-20260919 day 24): readiness waits for the one warmup the
+    /// server itself runs. In `run`, the boot calibration probe (one spec-shaped generation
+    /// through the real serving path: chunked prime, draft capture, sampled verify, pool
+    /// high-water read) precedes the `ready_tx` send, and `/readyz` cannot flip before that
+    /// send because `health.mark_ready()` follows it; until then `WorkerHealth` is in
+    /// PHASE_LOADING (`health::tests::loading_is_not_live_and_not_ready`). Anchored on the
+    /// comment-stripped production text so a reorder is a red test, not a log archaeology.
     #[test]
     fn readiness_follows_the_boot_calibration_probe() {
         let src = include_str!("worker.rs");
