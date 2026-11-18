@@ -21,12 +21,12 @@ It does not depend on the prompt or on the passes before it:
 
 | run (main 5a6ae2438e) | prompt | result |
 |---|---|---|
-| `base-24` | 24 ids | gates `MATCH`, then the cross-device error, exit 1, in 27 s |
+| `base-24` | 24 ids | gates `MATCH`, then the cross-device error, exit 1 |
 | `base-24-nogate` | 24 ids, `MEMRA_PRIME_GATE=0` | the same error without the batched-prime pass, exit 1 |
 | `base-8` | 8 ids (under `PRIME_MIN_T`, tokenwise prime) | exit 0, 16 tokens: the eager step has no such guard and reaches the home cache through peer access |
 
 The fix: `generate` and `generate_with` take `pp::new_cache` when the model's prime is stage-split
-(`HybridModel::prime_is_stage_split`, which restates the split walks' conditions). A prime that walks
+(`pp::prime_stage_split`, which restates the split walks' conditions). A prime that walks
 the whole trunk on the caller's engine (the gemma program, the serial residual under
 `MEMRA_PRIME_PP=0`) keeps the home cache it had. A stage-owned cache is decoded by the stage-split
 host-logits loop: the qwen device-counter and graph doors, which walk the whole trunk on the caller's
@@ -60,22 +60,54 @@ The fix: `forward::prefill_gate_verdict` classes the flip on the batched-prime g
 over the other's by at most the margin bound, under drift within the maxdiff bound, prints
 `FLIP-NEARTIE` and the run goes on. Any other flip prints `MISMATCH-STRUCTURED` and fails the run
 (exit 1), a flip on a row with a NaN included; so does a row with no finite value, which has no
-argmax. An agreeing row passes whatever its maxdiff, as before. The rule bounds both programs'
+argmax. An id that holds the same infinity in both rows (a masked id) is no drift. An agreeing row
+passes whatever its maxdiff, as before; when it holds a NaN the run says so and goes on. The rule bounds both programs'
 margins between the two contending ids, which
 is stricter than the batched-prime gate's tokenwise top-2 margin: a prefill that holds its token by 7
 logits over a decode that has the two tied is not a near tie.
 
-CPU proof (`cargo test --release -p memra-engine --lib prefill_gate_tests`, 8 tests, no card visible),
-with its red arms: the same tests against four wrong rules, each patched into
+CPU proof (`cargo test --release -p memra-engine --lib -- prefill_gate_tests`, 9 tests, no card
+visible), with its red arms: the same tests against six wrong rules, each patched into
 `prefill_gate_verdict_with` and reverted.
 
 | rule in `prefill_gate_verdict_with` | tests |
 |---|---|
-| the fix | 8 of 8 pass |
-| every flip fails (main's assert) | 2 fail: the near-tie row, the inclusive bounds |
-| every flip is a near tie (main's label as the rule) | 6 fail: every row that must fail the run |
+| the fix | 9 of 9 pass |
+| every flip fails (main's assert) | 3 fail: the near-tie row, the inclusive bounds, the masked id |
+| every flip is a near tie (main's label as the rule) | 7 fail: every row that must fail the run |
 | only the decode margin is bounded (the batched-prime gate's rule) | 2 fail: wide in one program, wide between the contending ids |
 | a maxdiff that drops NaN | 1 fails: the broken row |
+| `inf - inf` read as a NaN | 1 fails: the id masked in both rows |
+| two rows with no finite value agree | 1 fails: the broken row |
+
+## The cache choice on CPU
+
+No single-card test reaches the pair's cache path, and four wrong cache choices passed the whole lib
+suite. The choice is therefore a pure function, `pp::GenCachePlan::decide(DoorState, PrimeWalk)`,
+which `generate`, `generate_with` and the qwen door's predicate read, with one test per
+configuration (`gen_cache_plan_tests`, 6 tests): a stage-split prime on a pair, the hyper walk with
+`MEMRA_PRIME_PP` on and off, the gemma program, the serial residual under `MEMRA_PRIME_PP=0`, one
+card, `MEMRA_PP_STREAMS=0`, and the door open with no placement.
+
+| wrong choice in `pp.rs` | tests |
+|---|---|
+| the fix | 6 of 6 pass |
+| never through `pp::new_cache` | 3 fail |
+| always through `pp::new_cache` | 3 fail |
+| the hyper term dropped | 1 fails |
+| the device-counter doors open on a stage-owned cache | 2 fail |
+
+`prime_stage_split` restates the conditions of the split walks in `hybrid_forward.rs`. Each of the
+five split entries (the hyper walk, `prime_chunk`'s ppN arm, the PP-2 pipelined prime, the PP-3/PP-4
+prime, the step35 batched prime) carries `debug_assert!(self.prime_is_stage_split())`, and a source
+census (`prime_split_entry_tests`) keeps them there: with all five removed, or with `prime_chunk`'s
+alone removed, it fails. The assertions run in a debug build only; the gates build release.
+
+What the CPU tests cannot see is the two-line dispatch in `new_gen_cache` and a split walk that
+changes its condition in a release build. The 24-id `run-gen` cell on a pair covers both.
+
+All of the above on the final code tree: 16 of 16 in the three groups, the lib suite 801 pass, 0
+fail, 66 ignored, clippy `-D warnings` and fmt clean (toolchain 1.97.1, no card visible).
 
 ## Conditions
 
@@ -86,19 +118,26 @@ with its red arms: the same tests against four wrong rules, each patched into
   tokenizer, passed as ids (N = 8, 24, 64, 4,100, 8,200).
 - Binaries: base `run-gen` sha256 `f7a0a673ff3ab4141301beb0c2af24ffb752f052c57607e11f0457b0bd0ec98e`
   (main 5a6ae2438e), head `d54e9564e6032883d24b89cd59e79104c42e80bf54c4f40ce4700b0726876f1c`
-  (9a19b18b77).
+  (9a19b18b77, kept on the branch `research/1295-first-fix`; it is not an ancestor of the landed
+  commit).
 - `logs/<run>.log`: stdout and stderr of each `run-gen`, as it ran, with its exit status appended.
+  These logs do not name their binary. `receipts.tsv` has, per run, the commit (the build
+  tree's HEAD for the head binary, the prebuilt binary's directory name for main), the binary's
+  sha256 and the lease's start and end as the run wrapper recorded them; the wall time includes the
+  model load. Runs taken after this write-up carry the commit and the sha256 in the log's first line.
 
 ## Pending on a pair
 
 The head runs above used the fix's first commit (9a19b18b77). The final commit differs from it in
 which calls take the stage-owned cache (only a stage-split prime) and in the gate's rule (both
-margins, rows with no finite value); on this model and placement the cache path is the same. Still
-owed on the final commit, same pair and settings:
+margins, rows with no finite value); on this model and placement the cache path is the same. The
+re-take on the final commit replaces the head rows above; until then nothing on the pair proves the
+final commit. Still owed, same pair and settings:
 
 - 64 and 4,100 ids: the gate prints `FLIP-NEARTIE` and the run generates 16 tokens (4,100: expected
   `[16, 27669, 223, 18, ..]`, the tokens `run-spec` banked under memra#1275);
-- 8,200, 24 and 8 ids: 16 tokens, equal to the ones above.
+- 8,200, 24 and 8 ids: 16 tokens, equal to the ones above. The 24-id cell is the standing guard of
+  the cache placement on a pair (`docs/TESTING.md`, the PP-N gate table).
 
 Two head runs were stopped by the box's schedule before they produced a result (8,200 ids after 80 s,
 4,100 ids after 70 s); their logs are not kept.

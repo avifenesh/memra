@@ -280,8 +280,9 @@ pub struct PrefillGateVerdict {
     pub decode_margin: f32,
     /// The larger of the two programs' differences at those two ids.
     pub spread: f32,
-    /// Full-vocab maxdiff; NaN when a row holds a NaN, when both rows hold the same infinity
-    /// at one id, or when the rows differ in length.
+    /// Full-vocab maxdiff; NaN when a row holds a NaN or the rows differ in length. An id that
+    /// holds the same infinity in both rows counts as 0, one that is infinite in one row only
+    /// as infinite.
     pub maxdiff: f32,
     pub class: PrimeGateClass,
 }
@@ -330,7 +331,9 @@ pub fn prefill_gate_verdict_with(
         prefill
             .iter()
             .zip(decode)
-            .map(|(a, b)| (a - b).abs())
+            // Equal values differ by 0, two equal infinities included (a masked id in both
+            // rows); `inf - inf` would read as a NaN.
+            .map(|(a, b)| if a == b { 0.0 } else { (a - b).abs() })
             .fold(0.0f32, |m, d| {
                 if m.is_nan() || d.is_nan() {
                     f32::NAN
@@ -493,6 +496,22 @@ mod prefill_gate_tests {
         // two dead rows "agree" on TOKEN_NONE: not a match
         assert_eq!(class(&dead, &dead), PrimeGateClass::Structured);
         assert_eq!(class(&prefill[..32], &decode), PrimeGateClass::Structured);
+    }
+
+    /// An id masked to -inf in both rows is no drift; masked in one row only it is.
+    #[test]
+    fn equal_infinities_are_not_drift() {
+        let mut prefill = row(64, &[(3, 10.0), (7, 9.9)]);
+        let mut decode = row(64, &[(3, 9.9), (7, 10.0)]);
+        prefill[40] = f32::NEG_INFINITY;
+        decode[40] = f32::NEG_INFINITY;
+        let v = prefill_gate_verdict_with(&prefill, &decode, 8.0, 1.0);
+        assert!((v.maxdiff - 0.1).abs() < 1e-4, "{}", v.maxdiff);
+        assert_eq!(v.class, PrimeGateClass::NearTieFlip);
+        decode[40] = -4.0;
+        let v = prefill_gate_verdict_with(&prefill, &decode, 8.0, 1.0);
+        assert_eq!(v.maxdiff, f32::INFINITY);
+        assert_eq!(v.class, PrimeGateClass::Structured);
     }
 
     /// An agreeing row passes whatever its drift, as before the change.

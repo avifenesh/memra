@@ -259,6 +259,7 @@ stage-split dispatch or a decode path a split walks re-runs them.
 | spec-verify split | `decode-batch-gate <model.gguf> --mode ppspec [--ts 2,5,9] [--stages N] [--reps R]` | verify split bit-identical per logit column, plus the `h_seed` column |
 | `pp2-gate` | `MEMRA_PP_DEVICES=0,1 pp2-gate <model.gguf> [P=16] [N=32] [split=n_layers/2]` | the N=2 eager gate; it resets `MEMRA_PP_STAGES`/`SPLITS` itself |
 | `pp-transport-smoke` | `pp-transport-smoke` | the peer boundary transport alone |
+| `run-gen` generation on a pair | `MEMRA_PP_STAGES=2 MEMRA_PP_DEVICES=0,1 MEMRA_NGEN=16 run-gen <model.gguf> <24 token ids>` | the generation cache is stage-owned under a stage-split prime (memra#1295): both gate lines `MATCH`, then 16 tokens and exit 0. With the cache homed on the caller it ends in `PP cross-device tensor access at append_kv_quantized_rows` |
 
 Keep `--reps` at 2 or more (the class these gates catch was intermittent), open the PP door before
 load, and keep the `unsplit@ppncache` and `epilogue` arms that localize a red. `MEMRA_PP_WAVE` is off

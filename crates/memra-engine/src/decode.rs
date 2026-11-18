@@ -2607,29 +2607,23 @@ impl HybridModel {
         }
     }
 
-    /// Whether `generate` and `generate_with` allocate a stage-owned cache (memra#1295): the
-    /// prime walks each stage's layers on that stage's engine
-    /// ([`Self::prime_is_stage_split`]) and `pp::new_cache` places each layer's cache through
-    /// its stage's engine. Both must hold. A prime that walks the whole trunk on the caller's
-    /// engine (the gemma program, the serial residual under `MEMRA_PRIME_PP=0`) appends every
-    /// layer's KV from that engine and needs the cache home, as before.
-    ///
-    /// A stage-owned cache is decoded by the stage-split host-logits loop (`decode_step_h`):
-    /// the device-counter and graph doors walk the whole trunk on the caller's stream, over KV
-    /// planes and `len_d` counters that live with the stages.
-    fn gen_cache_stage_owned(&self) -> bool {
-        self.prime_is_stage_split() && crate::pp::cache_is_stage_owned(&self.cfg)
+    /// Where one `generate` or `generate_with` call puts its cache, and whether the
+    /// device-counter doors may open on it (memra#1295): `pp::GenCachePlan::decide` on the
+    /// door as it reads now and this model's prime walk.
+    fn gen_cache_plan(&self) -> crate::pp::GenCachePlan {
+        crate::pp::GenCachePlan::decide(
+            crate::pp::DoorState::read(self.layers.len(), &self.cfg),
+            self.prime_walk(),
+        )
     }
 
-    /// The cache of one `generate` or `generate_with` call: see
-    /// [`Self::gen_cache_stage_owned`]. Under a split prime with no placement named,
-    /// `pp::new_cache` is `Cache::new` plus the cache birth barrier.
+    /// The cache of one `generate` or `generate_with` call, as [`Self::gen_cache_plan`] says.
     fn new_gen_cache(
         &self,
         e: &Engine,
         max_ctx: usize,
     ) -> Result<Cache, Box<dyn std::error::Error>> {
-        if self.prime_is_stage_split() {
+        if self.gen_cache_plan().through_pp {
             crate::pp::new_cache(e, &self.cfg, max_ctx)
         } else {
             Cache::new(e, &self.cfg, max_ctx)
@@ -2642,11 +2636,11 @@ impl HybridModel {
     /// a hyper trunk refuses in `refuse_hyper`, and an MLA layer panics
     /// (`mla_path_unimplemented`). Those plans take the host-logits loop instead, whose
     /// `decode_step_h` serves all three. So does a call whose cache is stage-owned
-    /// ([`Self::gen_cache_stage_owned`]).
+    /// (`GenCachePlan::dc_doors_ok`).
     fn qwen_dc_plan_ok(&self) -> bool {
         !self.uses_sliding_gated_moe_program()
             && self.hyper.is_none()
-            && !self.gen_cache_stage_owned()
+            && self.gen_cache_plan().dc_doors_ok()
             && self
                 .layers
                 .iter()

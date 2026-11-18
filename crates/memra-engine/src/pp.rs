@@ -3463,6 +3463,86 @@ pub fn cache_is_stage_owned(cfg: &memra_gguf::config::ModelConfig) -> bool {
     pp_cuts(n_trunk).is_some() && stage_owned_placement()
 }
 
+/// How a model's prime walks its trunk, as far as the ppN door goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrimeWalk {
+    /// The serial residual (`prime_chunk`, the pipe and wave arms, the step35 batched prime):
+    /// stage-split under the door when `MEMRA_PRIME_PP` is on.
+    Serial,
+    /// The hyper walk (`prime_cache_hyper`): stage-split whenever the door is open with
+    /// per-stage streams. It does not read `MEMRA_PRIME_PP`.
+    Hyper,
+    /// The gemma program: never split, the whole trunk on the caller's engine.
+    Gemma,
+}
+
+/// The ppN door as one generation call sees it, read from the environment once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DoorState {
+    /// `pp_cuts` gives this model a stage fence.
+    pub open: bool,
+    /// The per-stage streams are on (`MEMRA_PP_STREAMS` is not 0).
+    pub streams: bool,
+    /// `MEMRA_PRIME_PP` is on.
+    pub prime_pp: bool,
+    /// [`new_cache`] would allocate through the stages' engines ([`cache_is_stage_owned`]).
+    pub cache_staged: bool,
+}
+
+impl DoorState {
+    pub fn read(n_layers: usize, cfg: &memra_gguf::config::ModelConfig) -> Self {
+        Self {
+            open: pp_cuts(n_layers).is_some(),
+            streams: !pp2_streams_off(),
+            prime_pp: prime_pp_on(),
+            cache_staged: cache_is_stage_owned(cfg),
+        }
+    }
+}
+
+/// Whether a prime walks each stage's layer range on that stage's engine. It restates the
+/// conditions of the split walks in `hybrid_forward.rs`, and each of them asserts it at its
+/// entry in a debug build.
+pub fn prime_stage_split(door: DoorState, walk: PrimeWalk) -> bool {
+    door.open
+        && door.streams
+        && match walk {
+            PrimeWalk::Hyper => true,
+            PrimeWalk::Serial => door.prime_pp,
+            PrimeWalk::Gemma => false,
+        }
+}
+
+/// Where `generate` and `generate_with` put their cache, and what may decode it (memra#1295).
+/// A pure function of the door and the walk, so that every configuration has a CPU test.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GenCachePlan {
+    /// Allocate through [`new_cache`], not `Cache::new`: the prime is stage-split.
+    pub through_pp: bool,
+    /// The cache planes then live with the stages (`Cache::new_ppn`).
+    pub stage_owned: bool,
+}
+
+impl GenCachePlan {
+    /// A stage-split prime appends each stage's KV on that stage's engine, so its cache goes
+    /// through [`new_cache`]. A prime that walks the whole trunk on the caller's engine appends
+    /// every layer's KV from there and keeps the cache home.
+    pub fn decide(door: DoorState, walk: PrimeWalk) -> Self {
+        let split = prime_stage_split(door, walk);
+        Self {
+            through_pp: split,
+            stage_owned: split && door.cache_staged,
+        }
+    }
+
+    /// Whether the device-counter and graph doors may open. They walk the whole trunk on the
+    /// caller's stream, over KV planes and `len_d` counters that a stage-owned cache keeps
+    /// with the stages; such a cache is decoded by the stage-split host-logits loop.
+    pub fn dc_doors_ok(self) -> bool {
+        !self.stage_owned
+    }
+}
+
 fn new_cache_inner(
     e: &Engine,
     cfg: &memra_gguf::config::ModelConfig,
@@ -4437,5 +4517,114 @@ mod host_bounce_tests {
     fn host_bounce_capacity_rejects_invalid_or_overflowing_geometry() {
         assert!(host_bounce_capacity(0).is_err());
         assert!(host_bounce_capacity(usize::MAX).is_err());
+    }
+}
+
+#[cfg(test)]
+mod gen_cache_plan_tests {
+    use super::{DoorState, GenCachePlan, PrimeWalk, prime_stage_split};
+
+    const WALKS: [PrimeWalk; 3] = [PrimeWalk::Serial, PrimeWalk::Hyper, PrimeWalk::Gemma];
+    const HOME: GenCachePlan = GenCachePlan {
+        through_pp: false,
+        stage_owned: false,
+    };
+    const STAGED: GenCachePlan = GenCachePlan {
+        through_pp: true,
+        stage_owned: true,
+    };
+
+    /// `MEMRA_PP_STAGES=2 MEMRA_PP_DEVICES=0,1`, everything else default.
+    fn pair() -> DoorState {
+        DoorState {
+            open: true,
+            streams: true,
+            prime_pp: true,
+            cache_staged: true,
+        }
+    }
+
+    /// memra#1295: the serial residual on a pair primes stage-split, so its cache is
+    /// stage-owned and the device-counter doors stay shut.
+    #[test]
+    fn a_stage_split_prime_takes_a_stage_owned_cache() {
+        let plan = GenCachePlan::decide(pair(), PrimeWalk::Serial);
+        assert_eq!(plan, STAGED);
+        assert!(!plan.dc_doors_ok());
+    }
+
+    /// The hyper walk splits with `MEMRA_PRIME_PP` on or off.
+    #[test]
+    fn the_hyper_walk_is_staged_whatever_prime_pp_says() {
+        for prime_pp in [true, false] {
+            let door = DoorState { prime_pp, ..pair() };
+            assert!(prime_stage_split(door, PrimeWalk::Hyper));
+            let plan = GenCachePlan::decide(door, PrimeWalk::Hyper);
+            assert_eq!(plan, STAGED, "prime_pp={prime_pp}");
+            assert!(!plan.dc_doors_ok());
+        }
+    }
+
+    /// The gemma prime walks the whole trunk on the caller's engine: home cache, as on main.
+    #[test]
+    fn gemma_keeps_the_home_cache_on_a_pair() {
+        let plan = GenCachePlan::decide(pair(), PrimeWalk::Gemma);
+        assert_eq!(plan, HOME);
+        assert!(plan.dc_doors_ok());
+    }
+
+    /// `MEMRA_PRIME_PP=0` sends the serial residual back to the whole-trunk walk.
+    #[test]
+    fn the_serial_walk_under_prime_pp_off_keeps_the_home_cache() {
+        let door = DoorState {
+            prime_pp: false,
+            ..pair()
+        };
+        let plan = GenCachePlan::decide(door, PrimeWalk::Serial);
+        assert_eq!(plan, HOME);
+        assert!(plan.dc_doors_ok());
+    }
+
+    /// One card (the door shut) and `MEMRA_PP_STREAMS=0`: nothing splits, for any walk.
+    #[test]
+    fn a_shut_door_or_streams_off_keeps_the_home_cache() {
+        let single = DoorState {
+            open: false,
+            streams: true,
+            prime_pp: true,
+            cache_staged: false,
+        };
+        let streams_off = DoorState {
+            streams: false,
+            cache_staged: false,
+            ..pair()
+        };
+        for door in [single, streams_off] {
+            for walk in WALKS {
+                assert!(!prime_stage_split(door, walk), "{door:?} {walk:?}");
+                let plan = GenCachePlan::decide(door, walk);
+                assert_eq!(plan, HOME, "{door:?} {walk:?}");
+                assert!(plan.dc_doors_ok());
+            }
+        }
+    }
+
+    /// The door open with no placement: the split prime's cache goes through `new_cache` (for
+    /// its birth barrier) but stays on the caller's device, so the doors may open.
+    #[test]
+    fn a_split_prime_with_no_placement_is_not_stage_owned() {
+        let door = DoorState {
+            cache_staged: false,
+            ..pair()
+        };
+        let plan = GenCachePlan::decide(door, PrimeWalk::Serial);
+        assert_eq!(
+            plan,
+            GenCachePlan {
+                through_pp: true,
+                stage_owned: false
+            }
+        );
+        assert!(plan.dc_doors_ok());
     }
 }

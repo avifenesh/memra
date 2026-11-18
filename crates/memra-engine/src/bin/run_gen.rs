@@ -1238,6 +1238,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "MISMATCH"
         }
     );
+    if v.class == PrimeGateClass::Match && v.maxdiff.is_nan() {
+        // Not fatal, as it never was: this gate does not bound an agreeing row. Not silent
+        // either: a logits row never holds a NaN on a sound path.
+        eprintln!(
+            "[gate] the two rows agree on argmax {am_p} but hold a NaN (or differ in length): \
+             reported, not judged"
+        );
+    }
     if v.class != PrimeGateClass::Match {
         // A flip between two numeric programs is judged, not asserted on (memra#1295): the
         // batched prefill and the tokenwise loop are two legitimate arithmetics, so a near-tie
