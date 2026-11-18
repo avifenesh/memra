@@ -1174,6 +1174,17 @@ mod tests {
         assert!(err.contains("bytes; maximum"), "{err}");
     }
 
+    /// How long a compiler test waits for something the code under test does by itself: a worker
+    /// thread starting, the supervisor reporting a result, a worker exiting. The wait ends at the
+    /// event, so its length costs a passing run nothing; a loaded host only makes the event late.
+    /// A fixed 100 ms here failed a full suite run under host load (memra#1335).
+    const COMPILER_EVENT_WAIT: Duration = Duration::from_secs(30);
+    /// The deadline of a compile that is meant to run away. The supervisor drops a job whose
+    /// deadline passed before it dequeued it (no worker starts and no result comes), so the
+    /// deadline has to outlast the supervisor's wake-up on a loaded host. Each runaway costs the
+    /// test this long: the supervisor waits the deadline out before it reports the timeout.
+    const RUNAWAY_COMPILE_DEADLINE: Duration = Duration::from_secs(1);
+
     #[test]
     fn compiler_abandons_runaway_job_and_drains_next_job() {
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1201,21 +1212,22 @@ mod tests {
             .try_submit(
                 1,
                 GrammarSpec::JsonObject,
-                Instant::now() + Duration::from_millis(100),
+                Instant::now() + RUNAWAY_COMPILE_DEADLINE,
             )
             .unwrap();
         started_rx
-            .recv_timeout(Duration::from_millis(100))
+            .recv_timeout(COMPILER_EVENT_WAIT)
             .expect("runaway compile did not start");
+        // The second compile returns at once: its deadline only bounds a hang.
         compiler
             .try_submit(
                 2,
                 GrammarSpec::JsonObject,
-                Instant::now() + Duration::from_secs(1),
+                Instant::now() + COMPILER_EVENT_WAIT,
             )
             .unwrap();
 
-        let wait_until = Instant::now() + Duration::from_secs(1);
+        let wait_until = Instant::now() + COMPILER_EVENT_WAIT;
         let mut first_timed_out = false;
         let second = loop {
             let remaining = wait_until.saturating_duration_since(Instant::now());
@@ -1275,14 +1287,14 @@ mod tests {
                 .try_submit(
                     id,
                     GrammarSpec::JsonObject,
-                    Instant::now() + Duration::from_millis(100),
+                    Instant::now() + RUNAWAY_COMPILE_DEADLINE,
                 )
                 .unwrap();
             started_rx
-                .recv_timeout(Duration::from_millis(100))
+                .recv_timeout(COMPILER_EVENT_WAIT)
                 .expect("runaway compile did not start");
             let done = result_rx
-                .recv_timeout(Duration::from_millis(250))
+                .recv_timeout(COMPILER_EVENT_WAIT)
                 .expect("runaway compile did not time out");
             assert_eq!(done.id, id);
             assert!(matches!(
@@ -1294,11 +1306,11 @@ mod tests {
         let refusal = compiler.try_submit(
             CONSTRAINT_ABANDONED_WORKER_CAP as u64,
             GrammarSpec::JsonObject,
-            Instant::now() + Duration::from_secs(1),
+            Instant::now() + RUNAWAY_COMPILE_DEADLINE,
         );
         if refusal.is_ok() {
             started_rx
-                .recv_timeout(Duration::from_millis(100))
+                .recv_timeout(COMPILER_EVENT_WAIT)
                 .expect("uncapped fifth compile did not start");
         }
 
@@ -1308,7 +1320,7 @@ mod tests {
         let spawned = calls.load(Ordering::SeqCst);
         for _ in 0..spawned {
             finished_rx
-                .recv_timeout(Duration::from_secs(1))
+                .recv_timeout(COMPILER_EVENT_WAIT)
                 .expect("runaway test worker did not exit");
         }
         assert_eq!(spawned, CONSTRAINT_ABANDONED_WORKER_CAP);
@@ -1320,12 +1332,14 @@ mod tests {
         assert!(compiler.abandoned_workers.is_fail_closed());
 
         let recovery_id = CONSTRAINT_ABANDONED_WORKER_CAP as u64 + 1;
-        let rearm_deadline = Instant::now() + Duration::from_secs(1);
+        let rearm_deadline = Instant::now() + COMPILER_EVENT_WAIT;
         loop {
+            // The workers are released, so this compile returns at once: its deadline only
+            // bounds a hang.
             match compiler.try_submit(
                 recovery_id,
                 GrammarSpec::JsonObject,
-                Instant::now() + Duration::from_secs(1),
+                Instant::now() + COMPILER_EVENT_WAIT,
             ) {
                 Ok(()) => break,
                 Err(ConstraintSubmitError::AbandonedWorkerLimit)
@@ -1337,10 +1351,10 @@ mod tests {
             }
         }
         started_rx
-            .recv_timeout(Duration::from_millis(100))
+            .recv_timeout(COMPILER_EVENT_WAIT)
             .expect("rearmed compile did not start");
         let recovered = result_rx
-            .recv_timeout(Duration::from_secs(1))
+            .recv_timeout(COMPILER_EVENT_WAIT)
             .expect("rearmed compile did not finish");
         assert_eq!(recovered.id, recovery_id);
         assert!(matches!(
