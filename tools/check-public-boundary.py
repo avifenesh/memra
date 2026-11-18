@@ -105,6 +105,15 @@ LANE_KEY = "lane"
 # the version still exists at some published ref and still trips the rules the entry names.
 SCOPE_KEY = "scope"
 REFS_ONLY = "refs_only"
+# The comment over the file's refs_only section. `seed --force` and `verify-allowlist --prune`
+# rewrite the file and put the section, under this comment, after the checkout's entries, so a
+# rewrite never strands the comment away from the entries it describes.
+REFS_ONLY_SECTION = (
+    "# refs_only entries: reviewed HISTORICAL versions that exist only on published refs, never in",
+    "# the checkout. Each one was read before it was listed and holds no secret; private content",
+    "# (such as the business-tier files) is never listed here. `verify-allowlist` holds each one",
+    "# to some published ref, run in a clone that mirrors origin's refs (boundary-refs.yml).",
+)
 EXPIRY_SEVERITY = 4
 # A rule the policy does not rank cannot happen (load_policy refuses), but an ad-hoc Policy
 # built in a test has no ranks at all, and an unranked rule must not sort BELOW a ranked one.
@@ -801,7 +810,9 @@ def blobs_at(specs: List[str]) -> Dict[str, bytes]:
     result = subprocess.run(
         ["git", "cat-file", "--batch"],
         cwd=ROOT,
-        input="\n".join(specs).encode() + b"\n",
+        # Paths come from git as bytes and are decoded with surrogateescape, so encode them back
+        # the same way: a non-UTF-8 path name must not stop the pass.
+        input="\n".join(specs).encode("utf-8", "surrogateescape") + b"\n",
         capture_output=True,
         check=True,
     )
@@ -880,7 +891,9 @@ def oids_at(specs: List[str]) -> Dict[str, str]:
     result = subprocess.run(
         ["git", "cat-file", "--batch-check=%(objectname) %(objecttype)"],
         cwd=ROOT,
-        input="\n".join(specs).encode() + b"\n",
+        # Paths come from git as bytes and are decoded with surrogateescape, so encode them back
+        # the same way: a non-UTF-8 path name must not stop the pass.
+        input="\n".join(specs).encode("utf-8", "surrogateescape") + b"\n",
         capture_output=True,
         check=True,
     )
@@ -1620,6 +1633,23 @@ def stale_entries(
     return stale
 
 
+def allowlist_lines(preamble: List[str], entries: Iterable[dict]) -> List[str]:
+    """The allowlist file's lines: the preamble's comments, the checkout's entries, then the
+    `refs_only` entries under REFS_ONLY_SECTION."""
+    entries = list(entries)
+
+    def rows(chosen: List[dict]) -> List[str]:
+        ordered = sorted(chosen, key=lambda e: (e.get("category", ""), e["path"]))
+        return [json.dumps(entry, sort_keys=True) for entry in ordered]
+
+    lines = [ln for ln in preamble if ln not in REFS_ONLY_SECTION]
+    lines += rows([e for e in entries if not is_refs_only(e)])
+    historical = [e for e in entries if is_refs_only(e)]
+    if historical:
+        lines += [*REFS_ONLY_SECTION, *rows(historical)]
+    return lines
+
+
 def cmd_seed(policy: Policy, force: bool) -> int:
     if ALLOWLIST_PATH.exists() and not force:
         print(
@@ -1652,7 +1682,8 @@ def cmd_seed(policy: Policy, force: bool) -> int:
             "reason": v.detail,
         }
         lines.append(json.dumps(entry, sort_keys=True))
-    lines.extend(json.dumps(entry, sort_keys=True) for entry in kept)
+    if kept:
+        lines += [*REFS_ONLY_SECTION, *(json.dumps(entry, sort_keys=True) for entry in kept)]
     ALLOWLIST_PATH.write_text("\n".join(lines) + "\n")
     print(
         f"seed: wrote {len(violations)} entries to {ALLOWLIST_PATH.relative_to(ROOT)}"
@@ -1672,24 +1703,58 @@ def is_shallow() -> bool:
     return out == "true"
 
 
-def historical_violations(policy: Policy, entries: Dict[Tuple[str, str], dict]) -> List[Violation]:
+def ref_set_looks_complete(refs: List[str]) -> bool:
+    """Whether these published refs look like origin's whole set: its branches AND GitHub's PR
+    heads, as boundary-refs.yml fetches them. A plain clone has no `refs/remotes/origin-pull/*`.
+    The test cannot see a ref that is here but not on origin (a local-only tag counts as
+    published), so only a clone that mirrors origin's refs judges `refs_only` entries for good."""
+    return any(ref.startswith("refs/remotes/origin/") for ref in refs) and any(
+        ref.startswith("refs/remotes/origin-pull/") for ref in refs
+    )
+
+
+def historical_violations(
+    policy: Policy, entries: Dict[Tuple[str, str], dict], refs: List[str]
+) -> Tuple[List[Violation], List[Tuple[str, str, str]]]:
     """The violations of the `refs_only` entries' versions, as found at the published refs: each
     entry's path is read at every ref (one `git cat-file` pass), and a version is judged when its
-    bytes are the pinned ones."""
-    refs = published_refs(DEFAULT_REF_GLOB)
+    bytes are the pinned ones.
+
+    Also returns the versions that trip a rule the entry does not name. A private path's
+    violation names its globs only (evaluate_content never runs the secret rules on it), so the
+    secret rules are run on it here: without that, a secret inside a listed private version would
+    be exempted unseen."""
     paths = sorted({path for path, _ in entries})
     oids = oids_at([f"{ref}:{path}" for ref in refs for path in paths])
     versions = sorted({(spec.split(":", 1)[1], oid) for spec, oid in oids.items()})
     loaded = blobs_at(sorted({oid for _, oid in versions}))
     found: List[Violation] = []
+    unnamed: List[Tuple[str, str, str]] = []
     for path, oid in versions:
         data = loaded.get(oid)
-        if data is None or (path, hashlib.sha256(data).hexdigest()) not in entries:
+        digest = hashlib.sha256(data).hexdigest() if data is not None else ""
+        entry = entries.get((path, digest))
+        if entry is None:
             continue
         violation = evaluate_content(policy, path, data)
-        if violation is not None:
-            found.append(violation)
-    return found
+        if violation is None:
+            continue
+        if violation.category == "private_path":
+            hits = scan_secret_bytes(
+                data, policy.secret_union, policy.secret_groups, policy.secret_patterns
+            )
+            if hits:
+                # The secret rules these bytes trip are live rules of this version as much as
+                # its globs: the entry has to name them (a reviewed placeholder, say).
+                globs = [(rule, 0, "") for rule in violation_rules(violation)]
+                violation = build_violation(policy, path, digest, "private_path", globs + hits)
+        found.append(violation)
+        extra = sorted(set(violation_rules(violation)) - set(entry.get("rules") or ()))
+        if extra:
+            unnamed.append(
+                (path, digest, f"rules the entry does not name: {','.join(extra)}")
+            )
+    return found, sorted(set(unnamed))
 
 
 def cmd_verify(policy: Policy, prune: bool) -> int:
@@ -1702,6 +1767,8 @@ def cmd_verify(policy: Policy, prune: bool) -> int:
     live_violations = evaluate(policy, paths={path for path, _ in checkout})
     drifted = stale_entries(checkout, live_violations)
     unchecked = 0
+    complete = False
+    unnamed: List[Tuple[str, str, str]] = []
     if historical and is_shallow():
         # A shallow clone (ci.yml's boundary job) holds no published history to look in.
         # boundary-refs.yml runs this mode on a full clone with every published ref.
@@ -1711,12 +1778,22 @@ def cmd_verify(policy: Policy, prune: bool) -> int:
             f"published history (boundary-refs.yml checks them)."
         )
     elif historical:
-        found = historical_violations(policy, historical)
+        refs = published_refs(DEFAULT_REF_GLOB)
+        if not refs:
+            # Fail closed, as the ref scan does: no published ref here means nothing was judged.
+            print(
+                f"verify: no refs matched {DEFAULT_REF_GLOB}, so {len(historical)} {REFS_ONLY} "
+                f"entries were not judged. Fetch origin's refs as boundary-refs.yml does."
+            )
+            return 1
+        complete = ref_set_looks_complete(refs)
+        found, unnamed = historical_violations(policy, historical, refs)
         live_violations += found
         drifted += [
             (path, digest, why.replace("no live violation", "at no published ref, or no violation"))
             for path, digest, why in stale_entries(historical, found)
         ]
+        drifted += unnamed
     if not drifted:
         print(
             f"verify: {len(checkout)} allowlist entries all pin live tracked files "
@@ -1742,9 +1819,15 @@ def cmd_verify(policy: Policy, prune: bool) -> int:
         pruned: Dict[Tuple[str, str], dict] = {}
         dropped = 0
         narrowed = 0
+        refused = 0
+        drifted_keys = {(path, digest) for path, digest, _ in drifted}
         for key, entry in allowlist.items():
-            if unchecked and is_refs_only(entry):
-                pruned[key] = entry  # not judged here, so not pruned here
+            if is_refs_only(entry) and (unchecked or not complete):
+                # Not judged here, or judged against a ref set that may lack the refs carrying
+                # it: a clone without origin's PR heads drifts every such entry, and pruning
+                # there would drop reviewed entries that CI's refs still need.
+                pruned[key] = entry
+                refused += not unchecked and key in drifted_keys
                 continue
             live = live_rules.get(key, set())
             keep = [rule for rule in entry.get("rules") or () if rule in live]
@@ -1757,16 +1840,17 @@ def cmd_verify(policy: Policy, prune: bool) -> int:
             pruned[key] = entry
         header = ALLOWLIST_PATH.read_text().splitlines()
         preamble = [ln for ln in header if ln.startswith("#") or not ln.strip()]
-        lines = preamble + [
-            json.dumps(entry, sort_keys=True)
-            for entry in sorted(
-                pruned.values(),
-                key=lambda e: (e.get("category", ""), e["path"]),
-            )
-        ]
+        lines = allowlist_lines(preamble, pruned.values())
         ALLOWLIST_PATH.write_text("\n".join(lines) + "\n")
         print(f"verify: dropped {dropped} entries, narrowed {narrowed}")
-        return 0
+        if refused:
+            print(
+                f"verify: kept {refused} {REFS_ONLY} entries unpruned: the published refs here do "
+                f"not look like origin's whole set (no refs/remotes/origin/* or no "
+                f"refs/remotes/origin-pull/*). Prune them in a clone that mirrors origin's refs."
+            )
+        # A secret rule an entry does not name is a finding, not a dead rule: no prune fixes it.
+        return 1 if refused or unnamed else 0
     return 1
 
 
