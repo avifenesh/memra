@@ -21108,6 +21108,9 @@ pub fn run(
             return;
         }
     };
+    // Load steps stamp the beat, so a respawn's reload reads as progressing to the systemd
+    // watchdog while it moves (memra#1331).
+    health.note_load_step();
     // MEMRA_FAST is read ONCE here (same handling as run_gen): the matmul path consults the env var
     // per-call, but logging it once keeps the worker's behavior explicit and stable for the run.
     let fast = std::env::var("MEMRA_FAST").as_deref() != Ok("0");
@@ -21179,6 +21182,7 @@ pub fn run(
         }
     }
     for (name, path, draft) in &models {
+        health.note_load_step();
         eprintln!("[worker] loading model {name:?} <- {path}");
         // DIRECTORY path = safetensors HF checkpoint or a manifest-backed memra repack/overlay;
         // file = GGUF. Repack tokenizers live in the manifest's source_dir.
@@ -21528,6 +21532,7 @@ pub fn run(
         );
         order.push(name.clone());
     }
+    health.note_load_step();
     // After every load: MEMRA_PARALLEL=auto writes MEMRA_PP_STAGES/MEMRA_PP_DEVICES inside the
     // load, and this first read freezes the placement-keyed spec-gate thresholds.
     bind_spec_k_device(&engine);
@@ -22462,6 +22467,7 @@ pub fn run(
     // the last thing the process does before serving (it leaves pools, graphs and workspaces
     // warm the way a first request would; the cost probe's 16 primed caches would not).
     run_spec_cost_calibration(&engine, &loaded, &dspark_drafts);
+    health.note_load_step();
     run_boot_calibration(
         &engine,
         &loaded,
@@ -41076,6 +41082,11 @@ pub fn spawn(
                         WORKER_RESPAWNS_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         h2.mark_dead(format!("worker thread panicked: {why}"));
                         eprintln!("[worker] PANIC in the GPU worker thread: {why}");
+                        if attempt <= worker_respawn_max() {
+                            // The reload to come keeps the systemd watchdog fed while it
+                            // moves (memra#1331).
+                            h2.mark_respawn_pending();
+                        }
                         if attempt > worker_respawn_max() {
                             eprintln!(
                                 "[worker] FATAL: worker unrecoverable after {} respawn \
@@ -55979,6 +55990,69 @@ mod tests {
     /// send because `health.mark_ready()` follows it; until then `WorkerHealth` is in
     /// PHASE_LOADING (`health::tests::loading_is_not_live_and_not_ready`). Anchored on the
     /// comment-stripped production text so a reorder is a red test, not a log archaeology.
+    /// memra#1331 wiring: a respawn marks itself pending after the fault latch and before the
+    /// backoff, and `run`'s load steps stamp progress (the engine, each model, the loop's end,
+    /// the cost calibration), so the systemd watchdog sees a reload that moves.
+    #[test]
+    fn a_respawn_reload_stamps_its_load_steps_for_the_watchdog() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+        let dead = prod
+            .find("h2.mark_dead(format!(\"worker thread panicked: {why}\"));")
+            .expect("the panic latch");
+        let pending = prod
+            .find("h2.mark_respawn_pending();")
+            .expect("the respawn mark");
+        let backoff = prod
+            .find("std::thread::sleep(backoff);")
+            .expect("the backoff");
+        assert!(
+            dead < pending && pending < backoff,
+            "{dead} {pending} {backoff}"
+        );
+        assert_eq!(prod.matches("mark_respawn_pending()").count(), 1);
+        let gate = &prod[dead..pending];
+        assert!(
+            gate.contains("if attempt <= worker_respawn_max() {"),
+            "{gate}"
+        );
+        let run_at = prod.find("pub fn run(").expect("worker::run exists");
+        let body = &prod[run_at..];
+        let body = &body[..body.find("health.mark_ready();").expect("run marks ready")];
+        let steps: Vec<usize> = body
+            .match_indices("health.note_load_step();")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(
+            steps.len(),
+            4,
+            "the engine, each model, the loop's end, the cost calibration"
+        );
+        let engine = body.find("Engine::new(device)").expect("engine");
+        let each = body
+            .find("for (name, path, draft) in &models {")
+            .expect("the model loop");
+        let after = body
+            .find("bind_spec_k_device(&engine);")
+            .expect("after the loads");
+        let cost = body
+            .find("run_spec_cost_calibration(&engine")
+            .expect("cost calibration");
+        let probe = body.find("run_boot_calibration(").expect("probe");
+        assert!(engine < steps[0] && steps[0] < each, "{steps:?}");
+        assert!(
+            each < steps[1] && steps[1] < each + 80,
+            "the loop's first statement"
+        );
+        assert!(steps[2] < after && after - steps[2] < 80, "{steps:?}");
+        assert!(cost < steps[3] && steps[3] < probe, "{steps:?}");
+    }
+
     #[test]
     fn readiness_follows_the_boot_calibration_probe() {
         let src = include_str!("worker.rs");

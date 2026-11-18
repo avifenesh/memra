@@ -265,6 +265,10 @@ pub struct WorkerHealth {
     generation: AtomicU32,
     /// longest observed scheduler-loop iteration (ms) — the live receipt for the threshold.
     tick_max_ms: AtomicU64,
+    /// A worker panicked and its in-process respawn is backing off or reloading (memra#1331).
+    /// Set after the fault latch, cleared by `mark_ready` (the reload landed) and `mark_dead`
+    /// (a fault with no respawn after it). Only the systemd watchdog reads it.
+    respawn_pending: AtomicBool,
     /// worker fault latch (panic / init failure). Set once, cleared only by a successful
     /// respawn. The verdict reads THIS, never the reason string.
     faulted: AtomicBool,
@@ -312,6 +316,7 @@ impl Default for WorkerHealth {
             phase: AtomicU8::new(PHASE_LOADING),
             generation: AtomicU32::new(0),
             tick_max_ms: AtomicU64::new(0),
+            respawn_pending: AtomicBool::new(false),
             faulted: AtomicBool::new(false),
             fault_reason: Mutex::new(String::new()),
             gpu_faulted: AtomicBool::new(false),
@@ -399,6 +404,8 @@ impl WorkerHealth {
         }
         self.faulted.store(false, Ordering::Release);
         self.set_phase(PHASE_IDLE);
+        // Last: until here the watchdog judges the reload, after it the serving worker.
+        self.respawn_pending.store(false, Ordering::Release);
     }
 
     /// The worker died (panic caught, init failed, or `run()` returned). LATCHES unhealthy:
@@ -408,8 +415,25 @@ impl WorkerHealth {
         if let Ok(mut r) = self.fault_reason.lock() {
             *r = reason;
         }
+        self.respawn_pending.store(false, Ordering::Release);
         self.faulted.store(true, Ordering::Release);
         self.phase.store(PHASE_DEAD, Ordering::Release);
+    }
+
+    /// The worker panicked and an in-process respawn follows (memra#1331): called after
+    /// `mark_dead`, before the backoff. Until the reload lands (`mark_ready`) the systemd
+    /// watchdog pings while the reload makes progress (`watchdog`); `/health` and `/readyz` stay
+    /// down as before. Stamps the beat, so the backoff starts with fresh progress.
+    pub fn mark_respawn_pending(&self) {
+        self.beat_ms.store(now_ms(), Ordering::Release);
+        self.respawn_pending.store(true, Ordering::Release);
+    }
+
+    /// One step of a model (re)load completed: the engine is up, a model is resident, a
+    /// calibration finished. Stamps the beat and nothing else, so the watchdog can tell a
+    /// respawn reload that moves from one that stopped.
+    pub fn note_load_step(&self) {
+        self.beat_ms.store(now_ms(), Ordering::Release);
     }
 
     /// The boot calibration probe is about to run (memra#524): weights resident, the one warmup
@@ -698,6 +722,31 @@ impl WorkerHealth {
                 }
             },
         }
+    }
+
+    /// The systemd watchdog's verdict (memra#1331): should this process be restarted whole?
+    /// Liveness, except during an in-process respawn. A respawn reloads every model and reruns
+    /// the calibration, which can take longer than the watchdog leaves (115 to 140 s for the
+    /// GB10 MTP serving against `WatchdogSec=180` pinged every 90 s), and withholding the ping
+    /// for the whole reload made systemd restart the unit under a respawn that was working. So
+    /// while a respawn is pending the verdict is the stall rule a busy worker has: alive while
+    /// the reload's last step (the beat its load steps stamp, or the prime odometer the
+    /// calibration advances) is no older than the stall bound. A reload that stops is withheld
+    /// after the same bound, and a GPU fault is withheld at once, as before.
+    pub fn watchdog(&self) -> Result<(), String> {
+        if self.respawn_pending.load(Ordering::Acquire) && !self.gpu_faulted.load(Ordering::Acquire)
+        {
+            let beat = self.beat_age_ms();
+            let age = self.forward_progress_age_from(beat);
+            if age > self.stall_ms {
+                return Err(format!(
+                    "worker respawn stalled: no load progress for {age} ms (threshold {} ms)",
+                    self.stall_ms
+                ));
+            }
+            return Ok(());
+        }
+        self.live()
     }
 
     /// READINESS (`/readyz`): should traffic be routed here? Everything liveness rejects, plus
@@ -1466,8 +1515,9 @@ pub fn sd_notify(msg: &str) {
     }
 }
 
-/// Spawn the systemd watchdog pinger: `WATCHDOG=1` only while the worker is LIVE, at half the
-/// interval systemd gave us (`WATCHDOG_USEC`). A wedged worker simply stops being live, the
+/// Spawn the systemd watchdog pinger: `WATCHDOG=1` only while the worker is LIVE, or while an
+/// in-process respawn's reload makes progress (`WorkerHealth::watchdog`, memra#1331), at half
+/// the interval systemd gave us (`WATCHDOG_USEC`). A wedged worker simply stops being live, the
 /// pings stop, and `Restart=` fires — which is the honest outcome, because CUDA errors are
 /// sticky per process and a fresh process is the only reliable recovery.
 pub fn spawn_sd_watchdog(health: SharedHealth) {
@@ -1491,7 +1541,7 @@ pub fn spawn_sd_watchdog(health: SharedHealth) {
         .spawn(move || {
             loop {
                 std::thread::sleep(every);
-                match health.live() {
+                match health.watchdog() {
                     Ok(()) => sd_notify("WATCHDOG=1"),
                     Err(why) => eprintln!("[sd-notify] withholding WATCHDOG=1: {why}"),
                 }
@@ -2018,6 +2068,92 @@ mod tests {
         h.mark_respawning();
         assert!(h.live().is_err(), "a respawn load answers nothing");
         assert_eq!(h.generation(), 1);
+    }
+
+    /// memra#1331: the systemd watchdog is fed through an in-process respawn while the reload
+    /// moves, and withheld when it stops for the stall bound, when no respawn follows a fault,
+    /// and at once on a GPU fault. `/health` stays down through the reload. On main the
+    /// watchdog read `live()`, which errs for the whole respawn: a 115 to 140 s reload against
+    /// `WatchdogSec=180` pinged every 90 s made systemd restart a respawn that was working.
+    #[test]
+    fn the_watchdog_is_fed_through_a_respawn_reload_while_it_moves() {
+        let clock = TestClock::start(1_000_000);
+        let h = WorkerHealth::with_stall_ms(1_000);
+        h.mark_ready();
+        assert!(h.watchdog().is_ok(), "a serving worker is fed");
+        h.mark_dead("worker thread panicked: test");
+        assert!(
+            h.watchdog().is_err(),
+            "a fault with no respawn after it is withheld"
+        );
+        h.mark_respawn_pending();
+        assert!(h.live().is_err(), "/health stays down through the backoff");
+        assert!(h.watchdog().is_ok(), "the backoff before the reload is fed");
+        h.mark_respawning();
+        assert!(h.live().is_err(), "/health stays down through the reload");
+        assert!(h.watchdog().is_ok(), "a reload that just started is fed");
+        clock.advance(5_000);
+        let why = h
+            .watchdog()
+            .expect_err("a reload with no step for the stall bound is withheld");
+        assert!(why.contains("respawn stalled"), "{why}");
+        h.note_load_step();
+        assert!(h.watchdog().is_ok(), "a load step feeds it again");
+        h.mark_warming();
+        assert!(h.watchdog().is_ok(), "the respawn's warmup is fed");
+        clock.advance(5_000);
+        assert!(h.watchdog().is_err(), "a warmup that stopped is withheld");
+        h.mark_ready();
+        assert!(
+            h.live().is_ok() && h.watchdog().is_ok(),
+            "the reload landed"
+        );
+        clock.advance(5_000);
+        assert!(
+            h.watchdog().is_ok(),
+            "an idle serving worker is fed at any beat age"
+        );
+        h.beat_busy();
+        clock.advance(5_000);
+        assert!(
+            h.watchdog().is_err(),
+            "after the reload, a busy worker's stall is liveness's again"
+        );
+
+        // The reload itself fails: the relay marks the worker dead and the process exits.
+        let h = WorkerHealth::with_stall_ms(60_000);
+        h.mark_ready();
+        h.mark_dead("worker thread panicked: test");
+        h.mark_respawn_pending();
+        h.mark_respawning();
+        assert!(h.watchdog().is_ok());
+        h.mark_dead("model load failed: test");
+        assert!(h.watchdog().is_err(), "a failed reload is withheld");
+
+        // A card fault during the reload is withheld at once, whatever the load does.
+        let h = WorkerHealth::with_stall_ms(60_000);
+        h.mark_ready();
+        h.mark_dead("worker thread panicked: test");
+        h.mark_respawn_pending();
+        h.mark_respawning();
+        h.mark_gpu_fault("Xid 79: test");
+        h.note_load_step();
+        assert!(
+            h.watchdog().is_err(),
+            "a GPU fault is withheld during a reload"
+        );
+    }
+
+    /// memra#1331 wiring: the pinger asks `watchdog`, not `live`.
+    #[test]
+    fn the_sd_watchdog_pings_on_the_watchdog_verdict() {
+        let src = include_str!("health.rs");
+        let prod = &src[..src.find("\nmod tests").expect("tests module")];
+        let at = prod.find("pub fn spawn_sd_watchdog(").expect("pinger");
+        let body = &prod[at..];
+        let body = &body[..body.find("\n}\n").expect("pinger end")];
+        assert_eq!(body.matches("health.watchdog()").count(), 1, "{body}");
+        assert_eq!(body.matches(".live()").count(), 0, "{body}");
     }
 
     /// memra#524 (day 25): the state order on the armed boot path is loading -> warming -> idle,
