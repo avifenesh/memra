@@ -835,14 +835,13 @@ class Tree:
         return result
 
     def symlinks_exact(self, paths):
-        result = {}
-        for row in git(self.repo, '--literal-pathspecs', 'ls-tree', '-z',
-                       self.ref, '--', *sorted(paths)).split(b'\0'):
-            if row:
-                metadata, path = row.split(b'\t', 1)
-                if metadata.startswith(b'120000 '):
-                    name = path.decode(); result[name] = self.read(name)
-        return result
+        # Only the names asked. One `git ls-tree` over a set that holds a directory and a path
+        # inside it lists the directory's other children too, so a symlink beside an asked path
+        # was reported, and the caller refused a tree the worktree variant accepts (memra#1298).
+        # The non-recursive listing never puts a path and its ancestor in one call and keeps
+        # only the names it was given.
+        modes = self.input_modes(*sorted(paths), recursive=False)
+        return {name: self.read(name) for name in sorted(modes) if modes[name] == '120000'}
 
 
 _INDEX_GITLINKS = {}

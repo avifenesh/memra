@@ -209,6 +209,27 @@ class SupportRecordDataInputs(unittest.TestCase):
         self.fixture.commit()
         self.assertEqual(self.plan(LOCK)['mode'], 'full')
 
+    def test_a_symlink_beside_an_asked_path_is_not_reported(self):
+        # memra#1298: the support census asks about each evidence path and its ancestors. One
+        # `git ls-tree` over a directory and a path inside it lists the directory's other
+        # children, so the Git tree reported a symlink nobody asked about, refused, and the plan
+        # fell back to full; the worktree variant reported nothing. The link sits beside the
+        # receipt directory, not inside it: a receipt directory is copied whole, and a symlink
+        # in one is refused by the copy census on its own.
+        beside = 'research/latest'
+        (self.repo / beside).symlink_to('support-fixture', target_is_directory=True)
+        self.fixture.commit()
+        asked = {GATE, 'research/support-fixture', 'research'}
+        for tree in (vp.Tree(self.repo, 'HEAD'), vp.LocalTree(self.repo)):
+            with self.subTest(tree=type(tree).__name__):
+                self.assertEqual(tree.symlinks_exact(asked), {})
+                self.assertEqual(data.resolve(tree)['required'], [GATE])
+                # The same symlink is still reported when it is one of the names asked.
+                self.assertEqual(tree.symlinks_exact(asked | {beside}), {beside: 'support-fixture'})
+        plan = self.plan(GATE)
+        self.assertEqual(plan['mode'], 'scoped')
+        self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['support-records'])
+
     def test_derived_required_missing_after_deletion_still_selects_contract(self):
         # Keep the copied parent present so this isolates required-file deletion.
         self.fixture.put('research/support-fixture/retained.txt', 'unrelated receipt content\n')
