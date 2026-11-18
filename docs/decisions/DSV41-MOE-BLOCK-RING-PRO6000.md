@@ -6,7 +6,7 @@ On an RTX PRO 6000 Blackwell (sm_120 with 188 SMs) the routed experts' small-row
 rows: every decode, verify and batched call of a four-rank split up to 64 rows) run
 `v41_moe_small_blk_kernel` instead of `v41_moe_small_kernel`. Both are the same program element for element,
 so the choice is speed only. Every other card keeps the six-stage warp ring with its rule unchanged (the RTX
-5090 and GB10 were not measured for this change). `memra_v41_moe_small_ring` lets a gate or a bench force
+5090 and GB10 were not measured for this change). `memra_v41_moe_small_ring` lets the kernel gate force
 either ring; nothing reads an environment variable.
 
 ## Why the warp ring was slow on this card
@@ -21,12 +21,14 @@ plan's tiles are 8 rows high though most hold one, and the block takes 60.7 KB (
 ## What was chosen
 
 Two stages of 2 KB of weights a warp (16 columns x 8 K blocks, or 8 columns x 16 K blocks while that launch is
-at most one wave of four blocks an SM), the activation rows staged once a block, a block barrier a stage. 21.7
-to 27.1 KB a block: four blocks an SM.
+at most one wave of four blocks an SM), the activation rows staged once a block, a block barrier a stage. At the
+shapes served calls take a block is 19.5 to 23.9 KB: four blocks an SM. The 8-column shape at 6 to 8 tile rows
+takes 27.1 KB (three an SM); served calls choose 8 columns only at 3 rows or fewer, so only the kernel gate runs it.
 
 ## The measurement
 
-Four RTX PRO 6000 Blackwell Max-Q (power limits 266-281 W), 40 layers, four ranks, device-push, 2026-11-18,
+Four RTX PRO 6000 Blackwell Max-Q (power limits 266-281 W, read at the gates step before the A/Bs and kept in no
+receipt), 40 layers, four ranks, device-push, 2026-11-18,
 nothing else on the box. A B B A B A A B, four runs an arm, steady calls past 0.5 s of load, ms; the range is
 B / A of the four adjacent pairs of runs. B is `4e80f97800`. The decode cell's token tape is the same in all
 eight runs of both A/Bs (`cd38e1b772b75d5a`).
@@ -51,7 +53,7 @@ prompt rows of memra#1324's trace; attribution, not timing), us:
 | 10 | 148.1 | 171.7 | 117.2 |
 
 On one card at the four-rank share's calls (random routings and pooled routings, 64 a cell), the block
-ring's w1 + w3, SwiGLU and w2 take 0.66-0.78 of the base kernels' time at 3 to 64 rows and 0.81-0.92 at
+ring's w1 + w3, SwiGLU and w2 take 0.66-0.77 of the base kernels' time at 3 to 64 rows and 0.81-0.92 at
 1 and 2 rows; the warp ring took 0.91-1.27.
 
 Byte identity: every probe variant against the warp ring on 64 routings a cell (0 differences);

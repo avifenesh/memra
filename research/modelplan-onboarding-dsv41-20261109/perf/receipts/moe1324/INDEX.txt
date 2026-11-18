@@ -42,3 +42,11 @@ Four cards (RTX PRO 6000 Blackwell Max-Q x4, 40 layers, four ranks), arm B = 4e8
   t1324b              the same traced block for B; kern-rows*.md and fam-rows*.md compare it with t1324's base
                       and main traces
 traces.sha256: the nsys reports of t1324 and t1324b (kept on the box, not in the repo).
+
+Not in any receipt here: the four-card steps' power limits and the box's CPU load at their start. moe_arm.sh printed
+both to its stdout, which went to logs outside the receipt dirs on the box (not copied before the box was taken
+back), so they are not recorded here. The PR and the record quote the power limits as read from the gates step's
+log (270 / 266 / 281 / 276 W at 00:51) and the load from the A/B logs' start lines; the A/B steps' own power-limit
+lines were not read. The cards' power draw, clocks and temperatures are in each step's lease.telemetry.csv.gz, and
+the probe runs' smi.csv carries the power limit on every line. moe_arm.sh now tees its output into the receipt dir
+(moe_arm.log, cards-start.csv).

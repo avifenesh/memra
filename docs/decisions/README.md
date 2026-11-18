@@ -95,6 +95,7 @@ line here.
 
 | Record | Date | Verdict | Decides |
 |---|---|---|---|
+| [DSV41-MOE-BLOCK-RING-PRO6000.md](DSV41-MOE-BLOCK-RING-PRO6000.md) | 2026-11-18 | Adopted | On the RTX PRO 6000 the deepseek-v4.1 route's grouped small-row expert body runs a two-stage block-staged ring (same bytes): four cards 0.87-0.96 of main's step time at 1 to 16 rows and 0.87-0.96 of the route before the CUTLASS lane; other cards keep the warp ring (memra#1324). |
 | [GB10-F8F4-GEMM-V2.md](GB10-F8F4-GEMM-V2.md) | 2026-11-06 | Amended | GB10 runs F8F4 prefill GEMMs of 2,048+ rows on the v2 tile; GB10-F8F4-GEMM-V3 replaced its mainloop on 2026-11-08. |
 | [GB10-F8F4-GEMM-V3.md](GB10-F8F4-GEMM-V3.md) | 2026-11-08 | Adopted | The v2 tile's mainloop is fed by TMA under mbarriers on GB10; `MEMRA_MMQ_F8F4_V3=0` is the rollback; discrete cards keep v1. |
 | [GB10-PRIME-ATTENTION-H2.md](GB10-PRIME-ATTENTION-H2.md) | 2026-11-06 | Superseded | GB10 primes quantized-KV attention with the two-head (h2) twin. Superseded on GB10 by GB10-PRIME-ATTENTION-H2P, which keeps h2's numbers. |
