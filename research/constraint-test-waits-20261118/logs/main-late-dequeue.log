@@ -1,0 +1,29 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 1m 29s
+     Running unittests src/lib.rs (~/.cache/memra-1335/target/release/deps/memra_server-2100d3fe685d2a2e)
+
+running 2 tests
+test constrained::tests::compiler_abandons_runaway_job_and_drains_next_job ... FAILED
+test constrained::tests::compiler_refuses_at_cap_then_rearms_after_runaways_finish ... FAILED
+
+failures:
+
+---- constrained::tests::compiler_abandons_runaway_job_and_drains_next_job stdout ----
+
+thread 'constrained::tests::compiler_abandons_runaway_job_and_drains_next_job' (2686289) panicked at crates/memra-server/src/constrained.rs:1213:14:
+runaway compile did not start: Timeout
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- constrained::tests::compiler_refuses_at_cap_then_rearms_after_runaways_finish stdout ----
+
+thread 'constrained::tests::compiler_refuses_at_cap_then_rearms_after_runaways_finish' (2686290) panicked at crates/memra-server/src/constrained.rs:1291:18:
+runaway compile did not start: Timeout
+
+
+failures:
+    constrained::tests::compiler_abandons_runaway_job_and_drains_next_job
+    constrained::tests::compiler_refuses_at_cap_then_rearms_after_runaways_finish
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 1288 filtered out; finished in 0.10s
+
+error: test failed, to rerun pass `-p memra-server --lib`
