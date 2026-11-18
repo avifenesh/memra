@@ -11015,7 +11015,7 @@ impl HybridModel {
             Some(g3) => g3,
             None => e.matmul_group(&[&fa.wq, &fa.wk, &fa.wv], h, t)?,
         };
-        let v = g3.pop().unwrap();
+        let mut v = g3.pop().unwrap();
         let mut k = g3.pop().unwrap();
         let qf = g3.pop().unwrap();
         let (mut q, gate) = if gated {
@@ -11056,6 +11056,14 @@ impl HybridModel {
             1.0,
         )?;
 
+        if crate::row_tap::kv_roundtrip() {
+            let mut kh = e.dtoh(&k)?;
+            let mut vh = e.dtoh(&v)?;
+            crate::row_tap::q8_0_roundtrip(&mut kh[..t * n_head_kv * head_dim]);
+            crate::row_tap::q5_1_roundtrip(&mut vh[..t * n_head_kv * head_dim]);
+            k = e.htod(&kh)?;
+            v = e.htod(&vh)?;
+        }
         // SDPA
         let mut attn = e.uninit(t * n_head * head_dim)?;
         // hand-written FlashAttention prefill (head_dim 256/128 stamped twins). MEMRA_NOFA

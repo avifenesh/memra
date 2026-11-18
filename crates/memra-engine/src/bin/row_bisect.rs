@@ -209,12 +209,17 @@ fn main() -> Res<()> {
         // SAFETY: single-threaded research binary; nothing else reads the environment here.
         unsafe { std::env::set_var(k, v) };
     }
+    // RB_PREFILL_KVQ=1: the prefill's attention sees K/V round-tripped through q8_0/q5_1.
+    let kvq = std::env::var("RB_PREFILL_KVQ").as_deref() == Ok("1");
+    println!("prefill K/V round-trip through q8_0/q5_1: {kvq}");
+    row_tap::set_kv_roundtrip(kvq);
     let mut pre: BTreeMap<usize, (Vec<Tap>, Vec<f32>)> = BTreeMap::new();
     for &r in &rows {
         row_tap::arm();
         let l = model.forward_last(&e, &prompt[..=r])?;
         pre.insert(r, (row_tap::take(), l));
     }
+    row_tap::set_kv_roundtrip(false);
     for (k, _) in &prefill_env {
         // SAFETY: as above.
         unsafe { std::env::remove_var(k) };
