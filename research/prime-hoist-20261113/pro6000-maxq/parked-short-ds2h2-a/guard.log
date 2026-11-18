@@ -1,0 +1,7 @@
+2026-11-18T02:19:21+02:00
+step parked-short-ds2h2-a mode emul24
+python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2h2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18322 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,50 --seed0 400
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 615.71.09, 97887 MiB, 2 MiB, 42, 30 %, 13.99 W, 276.00 W
+fixed ballast 72937 MiB held; card total 97887 MiB used 73498 MiB free 24389 MiB (target 24390)
+step rc=2 2026-11-18T02:21:28+02:00
+2 MiB, 62, 44 %

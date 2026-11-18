@@ -1,0 +1,14 @@
+p2000: 8527 bytes, last ids [17173, 12489, 55893]
+p4106: 17183 bytes, last ids [3045, 32709, 3045]
+p8200: 34417 bytes, last ids [95027, 220, 862]
+p16500: 69431 bytes, last ids [12489, 49813, 324]
+m7 run-gen 4106 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=2.022e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.879e-1  MATCH
+m7 run-gen 8200 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=1.758e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.779e-1  MATCH
+m7 run-spec 8200 rc=0 STEP-IDENTITY: 4 batched plain steps against one 4-column verify, 2 rounds after 211 primed tokens: 0 of 1986560 logits differ (max |diff| 0), 0 argmax differ - === SELF-CONSISTENCY PASS ===
+m7 dspark rc=0 == dspark_q38_gate: ALL EXACT | mean plain 29.3 tok/s | mean spec 197.4 tok/s | 384 tokens ==
+s2i run-gen 4106 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=2.022e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.879e-1  MATCH
+s2i run-gen 8200 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=1.758e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.779e-1  MATCH
+s2i run-spec 8200 rc=0 STEP-IDENTITY: 4 batched plain steps against one 4-column verify, 2 rounds after 211 primed tokens: 0 of 1986560 logits differ (max |diff| 0), 0 argmax differ - === SELF-CONSISTENCY PASS ===
+s2i dspark rc=0 == dspark_q38_gate: ALL EXACT | mean plain 29.3 tok/s | mean spec 193.2 tok/s | 384 tokens ==
+ARMS-EQUAL
+EXACT2-DONE rc=0 2026-11-18T02:10:07+02:00

@@ -1,0 +1,16 @@
+# memra#1321 review fold on one RTX PRO 6000 Max-Q card, third list (2026-11-18). LABEL<TAB>MODE<TAB>COMMAND; see maxq-cells.sh.
+# 1. Exactness m7 vs s2i on the roomy card (the workspace parks); it records each process's peak and writes the tight targets.
+exact-m7-s2i-roomy	roomy	PEAK_DIR="$KIT/peaks" PROMPTS_FROM="$KIT/out/exact-m7-s2i-emul24/prompts" bash "$KIT/exact-maxq.sh" m7 s2i
+# 2. The same items one at a time with the card held to the item's peak plus 768 MiB: the fold's prime calls end under the 2,048 MiB floor,
+#    so it drops the workspace between calls and at the prime's end ([prime-ws] lines in the s2i logs are the proof the path ran).
+exact-tight-dspark	emul:@~/.cache/memra-1321-maxq/peaks/dspark.tight	EXACT_ONLY=dspark PROMPTS_FROM="$KIT/out/exact-m7-s2i-emul24/prompts" bash "$KIT/exact-maxq.sh" m7 s2i
+exact-tight-rungen8200	emul:@~/.cache/memra-1321-maxq/peaks/rungen8200.tight	EXACT_ONLY=rungen8200 PROMPTS_FROM="$KIT/out/exact-m7-s2i-emul24/prompts" bash "$KIT/exact-maxq.sh" m7 s2i
+exact-tight-runspec8200	emul:@~/.cache/memra-1321-maxq/peaks/runspec8200.tight	EXACT_ONLY=runspec8200 PROMPTS_FROM="$KIT/out/exact-m7-s2i-emul24/prompts" bash "$KIT/exact-maxq.sh" m7 s2i
+exact-tight-rungen4106	emul:@~/.cache/memra-1321-maxq/peaks/rungen4106.tight	EXACT_ONLY=rungen4106 PROMPTS_FROM="$KIT/out/exact-m7-s2i-emul24/prompts" bash "$KIT/exact-maxq.sh" m7 s2i
+# 3. A short cold prime placed after an unplaced 5.7k prime (the later reclaim): boots a (0,0,50) and b (0,0,100), this card's own charge.
+parked-short-ds2h2-a	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2h2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,50 --seed0 400
+parked-short-dmain2-a	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-dmain2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,50 --seed0 400
+parked-short-ds2i-a	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2i-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,50 --seed0 400
+parked-short-ds2h2-b	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2h2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,100 --seed0 400
+parked-short-dmain2-b	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-dmain2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,100 --seed0 400
+parked-short-ds2i-b	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2i-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,100 --seed0 400

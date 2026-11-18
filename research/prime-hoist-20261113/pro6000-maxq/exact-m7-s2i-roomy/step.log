@@ -1,0 +1,22 @@
+c1ab4ef7c6b9d367ab21a26ffa1929b0c9baabe9583ffa9c349e61eaca81a8d7  p16500.ids
+db7f73646e7ca7e4e47509ac4369baf3e766ebae0333618aa68f3eeb0f6fa430  p2000.ids
+bc51fe82e76bec80550a1da13719a154635b85841675976173ed43b02efb7fc7  p4106.ids
+e0cb3c60db396b6e862cbbf916ac5fde3e47cdbb431f7413d74db95429b9acec  p8200.ids
+m7 run-gen 4106 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=2.022e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.879e-1  MATCH
+peak m7 rungen4106: about 18994 MiB (card used before the runs 2 MiB)
+m7 run-gen 8200 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=1.758e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.779e-1  MATCH
+peak m7 rungen8200: about 20978 MiB (card used before the runs 2 MiB)
+m7 run-spec 8200 rc=0 STEP-IDENTITY: 4 batched plain steps against one 4-column verify, 2 rounds after 211 primed tokens: 0 of 1986560 logits differ (max |diff| 0), 0 argmax differ - === SELF-CONSISTENCY PASS ===
+peak m7 runspec8200: about 19188 MiB (card used before the runs 2 MiB)
+m7 dspark rc=0 == dspark_q38_gate: ALL EXACT | mean plain 29.3 tok/s | mean spec 196.8 tok/s | 384 tokens ==
+peak m7 dspark: about 21672 MiB (card used before the runs 2 MiB)
+s2i run-gen 4106 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=2.022e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.879e-1  MATCH
+peak s2i rungen4106: about 19346 MiB (card used before the runs 2 MiB)
+s2i run-gen 8200 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=1.758e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.779e-1  MATCH
+peak s2i rungen8200: about 21266 MiB (card used before the runs 2 MiB)
+s2i run-spec 8200 rc=0 STEP-IDENTITY: 4 batched plain steps against one 4-column verify, 2 rounds after 211 primed tokens: 0 of 1986560 logits differ (max |diff| 0), 0 argmax differ - === SELF-CONSISTENCY PASS ===
+peak s2i runspec8200: about 19668 MiB (card used before the runs 2 MiB)
+s2i dspark rc=0 == dspark_q38_gate: ALL EXACT | mean plain 29.1 tok/s | mean spec 194.7 tok/s | 384 tokens ==
+peak s2i dspark: about 21640 MiB (card used before the runs 2 MiB)
+ARMS-EQUAL
+EXACT2-DONE rc=0 2026-11-18T02:25:09+02:00

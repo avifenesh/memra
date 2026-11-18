@@ -1,0 +1,31 @@
+# memra#1321 review fold on one RTX PRO 6000 Max-Q card (2026-11-18). LABEL<TAB>MODE<TAB>COMMAND; see maxq-cells.sh.
+# Arms: dmain2 = main 0db086f87a, ds2h2 = the change before the fold, ds2i = the fold (ring builds), as on the RTX 5090 Laptop.
+# emul24: the card is held to 24,390 MiB free before each boot. The server runs with MEMRA_DSPARK_PREFIX_RESTORE=0 (the laptop's default).
+# 1. Prompt 8,173 (seed 401 at 8k) as the first placed row of a boot at 100 MiB: one boot per step, the control arm first.
+first-8k-m100-ds2h2-r1	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2h2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 100 --seed0 400 --ring --words 5112
+first-8k-m100-dmain2-r1	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-dmain2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 100 --seed0 400 --ring --words 5112
+first-8k-m100-ds2i-r1	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2i-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 100 --seed0 400 --ring --words 5112
+# 2. Exactness, main (m7) against the fold (s2i), engine binaries on a card with 24 GB free: the paths under the floor.
+exact-m7-s2i-emul24	emul24	bash "$KIT/exact-maxq.sh" m7 s2i
+first-8k-m100-ds2h2-r2	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2h2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 100 --seed0 400 --ring --words 5112
+first-8k-m100-dmain2-r2	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-dmain2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 100 --seed0 400 --ring --words 5112
+first-8k-m100-ds2i-r2	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2i-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 100 --seed0 400 --ring --words 5112
+first-8k-m100-ds2h2-r3	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2h2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 100 --seed0 400 --ring --words 5112
+first-8k-m100-dmain2-r3	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-dmain2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 100 --seed0 400 --ring --words 5112
+first-8k-m100-ds2i-r3	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2i-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 100 --seed0 400 --ring --words 5112
+# 3. The same row at 150 MiB.
+first-8k-m150-ds2h2-r1	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2h2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 150 --seed0 400 --ring --words 5112
+first-8k-m150-dmain2-r1	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-dmain2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 150 --seed0 400 --ring --words 5112
+first-8k-m150-ds2i-r1	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2i-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 150 --seed0 400 --ring --words 5112
+first-8k-m150-ds2h2-r2	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2h2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 150 --seed0 400 --ring --words 5112
+first-8k-m150-dmain2-r2	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-dmain2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 150 --seed0 400 --ring --words 5112
+first-8k-m150-ds2i-r2	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2i-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --margins 150 --seed0 400 --ring --words 5112
+# 4. A short cold prime placed after an unplaced 5.7k prime (the later reclaim): boots a (0,0,50) and b (0,0,100).
+parked-short-ds2h2-a	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2h2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,50 --seed0 400
+parked-short-dmain2-a	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-dmain2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,50 --seed0 400
+parked-short-ds2i-a	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2i-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,50 --seed0 400
+parked-short-ds2h2-b	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2h2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,100 --seed0 400
+parked-short-dmain2-b	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-dmain2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,100 --seed0 400
+parked-short-ds2i-b	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2i-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,100 --seed0 400
+# 5. Exactness on the roomy card: the workspace parks (the path every device above the floor takes).
+exact-m7-s2i-roomy	roomy	bash "$KIT/exact-maxq.sh" m7 s2i
