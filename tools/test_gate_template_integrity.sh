@@ -26,7 +26,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GATE_SRC="${MEMRA_GATE_SRC_DIR:-$ROOT}"
-EXPECT_ASSERTIONS=51
+EXPECT_ASSERTIONS=52
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/gate-template-fixture-XXXXXX")
 VERDICTS="$WORK/verdicts.txt"
@@ -209,6 +209,71 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# THE RUN'S PORT (memra#1290). The emitted gate's DEFAULT_PORT is the same in every run of this
+# fixture, so two runs on one host booted their stub servers on one port: one of them bound it
+# and the other failed its control ("Address already in use") and everything after it. Local
+# full-inventory runs do run this step in parallel.
+#
+# Every runtime arm below therefore runs the gate on a port of this run's own, handed over
+# through the gate's per-gate override variable, which is the documented way to move a gate off
+# a busy port. The port comes from the reserved band, skipping the emitted default and every
+# hand-written gate's fixed port. A small holder claims it for this run by binding an
+# abstract-namespace unix socket named after the port: the name is host-wide in the same scope
+# as the port itself (the network namespace), needs no shared directory, and goes away with the
+# holder, which ends with this shell. A port a stranger is listening on is passed over.
+#
+# A pre-fix generator (v1) has no override variable: the fixture then keeps the emitted default,
+# as it always did.
+# ---------------------------------------------------------------------------
+RUN_PORT="$GATE_PORT"
+PORT_VAR=$(grep -oE '^PORT_ENV=MEMRA_[A-Z0-9_]+_B2GEO_PORT$' "$CODE" | head -1 | cut -d= -f2)
+if [ -n "$PORT_VAR" ]; then
+    python3 - "$GATE_PORT" "$REAL_PORTS" "$WORK/run-port.txt" "$$" <<'PY' &
+import os, socket, sys, time
+default, shell = int(sys.argv[1]), int(sys.argv[4])
+fixed = {int(line) for line in open(sys.argv[2]) if line.strip()}
+claimed = "none"
+for port in range(18300, 18400):
+    if port == default or port in fixed:
+        continue
+    hold = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        hold.bind("\0memra-gate-template-fixture-port-%d" % port)
+    except OSError:
+        hold.close()
+        continue  # another run of this fixture holds it
+    probe = socket.socket()
+    try:
+        probe.bind(("127.0.0.1", port))
+    except OSError:
+        hold.close()
+        continue  # a stranger is on it
+    finally:
+        probe.close()
+    claimed = str(port)
+    break
+with open(sys.argv[3] + ".tmp", "w") as out:
+    out.write(claimed + "\n")
+os.replace(sys.argv[3] + ".tmp", sys.argv[3])
+# Hold the claim while the fixture's shell lives; its cleanup also ends this process.
+while claimed != "none" and os.getppid() == shell:
+    time.sleep(1)
+PY
+    echo "$!" > "$WORK/port-holder.pid"
+    for _ in $(seq 100); do
+        [ -s "$WORK/run-port.txt" ] && break
+        sleep 0.1
+    done
+    RUN_PORT=$(cat "$WORK/run-port.txt" 2>/dev/null)
+    case "$RUN_PORT" in
+        ''|*[!0-9]*)
+            echo "BROKEN FIXTURE: no free port for this run in the reserved band (got '${RUN_PORT:-nothing}')." >&2
+            exit 3 ;;
+    esac
+fi
+echo "this run's port: $RUN_PORT (emitted default $GATE_PORT${PORT_VAR:+, override $PORT_VAR})"
+
+# ---------------------------------------------------------------------------
 # Stubs. The server is a real HTTP server so the gate's own curl/readyz/ownership path runs.
 # ---------------------------------------------------------------------------
 BINDIR="$WORK/bin"
@@ -302,6 +367,8 @@ GATE_ENV=(
     "MEMRA_GPU_LOCK=$WORK/gpu.lock"
     "MEMRA_GPU_LOCK_WAIT=5"
 )
+# The run's own port, through the gate's override variable (memra#1290).
+[ -n "$PORT_VAR" ] && GATE_ENV+=("$PORT_VAR=$RUN_PORT")
 run_gate() { # extra env..., then --  then gate args
     local envs=() out
     while [ $# -gt 0 ] && [ "$1" != "--" ]; do envs+=("$1"); shift; done
@@ -349,9 +416,18 @@ run_gate --
 assert_rc "CONTROL: a healthy stub server passes the gate" 0 "$LAST_RC"
 assert_grep "CONTROL: the PASS verdict names all 5 assertions" \
     'VERDICT: PASS \(5 assertions' "$LAST_OUT"
+# memra#1290: the control ran on this run's port, so a second run of this fixture on the host,
+# which holds another port, cannot be the listener that fails it. (A pre-fix generator has no
+# override, and its gate does not print its port: v1 counts the arm as non-decisive.)
+if [ -z "$PORT_VAR" ]; then
+    pass "CONTROL: the gate ran on the run's port (non-decisive: v1 has no override)"
+else
+    assert_grep "CONTROL: the gate ran on the run's port, not the emitted default" \
+        "port=$RUN_PORT \(override $PORT_VAR\)" "$LAST_OUT"
+fi
 
 # ---- port guard, against a real listener on the gate's own port ----
-python3 - "$GATE_PORT" "$WORK/listener.pid" <<'PY' &
+python3 - "$RUN_PORT" "$WORK/listener.pid" <<'PY' &
 import socket, sys, os, time
 s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.bind(("127.0.0.1", int(sys.argv[1]))); s.listen(1)
@@ -361,12 +437,12 @@ PY
 LISTENER=$!
 echo "$LISTENER" > "$WORK/listener.pid"
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-    ss -tln 2>/dev/null | grep -q "[:.]$GATE_PORT " && break
+    ss -tln 2>/dev/null | grep -q "[:.]$RUN_PORT " && break
     sleep 0.3
 done
 run_gate --
 assert_rc "an occupied port makes the gate REFUSE (not measure a stranger)" 1 "$LAST_RC"
-assert_grep "the refusal names the port" "port $GATE_PORT is already LISTENing" "$LAST_OUT"
+assert_grep "the refusal names the port" "port $RUN_PORT is already LISTENing" "$LAST_OUT"
 assert_grep "the refusal names the per-gate override variable" \
     'MEMRA_[A-Z0-9_]+_B2GEO_PORT=<free port>' "$LAST_OUT"
 assert_not_grep "the gate did not boot a server behind the refusal" \
@@ -388,13 +464,13 @@ rm -f "$WORK/listener.pid"
 # decisive evidence is therefore not the exit code — it is whether the gate ever printed a
 # comparison verdict at all.
 FOREIGN_LOG="$WORK/foreign.log"
-FIXTURE_STUB_ADDR="127.0.0.1:$GATE_PORT" \
-    MEMRA_ADDR="127.0.0.1:$GATE_PORT" \
+FIXTURE_STUB_ADDR="127.0.0.1:$RUN_PORT" \
+    MEMRA_ADDR="127.0.0.1:$RUN_PORT" \
     python3 "$SANDBOX/target/release/memra-server" > "$FOREIGN_LOG" 2>&1 &
 FOREIGN=$!
 echo "$FOREIGN" > "$WORK/foreign.pid"
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-    curl -sf "http://127.0.0.1:$GATE_PORT/readyz" >/dev/null 2>&1 && break
+    curl -sf "http://127.0.0.1:$RUN_PORT/readyz" >/dev/null 2>&1 && break
     sleep 0.3
 done
 run_gate --
@@ -414,7 +490,7 @@ if [ -f "$SANDBOX/tools/port-guard.sh" ]; then
     PG_OUT="$WORK/pg-blind.out"
     # Absolute $BASH: `PATH=/nonexistent bash ...` cannot find bash either, and 127 is not
     # the refusal under test.
-    ( cd "$SANDBOX" && PATH=/nonexistent "$BASH" tools/port-guard.sh check tf "$GATE_PORT" X ) \
+    ( cd "$SANDBOX" && PATH=/nonexistent "$BASH" tools/port-guard.sh check tf "$RUN_PORT" X ) \
         > "$PG_OUT" 2>&1
     PG_RC=$?
     assert_rc "no ss and no lsof is rc 2, not 'the port is free'" 2 "$PG_RC"
