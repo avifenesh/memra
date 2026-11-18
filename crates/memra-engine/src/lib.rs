@@ -4875,6 +4875,36 @@ impl Engine {
         }
     }
 
+    /// Bytes the device's graph memory pool holds reserved and no graph uses
+    /// (`RESERVED_MEM_CURRENT - USED_MEM_CURRENT`, memra#1351): what an alloc node of a new capture
+    /// takes without asking the driver for memory. A respawned worker finds the dead worker's
+    /// graph reserve here, since the pool keeps it until the context goes. 0 if either attribute
+    /// cannot be queried (never a false headroom claim, matching `pool_cached_bytes`).
+    pub fn device_graph_mem_cached(&self) -> usize {
+        use cudarc::driver::sys as cus;
+        let Ok(dev) = cudarc::driver::result::device::get(self.gpu.ctx.ordinal() as i32) else {
+            return 0;
+        };
+        let read = |attr: cus::CUgraphMem_attribute| {
+            let mut bytes: u64 = 0;
+            let rc = unsafe {
+                cus::cuDeviceGetGraphMemAttribute(
+                    dev,
+                    attr,
+                    &mut bytes as *mut u64 as *mut std::ffi::c_void,
+                )
+            };
+            (rc == cus::cudaError_enum::CUDA_SUCCESS).then_some(bytes as usize)
+        };
+        match (
+            read(cus::CUgraphMem_attribute::CU_GRAPH_MEM_ATTR_RESERVED_MEM_CURRENT),
+            read(cus::CUgraphMem_attribute::CU_GRAPH_MEM_ATTR_USED_MEM_CURRENT),
+        ) {
+            (Some(reserved), Some(used)) => reserved.saturating_sub(used),
+            _ => 0,
+        }
+    }
+
     /// Raw async-pool occupancy: (RESERVED_MEM_CURRENT, USED_MEM_CURRENT) in bytes. Reserved is
     /// what the pool has mapped from the driver; used is what is live inside it. Exposed for
     /// admission/VRAM diagnostics — the pair distinguishes "memory is parked in the pool and

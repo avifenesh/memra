@@ -578,6 +578,18 @@ pub(crate) fn draft_state_parked_delta(
     entry.saturating_sub(free_end.saturating_add(pool_cached_end))
 }
 
+/// What the draft-state measurement counts as free besides its free reading, at both ends
+/// (memra#1351): the default pool's cached blocks and the graph memory pool's reserved bytes no
+/// graph uses (`Engine::device_graph_mem_cached`). A capture's alloc nodes take memory from the
+/// graph pool, which keeps its reserve until the context goes. A respawned worker finds the dead
+/// worker's reserve there, and its captures reuse it without asking the driver for memory: with
+/// only the default pool counted, the GB10 MTP serving's respawned worker measured 1 MB where
+/// the first boot measured 34 MB, and admission charged every later speculative session 32 MB
+/// less (`research/respawn-watchdog-20261118/`, PR #1350's branch).
+pub(crate) fn draft_state_cached(pool_cached: usize, graph_cached: usize) -> usize {
+    pool_cached.saturating_add(graph_cached)
+}
+
 /// What the pre-capture guard does, from its readings (pure, table-tested).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CaptureHeadroomPlan {
@@ -12987,10 +12999,11 @@ impl HybridModel {
         let (cap_eff0, cap_meas0) = match e.ctx().mem_get_info() {
             Ok((raw, _)) => {
                 let cached = e.pool_cached_bytes();
+                let meas_cached = draft_state_cached(cached, e.device_graph_mem_cached());
                 (
                     Some(raw.saturating_add(cached)),
                     crate::unified_memory::delta_free_bytes(e.unified_memory(), raw)
-                        .map(|d| d.saturating_add(cached)),
+                        .map(|d| d.saturating_add(meas_cached)),
                 )
             }
             Err(_) => (None, None),
@@ -13587,7 +13600,11 @@ impl HybridModel {
             && let Ok((raw1, _)) = e.ctx().mem_get_info()
             && let Some(f1) = crate::unified_memory::delta_free_bytes(e.unified_memory(), raw1)
         {
-            let parked_delta = draft_state_parked_delta(meas0, f1, e.pool_cached_bytes());
+            let parked_delta = draft_state_parked_delta(
+                meas0,
+                f1,
+                draft_state_cached(e.pool_cached_bytes(), e.device_graph_mem_cached()),
+            );
             let (_res_high, used_high) = e.pool_high_water_reset();
             let peak_delta = used_high.saturating_sub(cap_used0);
             let observed = parked_delta.max(peak_delta);
@@ -18124,6 +18141,40 @@ mod capture_headroom_tests {
         );
     }
 
+    /// memra#1351: a capture whose alloc nodes reuse the graph memory pool's reserve takes no
+    /// memory from the driver, and the measurement sees it only through that reserve. The GB10
+    /// MTP serving's shape: a respawned worker inherits the dead worker's 32 MiB of graph reserve,
+    /// and its capture parks 34 MiB, 32 of them from that reserve and 2 from the driver. Counting
+    /// the reserve at both ends gives the first boot's 34 MiB; counting the default pool alone
+    /// gave the 2 MiB (1 MB in the receipts) that admission then charged per spec session.
+    #[test]
+    fn a_capture_from_the_graph_pools_reserve_is_measured() {
+        use super::{draft_state_cached, draft_state_parked_delta};
+        const MIB: usize = 1 << 20;
+        let free0 = 90_000 * MIB;
+        let pool_cached = 512 * MIB;
+        // The respawn: 32 MiB of graph reserve no graph uses at the entry, all of it taken by the
+        // capture, plus 2 MiB new from the driver.
+        let (graph0, graph1) = (32 * MIB, 0);
+        let free1 = free0 - 2 * MIB;
+        let entry = free0 + draft_state_cached(pool_cached, graph0);
+        let end = draft_state_cached(pool_cached, graph1);
+        assert_eq!(draft_state_parked_delta(entry, free1, end), 34 * MIB);
+        // The first boot: no reserve yet, the capture's 34 MiB come from the driver.
+        let entry = free0 + draft_state_cached(pool_cached, 0);
+        let end = draft_state_cached(pool_cached, 0);
+        assert_eq!(
+            draft_state_parked_delta(entry, free0 - 34 * MIB, end),
+            34 * MIB
+        );
+        // A reserve the capture leaves alone moves nothing.
+        let entry = free0 + draft_state_cached(pool_cached, 96 * MIB);
+        let end = draft_state_cached(pool_cached, 96 * MIB);
+        assert_eq!(draft_state_parked_delta(entry, free0, end), 0);
+        // An unreadable graph pool reads 0 at both ends: the default pool's measurement, as before.
+        assert_eq!(draft_state_cached(pool_cached, 0), pool_cached);
+    }
+
     /// memra#1307: the per-session draft-state measurement takes its delta on the delta reading at
     /// both ends (free memory plus what reclaim turns into free memory, on unified memory), and a
     /// failed capture still records the raw entry reading. The unified readings are two of the
@@ -18199,7 +18250,11 @@ mod capture_headroom_tests {
         assert!(
             entry.contains("Some(raw.saturating_add(cached)),")
                 && entry
-                    .contains("crate::unified_memory::delta_free_bytes(e.unified_memory(), raw)"),
+                    .contains("crate::unified_memory::delta_free_bytes(e.unified_memory(), raw)")
+                && entry.contains(
+                    "let meas_cached = draft_state_cached(cached, e.device_graph_mem_cached());"
+                )
+                && entry.contains(".map(|d| d.saturating_add(meas_cached)),"),
             "{entry}"
         );
         let at = src
@@ -18212,7 +18267,7 @@ mod capture_headroom_tests {
                     "&& let Some(f1) = crate::unified_memory::delta_free_bytes(e.unified_memory(), raw1)"
                 )
                 && !end.contains("is_unified(")
-                && end.contains("draft_state_parked_delta(meas0, f1, e.pool_cached_bytes())")
+                && end.contains("let parked_delta = draft_state_parked_delta(\n                meas0,\n                f1,\n                draft_state_cached(e.pool_cached_bytes(), e.device_graph_mem_cached()),\n")
                 && !end.contains("allocatable_mem_info"),
             "the draft-state bracket end does not take the delta reading: {end}"
         );
