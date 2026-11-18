@@ -26,7 +26,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GATE_SRC="${MEMRA_GATE_SRC_DIR:-$ROOT}"
-EXPECT_ASSERTIONS=52
+EXPECT_ASSERTIONS=54
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/gate-template-fixture-XXXXXX")
 VERDICTS="$WORK/verdicts.txt"
@@ -339,8 +339,9 @@ FIXTURE_WALK=0            omit the [tfmodel-batch] first B>1 line (breaks the su
 FIXTURE_NULL=1            answer with {"reasoning": null, "content": null} (the A-15 shape)
 FIXTURE_DIVERGE=1         answer differently on every request (breaks byte identity)
 FIXTURE_BATCH=0           the canary seam: same effect as FIXTURE_WALK=0
+FIXTURE_BOOT_DELAY=<s>    sleep that long before binding the port (a stub that is slow to boot)
 """
-import json, os, sys, threading
+import json, os, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 print("tfmodel: decode chunk cap 4", flush=True)
@@ -386,6 +387,7 @@ class H(BaseHTTPRequestHandler):
 
 addr = os.environ.get("MEMRA_ADDR", "127.0.0.1:0")
 host, _, port = addr.rpartition(":")
+time.sleep(float(os.environ.get("FIXTURE_BOOT_DELAY", "0")))
 ThreadingHTTPServer((host, int(port)), H).serve_forever()
 PY
 chmod +x "$SANDBOX/target/release/memra-server"
@@ -455,20 +457,66 @@ else
         "port=$RUN_PORT \(override $PORT_VAR\)" "$LAST_OUT"
 fi
 
+# ---- the capture is whole when the gate exits (memra#1341) ----
+# The gate writes its output through `exec > >(tee "$GLOG")`, and bash does not wait for a process
+# substitution. The gate used to exit with its last lines still on their way through tee, so an
+# arm that grepped the capture right after the exit could miss the refusal or the verdict of a
+# correct gate; under host load this fixture went red that way. Here tee is slow on purpose: it
+# holds everything it is given until end-of-file and one second more, far longer than the gate
+# needs to exit after its last line. Both exits are run, the plain one and the canary's. A gate
+# that waits for its tee has its last line in the capture when it returns; one that does not
+# returns an empty capture.
+SLOWTEE="$WORK/slowtee-bin"
+mkdir -p "$SLOWTEE"
+REAL_TEE=$(command -v tee)
+cat > "$SLOWTEE/tee" <<SH
+#!/usr/bin/env bash
+held=\$(mktemp "$WORK/slowtee-XXXXXX")
+cat > "\$held"
+sleep 1
+"$REAL_TEE" "\$@" < "\$held"
+SH
+chmod +x "$SLOWTEE/tee"
+run_gate "PATH=$SLOWTEE:$BINDIR:$PATH" --
+assert_grep "the capture holds the verdict when the gate exits (a slow tee)" \
+    'VERDICT: PASS \(5 assertions' "$LAST_OUT"
+run_gate "PATH=$SLOWTEE:$BINDIR:$PATH" -- --canary
+assert_grep "canary: the capture holds the canary's last line when the gate exits (a slow tee)" \
+    'CANARY OK \(the rollback seam broke the declared assertion' "$LAST_OUT"
+
+# A stranger on the run's port is waited for until it is there: the event, not a fixed time. The
+# two arms below used to give their stranger 3 s and then run the gate anyway; on a loaded host a
+# stranger that needed longer was not listening yet, the gate found the port free, and the arm
+# went red on a correct gate (memra#1341). The wait ends when the stranger is ready or has died;
+# a minute without either is a broken fixture, not a verdict about the gate.
+# FIXTURE_SLOW_STRANGER=<seconds> delays both strangers' bind, to show the wait holds.
+STRANGER_WAIT=600 # tenths of a second
+stranger_never_came() { # $1 what  $2 pid
+    if kill -0 "$2" 2>/dev/null; then
+        echo "BROKEN FIXTURE: $1 was not ready on port $RUN_PORT in $((STRANGER_WAIT / 10)) s; the arm cannot be tested." >&2
+    else
+        echo "BROKEN FIXTURE: $1 ended before it was ready on port $RUN_PORT; the arm cannot be tested." >&2
+    fi
+    exit 3
+}
+
 # ---- port guard, against a real listener on the gate's own port ----
-python3 - "$RUN_PORT" "$WORK/listener.pid" <<'PY' &
-import socket, sys, os, time
+python3 - "$RUN_PORT" "$WORK/listener.ready" "${FIXTURE_SLOW_STRANGER:-0}" <<'PY' &
+import socket, sys, time
+time.sleep(float(sys.argv[3]))
 s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.bind(("127.0.0.1", int(sys.argv[1]))); s.listen(1)
-open(sys.argv[2], "w").write(str(os.getpid()))
+open(sys.argv[2], "w").write("listening\n")
 time.sleep(120)
 PY
 LISTENER=$!
 echo "$LISTENER" > "$WORK/listener.pid"
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-    ss -tln 2>/dev/null | grep -q "[:.]$RUN_PORT " && break
-    sleep 0.3
+for _ in $(seq "$STRANGER_WAIT"); do
+    [ -e "$WORK/listener.ready" ] && break
+    kill -0 "$LISTENER" 2>/dev/null || break
+    sleep 0.1
 done
+[ -e "$WORK/listener.ready" ] || stranger_never_came "the listener" "$LISTENER"
 run_gate --
 assert_rc "an occupied port makes the gate REFUSE (not measure a stranger)" 1 "$LAST_RC"
 assert_grep "the refusal names the port" "port $RUN_PORT is already LISTENing" "$LAST_OUT"
@@ -478,7 +526,7 @@ assert_not_grep "the gate did not boot a server behind the refusal" \
     'lock released' "$LAST_OUT"
 kill "$LISTENER" 2>/dev/null
 wait "$LISTENER" 2>/dev/null
-rm -f "$WORK/listener.pid"
+rm -f "$WORK/listener.pid" "$WORK/listener.ready"
 
 # ---- THE RECEIPTED INCIDENT: a foreign responder that ANSWERS ----
 # tools/accept-gate.sh records it verbatim: "the rig's idle llama-server happened to hold 8181,
@@ -495,13 +543,20 @@ rm -f "$WORK/listener.pid"
 FOREIGN_LOG="$WORK/foreign.log"
 FIXTURE_STUB_ADDR="127.0.0.1:$RUN_PORT" \
     MEMRA_ADDR="127.0.0.1:$RUN_PORT" \
+    FIXTURE_BOOT_DELAY="${FIXTURE_SLOW_STRANGER:-0}" \
     python3 "$SANDBOX/target/release/memra-server" > "$FOREIGN_LOG" 2>&1 &
 FOREIGN=$!
 echo "$FOREIGN" > "$WORK/foreign.pid"
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-    curl -sf "http://127.0.0.1:$RUN_PORT/readyz" >/dev/null 2>&1 && break
-    sleep 0.3
+FOREIGN_READY=0
+for _ in $(seq "$STRANGER_WAIT"); do
+    if curl -sf --max-time 5 "http://127.0.0.1:$RUN_PORT/readyz" >/dev/null 2>&1; then
+        FOREIGN_READY=1
+        break
+    fi
+    kill -0 "$FOREIGN" 2>/dev/null || break
+    sleep 0.1
 done
+[ "$FOREIGN_READY" = 1 ] || stranger_never_came "the foreign responder" "$FOREIGN"
 run_gate --
 if [ "$LAST_RC" -ne 0 ] && grep -q 'already LISTENing' "$LAST_OUT"; then
     pass "a foreign responder that SPEAKS the API is refused before boot"
