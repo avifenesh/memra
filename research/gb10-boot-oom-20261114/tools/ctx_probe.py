@@ -22,8 +22,8 @@
                                           memra#1330: wait (at most ARM_WAIT_S) until MemFree is
                                           under ARM_MB, then K `recover` creations, each in a
                                           fresh process, GAP_MS apart, the arms of ARMS
-                                          (comma-separated) in turn starting at index ROUND
-                                          (so the first creation's arm alternates by round);
+                                          (comma-separated) in turn starting at index ARM_START
+                                          (env, default ROUND);
                                           exits 3 without a creation when the wait times out
 
 ARM is `fixed50` (a wait of 50 ms before every try after the first) or `ladder` (the shipped
@@ -379,6 +379,9 @@ def recover(arm, max_s=0.0):
 
 
 def run_round(out, rnd, k, gap_ms, arm_mb, arm_wait_s, arms):
+    # ARM_START (default: the round) is where the arms' turn starts; recovery_cell.sh passes the
+    # count of rounds that made creations, so the first creation's arm alternates over those.
+    start = int(os.environ.get("ARM_START", rnd))
     t_arm = time.monotonic()
     fired = "timeout"
     while time.monotonic() - t_arm < arm_wait_s:
@@ -393,7 +396,7 @@ def run_round(out, rnd, k, gap_ms, arm_mb, arm_wait_s, arms):
                                 "t": round(time.time(), 3), "host": host_now(), "armed": armed}) + "\n")
             sys.exit(3)
         for i in range(k):
-            arm = arms[(i + rnd) % len(arms)]
+            arm = arms[(i + start) % len(arms)]
             t_start = time.time()
             try:
                 p = subprocess.run([sys.executable, sys.argv[0], "recover", arm],
