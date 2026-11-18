@@ -205,6 +205,20 @@ VLOG="$TMP/verdicts.txt"
 trap 'rm -rf "$TMP"' INT TERM
 
 exec > >(tee "$GLOG") 2>&1
+TEE_PID=$!
+# THE LOG IS WHOLE WHEN THE GATE EXITS (memra#1341). tee runs in a process substitution, and
+# bash does not wait for one: the gate used to exit with its last lines still in the pipe, so a
+# caller that read its capture or $GLOG right after the exit could find the refusal or the
+# verdict missing. tools/test_gate_template_integrity.sh did exactly that and went red on a
+# correct gate under host load. On every exit of this shell, close its two ends of the pipe so
+# tee reads end-of-file, then wait for tee. The lock subshell below does not inherit an EXIT
+# trap, and every writer it starts on the pipe is waited for or killed before it returns, so tee
+# does reach end-of-file.
+drain_log() {
+  exec >&- 2>&-
+  wait "$TEE_PID" 2>/dev/null
+}
+trap drain_log EXIT
 echo "=== $GATE_NAME arch=$ARCHITECTURE tag=$TAG ts=$TS model=$MODEL ==="
 echo "=== draft=${DRAFT:-none} (source: $DRAFT_SOURCE) port=$PORT (override $PORT_ENV) ==="
 
