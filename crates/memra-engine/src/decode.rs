@@ -812,6 +812,7 @@ impl HybridModel {
         let tail_from = self.layers.len().saturating_sub(2);
         let mut pending: Option<(CudaSlice<f32>, CudaSlice<f32>)> = None;
         for (il, layer) in self.layers.iter().enumerate() {
+            crate::row_tap::set_layer(il);
             let anorm = layer.attn_norm.float_data();
             let fuse = std::env::var("MEMRA_NO_FUSE_NORMQ").is_err()
                 && self.mixer_in_q8_1_fast(e, &layer.mixer);
@@ -3676,6 +3677,17 @@ impl HybridModel {
                 key_dim,
                 eps,
             )?;
+            if crate::row_tap::armed() {
+                let gw = d_state * num_v;
+                crate::row_tap::emit(e, "la_qkv", usize::MAX, &qkv_mixed, 1, conv_dim)?;
+                crate::row_tap::emit(e, "la_z", usize::MAX, &z, 1, value_dim)?;
+                crate::row_tap::emit(e, "la_beta_raw", usize::MAX, &beta_raw, 1, num_v)?;
+                crate::row_tap::emit(e, "la_alpha", usize::MAX, &alpha, 1, num_v)?;
+                crate::row_tap::emit(e, "la_q", usize::MAX, &q_l2, 1, gw)?;
+                crate::row_tap::emit(e, "la_k", usize::MAX, &k_l2, 1, gw)?;
+                crate::row_tap::emit(e, "la_v", usize::MAX, &v_gd, 1, gw)?;
+                crate::row_tap::emit(e, "la_glog", usize::MAX, &g_log, 1, num_v)?;
+            }
             // gdn reads ssm_state, writes the spare ssm_state_alt (disjoint resident fields).
             let RecurLayer {
                 ssm_state,
@@ -3696,6 +3708,7 @@ impl HybridModel {
                 scale,
             )?;
         }
+        crate::row_tap::emit(e, "la_o", usize::MAX, &o, 1, d_state * num_v)?;
         if persistent_state {
             // CAPTURE-safe (graph replay): the canonical state every replay reads must stay at a
             // FIXED pointer (baked into the captured graph). Copy the freshly-written spare BACK

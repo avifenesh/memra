@@ -6084,6 +6084,7 @@ impl HybridModel {
             };
         }
         for (il, layer) in self.layers.iter().enumerate() {
+            crate::row_tap::set_layer(il);
             let mut h = e.uninit(t * n_embd)?;
             e.rms_norm(&x, layer.attn_norm.float_data(), &mut h, n_embd, t, eps)?;
             if probe {
@@ -12974,6 +12975,16 @@ impl HybridModel {
         let mut k_l2 = e.uninit(d_state * num_v * t)?;
         e.l2_norm(&k_g, &mut k_l2, d_state, num_v * t, eps)?;
         let v_gd = v_g;
+        if crate::row_tap::armed() {
+            let gw = d_state * num_v;
+            crate::row_tap::emit(e, "la_qkv", usize::MAX, &qkv_mixed, t, conv_dim)?;
+            crate::row_tap::emit(e, "la_z", usize::MAX, &z, t, value_dim)?;
+            crate::row_tap::emit(e, "la_beta_raw", usize::MAX, &beta_raw, t, num_v)?;
+            crate::row_tap::emit(e, "la_alpha", usize::MAX, &alpha, t, num_v)?;
+            crate::row_tap::emit(e, "la_q", usize::MAX, &q_l2, t, gw)?;
+            crate::row_tap::emit(e, "la_k", usize::MAX, &k_l2, t, gw)?;
+            crate::row_tap::emit(e, "la_v", usize::MAX, &v_gd, t, gw)?;
+        }
 
         // beta = sigmoid(beta_raw) ; g_log = a * softplus(alpha + dt). Both need [num_v, T] layout
         // (g[t*num_v + h]). beta_raw/alpha are [T, num_v] token-major == that layout already.
@@ -13010,6 +13021,8 @@ impl HybridModel {
             scale,
             num_v,
         )?;
+        crate::row_tap::emit(e, "la_glog", usize::MAX, &g_log, t, num_v)?;
+        crate::row_tap::emit(e, "la_o", usize::MAX, &o, t, d_state * num_v)?;
 
         // gated RMSNorm: dst = RMSNorm(o, ssm_norm[head_v]) * silu(z). o is [d_state, num_v, T];
         // rows of head_v=d_state, nrows = num_v*T. z must match row layout: z is [T, value_dim] token-major

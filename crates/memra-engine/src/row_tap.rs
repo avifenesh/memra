@@ -10,7 +10,7 @@
 
 use cudarc::driver::CudaSlice;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// One recorded stage: `name` (`mix`, `x1`, `ffn`), the layer index and the last row.
 #[derive(Debug, Clone)]
@@ -22,6 +22,14 @@ pub struct Tap {
 
 static ARMED: AtomicBool = AtomicBool::new(false);
 static TAPS: Mutex<Vec<Tap>> = Mutex::new(Vec::new());
+static LAYER: AtomicUsize = AtomicUsize::new(0);
+
+/// The trunk walk names the layer it is in, so a tap inside a mixer that does not know its own
+/// index (`emit` with `layer == usize::MAX`) records the right one.
+#[inline]
+pub(crate) fn set_layer(il: usize) {
+    LAYER.store(il, Ordering::Relaxed);
+}
 
 /// Start recording. Clears anything a previous arming left behind.
 pub fn arm() {
@@ -40,7 +48,8 @@ pub fn armed() -> bool {
     ARMED.load(Ordering::Relaxed)
 }
 
-/// Record the last of `rows` rows of width `width` held in `buf`.
+/// Record the last of `rows` rows of width `width` held in `buf`. `layer == usize::MAX` takes the
+/// layer the walk last named through [`set_layer`].
 pub(crate) fn emit(
     e: &crate::Engine,
     name: &'static str,
@@ -52,6 +61,11 @@ pub(crate) fn emit(
     if !armed() {
         return Ok(());
     }
+    let layer = if layer == usize::MAX {
+        LAYER.load(Ordering::Relaxed)
+    } else {
+        layer
+    };
     let view = e.view(buf, rows * width);
     let last = view.slice((rows - 1) * width..rows * width);
     let mut host = e.uninit(width)?;
