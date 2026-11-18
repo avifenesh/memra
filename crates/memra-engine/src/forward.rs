@@ -268,3 +268,88 @@ pub fn prime_gate_verdict(tokenwise: &[f32], batched: &[f32]) -> PrimeGateVerdic
         class,
     }
 }
+
+/// The verdict of run-gen's first gate (memra#1295): the batched prefill (`forward_last`)
+/// against the tokenwise decode loop at the last position.
+///
+/// Those are two numeric programs, like the two primes of gate #46 above, so a flip gets the
+/// same rule on the same calibrated bounds, with tokenwise as the reference: a flip whose
+/// tokenwise top-2 margin is within `MEMRA_PRIME_GATE_MARGIN`, under drift within
+/// `MEMRA_PRIME_GATE_MAXDIFF`, is the near-tie class (reported, generation goes on); any
+/// other flip is structured and fails the run. The returned `bp_*` fields are the prefill's.
+///
+/// An agreeing row is `Match` whatever its maxdiff. This gate never bounded the full-vocab
+/// drift of an agreeing row, and the ceiling was calibrated on the two primes, not on this
+/// pair, so applying it here would fail runs that pass today.
+///
+/// The gate used to label a flip by comparing the two programs' spread at the contending ids
+/// with the smaller of their margins, and then panicked on either label. That comparison
+/// cannot separate the classes: with prefill picking i and decode picking j, the shifts
+/// (p_i - d_i) and (d_j - p_j) sum to margin_p + margin_d, so the larger shift is at least
+/// the smaller margin for every flip.
+pub fn prefill_gate_verdict(tokenwise: &[f32], prefill: &[f32]) -> PrimeGateVerdict {
+    let mut v = prime_gate_verdict(tokenwise, prefill);
+    if v.tw_argmax == v.bp_argmax {
+        v.class = PrimeGateClass::Match;
+    }
+    v
+}
+
+#[cfg(test)]
+mod prefill_gate_tests {
+    use super::{PrimeGateClass, prefill_gate_verdict};
+
+    /// A flat row with the given (id, logit) entries raised above it.
+    fn row(n: usize, set: &[(usize, f32)]) -> Vec<f32> {
+        let mut l = vec![-4.0f32; n];
+        for &(i, v) in set {
+            l[i] = v;
+        }
+        l
+    }
+
+    /// memra#1295's 4,100-token row: both programs hold their token by less than 0.12.
+    #[test]
+    fn near_tie_flip_is_reported_not_fatal() {
+        let prefill = row(400, &[(343, 18.9964), (16, 18.9582)]);
+        let decode = row(400, &[(343, 18.9904), (16, 19.1077)]);
+        let v = prefill_gate_verdict(&decode, &prefill);
+        assert_eq!((v.bp_argmax, v.tw_argmax), (343, 16));
+        assert!((v.tw_margin - 0.1173).abs() < 1e-3, "{}", v.tw_margin);
+        assert_eq!(v.class, PrimeGateClass::NearTieFlip);
+    }
+
+    /// The tokenwise reference holds its token by 5 logits. The old inline label called this
+    /// row a near tie too (spread 6 against a smaller margin of 5).
+    #[test]
+    fn wide_margin_flip_fails() {
+        let prefill = row(64, &[(3, 10.0), (7, 4.0)]);
+        let decode = row(64, &[(3, 5.0), (7, 10.0)]);
+        let v = prefill_gate_verdict(&decode, &prefill);
+        assert_eq!((v.bp_argmax, v.tw_argmax), (3, 7));
+        assert_eq!(v.class, PrimeGateClass::Structured);
+    }
+
+    /// A flip on a small margin under drift past the ceiling is not the near-tie class.
+    #[test]
+    fn flip_under_out_of_bounds_drift_fails() {
+        let mut prefill = row(64, &[(3, 10.0), (7, 9.9)]);
+        let decode = row(64, &[(3, 9.9), (7, 10.0)]);
+        prefill[40] = 8.0; // 12 logits away from decode's -4.0
+        assert_eq!(
+            prefill_gate_verdict(&decode, &prefill).class,
+            PrimeGateClass::Structured
+        );
+    }
+
+    /// An agreeing row passes whatever its drift, as before the change.
+    #[test]
+    fn agreeing_row_matches_whatever_the_drift() {
+        let mut prefill = row(64, &[(3, 30.0)]);
+        let decode = row(64, &[(3, 30.5)]);
+        prefill[40] = 8.0;
+        let v = prefill_gate_verdict(&decode, &prefill);
+        assert!(v.maxdiff > 8.0);
+        assert_eq!(v.class, PrimeGateClass::Match);
+    }
+}

@@ -1233,15 +1233,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if am_p == am_d { "MATCH" } else { "MISMATCH" }
     );
     if am_p != am_d {
-        // near-tie vs real-gap diagnosis before the panic: both sides' view of both ids, PLUS
-        // the number that actually decides which of the two it is (lane/q8-argmax,
-        // research/q8-argmax-20260806/VERDICT.md). A flip is only meaningful if the config
-        // spread at the contending ids is large enough to reach across the top-2 margin:
-        // margin >= spread means a real numeric defect moved a logit further than the gap it
-        // crossed; margin << spread is the documented near-tie coin. `logit maxdiff` above is
-        // NOT that number — it is the max over a ~250k-wide vocab, dominated by tail noise,
-        // and it is routinely LARGER on runs this same gate calls MATCH (measured: MATCH at
-        // 1.165 beside MISMATCH at 0.466). Do not read it as severity.
+        // A flip between two numeric programs is judged, not asserted on (memra#1295): the
+        // batched prefill and the tokenwise loop are two legitimate arithmetics, so a near-tie
+        // position can flip between them (research/q8-argmax-20260806/VERDICT.md). The class
+        // comes from `forward::prefill_gate_verdict`, the batched-prime gate's rule below on
+        // the same bounds: a near tie is reported and generation goes on, anything else fails.
+        // `logit maxdiff` above is NOT the severity: it is the max over the whole vocab,
+        // dominated by tail noise, and it is routinely LARGER on runs this gate calls MATCH
+        // (measured: MATCH at 1.165 beside MISMATCH at 0.466). The lines below give both
+        // programs' view of the two contending ids. tools/argmax-margin-gate.sh judges every
+        // position of a prompt against the cell's calibrated floor.
+        use memra_engine::forward::PrimeGateClass;
+        let v = memra_engine::forward::prefill_gate_verdict(&dec_logits, &prefill);
         let margin_p = (prefill[am_p] - prefill[am_d]).abs();
         let margin_d = (dec_logits[am_d] - dec_logits[am_p]).abs();
         let spread = (prefill[am_p] - dec_logits[am_p])
@@ -1252,21 +1255,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             prefill[am_p], prefill[am_d], dec_logits[am_p], dec_logits[am_d]
         );
         eprintln!(
-            "[gate] top-2 margin: prefill {margin_p:.4} decode {margin_d:.4} | config spread at these ids {spread:.4} -> {}",
-            if spread > margin_p.min(margin_d) {
-                "NEAR-TIE class (the spread covers the margin; run tools/argmax-margin-gate.sh \
-                       to see this position's margin against the prompt's own distribution)"
-            } else {
-                "WIDE-MARGIN flip — the spread does NOT cover the margin; this is a real defect"
-            }
+            "[gate] margin between these ids: prefill {margin_p:.4} decode {margin_d:.4} | config spread at these ids {spread:.4}"
         );
+        if v.class == PrimeGateClass::NearTieFlip {
+            println!(
+                "prefill-vs-decode flip: FLIP-NEARTIE (tokenwise margin {:.4}, cross-config \
+                 drift class; generation continues from the batched prime)",
+                v.tw_margin
+            );
+        } else {
+            println!(
+                "prefill-vs-decode flip: MISMATCH-STRUCTURED (tokenwise margin {:.4})",
+                v.tw_margin
+            );
+            return Err(
+                "decode-step diverges from prefill at the last position on a wide margin or \
+                 under out-of-bounds drift (see the [gate] lines above): a cache, threading or \
+                 kernel bug, not the cross-config near-tie class"
+                    .into(),
+            );
+        }
     }
-    assert_eq!(
-        am_p, am_d,
-        "decode-step diverges from prefill at the last position (see the [gate] lines above for \
-         the near-tie-vs-defect diagnosis; a wide-margin flip means a cache/threading/kernel bug, \
-         a margin inside the config spread is the documented cross-config drift class)"
-    );
 
     // --- gap #46: the BATCHED-PRIME config (prime_cache — what actually seeds generation in
     //     generate/generate_with and serving) was never argmax-gated. forward_last and the

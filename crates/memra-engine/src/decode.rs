@@ -2607,6 +2607,17 @@ impl HybridModel {
         }
     }
 
+    /// The placement predicate of the device-counter doors in `generate` and `generate_with`
+    /// (memra#1295). Those doors walk the whole trunk on the caller's stream, which
+    /// `dc_walk_guards` refuses when the ppN door is open across devices with sharded weights.
+    /// There the cache is stage-owned (`pp::new_cache`), each layer's KV and `len_d` counter
+    /// live on its stage's device, and generation takes the host-logits loop, whose
+    /// `decode_step_h` is the stage-split arm that refusal names. The gemma door needs the
+    /// check here because it calls `gemma4_decode_step_dc` directly, past the guard.
+    fn dc_doors_placement_ok() -> bool {
+        crate::pp::refuse_unsplit_if_remote("generate", "decode_step_h").is_ok()
+    }
+
     /// The qwen dc door's plan predicate, shared by `generate` and `generate_with`. Every route
     /// inside that door (`decode_step_dc`, the `graph_decode_loop` capture) walks the serial
     /// residual over Full and Linear mixers only: step35 refuses in `full_attn_decode_dc_inner`,
@@ -2616,6 +2627,7 @@ impl HybridModel {
     fn qwen_dc_plan_ok(&self) -> bool {
         !self.uses_sliding_gated_moe_program()
             && self.hyper.is_none()
+            && Self::dc_doors_placement_ok()
             && self
                 .layers
                 .iter()
@@ -2633,7 +2645,8 @@ impl HybridModel {
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
         let _numeric = self.enter_numeric();
         let max_ctx = prompt.len() + max_new + 8;
-        let mut cache = Cache::new(e, &self.cfg, max_ctx)?;
+        // Stage-owned KV, for the reason given at `generate_with`'s allocation (memra#1295).
+        let mut cache = crate::pp::new_cache(e, &self.cfg, max_ctx)?;
         let mut last_logits = Vec::new();
         // prime: BATCHED cache prime (prime_cache — the prefill-throughput path, the measured #1
         // e2e gap: tokenwise primed at ~102/38 tok/s vs ~2000-5900 tok/s batched). Prompts below
@@ -2662,6 +2675,7 @@ impl HybridModel {
         );
         let mut out = Vec::with_capacity(max_new);
         if self.uses_gemma_program()
+            && Self::dc_doors_placement_ok()
             && let Some(embd_gpu) = self.embd_gpu_try(e)
         {
             // Graph serving probed FLAT vs this dc loop (2026-07-12, 1.7k N=2: 174.6/174.2 vs
@@ -2935,7 +2949,15 @@ impl HybridModel {
         let room = ctx_cap - prompt.len();
         let budget = params.max_new.min(room);
 
-        let mut cache = Cache::new(e, &self.cfg, ctx_cap)?;
+        // STAGE-OWNED KV (memra#1295): `pp::new_cache`, not `Cache::new`. With the ppN door open
+        // across devices the prime and the eager step below walk each stage's layers on that
+        // stage's engine, so each layer's KV has to live on its stage's device. A cache homed on
+        // the primary made the first stage-1 KV append fail the cross-device guard
+        // (`append_kv_quantized_rows.k_cache: tensor on dev0, stream on dev1`), so `run-gen` could
+        // not generate on a card pair after its gates passed (they allocate through
+        // `pp::new_cache`). With the door shut `new_cache` IS `Cache::new` (same branch, same
+        // allocations); with the door open on one device it adds the cache birth barrier.
+        let mut cache = crate::pp::new_cache(e, &self.cfg, ctx_cap)?;
         let mut last_logits = Vec::new();
         // BATCHED PRIME (2026-07-06 fix — generate_with was still tokenwise! run-gen's "decode"
         // numbers folded a ~40-100 tok/s tokenwise prime into the rate) + PRIME_NANOS contract.
@@ -2968,6 +2990,7 @@ impl HybridModel {
         // device counters, argmax on device — host sees 4B/token. Stream-identical to the
         // eager chain (DC-GATE). Penalties/temp fall through to the host-logits loop.
         if self.uses_gemma_program()
+            && Self::dc_doors_placement_ok()
             && sampler.is_greedy()
             && sampler.penalty_last_n() == 0
             && let Some(embd_gpu) = self.embd_gpu_try(e)
