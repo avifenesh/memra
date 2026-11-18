@@ -477,39 +477,6 @@ def ref_namespaces(refs: Iterable[str]) -> Dict[str, int]:
     return tally
 
 
-def secret_candidates_at_refs(
-    patterns: Dict[str, str], refs: List[str]
-) -> set[Tuple[str, str]]:
-    """Return (ref, path) pairs with a structural hit, from ONE multi-tree git grep.
-
-    git grep accepts many trees in a single invocation, which matters: one process over all
-    published refs costs seconds, while one process per ref per rule costs minutes and would
-    make this mode too slow to keep in CI — the way a gate rots.
-    """
-    if not patterns or not refs:
-        return set()
-    args = ["git", "grep", "--text", "-z", "-l", "-P"]
-    for source in patterns.values():
-        args.extend(("-e", source))
-    args.extend(refs)
-    result = subprocess.run(args, cwd=ROOT, capture_output=True)
-    if result.returncode == 1:
-        return set()
-    if result.returncode != 0:
-        message = result.stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"git grep ref prefilter failed: {message}")
-    pairs: set[Tuple[str, str]] = set()
-    for raw in result.stdout.split(b"\0"):
-        if not raw:
-            continue
-        # `<ref>:<path>`. A ref name cannot contain a colon, so the first one splits it.
-        entry = raw.decode("utf-8", errors="surrogateescape")
-        ref, _, path = entry.partition(":")
-        if path:
-            pairs.add((ref, path))
-    return pairs
-
-
 # ---------------------------------------------------------------------------------------------
 # GZIP BLOBS ARE JUDGED BY THEIR TEXT (memra#1198). Deflate bytes are close to random, so a short
 # name rule matches somewhere in a few hundred kilobytes of them by chance (15 of 90
@@ -842,49 +809,196 @@ def blobs_at(specs: List[str]) -> Dict[str, bytes]:
 SCANNED_BLOBS = "scanned_blobs"
 
 
-def tree_candidates_at_refs(
-    policy: Policy, refs: List[str]
-) -> Dict[Tuple[str, str], set[str]]:
-    """(path, oid) of every blob at `refs` that is gzip-named or under a private_paths glob, with
-    the refs that carry it: one `git ls-tree` per ref, keeping the oids, so a blob shared by many
-    refs is one entry.
+TreeEntry = Tuple[bytes, bytes, str]  # (mode, name, oid)
 
-    Private paths are matched here with `matches_glob`, as the checkout and commit scans match
-    them (memra#1356): the old per-ref `git ls-tree -- ':(glob)...'` was refused by git
-    ("pathspec magic not supported by this command: 'glob'"), and its silent `return []` meant
-    the ref scan never reported a private path. A failed `git ls-tree` now stops the scan.
 
-    The globs are one compiled regex (`glob_matcher`), and its verdict is memoized per path:
-    published refs repeat the same paths (41 refs listed 6.7 M entries on the rig), and an
-    fnmatch call per entry and glob took the pass from 4 s to 36 s there.
-    """
-    private_re = glob_matcher(policy.private_paths.values())
-    private: Dict[bytes, bool] = {}
-    groups: Dict[Tuple[str, str], set[str]] = {}
-    for ref in refs:
+def ref_trees(refs: List[str]) -> Tuple[Dict[str, List[str]], Dict[str, List[TreeEntry]]]:
+    """The root tree of each ref, and every tree object below them, each read once (memra#1357).
+
+    Published refs share almost all of their trees: on the rig 1,126 refs have 1,066 root trees
+    and 38,123 distinct tree objects holding 1.07 M entries, read in about 1 s, where one
+    `git ls-tree -r` per ref listed every ref's whole tree again (about 160 k entries each).
+    Returns (root tree oid -> the refs at it, tree oid -> its entries). Raises RuntimeError when a
+    ref has no tree or a tree object cannot be read."""
+    roots: Dict[str, List[str]] = {}
+    if not refs:
+        return roots, {}
+    result = subprocess.run(
+        ["git", "cat-file", "--batch-check=%(objectname) %(objecttype)"],
+        cwd=ROOT,
+        input="".join(f"{ref}^{{tree}}\n" for ref in refs).encode(),
+        capture_output=True,
+    )
+    lines = result.stdout.decode("utf-8", errors="replace").splitlines()
+    if result.returncode != 0 or len(lines) != len(refs):
+        message = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"git cat-file over the refs' trees failed: {message}")
+    for ref, line in zip(refs, lines):
+        parts = line.split()
+        if len(parts) != 2 or parts[1] != "tree":
+            raise RuntimeError(f"{ref} has no tree: {line}")
+        roots.setdefault(parts[0], []).append(ref)
+    trees: Dict[str, List[TreeEntry]] = {}
+    level = list(roots)
+    while level:
         result = subprocess.run(
-            ["git", "ls-tree", "-r", "-z", ref], cwd=ROOT, capture_output=True
+            ["git", "cat-file", "--batch"],
+            cwd=ROOT,
+            input="".join(f"{oid}\n" for oid in level).encode(),
+            capture_output=True,
         )
         if result.returncode != 0:
             message = result.stderr.decode("utf-8", errors="replace").strip()
-            raise RuntimeError(f"git ls-tree {ref} failed: {message}")
-        for entry in result.stdout.split(b"\0"):
-            meta, _, raw_path = entry.partition(b"\t")
-            if not raw_path:
-                continue
-            if not raw_path.endswith((b".gz", b".tgz")):
-                hit = private.get(raw_path)
-                if hit is None:
-                    path = raw_path.decode("utf-8", errors="surrogateescape")
-                    hit = private_re is not None and private_re.match(path) is not None
-                    private[raw_path] = hit
-                if not hit:
-                    continue
-            parts = meta.split()
-            if len(parts) != 3 or parts[1] != b"blob":
-                continue
+            raise RuntimeError(f"git cat-file over tree objects failed: {message}")
+        out = result.stdout
+        pos = 0
+        below: List[str] = []
+        for oid in level:
+            end = out.find(b"\n", pos)
+            header = out[pos:end].split()
+            if end < 0 or len(header) != 3 or header[1] != b"tree":
+                raise RuntimeError(f"tree {oid} cannot be read")
+            size = int(header[2])
+            body = out[end + 1 : end + 1 + size]
+            pos = end + 2 + size  # git terminates each body with a newline.
+            width = len(oid) // 2  # raw oid bytes: 20 for SHA-1, 32 for SHA-256
+            entries: List[TreeEntry] = []
+            at = 0
+            while at < len(body):
+                space = body.index(b" ", at)
+                nul = body.index(b"\0", space)
+                child = body[nul + 1 : nul + 1 + width].hex()
+                mode = body[at:space]
+                entries.append((mode, body[space + 1 : nul], child))
+                at = nul + 1 + width
+                if mode == b"40000" and child not in trees:
+                    trees[child] = []
+                    below.append(child)
+            trees[oid] = entries
+        level = below
+    return roots, trees
+
+
+def is_blob_mode(mode: bytes) -> bool:
+    """A file or a symlink: not a tree (40000) and not a submodule's commit (160000)."""
+    return mode not in (b"40000", b"160000")
+
+
+def secret_blobs(patterns: Dict[str, str], oids: Iterable[str]) -> set[str]:
+    """The blobs with a structural hit, from ONE `git grep` over every distinct blob (memra#1357).
+
+    The blobs go into one synthetic tree, each named by its oid, written to a scratch object
+    directory that borrows the repository's objects as an alternate, so the repository gains no
+    object. git grep then reads each blob once, where the multi-tree `git grep <ref>...` it
+    replaces read every ref's whole tree again: published refs share almost all of their blobs
+    (on the rig, 209 k distinct blobs, 12.2 GiB, grepped in about 145 s)."""
+    selected = sorted(set(oids))
+    if not patterns or not selected:
+        return set()
+    common = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    objects = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-path", "objects"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    with tempfile.TemporaryDirectory(prefix="public-boundary-objects-", dir=common) as scratch:
+        env = dict(
+            os.environ, GIT_OBJECT_DIRECTORY=scratch, GIT_ALTERNATE_OBJECT_DIRECTORIES=objects
+        )
+        made = subprocess.run(
+            ["git", "mktree", "-z", "--missing"],
+            cwd=ROOT,
+            env=env,
+            input=b"".join(
+                b"100644 blob %s\t%s\0" % (oid.encode(), oid.encode()) for oid in selected
+            ),
+            capture_output=True,
+        )
+        if made.returncode != 0:
+            message = made.stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"git mktree over the distinct blobs failed: {message}")
+        tree = made.stdout.decode().strip()
+        args = ["git", "grep", "--text", "-z", "-l", "-P"]
+        for source in patterns.values():
+            args.extend(("-e", source))
+        args.append(tree)
+        result = subprocess.run(args, cwd=ROOT, env=env, capture_output=True)
+    # git grep reports a blob it cannot read on stderr and still exits 0 or 1: an unread blob is
+    # a blob nobody judged, so any error line stops the scan.
+    unread = [
+        line for line in result.stderr.splitlines() if line.startswith((b"error:", b"fatal:"))
+    ]
+    if result.returncode not in (0, 1) or unread:
+        message = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"git grep ref prefilter failed: {message}")
+    if result.returncode == 1:
+        return set()
+    # `<tree>:<oid>`: the name after the colon is the blob's oid.
+    return {
+        raw.decode("ascii").partition(":")[2] for raw in result.stdout.split(b"\0") if raw
+    }
+
+
+def tree_candidates_at_refs(
+    policy: Policy, refs: List[str]
+) -> Dict[Tuple[str, str], set[str]]:
+    """(path, oid) of every candidate blob at `refs`, with the refs that carry it: the blobs with
+    a structural hit (`secret_blobs`), the gzip-named ones, and the ones under a private_paths
+    glob. Each tree object is read once (`ref_trees`) and each (tree, prefix) walked once, so a
+    blob shared by many refs is one entry.
+
+    Private paths are matched by one compiled regex (`glob_matcher`) that agrees with
+    `matches_glob`, the checkout and commit scans' matcher (memra#1356): the old per-ref
+    `git ls-tree -- ':(glob)...'` was refused by git ("pathspec magic not supported by this
+    command: 'glob'"), and its silent `return []` meant the ref scan never reported a private
+    path. The glob verdict is memoized per path, since refs repeat their paths. A ref whose tree
+    cannot be read stops the scan.
+    """
+    roots, trees = ref_trees(refs)
+    hits = secret_blobs(
+        policy.secret_sources,
+        (oid for entries in trees.values() for mode, _, oid in entries if is_blob_mode(mode)),
+    )
+    private_re = glob_matcher(policy.private_paths.values())
+    private: Dict[bytes, bool] = {}
+    walked: Dict[Tuple[str, bytes], List[Tuple[bytes, str]]] = {}
+
+    def candidate(raw_path: bytes, oid: str) -> bool:
+        if oid in hits or raw_path.endswith((b".gz", b".tgz")):
+            return True
+        hit = private.get(raw_path)
+        if hit is None:
             path = raw_path.decode("utf-8", errors="surrogateescape")
-            groups.setdefault((path, parts[2].decode("ascii")), set()).add(ref)
+            hit = private_re is not None and private_re.match(path) is not None
+            private[raw_path] = hit
+        return hit
+
+    def walk(tree: str, prefix: bytes) -> List[Tuple[bytes, str]]:
+        key = (tree, prefix)
+        found = walked.get(key)
+        if found is None:
+            found = []
+            for mode, name, oid in trees[tree]:
+                if mode == b"40000":
+                    found.extend(walk(oid, prefix + name + b"/"))
+                elif is_blob_mode(mode) and candidate(prefix + name, oid):
+                    found.append((prefix + name, oid))
+            walked[key] = found
+        return found
+
+    groups: Dict[Tuple[str, str], set[str]] = {}
+    for root, at in roots.items():
+        for raw_path, oid in walk(root, b""):
+            path = raw_path.decode("utf-8", errors="surrogateescape")
+            groups.setdefault((path, oid), set()).update(at)
     return groups
 
 
@@ -923,15 +1037,10 @@ def evaluate_refs(
     carrying each violation come from the groups, so a report can still say where to go and remove
     it. Gzip blobs are candidates by name at every ref, and by their magic when the raw
     prefilter already made them candidates (the checkout scan sniffs every file's magic). Private
-    paths are candidates by their glob at every ref (memra#1356).
+    paths are candidates by their glob at every ref (memra#1356). The raw prefilter greps each
+    distinct blob once, and the refs' trees are read once per tree object (memra#1357).
     """
     groups: Dict[Tuple[str, str], set[str]] = tree_candidates_at_refs(policy, refs)
-    ordered_pairs = sorted(secret_candidates_at_refs(policy.secret_sources, refs))
-    oids = oids_at([f"{ref}:{path}" for ref, path in ordered_pairs])
-    for ref, path in ordered_pairs:
-        oid = oids.get(f"{ref}:{path}")
-        if oid is not None:
-            groups.setdefault((path, oid), set()).add(ref)
 
     violations: Dict[Tuple[str, str], Violation] = {}
     carriers: Dict[Tuple[str, str], set[str]] = {}
