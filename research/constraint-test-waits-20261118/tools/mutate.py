@@ -8,6 +8,14 @@ Each arm edits the TEST code only, in place, and applies to main's file and to t
                 thread makes before it reads its queue: a supervisor that wakes late, after the
                 first job was submitted.
 
+Added for the review fold:
+
+  wrong-deadline       PRODUCTION code of constrained.rs: the supervisor waits
+                       CONSTRAINT_COMPILE_TIMEOUT for a worker instead of the job's own deadline.
+  worker-late-dequeue  FILE is crates/memra-server/src/worker.rs: the compile factory of
+                       slow_constraint_compile_times_out_while_normal_decode_and_heartbeat_progress
+                       sleeps 300 ms on its first call (late-dequeue for the third test).
+
 usage: mutate.py ARM FILE"""
 import sys
 from pathlib import Path
@@ -39,6 +47,21 @@ elif arm == "late-dequeue":
     once("            move || {\n                let calls = Arc::clone(&calls);\n                let release = Arc::clone(&release);\n",
          "            move || {\n            " + first
          + "                let calls = Arc::clone(&calls);\n                let release = Arc::clone(&release);\n")
+elif arm == "wrong-deadline":
+    once("                    let wait = job.deadline.saturating_duration_since(Instant::now());\n",
+         "                    let wait = CONSTRAINT_COMPILE_TIMEOUT;\n")
+elif arm == "worker-late-dequeue":
+    once("            crate::constrained::ConstraintCompiler::spawn_for_test(result_tx, move || {\n"
+         "                let started_tx = started_tx.clone();\n"
+         "                let release_rx = std::sync::Arc::clone(&release_rx);\n",
+         "            crate::constrained::ConstraintCompiler::spawn_for_test(result_tx, move || {\n"
+         "                static LATE: std::sync::atomic::AtomicBool =\n"
+         "                    std::sync::atomic::AtomicBool::new(true);\n"
+         "                if LATE.swap(false, std::sync::atomic::Ordering::SeqCst) {\n"
+         "                    std::thread::sleep(std::time::Duration::from_millis(300));\n"
+         "                }\n"
+         "                let started_tx = started_tx.clone();\n"
+         "                let release_rx = std::sync::Arc::clone(&release_rx);\n")
 else:
     raise SystemExit(f"unknown arm {arm}")
 path.write_text(text)

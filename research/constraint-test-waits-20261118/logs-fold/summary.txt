@@ -1,0 +1,18 @@
+start 2026-11-18T03:27:43+01:00 load 28.34 26.95 29.56
+50d49782285e378df837a00aaea1f476906ed4900e8fa4e0e438bde2d125b99f  ~/.cache/memra-1335/base-prefold.rs
+eed1d976538081d5d155ba7e14dc1ad29079da6e87cad547ec6713f09404ccfb  ~/.cache/memra-1335/base-fold.rs
+20ca6fdfe85ec4770a853e19394670f9d67054dabd15dcbad73f9f24d220ecdc  ~/.cache/memra-1335/base-wmain.rs
+e851eccbfa01cae59089f26b13ea16104b70c54fad8d83d213d3920f450868ba  ~/.cache/memra-1335/base-wfold.rs
+prefold-wrong-deadline rc=0 load 26.33 wall 226s test result: ok. 2 passed; 0 failed; abandons=ok refuses=ok ;
+fold-wrong-deadline rc=101 load 25.45 wall 95s test result: FAILED. 0 passed; 2 failed; refuses=FAILED abandons=FAILED ; thread 'constrained::tests::compiler_refuses_at_cap_then_rearms_after_runaways_finish' (1819746) panicked at crates/memra-server/src/constrained.rs:1200:9: runaway compile 0 was reported 4.000227543s after its deadline
+worker-main-late-dequeue rc=101 load 32.54 wall 89s test result: FAILED. 0 passed; 1 failed; constraint=FAILED ; thread 'worker::tests::slow_constraint_compile_times_out_while_normal_decode_and_heartbeat_progress' (1858216) panicked at crates/memra-server/src/worker.rs:41591:14: test compiler did not start: Timeout
+worker-fold-late-dequeue rc=0 load 30.24 wall 65s test result: ok. 1 passed; 0 failed; constraint=ok ;
+fold-late-start rc=0 load 23.17 wall 85s test result: ok. 2 passed; 0 failed; abandons=ok refuses=ok ;
+fold-late-dequeue rc=0 load 18.14 wall 76s test result: ok. 2 passed; 0 failed; abandons=ok refuses=ok ;
+fold-plain rc=0 load 15.83 wall 76s test result: ok. 3 passed; 0 failed; constraint=ok abandons=ok refuses=ok ;
+fold-plain repeated (three tests): 20 of 20 passed; load 11.73 19.59 25.49
+server lib suite rc=0 test result: ok. 1272 passed; 0 failed; 18 ignored; 0 measured; 0 filtered out; finished in 14.26s
+clippy (memra-server, all targets) rc=0 0 error lines
+fmt rc=0
+tree restored to the fold
+CHECKS-DONE 2026-11-18T03:42:27+01:00 load 11.79 17.65 24.29

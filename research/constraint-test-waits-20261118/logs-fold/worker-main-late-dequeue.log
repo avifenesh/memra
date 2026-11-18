@@ -1,0 +1,22 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 1m 19s
+     Running unittests src/lib.rs (~/.cache/memra-1335/target/release/deps/memra_server-2100d3fe685d2a2e)
+
+running 1 test
+test worker::tests::slow_constraint_compile_times_out_while_normal_decode_and_heartbeat_progress ... FAILED
+
+failures:
+
+---- worker::tests::slow_constraint_compile_times_out_while_normal_decode_and_heartbeat_progress stdout ----
+
+thread 'worker::tests::slow_constraint_compile_times_out_while_normal_decode_and_heartbeat_progress' (1858216) panicked at crates/memra-server/src/worker.rs:41591:14:
+test compiler did not start: Timeout
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    worker::tests::slow_constraint_compile_times_out_while_normal_decode_and_heartbeat_progress
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1289 filtered out; finished in 10.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`
