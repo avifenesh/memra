@@ -10896,17 +10896,21 @@ fn cuda_context_healthy(e: &Engine) -> bool {
 ///
 /// A respawn keeps the process and its primary contexts, and a device's graph memory pool keeps
 /// what it reserved until `cuDeviceGraphMemTrim` or the context goes: on GB10 the dead worker's
-/// 32 MiB were still there for the respawned worker (`research/respawn-drafthw-20261118/`, PR
-/// #1353's branch), whose captures then reused them. Its draft-state measurement read 1 MB
-/// where a first boot reads 34 MB, and `dspark_vg_debt_projection` would count the dead reserve
-/// as its own. This runs after the unwind dropped the dead engine: each device whose primary
-/// context is active (only those memra opened, so no context is created on a device it never
-/// used) is synchronized and trimmed, and the graph pool's reserved and used bytes are logged
-/// before and after. A trim frees only what no graph uses; what stays used is in the line.
+/// 32 MiB were still reserved for the respawned worker, whose captures then reused them, so its
+/// draft-state measurement read 1 MB where a first boot reads 34 MB, and
+/// `dspark_vg_debt_projection` would count the dead reserve as its own
+/// (`research/respawn-graph-trim-20261118/`). This runs after the unwind dropped the dead engine:
+/// each device whose primary context is active (only those memra opened, so no context is created
+/// on a device it never used) is synchronized and trimmed. The trim releases what no live
+/// allocation and no running or queued graph holds; the line's after reading is what those still
+/// hold (on GB10: reserved / used 32 / 32 MiB before the trim, 0 / 0 after).
 fn trim_graph_pools_for_respawn() {
     use cudarc::driver::sys;
-    let graph_mem = |device: sys::CUdevice| {
+    let graph_mem = |ordinal: i32| {
         let read = |attr| {
+            let Ok(device) = cudarc::driver::result::device::get(ordinal) else {
+                return "?".to_string();
+            };
             let mut bytes: u64 = 0;
             let rc = unsafe {
                 sys::cuDeviceGetGraphMemAttribute(
@@ -10927,32 +10931,85 @@ fn trim_graph_pools_for_respawn() {
         )
     };
     let mut count: i32 = 0;
-    if unsafe { sys::cuDeviceGetCount(&mut count) } != sys::CUresult::CUDA_SUCCESS {
+    let count = (unsafe { sys::cuDeviceGetCount(&mut count) } == sys::CUresult::CUDA_SUCCESS)
+        .then_some(count);
+    trim_graph_pools_with(
+        count,
+        |ordinal| {
+            let Ok(device) = cudarc::driver::result::device::get(ordinal) else {
+                return Err("no device handle".to_string());
+            };
+            let (mut flags, mut active) = (0u32, 0i32);
+            let rc = unsafe { sys::cuDevicePrimaryCtxGetState(device, &mut flags, &mut active) };
+            if rc != sys::CUresult::CUDA_SUCCESS {
+                return Err(format!("{rc:?}"));
+            }
+            Ok(active != 0)
+        },
+        |ordinal| {
+            let ctx = cudarc::driver::CudaContext::new(ordinal as usize)
+                .map_err(|error| format!("retain: {error}"))?;
+            ctx.synchronize()
+                .map_err(|error| format!("synchronize: {error}"))
+        },
+        graph_mem,
+        |ordinal| {
+            let Ok(device) = cudarc::driver::result::device::get(ordinal) else {
+                return "no device handle".to_string();
+            };
+            format!("{:?}", unsafe { sys::cuDeviceGraphMemTrim(device) })
+        },
+        |line| eprintln!("{line}"),
+    );
+}
+
+/// The respawn trim's loop over injected device operations, so its two safety rules are tested
+/// on CPU: a device whose primary context is not active (or cannot be read) never reaches
+/// `retain_sync`, which would create a context there, and a device whose synchronize fails (a
+/// sticky error) never reaches `trim`. Every skip says why in one line.
+fn trim_graph_pools_with(
+    count: Option<i32>,
+    active: impl Fn(i32) -> Result<bool, String>,
+    mut retain_sync: impl FnMut(i32) -> Result<(), String>,
+    read: impl Fn(i32) -> (String, String),
+    mut trim: impl FnMut(i32) -> String,
+    mut log: impl FnMut(String),
+) {
+    let Some(count) = count else {
+        log("[worker] respawn graph-pool trim: skipped, cuDeviceGetCount failed".to_string());
         return;
-    }
+    };
     for ordinal in 0..count {
-        let (mut flags, mut active) = (0u32, 0i32);
-        let rc = unsafe { sys::cuDevicePrimaryCtxGetState(ordinal, &mut flags, &mut active) };
-        if rc != sys::CUresult::CUDA_SUCCESS || active == 0 {
+        match active(ordinal) {
+            Ok(true) => {}
+            Ok(false) => {
+                log(format!(
+                    "[worker] respawn graph-pool trim dev{ordinal}: no active primary context, \
+                     skipped"
+                ));
+                continue;
+            }
+            Err(why) => {
+                log(format!(
+                    "[worker] respawn graph-pool trim dev{ordinal}: skipped, context state: {why}"
+                ));
+                continue;
+            }
+        }
+        if let Err(why) = retain_sync(ordinal) {
+            log(format!(
+                "[worker] respawn graph-pool trim dev{ordinal}: skipped, {why}"
+            ));
             continue;
         }
-        let Ok(ctx) = cudarc::driver::CudaContext::new(ordinal as usize) else {
-            continue;
-        };
-        if let Err(error) = ctx.synchronize() {
-            eprintln!(
-                "[worker] respawn graph-pool trim dev{ordinal}: skipped, synchronize: {error}"
-            );
-            continue;
-        }
-        let before = graph_mem(ordinal);
-        let rc = unsafe { sys::cuDeviceGraphMemTrim(ordinal) };
-        let after = graph_mem(ordinal);
-        eprintln!(
+        let before = read(ordinal);
+        let rc = trim(ordinal);
+        let after = read(ordinal);
+        log(format!(
             "[worker] respawn graph-pool trim dev{ordinal}: reserved {}MiB used {}MiB -> \
-             reserved {}MiB used {}MiB ({rc:?})",
+             reserved {}MiB used {}MiB ({rc})",
             before.0, before.1, after.0, after.1,
-        );
+        ));
     }
 }
 
@@ -56112,16 +56169,91 @@ mod tests {
         assert!(cost < steps[5] && steps[5] < probe, "{steps:?}");
     }
 
-    /// memra#524 (lane/spill-b-20260919 day 24): readiness waits for the one warmup the
-    /// server itself runs. In `run`, the boot calibration probe (one spec-shaped generation
-    /// through the real serving path: chunked prime, draft capture, sampled verify, pool
-    /// high-water read) precedes the `ready_tx` send, and `/readyz` cannot flip before that
-    /// send because `health.mark_ready()` follows it; until then `WorkerHealth` is in
-    /// PHASE_LOADING (`health::tests::loading_is_not_live_and_not_ready`). Anchored on the
-    /// comment-stripped production text so a reorder is a red test, not a log archaeology.
+    /// memra#1361 review: the respawn trim's two safety rules, over injected device operations.
+    /// A device without an active primary context never reaches retain (which would create a
+    /// context on a device memra never opened), a sticky synchronize error never reaches the
+    /// trim, and every skip says why.
+    #[test]
+    fn the_respawn_trim_retains_only_active_devices_and_never_trims_after_a_failed_sync() {
+        use std::cell::RefCell;
+        let retained = RefCell::new(Vec::new());
+        let trimmed = RefCell::new(Vec::new());
+        let lines = RefCell::new(Vec::new());
+        // dev0 active, dev1 never opened, dev2 active with a sticky error, dev3 state unreadable.
+        super::trim_graph_pools_with(
+            Some(4),
+            |ordinal| match ordinal {
+                0 | 2 => Ok(true),
+                1 => Ok(false),
+                _ => Err("CUDA_ERROR_INVALID_DEVICE".to_string()),
+            },
+            |ordinal| {
+                retained.borrow_mut().push(ordinal);
+                if ordinal == 2 {
+                    Err("synchronize: CUDA_ERROR_ILLEGAL_ADDRESS".to_string())
+                } else {
+                    Ok(())
+                }
+            },
+            |ordinal| {
+                if trimmed.borrow().contains(&ordinal) {
+                    ("0".to_string(), "0".to_string())
+                } else {
+                    ("32".to_string(), "32".to_string())
+                }
+            },
+            |ordinal| {
+                trimmed.borrow_mut().push(ordinal);
+                "CUDA_SUCCESS".to_string()
+            },
+            |line| lines.borrow_mut().push(line),
+        );
+        assert_eq!(
+            *retained.borrow(),
+            vec![0, 2],
+            "only active devices are retained"
+        );
+        assert_eq!(
+            *trimmed.borrow(),
+            vec![0],
+            "no trim after a failed synchronize"
+        );
+        let lines = lines.borrow();
+        assert_eq!(
+            lines[0],
+            "[worker] respawn graph-pool trim dev0: reserved 32MiB used 32MiB -> reserved 0MiB \
+             used 0MiB (CUDA_SUCCESS)"
+        );
+        assert!(
+            lines[1].contains("dev1: no active primary context, skipped"),
+            "{lines:?}"
+        );
+        assert!(
+            lines[2].contains("dev2: skipped, synchronize: CUDA_ERROR_ILLEGAL_ADDRESS"),
+            "{lines:?}"
+        );
+        assert!(
+            lines[3].contains("dev3: skipped, context state: CUDA_ERROR_INVALID_DEVICE"),
+            "{lines:?}"
+        );
+        // No device count: one line, nothing touched.
+        let mut skipped = Vec::new();
+        super::trim_graph_pools_with(
+            None,
+            |_| panic!("no device without a count"),
+            |_| panic!("no retain without a count"),
+            |_| panic!("no read without a count"),
+            |_| panic!("no trim without a count"),
+            |line| skipped.push(line),
+        );
+        assert_eq!(
+            skipped,
+            ["[worker] respawn graph-pool trim: skipped, cuDeviceGetCount failed"]
+        );
+    }
+
     /// memra#1361 wiring: a respawn trims the device graph pools after the backoff (the dead
-    /// engine dropped in the unwind) and before the reload, only on devices whose primary context
-    /// memra opened, synchronizing first.
+    /// engine dropped in the unwind) and before the reload, through the tested loop.
     #[test]
     fn a_respawn_trims_the_graph_pools_before_its_reload() {
         let src = include_str!("worker.rs");
@@ -56150,17 +56282,17 @@ mod tests {
             .find("fn trim_graph_pools_for_respawn() {")
             .expect("the trim fn");
         let body = &prod[at..at + prod[at..].find("\n}\n").expect("its end")];
-        let active = body
-            .find("cuDevicePrimaryCtxGetState(")
-            .expect("the active check");
-        let skip = body.find("active == 0").expect("unopened devices skipped");
-        let sync = body.find("ctx.synchronize()").expect("synchronize");
-        let cut = body
-            .find("cuDeviceGraphMemTrim(ordinal)")
-            .expect("the trim call");
-        assert!(active < skip && skip < sync && sync < cut, "{body}");
+        assert_eq!(body.matches("trim_graph_pools_with(").count(), 1, "{body}");
+        assert!(body.contains("Ok(active != 0)") && body.contains("cuDeviceGraphMemTrim(device)"));
     }
 
+    /// memra#524 (lane/spill-b-20260919 day 24): readiness waits for the one warmup the
+    /// server itself runs. In `run`, the boot calibration probe (one spec-shaped generation
+    /// through the real serving path: chunked prime, draft capture, sampled verify, pool
+    /// high-water read) precedes the `ready_tx` send, and `/readyz` cannot flip before that
+    /// send because `health.mark_ready()` follows it; until then `WorkerHealth` is in
+    /// PHASE_LOADING (`health::tests::loading_is_not_live_and_not_ready`). Anchored on the
+    /// comment-stripped production text so a reorder is a red test, not a log archaeology.
     #[test]
     fn readiness_follows_the_boot_calibration_probe() {
         let src = include_str!("worker.rs");

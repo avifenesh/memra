@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Runs ON unit-a inside this lane's lease (memra#1331 / PR #1350's own GB10 cell): arm ARM as
+# Runs ON unit-a inside a sparklock lease (written for memra#1331's PR #1350 GB10 cell, reused for
+# memra#1351, #1360 and #1361): arm ARM as
 # a systemd user service shaped like deploy/systemd/memra-server.service's supervision
 # (Type=notify, WatchdogSec=180, Restart=on-failure, TimeoutStartSec=600), in memra#1307's MTP
 # serving (262,144 context, 32 sessions), with MEMRA_PANIC_AFTER=1: the first completed request
 # panics the worker once, and the in-process respawn reloads. Read out: NRestarts and the main
 # PID before and after, /readyz reached again (and when), every `withholding WATCHDOG=1` line,
 # systemd's watchdog lines, and the respawn's reload steps with their durations (server lines
-# timestamped by tsrun.py). usage: unit-a-wd.sh ARM
+# timestamped by tsrun.py). usage: gb10-wd.sh ARM
 set -u
 ARM=$1
 R=$HOME/.cache/memra-1255/gb10
