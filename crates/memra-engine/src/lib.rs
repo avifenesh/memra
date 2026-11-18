@@ -2239,6 +2239,12 @@ pub struct GdnScanWs {
     pub t_cap: usize,
     pub h: usize,
     pub hk: usize,
+    /// This allocation's number, never 0 and never given twice (`GdnScanWs::next_generation`).
+    /// A prime graph holds the addresses of every plane; it replays only over the generation it
+    /// was captured over (`qwen_prime_graph::run`). An address cannot stand in for it: a
+    /// workspace freed and allocated again can get one plane back at its old address and the
+    /// others elsewhere.
+    pub generation: u64,
     pub gcum: CudaSlice<f32>,
     pub a: CudaSlice<f32>,
     pub p: CudaSlice<f32>,
@@ -2288,6 +2294,13 @@ impl GdnScanWs {
         ]
     }
 
+    /// The next workspace generation: 1, 2, 3, ... for the life of the process. 0 is left for
+    /// "no workspace".
+    pub(crate) fn next_generation() -> u64 {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn alloc(
         e: &Engine,
         t_cap: usize,
@@ -2300,6 +2313,7 @@ impl GdnScanWs {
             t_cap,
             h,
             hk,
+            generation: Self::next_generation(),
             gcum: e.uninit(gcum)?,
             a: e.uninit(a)?,
             p: e.uninit(p)?,
@@ -2367,20 +2381,22 @@ impl GdnScanWs {
 
 /// The free memory a device must hold for a prime's GDN scan workspace to stay mapped between
 /// prime calls and between primes (memra#1258): 2,048 MiB, the default of the floor admission
-/// keeps free in front of every request. It is the park's own floor. A server whose
-/// driver-headroom rung is on passes that rung's floor (`set_prime_gdn_ws_park_floor`); with the
-/// rung switched off (`MEMRA_ADMIT_DRIVER_HEADROOM_MB=0`), and in an engine binary, which has
-/// no admission, this default stands. So no configuration keeps the workspace mapped on a
-/// short device.
+/// keeps free in front of every request. It is the park's own floor and the least it can be. A
+/// server passes its driver-headroom rung's floor (`set_prime_gdn_ws_park_floor`), which raises
+/// the park floor when it is larger. A smaller one (`MEMRA_ADMIT_DRIVER_HEADROOM_MB=256`), the
+/// rung switched off (`=0`), and an engine binary, which has no admission, all leave this
+/// default. So no configuration keeps the workspace mapped on a short device.
 pub const PRIME_GDN_WS_PARK_FLOOR_DEFAULT: usize = 2048 << 20;
 
 static PRIME_GDN_WS_PARK_FLOOR: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(PRIME_GDN_WS_PARK_FLOOR_DEFAULT);
 
-/// Sets the park floor to the floor a server's admission keeps free in front of every request
+/// Hands the park floor the floor a server's admission keeps free in front of every request
 /// (`MEMRA_ADMIT_DRIVER_HEADROOM_MB`). Parked bytes count as cached, but only a prime or a trim
-/// can use them, so on a device under the floor they go back to the pool instead. Zero is the
-/// rung's rollback seam, not a park setting: it leaves `PRIME_GDN_WS_PARK_FLOOR_DEFAULT`.
+/// can use them, so on a device under the floor they go back to the pool instead. The rung's
+/// floor only raises the park floor (`prime_gdn_ws_park_floor_from`): the rung's setting sizes
+/// what admission hands back to the driver, and a small one or zero (its rollback seam) is not
+/// a wish to keep 504 MB mapped on a short device.
 pub fn set_prime_gdn_ws_park_floor(bytes: usize) {
     PRIME_GDN_WS_PARK_FLOOR.store(
         prime_gdn_ws_park_floor_from(bytes),
@@ -2388,19 +2404,70 @@ pub fn set_prime_gdn_ws_park_floor(bytes: usize) {
     );
 }
 
-/// The park floor for the floor a server passes: that floor, or the default for zero.
+/// The park floor for the floor a server passes: the larger of that floor and the default.
 pub(crate) fn prime_gdn_ws_park_floor_from(bytes: usize) -> usize {
-    if bytes == 0 {
-        PRIME_GDN_WS_PARK_FLOOR_DEFAULT
-    } else {
-        bytes
-    }
+    bytes.max(PRIME_GDN_WS_PARK_FLOOR_DEFAULT)
 }
 
 /// Whether a prime's GDN scan workspace may stay mapped: only while the device's free reading
 /// (`None`: unreadable) holds the floor.
 pub(crate) fn prime_gdn_ws_parks(free: Option<usize>, floor: usize) -> bool {
     free.is_some_and(|free| free >= floor)
+}
+
+/// The four points where a prime's GDN scan workspace is dropped (memra#1258), apart from the
+/// device: what each does to the slot that holds the workspace (the slab's, or the engine's
+/// parked one). They are generic so the tests run them on a value that counts its drops. The
+/// engine passes `GdnScanWs` and the park decision (`prime_gdn_ws_parks`); a workspace that is
+/// dropped is dropped inside the call, before it returns.
+pub(crate) mod prime_ws_slot {
+    /// The gap between two calls of one prime. `home` keeps its workspace only when the device
+    /// holds the floor (`parks`). Returns whether one was dropped.
+    pub(crate) fn between_calls<T>(home: &mut Option<T>, parks: bool) -> bool {
+        if parks {
+            return false;
+        }
+        home.take().is_some()
+    }
+
+    /// A prime's end. `ws` goes to `parked` when the device holds the floor, and is dropped
+    /// otherwise. Returns whether it was parked.
+    pub(crate) fn park<T>(parked: &mut Option<T>, ws: T, parks: bool) -> bool {
+        if parks {
+            *parked = Some(ws);
+        } else {
+            drop(ws);
+        }
+        parks
+    }
+
+    /// A later look at a parked workspace. It stays while the device holds the floor; otherwise
+    /// it leaves `parked` and is dropped. Returns `read` of the one dropped.
+    pub(crate) fn reclaim<T, R>(
+        parked: &mut Option<T>,
+        parks: bool,
+        read: impl FnOnce(&T) -> R,
+    ) -> Option<R> {
+        if parks {
+            return None;
+        }
+        let ws = parked.take()?;
+        let was = read(&ws);
+        drop(ws);
+        Some(was)
+    }
+
+    /// A call that needs another workspace than the slot's (wider, or none yet). The old one is
+    /// dropped before `alloc` runs, so the two never hold memory together; a failed `alloc`
+    /// leaves the slot empty.
+    pub(crate) fn replace<T, E>(
+        slot: &mut Option<T>,
+        alloc: impl FnOnce() -> Result<T, E>,
+    ) -> Result<(), E> {
+        *slot = None;
+        *slot = Some(alloc()?);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -2446,15 +2513,119 @@ mod gdn_scan_ws_tests {
         assert!(!super::prime_gdn_ws_parks(Some(floor - 1), floor));
         assert!(!super::prime_gdn_ws_parks(Some(94 << 20), floor));
         assert!(!super::prime_gdn_ws_parks(None, floor));
-        // The park's floor is its own: the rung's rollback seam (0) leaves the default, and a
-        // floor the server passes is taken as it is.
+        // The park's floor is its own and the least it can be: the rung's rollback seam (0) and
+        // a smaller floor from the server leave the default, a larger one raises it.
         assert_eq!(super::PRIME_GDN_WS_PARK_FLOOR_DEFAULT, floor);
         assert_eq!(super::prime_gdn_ws_park_floor_from(0), floor);
-        assert_eq!(super::prime_gdn_ws_park_floor_from(512 << 20), 512 << 20);
+        assert_eq!(super::prime_gdn_ws_park_floor_from(256 << 20), floor);
+        assert_eq!(super::prime_gdn_ws_park_floor_from(floor - 1), floor);
+        assert_eq!(super::prime_gdn_ws_park_floor_from(4096 << 20), 4096 << 20);
         assert!(!super::prime_gdn_ws_parks(
             Some(floor - 1),
             super::prime_gdn_ws_park_floor_from(0)
         ));
+        // A server run with MEMRA_ADMIT_DRIVER_HEADROOM_MB=256: a device with 1 GiB free is under
+        // the park floor all the same. Taken as it was, that setting kept the workspace mapped
+        // there, across the gap between two calls too.
+        assert!(!super::prime_gdn_ws_parks(
+            Some(1024 << 20),
+            super::prime_gdn_ws_park_floor_from(256 << 20)
+        ));
+    }
+
+    /// A stand-in workspace that counts the ones alive.
+    struct CountedWs<'a> {
+        live: &'a std::cell::Cell<usize>,
+        bytes: usize,
+    }
+
+    impl<'a> CountedWs<'a> {
+        fn new(live: &'a std::cell::Cell<usize>, bytes: usize) -> Self {
+            live.set(live.get() + 1);
+            Self { live, bytes }
+        }
+    }
+
+    impl Drop for CountedWs<'_> {
+        fn drop(&mut self) {
+            self.live.set(self.live.get() - 1);
+        }
+    }
+
+    /// memra#1258: what each of the four drop points does to the workspace, on a stand-in that
+    /// counts the ones alive. Under the floor the workspace is gone when the call returns, not
+    /// only reported gone; above it the slot keeps the same one.
+    #[test]
+    fn a_workspace_under_the_floor_is_dropped_not_only_reported() {
+        use super::prime_ws_slot as slot;
+        let live = std::cell::Cell::new(0usize);
+        let ws = |bytes| CountedWs::new(&live, bytes);
+
+        // The gap between two calls.
+        let mut home = Some(ws(504));
+        assert!(!slot::between_calls(&mut home, true));
+        assert!(
+            home.is_some() && live.get() == 1,
+            "above the floor it stays"
+        );
+        assert!(slot::between_calls(&mut home, false));
+        assert!(home.is_none(), "under the floor the slab keeps nothing");
+        assert_eq!(live.get(), 0, "and the workspace is freed");
+        assert!(!slot::between_calls(&mut home, false), "nothing to drop");
+
+        // The prime's end.
+        let mut parked = None;
+        assert!(slot::park(&mut parked, ws(504), true));
+        assert!(
+            parked.is_some() && live.get() == 1,
+            "above the floor it parks"
+        );
+        parked = None;
+        assert_eq!(live.get(), 0);
+        assert!(!slot::park(&mut parked, ws(504), false));
+        assert!(parked.is_none(), "under the floor nothing is parked");
+        assert_eq!(live.get(), 0, "and the workspace is freed");
+
+        // The later look at a parked workspace.
+        let mut parked = Some(ws(504));
+        assert_eq!(slot::reclaim(&mut parked, true, |w| w.bytes), None);
+        assert!(
+            parked.is_some() && live.get() == 1,
+            "above the floor it stays"
+        );
+        assert_eq!(slot::reclaim(&mut parked, false, |w| w.bytes), Some(504));
+        assert!(parked.is_none(), "under the floor it leaves the park");
+        assert_eq!(live.get(), 0, "and is freed before its bytes are reported");
+        assert_eq!(slot::reclaim(&mut parked, false, |w| w.bytes), None);
+
+        // A wider call's new workspace: the old one is freed before the new one is allocated.
+        let mut home = Some(ws(504));
+        let alive_at_alloc = std::cell::Cell::new(usize::MAX);
+        let made: Result<(), ()> = slot::replace(&mut home, || {
+            alive_at_alloc.set(live.get());
+            Ok(ws(1008))
+        });
+        assert!(made.is_ok());
+        assert_eq!(
+            alive_at_alloc.get(),
+            0,
+            "the two never hold memory together"
+        );
+        assert_eq!(home.as_ref().map(|w| w.bytes), Some(1008));
+        assert_eq!(live.get(), 1);
+        // A failed allocation leaves the slot empty, not the stale workspace.
+        let failed: Result<(), &str> = slot::replace(&mut home, || Err("out of memory"));
+        assert_eq!(failed, Err("out of memory"));
+        assert!(home.is_none() && live.get() == 0);
+    }
+
+    /// memra#1258: a workspace's generation names one allocation: never 0 (a prime graph's "no
+    /// workspace"), never the same twice.
+    #[test]
+    fn a_workspace_generation_is_never_reused() {
+        let first = GdnScanWs::next_generation();
+        let second = GdnScanWs::next_generation();
+        assert!(first > 0 && second > first, "{first} {second}");
     }
 
     /// memra#1258: a scan takes the workspace only when the planes hold its rows and heads, at
@@ -30071,14 +30242,16 @@ impl Engine {
             return;
         };
         let (free, floor) = self.prime_gdn_ws_floor_reading();
-        if !prime_gdn_ws_parks(free, floor) {
-            self.prime_gdn_ws_note("not parked", free, floor, ws.bytes());
-            return;
-        }
-        *self
+        let bytes = ws.bytes();
+        let mut slot = self
             .prime_gdn_ws_parked
             .lock()
-            .unwrap_or_else(|p| p.into_inner()) = Some(ws);
+            .unwrap_or_else(|p| p.into_inner());
+        let parked = prime_ws_slot::park(&mut *slot, ws, prime_gdn_ws_parks(free, floor));
+        drop(slot);
+        if !parked {
+            self.prime_gdn_ws_note("not parked", free, floor, bytes);
+        }
     }
 
     /// The device's free memory as admission sizes with it, and the park floor. The reading is
@@ -30110,8 +30283,7 @@ impl Engine {
             return;
         };
         let (free, floor) = self.prime_gdn_ws_floor_reading();
-        if !prime_gdn_ws_parks(free, floor) {
-            *home = None;
+        if prime_ws_slot::between_calls(home, prime_gdn_ws_parks(free, floor)) {
             self.prime_gdn_ws_note("not held between calls", free, floor, bytes);
         }
     }
@@ -30143,14 +30315,19 @@ impl Engine {
             return 0;
         }
         let (free, floor) = self.prime_gdn_ws_floor_reading();
-        if prime_gdn_ws_parks(free, floor) {
-            return 0;
-        }
-        let Some(ws) = self.prime_gdn_ws_unpark() else {
+        let mut slot = self
+            .prime_gdn_ws_parked
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let dropped = prime_ws_slot::reclaim(
+            &mut *slot,
+            prime_gdn_ws_parks(free, floor),
+            GdnScanWs::bytes,
+        );
+        drop(slot);
+        let Some(bytes) = dropped else {
             return 0;
         };
-        let bytes = ws.bytes();
-        drop(ws);
         // The frees are stream-ordered: let them land before the caller reads the pool.
         let _ = self.stream().synchronize();
         self.prime_gdn_ws_note("unparked", free, floor, bytes);

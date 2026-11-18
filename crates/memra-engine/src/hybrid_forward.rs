@@ -1621,6 +1621,14 @@ fn cpu_expert_profile_admit_enabled() -> bool {
 /// kernel needs T >= d_conv-1). Callers: generate / generate_spec.
 pub const PRIME_MIN_T: usize = 16;
 
+/// Whether a prime call that leaves `queued_after` prompt tokens for later is the prime's last
+/// batched call (memra#1258): nothing is left, or fewer than `PRIME_MIN_T` tokens, which no
+/// batched call takes. Such a tail goes through `decode_step`, after a stop at an affinity or
+/// seed boundary for one, so no call ever ends at the request's end.
+pub(crate) fn prime_batched_calls_over(queued_after: usize) -> bool {
+    queued_after < PRIME_MIN_T
+}
+
 /// memra#1258 step 2: a prime call of at least this many rows walks with the prime GDN scan
 /// workspace (`PrimeSlabs::gdn`, held at `PRIME_CHUNK_MAX_TOKENS` rows); a narrower first call
 /// keeps the per-layer scan transients, which cost it less than a cap-sized workspace.
@@ -6399,9 +6407,10 @@ impl HybridModel {
         let events_before = crate::progress::events();
         let a4_before = self.a4_prime_receipt_begin();
         let out = self.prime_cache_overlaid_inner(e, tokens, cache, queued_after, overlay);
-        // memra#1258 step 2: the prime is over (no take of this request follows, or it failed),
-        // so its GDN scan workspace is parked, where admission counts it as reclaimable.
-        if queued_after == 0 || out.is_err() {
+        // memra#1258 step 2: the prime's batched calls are over (no take of this request
+        // follows, only a tail under `PRIME_MIN_T` does, or the call failed), so its GDN scan
+        // workspace is parked, where admission counts it as reclaimable.
+        if prime_batched_calls_over(queued_after) || out.is_err() {
             self.prime_gdn_ws_release(e);
         }
         if out.is_ok() && crate::progress::events() == events_before {
@@ -7588,8 +7597,9 @@ impl HybridModel {
                     )
                 })
             {
-                s.gdn = None;
-                s.gdn = Some(crate::GdnScanWs::alloc(e, rows, h, hk, pair)?);
+                crate::prime_ws_slot::replace(&mut s.gdn, || {
+                    crate::GdnScanWs::alloc(e, rows, h, hk, pair)
+                })?;
             }
         }
         Ok(slab)
@@ -7615,10 +7625,14 @@ impl HybridModel {
         }
     }
 
-    /// memra#1258: a request whose prime will make no further call (retired, aborted or torn
-    /// down between two of its prime calls) hands the workspace back. The last call of a prime
-    /// and a failed call release it themselves; a prime that simply stops being called cannot.
-    pub fn prime_abandoned(&self, e: &Engine) {
+    /// memra#1258: a request's prime makes no further call, so no slab keeps its workspace.
+    /// A prime's last batched call and a failed call release it themselves. Two ends make no
+    /// such call, and whoever drives the prime says so here: a prompt whose last tokens went
+    /// through `decode_step` (a tail after a boundary stop, a starved tick budget), and a
+    /// request that leaves between two calls of its prime (retired, aborted, torn down). A
+    /// server calls this where a prompt completes and where a request retires; with nothing in
+    /// a slab it does nothing.
+    pub fn prime_ended(&self, e: &Engine) {
         let _numeric = self.enter_numeric();
         self.prime_gdn_ws_release(e);
     }
@@ -33341,7 +33355,7 @@ mod prime_slab_into_census_tests {
         let overlaid = code(fn_body(&hf, concat!("pub fn prime_cache", "_overlaid(")));
         assert!(
             overlaid.contains(concat!(
-                "if queued_after == 0 || out.is_err() {\n",
+                "if prime_batched_calls_over(queued_after) || out.is_err() {\n",
                 "            self.prime_gdn_ws_release(e);"
             )),
             "{overlaid}"
@@ -33417,21 +33431,54 @@ mod prime_slab_into_census_tests {
                 && release.contains(concat!("owner.prime_gdn_ws", "_park(")),
             "{release}"
         );
-        let abandoned = code(fn_body(&hf, concat!("pub fn prime", "_abandoned(")));
-        assert!(abandoned.contains(concat!("self.prime_gdn_ws", "_release(e);")));
-        // A call reuses a workspace only through the sizing decision.
+        let ended = code(fn_body(&hf, concat!("pub fn prime", "_ended(")));
+        assert!(ended.contains(concat!("self.prime_gdn_ws", "_release(e);")));
+        // The MTP prime walker calls `prime_chunk` itself, with the request's end as `seq_end`.
+        // Its trunk can end on a tokenwise segment, which no call's end covers, so the walker
+        // releases when the trunk's last chunk is done, before the draft setup allocates.
+        let walker = std::fs::read_to_string(src.join("spec/prime.rs")).expect("source");
+        let advance = code(fn_body(&walker, concat!("fn advance", "_chunk(&mut self)")));
+        assert!(
+            advance.contains(concat!(
+                "if s.cursor == s.chunks.len() {\n",
+                "                    self.model.prime_gdn_ws_release(self.e);\n",
+                "                    self.setup()?;"
+            )),
+            "{advance}"
+        );
+        // A call reuses a workspace only through the sizing decision, and replaces one only
+        // through the slot action that frees the old one first.
         let get = code(fn_body(&hf, concat!("pub fn prime_slabs", "_get(")));
         assert!(
             get.contains(concat!("crate::GdnScanWs::dims", "_stale(")),
             "{get}"
         );
+        let replace = concat!("prime_ws_slot::replace", "(&mut s.gdn, || {");
+        assert!(get.contains(replace), "{get}");
+        // One allocation, inside that action, and one plain assignment: the unpark.
+        assert_eq!(get.matches(concat!("GdnScanWs::", "alloc(")).count(), 1);
+        assert_eq!(get.matches(concat!("s.gdn ", "= ")).count(), 1, "{get}");
         let shape = code(fn_body(&hf, concat!("pub fn prime_workspace", "_shape(")));
         assert!(
             !shape.contains(concat!("slab_row_bytes ", "+= ")),
             "{shape}"
         );
-        assert!(graph.contains(concat!("p.gdn_pointer ", "== gdn_pointer")));
+        // The graph replays only over the workspace allocation it was captured over. A plane's
+        // address does not name one: a freed workspace can come back with `gcum` where it was
+        // and the other planes elsewhere.
+        assert!(graph.contains(concat!("p.gdn_generation ", "== gdn_generation")));
+        assert!(graph.contains(concat!("map_or(0, |g| g.", "generation)")));
+        assert!(
+            !graph.contains(concat!("gdn_", "pointer")),
+            "no address stands in"
+        );
         let lib = std::fs::read_to_string(src.join("lib.rs")).expect("source");
+        let stamp = concat!("generation: Self::next", "_generation(),");
+        assert_eq!(
+            lib.matches(stamp).count(),
+            1,
+            "every allocation is numbered"
+        );
         let cached = code(fn_body(&lib, concat!("pub fn pool_cached", "_bytes(")));
         assert!(
             cached.contains(concat!("prime_gdn_ws_parked", "_bytes()")),
@@ -33457,9 +33504,12 @@ mod prime_slab_into_census_tests {
             &lib,
             concat!("pub(crate) fn prime_gdn_ws", "_park("),
         ));
+        let decision = concat!("prime_gdn_ws", "_parks(free, floor)");
         assert!(
             park.contains(concat!("self.prime_gdn_ws_floor", "_reading();"))
-                && park.contains(concat!("if !prime_gdn_ws", "_parks(free, floor)")),
+                && park.contains(concat!("prime_ws_slot::", "park("))
+                && park.matches(decision).count() == 1
+                && !park.contains(concat!("= Some", "(ws)")),
             "{park}"
         );
         let reading = code(fn_body(&lib, concat!("fn prime_gdn_ws_floor", "_reading(")));
@@ -33475,7 +33525,9 @@ mod prime_slab_into_census_tests {
         ));
         assert!(
             between.contains(concat!("self.prime_gdn_ws_floor", "_reading();"))
-                && between.contains(concat!("if !prime_gdn_ws", "_parks(free, floor)")),
+                && between.contains(&format!(
+                    "if prime_ws_slot::between_calls(home, {decision}) {{"
+                )),
             "{between}"
         );
         let reconsider = code(fn_body(
@@ -33484,11 +33536,30 @@ mod prime_slab_into_census_tests {
         ));
         assert!(
             reconsider.contains(concat!("self.prime_gdn_ws_floor", "_reading();"))
-                && reconsider.contains(concat!("if prime_gdn_ws", "_parks(free, floor)"))
+                && reconsider.contains(concat!("prime_ws_slot::", "reclaim("))
+                && reconsider.matches(decision).count() == 1
+                && !reconsider.contains(concat!("= Some", "(ws)"))
                 && reconsider.contains(concat!("self.stream()", ".synchronize()")),
             "{reconsider}"
         );
         let fits = code(fn_body(&lib, concat!("fn fits", "(&self")));
         assert!(fits.contains(concat!("Self::dims", "_fit(")), "{fits}");
+    }
+
+    /// memra#1258: a prime's batched calls are over when what is left of the prompt is less
+    /// than a batched call takes. The reviewed case: the last batched call stops at an affinity
+    /// or seed boundary with a tail of 1 to 15 tokens queued, the tail goes through
+    /// `decode_step`, and no call ends at the request's end. Keyed on an empty queue alone, the
+    /// workspace stayed in the slab as used bytes for the rest of the request.
+    #[test]
+    fn a_tail_under_the_prime_floor_ends_the_batched_calls() {
+        assert!(super::prime_batched_calls_over(0));
+        for tail in 1..super::PRIME_MIN_T {
+            assert!(super::prime_batched_calls_over(tail), "a tail of {tail}");
+        }
+        // A batched call can still take these.
+        for queued in [super::PRIME_MIN_T, super::PRIME_MIN_T + 1, 4_077, 28_672] {
+            assert!(!super::prime_batched_calls_over(queued), "{queued} queued");
+        }
     }
 }
