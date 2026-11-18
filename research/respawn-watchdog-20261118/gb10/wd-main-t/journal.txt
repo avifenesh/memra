@@ -1,0 +1,20 @@
+2026-11-18T13:08:21.561765+02:00 unit-a systemd[2299289]: Starting memra1255-wd-main-t.service - /usr/bin/python3 ~/.cache/memra-1255/gb10/bins/main/research/spec-capture-headroom-20261112/tools/tsrun.py ~/.cache/memra-1255/gb10/bins/main/memra-server...
+2026-11-18T13:10:26.769546+02:00 unit-a systemd[2299289]: Started memra1255-wd-main-t.service - /usr/bin/python3 ~/.cache/memra-1255/gb10/bins/main/research/spec-capture-headroom-20261112/tools/tsrun.py ~/.cache/memra-1255/gb10/bins/main/memra-server.
+2026-11-18T13:14:21.742811+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Watchdog timeout (limit 3min)!
+2026-11-18T13:14:21.743139+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Killing process 2540170 (python3) with signal SIGABRT.
+2026-11-18T13:14:21.743309+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Killing process 2540179 (memra-server) with signal SIGABRT.
+2026-11-18T13:14:21.743349+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Killing process 2540202 (journalctl) with signal SIGABRT.
+2026-11-18T13:14:25.899930+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Main process exited, code=dumped, status=6/ABRT
+2026-11-18T13:14:27.574321+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Failed with result 'watchdog'.
+2026-11-18T13:14:27.574564+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Consumed 3min 55.151s CPU time, 1.2G memory peak, 0B memory swap peak.
+2026-11-18T13:14:37.743203+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Scheduled restart job, restart counter is at 1.
+2026-11-18T13:14:37.756741+02:00 unit-a systemd[2299289]: Starting memra1255-wd-main-t.service - /usr/bin/python3 ~/.cache/memra-1255/gb10/bins/main/research/spec-capture-headroom-20261112/tools/tsrun.py ~/.cache/memra-1255/gb10/bins/main/memra-server...
+2026-11-18T13:16:43.320498+02:00 unit-a systemd[2299289]: Started memra1255-wd-main-t.service - /usr/bin/python3 ~/.cache/memra-1255/gb10/bins/main/research/spec-capture-headroom-20261112/tools/tsrun.py ~/.cache/memra-1255/gb10/bins/main/memra-server.
+2026-11-18T13:16:47.952134+02:00 unit-a systemd[2299289]: Stopping memra1255-wd-main-t.service - /usr/bin/python3 ~/.cache/memra-1255/gb10/bins/main/research/spec-capture-headroom-20261112/tools/tsrun.py ~/.cache/memra-1255/gb10/bins/main/memra-server...
+2026-11-18T13:17:52.992778+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: State 'stop-sigterm' timed out. Killing.
+2026-11-18T13:17:52.992862+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Killing process 2542522 (python3) with signal SIGKILL.
+2026-11-18T13:17:52.992964+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Killing process 2542523 (memra-server) with signal SIGKILL.
+2026-11-18T13:17:52.994588+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Main process exited, code=killed, status=9/KILL
+2026-11-18T13:17:52.994622+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Failed with result 'timeout'.
+2026-11-18T13:17:52.994808+02:00 unit-a systemd[2299289]: Stopped memra1255-wd-main-t.service - /usr/bin/python3 ~/.cache/memra-1255/gb10/bins/main/research/spec-capture-headroom-20261112/tools/tsrun.py ~/.cache/memra-1255/gb10/bins/main/memra-server.
+2026-11-18T13:17:52.994866+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Consumed 3min 9.543s CPU time, 1.2G memory peak, 0B memory swap peak.

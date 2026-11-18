@@ -1,0 +1,25 @@
+2026-11-18T13:08:21+02:00
+unit-a
+e8a7483287cf0a24f96f66e0e40bfd750a5e5f6b64034738220a3cbbbb107017  ~/.cache/memra-1255/gb10/bins/main/memra-server
+               total        used        free      shared  buff/cache   available
+Mem:          124608        6467       46776         523       73006      118140
+Running as unit: memra1255-wd-main-t.service
+first ready after 125 s: MainPID=2540170 Result=success NRestarts=0 ActiveState=active SubState=running
+timed: armed 1795000101.613009, ready 1795000226, send at 1795000350 (a live ping slot + 68 s)
+request 1 done 2026-11-18T13:12:31+02:00: {"object":"chat.completion","model":"q38","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":"We need answer user: \"Say hello in five words.\" Need final exactly five","reasoning_details":[{"type":"reasoning.text","text":"We need answer user: \"Say hello in five words.\" N
+panic seen 2026-11-18T13:12:33+02:00
+ready again after 254 s from the panic: MainPID=2542522 Result=success NRestarts=1 ActiveState=active SubState=running
+request 2: {"object":"chat.completion","model":"q38","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":"We need answer user: \"Say hello in five words.\" Need final exactly five","reasoning_details":[{"type":"reasoning.text","text":"We need answer user: \"Say hello in five words.\" N
+final: MainPID=2542522 Result=success NRestarts=1 ActiveState=active SubState=running
+2026-11-18T13:08:21.561765+02:00 unit-a systemd[2299289]: Starting memra1255-wd-main-t.service - /usr/bin/python3 ~/.cache/memra-1255/gb10/bins/main/research/spec-capture-headroom-20261112/tools/tsrun.py ~/.cache/memra-1255/gb10/bins/main/memra-server...
+2026-11-18T13:10:26.769546+02:00 unit-a systemd[2299289]: Started memra1255-wd-main-t.service - /usr/bin/python3 ~/.cache/memra-1255/gb10/bins/main/research/spec-capture-headroom-20261112/tools/tsrun.py ~/.cache/memra-1255/gb10/bins/main/memra-server.
+2026-11-18T13:14:21.742811+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Watchdog timeout (limit 3min)!
+2026-11-18T13:14:25.899930+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Main process exited, code=dumped, status=6/ABRT
+2026-11-18T13:14:27.574321+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Failed with result 'watchdog'.
+2026-11-18T13:14:37.743203+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Scheduled restart job, restart counter is at 1.
+2026-11-18T13:14:37.756741+02:00 unit-a systemd[2299289]: Starting memra1255-wd-main-t.service - /usr/bin/python3 ~/.cache/memra-1255/gb10/bins/main/research/spec-capture-headroom-20261112/tools/tsrun.py ~/.cache/memra-1255/gb10/bins/main/memra-server...
+2026-11-18T13:16:43.320498+02:00 unit-a systemd[2299289]: Started memra1255-wd-main-t.service - /usr/bin/python3 ~/.cache/memra-1255/gb10/bins/main/research/spec-capture-headroom-20261112/tools/tsrun.py ~/.cache/memra-1255/gb10/bins/main/memra-server.
+2026-11-18T13:17:52.994588+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Main process exited, code=killed, status=9/KILL
+2026-11-18T13:17:52.994622+02:00 unit-a systemd[2299289]: memra1255-wd-main-t.service: Failed with result 'timeout'.
+withholding lines: 5
+WD-DONE main 2026-11-18T13:17:53+02:00
