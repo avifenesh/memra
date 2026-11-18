@@ -211,12 +211,21 @@ TEE_PID=$!
 # caller that read its capture or $GLOG right after the exit could find the refusal or the
 # verdict missing. tools/test_gate_template_integrity.sh did exactly that and went red on a
 # correct gate under host load. On every exit of this shell, close its two ends of the pipe so
-# tee reads end-of-file, then wait for tee. The lock subshell below does not inherit an EXIT
-# trap, and every writer it starts on the pipe is waited for or killed before it returns, so tee
-# does reach end-of-file.
+# tee reads end-of-file, then wait until tee is gone. The lock subshell below does not inherit an
+# EXIT trap, and every writer it starts on the pipe is waited for or killed before it returns,
+# so tee reaches end-of-file at once.
+#
+# The wait has a deadline. If the lock subshell is killed outright (SIGKILL, the OOM killer),
+# a writer it left behind, such as a request still in flight, holds the pipe open for as long
+# as it lives; the gate then gives up on the log after a minute instead of never returning. The
+# wait is a loop on tee's pid, not `wait`: a trapped INT or TERM cuts a `wait` short.
+DRAIN_DEADLINE=60
 drain_log() {
   exec >&- 2>&-
-  wait "$TEE_PID" 2>/dev/null
+  local deadline=$((SECONDS + DRAIN_DEADLINE))
+  while kill -0 "$TEE_PID" 2>/dev/null && [ "$SECONDS" -lt "$deadline" ]; do
+    sleep 0.05
+  done
 }
 trap drain_log EXIT
 echo "=== $GATE_NAME arch=$ARCHITECTURE tag=$TAG ts=$TS model=$MODEL ==="
