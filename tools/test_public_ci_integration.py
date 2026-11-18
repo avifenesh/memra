@@ -12,16 +12,25 @@ import re
 import importlib.util
 import hashlib
 import contextlib
+import traceback
 
 import public_ci as ci
 import validation_plan as vp
 
 ROOT = Path(__file__).resolve().parents[1]
-# Hang guard for the whole witness. Measured on GitHub-hosted runners (2026-11-02): 579 s of
-# command time for one PR and 633 s for another, so 660 s failed on runner variance alone.
-PUBLIC_CI_WITNESS_SECONDS = 900
-# Matched hosted prefix 402 s + projected tail 228 s + overhead 25 s.
-# Round 655 s up to 11 minutes. Children keep the 120-second bound.
+# Hang guard for the whole witness (memra#1291). It used to be a wall-clock deadline: 900 s for
+# the witness, 120 s for each child. Wall clock measures the host: the witness takes about 600 s
+# of command time on a GitHub-hosted runner (2026-11-02: 579 s for one PR, 633 s for another) and
+# ran past 900 s, with one child at 99 s, beside other jobs on a 32-thread host at a load of 30
+# to 80. What the guard is for is a hang (a reader blocked on a dead pipe, a child that waits
+# forever) and a loop that never ends. Both are read from CPU time, which a loaded host does not
+# stretch: the witness and its children must keep using CPU, and must not use more than a budget.
+PUBLIC_CI_STALL_SECONDS = 300        # no CPU progress by the witness and its children for this long
+PUBLIC_CI_CHILD_STALL_SECONDS = 120  # no CPU progress by one child's session for this long
+PUBLIC_CI_CPU_SECONDS = 3600         # CPU budget of the witness, about six hosted runs
+# CPU that counts as progress in a stall window. A blocked process uses none; the guard's own
+# sampling is measured and left out.
+PUBLIC_CI_PROGRESS_CPU_SECONDS = 0.05
 
 LEGACY_SOURCE = '2ab8eec8ddd5b27ecaaf22f55ddf728151be560c'
 LEGACY_MANIFEST_SHA256 = '0bbc14dd37b72d1058b399963d174d3aed10932b8b704e26f7d3aab3169a5e1d'
@@ -84,12 +93,132 @@ class PublicWitnessDeadline(BaseException):
     """A whole-witness deadline must escape expected-failure handlers."""
 
 
+_CLOCK_TICKS = os.sysconf('SC_CLK_TCK')
+
+
+def process_cpu_seconds(sessions=(), pids=()):
+    """CPU seconds used so far by every live process of the sessions `sessions` and by the exact
+    processes `pids`, read from /proc.
+
+    A session id here is the pid of a child this witness started in a session of its own, so the
+    child's Git readers and grandchildren are counted with it, and a grandchild's time stays in
+    the sum after its parent reaps it. No process is signalled or matched by name."""
+    sessions, pids = {int(s) for s in sessions}, {int(p) for p in pids}
+    if not sessions and not pids:
+        return 0.0
+    ticks = 0
+    for entry in os.listdir('/proc'):
+        if not entry.isdigit():
+            continue
+        try:
+            raw = Path('/proc', entry, 'stat').read_bytes()
+        except OSError:
+            continue  # it ended between the listing and the read
+        # The fields after the command name: state, ppid, pgrp, session, ..., utime, stime,
+        # cutime, cstime at 11 to 14.
+        fields = raw[raw.rindex(b')') + 2:].split()
+        if int(fields[3]) in sessions or int(entry) in pids:
+            ticks += sum(int(value) for value in fields[11:15])
+    return ticks / _CLOCK_TICKS
+
+
+class WitnessLiveness:
+    """Has a witness stalled, or spent its CPU budget? Pure over the clock and the CPU reading.
+
+    Wall time alone never stops it: a host that gives the witness a tenth of a core stretches
+    the run tenfold and changes neither answer."""
+
+    def __init__(self, stall_seconds, cpu_seconds, now, cpu):
+        self.stall_seconds, self.cpu_seconds = stall_seconds, cpu_seconds
+        self.first_cpu = self.mark_cpu = cpu
+        self.mark_time = now
+
+    def verdict(self, now, cpu):
+        """None while the witness is live, else why it is stopped."""
+        if cpu < self.mark_cpu:
+            self.mark_cpu = cpu  # a counted process left the sum; not progress
+        elif cpu - self.mark_cpu >= PUBLIC_CI_PROGRESS_CPU_SECONDS:
+            self.mark_cpu, self.mark_time = cpu, now
+        if cpu - self.first_cpu > self.cpu_seconds:
+            return f"used more than {self.cpu_seconds} CPU seconds"
+        if now - self.mark_time >= self.stall_seconds:
+            return f"made no CPU progress for {self.stall_seconds} seconds"
+        return None
+
+
+class WitnessCpu:
+    """CPU seconds used by a witness: this process and the children it has reaped, the sessions
+    of its live children, and the exact other processes it names.
+
+    The reading leaves out what the readings themselves cost. A blocked witness samples /proc
+    every few seconds; with that cost left in, it would look alive for ever."""
+
+    def __init__(self, sessions, pids):
+        self.sessions, self.pids = sessions, pids  # callables: the live ones at each reading
+        self.overhead = 0.0
+
+    def seconds(self):
+        began = time.process_time()
+        reaped = os.times()
+        total = (began + reaped.children_user + reaped.children_system
+                 + process_cpu_seconds(self.sessions(), self.pids()) - self.overhead)
+        self.overhead += time.process_time() - began
+        return total
+
+
+class OwnedChildren(list):
+    """The witness's live child processes, and the last line it printed: the guard names that
+    line when it stops the witness, so a stopped run says where it was."""
+    last_event = 'witness start'
+
+    def event(self, text):
+        self.last_event = text
+        print(text, flush=True)
+
+
+class ChildStalled(Exception):
+    """An owned child's session made no CPU progress for its stall window."""
+
+
+def communicate_while_live(process, stall_seconds, poll_seconds=5.0):
+    """`process.communicate()` for a child in a session of its own, for as long as that session
+    keeps using CPU. Returns its output; raises ChildStalled once the session has made no CPU
+    progress for `stall_seconds`. The caller stops the child."""
+    liveness = WitnessLiveness(stall_seconds, float('inf'), time.monotonic(),
+                               process_cpu_seconds([process.pid]))
+    while True:
+        try:
+            return process.communicate(timeout=min(poll_seconds, stall_seconds / 4))[0]
+        except subprocess.TimeoutExpired:
+            reason = liveness.verdict(time.monotonic(), process_cpu_seconds([process.pid]))
+            if reason is not None:
+                raise ChildStalled(reason) from None
+
+
 @contextlib.contextmanager
-def bounded_public_witness(seconds):
-    """Bound this one witness, including direct Git reads, and only its children."""
-    children = []
-    def expire(_signal, _frame):
-        print("public-ci whole witness DEADLINE", flush=True)
+def bounded_public_witness(stall_seconds, cpu_seconds=PUBLIC_CI_CPU_SECONDS):
+    """Guard this one witness, including direct Git reads, and only its children.
+
+    The witness is stopped when it and its children make no CPU progress for `stall_seconds`,
+    or use more than `cpu_seconds` of CPU. It is not stopped for taking long on a busy host."""
+    children = OwnedChildren()
+    # The sessions of its live children, and the module's Git readers, which run in this
+    # process's own session and are named by pid.
+    meter = WitnessCpu(lambda: [process.pid for process in children],
+                       lambda: [process.pid for process in ci._BLOB_READERS.values()])
+    liveness = WitnessLiveness(stall_seconds, cpu_seconds, time.monotonic(), meter.seconds())
+
+    def expire(_signal, frame):
+        cpu = meter.seconds()
+        reason = liveness.verdict(time.monotonic(), cpu)
+        if reason is None:
+            return
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        detail = (f"{reason}; last event: {children.last_event}; "
+                  f"cpu_seconds={max(0.0, cpu - liveness.first_cpu):.1f}")
+        print("public-ci whole witness DEADLINE: " + detail, flush=True)
+        for line in traceback.format_stack(frame)[-6:]:
+            print(line.rstrip(), flush=True)
         for process in children:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
@@ -103,14 +232,15 @@ def bounded_public_witness(seconds):
                     process.kill()
                 except ProcessLookupError:
                     pass
-        raise PublicWitnessDeadline(f"public-ci whole witness exceeded {seconds} seconds")
+        raise PublicWitnessDeadline("public-ci whole witness " + detail)
     previous = signal.signal(signal.SIGALRM, expire)
-    signal.alarm(seconds)
+    check_seconds = min(15.0, stall_seconds / 4)
+    signal.setitimer(signal.ITIMER_REAL, check_seconds, check_seconds)
     try:
         yield children
     finally:
         original_error = sys.exc_info()[1]
-        signal.alarm(0)
+        signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous)
         cleanup_errors = []
         for process in children:
@@ -158,9 +288,148 @@ def bounded_public_witness(seconds):
                 raise RuntimeError(detail)
 
 
+def _burn(seconds):
+    """Use CPU in this process for `seconds` of wall time."""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        pass
+
+
+# The guard's tests use one stall window, _WINDOW seconds, and work that lasts more than two of
+# them. A busy process needs a twentieth of a core to show progress inside one window.
+_WINDOW = 0.8
+_BUSY_SECONDS = 1.8
+# A child that uses CPU for _BUSY_SECONDS of wall time, then says so.
+_BUSY_CHILD = (f'import time\nend = time.monotonic() + {_BUSY_SECONDS}\n'
+               'while time.monotonic() < end:\n    pass\nprint("done")\n')
+# A child that blocks without using CPU.
+_BLOCKED_CHILD = 'import time\ntime.sleep(60)\n'
+
+
+class LivenessGuard(unittest.TestCase):
+    """memra#1291: the witness's guard reads CPU progress, not the wall clock. Runs before the
+    witness (unittest orders classes by name) and takes about eight seconds."""
+
+    def child(self, source, **kwargs):
+        process = subprocess.Popen([sys.executable, '-c', source], text=True, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, start_new_session=True, **kwargs)
+        self.addCleanup(process.wait)
+        self.addCleanup(lambda: process.poll() is None and os.killpg(process.pid, signal.SIGKILL))
+        self.addCleanup(lambda: [s.close() for s in (process.stdin, process.stdout) if s is not None])
+        return process
+
+    def test_a_loaded_host_does_not_stop_a_live_witness(self):
+        # Wall time runs ten thousand seconds while the witness gets a hundredth of a core:
+        # thirty hosted runs' worth of wall, a tenth of the CPU budget.
+        liveness = WitnessLiveness(PUBLIC_CI_STALL_SECONDS, PUBLIC_CI_CPU_SECONDS, 0.0, 0.0)
+        for step in range(1, 1001):
+            self.assertIsNone(liveness.verdict(step * 10.0, step * 0.1), step)
+        # The same clock with no CPU at all is a hang, named at the stall window.
+        stalled = WitnessLiveness(PUBLIC_CI_STALL_SECONDS, PUBLIC_CI_CPU_SECONDS, 0.0, 5.0)
+        self.assertIsNone(stalled.verdict(PUBLIC_CI_STALL_SECONDS - 1.0, 5.0))
+        self.assertEqual(stalled.verdict(float(PUBLIC_CI_STALL_SECONDS), 5.0),
+                         f"made no CPU progress for {PUBLIC_CI_STALL_SECONDS} seconds")
+        # CPU under the progress threshold is not progress; a counted process leaving the sum
+        # is not progress either, and the next real use of CPU is.
+        idle = WitnessLiveness(10, 100, 0.0, 5.0)
+        self.assertIsNone(idle.verdict(9.0, 5.0 + PUBLIC_CI_PROGRESS_CPU_SECONDS / 2))
+        self.assertIsNotNone(idle.verdict(10.0, 5.0 + PUBLIC_CI_PROGRESS_CPU_SECONDS / 2))
+        left = WitnessLiveness(10, 100, 0.0, 5.0)
+        self.assertIsNone(left.verdict(9.0, 2.0))
+        self.assertIsNone(left.verdict(9.5, 2.0 + 2 * PUBLIC_CI_PROGRESS_CPU_SECONDS))
+        self.assertIsNone(left.verdict(19.0, 2.0 + 2 * PUBLIC_CI_PROGRESS_CPU_SECONDS))
+        self.assertIsNotNone(left.verdict(19.5, 2.0 + 2 * PUBLIC_CI_PROGRESS_CPU_SECONDS))
+        # A loop that never ends is stopped by the budget, however fast the clock.
+        spinning = WitnessLiveness(10, 100, 0.0, 0.0)
+        self.assertIsNone(spinning.verdict(1.0, 100.0))
+        self.assertEqual(spinning.verdict(2.0, 100.5), "used more than 100 CPU seconds")
+
+    def test_a_busy_witness_outlives_its_stall_window(self):
+        # More than two stall windows of work in this process. A wall-clock deadline of one
+        # window stopped this.
+        with bounded_public_witness(_WINDOW):
+            _burn(_BUSY_SECONDS)
+
+    def test_the_guard_does_not_count_its_own_sampling(self):
+        # A blocked witness does nothing but take readings. Readings that cost a quarter of a
+        # CPU second, five times the progress threshold, must read as no progress. The pid is a
+        # reaped child's, so every reading scans /proc and finds nothing to add.
+        gone = subprocess.Popen([sys.executable, '-c', 'pass'])
+        gone.wait()
+        meter = WitnessCpu(lambda: (), lambda: [gone.pid])
+        first = last = meter.seconds()
+        began = time.process_time()
+        while time.process_time() - began < 5 * PUBLIC_CI_PROGRESS_CPU_SECONDS:
+            last = meter.seconds()
+        self.assertGreaterEqual(meter.overhead, 4 * PUBLIC_CI_PROGRESS_CPU_SECONDS)
+        self.assertLess(last - first, PUBLIC_CI_PROGRESS_CPU_SECONDS)
+
+    def test_a_blocked_witness_is_stopped_and_says_where(self):
+        started = time.monotonic()
+        with self.assertRaises(PublicWitnessDeadline) as caught:
+            with bounded_public_witness(_WINDOW) as owned:
+                owned.event('public-ci test event before the blocked call')
+                time.sleep(30)
+        self.assertLess(time.monotonic() - started, 15)
+        self.assertIn(f'made no CPU progress for {_WINDOW} seconds', str(caught.exception))
+        self.assertIn('last event: public-ci test event before the blocked call', str(caught.exception))
+
+    def test_a_busy_child_keeps_a_waiting_witness_alive(self):
+        # The witness itself only waits; the CPU is the child's, in a session of its own. Both
+        # guards watch it: the witness's, and the wait for the child.
+        process = self.child(_BUSY_CHILD)
+        with bounded_public_witness(_WINDOW) as owned:
+            owned.append(process)
+            self.assertEqual(communicate_while_live(process, _WINDOW), 'done\n')
+            owned.remove(process)
+        self.assertEqual(process.returncode, 0)
+
+    def test_a_blocked_child_stops_the_witness_and_is_killed(self):
+        process = self.child(_BLOCKED_CHILD)
+        started = time.monotonic()
+        with self.assertRaises(PublicWitnessDeadline):
+            with bounded_public_witness(_WINDOW) as owned:
+                owned.append(process)
+                process.wait()
+        self.assertLess(time.monotonic() - started, 15)
+        self.assertEqual(process.wait(timeout=5), -signal.SIGKILL)
+
+    def test_the_cpu_budget_stops_a_witness_that_never_ends(self):
+        with self.assertRaises(PublicWitnessDeadline) as caught:
+            with bounded_public_witness(2, cpu_seconds=0.3):
+                _burn(20)
+        self.assertIn('used more than 0.3 CPU seconds', str(caught.exception))
+
+    def test_a_blocked_child_is_not_waited_for(self):
+        blocked = self.child(_BLOCKED_CHILD)
+        started = time.monotonic()
+        with self.assertRaisesRegex(ChildStalled, f'made no CPU progress for {_WINDOW} seconds'):
+            communicate_while_live(blocked, _WINDOW)
+        self.assertLess(time.monotonic() - started, 15)
+        self.assertIsNone(blocked.poll(), 'the caller stops a stalled child, not the wait')
+
+    def test_a_session_is_counted_with_its_grandchildren(self):
+        # The child starts a grandchild that uses 0.8 CPU seconds and then waits; both are in
+        # the child's session, and the child itself uses next to nothing.
+        grandchild = ('import sys, time\nwhile time.process_time() < 0.8:\n    pass\n'
+                      'print("burned", flush=True)\nsys.stdin.read()\n')
+        process = self.child('import subprocess, sys, time\n'
+                             f'subprocess.run([sys.executable, "-c", {grandchild!r}])\n'
+                             'print("reaped", flush=True)\ntime.sleep(60)\n',
+                             stdin=subprocess.PIPE)
+        self.assertEqual(process.stdout.readline(), 'burned\n')
+        self.assertGreaterEqual(process_cpu_seconds([process.pid]), 0.5)
+        self.assertEqual(process_cpu_seconds(), 0.0)
+        self.assertLess(process_cpu_seconds(pids=[process.pid]), 0.5)
+        # The grandchild ends and its parent reaps it: its time stays in the session's sum.
+        process.stdin.close()
+        self.assertEqual(process.stdout.readline(), 'reaped\n')
+        self.assertGreaterEqual(process_cpu_seconds([process.pid]), 0.5)
+
+
 class PublicCiIntegration(unittest.TestCase):
     def test_modes_sources_commands_and_results(self):
-        with bounded_public_witness(PUBLIC_CI_WITNESS_SECONDS) as owned_children, tempfile.TemporaryDirectory(prefix='memra-public-ci-') as folder:
+        with bounded_public_witness(PUBLIC_CI_STALL_SECONDS) as owned_children, tempfile.TemporaryDirectory(prefix='memra-public-ci-') as folder:
             scratch = Path(folder)
             hooks, templates = scratch / 'hooks', scratch / 'templates'
             hooks.mkdir(); templates.mkdir()
@@ -172,25 +441,21 @@ class PublicCiIntegration(unittest.TestCase):
             repo = scratch / 'repo'
 
             command_number = 0
-            witness_deadline = time.monotonic() + PUBLIC_CI_WITNESS_SECONDS
 
             def command(args, *, ok=True, cwd=repo, extra_env=None):
                 nonlocal command_number
                 command_number += 1
                 started = time.monotonic()
-                remaining = witness_deadline - started
-                if remaining <= 0:
-                    self.fail(f"public-ci witness exceeded its {PUBLIC_CI_WITNESS_SECONDS}-second deadline")
                 argv_digest = hashlib.sha256(json.dumps([str(a) for a in args]).encode()).hexdigest()
-                print(f"public-ci command {command_number} START executable={Path(args[0]).name} "
-                      f"argv_sha256={argv_digest}", flush=True)
+                owned_children.event(f"public-ci command {command_number} START executable={Path(args[0]).name} "
+                                     f"argv_sha256={argv_digest}")
                 process = subprocess.Popen(args, cwd=cwd, env=dict(env, **(extra_env or {})), text=True,
                                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                            start_new_session=True)
                 owned_children.append(process)
                 try:
-                    output, _ = process.communicate(timeout=min(120, remaining))
-                except subprocess.TimeoutExpired:
+                    output = communicate_while_live(process, PUBLIC_CI_CHILD_STALL_SECONDS)
+                except ChildStalled as stalled:
                     # Only this owned child session. Killing the Python CLI alone
                     # leaves its Git readers alive and gives no bounded failure.
                     try:
@@ -205,12 +470,12 @@ class PublicCiIntegration(unittest.TestCase):
                         except ProcessLookupError:
                             pass
                         output, _ = process.communicate(timeout=5)
-                    self.fail(f"public-ci command {command_number} timed out; "
+                    self.fail(f"public-ci command {command_number} {stalled}; "
                               f"executable={Path(args[0]).name}; argv_sha256={argv_digest}; "
                               f"partial_output={output[-4096:]}")
                 owned_children.remove(process)
-                print(f"public-ci command {command_number} END status={process.returncode} "
-                      f"seconds={time.monotonic() - started:.3f}", flush=True)
+                owned_children.event(f"public-ci command {command_number} END status={process.returncode} "
+                                     f"seconds={time.monotonic() - started:.3f}")
                 if ok:
                     self.assertEqual(process.returncode, 0, output)
                 else:
@@ -256,7 +521,7 @@ class PublicCiIntegration(unittest.TestCase):
             self.assertEqual(len(vp.workspace(vp.Tree(repo, source))[0]), 14)
             # Materialize the exact existing support evidence for the live guard.
             # This is source transport, never model/runtime qualification.
-            print("public-ci direct phase support/source census START", flush=True)
+            owned_children.event("public-ci direct phase support/source census START")
             support_tree = vp.Tree(repo, source)
             support = vp.support_record_data_inputs(support_tree)
             present = set(support_tree.paths('research', 'docs'))
@@ -285,7 +550,7 @@ class PublicCiIntegration(unittest.TestCase):
                     (repo / path).symlink_to(support_tree.read_bytes(path).decode())
                 elif conflict_modes[path] != '120000':
                     (repo / path).chmod(0o755 if conflict_modes[path] == '100755' else 0o644)
-            print("public-ci direct phase support/source census END", flush=True)
+            owned_children.event("public-ci direct phase support/source census END")
             descriptor = {'full_name': ci.REPOSITORY,
                           'owner': {'login': ci.OWNER, 'id': ci.OWNER_ID}}
             external = {'login': 'contributor', 'id': 42}
