@@ -4082,9 +4082,11 @@ pub struct HybridModel {
     /// admission charges it per spec-capable session. 0 until the first capture is
     /// observed (the boot calibration probe usually supplies it).
     pub(crate) draft_state_bytes: std::sync::atomic::AtomicUsize,
-    /// The highest device graph-pool reading taken after a landed draft capture, in bytes
+    /// The graph pool's largest growth across one landed draft capture's bracket, in bytes
     /// (memra#1360): the reserve every draft graph on the stream shares (32 MiB on GB10's MTP
-    /// serving). Admission charges only what the live pool holds less than this
+    /// serving). The bracket's own growth, not the device-wide reading, so graphs of other
+    /// tenants in the pool at that moment (the Qwen prime graph, DSpark verify graphs) are not
+    /// counted. Admission charges only what the live pool holds less than this
     /// (`crate::spec::draft_state_charge`), not a per-session copy.
     pub(crate) draft_graph_reserve_bytes: std::sync::atomic::AtomicUsize,
     /// Test helper: extra device ordinals participating in this model for structural tests.
@@ -4221,19 +4223,10 @@ impl HybridModel {
         (observed > prev).then_some(observed)
     }
 
-    /// Record the graph pool's reading after a landed draft capture (memra#1360), high-water.
-    /// Returns the new high-water when it rose.
-    pub fn record_draft_graph_reserve(&self, graph_reading: usize) -> Option<usize> {
-        let prev = self
-            .draft_graph_reserve_bytes
-            .fetch_max(graph_reading, std::sync::atomic::Ordering::Relaxed);
-        (graph_reading > prev).then_some(graph_reading)
-    }
-
-    /// The stream's draft graph reserve high-water, in bytes (0 until a draft capture landed).
-    pub fn draft_graph_reserve_bytes(&self) -> usize {
-        self.draft_graph_reserve_bytes
-            .load(std::sync::atomic::Ordering::Relaxed)
+    /// Record the graph pool's growth across a landed draft capture's bracket (memra#1360),
+    /// high-water (`crate::spec::raise_high_water`). Returns the new high-water when it rose.
+    pub fn record_draft_graph_reserve(&self, graph_growth: usize) -> Option<usize> {
+        crate::spec::raise_high_water(&self.draft_graph_reserve_bytes, graph_growth)
     }
 
     /// Per-session draft-graph state admission charge, in bytes (`crate::spec::draft_state_charge`):

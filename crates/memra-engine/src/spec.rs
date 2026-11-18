@@ -641,9 +641,19 @@ pub(crate) fn split_draft_state(
     )
 }
 
+/// Raise a high-water to `observed` (memra#1360 review): a smaller later reading never lowers it.
+/// Returns the new high-water when it rose.
+pub(crate) fn raise_high_water(
+    slot: &std::sync::atomic::AtomicUsize,
+    observed: usize,
+) -> Option<usize> {
+    let prev = slot.fetch_max(observed, std::sync::atomic::Ordering::Relaxed);
+    (observed > prev).then_some(observed)
+}
+
 /// The per-session draft-state charge (memra#1360): the per-session part, plus what the stream's
-/// graph reserve owes at this moment. `reserve_hw` is the highest graph-pool reading taken after a
-/// landed draft capture, `graph_now` the pool's reading now: while the pool holds the reserve it is
+/// graph reserve owes at this moment. `reserve_hw` is the graph pool's largest growth across one
+/// landed draft capture's bracket, `graph_now` the pool's reading now: while the pool holds the reserve it is
 /// in the free reading admission starts from and owes nothing; after a trim (the prime graphs'
 /// `cuDeviceGraphMemTrim` releases idle draft graphs' memory too) the next draft launch maps it
 /// again, and the shortfall is charged. A live reading heals after any trim, by anyone.
@@ -13698,11 +13708,11 @@ impl HybridModel {
             let graph1 = e.device_graph_mem_reserved();
             let graph_growth = graph1.saturating_sub(cap_graph0);
             let (observed, _) = split_draft_state(parked_delta, peak_delta, graph_growth);
-            if let Some(hw) = self.record_draft_graph_reserve(graph1) {
+            if let Some(hw) = self.record_draft_graph_reserve(graph_growth) {
                 eprintln!(
-                    "[spec] draft graph-pool reserve: {}MB (the graph pool {}MB -> {}MB across \
-                     this capture; shared by every draft graph on the stream, so charged only \
-                     while the pool holds less, not per session)",
+                    "[spec] draft graph-pool reserve: {}MiB (the graph pool {}MiB -> {}MiB \
+                     across this capture; shared by every draft graph on the stream, so charged \
+                     only while the pool holds less, not per session)",
                     hw / (1 << 20),
                     cap_graph0 / (1 << 20),
                     graph1 / (1 << 20),
@@ -18337,8 +18347,40 @@ mod capture_headroom_tests {
         );
     }
 
+    /// memra#1360 review round 2: the reserve is the bracket's own growth. With another tenant's
+    /// graph in the pool at the capture's entry (the Qwen prime graph on the 5090), the device-wide
+    /// reading would count it, and once it trims, every later spec admission would be charged for
+    /// it. A later capture on a pool that already holds the reserve grows it by nothing, and a
+    /// smaller reading never lowers the high-water.
+    #[test]
+    fn the_graph_reserve_is_the_brackets_own_growth() {
+        use super::{draft_state_charge, raise_high_water};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        const MIB: usize = 1 << 20;
+        let reserve = AtomicUsize::new(0);
+        // A 96 MiB prime graph in the pool at the entry; the draft capture adds 32 MiB.
+        let (cap_graph0, graph1) = (96 * MIB, 128 * MIB);
+        assert_eq!(
+            raise_high_water(&reserve, graph1.saturating_sub(cap_graph0)),
+            Some(32 * MIB)
+        );
+        assert_eq!(reserve.load(Ordering::Relaxed), 32 * MIB);
+        // The prime graph trims away: the pool holds the draft's 32 MiB, which owes nothing.
+        assert_eq!(
+            draft_state_charge(2 * MIB, reserve.load(Ordering::Relaxed), 32 * MIB),
+            2 * MIB
+        );
+        // A second capture on the same stream grows the pool by nothing, a third by 8 MiB:
+        // neither lowers the reserve.
+        assert_eq!(raise_high_water(&reserve, 0), None);
+        assert_eq!(raise_high_water(&reserve, 8 * MIB), None);
+        assert_eq!(reserve.load(Ordering::Relaxed), 32 * MIB);
+        // A larger growth raises it.
+        assert_eq!(raise_high_water(&reserve, 40 * MIB), Some(40 * MIB));
+    }
+
     /// memra#1360 review wiring: the bracket reads the graph pool once, after the pool watermark
-    /// reset and before its first capture, splits at its end and records the absolute reading;
+    /// reset and before its first capture, splits at its end and records the growth;
     /// every caller of the charge passes the live graph-pool reading.
     #[test]
     fn the_graph_reserve_wiring_reads_the_live_pool() {
@@ -18364,8 +18406,9 @@ mod capture_headroom_tests {
             reset < reads[0] && reads[0] < first_capture,
             "{reset} {reads:?} {first_capture}"
         );
-        // The entry reading and the guard's live reading; no second entry reading.
-        assert_eq!(bracket.matches("device_graph_mem_reserved()").count(), 2);
+        // The entry reading and the guard's live reading; no second entry reading, however it
+        // is spelled (`Engine::device_graph_mem_reserved(e)` too).
+        assert_eq!(bracket.matches("device_graph_mem_reserved").count(), 2);
         let end = squash(
             &src[close
                 ..close
@@ -18377,7 +18420,7 @@ mod capture_headroom_tests {
             "let graph1 = e.device_graph_mem_reserved();",
             "let graph_growth = graph1.saturating_sub(cap_graph0);",
             "let (observed, _) = split_draft_state(parked_delta, peak_delta, graph_growth);",
-            "self.record_draft_graph_reserve(graph1)",
+            "self.record_draft_graph_reserve(graph_growth)",
             "self.record_draft_state_bytes(observed)",
         ] {
             assert!(end.contains(needle), "{needle}: {end}");
