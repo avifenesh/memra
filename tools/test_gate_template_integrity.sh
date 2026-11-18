@@ -490,10 +490,10 @@ assert_grep "canary: the capture holds the canary's last line when the gate exit
 # went red on a correct gate (memra#1341). The wait ends when the stranger is ready or has died;
 # a minute without either is a broken fixture, not a verdict about the gate.
 # FIXTURE_SLOW_STRANGER=<seconds> delays both strangers' bind, to show the wait holds.
-STRANGER_WAIT=600 # tenths of a second
+STRANGER_WAIT=60 # seconds, by the clock: a probe that is slow to answer does not stretch it
 stranger_never_came() { # $1 what  $2 pid
     if kill -0 "$2" 2>/dev/null; then
-        echo "BROKEN FIXTURE: $1 was not ready on port $RUN_PORT in $((STRANGER_WAIT / 10)) s; the arm cannot be tested." >&2
+        echo "BROKEN FIXTURE: $1 was not ready on port $RUN_PORT in $STRANGER_WAIT s; the arm cannot be tested." >&2
     else
         echo "BROKEN FIXTURE: $1 ended before it was ready on port $RUN_PORT; the arm cannot be tested." >&2
     fi
@@ -511,8 +511,8 @@ time.sleep(120)
 PY
 LISTENER=$!
 echo "$LISTENER" > "$WORK/listener.pid"
-for _ in $(seq "$STRANGER_WAIT"); do
-    [ -e "$WORK/listener.ready" ] && break
+STRANGER_UNTIL=$((SECONDS + STRANGER_WAIT))
+while [ ! -e "$WORK/listener.ready" ] && [ "$SECONDS" -lt "$STRANGER_UNTIL" ]; do
     kill -0 "$LISTENER" 2>/dev/null || break
     sleep 0.1
 done
@@ -548,8 +548,9 @@ FIXTURE_STUB_ADDR="127.0.0.1:$RUN_PORT" \
 FOREIGN=$!
 echo "$FOREIGN" > "$WORK/foreign.pid"
 FOREIGN_READY=0
-for _ in $(seq "$STRANGER_WAIT"); do
-    if curl -sf --max-time 5 "http://127.0.0.1:$RUN_PORT/readyz" >/dev/null 2>&1; then
+STRANGER_UNTIL=$((SECONDS + STRANGER_WAIT))
+while [ "$SECONDS" -lt "$STRANGER_UNTIL" ]; do
+    if curl -sf --max-time 2 "http://127.0.0.1:$RUN_PORT/readyz" >/dev/null 2>&1; then
         FOREIGN_READY=1
         break
     fi
