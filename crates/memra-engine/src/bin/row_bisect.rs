@@ -274,6 +274,7 @@ fn main() -> Res<()> {
         println!(
             "  layer kind  mix_rel     x1_rel      out_rel     out_maxabs  router(k) prefill-vs-decode"
         );
+        let mut route_lines: Vec<String> = Vec::new();
         for il in 0..model.layers.len() {
             let (Some(pm), Some(dm), Some(px1), Some(dx1), Some(pf), Some(df)) = (
                 p.get(&(il, "mix")),
@@ -309,6 +310,19 @@ fn main() -> Res<()> {
                     "{} gap_p {pg:.4} gap_d {dg:.4} max|dlogit| {maxdl:.4}",
                     if same { "same" } else { "DIFF" }
                 );
+                let fmt_sel = |sel: &[usize], lg: &[f64]| -> String {
+                    let mx = lg.iter().cloned().fold(f64::MIN, f64::max);
+                    let den: f64 = lg.iter().map(|v| (v - mx).exp()).sum();
+                    sel.iter()
+                        .map(|x| format!("{x}:{:.4}:{:.5}", lg[*x], (lg[*x] - mx).exp() / den))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                };
+                route_lines.push(format!(
+                    "  route row={r} layer={il} prefill={} decode={}",
+                    fmt_sel(&ps, &plg),
+                    fmt_sel(&ds, &dlg)
+                ));
                 if !same {
                     let only_p: Vec<usize> =
                         pss.iter().filter(|x| !dss.contains(x)).copied().collect();
@@ -333,6 +347,9 @@ fn main() -> Res<()> {
                 "  {il:5} {:5} {mr:.3e}   {xr:.3e}   {or:.3e}   {om:9.4}   {rline}",
                 kinds[il]
             );
+        }
+        for line in &route_lines {
+            println!("{line}");
         }
         if let Some(dir) = &out {
             write_taps(dir, "prefill", r, pt, pl)?;
