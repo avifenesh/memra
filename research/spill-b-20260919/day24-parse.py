@@ -13,7 +13,7 @@ def stamp(l):
 # --- boot facts
 floor = None; budget_line = None
 for _, l in map(stamp, log):
-    m = re.search(r"boot calibration done: .*transient floor (\d+)MB", l)
+    m = re.search(r"boot calibration done: .*transient floor (\d+)Mi?B", l)
     if m: floor = int(m.group(1)) * (1 << 20)
     if "[admit-predict] shadow armed" in l: budget_line = l
     m = re.search(r"boot calibration (disarmed|skipped|FAILED)", l)

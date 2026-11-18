@@ -137,7 +137,7 @@ def boot(cell, arm, binary, n):
         m = re.search(pattern, text)
         return m.group(0).strip() if m else None
 
-    floor = first(r"transient floor \d+MB \(static[^\]]*\]")
+    floor = first(r"transient floor \d+Mi?B \(static[^\]]*\]")
     measured = re.search(r"measured (\d+)MB", floor or "")
     measured = int(measured.group(1)) if measured else None
     trims = [(why, json.loads(j)) for why, j in re.findall(r"\[device-trim\] reason=(\S+) (\{[^\n]*\})", text)]

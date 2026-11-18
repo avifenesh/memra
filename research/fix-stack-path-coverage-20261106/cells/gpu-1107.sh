@@ -104,7 +104,7 @@ note "dspark-smoke rc=$? $(grep -E 'FAIL|on-r1' $L/dspark-smoke.log | tr '\n' ' 
 
 # 5. #1075 on the stack: the 27B + DFlash2 floor and admission, old tip binary vs this tip
 G 1h "floor A/B (#1075)" python3 $C/serve_cells.py floor-ab $BIN $L/serve-floor $OLDBIN > $L/serve-floor.log 2>&1
-note "floor-ab rc=$? :: $(grep -a 'CELL' $L/serve-floor.log | cut -c1-200 | tr '\n' '|' | cut -c1-600) :: $(grep -a -h -o 'transient floor [0-9]*MB' $L/serve-floor/server-floor-*.log 2>/dev/null | tr '\n' ' ')"
+note "floor-ab rc=$? :: $(grep -a 'CELL' $L/serve-floor.log | cut -c1-200 | tr '\n' '|' | cut -c1-600) :: $(grep -a -h -o 'transient floor [0-9]*Mi\?B' $L/serve-floor/server-floor-*.log 2>/dev/null | tr '\n' ' ')"
 
 # 5b. #1078 on the stack: a default Ornith-1.5 (qwen35_moe + MTP) boot, the 1106 binary (panicked) vs this tip
 G 40m "Ornith default boot A/B (#1078)" python3 $C/serve_cells.py orn-boot-ab $BIN $L/serve-orn $OLDBIN > $L/serve-orn.log 2>&1

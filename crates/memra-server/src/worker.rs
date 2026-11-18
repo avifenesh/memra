@@ -56065,10 +56065,8 @@ mod tests {
         let body = &prod[at..at + prod[at..].find("\n}\n").expect("its end")];
         assert!(body.matches("[admit-cal]").count() >= 7);
         assert_eq!(body.matches("{}MiB").count(), 1 + 5 + 5);
-        assert!(
-            !body.contains("{}MB"),
-            "no MB label left in the calibration"
-        );
+        // `}MB` catches a named or formatted placeholder too (`{name}MB`, `{:.1}MB`).
+        assert!(!body.contains("}MB"), "no MB label left in the calibration");
     }
 
     #[test]

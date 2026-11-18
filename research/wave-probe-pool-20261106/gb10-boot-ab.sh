@@ -58,7 +58,7 @@ for cell in "$@"; do
   )
   log "cell $i $route $arm: $(tr '\n' ' ' < "$C/ready.txt") http=$(cat "$C/req.code" 2>/dev/null)"
   log "  $(grep -aoE '\[prefix-cache\] (on: budget [0-9]+MB|WARNING: derived budget is 0 B)' "$C/server.log" | head -1)"
-  log "  $(grep -aoE 'transient floor [0-9]+MB \(static[^)]*\)' "$C/server.log" | head -1)"
+  log "  $(grep -aoE 'transient floor [0-9]+Mi?B \(static[^)]*\)' "$C/server.log" | head -1)"
   log "  $(grep -aoE '\[wave-probe\][^\n]{0,200}' "$C/server.log" | head -1)"
   log "  $(grep -aoE '\[spec-cost\] (calibration|model=)[^\n]{0,160}' "$C/server.log" | head -1)"
   log "  oom_lines=$(grep -acE 'CUDA_ERROR_OUT_OF_MEMORY|out of memory' "$C/server.log")"
