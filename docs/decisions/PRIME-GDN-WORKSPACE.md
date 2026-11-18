@@ -1,10 +1,11 @@
 # The prime's GDN scan planes are one workspace, kept mapped only above a free-memory floor (2026-11-14)
 
 **Status:** adopted for dense GDN trunks on the mma scan route (memra#1258, part 2), with the review
-fold of 2026-11-14; some cells of the fold are still owed (listed in the record). Measured on an
+folds of 2026-11-14 and 2026-11-18; some cells of the first fold are still owed (listed in the
+record), and the second fold has CPU tests only. Measured on an
 RTX 5090 Laptop (sm_120a), on GB10 (sm_121a, both DGX Spark units) and, for the fold's exactness,
-on an RTX PRO 6000 Blackwell Max-Q (sm_120a), with Qwen3.8-27B NVFP4 + Q5_K and DFlash2. No env seam: the floor is the one admission keeps free
-(`MEMRA_ADMIT_DRIVER_HEADROOM_MB`), and 2,048 MiB when that is 0 or there is no admission.
+on an RTX PRO 6000 Blackwell Max-Q (sm_120a), with Qwen3.8-27B NVFP4 + Q5_K and DFlash2. No env seam: the floor is 2,048 MiB, or the one admission keeps free
+(`MEMRA_ADMIT_DRIVER_HEADROOM_MB`) when that is larger.
 
 ## Question
 
@@ -23,8 +24,9 @@ short of its target, admission charges only the workspace's rows past the call's
 calibration leaves the parked bytes out of its measured peak.
 
 The workspace stays mapped only while the device's free reading (admission's own:
-`allocatable_mem_info`) holds a floor of 2,048 MiB by default, the one admission keeps free in
-front of every request. The floor is asked at every point the workspace could stay mapped:
+`allocatable_mem_info`) holds a floor of 2,048 MiB, the default of the one admission keeps free in
+front of every request. A larger admission floor raises it; a smaller one or zero does not lower
+it. The floor is asked at every point the workspace could stay mapped:
 
 - **at a prime's end:** under the floor it is dropped, its bytes are cached blocks again, and the
   next prime allocates a new one;
@@ -36,7 +38,15 @@ front of every request. The floor is asked at every point the workspace could st
   once the device no longer holds the floor.
 
 A walk that fails, a chunk that fails and a request retired between two calls of its prime all
-release the workspace, on every engine the model owns.
+release the workspace, on every engine the model owns. So does a prime that ends without a last
+batched call, because its last tokens went through `decode_step`: a call that leaves fewer than
+`PRIME_MIN_T` tokens counts as the last, the prefill tick releases where the prompt completes,
+the MTP prime walker when its trunk is done, and every retiring request releases whatever a slab
+still holds.
+
+A captured prime graph holds the address of every plane. It replays only over the workspace
+allocation it was captured over, which a generation number names: the workspace can be freed and
+allocated again inside one prime, and one plane's address does not tell the two apart.
 
 The reason for the floor is what the workspace's bytes are. Parked, only a prime or a trim can use
 them; held between calls, nothing can. The steps that run meanwhile allocate from the pool's
@@ -53,8 +63,11 @@ cached blocks and then from the driver.
   - with the workspace no row fails: 21 rows, among them that prompt at 48 MiB and a zero-margin
     row, all seven rows of a sweep on the boot's own charge.
 - **Per-call draw on that card:** the pool grows 704-736 MiB per prime at 5.7k against main's
-  800-992, and main's 192 MiB step is gone. At ~8.1k the second call draws 1,103-1,105 MiB, the same
-  in both boots, against main's 1,616-2,255.
+  800-992, and main's 192 MiB step is gone. At ~8.1k, before the fold, the second call drew
+  1,103-1,105 MiB, the same in both boots, against main's 1,616-2,255: that head kept the
+  workspace across the gap between the two calls. With the fold a device under the floor drops
+  it there and the second call allocates it again: 1,552 MiB against main's 1,616 in the two
+  fresh boots of prompt 8,173 below (first call 1,520 against 1,584).
 - **~8.1k tokens under a 100-150 MiB margin, before the fold:** both arms fail in the prime's
   second call in 2 rows (of 10 for main, of 8 with the workspace), but not on the same prompts.
   Main's failures (prompts 8,234 and 8,215) pass with the workspace. The workspace's two failures
@@ -106,4 +119,13 @@ cached blocks and then from the driver.
 - **`MEMRA_ADMIT_DRIVER_HEADROOM_MB=0` meaning "always park".** That value switches the rung off;
   it would also have switched on the rejected always-park form, in the server and in every engine
   binary. The park keeps its own 2,048 MiB default.
+- **A smaller admission floor lowering the park floor.** With `MEMRA_ADMIT_DRIVER_HEADROOM_MB=256`
+  a device with 286 MiB free, the 8,173 rows' reading in the gap, would hold the floor and keep
+  the workspace across the gap. The setting sizes what admission hands back to the driver; the
+  park floor is the larger of it and 2,048 MiB.
+- **Releasing at retire only for a request that leaves mid-prime.** A prime whose last tokens
+  went through `decode_step` is finished when its request retires, so that test was false and the
+  workspace stayed in the slab as used bytes.
+- **The prime graph keyed on the address of one plane (`gcum`).** A workspace freed and allocated
+  again can get that plane back at its old address and the others elsewhere.
 - **An env seam for the park.** The floor is admission's existing one.
