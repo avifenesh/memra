@@ -9565,13 +9565,28 @@ fn vmm_reap_tick(
             released += c.reap_kv();
         }
     }
+    released += vmm_reap_parked(reuse, spec_reuse);
+    (released, vmm_pending_bytes(reuse, spec_reuse))
+}
+
+/// The parked pools' share of the owner-tick reap: every parked session's released tails, the
+/// part of `vmm_pending_bytes` the graveyard's reap does not release. Returns the bytes released.
+/// The admission pass reaps these and the graves only (memra#1313 review): an active session's
+/// tail is left to the tick top, because the pass's owed-growth booking (`vmm_owed_bytes`) was
+/// taken with it pending, and a tail released under it would read as free in the pass's second
+/// reading while the session needs those bytes again as it grows.
+fn vmm_reap_parked(
+    reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &mut HashMap<PoolKey, Vec<SpecReuseEntry>>,
+) -> usize {
+    let mut released = 0;
     for e in reuse.values_mut().flatten() {
         released += e.cache.reap_kv();
     }
     for e in spec_reuse.values_mut().flatten() {
         released += e.sess.reap_kv();
     }
-    (released, vmm_pending_bytes(reuse, spec_reuse))
+    released
 }
 
 /// Bytes scheduled for release and not yet reaped with nothing active (DAY37 addendum E2): the
@@ -11758,22 +11773,21 @@ fn reclaim_climb(
 /// out what the last tick released and nobody has reaped: the graves of the sessions it retired
 /// or the park cap dropped, and the trimmed tails of the sessions it parked. A pass that is short
 /// on it would start its reclaim on bytes that are already free, and evict prefix entries or a
-/// parked session nobody needed to. So when `first` is not `sufficient` and releases are pending
-/// (`pending_release_bytes`: the graveyard and the parked pools' tails; 0 under pooled planes),
-/// the pass reaps (`reap`) and reads again (`read`) before anything is reclaimed. A second reading
+/// parked session nobody needed to. So when `first` is not `sufficient`, the pass asks
+/// `reap_pending` to reap what is pending (the graveyard and the parked pools' tails; nothing
+/// under pooled planes), which returns false when nothing was, and then reads again (`read`)
+/// before anything is reclaimed. A sufficient reading costs no pending count. A second reading
 /// that is lost keeps the first.
 fn first_admission_reading<H>(
     first: Option<H>,
     sufficient: impl Fn(&H) -> bool,
-    pending_release_bytes: usize,
-    reap: impl FnOnce(),
+    reap_pending: impl FnOnce() -> bool,
     read: impl FnOnce() -> Option<H>,
 ) -> Option<H> {
     let reading = first?;
-    if sufficient(&reading) || pending_release_bytes == 0 {
+    if sufficient(&reading) || !reap_pending() {
         return Some(reading);
     }
-    reap();
     read().or(Some(reading))
 }
 
@@ -23361,29 +23375,25 @@ pub fn run(
                 // PENDING RELEASES (memra#1313): under on-demand KV planes the tick-top reap runs
                 // after this pass, so the reading above leaves out the graves and the trimmed
                 // tails the last tick left. Short on it with releases pending, the pass reaps
-                // them (the graves behind their own fences, then the owner-tick reap for the
-                // tails) and reads again, so the reclaim below never starts on bytes that are
-                // already free. Unarmed nothing is pending and the reading stands. What is still
-                // pending after the two reaps is the tick top's to read: its reap follows this
-                // pass in the same loop.
-                let vmm_unreaped = if crate::kv_vmm::armed() {
-                    vmm_pending_bytes(&reuse, &spec_reuse)
-                } else {
-                    0
-                };
+                // what `vmm_pending_bytes` counts (the graves behind their own fences, then the
+                // parked pools' tails) and reads again, so the reclaim below never starts on
+                // bytes that are already free. Active sessions' tails stay for the tick top: the
+                // owed-growth booking above was taken with them pending. Unarmed nothing is
+                // pending and the reading stands. What is still pending after the two reaps is
+                // the tick top's to read: its reap follows this pass in the same loop.
                 let raw_headroom = first_admission_reading(
                     raw_headroom,
                     |h: &AdmissionHeadroom| book(h.clone()).sufficient(required),
-                    vmm_unreaped,
                     || {
-                        vmm_reap_for("admission");
-                        let (reaped, _) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse);
-                        if reaped > 0 {
-                            eprintln!(
-                                "[kv-vmm] reap (admission) released={reaped} pending={}",
-                                memra_engine::cache::vmm_graveyard_bytes()
-                            );
+                        if !crate::kv_vmm::armed() || vmm_pending_bytes(&reuse, &spec_reuse) == 0 {
+                            return false;
                         }
+                        vmm_reap_for("admission");
+                        let tails = vmm_reap_parked(&mut reuse, &mut spec_reuse);
+                        if tails > 0 {
+                            eprintln!("[kv-vmm] reap (admission-tails) released={tails}");
+                        }
+                        true
                     },
                     || admission_headroom(&engine, &loaded, device_requirements.as_deref()),
                 );
@@ -57884,19 +57894,21 @@ mod tests {
                 .expect("the phases");
         assert!(sweep < ensure && ensure < first_phase);
         assert_eq!(live.matches("vmm_ensure_session(s)").count(), 2);
-        // The owner-tick reap has two callers: the tick top, and an admission pass whose first
-        // reading is short with releases pending (memra#1313), which reaps before it reclaims.
         assert_eq!(
             live.matches("vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse)")
                 .count(),
-            2
+            1
         );
+        // memra#1313, the one anchor of the admission pass's reap: a short first reading reaps
+        // the graves and the parked tails (never the active sessions' tails, which the owed
+        // booking holds) and is taken again before the reading is first used and before the
+        // first reclaim.
         let first = live
             .find("let raw_headroom = admission_headroom(&engine, &loaded, device_requirements.as_deref());")
             .expect("the pass's first reading");
         let reread = first
             + live[first..]
-                .find("let raw_headroom = first_admission_reading( raw_headroom, |h: &AdmissionHeadroom| book(h.clone()).sufficient(required), vmm_unreaped, || { vmm_reap_for(\"admission\"); let (reaped, _) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse);")
+                .find("vmm_reap_for(\"admission\"); let tails = vmm_reap_parked(&mut reuse, &mut spec_reuse);")
                 .expect("the short first reading is taken again after a reap");
         let settle = first
             + live[first..]
@@ -57907,9 +57919,6 @@ mod tests {
                 .find("kv_flex.shed(&mut px, false, \"admission headroom\")")
                 .expect("the pass's first reclaim");
         assert!(reread < settle && settle < reclaim);
-        assert!(live.contains(
-            "let vmm_unreaped = if crate::kv_vmm::armed() { vmm_pending_bytes(&reuse, &spec_reuse) } else { 0 };"
-        ));
     }
 
     /// WP-B day 37 (DAY37 1.2 ensure points 1 and 3, 1.3): every session-cache construction in
@@ -61841,9 +61850,12 @@ mod parked_evict_reap_1278_tests {
         driver_free: usize,
         pool_cached: usize,
         graveyard: usize,
-        /// Trimmed tails of parked sessions, scheduled for release: the owner-tick reap
+        /// Trimmed tails of parked sessions, scheduled for release: the parked pools' reap
         /// releases them, the graveyard's reap does not.
         tails: usize,
+        /// A tail an active session released past its bound, which the owner-tick reap
+        /// releases; the pass's owed-growth booking was taken with it pending.
+        active_tails: usize,
         parked: Vec<usize>,
         prefix: Vec<usize>,
         log: Vec<&'static str>,
@@ -61857,6 +61869,7 @@ mod parked_evict_reap_1278_tests {
                 pool_cached: 0,
                 graveyard: 0,
                 tails: 0,
+                active_tails: 0,
                 parked: parked.to_vec(),
                 prefix: Vec::new(),
                 log: Vec::new(),
@@ -61886,13 +61899,14 @@ mod parked_evict_reap_1278_tests {
             self.driver_free += released;
             released
         }
-        /// The owner-tick reap: the graveyard and the parked sessions' trimmed tails.
-        fn reap_tick(&mut self) -> usize {
-            self.log.push("reap-tick");
-            let released = std::mem::take(&mut self.graveyard) + std::mem::take(&mut self.tails);
+        /// The parked pools' reap (`vmm_reap_parked`): the parked sessions' trimmed tails.
+        fn reap_parked(&mut self) -> usize {
+            self.log.push("reap-parked");
+            let released = std::mem::take(&mut self.tails);
             self.driver_free += released;
             released
         }
+        /// What `vmm_pending_bytes` counts: the graveyard and the parked pools' tails.
         fn pending(&self) -> usize {
             self.graveyard + self.tails
         }
@@ -61948,18 +61962,16 @@ mod parked_evict_reap_1278_tests {
     /// is still short. Returns the evictions.
     fn admission_pass(dev: &RefCell<FakeDevice>, required: usize) -> usize {
         let first = Some(dev.borrow_mut().headroom());
-        let pending = if dev.borrow().on_demand {
-            dev.borrow().pending()
-        } else {
-            0
-        };
         let mut headroom = first_admission_reading(
             first,
             |h: &AdmissionHeadroom| h.sufficient(required),
-            pending,
             || {
+                if !dev.borrow().on_demand || dev.borrow().pending() == 0 {
+                    return false;
+                }
                 dev.borrow_mut().reap();
-                dev.borrow_mut().reap_tick();
+                dev.borrow_mut().reap_parked();
+                true
             },
             || Some(dev.borrow_mut().headroom()),
         )
@@ -61986,10 +61998,10 @@ mod parked_evict_reap_1278_tests {
         assert_eq!(admission_pass(&dev, 12 * GIB), 0);
         let dev = dev.into_inner();
         assert_eq!(dev.parked.len(), 3, "every parked session stays");
-        assert_eq!(dev.log, ["read", "reap", "reap-tick", "read"]);
+        assert_eq!(dev.log, ["read", "reap", "reap-parked", "read"]);
 
         // The same with the bytes in the trimmed tail of a session the last tick parked, which
-        // only the owner-tick reap releases.
+        // only the parked pools' reap releases.
         let dev = FakeDevice::new(true, 10 * GIB, &[4 * GIB; 3]);
         dev.borrow_mut().tails = 4 * GIB;
         assert_eq!(admission_pass(&dev, 12 * GIB), 0);
@@ -62001,6 +62013,43 @@ mod parked_evict_reap_1278_tests {
         dev.borrow_mut().graveyard = 4 * GIB;
         assert_eq!(admission_pass(&dev, 16 * GIB), 1);
         assert_eq!(dev.into_inner().parked.len(), 2);
+    }
+
+    /// memra#1313 review: an active session's tail is not the pass's to reap. The session
+    /// adopted a parked plane this pass, and the tail past its bound is pending; the pass's
+    /// owed-growth booking was taken with that tail pending, so a reading that counted it would
+    /// admit the next arrival on bytes the session needs again as it grows. 10 GiB free, 2 GiB in
+    /// the graveyard, a 4 GiB active tail, an arrival that needs 12 GiB: the pass reaps the
+    /// graves, reads 12 GiB, and leaves the tail for the tick top.
+    #[test]
+    fn a_short_pass_does_not_count_an_active_sessions_tail() {
+        let dev = FakeDevice::new(true, 10 * GIB, &[4 * GIB; 3]);
+        dev.borrow_mut().graveyard = 2 * GIB;
+        dev.borrow_mut().active_tails = 4 * GIB;
+        assert_eq!(admission_pass(&dev, 12 * GIB), 0);
+        let dev = dev.into_inner();
+        assert_eq!(dev.active_tails, 4 * GIB, "left for the tick-top reap");
+        assert_eq!(dev.driver_free, 12 * GIB, "the graves, not the active tail");
+        // With only the active tail pending the pass does not reap at all: 4 GiB short, it goes
+        // to the ladder and evicts one parked session.
+        let dev = FakeDevice::new(true, 10 * GIB, &[4 * GIB; 3]);
+        dev.borrow_mut().active_tails = 4 * GIB;
+        assert_eq!(admission_pass(&dev, 14 * GIB), 1);
+        assert_eq!(dev.borrow().active_tails, 4 * GIB);
+        assert_eq!(dev.borrow().log, ["read", "evict", "reap", "read"]);
+        // The production reap the pass calls is the parked pools' share of the owner-tick reap,
+        // which the tick top's reap also calls.
+        let worker = include_str!("worker.rs");
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let parked = live
+            .find("fn vmm_reap_parked(")
+            .expect("the parked pools' reap");
+        let body = &live[parked..parked + live[parked..].find("\n}\n").expect("its end")];
+        assert!(
+            !body.contains("active") && body.contains("reuse.values_mut()"),
+            "{body}"
+        );
+        assert!(live.contains("released += vmm_reap_parked(reuse, spec_reuse);"));
     }
 
     /// memra#1313: the first reading is taken once when it suffices or nothing is pending, and
@@ -62032,7 +62081,6 @@ mod parked_evict_reap_1278_tests {
             first_admission_reading(
                 None::<usize>,
                 |_| false,
-                GIB,
                 || panic!("no reap without a reading"),
                 || panic!("no second reading"),
             )
@@ -62044,8 +62092,10 @@ mod parked_evict_reap_1278_tests {
             first_admission_reading(
                 Some(10 * GIB),
                 |r| *r >= 12 * GIB,
-                GIB,
-                || reaped = true,
+                || {
+                    reaped = true;
+                    true
+                },
                 || None
             ),
             Some(10 * GIB)
@@ -62776,15 +62826,9 @@ mod parked_evict_reap_1278_tests {
                 ),
                 1,
             ),
-            // memra#1313: an admission pass that is short on its first reading reaps before it
-            // reclaims.
-            (
-                concat!(
-                    "vmm_reap_for(\"admission\"); let (reaped, _) = ",
-                    "vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse);",
-                ),
-                1,
-            ),
+            // memra#1313: an admission pass that is short on its first reading (its wiring is
+            // pinned in `vmm_tick_top_ensure_precedes_every_phase_and_is_armed_only`).
+            ("vmm_reap_for(\"admission\");", 1),
             // Every reap in the worker is one of the sites above.
             ("vmm_reap_for(\"", 10),
             ("vmm_reap_trim_for(engine, loaded, \"", 6),
