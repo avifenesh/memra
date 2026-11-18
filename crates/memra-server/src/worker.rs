@@ -8822,25 +8822,16 @@ fn pp_boundary_slot_token_cap(
     if !memra_engine::pp::prime_pp_on() || memra_engine::pp::pp2_streams_off() {
         return decode_wave_cap;
     }
-    // The widest call of any prime up to the context cap (memra#1276): a prime of a shorter
-    // stretch can make a wider call than the whole context's schedule does.
-    let mut single = memra_engine::hybrid_forward::prime_call_rows_max(
+    let single = pp_boundary_slot_prime_rows(
         context_cap,
-        n_trunk,
-        model.gdn_prime_grid_on(),
+        memra_engine::hybrid_forward::PrimeScheduleKind::from_env(n_trunk),
+        model
+            .gdn_prime_grid_on()
+            .then(memra_engine::Engine::gdn_chunk_size),
         model.swa_ring_on(),
+        model.uses_sliding_gated_moe_program(),
     )
     .max(decode_wave_cap);
-    // The step35 GEMM prime walks its own schedule (`step_gemm_prime_ranges`): calls of the cap
-    // from a prompt of one chunk on (memra#1275). The pipeline schedule above makes narrower
-    // calls until the context is about 28k tokens (2,405 rows at a 16,384-token context), and
-    // with a ring plan it never passes the cap (memra#1299), so the slot takes both.
-    if model.uses_sliding_gated_moe_program() {
-        single = single.max(memra_engine::hybrid_forward::step_gemm_call_rows_max(
-            context_cap,
-            model.swa_ring_on(),
-        ));
-    }
     // Concat-prime transports the sum of all selected rows through one boundary payload. The
     // scheduler caps each member by PRIME_BATCH_MAX_T and the group by PRIME_BATCH.
     let batch_members = std::env::var("MEMRA_PRIME_BATCH")
@@ -8859,6 +8850,33 @@ fn pp_boundary_slot_token_cap(
         batch_members,
         batch_rows,
     )
+}
+
+/// The widest single prime call the PP boundary slot carries, in rows. Pure over the schedule.
+///
+/// It is the widest call of any prime up to the context cap (memra#1276): a prime of a shorter
+/// stretch can make a wider call than the whole context's schedule does. A step35 model also
+/// primes through the batched GEMM entry, which walks its own schedule
+/// (`step_gemm_prime_ranges`): calls of the cap from a prompt of one chunk on (memra#1275). The
+/// pipeline schedule makes narrower calls until the context is about 28k tokens (2,405 rows at
+/// a 16,384-token context), and with a ring plan it never passes the cap (memra#1299), so the
+/// slot takes both.
+fn pp_boundary_slot_prime_rows(
+    context_cap: usize,
+    kind: memra_engine::hybrid_forward::PrimeScheduleKind,
+    grid: Option<usize>,
+    ring_on: bool,
+    step35: bool,
+) -> usize {
+    let mut rows =
+        memra_engine::hybrid_forward::prime_call_rows_max_under(context_cap, kind, grid, ring_on);
+    if step35 {
+        rows = rows.max(memra_engine::hybrid_forward::step_gemm_call_rows_max(
+            context_cap,
+            ring_on,
+        ));
+    }
+    rows
 }
 
 fn pp_boundary_token_cap_resolve(
@@ -40689,15 +40707,34 @@ mod tests {
         // memra#1299 review: the step35 GEMM prime walks its own schedule, whose calls are the
         // cap wide, while the pipeline schedule's are narrower at a short context and at most
         // the cap with a ring plan, so the slot reads both.
+        use memra_engine::hybrid_forward::PrimeScheduleKind as K;
+        let cap = 4_096;
+        let pp2 = K::Pipeline { dynamic: true };
+        let rows = |context, ring, step35| {
+            super::pp_boundary_slot_prime_rows(context, pp2, None, ring, step35)
+        };
+        // A 16,384-token context: the pipeline schedule's widest call is 2,405 rows, the GEMM
+        // prime's is the cap, and a step35 slot carries the cap.
+        assert_eq!(rows(16_384, true, false), 2_405);
+        assert_eq!(rows(16_384, true, true), cap);
+        assert_eq!(rows(8_192, true, true), cap);
+        assert_eq!(rows(4_096, true, true), cap);
+        // From 32,768 the ring-plan pipeline schedule reaches the cap by itself and never
+        // passes it; without a ring it keeps its 4,809-row call, which the slot then carries.
+        assert_eq!(rows(32_768, true, false), cap);
+        assert_eq!(rows(32_768, true, true), cap);
+        assert_eq!(rows(262_144, true, true), cap);
+        assert_eq!(rows(32_768, false, false), 4_809);
+        assert_eq!(rows(32_768, false, true), 4_809);
+        // Below one chunk the widest call is the prompt itself.
+        assert_eq!(rows(1_000, true, true), 1_000);
+        // The slot function takes its rows from this helper.
         let src = include_str!("worker.rs");
         let at = src
             .find("\nfn pp_boundary_slot_token_cap(")
             .expect("the slot cap");
         let body = &src[at..at + src[at..].find("\n}\n").expect("its end")];
-        let flat: String = body.chars().filter(|c| !c.is_whitespace()).collect();
-        assert!(flat.contains(
-            "ifmodel.uses_sliding_gated_moe_program(){single=single.max(memra_engine::hybrid_forward::step_gemm_call_rows_max(context_cap"
-        ));
+        assert!(body.contains(concat!("let single = pp_boundary_slot_prime_", "rows(")));
     }
 
     #[test]

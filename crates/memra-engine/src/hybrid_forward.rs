@@ -1847,8 +1847,12 @@ fn prime_chunk_work(prefix: usize, total: usize) -> u128 {
 }
 
 /// Splits every range wider than `cap` into parts within it (memra#1299). The SWA ring
-/// (`swa_ring_rows`) holds the reader's window plus one prime call of at most
-/// `PRIME_CHUNK_MAX_TOKENS` rows; a wider call fails its append (`SWA ring append does not fit`).
+/// (`swa_ring_rows`) is sized for the reader's window plus one prime call of
+/// `PRIME_CHUNK_MAX_TOKENS` rows and a rewind slack. An append that wraps keeps the aligned
+/// window (511 to 542 rows on a 512-row window), so the ring takes a call somewhat wider than
+/// the chunk it is sized for, and fails the append (`SWA ring append does not fit`) once the
+/// call exceeds the ring's rows less the kept ones (5,151 less 512 at t = 32,768, where the
+/// dynamic schedule's 4,809-row call fails). No call wider than the chunk is promised to fit.
 /// The split points are rounded down to the GDN chunk grid `grid` (<= 1: no grid), where
 /// [`align_prime_ranges_to_gdn`] places boundaries. Rounding can lengthen the next part by up to
 /// `grid - 1` rows, so the parts are sized to `cap - (grid - 1)` first, and none exceeds `cap`.
@@ -1978,9 +1982,9 @@ pub fn prime_chunk_ranges_under(
                 None => ranges,
             };
             // memra#1299: the dynamic schedule's calls after its short first one outgrow the
-            // chunk (4,809 rows at t = 32,768), and a ring plan holds one chunk of at most the
-            // cap. The split comes after the alignment, on the same grid, so no boundary it
-            // adds is off the grid and no alignment can widen a part again.
+            // chunk (4,097 rows from t = 27,916, 4,809 at t = 32,768), and a ring plan is sized
+            // for one chunk of the cap. The split comes after the alignment, on the same grid,
+            // so no boundary it adds is off the grid and no alignment can widen a part again.
             if ring_on {
                 split_ranges_at_cap(
                     ranges,
@@ -32477,7 +32481,7 @@ mod prime_chunk_schedule_tests {
         ] {
             // No grid (step35), and the GDN grids, should a ring plan ever carry one: the split
             // follows the alignment and keeps to its grid.
-            for grid in [None, Some(32), Some(64)] {
+            for grid in [None, Some(32), Some(64), Some(96), Some(128)] {
                 for t in (PRIME_MIN_T..=70_000).chain((70_001..=262_144).step_by(97)) {
                     let ranges = prime_chunk_ranges_under(t, kind, grid, true);
                     let at = format!("t={t} {kind:?} grid={grid:?}");
@@ -32495,7 +32499,7 @@ mod prime_chunk_schedule_tests {
         }
         // The split itself: every part within the cap and at least PRIME_MIN_T rows, and every
         // boundary it adds on the grid.
-        for grid in [1usize, 32, 64] {
+        for grid in [1usize, 32, 64, 96, 128] {
             for start in [0usize, 7, 4_096, 4_113] {
                 for width in (cap + 1..=3 * cap).step_by(37) {
                     let parts = super::split_ranges_at_cap(vec![(start, start + width)], cap, grid);
