@@ -9,7 +9,9 @@ from pathlib import Path
 CAP = 4096  # PRIME_CHUNK_MAX_TOKENS
 MIN_T = 16  # PRIME_MIN_T
 SPLIT = 64
-SHORTEST = 27_916  # the shortest continuation whose main schedule has a call over the ring's room
+# The shortest continuation whose main schedule has a call wider than the chunk (4,097 rows; the
+# ring still takes that one: its append fails once a call exceeds its rows less the kept ones).
+SHORTEST = 27_916
 RING_ERR = "SWA ring append does not fit"
 out = Path(sys.argv[1])
 ARMS = ("base",) if "--base-only" in sys.argv[2:] else ("base", "head")
