@@ -10892,6 +10892,70 @@ fn cuda_context_healthy(e: &Engine) -> bool {
     e.stream().synchronize().is_ok() && e.zeros(16).and_then(|z| e.dtoh(&z)).is_ok()
 }
 
+/// Give the device graph memory pools back before a worker respawn's reload (memra#1361).
+///
+/// A respawn keeps the process and its primary contexts, and a device's graph memory pool keeps
+/// what it reserved until `cuDeviceGraphMemTrim` or the context goes: on GB10 the dead worker's
+/// 32 MiB were still there for the respawned worker (`research/respawn-drafthw-20261118/`, PR
+/// #1353's branch), whose captures then reused them. Its draft-state measurement read 1 MB
+/// where a first boot reads 34 MB, and `dspark_vg_debt_projection` would count the dead reserve
+/// as its own. This runs after the unwind dropped the dead engine: each device whose primary
+/// context is active (only those memra opened, so no context is created on a device it never
+/// used) is synchronized and trimmed, and the graph pool's reserved and used bytes are logged
+/// before and after. A trim frees only what no graph uses; what stays used is in the line.
+fn trim_graph_pools_for_respawn() {
+    use cudarc::driver::sys;
+    let graph_mem = |device: sys::CUdevice| {
+        let read = |attr| {
+            let mut bytes: u64 = 0;
+            let rc = unsafe {
+                sys::cuDeviceGetGraphMemAttribute(
+                    device,
+                    attr,
+                    &mut bytes as *mut u64 as *mut std::ffi::c_void,
+                )
+            };
+            if rc == sys::CUresult::CUDA_SUCCESS {
+                (bytes >> 20).to_string()
+            } else {
+                "?".to_string()
+            }
+        };
+        (
+            read(sys::CUgraphMem_attribute::CU_GRAPH_MEM_ATTR_RESERVED_MEM_CURRENT),
+            read(sys::CUgraphMem_attribute::CU_GRAPH_MEM_ATTR_USED_MEM_CURRENT),
+        )
+    };
+    let mut count: i32 = 0;
+    if unsafe { sys::cuDeviceGetCount(&mut count) } != sys::CUresult::CUDA_SUCCESS {
+        return;
+    }
+    for ordinal in 0..count {
+        let (mut flags, mut active) = (0u32, 0i32);
+        let rc = unsafe { sys::cuDevicePrimaryCtxGetState(ordinal, &mut flags, &mut active) };
+        if rc != sys::CUresult::CUDA_SUCCESS || active == 0 {
+            continue;
+        }
+        let Ok(ctx) = cudarc::driver::CudaContext::new(ordinal as usize) else {
+            continue;
+        };
+        if let Err(error) = ctx.synchronize() {
+            eprintln!(
+                "[worker] respawn graph-pool trim dev{ordinal}: skipped, synchronize: {error}"
+            );
+            continue;
+        }
+        let before = graph_mem(ordinal);
+        let rc = unsafe { sys::cuDeviceGraphMemTrim(ordinal) };
+        let after = graph_mem(ordinal);
+        eprintln!(
+            "[worker] respawn graph-pool trim dev{ordinal}: reserved {}MiB used {}MiB -> \
+             reserved {}MiB used {}MiB ({rc:?})",
+            before.0, before.1, after.0, after.1,
+        );
+    }
+}
+
 /// The per-request fault boundary (memra#525). Runs `f` under `catch_unwind`; on a panic it
 /// classifies at the catch site: a driver-looking payload or a failed `context_healthy` probe is
 /// a WORKER fault and the panic is re-raised into the supervisor's respawn/exit ladder; anything
@@ -41114,6 +41178,9 @@ pub fn spawn(
                             backoff
                         );
                         std::thread::sleep(backoff);
+                        // The dead worker's engine was dropped in the unwind; give its graph
+                        // memory back before the reload (memra#1361).
+                        trim_graph_pools_for_respawn();
                         h2.mark_respawning();
                     }
                 }
@@ -56052,6 +56119,48 @@ mod tests {
     /// send because `health.mark_ready()` follows it; until then `WorkerHealth` is in
     /// PHASE_LOADING (`health::tests::loading_is_not_live_and_not_ready`). Anchored on the
     /// comment-stripped production text so a reorder is a red test, not a log archaeology.
+    /// memra#1361 wiring: a respawn trims the device graph pools after the backoff (the dead
+    /// engine dropped in the unwind) and before the reload, only on devices whose primary context
+    /// memra opened, synchronizing first.
+    #[test]
+    fn a_respawn_trims_the_graph_pools_before_its_reload() {
+        let src = include_str!("worker.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
+        let dead = prod
+            .find("h2.mark_dead(format!(\"worker thread panicked: {why}\"));")
+            .expect("the panic latch");
+        let backoff = prod
+            .find("std::thread::sleep(backoff);")
+            .expect("the backoff");
+        let trim = prod
+            .find("trim_graph_pools_for_respawn();")
+            .expect("the trim");
+        let respawning = prod.find("h2.mark_respawning();").expect("the reload");
+        assert!(
+            dead < backoff && backoff < trim && trim < respawning,
+            "{dead} {backoff} {trim} {respawning}"
+        );
+        assert_eq!(prod.matches("trim_graph_pools_for_respawn();").count(), 1);
+        let at = prod
+            .find("fn trim_graph_pools_for_respawn() {")
+            .expect("the trim fn");
+        let body = &prod[at..at + prod[at..].find("\n}\n").expect("its end")];
+        let active = body
+            .find("cuDevicePrimaryCtxGetState(")
+            .expect("the active check");
+        let skip = body.find("active == 0").expect("unopened devices skipped");
+        let sync = body.find("ctx.synchronize()").expect("synchronize");
+        let cut = body
+            .find("cuDeviceGraphMemTrim(ordinal)")
+            .expect("the trim call");
+        assert!(active < skip && skip < sync && sync < cut, "{body}");
+    }
+
     #[test]
     fn readiness_follows_the_boot_calibration_probe() {
         let src = include_str!("worker.rs");
