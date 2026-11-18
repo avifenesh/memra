@@ -1185,6 +1185,25 @@ mod tests {
     /// test this long: the supervisor waits the deadline out before it reports the timeout.
     const RUNAWAY_COMPILE_DEADLINE: Duration = Duration::from_secs(1);
 
+    /// The supervisor reports a runaway at the job's own deadline: not before it, and less than
+    /// one more deadline's length after it. `finished_at` is the supervisor's clock at the report,
+    /// so this holds however late the test thread reads the result; a supervisor that waited some
+    /// other bound (`CONSTRAINT_COMPILE_TIMEOUT`, say) fails it.
+    fn assert_reported_at_its_deadline(done: &ConstraintCompileResult, deadline: Instant) {
+        assert!(
+            done.finished_at >= deadline,
+            "runaway compile {} was reported {:?} before its deadline",
+            done.id,
+            deadline.saturating_duration_since(done.finished_at),
+        );
+        let late = done.finished_at.saturating_duration_since(deadline);
+        assert!(
+            late < RUNAWAY_COMPILE_DEADLINE,
+            "runaway compile {} was reported {late:?} after its deadline",
+            done.id,
+        );
+    }
+
     #[test]
     fn compiler_abandons_runaway_job_and_drains_next_job() {
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1208,12 +1227,9 @@ mod tests {
             }
         });
 
+        let runaway_deadline = Instant::now() + RUNAWAY_COMPILE_DEADLINE;
         compiler
-            .try_submit(
-                1,
-                GrammarSpec::JsonObject,
-                Instant::now() + RUNAWAY_COMPILE_DEADLINE,
-            )
+            .try_submit(1, GrammarSpec::JsonObject, runaway_deadline)
             .unwrap();
         started_rx
             .recv_timeout(COMPILER_EVENT_WAIT)
@@ -1236,6 +1252,7 @@ mod tests {
                 .expect("fresh compile did not drain while the first worker was stuck");
             if done.id == 1 {
                 first_timed_out = matches!(done.result, Err(ConstraintCompileFailure::TimedOut),);
+                assert_reported_at_its_deadline(&done, runaway_deadline);
                 continue;
             }
             if done.id == 2 {
@@ -1283,12 +1300,9 @@ mod tests {
         });
 
         for id in 0..CONSTRAINT_ABANDONED_WORKER_CAP as u64 {
+            let deadline = Instant::now() + RUNAWAY_COMPILE_DEADLINE;
             compiler
-                .try_submit(
-                    id,
-                    GrammarSpec::JsonObject,
-                    Instant::now() + RUNAWAY_COMPILE_DEADLINE,
-                )
+                .try_submit(id, GrammarSpec::JsonObject, deadline)
                 .unwrap();
             started_rx
                 .recv_timeout(COMPILER_EVENT_WAIT)
@@ -1301,6 +1315,7 @@ mod tests {
                 done.result,
                 Err(ConstraintCompileFailure::TimedOut)
             ));
+            assert_reported_at_its_deadline(&done, deadline);
         }
 
         let refusal = compiler.try_submit(

@@ -42616,6 +42616,11 @@ mod tests {
         // bounds below; the teeth are the per-step non-blocking guard on the wall clock.
         let start = std::time::Instant::now();
         let deadline = start + std::time::Duration::from_millis(100);
+        // The compiler job's own deadline is on the wall clock: its supervisor drops a job it
+        // dequeues after that instant, and then the compile never starts (memra#1335). Nothing
+        // here waits for it, so it is long; the pending entry keeps the 100 ms deadline, which
+        // the loop below judges on the step clock.
+        let compile_deadline = start + std::time::Duration::from_secs(30);
         let mut pathological = serde_json::json!({"type": "string"});
         for _ in 0..24 {
             pathological = serde_json::json!({"allOf": [pathological]});
@@ -42624,7 +42629,7 @@ mod tests {
             .try_submit(
                 7,
                 crate::constrained::GrammarSpec::JsonSchema(pathological),
-                deadline,
+                compile_deadline,
             )
             .unwrap();
         started_rx
