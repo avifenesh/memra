@@ -124,6 +124,12 @@ pub(crate) async fn admit_translated(
         Ok(ms) => crate::RequestDeadline::starting_now(ms),
         Err(msg) => return Err(crate::bad_request(&msg, Some("timeout_ms"))),
     };
+    // `ignore_eos: true` is served by the deepseek-v4.1 route alone, on every surface: the same
+    // `validate_ignore_eos` the chat and completions handlers call, so /v1/messages and
+    // /v1/responses refuse it for any other model with the same message (memra#1338).
+    if let Err(msg) = crate::validate_ignore_eos(req.ignore_eos, st.caps.get(&req.model)) {
+        return Err(crate::bad_request(msg, Some("ignore_eos")));
+    }
     // Defensive twin of the chat surface's role gate: the translations only construct
     // system/user/assistant/tool turns, but a translation bug must surface as a clean
     // 400 here, never as a template render fault mid-worker.

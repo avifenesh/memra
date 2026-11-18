@@ -157,7 +157,7 @@ shape is what the validation harnesses read.
 | `model`, `max_tokens`, `stream`, `stream_options`, `temperature`, `top_p`, `top_k`, `min_p`, `frequency_penalty`, `presence_penalty`, `repetition_penalty`, `seed`, `stop`, `stop_token_ids`, `n`, `background`, `cache_salt`, `session_id`, `user`, `timeout_ms`, `max_ctx` | yes | yes | supported |
 | `messages`, `max_completion_tokens`, `tools`, `tool_choice`, `parallel_tool_calls`, `response_format`, reasoning fields | yes | | supported |
 | `prompt` or `prompt_ids`, `chat` (wrap the prompt in the chat template as one user turn) | | yes | supported; `prompt_ids` are checked against the vocabulary |
-| `ignore_eos` | yes | yes | `true` is served by the deepseek-v4.1 route only; any other model answers it with a 400 ([below](#ignore_eos-on-completions-and-chat-deepseek-v41-route)) |
+| `ignore_eos` | yes | yes | `true` is served by the deepseek-v4.1 route only; any other model answers it with a 400 ([below](#ignore_eos-deepseek-v41-route)) |
 | `logit_bias` | 400 | 400 | no device-side bias hook |
 | `logprobs` | 400 unless `false` | 400 | not implemented |
 | `top_logprobs` | 400 | | not implemented |
@@ -185,20 +185,26 @@ and any later ids in its speculative burst are neither emitted nor counted in
 `usage.completion_tokens`. Listed ids win over EOS; unlisted EOS keeps its usual accounting. String
 `stop` works independently, streaming or not.
 
-### `ignore_eos` on completions and chat (deepseek-v4.1 route)
+### `ignore_eos` (deepseek-v4.1 route)
 
-`POST /v1/completions` and `POST /v1/chat/completions` accept `ignore_eos: bool` (default `false`),
-the benchmark field of other OpenAI-compatible servers: with `true` the model's end-of-sentence
-token no longer ends generation; it is detokenized into the stream and fed back like any token, and
-the request ends at `max_tokens`, a stop string or a stop id. Only the deepseek-v4.1 route serves
-it. For any other model `ignore_eos: true` is a 400 with `param: "ignore_eos"` on both surfaces;
-`false` is accepted everywhere, and an explicit `null` is `false`. The chat surface dropped the
-field without a word until memra#1325: a chat request that set it stopped at the end id with
-`finish_reason: "stop"`.
+`POST /v1/completions`, `POST /v1/chat/completions`, `POST /v1/messages` and `POST /v1/responses`
+accept `ignore_eos: bool` (default `false`), the benchmark field of other OpenAI-compatible
+servers: with `true` the model's end-of-sentence token no longer ends generation; it is
+detokenized into the stream and fed back like any token, and the request ends at its token cap
+(`max_tokens`, or `max_output_tokens` on `/v1/responses`), a stop string or a stop id. Only the
+deepseek-v4.1 route serves it. For any other model `ignore_eos: true` is a 400 whose message
+starts `ignore_eos is served by the deepseek-v4.1 route only`, on all four surfaces; the OpenAI
+error bodies carry `param: "ignore_eos"`, and `/v1/messages` answers in the Anthropic error body,
+which has no `param`. `false` is accepted everywhere, and an explicit `null` is `false`. A value
+that is not a boolean is a 400 naming the field. The chat surface dropped the field without a word
+until memra#1325, and `/v1/messages` and `/v1/responses` until memra#1338: a request that set it
+stopped at the end id.
 
 Without `max_tokens`, a request that sets `ignore_eos: true` and meets no stop string or stop id
 runs to the output bound of any request that omits `max_tokens` (the rest of the context, or the
 model's declared output cap) and ends with `finish_reason: "length"`. Send `max_tokens` with it.
+`/v1/responses` without `max_output_tokens` runs to the same bound and ends with
+`status: "incomplete"`; `/v1/messages` always carries its required `max_tokens`.
 
 ### Multiple choices: `n`
 
@@ -437,6 +443,7 @@ predicate, so the prompt it serves is the prompt counted here.
 | `tool_choice` | `{"type":"auto"}` or `{"type":"none"}`; `any` and `tool` are a 400 on this surface (use the chat surface's `required` or named form to force a call); `disable_parallel_tool_use` is ignored |
 | `stop_sequences` | stop strings; the match is reported as `stop_sequence` |
 | `temperature`, `top_p`, `top_k`, `timeout_ms` | as on chat |
+| `ignore_eos` | memra's field, as on chat: [deepseek-v4.1 route only](#ignore_eos-deepseek-v41-route) |
 | `thinking`, `output_config.effort` | see [Reasoning controls](#reasoning-controls); other `output_config` keys are a 400 |
 | `metadata.user_id` | session affinity |
 | `mcp_servers` | 400: server-side MCP does not run here |
@@ -473,8 +480,8 @@ Not implemented: `/v1/messages/count_tokens` and server-side tools.
 the whole conversation in `input` each turn (`store: false` semantics). These stateful features
 are a 400 naming the field: `previous_response_id`, `store: true`, `conversation`,
 `truncation: "auto"`, `prompt` (stored prompt templates) and `input` items of type
-`item_reference`. A non-boolean `stream`, `store` or `background` is a 400 (`<field> must be a
-boolean`); `null` is absent.
+`item_reference`. A non-boolean `stream`, `store`, `background` or `ignore_eos` is a 400 (`<field>
+must be a boolean`); `null` is absent.
 
 | Field | Handling |
 |---|---|
@@ -486,6 +493,7 @@ boolean`); `null` is absent.
 | `parallel_tool_calls` | boolean (anything else is a 400), passed to the chat rule above |
 | `max_output_tokens` | the `max_tokens` cap |
 | `temperature`, `top_p`, `user`, `timeout_ms` | as on chat |
+| `ignore_eos` | memra's field, as on chat: [deepseek-v4.1 route only](#ignore_eos-deepseek-v41-route) |
 | `reasoning` | see [Reasoning controls](#reasoning-controls) |
 | `text.format` | `text` is a no-op; `json_object` and `json_schema` use the chat surface's constrained decoder; other types are a 400 |
 | `background` | `true` returns `status: "queued"`; poll `GET /v1/responses/{id}`, cancel `POST /v1/responses/{id}/cancel`. The result stays until its TTL passes after the job ends; polls do not consume it. With `stream: true` it is a 400 |

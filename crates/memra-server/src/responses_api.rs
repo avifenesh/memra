@@ -115,7 +115,8 @@ fn refuse(field: &str, why: &str) -> String {
 }
 
 /// A Responses boolean field: `Some(b)` for a boolean, `None` when absent or null (OpenAI
-/// declares `background`, `stream` and `store` nullable). Any other value is a 400 naming the
+/// declares `background`, `stream` and `store` nullable; memra's own `ignore_eos` reads null the
+/// same way, as on chat). Any other value is a 400 naming the
 /// field, `<field> must be a boolean`: the shape chat and text completions give a non-boolean
 /// `background` (`background_jobs::BACKGROUND_NOT_BOOLEAN`).
 fn optional_bool(
@@ -489,11 +490,20 @@ pub(crate) fn translate(v: &Value) -> Result<Value, (String, Option<String>)> {
         },
     };
 
+    // `ignore_eos` is memra's benchmark field, not a Responses one. It rides into the internal
+    // request as on the chat surface, and the shared admission serves it on the deepseek-v4.1
+    // route and refuses it elsewhere. This translation used to drop it: the request answered 200
+    // and stopped at the end id (memra#1338).
+    let ignore_eos = optional_bool(obj, "ignore_eos")?.unwrap_or(false);
+
     let mut out = json!({
         "model": model,
         "messages": messages,
         "stream": stream,
     });
+    if ignore_eos {
+        out["ignore_eos"] = json!(true);
+    }
     if !tools.is_empty() {
         out["tools"] = Value::Array(tools);
     }
@@ -2219,6 +2229,35 @@ mod tests {
             translate(&json!({"model": "m", "input": "hi", "store": true})).unwrap_err();
         assert!(msg.contains("stateless"), "got: {msg}");
         assert_eq!(param.as_deref(), Some("store"));
+    }
+
+    /// memra#1338: `ignore_eos` reaches the internal chat request from `/v1/responses`. The
+    /// translation builds that request from named keys and had no such key, so `ignore_eos: true`
+    /// was dropped and the request stopped at the end id.
+    #[test]
+    fn translate_carries_ignore_eos() {
+        for (sent, want) in [
+            (Some(json!(true)), true),
+            (Some(json!(false)), false),
+            (Some(json!(null)), false),
+            (None, false),
+        ] {
+            let mut body = json!({"model": "m", "input": "hi"});
+            if let Some(v) = &sent {
+                body["ignore_eos"] = v.clone();
+            }
+            let translated = translate(&body).expect("translate");
+            let req: ChatCompletionReq =
+                serde_json::from_value(translated).expect("internal shape");
+            assert_eq!(req.ignore_eos, want, "sent {sent:?}");
+        }
+        // A value that is not a boolean is refused by name, never read as absent.
+        for invalid in [json!("true"), json!(1), json!({}), json!([])] {
+            let req = json!({"model": "m", "input": "hi", "ignore_eos": invalid});
+            let (msg, param) = translate(&req).unwrap_err();
+            assert_eq!(msg, "ignore_eos must be a boolean", "ignore_eos={invalid}");
+            assert_eq!(param.as_deref(), Some("ignore_eos"), "ignore_eos={invalid}");
+        }
     }
 
     #[test]
