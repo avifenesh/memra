@@ -2418,37 +2418,53 @@ pub(crate) fn prime_gdn_ws_parks(free: Option<usize>, floor: usize) -> bool {
 /// The four points where a prime's GDN scan workspace is dropped (memra#1258), apart from the
 /// device: what each does to the slot that holds the workspace (the slab's, or the engine's
 /// parked one). They are generic so the tests run them on a value that counts its drops. The
-/// engine passes `GdnScanWs` and the park decision (`prime_gdn_ws_parks`); a workspace that is
-/// dropped is dropped inside the call, before it returns.
+/// engine passes `GdnScanWs` and its one floor reading; the decision (`prime_gdn_ws_parks`) is
+/// taken here, so a test of an action is a test of which way the decision goes. A workspace
+/// that is dropped is dropped inside the call, before it returns.
 pub(crate) mod prime_ws_slot {
-    /// The gap between two calls of one prime. `home` keeps its workspace only when the device
-    /// holds the floor (`parks`). Returns whether one was dropped.
-    pub(crate) fn between_calls<T>(home: &mut Option<T>, parks: bool) -> bool {
-        if parks {
+    use super::prime_gdn_ws_parks;
+
+    /// The gap between two calls of one prime. `home` keeps its workspace only while the
+    /// device's free reading holds the floor. Returns whether one was dropped.
+    pub(crate) fn between_calls<T>(
+        home: &mut Option<T>,
+        free: Option<usize>,
+        floor: usize,
+    ) -> bool {
+        if prime_gdn_ws_parks(free, floor) {
             return false;
         }
         home.take().is_some()
     }
 
-    /// A prime's end. `ws` goes to `parked` when the device holds the floor, and is dropped
-    /// otherwise. Returns whether it was parked.
-    pub(crate) fn park<T>(parked: &mut Option<T>, ws: T, parks: bool) -> bool {
+    /// A prime's end. The workspace leaves `home` whatever the device holds: to `parked` when
+    /// the free reading holds the floor, dropped otherwise. Returns whether it was parked, and
+    /// None when `home` held no workspace.
+    pub(crate) fn park<T>(
+        home: &mut Option<T>,
+        parked: &mut Option<T>,
+        free: Option<usize>,
+        floor: usize,
+    ) -> Option<bool> {
+        let ws = home.take()?;
+        let parks = prime_gdn_ws_parks(free, floor);
         if parks {
             *parked = Some(ws);
         } else {
             drop(ws);
         }
-        parks
+        Some(parks)
     }
 
-    /// A later look at a parked workspace. It stays while the device holds the floor; otherwise
-    /// it leaves `parked` and is dropped. Returns `read` of the one dropped.
+    /// A later look at a parked workspace. It stays while the free reading holds the floor;
+    /// otherwise it leaves `parked` and is dropped. Returns `read` of the one dropped.
     pub(crate) fn reclaim<T, R>(
         parked: &mut Option<T>,
-        parks: bool,
+        free: Option<usize>,
+        floor: usize,
         read: impl FnOnce(&T) -> R,
     ) -> Option<R> {
-        if parks {
+        if prime_gdn_ws_parks(free, floor) {
             return None;
         }
         let ws = parked.take()?;
@@ -2553,50 +2569,75 @@ mod gdn_scan_ws_tests {
     }
 
     /// memra#1258: what each of the four drop points does to the workspace, on a stand-in that
-    /// counts the ones alive. Under the floor the workspace is gone when the call returns, not
-    /// only reported gone; above it the slot keeps the same one.
+    /// counts the ones alive, with the device's free reading against the floor. Under the floor,
+    /// or on a device that cannot be read, the workspace is gone when the call returns, not only
+    /// reported gone; at the floor and above it the slot keeps the same one. The park takes the
+    /// workspace out of its home either way.
     #[test]
     fn a_workspace_under_the_floor_is_dropped_not_only_reported() {
         use super::prime_ws_slot as slot;
         let live = std::cell::Cell::new(0usize);
         let ws = |bytes| CountedWs::new(&live, bytes);
+        let floor = super::PRIME_GDN_WS_PARK_FLOOR_DEFAULT;
+        let (roomy, short) = (Some(floor), Some(floor - 1));
 
         // The gap between two calls.
         let mut home = Some(ws(504));
-        assert!(!slot::between_calls(&mut home, true));
-        assert!(
-            home.is_some() && live.get() == 1,
-            "above the floor it stays"
-        );
-        assert!(slot::between_calls(&mut home, false));
+        assert!(!slot::between_calls(&mut home, roomy, floor));
+        assert!(home.is_some(), "at the floor it stays");
+        assert_eq!(live.get(), 1);
+        assert!(slot::between_calls(&mut home, short, floor));
         assert!(home.is_none(), "under the floor the slab keeps nothing");
         assert_eq!(live.get(), 0, "and the workspace is freed");
-        assert!(!slot::between_calls(&mut home, false), "nothing to drop");
-
-        // The prime's end.
-        let mut parked = None;
-        assert!(slot::park(&mut parked, ws(504), true));
         assert!(
-            parked.is_some() && live.get() == 1,
-            "above the floor it parks"
+            !slot::between_calls(&mut home, short, floor),
+            "nothing to drop"
         );
+        home = Some(ws(504));
+        assert!(slot::between_calls(&mut home, None, floor), "unreadable");
+        assert!(home.is_none() && live.get() == 0);
+
+        // The prime's end: the workspace leaves its home, parked or freed.
+        let mut home = Some(ws(504));
+        let mut parked = None;
+        assert_eq!(slot::park(&mut home, &mut parked, roomy, floor), Some(true));
+        assert!(home.is_none(), "at the floor it leaves the slab");
+        assert!(parked.is_some(), "and is parked");
+        assert_eq!(live.get(), 1);
+        assert_eq!(slot::park(&mut home, &mut parked, roomy, floor), None);
+        assert!(parked.is_some(), "an empty home leaves the park as it is");
         parked = None;
         assert_eq!(live.get(), 0);
-        assert!(!slot::park(&mut parked, ws(504), false));
-        assert!(parked.is_none(), "under the floor nothing is parked");
-        assert_eq!(live.get(), 0, "and the workspace is freed");
+        home = Some(ws(504));
+        assert_eq!(
+            slot::park(&mut home, &mut parked, short, floor),
+            Some(false)
+        );
+        assert!(home.is_none(), "under the floor it leaves the slab too");
+        assert!(parked.is_none(), "and nothing is parked");
+        assert_eq!(live.get(), 0, "the workspace is freed");
+        home = Some(ws(504));
+        assert_eq!(slot::park(&mut home, &mut parked, None, floor), Some(false));
+        assert!(home.is_none() && parked.is_none() && live.get() == 0);
 
         // The later look at a parked workspace.
         let mut parked = Some(ws(504));
-        assert_eq!(slot::reclaim(&mut parked, true, |w| w.bytes), None);
-        assert!(
-            parked.is_some() && live.get() == 1,
-            "above the floor it stays"
+        assert_eq!(slot::reclaim(&mut parked, roomy, floor, |w| w.bytes), None);
+        assert!(parked.is_some(), "at the floor it stays");
+        assert_eq!(live.get(), 1);
+        assert_eq!(
+            slot::reclaim(&mut parked, short, floor, |w| w.bytes),
+            Some(504)
         );
-        assert_eq!(slot::reclaim(&mut parked, false, |w| w.bytes), Some(504));
         assert!(parked.is_none(), "under the floor it leaves the park");
         assert_eq!(live.get(), 0, "and is freed before its bytes are reported");
-        assert_eq!(slot::reclaim(&mut parked, false, |w| w.bytes), None);
+        assert_eq!(slot::reclaim(&mut parked, short, floor, |w| w.bytes), None);
+        parked = Some(ws(504));
+        assert_eq!(
+            slot::reclaim(&mut parked, None, floor, |w| w.bytes),
+            Some(504)
+        );
+        assert!(parked.is_none() && live.get() == 0);
 
         // A wider call's new workspace: the old one is freed before the new one is allocated.
         let mut home = Some(ws(504));
@@ -30247,8 +30288,9 @@ impl Engine {
         *self.prime_gdn_ws.lock().unwrap_or_else(|p| p.into_inner()) = ws;
     }
 
-    /// Parks a prime's GDN scan workspace between primes (memra#1258): it stays mapped for the
-    /// next prime and counts as reclaimable until a trim frees it.
+    /// Parks a prime's GDN scan workspace between primes (memra#1258): it leaves `home` (the
+    /// slab's slot), stays mapped for the next prime and counts as reclaimable until a trim
+    /// frees it.
     ///
     /// Only a prime or a trim can use parked bytes. The steps that follow a prime allocate from
     /// the pool's cached blocks and, past those, from the driver. So the workspace is parked only
@@ -30256,19 +30298,18 @@ impl Engine {
     /// (`set_prime_gdn_ws_park_floor`). Under it the workspace is dropped here and its bytes are
     /// cached blocks again, as the per-layer planes were before the workspace: the next prime
     /// allocates a new one.
-    pub(crate) fn prime_gdn_ws_park(&self, ws: Option<GdnScanWs>) {
-        let Some(ws) = ws else {
+    pub(crate) fn prime_gdn_ws_park(&self, home: &mut Option<GdnScanWs>) {
+        let Some(bytes) = home.as_ref().map(GdnScanWs::bytes) else {
             return;
         };
         let (free, floor) = self.prime_gdn_ws_floor_reading();
-        let bytes = ws.bytes();
         let mut slot = self
             .prime_gdn_ws_parked
             .lock()
             .unwrap_or_else(|p| p.into_inner());
-        let parked = prime_ws_slot::park(&mut *slot, ws, prime_gdn_ws_parks(free, floor));
+        let parked = prime_ws_slot::park(home, &mut *slot, free, floor);
         drop(slot);
-        if !parked {
+        if parked == Some(false) {
             self.prime_gdn_ws_note("not parked", free, floor, bytes);
         }
     }
@@ -30302,7 +30343,7 @@ impl Engine {
             return;
         };
         let (free, floor) = self.prime_gdn_ws_floor_reading();
-        if prime_ws_slot::between_calls(home, prime_gdn_ws_parks(free, floor)) {
+        if prime_ws_slot::between_calls(home, free, floor) {
             self.prime_gdn_ws_note("not held between calls", free, floor, bytes);
         }
     }
@@ -30338,11 +30379,7 @@ impl Engine {
             .prime_gdn_ws_parked
             .lock()
             .unwrap_or_else(|p| p.into_inner());
-        let dropped = prime_ws_slot::reclaim(
-            &mut *slot,
-            prime_gdn_ws_parks(free, floor),
-            GdnScanWs::bytes,
-        );
+        let dropped = prime_ws_slot::reclaim(&mut *slot, free, floor, GdnScanWs::bytes);
         drop(slot);
         let Some(bytes) = dropped else {
             return 0;

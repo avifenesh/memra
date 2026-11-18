@@ -7672,7 +7672,7 @@ impl HybridModel {
         let slabs = self.prime_slabs.lock().unwrap_or_else(|p| p.into_inner());
         for owner in owners {
             if let Some(slab) = slabs.get(&owner.ctx().ordinal()) {
-                owner.prime_gdn_ws_park(slab.lock().unwrap_or_else(|p| p.into_inner()).gdn.take());
+                owner.prime_gdn_ws_park(&mut slab.lock().unwrap_or_else(|p| p.into_inner()).gdn);
             }
         }
     }
@@ -7709,7 +7709,7 @@ impl HybridModel {
         };
         let mut s = slab.lock().unwrap_or_else(|p| p.into_inner());
         if over {
-            e.prime_gdn_ws_park(s.gdn.take());
+            e.prime_gdn_ws_park(&mut s.gdn);
         } else {
             e.prime_gdn_ws_between_calls(&mut s.gdn);
         }
@@ -33519,7 +33519,7 @@ mod prime_slab_into_census_tests {
         assert!(
             end.contains(concat!(
                 "if over {\n",
-                "            e.prime_gdn_ws_park(s.gdn.take());\n",
+                "            e.prime_gdn_ws_park(&mut s.gdn);\n",
                 "        } else {\n",
                 "            e.prime_gdn_ws_between_calls(&mut s.gdn);"
             )),
@@ -33547,9 +33547,14 @@ mod prime_slab_into_census_tests {
             &hf,
             concat!("pub(crate) fn prime_gdn_ws", "_release("),
         ));
+        // The release hands the engine the slab's own slot, for every engine the model owns.
+        // A call that passed anything else (a taken value, an empty slot) released nothing.
         assert!(
             release.contains(concat!("self.owned_engines", "(e)"))
-                && release.contains(concat!("owner.prime_gdn_ws", "_park(")),
+                && release.contains(concat!(
+                    "owner.prime_gdn_ws_park(&mut slab.lock()",
+                    ".unwrap_or_else(|p| p.into_inner()).gdn);"
+                )),
             "{release}"
         );
         let ended = code(fn_body(&hf, concat!("pub fn prime", "_ended(")));
@@ -33566,6 +33571,17 @@ mod prime_slab_into_census_tests {
                 "                    self.setup()?;"
             )),
             "{advance}"
+        );
+        // The synchronous spec prime walks its segments itself. Its final segment is tokenwise
+        // under the tokenwise prime, whatever its length, so it releases after the last one.
+        let spec = std::fs::read_to_string(src.join("spec.rs")).expect("source");
+        assert_eq!(
+            spec.matches(concat!(
+                "            self.prime_gdn_ws_release(e);\n",
+                "            prompt_h = Some(h_all);\n"
+            ))
+            .count(),
+            1
         );
         // A call reuses a workspace only through the sizing decision, and replaces one only
         // through the slot action that frees the old one first.
@@ -33625,12 +33641,18 @@ mod prime_slab_into_census_tests {
             &lib,
             concat!("pub(crate) fn prime_gdn_ws", "_park("),
         ));
-        let decision = concat!("prime_gdn_ws", "_parks(free, floor)");
+        // The engine's three methods pass the slot actions the one reading and its floor, and
+        // take no decision of their own: which way the floor decides is the actions' behavior,
+        // and their test's. Each call is pinned whole, so no argument can be turned around.
+        let decides = concat!("prime_gdn_ws", "_parks(");
         assert!(
             park.contains(concat!("self.prime_gdn_ws_floor", "_reading();"))
-                && park.contains(concat!("prime_ws_slot::", "park("))
-                && park.matches(decision).count() == 1
-                && !park.contains(concat!("= Some", "(ws)")),
+                && park.contains(concat!(
+                    "let parked = prime_ws_slot::park",
+                    "(home, &mut *slot, free, floor);"
+                ))
+                && park.contains(concat!("if parked ", "== Some(false) {"))
+                && !park.contains(decides),
             "{park}"
         );
         let reading = code(fn_body(&lib, concat!("fn prime_gdn_ws_floor", "_reading(")));
@@ -33646,9 +33668,11 @@ mod prime_slab_into_census_tests {
         ));
         assert!(
             between.contains(concat!("self.prime_gdn_ws_floor", "_reading();"))
-                && between.contains(&format!(
-                    "if prime_ws_slot::between_calls(home, {decision}) {{"
-                )),
+                && between.contains(concat!(
+                    "if prime_ws_slot::between_calls",
+                    "(home, free, floor) {"
+                ))
+                && !between.contains(decides),
             "{between}"
         );
         let reconsider = code(fn_body(
@@ -33657,12 +33681,17 @@ mod prime_slab_into_census_tests {
         ));
         assert!(
             reconsider.contains(concat!("self.prime_gdn_ws_floor", "_reading();"))
-                && reconsider.contains(concat!("prime_ws_slot::", "reclaim("))
-                && reconsider.matches(decision).count() == 1
-                && !reconsider.contains(concat!("= Some", "(ws)"))
+                && reconsider.contains(concat!(
+                    "let dropped = prime_ws_slot::reclaim",
+                    "(&mut *slot, free, floor, GdnScanWs::bytes);"
+                ))
+                && !reconsider.contains(decides)
                 && reconsider.contains(concat!("self.stream()", ".synchronize()")),
             "{reconsider}"
         );
+        // The decision is taken once in each of the three actions that drop by it.
+        let actions = code(fn_body(&lib, concat!("pub(crate) mod prime_ws", "_slot {")));
+        assert_eq!(actions.matches(decides).count(), 3, "{actions}");
         let fits = code(fn_body(&lib, concat!("fn fits", "(&self")));
         assert!(fits.contains(concat!("Self::dims", "_fit(")), "{fits}");
     }
