@@ -2,7 +2,7 @@
 
 **Status:** adopted for dense GDN trunks on the mma scan route (memra#1258, part 2), with the review
 folds of 2026-11-14 and 2026-11-18; some cells of the first fold are still owed (listed in the
-record), and the second fold has CPU tests only. Measured on an
+record), and the later folds have CPU tests only. Measured on an
 RTX 5090 Laptop (sm_120a), on GB10 (sm_121a, both DGX Spark units) and, for the fold's exactness,
 on an RTX PRO 6000 Blackwell Max-Q (sm_120a), with Qwen3.8-27B NVFP4 + Q5_K and DFlash2. No env seam: the floor is 2,048 MiB, or the one admission keeps free
 (`MEMRA_ADMIT_DRIVER_HEADROOM_MB`) when that is larger.
@@ -41,8 +41,8 @@ A walk that fails, a chunk that fails and a request retired between two calls of
 release the workspace, on every engine the model owns. So does a prime that ends without a last
 batched call, because its last tokens went through `decode_step`: a call that leaves fewer than
 `PRIME_MIN_T` tokens counts as the last, the prefill tick releases where the prompt completes,
-the MTP prime walker when its trunk is done, and every retiring request releases whatever a slab
-still holds.
+the MTP prime walker when its trunk is done, the synchronous spec prime after its last segment,
+and every retiring request releases whatever a slab still holds.
 
 A captured prime graph holds the address of every plane. It replays only over the workspace
 allocation it was captured over, which a generation number names: the workspace can be freed and
