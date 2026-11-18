@@ -530,7 +530,7 @@ static int v41_sms() { return bs::sms(); }
 //
 // The ring a small-row call runs on (memra#1324; speed only, the same bytes): the RTX PRO 6000 (sm_120 with 188 SMs:
 // Workstation, Max-Q and Server Edition) runs the skeleton's two-stage block ring `bs::Block2`, every other card the
-// six-stage warp ring `bs::Warp6` (`bs::moe_block2_card`). On one Max-Q card at a four-rank share's calls (w1 + w3
+// six-stage warp ring `bs::Warp6` (`v41_moe_blk_card`). On one Max-Q card at a four-rank share's calls (w1 + w3
 // n 576 k 5120, w2 n 1280 k 2304, 64 routings a cell, interleaved rounds; receipts
 // research/modelplan-onboarding-dsv41-20261109/perf/receipts/moe1324): the block ring's w1 + w3, SwiGLU and w2 take
 // 0.66-0.77 of the pre-CUTLASS kernels' time at 3 to 64 rows, 0.81-0.92 at 1 and 2, where the warp ring took
@@ -541,6 +541,7 @@ static int v41_sms() { return bs::sms(); }
 // calls choose 8 columns at 3 rows or fewer). Other cards keep the warp ring until measured (the RTX 5090's line
 // was not measured for this change).
 static std::atomic<int> v41_moe_ring{0};
+static bool v41_moe_blk_card() { return bs::cc() == 120 && v41_sms() >= 188; }
 // The kernel gate's choice of the ring: 0 by the card, 1 the six-stage warp ring, 2 the two-stage block ring.
 extern "C" void memra_v41_moe_small_ring(int ring) {
     if (ring >= 0 && ring <= 2) v41_moe_ring.store(ring, std::memory_order_relaxed);
@@ -567,16 +568,39 @@ extern "C" int memra_v41_moe_small(const void* a, long lda, const void* asf, con
     // expert table's, checked at load): an unaligned base is refused, not read wrong
     if ((uintptr_t)a % 16 || (uintptr_t)asf % 4) return 41027;
     if (max_tiles == 0) return 0;
-    bs::moe_small_launch<bs::MxHw32<1>, bs::EpiBf16>(
-        v41_moe_ring.load(std::memory_order_relaxed), n, max_tiles, nproj, bm, (cudaStream_t)stream,
-        (const uint8_t*)a, lda, (const uint8_t*)asf, sfrow, (const bs::Tile*)tiles, ntiles, (const bs::ExpW*)ew, p0,
-        p1, ldb, (v41_bf*)d0, (v41_bf*)d1, ldc, k);
+    cudaStream_t st = (cudaStream_t)stream;
+    const uint8_t *A = (const uint8_t*)a, *As = (const uint8_t*)asf;
+    const bs::Tile* T = (const bs::Tile*)tiles;
+    const bs::ExpW* E = (const bs::ExpW*)ew;
+    using M = bs::MxHw32<1>;
+    using O = bs::EpiBf16;
+    const int ring = v41_moe_ring.load(std::memory_order_relaxed);
+#define V41_SR(RING, CWX, PKX)                                                                              \
+    bs::SmallRowMoe<bs::RING, M, O, CWX, PKX>::launch(n, max_tiles, nproj, bm, st, A, lda, As, sfrow, T, ntiles, \
+                                                      E, p0, p1, ldb, (v41_bf*)d0, (v41_bf*)d1, ldc, k)
+    if (ring == 2 || (ring == 0 && v41_moe_blk_card())) {
+        // the block-staged ring: 8 columns a warp (16 K blocks a stage) while that launch is at most one wave of
+        // four blocks an SM, else 16 (8 K blocks a stage)
+        const long b8 = (long)((n + 31) / 32) * max_tiles * nproj;
+        if (b8 <= 4L * v41_sms()) V41_SR(Block2, 8, 16);
+        else V41_SR(Block2, 16, 8);
+        V41_ERR();
+    }
+    // a warp's output columns: 16 while that gives at least four warps an SM, else 8, else 4 (a narrow output
+    // still spreads over the card; the MMA's empty rows are free next to the weight stream)
+    long want = 4L * v41_sms();
+    int cw = (long)((n + 15) / 16) * max_tiles >= want ? 16 : (long)((n + 7) / 8) * max_tiles >= want ? 8 : 4;
+    if (cw == 16) V41_SR(Warp6, 16, 4);
+    else if (cw == 8) V41_SR(Warp6, 8, 4);
+    else V41_SR(Warp6, 4, 4);
+#undef V41_SR
     V41_ERR();
 }
 
 // ---------------------------------------------------------------------------------------------
 // The small-row body of the dense FP8/FP4 GEMMs (cu/dsv41_cutlass.cu runs the calls `memra_v41_dense_small_fits`
-// takes here and every other call on CUTLASS): the skeleton's `bs::dense_small_launch`. An output element is
+// takes here and every other call on CUTLASS): the skeleton's `bs::dense_small_launch` on this route's geometry
+// (`v41_dense_geo`). An output element is
 // CUTLASS's program exactly, as in the grouped body above: the block-scaled MMA (kind::mxf8f6f4, block_scale,
 // scale_vec::1X, ue8m0) with the weights on A (e4m3, or e2m1 in its 8-bit container) and the activations on B
 // (e4m3), the canonical m16n8k32 fragments, one fp32 accumulator chained over the 32-wide K blocks in ascending
@@ -606,8 +630,48 @@ extern "C" int memra_v41_dense_small_fits(int m, int n, int k) {
 
 // c[m][n] (bf16, row pitch ldc) = a . w^T for m <= V41D_MAX_M rows: a e4m3 codes [m][lda], asf their scales in the
 // layout of m rows; w weight rows [n][ldw bytes] (wfmt 0 e4m3; 1 and 2 e2m1 pairs, low nibble first: a minted NVFP4
-// weight holds its ue8m0 codes), wsf their scales in the layout of n rows. k a multiple of 128. The launch geometry
-// is the skeleton's (`bs::dense_small_launch`); a shape it cannot stage is refused (41028).
+// weight holds its ue8m0 codes), wsf their scales in the layout of n rows. k a multiple of 128. A shape the body
+// cannot stage is refused (41028).
+//
+// The launch geometry (this route's rule): an SM's share of the output columns in one block (up to four warps of 2
+// to 16 columns each), so the whole call is resident at once, and the stage as deep as that leaves room for, up to
+// about 48 KB a SM of weights in flight (a sweep of 8 to 128 KB on the RTX 5090: 8 KB ran at 0.4 of the bandwidth,
+// 32-64 KB level and best). Returns false for a shape the body cannot stage.
+template <class Math>
+static bool v41_dense_geo(int m, int n, int k, bs::DenseLaunch& g) {
+    const int wb = Math::kWB, ab = Math::kAB, kb = k / 32;
+    const long sms = v41_sms();
+    const bs::Smem sm = bs::smem();
+    // an SM's output columns: CW the least of 2, 4, 8, 16 with four warps holding them, then the warps they need
+    const long per_sm = (n + sms - 1) / sms;
+    int cw = 2;
+    while (cw < 16 && 4L * cw < per_sm) cw <<= 1;
+    int nwb = (per_sm + cw - 1) / cw < 4 ? (int)((per_sm + cw - 1) / cw) : 4;
+    const long blocks = (n + (long)nwb * cw - 1) / ((long)nwb * cw);
+    const long bps = (blocks + sms - 1) / sms;  // blocks an SM holds at once
+    const long budget = sm.sm / bps - sm.per_block < sm.optin ? sm.sm / bps - sm.per_block : sm.optin;
+    // K blocks a stage: a power of two from 4 to 64, not past K, while the ring fits, the stages in flight
+    // (bs::kDenseStages - 1) hold at most the in-flight target, and the next stage fits the registers carrying it
+    const long want = 48L * 1024 / bps;
+    const int nthr = nwb * 32;
+    int lpk = 2;
+    while (lpk < 6 && (1 << lpk) < kb && bs::DenseGeo(wb, ab, cw, m, 2 << lpk).block(nwb) <= budget &&
+           (long)(bs::kDenseStages - 1) * nwb * cw * wb * (2 << lpk) <= want &&
+           bs::dense_carries<Math>(m, nthr, lpk + 1))
+        ++lpk;
+    if (!bs::dense_carries<Math>(m, nthr, lpk)) return false;
+    const int smem = bs::DenseGeo(wb, ab, cw, m, 1 << lpk).block(nwb);
+    if (smem > sm.optin) return false;
+    g = bs::DenseLaunch{cw, nwb, lpk, (unsigned)blocks, smem, sm.optin};
+    return true;
+}
+template <class Math>
+static int v41_dense_go(const uint8_t* A, long lda, const uint8_t* As, const uint8_t* B, long ldw, const uint8_t* Bs,
+                        v41_bf* c, long ldc, int m, int n, int k, cudaStream_t st) {
+    bs::DenseLaunch g;
+    if (!v41_dense_geo<Math>(m, n, k, g)) return -1;
+    return bs::dense_small_launch<Math, bs::EpiBf16>(g, st, A, lda, As, B, ldw, Bs, c, ldc, m, n, k);
+}
 extern "C" int memra_v41_dense_small(const void* a, long lda, const void* asf, const void* w, long ldw,
                                      const void* wsf, int wfmt, void* c, long ldc, int m, int n, int k, void* stream) {
     if (m < 0 || m > V41D_MAX_M || n <= 0 || k <= 0 || k % 128 || lda % 16 || ldw % 16 || ldc < n) return 41028;
@@ -617,11 +681,8 @@ extern "C" int memra_v41_dense_small(const void* a, long lda, const void* asf, c
     if (m == 0) return 0;
     cudaStream_t st = (cudaStream_t)stream;
     const uint8_t *A = (const uint8_t*)a, *As = (const uint8_t*)asf, *B = (const uint8_t*)w, *Bs = (const uint8_t*)wsf;
-    const int r = wfmt == 0
-                      ? bs::dense_small_launch<bs::MxHw32<0>, bs::EpiBf16>(A, lda, As, B, ldw, Bs, (v41_bf*)c, ldc, m,
-                                                                            n, k, st)
-                      : bs::dense_small_launch<bs::MxHw32<1>, bs::EpiBf16>(A, lda, As, B, ldw, Bs, (v41_bf*)c, ldc, m,
-                                                                            n, k, st);
+    const int r = wfmt == 0 ? v41_dense_go<bs::MxHw32<0>>(A, lda, As, B, ldw, Bs, (v41_bf*)c, ldc, m, n, k, st)
+                            : v41_dense_go<bs::MxHw32<1>>(A, lda, As, B, ldw, Bs, (v41_bf*)c, ldc, m, n, k, st);
     if (r) return 41028;
     V41_ERR();
 }
@@ -2911,6 +2972,7 @@ extern "C" int memra_v41_add_cast(const float* y, const void* add, void* out, lo
 // the gate compares both forms with the host plan); a longer one in chunks of V41_PLAN_CH tokens.
 #define V41_PLAN_CH 256
 #define V41_PLAN_SMALL 256
+#define V41_PLAN_NE 1024  // the most experts the plan takes (one scan thread each)
 
 // counts: scratch [ceil(rows / 256)][ne] ints (unused for at most V41_PLAN_SMALL pairs); tiles: room for
 // ceil(rows * topk / bm) + min(ne, rows * topk); the tile list covers experts [e0, e1)
@@ -2918,12 +2980,13 @@ extern "C" int memra_v41_moe_plan(const int* sel, const float* selw, int rows, i
                                   int* counts, int* off, int* ptok, float* pw, int* order, void* tiles, int* ntiles,
                                   int* err, int* flag, int* rows_bad, int row0, int rows_cap, void* stream) {
     if (rows <= 0) return rows < 0 ? 41025 : 0;
-    if (ne <= 0 || ne > 1024 || topk <= 0 || topk > bs::kMaxTopk || bm <= 0 || e0 < 0 || e1 > ne || e0 > e1)
+    if (ne <= 0 || ne > V41_PLAN_NE || topk <= 0 || topk > bs::kMaxTopk || bm <= 0 || e0 < 0 || e1 > ne || e0 > e1)
         return 41025;
     if (rows_bad && (row0 < 0 || rows_cap <= 0)) return 41025;
-    bs::moe_plan_launch<V41_PLAN_CH, 1024, V41_PLAN_SMALL>(sel, selw, rows, topk, ne, bm, e0, e1, counts, off, ptok, pw,
-                                                           order, (bs::Tile*)tiles, ntiles, err, flag, rows_bad, row0,
-                                                           rows_cap, (cudaStream_t)stream);
+    bs::moe_plan_launch<V41_PLAN_CH, V41_PLAN_NE, V41_PLAN_SMALL>(sel, selw, rows, topk, ne, bm, e0, e1, counts, off,
+                                                                  ptok, pw, order, (bs::Tile*)tiles, ntiles, err,
+                                                                  flag, rows_bad, row0, rows_cap,
+                                                                  (cudaStream_t)stream);
     V41_ERR();
 }
 

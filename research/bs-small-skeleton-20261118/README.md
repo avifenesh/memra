@@ -47,6 +47,10 @@ taken from memra-engine's build out dir) give the same result against the base: 
 build.rs's. The committed tree rebuilt with `nv_build.sh` after the last edits (comments and two unused
 `using` declarations in `dsv41_cutlass.cu`) gives the same per-kernel digests: `sass-cmp-final-tree-120a-121a.txt`.
 
+After the review of #1343 moved the speed rules (ring choice, column rules, dense geometry) from the header into
+the route, the tree was rebuilt and compared again on sm_120a and sm_121a: 104 of 104 and 9 of 9 on each arch,
+with every kernel's digest equal to the earlier head's (`sass-cmp-review-120a-121a.txt`). The move is host code only.
+
 `sass-cmp-120a-121a-round1.txt` is the first comparison of the extraction, before its expression forms were
 made exact: 18 of 104 kernels of `dsv41_gpu.cu` differed on each arch (all dense small-row instances but three,
 every grouped-body instance), while every CUTLASS kernel and every plan kernel was equal. The comparison catches
