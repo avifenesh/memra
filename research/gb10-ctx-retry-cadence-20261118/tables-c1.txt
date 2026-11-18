@@ -1,0 +1,111 @@
+cells: cb33/c1
+rows: 133; probe died or another driver error: 0
+
+== stratum first
+  fixed50: creations=12 first try out of memory=7 (58.3 %) not recovered=0
+    ms to the context:        n=7 median=629.4 p90=1284.6 p99=1284.6 max=1284.6 mean=707.2
+    driver calls (tries):     n=7 median=4 p90=12 p99=12 max=12 mean=4.9  total=34
+    ms inside failing calls:  n=7 median=198.5 p90=559.6 p99=559.6 max=559.6 mean=241.8
+    ms of waits:              n=7 median=150.9 p90=552.8 p99=552.8 max=552.8 mean=193.9
+    one failing call, ms:     n=27 median=62.9 p90=95.8 p99=110.7 max=110.7 mean=62.7
+    ms of the call that succeeded: n=7 median=207.6 p90=444.3 p99=444.3 max=444.3 mean=271.4
+    over 1 s: 2; calls per second in those: n=2 median=7.43 p90=9.34 p99=9.34 max=9.34 mean=8.4
+    over 1/2/5/10 s: [2, 0, 0, 0]
+    over 90 s: 0; ladder rows where the shipped policy would have given up: 0
+  ladder: creations=5 first try out of memory=2 (40.0 %) not recovered=0
+    ms to the context:        n=2 median=691.6 p90=1248.1 p99=1248.1 max=1248.1 mean=969.8
+    driver calls (tries):     n=2 median=4 p90=5 p99=5 max=5 mean=4.5  total=9
+    ms inside failing calls:  n=2 median=163.3 p90=184.4 p99=184.4 max=184.4 mean=173.9
+    ms of waits:              n=2 median=351.1 p90=751.7 p99=751.7 max=751.7 mean=551.4
+    one failing call, ms:     n=7 median=55.7 p90=72.7 p99=72.7 max=72.7 mean=49.7
+    ms of the call that succeeded: n=2 median=177.2 p90=312 p99=312 max=312 mean=244.6
+    over 1 s: 1; calls per second in those: n=1 median=4.01 p90=4.01 p99=4.01 max=4.01 mean=4.0
+    over 1/2/5/10 s: [1, 0, 0, 0]
+    over 90 s: 0; ladder rows where the shipped policy would have given up: 0
+
+== stratum later
+  fixed50: creations=39 first try out of memory=2 (5.1 %) not recovered=0
+    ms to the context:        n=2 median=260.8 p90=270.3 p99=270.3 max=270.3 mean=265.6
+    driver calls (tries):     n=2 median=2 p90=2 p99=2 max=2 mean=2.0  total=4
+    ms inside failing calls:  n=2 median=23.2 p90=32.1 p99=32.1 max=32.1 mean=27.6
+    ms of waits:              n=2 median=50.3 p90=50.3 p99=50.3 max=50.3 mean=50.3
+    one failing call, ms:     n=2 median=23.2 p90=32.1 p99=32.1 max=32.1 mean=27.6
+    ms of the call that succeeded: n=2 median=187.3 p90=187.9 p99=187.9 max=187.9 mean=187.6
+    over 1/2/5/10 s: [0, 0, 0, 0]
+    over 90 s: 0; ladder rows where the shipped policy would have given up: 0
+  ladder: creations=46 first try out of memory=1 (2.2 %) not recovered=0
+    ms to the context:        n=1 median=2092.2 p90=2092.2 p99=2092.2 max=2092.2 mean=2092.2
+    driver calls (tries):     n=1 median=6 p90=6 p99=6 max=6 mean=6.0  total=6
+    ms inside failing calls:  n=1 median=378.9 p90=378.9 p99=378.9 max=378.9 mean=378.9
+    ms of waits:              n=1 median=1551.5 p90=1551.5 p99=1551.5 max=1551.5 mean=1551.5
+    one failing call, ms:     n=5 median=57.8 p90=123.8 p99=123.8 max=123.8 mean=75.8
+    ms of the call that succeeded: n=1 median=161.8 p90=161.8 p99=161.8 max=161.8 mean=161.8
+    over 1 s: 1; calls per second in those: n=1 median=2.87 p90=2.87 p99=2.87 max=2.87 mean=2.9
+    over 1/2/5/10 s: [1, 1, 0, 0]
+    over 90 s: 0; ladder rows where the shipped policy would have given up: 0
+
+== stratum holder
+  fixed50: creations=15 first try out of memory=2 (13.3 %) not recovered=0
+    ms to the context:        n=2 median=248.2 p90=1514.8 p99=1514.8 max=1514.8 mean=881.5
+    driver calls (tries):     n=2 median=2 p90=9 p99=9 max=9 mean=5.5  total=11
+    ms inside failing calls:  n=2 median=31.2 p90=870.7 p99=870.7 max=870.7 mean=451.0
+    ms of waits:              n=2 median=50.5 p90=402.8 p99=402.8 max=402.8 mean=226.7
+    one failing call, ms:     n=9 median=97.1 p90=175 p99=175 max=175 mean=100.2
+    ms of the call that succeeded: n=2 median=166.5 p90=241.3 p99=241.3 max=241.3 mean=203.9
+    over 1 s: 1; calls per second in those: n=1 median=5.94 p90=5.94 p99=5.94 max=5.94 mean=5.9
+    over 1/2/5/10 s: [1, 0, 0, 0]
+    over 90 s: 0; ladder rows where the shipped policy would have given up: 0
+  ladder: creations=16 first try out of memory=0 (0.0 %) not recovered=0
+
+== stratum first+later
+  fixed50: creations=51 first try out of memory=9 (17.6 %) not recovered=0
+    ms to the context:        n=9 median=589.7 p90=1284.6 p99=1284.6 max=1284.6 mean=609.0
+    driver calls (tries):     n=9 median=2 p90=12 p99=12 max=12 mean=4.2  total=38
+    ms inside failing calls:  n=9 median=95.1 p90=559.6 p99=559.6 max=559.6 mean=194.2
+    ms of waits:              n=9 median=50.4 p90=552.8 p99=552.8 max=552.8 mean=162.0
+    one failing call, ms:     n=29 median=57.1 p90=95.8 p99=110.7 max=110.7 mean=60.3
+    ms of the call that succeeded: n=9 median=206.1 p90=444.3 p99=444.3 max=444.3 mean=252.8
+    over 1 s: 2; calls per second in those: n=2 median=7.43 p90=9.34 p99=9.34 max=9.34 mean=8.4
+    over 1/2/5/10 s: [2, 0, 0, 0]
+    over 90 s: 0; ladder rows where the shipped policy would have given up: 0
+  ladder: creations=51 first try out of memory=3 (5.9 %) not recovered=0
+    ms to the context:        n=3 median=1248.1 p90=2092.2 p99=2092.2 max=2092.2 mean=1344.0
+    driver calls (tries):     n=3 median=5 p90=6 p99=6 max=6 mean=5.0  total=15
+    ms inside failing calls:  n=3 median=184.4 p90=378.9 p99=378.9 max=378.9 mean=242.2
+    ms of waits:              n=3 median=751.7 p90=1551.5 p99=1551.5 max=1551.5 mean=884.8
+    one failing call, ms:     n=12 median=55.7 p90=120.1 p99=123.8 max=123.8 mean=60.6
+    ms of the call that succeeded: n=3 median=177.2 p90=312 p99=312 max=312 mean=217.0
+    over 1 s: 2; calls per second in those: n=2 median=2.87 p90=4.01 p99=4.01 max=4.01 mean=3.4
+    over 1/2/5/10 s: [2, 1, 0, 0]
+    over 90 s: 0; ladder rows where the shipped policy would have given up: 0
+  fixed50 vs ladder ms to the context: Mann-Whitney U=4 z=-1.76 p=0.079; median difference -658 ms, 95 % bootstrap [-1815, 104]
+  calls per failed creation: fixed50 mean 4.2, ladder mean 5.0
+
+== stratum first+later+holder
+  fixed50: creations=66 first try out of memory=11 (16.7 %) not recovered=0
+    ms to the context:        n=11 median=589.7 p90=1284.6 p99=1514.8 max=1514.8 mean=658.6
+    driver calls (tries):     n=11 median=2 p90=9 p99=12 max=12 mean=4.5  total=49
+    ms inside failing calls:  n=11 median=95.1 p90=559.6 p99=870.7 max=870.7 mean=240.9
+    ms of waits:              n=11 median=50.5 p90=402.8 p99=552.8 max=552.8 mean=173.8
+    one failing call, ms:     n=38 median=63.2 p90=110.7 p99=175 max=175 mean=69.7
+    ms of the call that succeeded: n=11 median=206.1 p90=418.8 p99=444.3 max=444.3 mean=243.9
+    over 1 s: 3; calls per second in those: n=3 median=7.43 p90=9.34 p99=9.34 max=9.34 mean=7.6
+    over 1/2/5/10 s: [3, 0, 0, 0]
+    over 90 s: 0; ladder rows where the shipped policy would have given up: 0
+  ladder: creations=67 first try out of memory=3 (4.5 %) not recovered=0
+    ms to the context:        n=3 median=1248.1 p90=2092.2 p99=2092.2 max=2092.2 mean=1344.0
+    driver calls (tries):     n=3 median=5 p90=6 p99=6 max=6 mean=5.0  total=15
+    ms inside failing calls:  n=3 median=184.4 p90=378.9 p99=378.9 max=378.9 mean=242.2
+    ms of waits:              n=3 median=751.7 p90=1551.5 p99=1551.5 max=1551.5 mean=884.8
+    one failing call, ms:     n=12 median=55.7 p90=120.1 p99=123.8 max=123.8 mean=60.6
+    ms of the call that succeeded: n=3 median=177.2 p90=312 p99=312 max=312 mean=217.0
+    over 1 s: 2; calls per second in those: n=2 median=2.87 p90=4.01 p99=4.01 max=4.01 mean=3.4
+    over 1/2/5/10 s: [2, 1, 0, 0]
+    over 90 s: 0; ladder rows where the shipped policy would have given up: 0
+  fixed50 vs ladder ms to the context: Mann-Whitney U=6 z=-1.63 p=0.102; median difference -658 ms, 95 % bootstrap [-1815, 104]
+  calls per failed creation: fixed50 mean 4.5, ladder mean 5.0
+
+free blocks of order >= 9 read before a failing try: n=50 median=0 p90=0 p99=0 max=0 mean=0.0
+free blocks of order >= 9 read before the try that succeeded: n=14 median=0 p90=1 p99=2 max=2 mean=0.3
+MemFree MB before a failing try: n=50 median=2006 p90=2318 p99=2655 max=2655 mean=1972.0
+MemAvailable MB before a failing try: n=50 median=116832 p90=117125 p99=117138 max=117138 mean=115188.5

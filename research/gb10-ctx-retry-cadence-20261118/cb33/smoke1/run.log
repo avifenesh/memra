@@ -1,0 +1,15 @@
+2026-11-18T11:23:55+02:00 cell smoke1 READERS=8 K=3 GAP_MS=1500 ARMS=fixed50 ladder HOLD_GIB=24 HOLD_S=2 ARM_MB=2500 ARM_WAIT_S=30 PAUSE_S=10 SETTLE_S=5 ROUNDS=3 UNTIL=9999999999
+2026-11-18T11:23:55+02:00 host: spark-cb33 7.0.0-1019-nvidia NVIDIA GB10, 580.178.04 min_free_kbytes=45166 probe=79911fd34aacbeaf
+2026-11-18T11:23:55+02:00 episode 1 starts
+2026-11-18T11:23:55+02:00 fill_live: before MemFree: 47627 MemAvailable: 116244 Cached: 68593 
+  2026-11-18T11:23:55+02:00 fill2: before MemFree: 48770668 kB;MemAvailable: 119034180 kB;Cached: 70239740 kB;
+  2026-11-18T11:24:53+02:00 fill2 done: MemFree: 1562600 kB;MemAvailable: 108476860 kB;Cached: 107549672 kB;
+2026-11-18T11:24:53+02:00 fill_live: 8 readers running until /home/avifenesh/.cache/memra-1330/runs/smoke1/stop.1 (at most 100000s)
+2026-11-18T11:26:03+02:00 episode 1 ends at round 2: MemFree stayed over 2500 MB
+2026-11-18T11:26:13+02:00 episode 2 starts
+2026-11-18T11:26:13+02:00 fill_live: before MemFree: 3068 MemAvailable: 112170 Cached: 109828 
+  2026-11-18T11:26:13+02:00 fill2: before MemFree: 3138204 kB;MemAvailable: 114858924 kB;Cached: 112464792 kB;
+  2026-11-18T11:26:15+02:00 fill2 done: MemFree: 3009300 kB;MemAvailable: 114119296 kB;Cached: 111853752 kB;
+2026-11-18T11:26:15+02:00 fill_live: 8 readers running until /home/avifenesh/.cache/memra-1330/runs/smoke1/stop.2 (at most 100000s)
+2026-11-18T11:26:59+02:00 end: rounds=3 episodes=2 MemFree: 11152724 kB;MemAvailable: 119980468 kB;Cached: 109810248 kB;
+2026-11-18T11:27:00+02:00 creations=6 first_try_failed=0 nvrm_lines=1 kgrctx=0
