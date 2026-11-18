@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -1765,6 +1766,21 @@ class VerifyAllowlistTests(unittest.TestCase):
         self.assertEqual(rc, 0, output)
         self.assertIn("1 allowlist entries", output)
 
+    def mirror_origin(self, pull: int = 1, fetched_pull: int | None = None) -> None:
+        """Make this repo look like a clone that mirrors origin, as boundary-refs.yml fetches it:
+        the repo is its own `origin` remote, each branch is at refs/remotes/origin/*, and `pull`
+        PR heads (refs/pull/N/head, which `git ls-remote origin` lists) of which `fetched_pull`
+        are at refs/remotes/origin-pull/*. The tags are the repo's own."""
+        if "origin" not in self.git("remote").split():
+            self.git("remote", "add", "origin", str(self.root))
+        for branch in self.git("for-each-ref", "--format=%(refname:short)", "refs/heads").split():
+            self.git("update-ref", f"refs/remotes/origin/{branch}", f"refs/heads/{branch}")
+        head = self.git("rev-parse", "HEAD")
+        for n in range(1, pull + 1):
+            self.git("update-ref", f"refs/pull/{n}/head", head)
+            if n <= (pull if fetched_pull is None else fetched_pull):
+                self.git("update-ref", f"refs/remotes/origin-pull/{n}", head)
+
     def historical(self, path: str, data: bytes, rules: list[str]) -> dict:
         """A `refs_only` row for `data` at `path`: a version the checkout no longer carries."""
         return {
@@ -1873,13 +1889,100 @@ class VerifyAllowlistTests(unittest.TestCase):
         self.assertIn("kept 1 refs_only entries unpruned", output)
         with mock.patch.object(boundary, "ROOT", self.root):
             self.assertEqual(len(boundary.load_allowlist(self.allowlist_path)), 1)
-        head = self.git("rev-parse", "HEAD")
-        self.git("update-ref", "refs/remotes/origin/main", head)
-        self.git("update-ref", "refs/remotes/origin-pull/1", head)
+        # Review of memra#1368 round 2: a plain clone (origin's branches and the tags, no PR
+        # heads) keeps it too.
+        self.mirror_origin(pull=0)
+        self.write_allowlist(never)
+        rc, output = self.run_verify(prune=True)
+        self.assertEqual(rc, 1, output)
+        self.assertIn("kept 1 refs_only entries unpruned: the published refs here lack one of", output)
+        # One PR head fetched of two that origin lists: the shape holds, the counts do not.
+        self.mirror_origin(pull=2, fetched_pull=1)
+        rc, output = self.run_verify(prune=True)
+        self.assertEqual(rc, 1, output)
+        self.assertIn("(pull heads: 1 here, 2 on origin)", output)
+        self.mirror_origin(pull=2)
         rc, output = self.run_verify(prune=True)
         self.assertEqual(rc, 0, output)
         with mock.patch.object(boundary, "ROOT", self.root):
             self.assertEqual(boundary.load_allowlist(self.allowlist_path), {})
+
+    def test_prune_without_an_origin_remote_keeps_refs_only_entries(self) -> None:
+        """Review of memra#1368 round 2: the refs' counts are compared with `git ls-remote
+        origin`; when that cannot run, the set is not known to be whole."""
+        self.tag_old_version()
+        self.mirror_origin()
+        # Removing the remote would drop refs/remotes/origin/* with it; point it nowhere instead.
+        self.git("remote", "set-url", "origin", str(self.root / "no-such-repo"))
+        self.write_allowlist(self.historical("deploy/old.txt", b"never pushed\n", ["alpha"]))
+        rc, output = self.run_verify(prune=True)
+        self.assertEqual(rc, 1, output)
+        self.assertIn("`git ls-remote origin` failed", output)
+
+    def test_prune_on_a_plain_clone_still_prunes_checkout_entries(self) -> None:
+        """Review of memra#1368 round 2: on a plain clone a refs_only entry that did NOT drift is
+        not "kept unpruned", and a drifted checkout entry still drops, with rc 0."""
+        old = self.tag_old_version()
+        self.commit("deploy/gone.txt", b"beta needle\n")
+        gone = self.pin("deploy/gone.txt", ["beta"])
+        self.commit("deploy/gone.txt", b"clean\n")
+        self.mirror_origin(pull=0)
+        kept = self.historical("deploy/old.txt", old, ["alpha"])
+        self.write_allowlist(kept, gone)
+        rc, output = self.run_verify(prune=True)
+        self.assertEqual(rc, 0, output)
+        self.assertIn("dropped 1 entries", output)
+        self.assertNotIn("unpruned", output)
+        with mock.patch.object(boundary, "ROOT", self.root):
+            self.assertEqual(list(boundary.load_allowlist(self.allowlist_path)), [("deploy/old.txt", kept["sha256"])])
+
+    def test_the_ref_set_shape_needs_each_published_namespace(self) -> None:
+        """Review of memra#1368 round 2: origin's branches, its PR heads and the tags, each."""
+        whole = ["refs/remotes/origin/main", "refs/remotes/origin-pull/7", "refs/tags/v1"]
+        self.assertTrue(boundary.ref_set_looks_complete(whole))
+        for missing in whole:
+            with self.subTest(missing=missing):
+                self.assertFalse(
+                    boundary.ref_set_looks_complete([ref for ref in whole if ref != missing])
+                )
+
+    def test_remote_ref_shortfall_counts_each_namespace(self) -> None:
+        listing = "\n".join(
+            f"{'0' * 40}\t{name}"
+            for name in (
+                "HEAD",
+                "refs/heads/main",
+                "refs/heads/lane",
+                "refs/tags/v1",
+                "refs/tags/v1^{}",
+                "refs/pull/1/head",
+                "refs/pull/1/merge",
+                "refs/pull/2/head",
+            )
+        )
+        refs = [
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/main",
+            "refs/remotes/origin/lane",
+            "refs/remotes/origin-pull/1",
+            "refs/remotes/origin-pull/2",
+            "refs/tags/v1",
+        ]
+        self.assertEqual(boundary.remote_ref_shortfall(refs, listing), [])
+        self.assertEqual(
+            boundary.remote_ref_shortfall(
+                [ref for ref in refs if ref not in ("refs/remotes/origin/lane", "refs/tags/v1")], listing
+            ),
+            ["heads: 1 here, 2 on origin", "tags: 0 here, 1 on origin"],
+        )
+        self.assertEqual(
+            boundary.remote_ref_shortfall(refs[:2] + refs[3:], listing),
+            ["heads: 1 here, 2 on origin"],
+        )
+        self.assertEqual(
+            boundary.remote_ref_shortfall(refs[:4] + refs[5:], listing),
+            ["pull heads: 1 here, 2 on origin"],
+        )
 
     def test_verify_fails_on_a_secret_inside_a_refs_only_private_version(self) -> None:
         """Review of memra#1368: a private path's violation names its globs only, so the ref scan
@@ -1906,6 +2009,14 @@ class VerifyAllowlistTests(unittest.TestCase):
             f"sha256={rows[1]['sha256'][:12]}…  (rules the entry does not name: alpha)",
             output,
         )
+        # Review of memra#1368 round 2: --prune cannot fix an unnamed secret rule, so it fails
+        # too, even on refs that mirror origin, and keeps the entry.
+        self.mirror_origin()
+        rc, output = self.run_verify(prune=True)
+        self.assertEqual(rc, 1, output)
+        self.assertNotIn("unpruned", output)
+        with mock.patch.object(boundary, "ROOT", self.root):
+            self.assertEqual(len(boundary.load_allowlist(self.allowlist_path)), 2)
         # An entry that names the secret rule too (a reviewed placeholder) holds.
         self.write_allowlist(rows[0], {**rows[1], "rules": ["alpha", "priv"]})
         rc, output = self.run_verify()
@@ -1914,9 +2025,7 @@ class VerifyAllowlistTests(unittest.TestCase):
     def test_prune_keeps_the_section_comment_over_refs_only_entries(self) -> None:
         """Review of memra#1368: a rewrite puts the refs_only rows, under their comment, last."""
         old = self.tag_old_version()
-        head = self.git("rev-parse", "HEAD")
-        self.git("update-ref", "refs/remotes/origin/main", head)
-        self.git("update-ref", "refs/remotes/origin-pull/1", head)
+        self.mirror_origin()
         self.commit("deploy/live.txt", b"beta needle\n")
         live = self.pin("deploy/live.txt", ["beta"])
         self.commit("deploy/gone.txt", b"beta needle too\n")
@@ -2018,22 +2127,72 @@ class VerifyAllowlistTests(unittest.TestCase):
         """The full clone that holds every published ref is where refs_only entries are held.
         Review of memra#1368: the scan and the drift check run in one step, each failing the step
         without skipping the other, and an allowlist or scanner change on a pull request runs the
-        drift check."""
+        drift check. Round 2: the drift check runs first (a timeout kill in the slow scan must not
+        take it along), and the step body is RUN, as GitHub runs it (`bash -e`), with a stub
+        python3 that records each call."""
         workflow = (Path(__file__).resolve().parent.parent / ".github/workflows/boundary-refs.yml")
         text = workflow.read_text()
         steps = text.split("\n      - name: ")
         step = next(s for s in steps if s.startswith("Public-boundary ref scan and allowlist drift"))
-        body = [ln.strip() for ln in step.split("run: |", 1)[1].splitlines() if ln.strip()]
-        self.assertNotIn("set -euo pipefail", body)
-        self.assertIn("if ! python3 tools/check-public-boundary.py verify-allowlist; then", body)
-        self.assertEqual(body.count("rc=1"), 2)
-        self.assertEqual(body[-1], 'exit "$rc"')
+        script = textwrap.dedent(step.split("run: |\n", 1)[1])
         code = ["\n".join(ln for ln in s.splitlines() if not ln.strip().startswith("#")) for s in steps]
         self.assertEqual(sum("verify-allowlist" in c for c in code), 1)
+        stub = self.root / "stub"
+        stub.mkdir()
+        (stub / "python3").write_text(
+            '#!/bin/sh\necho "$*" >> "$CALLS"\n'
+            'case "$*" in *verify-allowlist*) exit "$V_RC";; *) exit "$C_RC";; esac\n'
+        )
+        (stub / "python3").chmod(0o755)
+        (stub / "step.sh").write_text(script)
+        calls = stub / "calls"
+        verify = "tools/check-public-boundary.py verify-allowlist"
+        scan = (
+            "tools/check-public-boundary.py check --refs "
+            "refs/remotes/origin/**,refs/remotes/origin-pull/**,refs/tags/** --summary-only"
+        )
+        for event in ("schedule", "pull_request", "workflow_dispatch"):
+            for v_rc in (0, 1):
+                for c_rc in (0, 1):
+                    with self.subTest(event=event, v_rc=v_rc, c_rc=c_rc):
+                        calls.write_text("")
+                        env = {
+                            **os.environ,
+                            "PATH": f"{stub}:{os.environ['PATH']}",
+                            "CALLS": str(calls),
+                            "EVENT": event,
+                            "REF_GLOB": "",
+                            "V_RC": str(v_rc),
+                            "C_RC": str(c_rc),
+                        }
+                        run = subprocess.run(
+                            ["bash", "--noprofile", "--norc", "-eo", "pipefail", str(stub / "step.sh")],
+                            env=env,
+                            capture_output=True,
+                            text=True,
+                        )
+                        made = calls.read_text().splitlines()
+                        if event == "pull_request":
+                            self.assertEqual(made, [verify])
+                            self.assertEqual(run.returncode, v_rc, run.stdout)
+                        else:
+                            self.assertEqual(made, [verify, scan])
+                            self.assertEqual(run.returncode, int(bool(v_rc or c_rc)), run.stdout)
         on = text.split("\njobs:", 1)[0]
         pr = on.split("\n  pull_request:\n", 1)[1].split("\n  workflow_dispatch:", 1)[0]
-        for path in ("tools/public-boundary-allowlist.jsonl", "tools/check-public-boundary.py"):
-            self.assertIn(f'- "{path}"', pr)
+        listed = [ln.strip() for ln in pr.splitlines() if ln.strip().startswith("- ")]
+        self.assertEqual(
+            sorted(listed),
+            sorted(
+                f'- "{path}"'
+                for path in (
+                    "tools/public-boundary-allowlist.jsonl",
+                    "tools/public-boundary-policy.toml",
+                    "tools/check-public-boundary.py",
+                    ".github/workflows/boundary-refs.yml",
+                )
+            ),
+        )
 
     def test_empty_allowlist_never_requests_a_whole_tree_grep(self) -> None:
         self.commit("deploy/new.txt", b"alpha needle\n")
