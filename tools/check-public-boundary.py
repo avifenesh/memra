@@ -811,6 +811,9 @@ def blobs_at(specs: List[str]) -> Dict[str, bytes]:
     result = subprocess.run(
         ["git", "cat-file", "--batch"],
         cwd=ROOT,
+        # Review of memra#1368 round 4: a local refs/replace/* substitute must not stand in for
+        # the object a ref names.
+        env={**os.environ, "GIT_NO_REPLACE_OBJECTS": "1"},
         # Paths come from git as bytes and are decoded with surrogateescape, so encode them back
         # the same way: a non-UTF-8 path name must not stop the pass.
         input="\n".join(specs).encode("utf-8", "surrogateescape") + b"\n",
@@ -892,6 +895,9 @@ def oids_at(specs: List[str]) -> Dict[str, str]:
     result = subprocess.run(
         ["git", "cat-file", "--batch-check=%(objectname) %(objecttype)"],
         cwd=ROOT,
+        # Review of memra#1368 round 4: a local refs/replace/* substitute must not stand in for
+        # the object a ref names.
+        env={**os.environ, "GIT_NO_REPLACE_OBJECTS": "1"},
         # Paths come from git as bytes and are decoded with surrogateescape, so encode them back
         # the same way: a non-UTF-8 path name must not stop the pass.
         input="\n".join(specs).encode("utf-8", "surrogateescape") + b"\n",

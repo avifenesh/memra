@@ -1919,8 +1919,11 @@ class VerifyAllowlistTests(unittest.TestCase):
     def test_prune_keeps_refs_only_entries_when_a_tip_here_is_behind_origin(self) -> None:
         """Review of memra#1368 round 3 (Q1): origin's `lane` moved to a commit that carries a
         listed version and this clone's origin/lane is the old tip. Every count matches, the
-        carrier is not here, and --prune must keep the entry. Fetched, the entry holds (Q0)."""
+        carrier is not here, and --prune must keep the entry. Fetched, the entry holds (Q0).
+        Round 4: an annotated tag (origin's are all annotated) matches by its tag object, so
+        reading the commit it points to instead makes the fetched clone refuse."""
         self.tag_old_version()
+        self.git("tag", "-a", "-m", "x", "v2")
         version = b"alpha needle, on lane\n"
         entry = self.historical("deploy/old.txt", version, ["alpha"])
         self.git("branch", "lane")
@@ -1942,6 +1945,31 @@ class VerifyAllowlistTests(unittest.TestCase):
         rc, output = self.run_verify(prune=True)
         self.assertEqual(rc, 0, output)
         self.assertIn("1 refs_only entries all pin versions", output)
+
+    def test_a_local_replace_ref_does_not_hide_a_carrier(self) -> None:
+        """Review of memra#1368 round 4 (Q9): a local refs/replace/* substitute for the carrier's
+        commit, or for the version's blob. Every ref matches origin, so --prune runs, and the
+        entry must hold: the scanner reads the objects the refs name, not their replacements."""
+        self.tag_old_version()
+        base = self.git("rev-parse", "HEAD")
+        version = b"alpha needle, on lane\n"
+        self.lane_with(version)
+        self.mirror_origin()
+        entry = self.historical("deploy/old.txt", version, ["alpha"])
+        lane = self.git("rev-parse", "lane")
+        blob = self.git("rev-parse", "lane:deploy/old.txt")
+        clean = self.git("rev-parse", "HEAD:deploy/old.txt")
+        # The carrier's commit replaced by one without the version, then the version's blob by
+        # the clean one.
+        for replaced, by in ((lane, base), (blob, clean)):
+            self.git("replace", "-f", replaced, by)
+            self.write_allowlist(entry)
+            rc, output = self.run_verify(prune=True)
+            self.assertEqual(rc, 0, output)
+            self.assertIn("1 refs_only entries all pin versions", output)
+            with mock.patch.object(boundary, "ROOT", self.root):
+                self.assertEqual(len(boundary.load_allowlist(self.allowlist_path)), 1)
+            self.git("replace", "-d", replaced)
 
     def test_prune_keeps_refs_only_entries_when_a_stale_ref_hides_a_missing_one(self) -> None:
         """Review of memra#1368 round 3 (Q2): a branch deleted on origin is still here and a new
