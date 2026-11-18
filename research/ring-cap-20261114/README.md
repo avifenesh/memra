@@ -8,10 +8,15 @@ call (4,809 rows) and primes to its last row with the change, in 14 calls of at 
 
 PP-2's dynamic prime schedule makes its first call half a chunk and spreads the rest at equal
 modeled work, so the calls after it outgrow the chunk: 4,097 rows from a 27,916-token prime, and
-4,809 at 32,768. A ring plan (step35) holds the reader's window plus one prime call of at most
-`PRIME_CHUNK_MAX_TOKENS` rows (`swa_ring_rows`: 5,151 rows at a 512-row window), and a wider call
-fails its append. On PP-2 step35 takes this schedule whenever the batched GEMM entry declines, so
-a continuation of 27,916 tokens or more with `MEMRA_STEP_GEMM_PRIME_SUFFIX=0` could not prime.
+4,809 at 32,768. A ring plan (step35) is sized for the reader's window plus one prime call of
+`PRIME_CHUNK_MAX_TOKENS` rows (`swa_ring_rows`: 5,151 rows at a 512-row window). An append that
+wraps keeps the aligned window, 511 to 542 rows, so the ring takes a call somewhat wider than
+the chunk and fails the append once the call exceeds its rows less the kept ones. The 4,097-row
+call of a 27,916-token prime still fits; the 4,809-row call at 32,768 does not (measured below:
+5,151 less 512 kept). A simulation of main's schedule against the ring in the review of this
+change puts the first failing length at about 31,500 tokens. On PP-2 step35 takes this schedule
+whenever the batched GEMM entry declines, so a long continuation with
+`MEMRA_STEP_GEMM_PRIME_SUFFIX=0` could not prime.
 
 With a ring plan, `prime_chunk_ranges_under` splits every pipeline range wider than the cap into
 parts within it. Without a ring the schedule is unchanged.
@@ -43,7 +48,8 @@ PASS:
   continuation's `[prime-walk]` line lists a call wider than 4,096 rows;
 - head: the probe exits 0, the continuation's calls are each within 4,096 rows and at least 16,
   they sum to the continuation's length, and the `sp64` row is printed;
-- the continuation is at least 27,916 tokens.
+- the continuation is at least 27,916 tokens, the shortest prime whose schedule on main has a
+  call wider than the chunk (not the shortest that fails: see above).
 
 Reported, not judged: `sp64` against `ref` on the head. They are two prime programs (the batched
 GEMM prime and the walk).
@@ -53,7 +59,14 @@ GEMM prime and the walk).
 Binaries: base = main 5a6ae2438e, head = 3a766d2dff (this change rebased onto it). Both carry the
 probe fix of this change (below) and two print-only patches, so that the receipt shows every
 call's width (`tools/print-patches-*.diff`: the GEMM prime's `ENGAGED` line and the prime walk
-list their calls). Their sha256 are in `guard.log`.
+list their calls). `guard.log` names them by sha256:
+
+- `21589b474348d9e9...` = `concat-prime-probe-base`: main 5a6ae2438e with
+  `tools/print-patches-main-5a6ae2438e.diff` and the probe file of 3a766d2dff;
+- `1991fb78d3998b2c...` = `concat-prime-probe-head`: 3a766d2dff with
+  `tools/print-patches-head-3a766d2dff.diff`.
+
+The two patched `hybrid_forward.rs` files are the only difference between the builds.
 
 | arm | exit | wall | continuation's calls (rows) | widest | ends |
 |---|---|---|---|---|---|
@@ -75,7 +88,10 @@ it in both arms before the continuation: `PP cross-device tensor access at
 append_kv_quantized_rows.k_cache: tensor on dev0, stream on dev1`. Nothing about this change was
 measured. The change's third commit fixes the probe (the arm takes its cache from `pp::new_cache`,
 as `run-gen` and `run-spec` do, and reads the hidden rows on the stream that owns them), and the
-cell got its base-first order from this run. Kept as it ran; its `verdict.txt` reads `FAIL`.
+cell got its base-first order from this run. Kept as it ran; its `verdict.txt` reads `FAIL`. That
+run asked for 16 decode steps (`--steps 16`); the cell above asks for none (`--steps 0`), because
+the probe's plain decode loop is not a proven path on a pipeline (memra#1295) and the cell is
+about the prime's calls.
 
 ## Not measured
 

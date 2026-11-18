@@ -39,7 +39,8 @@
 #     within 4,096 rows and at least 16, summing to the continuation's length, and the sp64 row
 #     is printed (the continuation primed to its last row);
 #   - the continuation is at least 27,916 tokens (the shortest length at which main's schedule
-#     has a call over the ring's room).
+#     has a call wider than the chunk; the append first fails later, once a call exceeds the
+#     ring's rows less the rows it keeps: about 31,500 tokens by simulation).
 # Reported, not judged: sp64 against ref on the head (EXACT or DIFFER, last-row maxdiff, argmax). The two arms of that comparison are two prime programs (the batched
 # GEMM prime and the walk), which the suffix door's own record says are not byte-identical.
 #
