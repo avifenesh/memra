@@ -1532,6 +1532,32 @@ class CommitBlobTests(unittest.TestCase):
         with mock.patch.object(boundary, "ROOT", self.root), self.assertRaises(RuntimeError):
             boundary.tree_candidates_at_refs(self.policy, ["refs/heads/no-such-ref"])
 
+    def test_the_ref_scan_matches_each_path_against_the_globs_once(self) -> None:
+        """memra#1356: refs repeat their paths, so the private-glob verdict is taken once per path,
+        not once per (ref, path); per entry, it made the ls-tree pass about 9 times slower."""
+        self.policy.private_paths["private"] = "deploy/private/**"
+        self.commit("a.md", b"clean\n", "one")
+        self.commit("deploy/private/b.service", b"clean\n", "two")
+        for name in ("lane/x", "lane/y", "lane/z"):
+            self.git("branch", name)
+        calls: list = []
+        real = boundary.matches_glob
+
+        def counted(path: str, glob: str) -> bool:
+            calls.append(path)
+            return real(path, glob)
+
+        with mock.patch.object(boundary, "ROOT", self.root), mock.patch.object(
+            boundary, "matches_glob", counted
+        ):
+            groups = boundary.tree_candidates_at_refs(
+                self.policy, boundary.published_refs("refs/heads/**")
+            )
+        self.assertEqual(sorted(path for path, _ in groups), ["deploy/private/b.service"])
+        self.assertEqual(len(next(iter(groups.values()))), 4)
+        globs = len(self.policy.private_paths)
+        self.assertLessEqual(max(calls.count(path) for path in calls), globs)
+
     def test_commit_scan_applies_private_path_rules(self) -> None:
         self.policy.private_paths["private"] = "private/**"
         commit = self.commit("private/evidence.txt", b"safe\n", "private path")

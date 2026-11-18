@@ -812,8 +812,13 @@ def tree_candidates_at_refs(
     them (memra#1356): the old per-ref `git ls-tree -- ':(glob)...'` was refused by git
     ("pathspec magic not supported by this command: 'glob'"), and its silent `return []` meant
     the ref scan never reported a private path. A failed `git ls-tree` now stops the scan.
+
+    The glob verdict is memoized per path: published refs repeat the same paths (41 refs listed
+    6.7 M entries on the rig), and matching every entry against every glob took the pass from
+    4 s to 36 s there; memoized it takes 6 s.
     """
     private_globs = list(policy.private_paths.values())
+    private: Dict[bytes, bool] = {}
     groups: Dict[Tuple[str, str], set[str]] = {}
     for ref in refs:
         result = subprocess.run(
@@ -824,15 +829,18 @@ def tree_candidates_at_refs(
             raise RuntimeError(f"git ls-tree {ref} failed: {message}")
         for entry in result.stdout.split(b"\0"):
             meta, _, raw_path = entry.partition(b"\t")
+            if not raw_path.endswith((b".gz", b".tgz")):
+                hit = private.get(raw_path)
+                if hit is None:
+                    path = raw_path.decode("utf-8", errors="surrogateescape")
+                    hit = any(matches_glob(path, glob) for glob in private_globs)
+                    private[raw_path] = hit
+                if not hit:
+                    continue
             parts = meta.split()
             if len(parts) != 3 or parts[1] != b"blob":
                 continue
             path = raw_path.decode("utf-8", errors="surrogateescape")
-            if not (
-                raw_path.endswith((b".gz", b".tgz"))
-                or any(matches_glob(path, glob) for glob in private_globs)
-            ):
-                continue
             groups.setdefault((path, parts[2].decode("ascii")), set()).add(ref)
     return groups
 
