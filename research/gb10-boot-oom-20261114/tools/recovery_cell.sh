@@ -29,6 +29,7 @@ OUT=$R/runs/$NAME
 mkdir -p "$OUT"
 STOP=$OUT/STOP
 rm -f "$STOP" "$OUT/DONE"
+[ "$UNTIL" != 9999999999 ] && echo "$UNTIL" > "$OUT/UNTIL"
 echo $$ > "$OUT/cell.pid"
 log() { echo "$(date -Is) $*" | tee -a "$OUT/run.log"; }
 t0=$(date +%s)
@@ -48,7 +49,11 @@ stop_readers() {  # exactly the readers of this episode: each recorded subshell 
     kill "$p" 2>/dev/null
   done
 }
-go() { [ $r -lt "$ROUNDS" ] && [ "$(date +%s)" -lt "$UNTIL" ] && [ ! -e "$STOP" ]; }
+# runs/NAME/UNTIL, when present, replaces UNTIL: the caller moves the end with its lease.
+go() {
+  [ -s "$OUT/UNTIL" ] && UNTIL=$(cat "$OUT/UNTIL")
+  [ $r -lt "$ROUNDS" ] && [ "$(date +%s)" -lt "$UNTIL" ] && [ ! -e "$STOP" ]
+}
 r=0; ep=0; ESTOP=$OUT/stop.0; EPIDS=$OUT/reader.pids.0
 trap 'stop_readers; touch "$STOP"; log "cell stopped by signal"; exit 1' TERM INT
 while go; do
