@@ -213,8 +213,8 @@ fn sessions_fit_refusal(
     let needed = per_session.saturating_mul(others);
     (needed > available).then(|| {
         format!(
-            "{target} sessions at depth {depth} do not fit: the other {others} need {}MB \
-             ({:.1}MB each), {}MB allocatable",
+            "{target} sessions at depth {depth} do not fit: the other {others} need {}MiB \
+             ({:.1}MiB each), {}MiB allocatable",
             needed >> 20,
             per_session as f64 / (1u64 << 20) as f64,
             available >> 20,
@@ -541,8 +541,8 @@ mod tests {
             .expect("one byte short refuses");
         assert_eq!(
             why,
-            "32 sessions at depth 2048 do not fit: the other 30 need 15150MB (505.0MB each), \
-             15149MB allocatable"
+            "32 sessions at depth 2048 do not fit: the other 30 need 15150MiB (505.0MiB each), \
+             15149MiB allocatable"
         );
         assert!(super::sessions_fit_refusal(16, 2048, 505 * MB, 7016 * MB).is_some());
         assert_eq!(super::sessions_fit_refusal(2, 2048, usize::MAX, 0), None);

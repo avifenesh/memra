@@ -29,7 +29,7 @@ import sys
 d = pathlib.Path(sys.argv[1])
 want = sys.argv[2] if len(sys.argv) > 2 else None
 ts = re.compile(r"(\d+\.\d+) \[tick-spec\].* wall_ms=([\d.]+) generated=(\d+)->(\d+) rounds=(\d+) drafted=(\d+) accepted=(\d+)")
-trm = re.compile(r"(\d+\.\d+) \[spec\] pre-capture pool trim(?: SKIPPED \(arm N\))?: (?:released )?(\d+)MB(?: of (\d+)MB)?.*driver free (\d+)MB < required (\d+)MB")
+trm = re.compile(r"(\d+\.\d+) \[spec\] pre-capture pool trim(?: SKIPPED \(arm N\))?: (?:released )?(\d+)Mi?B(?: of (\d+)Mi?B)?.*driver free (\d+)Mi?B < required (\d+)Mi?B")
 pen = re.compile(r"(\d+\.\d+) \[specpub-probe\] enter why=spec-boundary pos=(\d+) reserved=(\d+) used=(\d+) cached=(\d+)")
 pex = re.compile(r"(\d+\.\d+) \[specpub-probe\] exit why=spec-boundary us=(\d+) reserved=(\d+) used=(\d+)")
 ins = re.compile(r"(\d+\.\d+) \[prefix-cache\] insert \(spec-boundary\): (\d+) tokens, ([\d.]+)MB")
@@ -82,7 +82,7 @@ for c in sorted(p for p in d.iterdir() if p.is_dir() and re.match(r"\d\d-[A-Z]$"
         "gap": interval - b2[1], "interval": interval,
         "b1": b1[1],
         "trim": [f"{'kept' if 'SKIPPED' in t[2] else 'released'} {t[1]}" + (f" of {t[3]}" if t[3] else "") +
-                 f" MB (driver {t[4]} < {t[5]})" for t in trims if t0 <= t[0] <= t1],
+                 f" MiB (driver {t[4]} < {t[5]})" for t in trims if t0 <= t[0] <= t1],
         "cached_entry": next((e[3] / 2**20 for e in enters if b1[0] <= e[0] <= b2[0]), None),
         "growth": next((x[1] - e[2] for e in enters if b1[0] <= e[0] <= b2[0]
                         for x in exits if x[0] >= e[0]), None),
