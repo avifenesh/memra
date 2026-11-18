@@ -117,6 +117,21 @@ class BoundaryContractTests(unittest.TestCase):
         after = self.fixture.commit()
         self.assertEqual(vp.event_plan(self.repo, 'push', '', before, after)['mode'], 'full')
 
+    def test_a_symlink_beside_the_inputs_is_not_an_input_symlink(self):
+        # memra#1298: the admission asks about the inputs and their ancestors. The Git tree's
+        # listing of `tools` with a path inside it named every child of `tools`, so a symlink
+        # that is no input refused the contract there, and the worktree variant admitted it.
+        (self.repo / 'tools/latest-policy').symlink_to('public-boundary-policy.toml')
+        self.fixture.commit()
+        for tree in (vp.Tree(self.repo, 'HEAD'), vp.LocalTree(self.repo)):
+            with self.subTest(tree=type(tree).__name__):
+                vp.boundary_contract_inputs(tree)
+        for name in self.inputs:
+            with self.subTest(name=name):
+                p = self.plan(name)
+                self.assertEqual(p['mode'], 'scoped')
+                self.assertEqual([c['id'] for c in p['cpu_contracts']], ['public-boundary'])
+
     def test_populated_gitlink_ancestor_expands_local_and_git_tree_plans(self):
         self.fixture.g('rm', '-r', '--cached', 'tools')
         self.fixture.g('update-index', '--add', '--cacheinfo', '160000,' + self.base + ',tools')
