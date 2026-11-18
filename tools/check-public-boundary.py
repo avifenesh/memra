@@ -813,11 +813,11 @@ def tree_candidates_at_refs(
     ("pathspec magic not supported by this command: 'glob'"), and its silent `return []` meant
     the ref scan never reported a private path. A failed `git ls-tree` now stops the scan.
 
-    The glob verdict is memoized per path: published refs repeat the same paths (41 refs listed
-    6.7 M entries on the rig), and matching every entry against every glob took the pass from
-    4 s to 36 s there; memoized it takes 6 s.
+    The globs are one compiled regex (`glob_matcher`), and its verdict is memoized per path:
+    published refs repeat the same paths (41 refs listed 6.7 M entries on the rig), and an
+    fnmatch call per entry and glob took the pass from 4 s to 36 s there.
     """
-    private_globs = list(policy.private_paths.values())
+    private_re = glob_matcher(policy.private_paths.values())
     private: Dict[bytes, bool] = {}
     groups: Dict[Tuple[str, str], set[str]] = {}
     for ref in refs:
@@ -829,11 +829,13 @@ def tree_candidates_at_refs(
             raise RuntimeError(f"git ls-tree {ref} failed: {message}")
         for entry in result.stdout.split(b"\0"):
             meta, _, raw_path = entry.partition(b"\t")
+            if not raw_path:
+                continue
             if not raw_path.endswith((b".gz", b".tgz")):
                 hit = private.get(raw_path)
                 if hit is None:
                     path = raw_path.decode("utf-8", errors="surrogateescape")
-                    hit = any(matches_glob(path, glob) for glob in private_globs)
+                    hit = private_re is not None and private_re.match(path) is not None
                     private[raw_path] = hit
                 if not hit:
                     continue
@@ -988,6 +990,14 @@ def changed_blobs(commits: Iterable[str]) -> List[Tuple[str, str]]:
 def matches_glob(path: str, glob: str) -> bool:
     # fnmatch's `*` matches path separators, so `deploy/gateway/**` works for any depth.
     return fnmatch.fnmatchcase(path, glob) or fnmatch.fnmatchcase(path, glob.rstrip("*"))
+
+
+def glob_matcher(globs: Iterable[str]) -> Optional[re.Pattern]:
+    """One compiled regex that matches a path exactly when `matches_glob` matches it for one of
+    `globs`, or None for no globs: the ref scan tests every entry of every ref, and one regex is
+    much cheaper there than an fnmatch call per glob (review of memra#1356)."""
+    forms = [fnmatch.translate(form) for glob in globs for form in (glob, glob.rstrip("*"))]
+    return re.compile("|".join(f"(?:{form})" for form in forms)) if forms else None
 
 
 def is_bypass(path: str, bypass_globs: Iterable[str]) -> bool:
