@@ -11,8 +11,24 @@
     ctx_probe.py churn OUT.jsonl SECONDS [RETRY_MAX]
                                           one process that creates and destroys a context over
                                           and over for SECONDS, one record per context
-    ctx_probe.py hold GIB SECONDS         hold GIB of backed device memory for SECONDS, then exit
-                                          cleanly (stands in for a server that exits)
+    ctx_probe.py hold GIB SECONDS [ARM]   hold GIB of backed device memory for SECONDS, then exit
+                                          cleanly (stands in for a server that exits); with ARM
+                                          (memra#1330) its own context creation is retried at that
+                                          cadence and recorded as one JSON line on stdout
+    ctx_probe.py recover ARM              memra#1330: one creation in this process, retried on
+                                          out of memory with no cap at ARM's cadence, every try
+                                          recorded with the host's memory; one JSON line
+    ctx_probe.py round OUT.jsonl ROUND K GAP_MS ARM_MB ARM_WAIT_S ARMS
+                                          memra#1330: wait (at most ARM_WAIT_S) until MemFree is
+                                          under ARM_MB, then K `recover` creations, each in a
+                                          fresh process, GAP_MS apart, the arms of ARMS
+                                          (comma-separated) in turn starting at index ROUND
+                                          (so the first creation's arm alternates by round);
+                                          exits 3 without a creation when the wait times out
+
+ARM is `fixed50` (a wait of 50 ms before every try after the first) or `ladder` (the shipped
+policy's waits, `RECLAIM_RETRY` in crates/memra-runtime/src/ctx_boot.rs: 50 ms doubling to 800 ms,
+then 800 ms; its 90 s budget is not applied here, the record says where it would have stopped).
 
 A boot walks the driver calls `Engine::new` makes before it loads a kernel module, in the same
 order: cuInit, cuDeviceGet, cuDevicePrimaryCtxRetain (cudarc's `CudaContext::new`), cuCtxSetCurrent,
@@ -28,6 +44,7 @@ took to succeed. The first try is the boot's verdict; the retries measure how lo
 Standard library and libcuda only. Reads /proc; changes no setting."""
 import ctypes
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -231,17 +248,30 @@ def churn(out, seconds, retry_max):
     print(f"churn done: contexts={n} first-try failures={fails}", flush=True)
 
 
-def hold(gib, seconds):
+def hold(gib, seconds, arm=None):
     cu = ctypes.CDLL("libcuda.so.1")
     dev, ctx, ptr = ctypes.c_int(), ctypes.c_void_p(), ctypes.c_ulonglong()
-    for name, rc in (
-        ("cuInit", cu.cuInit(0)),
-        ("cuDeviceGet", cu.cuDeviceGet(ctypes.byref(dev), 0)),
-        ("cuDevicePrimaryCtxRetain", cu.cuDevicePrimaryCtxRetain(ctypes.byref(ctx), dev)),
-        ("cuCtxSetCurrent", cu.cuCtxSetCurrent(ctx)),
-    ):
+    rec = None
+    if arm is None:
+        create = [("cuDevicePrimaryCtxRetain", lambda: cu.cuDevicePrimaryCtxRetain(ctypes.byref(ctx), dev))]
+    else:
+        create = []
+    for name, fn in [
+        ("cuInit", lambda: cu.cuInit(0)),
+        ("cuDeviceGet", lambda: cu.cuDeviceGet(ctypes.byref(dev), 0)),
+    ] + create:
+        rc = fn()
         if rc:
             sys.exit(f"hold: {name} CUresult {rc}")
+    if arm is not None:
+        rec = {"holder": True, "arm": arm, "t": round(time.time(), 3)}
+        rec.update(retry_until_ok(lambda: cu.cuDevicePrimaryCtxRetain(ctypes.byref(ctx), dev), arm))
+        if rec["rc"]:
+            print(json.dumps(rec), flush=True)
+            sys.exit(f"hold: cuDevicePrimaryCtxRetain CUresult {rec['rc']}")
+    rc = cu.cuCtxSetCurrent(ctx)
+    if rc:
+        sys.exit(f"hold: cuCtxSetCurrent CUresult {rc}")
     held = []
     for _ in range(gib):
         rc = cu.cuMemAlloc_v2(ctypes.byref(ptr), ctypes.c_size_t(1 << 30))
@@ -250,12 +280,143 @@ def hold(gib, seconds):
         cu.cuMemsetD8_v2(ctypes.c_ulonglong(ptr.value), ctypes.c_ubyte(1), ctypes.c_size_t(1 << 30))
         held.append(ptr.value)
     cu.cuCtxSynchronize()
-    print(f"hold: {gib} GiB backed, {json.dumps(meminfo())}", flush=True)
+    if rec is None:
+        print(f"hold: {gib} GiB backed, {json.dumps(meminfo())}", flush=True)
+    else:
+        rec["backed"] = {"gib": gib, "t": round(time.time(), 3), "mem": meminfo()}
     time.sleep(seconds)
     for p in held:
         cu.cuMemFree_v2(ctypes.c_ulonglong(p))
     cu.cuDevicePrimaryCtxRelease(dev)
-    print(f"hold: released {round(time.time(), 3)}", flush=True)
+    if rec is None:
+        print(f"hold: released {round(time.time(), 3)}", flush=True)
+    else:
+        # The process exits right after this line: its device memory returns with the exit.
+        rec["released"] = round(time.time(), 3)
+        print(json.dumps(rec), flush=True)
+
+
+# memra#1330: the waits of each arm, in seconds, before try 2, 3, ...
+def arm_wait(arm, k):
+    """The wait before try k + 2 (k = 0 for the first retry)."""
+    if arm == "fixed50":
+        return 0.05
+    if arm == "ladder":
+        # RECLAIM_RETRY: first_backoff 50 ms, doubling, max_backoff 800 ms.
+        return min(0.05 * (2 ** k), 0.8)
+    raise SystemExit(f"unknown arm {arm}")
+
+
+SHIPPED_BUDGET_S = 90.0
+
+
+def host_now():
+    """MemFree, MemAvailable (MB) and the Normal zone's free blocks of order 9 and up."""
+    m = meminfo()
+    b = buddy_normal()
+    return {"free": m.get("MemFree_mb"), "avail": m.get("MemAvailable_mb"), "hi": b[9:]}
+
+
+def retry_until_ok(fn, arm, max_s=0.0):
+    """Call fn until it returns something other than out of memory, waiting arm_wait between
+    tries; no cap unless max_s > 0. Each try: ms since the first try began, the try's own ms, its
+    CUresult and the host read right before it. Also where the shipped policy (same waits, 90 s of
+    elapsed time, `elapsed + wait > budget` stops) would have given up."""
+    tries = []
+    t0 = time.monotonic()
+    k = 0
+    shipped_stop = None
+    while True:
+        h = host_now()
+        ts = time.monotonic()
+        rc = fn()
+        te = time.monotonic()
+        tries.append([round((ts - t0) * 1e3, 1), round((te - ts) * 1e3, 1), rc, h["free"], h["avail"], h["hi"]])
+        if rc != OOM:
+            break
+        if max_s and te - t0 > max_s:
+            break
+        w = arm_wait(arm, k)
+        if shipped_stop is None and arm == "ladder" and (te - t0) + w > SHIPPED_BUDGET_S:
+            shipped_stop = len(tries)
+        time.sleep(w)
+        k += 1
+    out = {
+        "rc": rc,
+        "tries": len(tries),
+        "failed_first": tries[0][2] == OOM,
+        "ms_to_ok": round((time.monotonic() - t0) * 1e3, 1) if rc == 0 else None,
+        "try_rows": "ms_since_first,try_ms,rc,MemFree_mb,MemAvailable_mb,free_blocks_order9up",
+        "try": tries,
+        "after": host_now(),
+    }
+    if shipped_stop is not None:
+        out["shipped_policy_gives_up_after_try"] = shipped_stop
+    return out
+
+
+def recover(arm, max_s=0.0):
+    """One creation: cuInit, cuDeviceGet, then cuDevicePrimaryCtxRetain until it succeeds, then
+    cuCtxSetCurrent and cuMemGetInfo, and the context is released at once."""
+    cu = ctypes.CDLL("libcuda.so.1")
+    dev, ctx = ctypes.c_int(), ctypes.c_void_p()
+    free, total = ctypes.c_size_t(), ctypes.c_size_t()
+    rec = {"arm": arm, "t": round(time.time(), 3)}
+    t_init = time.monotonic()
+    for name, rc in (("cuInit", cu.cuInit(0)), ("cuDeviceGet", cu.cuDeviceGet(ctypes.byref(dev), 0))):
+        if rc:
+            rec.update({"rc": rc, "stopped_at": name})
+            print(json.dumps(rec), flush=True)
+            return
+    rec["init_ms"] = round((time.monotonic() - t_init) * 1e3, 1)
+    rec.update(retry_until_ok(lambda: cu.cuDevicePrimaryCtxRetain(ctypes.byref(ctx), dev), arm, max_s))
+    if rec["rc"] == 0:
+        cu.cuCtxSetCurrent(ctx)
+        cu.cuMemGetInfo_v2(ctypes.byref(free), ctypes.byref(total))
+        rec["cu_free_mb"] = free.value >> 20
+        cu.cuDevicePrimaryCtxRelease(dev)
+    print(json.dumps(rec), flush=True)
+
+
+def run_round(out, rnd, k, gap_ms, arm_mb, arm_wait_s, arms):
+    t_arm = time.monotonic()
+    fired = "timeout"
+    while time.monotonic() - t_arm < arm_wait_s:
+        if mem_free_mb() < arm_mb:
+            fired = "threshold"
+            break
+        time.sleep(0.02)
+    armed = {"mb": arm_mb, "fired": fired, "waited_s": round(time.monotonic() - t_arm, 2)}
+    with open(out, "a") as f:
+        if fired == "timeout":
+            f.write(json.dumps({"round": rnd, "skipped": "MemFree stayed over the threshold",
+                                "t": round(time.time(), 3), "host": host_now(), "armed": armed}) + "\n")
+            sys.exit(3)
+        for i in range(k):
+            arm = arms[(i + rnd) % len(arms)]
+            t_start = time.time()
+            try:
+                p = subprocess.run([sys.executable, sys.argv[0], "recover", arm],
+                                   capture_output=True, text=True, timeout=float(os.environ.get("RECOVER_TIMEOUT_S", "1800")))
+                line = p.stdout.strip().splitlines()[-1] if p.stdout.strip() else ""
+                rc = p.returncode
+            except subprocess.TimeoutExpired:
+                line, rc = "", "timeout"
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                rec = {"arm": arm, "rc": None, "died": True, "stderr": (p.stderr[-400:] if rc != "timeout" else "timeout")}
+            rec.update({"round": rnd, "idx": i, "exit": rc, "t_start": round(t_start, 3),
+                        "wall_ms": round((time.time() - t_start) * 1e3, 1)})
+            if i == 0:
+                rec["armed"] = armed
+            f.write(json.dumps(rec) + "\n")
+            f.flush()
+            if rec.get("failed_first"):
+                print(f"round {rnd} creation {i} {arm}: first try out of memory, ok after "
+                      f"{rec.get('tries')} tries and {rec.get('ms_to_ok')} ms", flush=True)
+            if i + 1 < k:
+                time.sleep(gap_ms / 1e3)
 
 
 if __name__ == "__main__":
@@ -270,6 +431,11 @@ if __name__ == "__main__":
     elif mode == "churn":
         churn(sys.argv[2], float(sys.argv[3]), int(sys.argv[4]) if len(sys.argv) > 4 else 0)
     elif mode == "hold":
-        hold(int(sys.argv[2]), float(sys.argv[3]))
+        hold(int(sys.argv[2]), float(sys.argv[3]), sys.argv[4] if len(sys.argv) > 4 else None)
+    elif mode == "recover":
+        recover(sys.argv[2], float(sys.argv[3]) if len(sys.argv) > 3 else 0.0)
+    elif mode == "round":
+        run_round(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), int(sys.argv[6]),
+                  float(sys.argv[7]), sys.argv[8].split(","))
     else:
         sys.exit(__doc__)
