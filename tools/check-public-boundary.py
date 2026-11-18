@@ -495,29 +495,161 @@ def is_gzip_name(path: str) -> bool:
     return path.endswith((".gz", ".tgz"))
 
 
-def gzip_members(data: bytes) -> Optional[List[Tuple[str, bytes]]]:
-    """The text members a gzip blob is judged by, or None when `data` is not a gzip blob that
-    decompresses (it is then judged by its raw bytes). A tar's member is named by its path inside
-    the tar; a plain stream is one member named ''."""
+def has_gzip_magic(path: Path) -> bool:
+    """The checkout scan finds a gzip blob by its magic, whatever its name; commit mode reads every
+    changed blob and sees the magic in its bytes. The ref scan takes gzip blobs by name, plus any
+    the raw prefilter already made candidates."""
+    try:
+        with path.open("rb") as fh:
+            return fh.read(2) == GZIP_MAGIC
+    except OSError:
+        return False
+
+
+# A blob's decompressed members may hold at most this many bytes (review round 1): a few MB of
+# zeros expand to GBs, and the scan holds a member in memory. Over it, the blob is a finding of its
+# own (`archive_over_scan_cap`), never a pass. Nested archives share their outer blob's budget.
+SCAN_CAP_BYTES = 1 << 30
+GZIP_NEST_DEPTH = 3
+GZIP_HEADER_MEMBER = "<gzip header>"
+TAR_TAIL_MEMBER = "<after the tar>"
+
+
+class ScanCapExceeded(Exception):
+    """A gzip blob decompresses past `SCAN_CAP_BYTES`."""
+
+
+def gzip_header_fields(data: bytes, pos: int) -> Tuple[int, bytes]:
+    """Parse one gzip member header at `pos` (RFC 1952): its end, and its FEXTRA, FNAME and
+    FCOMMENT fields, which a reader of the decompressed stream never sees but the blob carries.
+    Raises ValueError on a malformed header."""
+    if data[pos : pos + 2] != GZIP_MAGIC or len(data) < pos + 10 or data[pos + 2] != 8:
+        raise ValueError("not a deflate gzip member")
+    flags = data[pos + 3]
+    at = pos + 10
+    fields: List[bytes] = []
+    if flags & 0x04:  # FEXTRA
+        if len(data) < at + 2:
+            raise ValueError("truncated FEXTRA")
+        xlen = int.from_bytes(data[at : at + 2], "little")
+        fields.append(data[at + 2 : at + 2 + xlen])
+        at += 2 + xlen
+    for bit in (0x08, 0x10):  # FNAME, FCOMMENT: zero-terminated
+        if flags & bit:
+            end = data.find(b"\0", at)
+            if end < 0:
+                raise ValueError("unterminated header field")
+            fields.append(data[at:end])
+            at = end + 1
+    if flags & 0x02:  # FHCRC
+        at += 2
+    if at > len(data):
+        raise ValueError("truncated header")
+    return at, b"\n".join(field for field in fields if field)
+
+
+def gunzip_capped(data: bytes, budget: List[int]) -> Tuple[bytes, bytes]:
+    """Decompress every member of a gzip stream within `budget[0]` bytes (decremented): the
+    content and the members' header fields. Raises ScanCapExceeded past the budget, and
+    ValueError, EOFError or zlib.error on a stream that does not decompress."""
+    out: List[bytes] = []
+    headers: List[bytes] = []
+    pos = 0
+    while pos < len(data):
+        if data[pos : pos + 2] != GZIP_MAGIC:
+            if data[pos:].strip(b"\0"):
+                raise ValueError("trailing bytes after the gzip stream")
+            break
+        pos, fields = gzip_header_fields(data, pos)
+        if fields:
+            headers.append(fields)
+        inflate = zlib.decompressobj(-zlib.MAX_WBITS)
+        pending = data[pos:]
+        while True:
+            chunk = inflate.decompress(pending, budget[0] + 1)
+            if len(chunk) > budget[0]:
+                raise ScanCapExceeded()
+            budget[0] -= len(chunk)
+            out.append(chunk)
+            if inflate.eof:
+                break
+            pending = inflate.unconsumed_tail
+            if not pending:
+                raise EOFError("truncated gzip member")
+        pos = len(data) - len(inflate.unused_data) + 8  # the CRC32 and ISIZE trailer
+    return b"".join(out), b"\n".join(headers)
+
+
+def gzip_members(
+    data: bytes, depth: int = 0, budget: Optional[List[int]] = None
+) -> Optional[List[Tuple[str, bytes]]]:
+    """The members a gzip blob is judged by, or None when `data` is not a gzip blob that
+    decompresses (it is then judged by its raw bytes). Raises ScanCapExceeded past the cap.
+
+    - The gzip header's FEXTRA, FNAME and FCOMMENT fields, as a member of their own.
+    - A tar's regular files, by their path inside the tar; a gzip inside it is opened in turn, up
+      to `GZIP_NEST_DEPTH` levels. Bytes after the tar's end that are not padding are a member of
+      their own, and a tar that does not parse is judged as one stream.
+    - Otherwise the one stream, named ''.
+
+    Binary content is left out by git's own test (a NUL in the first 8000 bytes): tensor and float
+    dumps would match by chance just as deflate bytes do. The header fields, a tar's tail and a tar
+    that does not parse are judged whatever they hold, as the raw scan judged them before."""
     if data[:2] != GZIP_MAGIC:
         return None
+    budget = [SCAN_CAP_BYTES] if budget is None else budget
     try:
-        raw = gzip.decompress(data)
-    except (OSError, EOFError, zlib.error):
+        raw, header = gunzip_capped(data, budget)
+    except (ValueError, EOFError, zlib.error):
         return None
-    members: List[Tuple[str, bytes]] = [("", raw)]
-    if raw[257:262] == b"ustar":
-        try:
-            with tarfile.open(fileobj=io.BytesIO(raw)) as tar:
-                members = []
-                for info in tar:
-                    if not info.isfile():
-                        continue
-                    handle = tar.extractfile(info)
-                    members.append((info.name, handle.read() if handle else b""))
-        except tarfile.TarError:
-            members = [("", raw)]
-    return [(name, body) for name, body in members if b"\0" not in body[:BINARY_PROBE]]
+    members: List[Tuple[str, bytes]] = []
+    if header:
+        members.append((GZIP_HEADER_MEMBER, header))
+    if raw[257:262] != b"ustar":
+        if b"\0" not in raw[:BINARY_PROBE]:
+            members.append(("", raw))
+        return members
+    files: List[Tuple[str, bytes]] = []
+    try:
+        with tarfile.open(fileobj=io.BytesIO(raw)) as tar:
+            for info in tar:
+                if not info.isfile():
+                    continue
+                if info.size > budget[0]:
+                    raise ScanCapExceeded()
+                handle = tar.extractfile(info)
+                body = handle.read() if handle else b""
+                budget[0] -= len(body)
+                files.append((info.name, body))
+            tail = raw[tar.offset :]
+    except tarfile.TarError:
+        members.append(("", raw))
+        return members
+    for name, body in files:
+        if body[:2] == GZIP_MAGIC and depth < GZIP_NEST_DEPTH:
+            nested = gzip_members(body, depth + 1, budget)
+            if nested is None:
+                members.append((name, body))
+            else:
+                members.extend((f"{name}/{inner}" if inner else name, b) for inner, b in nested)
+        elif b"\0" not in body[:BINARY_PROBE]:
+            members.append((name, body))
+    if tail.strip(b"\0"):
+        members.append((TAR_TAIL_MEMBER, tail))
+    return members
+
+
+def scratch_dir() -> str:
+    """Where the decompressed copies go (review round 1): the git common dir, on the repository's
+    disk, rather than a RAM-backed /tmp."""
+    common = subprocess.run(
+        ["git", "rev-parse", "--git-common-dir"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return str((ROOT / common).resolve())
 
 
 def members_with_hits(
@@ -546,7 +678,7 @@ def members_with_hits(
             os.unlink(os.path.join(tmp, file_name))
         pending.clear()
 
-    with tempfile.TemporaryDirectory(prefix="public-boundary-gz-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="public-boundary-gz-", dir=scratch_dir()) as tmp:
         size = 0
         for key, members in blobs:
             for name, body in members:
@@ -576,29 +708,6 @@ def scan_members(
             hits.append((rule, line, f"{name}: {text}" if name else text))
     hits.sort(key=lambda hit: (hit[1], hit[0]))
     return hits
-
-
-def paths_at_ref(ref: str) -> List[str]:
-    """Every path at `ref`. `git ls-tree` takes no `:(glob)` pathspec (it fails with "pathspec
-    magic not supported by this command"), so globs are matched here."""
-    result = subprocess.run(
-        ["git", "ls-tree", "-r", "--name-only", "-z", ref],
-        cwd=ROOT,
-        capture_output=True,
-    )
-    if result.returncode != 0:
-        message = result.stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"git ls-tree {ref} failed: {message}")
-    return [
-        raw.decode("utf-8", errors="surrogateescape")
-        for raw in result.stdout.split(b"\0")
-        if raw
-    ]
-
-
-def gzip_candidates_at_ref(ref: str) -> List[str]:
-    """Paths at `ref` named as gzip blobs: their text is not what `git grep` sees."""
-    return [path for path in paths_at_ref(ref) if is_gzip_name(path)]
 
 
 def private_candidates_at_ref(policy: Policy, ref: str) -> List[str]:
@@ -653,50 +762,99 @@ def blobs_at(specs: List[str]) -> Dict[str, bytes]:
 SCANNED_BLOBS = "scanned_blobs"
 
 
+def gzip_blobs_at_refs(refs: List[str]) -> Dict[Tuple[str, str], set[str]]:
+    """(path, oid) of every gzip-named blob at `refs`, with the refs that carry it: one
+    `git ls-tree` per ref, keeping the oids, so a blob shared by many refs is one entry."""
+    groups: Dict[Tuple[str, str], set[str]] = {}
+    for ref in refs:
+        result = subprocess.run(
+            ["git", "ls-tree", "-r", "-z", ref], cwd=ROOT, capture_output=True
+        )
+        if result.returncode != 0:
+            message = result.stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"git ls-tree {ref} failed: {message}")
+        for entry in result.stdout.split(b"\0"):
+            if not entry.endswith((b".gz", b".tgz")):
+                continue
+            meta, _, raw_path = entry.partition(b"\t")
+            parts = meta.split()
+            if len(parts) != 3 or parts[1] != b"blob":
+                continue
+            path = raw_path.decode("utf-8", errors="surrogateescape")
+            groups.setdefault((path, parts[2].decode("ascii")), set()).add(ref)
+    return groups
+
+
+def oids_at(specs: List[str]) -> Dict[str, str]:
+    """Map each `<ref>:<path>` spec to its blob oid in one `git cat-file --batch-check` pass."""
+    if not specs:
+        return {}
+    result = subprocess.run(
+        ["git", "cat-file", "--batch-check=%(objectname) %(objecttype)"],
+        cwd=ROOT,
+        input="\n".join(specs).encode() + b"\n",
+        capture_output=True,
+        check=True,
+    )
+    oids: Dict[str, str] = {}
+    for spec, line in zip(specs, result.stdout.decode("utf-8", errors="replace").splitlines()):
+        parts = line.split()
+        if len(parts) == 2 and parts[1] == "blob":
+            oids[spec] = parts[0]
+    return oids
+
+
 def evaluate_refs(
     policy: Policy, refs: List[str], chunk: int = 256, stats: Optional[Dict[str, int]] = None
 ) -> Tuple[List[Violation], Dict[Tuple[str, str], set[str]]]:
     """Evaluate every candidate blob version carried by `refs`.
 
-    Deduplicated by (path, sha256): branches share history, so the same blob shows up on many
-    refs and the allowlist is keyed on content anyway. The refs carrying each violation are
-    returned alongside it so a report can say where to go and remove it.
+    Each (path, oid) is read and judged once (review round 1 of memra#1198): published refs share
+    almost all of their blobs, and judging per (ref, path) read the same blob once per ref that
+    carries it (1,119 refs held 4,385 distinct gzip blobs in 1.27 M (ref, path) pairs). The refs
+    carrying each violation come from the groups, so a report can still say where to go and remove
+    it. Gzip blobs are candidates by name at every ref, and by their magic when the raw
+    prefilter already made them candidates (the checkout scan sniffs every file's magic).
     """
-    candidates: set[Tuple[str, str]] = set()
+    groups: Dict[Tuple[str, str], set[str]] = gzip_blobs_at_refs(refs)
+    pairs: set[Tuple[str, str]] = set()
     for ref in refs:
         for path in private_candidates_at_ref(policy, ref):
-            candidates.add((ref, path))
-        for path in gzip_candidates_at_ref(ref):
-            candidates.add((ref, path))
-    candidates.update(secret_candidates_at_refs(policy.secret_sources, refs))
+            pairs.add((ref, path))
+    pairs.update(secret_candidates_at_refs(policy.secret_sources, refs))
+    ordered_pairs = sorted(pairs)
+    oids = oids_at([f"{ref}:{path}" for ref, path in ordered_pairs])
+    for ref, path in ordered_pairs:
+        oid = oids.get(f"{ref}:{path}")
+        if oid is not None:
+            groups.setdefault((path, oid), set()).add(ref)
 
     violations: Dict[Tuple[str, str], Violation] = {}
     carriers: Dict[Tuple[str, str], set[str]] = {}
-    ordered = sorted(candidates)
+    ordered = sorted(groups)
     read = 0
     for start in range(0, len(ordered), chunk):
         batch = ordered[start : start + chunk]
-        loaded = blobs_at([f"{ref}:{path}" for ref, path in batch])
+        loaded = blobs_at([oid for _, oid in batch])
         gz = gzip_batch(
             policy,
             [
-                (f"{ref}:{path}", path, lambda spec=f"{ref}:{path}": loaded.get(spec))
-                for ref, path in batch
-                if is_gzip_name(path) or loaded.get(f"{ref}:{path}", b"")[:2] == GZIP_MAGIC
+                (oid, path, lambda oid=oid: loaded.get(oid))
+                for path, oid in batch
+                if is_gzip_name(path) or loaded.get(oid, b"")[:2] == GZIP_MAGIC
             ],
         )
-        for ref, path in batch:
-            data = loaded.get(f"{ref}:{path}")
+        for path, oid in batch:
+            data = loaded.get(oid)
             if data is None:
                 continue
             read += 1
-            spec = f"{ref}:{path}"
-            violation = gz[spec] if spec in gz else evaluate_content(policy, path, data)
+            violation = gz[oid] if oid in gz else evaluate_content(policy, path, data)
             if violation is None:
                 continue
             key = (violation.path, violation.sha256)
             violations.setdefault(key, violation)
-            carriers.setdefault(key, set()).add(short_ref(ref))
+            carriers.setdefault(key, set()).update(short_ref(ref) for ref in groups[(path, oid)])
     if stats is not None:
         # A scan that read zero blobs is a scan that proved nothing, and the difference between
         # "clean" and "never ran" has to be visible in a log rather than inferred from silence.
@@ -895,7 +1053,10 @@ def evaluate_content(policy: Policy, rel: str, data: bytes) -> Optional[Violatio
         )
     if bypass:
         return None
-    members = gzip_members(data)
+    try:
+        members = gzip_members(data)
+    except ScanCapExceeded:
+        return cap_violation(policy, rel, data)
     if members is not None:
         flagged = members_with_hits(policy.secret_sources, [(rel, members)]).get(rel, [])
         return gzip_violation(policy, rel, data, flagged)
@@ -914,6 +1075,22 @@ def evaluate_content(policy: Policy, rel: str, data: bytes) -> Optional[Violatio
         return None
     return build_violation(
         policy, rel, hashlib.sha256(data).hexdigest(), "secret_pattern", hits
+    )
+
+
+SCAN_CAP_RULE = "archive_over_scan_cap"
+
+
+def cap_violation(policy: Policy, rel: str, data: bytes) -> Violation:
+    """A gzip blob that decompresses past the scan cap is a finding, not a pass: what lies past
+    the cap was not read."""
+    return Violation(
+        path=rel,
+        sha256=hashlib.sha256(data).hexdigest(),
+        category="secret_pattern",
+        detail=f"{SCAN_CAP_RULE} (decompresses past {SCAN_CAP_BYTES >> 20} MiB; not scanned)",
+        rules=(SCAN_CAP_RULE,),
+        severity=policy.rank(SCAN_CAP_RULE),
     )
 
 
@@ -955,7 +1132,11 @@ def gzip_batch(
         data = read()
         if data is None:
             continue
-        members = gzip_members(data)
+        try:
+            members = gzip_members(data)
+        except ScanCapExceeded:
+            verdicts[key] = cap_violation(policy, rel, data)
+            continue
         if members is None:
             continue
         judged[key] = (rel, data)
@@ -1061,7 +1242,7 @@ def evaluate(
         # git grep does not prefilter symlink blobs, so the small tracked-symlink set is scanned
         # directly. This keeps the fast prefilter for ordinary files without making links a blind
         # spot.
-        if not bypass and not is_link and is_gzip_name(rel):
+        if not bypass and not is_link and (is_gzip_name(rel) or has_gzip_magic(full)):
             # Judged together after the walk (`gzip_batch`); one that does not decompress comes
             # back to the raw scan below.
             gz_names.append(rel)
