@@ -2662,7 +2662,10 @@ either for a gate or a bench. Bytes: `dsv41-gate kernels` 1,089 of 1,089, every 
 two new cases at w2's shape (72 K blocks: a short last stage on the 16-block stages); `dsv41-gate tp` on four ranks
 (needle capture, layers 1,2,14,20,21,24, two decode steps) 916 of 916 (default), 914 of 914 (peer-pull) and 914 of
 914 (host-canonical), the 180 layer hashes a transport equal to main's binary's on the same command
-(`receipts/moe1324/moe1324-gates`, `moe1324-gates-main`, `moe1324-gatehc`, `moe1324-gatehc-main`).
+(`receipts/moe1324/moe1324-gates`, `moe1324-gates-main`, `moe1324-gatehc`, `moe1324-gatehc-main`); on two ranks 480 of
+480, 478 of 478 and 478 of 478, the 108 layer hashes of each transport equal to main's default (`moe1324-pair`,
+`moe1324-pair-long`). One card: the layer and decode gates pass in both arms, and `memra model verify` checkpoint
+and serve give verified=Serve on a full-binary build of the change (`moe1324-one*`, `moe1324-m1`).
 
 Four cards, 40 layers, device-push, A B B A B A A B, four runs an arm, steady calls past 0.5 s, ms (B / A over the
 four adjacent pairs; `receipts/moe1324/moe1324-ab`, `moe1324-ab-base`, `per_run.md` in each):
