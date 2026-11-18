@@ -71,9 +71,12 @@ struct ChunkGraph {
     rows: usize,
     capacity: usize,
     slab_pointer: u64,
-    /// The prime GDN scan workspace the graph was captured over (0 = none). It is freed between
-    /// primes and may come back elsewhere (memra#1258), so a graph over another address recaptures.
-    gdn_pointer: u64,
+    /// The prime GDN scan workspace the graph was captured over, by its generation (0 = none).
+    /// The workspace is freed between primes, and under the park floor between two calls of one
+    /// prime, and allocated again (memra#1258). The graph holds the address of every plane, so
+    /// it replays only over the same allocation. One plane's address does not name it: the new
+    /// workspace can get that plane back where it was and the others elsewhere.
+    gdn_generation: u64,
     dequant_pointer: u64,
     tap_layers: Vec<usize>,
     attention_fa2: bool,
@@ -214,13 +217,11 @@ pub(crate) fn run(
         .max()
         .unwrap();
     let slab = m.prime_slabs_get(e, rows, hidden, nff)?;
-    let (slab_pointer, gdn_pointer) = {
+    let (slab_pointer, gdn_generation) = {
         let s = slab.lock().unwrap();
         (
             s.xa.device_ptr(&e.stream()).0,
-            s.gdn
-                .as_ref()
-                .map_or(0, |g| g.gcum.device_ptr(&e.stream()).0),
+            s.gdn.as_ref().map_or(0, |g| g.generation),
         )
     };
     let dequant_pointer = e
@@ -242,7 +243,7 @@ pub(crate) fn run(
             if p.rows == rows
                 && p.capacity >= seq_end
                 && p.slab_pointer == slab_pointer
-                && p.gdn_pointer == gdn_pointer
+                && p.gdn_generation == gdn_generation
                 && p.dequant_pointer == dequant_pointer
                 && p.tap_layers == tap_layers
                 && p.attention_fa2 == e.prime_attn_fa2_enabled() =>
@@ -268,7 +269,7 @@ pub(crate) fn run(
                 rows,
                 capacity: seq_end,
                 slab_pointer,
-                gdn_pointer,
+                gdn_generation,
                 tap_layers,
                 attention_fa2: e.prime_attn_fa2_enabled(),
                 dequant_pointer: e

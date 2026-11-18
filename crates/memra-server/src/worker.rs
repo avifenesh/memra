@@ -9882,13 +9882,6 @@ fn release_short_parked_workspaces(owners: &[&Engine], why: &str) -> usize {
     released
 }
 
-/// Whether a retiring request leaves a prime unfinished (memra#1258): its prime service is still
-/// pending, or prompt tokens are still queued for the prime. Such a request makes no further
-/// prime call, so nothing would release the workspace its last call left in the slab.
-fn retires_mid_prime(prime_pending: bool, prefill_queued: usize) -> bool {
-    prime_pending || prefill_queued > 0
-}
-
 fn admission_required(cost: usize, reserve: usize) -> usize {
     cost.saturating_add(reserve)
 }
@@ -22623,9 +22616,10 @@ pub fn run(
         }
     );
     // PARKED PRIME WORKSPACE (memra#1258): a prime keeps its GDN scan workspace mapped only on a
-    // device that holds the floor admission keeps free; under it the bytes go back to the pool.
-    // With the rung off (0) the engine keeps its own default floor: the rollback seam of the
-    // rung is not a switch for the park.
+    // device that holds the park floor; under it the bytes go back to the pool. The floor is
+    // the engine's own 2,048 MiB, or this rung's when the rung keeps more than that free. With
+    // the rung off (0) or set lower the engine's floor stands: the rung's setting is not a
+    // switch for the park.
     memra_engine::set_prime_gdn_ws_park_floor(admit_driver_headroom_bytes());
     // PREFILL WORKSPACE HELD (research/c8-workspace-20261108): the card's arm, resolved once.
     let prefill_held = prefill_held_for_device(&device_name, device_is_unified(&engine));
@@ -28313,13 +28307,14 @@ pub fn run(
             }
             retired_interactive |= s.lane == crate::lanes::Lane::Interactive;
             retire_prefix_pin(&mut px, &mut s.prefix_pin);
-            // memra#1258: every way out of `active` passes here (abort, error, out-of-memory
-            // teardown, a pending prime). A request that leaves between two calls of its prime
-            // makes no call that would release the prime's GDN scan workspace.
-            if retires_mid_prime(s.prime_service.pending, s.prefill_queue.len())
-                && let Some(lm) = loaded.get(&s.model)
-            {
-                lm.model.prime_abandoned(&engine);
+            // memra#1258: every way out of `active` passes here (a finished request, abort,
+            // error, out-of-memory teardown, a pending prime). A request that leaves between
+            // two calls of its prime makes no call that would release the prime's GDN scan
+            // workspace, and neither does a prime whose last tokens went through `decode_step`
+            // on a route that does not say so itself. So every retire releases: with nothing
+            // left in a slab, the usual case, it does nothing.
+            if let Some(lm) = loaded.get(&s.model) {
+                lm.model.prime_ended(&engine);
             }
             let pool_key = s.pool_key(); // before the partial moves below (PC-ISO park key)
             // SAMPLER IDENTITY OF THE RETIRING REQUEST (lane/session-resume-sampler-predicate-
@@ -35913,6 +35908,11 @@ fn prefill_tick(
     maybe_plain_checkpoint(engine, s);
     if s.prefill_queue.is_empty() {
         s.prefill_done = true;
+        // memra#1258: the prompt is primed. A prime whose last tokens went through
+        // `decode_step` (a tail under PRIME_MIN_T after a boundary stop, a starved tick budget)
+        // made no last batched call, so the slab would keep the GDN scan workspace as used
+        // bytes for the whole generation, where no trim and no reclaim reaches it.
+        lm.model.prime_ended(engine);
         if let Some(c) = s.cache.as_ref() {
             kvprobe(engine, c, &s.last_logits, "prefill-done");
         }
@@ -45431,33 +45431,60 @@ mod tests {
     }
 
     #[test]
-    fn a_request_retired_mid_prime_hands_the_workspace_back() {
-        // memra#1258 (review): pending prime service, or prompt tokens still queued.
-        assert!(!super::retires_mid_prime(false, 0));
-        assert!(super::retires_mid_prime(true, 0));
-        assert!(super::retires_mid_prime(false, 1));
-        assert!(super::retires_mid_prime(false, 4_077));
-        // At the one seam every session leaves `active` through, before any of the retire
-        // loop's early exits.
+    fn a_retiring_request_hands_the_workspace_back() {
+        // memra#1258 (review, both rounds): at the one seam every session leaves `active`
+        // through, before any of the retire loop's early exits, and for every request. A
+        // request retired mid-prime makes no releasing call, and neither does one whose prime
+        // ended on `decode_step` (`retires_mid_prime(false, 0)` was false for it).
         let src = include_str!("worker.rs");
         let remove = src.find("let mut s = active.remove(i);").expect("the seam");
         let rest = &src[remove..];
         let hook = rest
             .find(concat!(
-                "if retires_mid_prime(s.prime_service.pending, ",
-                "s.prefill_queue.len())"
+                "            if let Some(lm) = loaded.get(&s.model) {\n",
+                "                lm.model.prime_",
+                "ended(&engine);\n",
+                "            }\n"
             ))
-            .expect("the hook");
+            .expect("the hook, under no other condition");
         let first_exit = rest.find("continue;").expect("the loop's first early exit");
         assert!(hook < first_exit, "the hook runs before every early exit");
-        assert!(rest[hook..first_exit].contains(concat!("lm.model.prime", "_abandoned(&engine);")));
+    }
+
+    #[test]
+    fn a_prompt_that_completes_hands_the_workspace_back() {
+        // memra#1258 (review round 2): the prefill tick releases where the prompt completes,
+        // whichever branch fed its last token. The tokenwise branch makes no prime call, so
+        // nothing else would, until the request retires.
+        let src = include_str!("worker.rs");
+        let tick = src.find("\nfn prefill_tick(").expect("the prefill tick");
+        let body = &src[tick..tick + src[tick..].find("\n}\n").expect("its end")];
+        let tokenwise = body
+            .find("} else if let Some(tok) = s.prefill_queue.pop_front() {")
+            .expect("the tokenwise branch");
+        let done = body
+            .rfind(concat!(
+                "    if s.prefill_queue.is_empty() {\n",
+                "        s.prefill_done = true;\n"
+            ))
+            .expect("the prompt's completion");
+        assert!(tokenwise < done, "after both branches");
+        let block = &body[done..];
+        let release = block
+            .find(concat!("        lm.model.prime_", "ended(engine);\n"))
+            .expect("the release");
+        let seed = block
+            .find("maybe_prefix_seed(")
+            .expect("the completion's first capture");
+        assert!(release < seed, "before anything the completion allocates");
     }
 
     #[test]
     fn the_worker_hands_the_engine_the_park_floor() {
         // memra#1258: admission counts a parked prime workspace as cached, and only a prime or
-        // a trim can use it. The engine parks it only above the floor the driver-headroom rung
-        // keeps; without this call the floor is 0 and it parks on a short device too.
+        // a trim can use it. The engine parks it only above its own floor, 2,048 MiB; this call
+        // raises that floor to the driver-headroom rung's when the rung keeps more than that
+        // free. Without the call a rung set higher would not move the park floor.
         let src = include_str!("worker.rs");
         let flat: String = src.chars().filter(|c| !c.is_whitespace()).collect();
         assert!(flat.contains(concat!(

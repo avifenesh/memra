@@ -722,7 +722,11 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
                     }
                 }
                 let s = self.state.as_ref().unwrap();
+                // memra#1258: the trunk is primed. Its batched chunks name the request's end as
+                // `seq_end`, and a schedule whose last segment is tokenwise makes no call that
+                // ends there, so the walker hands the slab's GDN scan workspace back itself.
                 if s.cursor == s.chunks.len() {
+                    self.model.prime_gdn_ws_release(self.e);
                     self.setup()?;
                     if short {
                         self.fill()?;
@@ -780,6 +784,27 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// memra#1258: a warm walker (a carried suffix) whose last segment is under `PRIME_MIN_T`
+    /// ends its trunk on a tokenwise chunk. The batched chunk before it does not reach the
+    /// request's end, so no prime call releases the GDN scan workspace: `advance_chunk` does,
+    /// when the trunk's last chunk is done (pinned with the other release points in
+    /// `the_gdn_scan_workspace_lives_for_one_prime`).
+    #[test]
+    fn a_warm_trunk_can_end_on_a_tokenwise_segment() {
+        let chunks = trunk_schedule(4096 + 9, Some(4096), None, false, true, true, |n| {
+            vec![(0, n)]
+        });
+        let (first, last) = (chunks[0], chunks[chunks.len() - 1]);
+        assert_eq!(chunks.len(), 2);
+        assert!(first.batched && (first.start, first.end) == (0, 4096));
+        assert!(!last.batched && (last.start, last.end) == (4096, 4105));
+        // With 16 tokens after the stop the last segment is a batched call again.
+        let chunks = trunk_schedule(4096 + 16, Some(4096), None, false, true, true, |n| {
+            vec![(0, n)]
+        });
+        assert!(chunks.iter().all(|chunk| chunk.batched));
+    }
 
     /// WP-B day 39 addendum B: the walker owes its turn checkpoint's snapshot until it has run
     /// the chunk that ends on the checkpoint row.
