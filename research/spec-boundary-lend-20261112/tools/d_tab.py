@@ -29,7 +29,7 @@ import sys
 d = pathlib.Path(sys.argv[1])
 want = sys.argv[2] if len(sys.argv) > 2 else None
 ts = re.compile(r"(\d+\.\d+) \[tick-spec\].* wall_ms=([\d.]+) generated=(\d+)->(\d+) rounds=(\d+) drafted=(\d+) accepted=(\d+)")
-trm = re.compile(r"(\d+\.\d+) \[spec\] pre-capture pool trim(?: SKIPPED \(arm N\))?: (?:released )?(\d+)Mi?B(?: of (\d+)Mi?B)?.*driver free (\d+)Mi?B < required (\d+)Mi?B")
+trm = re.compile(r"(\d+\.\d+) \[spec\] pre-capture pool trim(?: SKIPPED \(arm N\))?: (?:released )?(\d+)Mi?B(?: of (\d+)Mi?B)?.*(?:driver|allocatable) free (\d+)Mi?B < required (\d+)Mi?B")
 pen = re.compile(r"(\d+\.\d+) \[specpub-probe\] enter why=spec-boundary pos=(\d+) reserved=(\d+) used=(\d+) cached=(\d+)")
 pex = re.compile(r"(\d+\.\d+) \[specpub-probe\] exit why=spec-boundary us=(\d+) reserved=(\d+) used=(\d+)")
 ins = re.compile(r"(\d+\.\d+) \[prefix-cache\] insert \(spec-boundary\): (\d+) tokens, ([\d.]+)MB")

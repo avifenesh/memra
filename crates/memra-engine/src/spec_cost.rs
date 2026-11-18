@@ -532,19 +532,19 @@ mod tests {
     /// names what they need against what is allocatable.
     #[test]
     fn probe_fit_refuses_only_past_what_is_allocatable() {
-        const MB: usize = 1 << 20;
+        const MIB: usize = 1 << 20;
         assert_eq!(
-            super::sessions_fit_refusal(32, 2048, 505 * MB, 30 * 505 * MB),
+            super::sessions_fit_refusal(32, 2048, 505 * MIB, 30 * 505 * MIB),
             None
         );
-        let why = super::sessions_fit_refusal(32, 2048, 505 * MB, 30 * 505 * MB - 1)
+        let why = super::sessions_fit_refusal(32, 2048, 505 * MIB, 30 * 505 * MIB - 1)
             .expect("one byte short refuses");
         assert_eq!(
             why,
             "32 sessions at depth 2048 do not fit: the other 30 need 15150MiB (505.0MiB each), \
              15149MiB allocatable"
         );
-        assert!(super::sessions_fit_refusal(16, 2048, 505 * MB, 7016 * MB).is_some());
+        assert!(super::sessions_fit_refusal(16, 2048, 505 * MIB, 7016 * MIB).is_some());
         assert_eq!(super::sessions_fit_refusal(2, 2048, usize::MAX, 0), None);
         assert_eq!(super::sessions_fit_refusal(16, 2048, 0, 0), None);
     }
