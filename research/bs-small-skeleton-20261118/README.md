@@ -61,3 +61,9 @@ a changed kernel; the decision record lists the three causes found and fixed.
 Nothing was run on a card. `gpu-battery.sh` is the GPU battery prepared for the merge, with the expected counts
 (the kernel gate, the four-rank tensor-parallel gates, the full pair battery), to run when an RTX PRO 6000 box is
 free.
+
+`gpu-battery-dryrun.sh CASE` runs the battery against fake binaries, a fake `nvidia-smi`, `cargo` and
+`release-battery.sh` (no GPU): the passing pair, kgate and tp4 phases, and one case for each failure path (a
+missing, partial or newline-less BOARD, an absent model, a lock that cannot be opened, a missing binary, a run-gen
+MISMATCH, a FLIP-NEARTIE that passes, a failing release battery, kernel-gate lines that differ between the arms, a
+relative OUT). Results: `gpu-battery-dryrun.txt`.
