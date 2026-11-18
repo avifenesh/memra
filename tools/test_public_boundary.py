@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -1713,6 +1714,146 @@ class CommitBlobTests(unittest.TestCase):
         self.commit("deep/dir/receipts.md", b"alpha needle\n", "evidence")
         self.ref_scan_calls()
         self.assertEqual([v.path for v in self.found[0]], ["deep/dir/receipts.md"])
+
+    def git_bytes(self, *args: str, data: bytes = b"") -> str:
+        return subprocess.run(
+            ["git", *args], cwd=self.root, input=data, check=True, capture_output=True
+        ).stdout.decode().strip()
+
+    def head_at_tree(self, tree: str, branch: str) -> None:
+        commit = self.git("commit-tree", "-m", branch, tree)
+        self.git("update-ref", f"refs/heads/{branch}", commit)
+
+    def test_tree_entry_modes_are_read_as_git_reads_them(self) -> None:
+        """Review of memra#1357 round 1: git classifies a mode by its type bits (`canon_mode`)."""
+        kinds = {
+            mode: boundary.entry_kind(mode)
+            for mode in (b"40000", b"040000", b"100644", b"100755", b"100664", b"120000", b"160000")
+        }
+        self.assertEqual(
+            kinds,
+            {
+                b"40000": True,
+                b"040000": True,
+                b"100644": False,
+                b"100755": False,
+                b"100664": False,
+                b"120000": False,
+                b"160000": None,
+            },
+        )
+        for bad in (b"", b"4000x", b"+40000"):
+            with self.assertRaises(RuntimeError):
+                boundary.entry_kind(bad)
+
+    def test_a_zero_padded_tree_mode_is_walked_as_a_tree(self) -> None:
+        """Review of memra#1357 round 1: fsck only warns on a zero-padded `040000`, so a pushed ref
+        can carry one; it is a tree, and a legacy `100664` is a blob, as git reads them."""
+        needle = self.git_bytes("hash-object", "-w", "--stdin", data=b"alpha needle\n")
+        sub = self.git_bytes("mktree", data=f"100644 blob {needle}\tx.log\n".encode())
+        raw = bytes.fromhex
+        tree = self.git_bytes(
+            "hash-object", "-t", "tree", "-w", "--literally", "--stdin",
+            data=b"100664 legacy.log\0" + raw(needle) + b"040000 sub\0" + raw(sub),
+        )
+        self.head_at_tree(tree, "padded")
+        self.ref_scan_calls()
+        self.assertEqual(sorted(v.path for v in self.found[0]), ["legacy.log", "sub/x.log"])
+
+    def test_a_tree_deeper_than_the_recursion_limit_is_walked(self) -> None:
+        """Review of memra#1357 round 1: git reads trees deeper than Python's recursion limit."""
+        needle = self.git_bytes("hash-object", "-w", "--stdin", data=b"alpha needle\n")
+        deep = "d/" * (sys.getrecursionlimit() + 100) + "run.log"
+        self.git("update-index", "--add", "--cacheinfo", f"100644,{needle},{deep}")
+        self.head_at_tree(self.git("write-tree"), "deep")
+        self.ref_scan_calls()
+        self.assertEqual([v.path for v in self.found[0]], [deep])
+
+    def test_the_ref_scan_greps_a_binary_blob_as_text(self) -> None:
+        """Review of memra#1357 round 1: a NUL-bearing blob (a profiler capture) is a candidate,
+        as in the checkout scan's prefilter. git grep -l lists it with or without --text, so this
+        pins the outcome: skipping binary blobs (-I) fails it."""
+        self.commit("capture.bin", b"\0alpha needle\n", "a capture")
+        self.ref_scan_calls()
+        self.assertEqual([v.path for v in self.found[0]], ["capture.bin"])
+
+    def test_the_ref_scan_greps_a_symlinks_target_text(self) -> None:
+        """Review of memra#1357 round 1: a symlink's blob is its target text, judged as the
+        checkout scan judges it; the multi-tree grep this replaced skipped symlinks."""
+        self.symlink("receipt-link", "alpha needle")
+        self.git("add", "receipt-link")
+        self.git("commit", "-q", "-m", "a link")
+        with mock.patch.object(boundary, "ROOT", self.root):
+            checkout = [(v.path, v.category) for v in boundary.evaluate(self.policy)]
+        self.ref_scan_calls()
+        self.assertEqual(checkout, [("receipt-link", "secret_pattern")])
+        self.assertEqual([(v.path, v.category) for v in self.found[0]], checkout)
+
+    def test_a_path_with_a_newline_hides_no_ref_scan_finding(self) -> None:
+        """Review of memra#1357 round 1: the scan never passes paths through a line-based read."""
+        self.write("a\nb.txt", b"alpha needle\n")
+        self.write("plain.txt", b"alpha needle\n")
+        self.git("add", "-f", ".")
+        self.git("commit", "-q", "-m", "a newline path")
+        self.ref_scan_calls()
+        self.assertEqual(sorted(v.path for v in self.found[0]), ["a\nb.txt", "plain.txt"])
+
+    def test_a_blob_missing_from_the_store_stops_the_ref_scan(self) -> None:
+        """Review of memra#1357 round 1: a blob nobody can read is a blob nobody judged."""
+        self.commit("receipts.md", b"alpha needle\n", "evidence")
+        self.git("update-index", "--add", "--cacheinfo", f"100644,{'2' * 40},gone.txt")
+        self.head_at_tree(self.git("write-tree", "--missing-ok"), "gone")
+        with self.assertRaises(RuntimeError):
+            self.ref_scan_calls()
+
+    def test_a_root_held_as_another_roots_subtree_is_read_once(self) -> None:
+        """Review of memra#1357 round 1: each tree object is read once, roots included."""
+        self.commit("sub/receipts.md", b"alpha needle\n", "evidence")
+        sub = self.git("rev-parse", "HEAD:sub")
+        read: list[str] = []
+        real = subprocess.run
+
+        def recorded(args, *a, **k):
+            if list(args)[:3] == ["git", "cat-file", "--batch"]:
+                read.extend(k["input"].decode().split())
+            return real(args, *a, **k)
+
+        with mock.patch.object(boundary, "ROOT", self.root), mock.patch.object(
+            boundary.subprocess, "run", recorded
+        ):
+            roots, _ = boundary.ref_trees(["HEAD", sub])
+        self.assertIn(sub, roots)
+        self.assertEqual(sorted(read), sorted(set(read)))
+        self.assertEqual(len(read), 2)
+
+    def test_a_scan_killed_mid_grep_leaves_no_scratch_past_a_day(self) -> None:
+        """Review of memra#1357 round 1: a timeout kill skips the cleanup, so the next scan
+        sweeps scratch object directories older than a day and keeps a running scan's."""
+        self.commit("receipts.md", b"alpha needle\n", "evidence")
+        git_dir = self.root / ".git"
+        old, fresh = git_dir / "public-boundary-objects-old", git_dir / "public-boundary-objects-new"
+        for left in (old, fresh):
+            (left / "pack").mkdir(parents=True)
+        two_days = time.time() - 2 * 24 * 3600
+        os.utime(old, (two_days, two_days))
+        self.ref_scan_calls()
+        self.assertFalse(old.exists())
+        self.assertTrue(fresh.is_dir())
+        self.assertEqual([v.path for v in self.found[0]], ["receipts.md"])
+
+    def test_the_ref_scan_reads_a_repository_under_a_path_with_a_colon(self) -> None:
+        """Review of memra#1357 round 1: the alternates variable is colon-separated, so the
+        repository's object path is passed quoted."""
+        self.tempdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.tempdir.cleanup)
+        self.root = Path(self.tempdir.name) / "a:b"
+        self.root.mkdir()
+        self.git("init", "-q")
+        self.git("config", "user.name", "Boundary Test")
+        self.git("config", "user.email", "boundary@example.invalid")
+        self.commit("receipts.md", b"alpha needle\n", "evidence")
+        self.ref_scan_calls()
+        self.assertEqual([v.path for v in self.found[0]], ["receipts.md"])
 
     def test_commit_scan_applies_private_path_rules(self) -> None:
         self.policy.private_paths["private"] = "private/**"

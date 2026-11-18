@@ -75,11 +75,11 @@ jobs:
   refs:
     runs-on: ubuntu-24.04
     # Measured 2026-08-19: 187 refs, ~25 minutes on 4 nice'd cores of the dev rig. By 2026-11
-    # (1,354 refs) the per-(ref, path) `git grep` never finished inside 120 minutes (memra#1357).
-    # The scan now reads each tree object once and greps each distinct blob once: 1,354 refs
-    # (331 heads, 21 tags, 1,002 PR heads) in 9.3 minutes on the rig, 2.8 GB peak. The ceiling
-    # stays at 120 so that growth shows as a slow run, not a kill: a timeout kill is a scan
-    # that proved nothing.
+    # (1,354 refs) the one multi-tree `git grep` over every ref never finished inside 120
+    # minutes (memra#1357). The scan now reads each tree object once and greps each distinct
+    # blob once: 1,354 refs (331 heads, 21 tags, 1,002 PR heads) in 9.3 minutes on the rig,
+    # 2.7 GiB peak. The ceiling stays at 120 so that growth shows as a slow run, not a kill: a
+    # timeout kill is a scan that proved nothing.
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

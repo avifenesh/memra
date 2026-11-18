@@ -50,10 +50,12 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import zlib
 
 try:
@@ -809,7 +811,27 @@ def blobs_at(specs: List[str]) -> Dict[str, bytes]:
 SCANNED_BLOBS = "scanned_blobs"
 
 
-TreeEntry = Tuple[bytes, bytes, str]  # (mode, name, oid)
+TreeEntry = Tuple[bool, bytes, str]  # (is a tree, name, oid); submodule entries are not kept
+
+OCTAL_DIGITS = frozenset(b"01234567")
+
+
+def entry_kind(mode: bytes) -> Optional[bool]:
+    """True for a tree, False for a blob, None for anything else, as git reads a tree entry.
+
+    git parses a mode as octal digits and canonicalizes it by its type bits (`canon_mode`):
+    040000 is a tree, a regular file or a symlink is a blob, and anything else is a gitlink.
+    Review of memra#1357 round 1: a zero-padded `040000` (fsck's `zeroPaddedFilemode`, only a
+    warning) is a tree to git, and comparing the raw bytes took it for a blob. A mode that is not
+    octal makes git refuse the tree, so it stops the scan here too."""
+    if not mode or not OCTAL_DIGITS.issuperset(mode):
+        raise RuntimeError(f"tree entry mode {mode!r} is not octal")
+    bits = int(mode, 8) & 0o170000
+    if bits == 0o040000:
+        return True
+    if bits in (0o100000, 0o120000):
+        return False
+    return None
 
 
 def ref_trees(refs: List[str]) -> Tuple[Dict[str, List[str]], Dict[str, List[TreeEntry]]]:
@@ -841,7 +863,10 @@ def ref_trees(refs: List[str]) -> Tuple[Dict[str, List[str]], Dict[str, List[Tre
         if len(parts) != 2 or parts[1] != "tree":
             raise RuntimeError(f"{ref} has no tree: {line}")
         roots.setdefault(parts[0], []).append(ref)
-    trees: Dict[str, List[TreeEntry]] = {}
+    # Every root is marked queued up front, so a root that another root also holds as a subtree
+    # is read once (review of memra#1357 round 1).
+    trees: Dict[str, List[TreeEntry]] = {oid: [] for oid in roots}
+    kinds: Dict[bytes, Optional[bool]] = {}
     level = list(roots)
     while level:
         result = subprocess.run(
@@ -873,9 +898,14 @@ def ref_trees(refs: List[str]) -> Tuple[Dict[str, List[str]], Dict[str, List[Tre
                 nul = body.index(b"\0", space)
                 child = body[nul + 1 : nul + 1 + width].hex()
                 mode = body[at:space]
-                entries.append((mode, body[space + 1 : nul], child))
                 at = nul + 1 + width
-                if mode == b"40000" and child not in trees:
+                kind = kinds.get(mode, ...)
+                if kind is ...:
+                    kind = kinds[mode] = entry_kind(mode)
+                if kind is None:
+                    continue  # a submodule's commit, not an object of this repository
+                entries.append((kind, body[space + 1 : nul], child))
+                if kind and child not in trees:
                     trees[child] = []
                     below.append(child)
             trees[oid] = entries
@@ -883,9 +913,17 @@ def ref_trees(refs: List[str]) -> Tuple[Dict[str, List[str]], Dict[str, List[Tre
     return roots, trees
 
 
-def is_blob_mode(mode: bytes) -> bool:
-    """A file or a symlink: not a tree (40000) and not a submodule's commit (160000)."""
-    return mode not in (b"40000", b"160000")
+# A scratch object directory older than this was left by a scan that was killed (a timeout
+# cancel sends SIGKILL after SIGTERM): no scan runs this long, so it is swept at the next start.
+STALE_SCRATCH_SECONDS = 24 * 3600
+
+
+def git_quoted(path: str) -> str:
+    """`path` as a C-quoted entry of GIT_ALTERNATE_OBJECT_DIRECTORIES, which git splits on `:`
+    unless the entry is quoted (review of memra#1357 round 1: a repository under a path with a
+    colon)."""
+    quoted = path.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return f'"{quoted}"'
 
 
 def secret_blobs(patterns: Dict[str, str], oids: Iterable[str]) -> set[str]:
@@ -895,7 +933,11 @@ def secret_blobs(patterns: Dict[str, str], oids: Iterable[str]) -> set[str]:
     directory that borrows the repository's objects as an alternate, so the repository gains no
     object. git grep then reads each blob once, where the multi-tree `git grep <ref>...` it
     replaces read every ref's whole tree again: published refs share almost all of their blobs
-    (on the rig, 209 k distinct blobs, 12.2 GiB, grepped in about 145 s)."""
+    (on the rig's clone of 1,126 refs, 209 k distinct blobs, 12.2 GiB).
+
+    Every blob is listed as a regular file, so a symlink's target text is grepped too, as the
+    checkout scan reads it; the old tree grep skipped symlinks. A blob git grep cannot read, such
+    as one missing from the object store, stops the scan."""
     selected = sorted(set(oids))
     if not patterns or not selected:
         return set()
@@ -913,11 +955,19 @@ def secret_blobs(patterns: Dict[str, str], oids: Iterable[str]) -> set[str]:
         text=True,
         check=True,
     ).stdout.strip()
+    stale = time.time() - STALE_SCRATCH_SECONDS
+    for left in Path(common).glob("public-boundary-objects-*"):
+        try:
+            old = left.is_dir() and not left.is_symlink() and left.stat().st_mtime < stale
+        except OSError:
+            continue  # another scan's sweep removed it first
+        if old:
+            shutil.rmtree(left, ignore_errors=True)
     with tempfile.TemporaryDirectory(prefix="public-boundary-objects-", dir=common) as scratch:
         env = dict(
             os.environ,
             GIT_OBJECT_DIRECTORY=scratch,
-            GIT_ALTERNATE_OBJECT_DIRECTORIES=objects,
+            GIT_ALTERNATE_OBJECT_DIRECTORIES=git_quoted(objects),
             GIT_NO_REPLACE_OBJECTS="1",
         )
         made = subprocess.run(
@@ -933,6 +983,8 @@ def secret_blobs(patterns: Dict[str, str], oids: Iterable[str]) -> set[str]:
             message = made.stderr.decode("utf-8", errors="replace").strip()
             raise RuntimeError(f"git mktree over the distinct blobs failed: {message}")
         tree = made.stdout.decode().strip()
+        # With -l, git grep lists a matching binary blob with or without --text; --text keeps a
+        # NUL-bearing blob (a profiler capture) a candidate whatever git's binary heuristics do.
         args = ["git", "grep", "--text", "-z", "-l", "-P"]
         for source in patterns.values():
             args.extend(("-e", source))
@@ -972,7 +1024,7 @@ def tree_candidates_at_refs(
     roots, trees = ref_trees(refs)
     hits = secret_blobs(
         policy.secret_sources,
-        (oid for entries in trees.values() for mode, _, oid in entries if is_blob_mode(mode)),
+        (oid for entries in trees.values() for is_tree, _, oid in entries if not is_tree),
     )
     private_re = glob_matcher(policy.private_paths.values())
     private: Dict[bytes, bool] = {}
@@ -988,22 +1040,38 @@ def tree_candidates_at_refs(
             private[raw_path] = hit
         return hit
 
-    def walk(tree: str, prefix: bytes) -> List[Tuple[bytes, str]]:
-        key = (tree, prefix)
-        found = walked.get(key)
-        if found is None:
-            found = []
-            for mode, name, oid in trees[tree]:
-                if mode == b"40000":
-                    found.extend(walk(oid, prefix + name + b"/"))
-                elif is_blob_mode(mode) and candidate(prefix + name, oid):
-                    found.append((prefix + name, oid))
-            walked[key] = found
-        return found
+    def walk(root: str) -> List[Tuple[bytes, str]]:
+        """The candidates under `root`, each (tree, prefix) memoized. An explicit stack, not
+        recursion: git reads trees far deeper than Python's recursion limit (review of
+        memra#1357 round 1)."""
+        done = walked.get((root, b""))
+        if done is not None:
+            return done
+        # Each frame: (tree, prefix, its entries not yet visited, the candidates found so far).
+        stack = [(root, b"", iter(trees[root]), [])]
+        while stack:
+            tree, prefix, entries, found = stack[-1]
+            for is_tree, name, oid in entries:
+                path = prefix + name
+                if not is_tree:
+                    if candidate(path, oid):
+                        found.append((path, oid))
+                    continue
+                below = walked.get((oid, path + b"/"))
+                if below is None:
+                    stack.append((oid, path + b"/", iter(trees[oid]), []))
+                    break
+                found.extend(below)
+            else:
+                stack.pop()
+                walked[(tree, prefix)] = found
+                if stack:
+                    stack[-1][3].extend(found)
+        return walked[(root, b"")]
 
     groups: Dict[Tuple[str, str], set[str]] = {}
     for root, at in roots.items():
-        for raw_path, oid in walk(root, b""):
+        for raw_path, oid in walk(root):
             path = raw_path.decode("utf-8", errors="surrogateescape")
             groups.setdefault((path, oid), set()).update(at)
     return groups
