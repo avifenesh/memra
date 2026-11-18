@@ -1247,10 +1247,8 @@ class CommitBlobTests(unittest.TestCase):
             private_paths={"priv": "private/**"},
             bypass_paths=[],
         )
-        with mock.patch.object(
-            boundary, "private_candidates_at_ref", lambda _policy, _ref: ["private/x.log.gz"]
-        ):
-            violations, _ = self.refs_scan(policy)
+        # Found by its gzip name alone: no private_candidates_at_ref mock (review round 3).
+        violations, _ = self.refs_scan(policy)
         self.assertEqual(
             [(v.path, v.category) for v in violations], [("private/x.log.gz", "private_path")]
         )
@@ -1315,11 +1313,57 @@ class CommitBlobTests(unittest.TestCase):
         for i in range(3):
             level = self.tar_bytes({f"l{i}.tar.gz": gzip.compress(level, mtime=0)})
         blob = gzip.compress(level, mtime=0)
-        violation = boundary.evaluate_content(self.policy, "research/l/n.tar.gz", blob)
+        self.assertIsNotNone(boundary.evaluate_content(self.policy, "research/l/n.tar.gz", blob))
+        self.assertIn(
+            "l2.tar.gz/l1.tar.gz/l0.tar.gz/run.log",
+            [name for name, _ in boundary.gzip_members(blob) or []],
+        )
+
+    def test_a_gzip_past_the_nesting_limit_is_judged_by_its_bytes(self) -> None:
+        """Review round 3: GZIP_NEST_DEPTH is 7, the outer tar.gz's tar and three nested tar.gz
+        levels. A gzip in the innermost tar is the eighth container: it is kept as its bytes."""
+        import gzip
+
+        level = self.tar_bytes({"run.log.gz": gzip.compress(b"x\nthe alpha needle\n", mtime=0)})
+        for i in range(3):
+            level = self.tar_bytes({f"l{i}.tar.gz": gzip.compress(level, mtime=0)})
+        members = dict(boundary.gzip_members(gzip.compress(level, mtime=0)) or [])
+        body = members["l2.tar.gz/l1.tar.gz/l0.tar.gz/run.log.gz"]
+        self.assertEqual(body[:2], boundary.GZIP_MAGIC)
+
+    def test_a_nested_gzip_that_does_not_decompress_is_judged_by_its_bytes(self) -> None:
+        """Review round 3: a top-level gzip that does not decompress keeps the raw scan; inside a
+        tar.gz the same blob was dropped as binary (its header holds a NUL)."""
+        import gzip
+
+        inner = gzip.compress(b"the alpha needle\n" + b"pad row\n" * 400, compresslevel=0, mtime=0)
+        broken = inner[: len(inner) // 2]
+        self.assertIsNotNone(boundary.evaluate_content(self.policy, "research/l/top.log.gz", broken))
+        outer = gzip.compress(self.tar_bytes({"x.log.gz": broken}), mtime=0)
+        self.assertIsNotNone(boundary.evaluate_content(self.policy, "research/l/o.tar.gz", outer))
+
+    def test_nested_plain_tars_stay_near_the_cap(self) -> None:
+        """Review round 3: each plain tar opened from a tar member is a copy no decompression
+        charged, so seven nested tars held about one copy of the cap per level. Charged, the scan
+        stops past the cap with a finding, and its peak stays near the cap."""
+        import gzip
+        import tracemalloc
+
+        cap = 1 << 20
+        level = self.tar_bytes({"run.log": b"row of clean text\n" * ((768 << 10) // 18)})
+        for i in range(6):
+            level = self.tar_bytes({f"l{i}.tar": level})
+        blob = gzip.compress(level, mtime=0)
+        with mock.patch.object(boundary, "SCAN_CAP_BYTES", cap):
+            tracemalloc.start()
+            try:
+                violation = boundary.evaluate_content(self.policy, "research/l/t.tar.gz", blob)
+                _, peak = tracemalloc.get_traced_memory()
+            finally:
+                tracemalloc.stop()
         assert violation is not None
-        self.assertIn("l2.tar.gz/l1.tar.gz/l0.tar.gz/run.log", violation.detail + str(
-            boundary.scan_members(self.policy, boundary.gzip_members(blob) or [])
-        ))
+        self.assertEqual(violation.rules, (boundary.SCAN_CAP_RULE,))
+        self.assertLess(peak, 3 * cap)
 
     def test_every_member_of_a_multi_member_gzip_is_read(self) -> None:
         import gzip

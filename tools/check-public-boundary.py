@@ -508,11 +508,14 @@ def has_gzip_magic(path: Path) -> bool:
 
 # A blob's decompressed members may hold at most this many bytes (review round 1): a few MB of
 # zeros expand to GBs, and the scan holds a member in memory. Over it, the blob is a finding of its
-# own (`archive_over_scan_cap`), never a pass. Nested archives share their outer blob's budget.
+# own (`archive_over_scan_cap`), never a pass. Nested archives share their outer blob's budget, and
+# a plain tar opened from a tar member is charged again for its copy (review round 3), so nested
+# tars cannot hold a copy of the cap per level.
 SCAN_CAP_BYTES = 1 << 30
-# Containers opened inside a blob: a gzip and a tar each count one, so 8 is the outer tar.gz and three
-# nested tar.gz levels inside it.
-GZIP_NEST_DEPTH = 8
+# Containers opened below a blob's own gzip: a gzip and a tar each count one, so 7 is the outer
+# tar.gz's tar and three nested tar.gz levels inside it. A gzip past the limit is judged by its
+# bytes, as one that does not decompress is (`text_member`).
+GZIP_NEST_DEPTH = 7
 GZIP_HEADER_MEMBER = "<gzip header>"
 TAR_TAIL_MEMBER = "<after the tar>"
 
@@ -568,8 +571,6 @@ def gunzip_capped(data: bytes, budget: List[int]) -> Tuple[bytes, bytes]:
         inflate = zlib.decompressobj(-zlib.MAX_WBITS)
         pending = data[pos:]
         while True:
-            if budget[0] < 0:
-                raise ScanCapExceeded()
             chunk = inflate.decompress(pending, budget[0] + 1)
             if len(chunk) > budget[0]:
                 raise ScanCapExceeded()
@@ -599,23 +600,33 @@ def looks_like_tar(raw: bytes) -> bool:
 
 
 def container_members(
-    raw: bytes, depth: int, budget: List[int]
+    raw: bytes, depth: int, budget: List[int], copied: bool = False
 ) -> Optional[List[Tuple[str, bytes]]]:
     """The members of a decompressed stream or of a tar member: a gzip inside it is opened in
     turn and a tar is read by its files, up to `GZIP_NEST_DEPTH` levels of nesting; None when
-    `raw` is neither (it is then one member, judged as text). Raises ScanCapExceeded."""
+    `raw` is neither (it is then one member, `text_member`). `copied` says `raw` is a tar
+    member's copy, which no decompression charged: a plain tar opened from it is charged its
+    length first. Raises ScanCapExceeded."""
     if depth >= GZIP_NEST_DEPTH:
         return None
     if raw[:2] == GZIP_MAGIC:
         return gzip_members(raw, depth + 1, budget)
     if looks_like_tar(raw):
+        if copied:
+            if len(raw) > budget[0]:
+                raise ScanCapExceeded()
+            budget[0] -= len(raw)
         return tar_members(raw, depth + 1, budget)
     return None
 
 
 def text_member(name: str, body: bytes) -> List[Tuple[str, bytes]]:
     """One member, left out when it is binary by git's own test (a NUL in the first 8000 bytes):
-    tensor and float dumps would match by chance just as deflate bytes do."""
+    tensor and float dumps would match by chance just as deflate bytes do. A gzip that was not
+    opened (it does not decompress, or it is past `GZIP_NEST_DEPTH`) is kept and judged by its
+    bytes, as a top-level one is (review round 3)."""
+    if body[:2] == GZIP_MAGIC:
+        return [(name, body)]
     return [] if b"\0" in body[:BINARY_PROBE] else [(name, body)]
 
 
@@ -624,7 +635,7 @@ def tar_members(raw: bytes, depth: int, budget: List[int]) -> List[Tuple[str, by
     and the bytes after the tar's end that are not padding as a member of their own. A tar that
     does not parse is judged as one stream, whatever it holds. The tar's bytes were charged to the
     budget when they were decompressed; only a sparse member, which expands past its stored bytes,
-    is charged again."""
+    and a plain tar member opened in turn (`container_members`) are charged again."""
     files: List[Tuple[str, bytes]] = []
     try:
         with tarfile.open(fileobj=io.BytesIO(raw)) as tar:
@@ -643,7 +654,7 @@ def tar_members(raw: bytes, depth: int, budget: List[int]) -> List[Tuple[str, by
         return [("", raw)]
     members: List[Tuple[str, bytes]] = []
     for name, body in files:
-        nested = container_members(body, depth, budget)
+        nested = container_members(body, depth, budget, copied=True)
         if nested is None:
             members.extend(text_member(name, body))
         else:
