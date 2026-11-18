@@ -1,0 +1,48 @@
+diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
+index 02349ad03c..7790c4a9cc 100644
+--- a/crates/memra-engine/src/spec.rs
++++ b/crates/memra-engine/src/spec.rs
+@@ -12996,6 +12996,21 @@ impl HybridModel {
+         // Two entry readings, one value on a discrete card (memra#1307): `cap_eff0` is the raw
+         // driver reading a failed capture records as its appetite floor, `cap_meas0` opens the
+         // delta on the delta reading (see `draft_state_parked_delta`).
++        {
++            let (praw, _) = e.ctx().mem_get_info().unwrap_or((0, 0));
++            let (pres, pused) = e.pool_reserved_used();
++            eprintln!(
++                "[diag1351] {} raw={} delta={:?} pool_res={} pool_used={} graph_res={} graph_cached={} unified={}",
++                "entry",
++                praw >> 20,
++                crate::unified_memory::delta_free_bytes(e.unified_memory(), praw).map(|d| d >> 20),
++                pres >> 20,
++                pused >> 20,
++                e.device_graph_mem_reserved() >> 20,
++                e.device_graph_mem_cached() >> 20,
++                e.unified_memory(),
++            );
++        }
+         let (cap_eff0, cap_meas0) = match e.ctx().mem_get_info() {
+             Ok((raw, _)) => {
+                 let cached = e.pool_cached_bytes();
+@@ -13600,6 +13615,21 @@ impl HybridModel {
+             && let Ok((raw1, _)) = e.ctx().mem_get_info()
+             && let Some(f1) = crate::unified_memory::delta_free_bytes(e.unified_memory(), raw1)
+         {
++            {
++                let (praw, _) = e.ctx().mem_get_info().unwrap_or((0, 0));
++                let (pres, pused) = e.pool_reserved_used();
++                eprintln!(
++                    "[diag1351] {} raw={} delta={:?} pool_res={} pool_used={} graph_res={} graph_cached={} unified={}",
++                    "end",
++                    praw >> 20,
++                    crate::unified_memory::delta_free_bytes(e.unified_memory(), praw).map(|d| d >> 20),
++                    pres >> 20,
++                    pused >> 20,
++                    e.device_graph_mem_reserved() >> 20,
++                    e.device_graph_mem_cached() >> 20,
++                    e.unified_memory(),
++                );
++            }
+             let parked_delta = draft_state_parked_delta(
+                 meas0,
+                 f1,
