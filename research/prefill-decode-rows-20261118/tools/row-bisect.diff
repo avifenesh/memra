@@ -1,0 +1,687 @@
+# e9676a1026 probe(engine): row-bisect, per-layer last-row taps for prefill against decode (memra#1203)
+# 2a95ac501a probe(engine): row-bisect prints each MoE layer's host top-k with logits and softmax weights
+# 6292c1d465 probe(engine): row-bisect RB_PREFILL_ENV sets knobs for the prefill forwards only
+# 695f346e5b probe(engine): row-bisect taps inside the GDN mixer (projections, q/k/v, g, core output) in both programs
+# f0453bb32e probe(engine): row-bisect RB_PREFILL_KVQ, prefill attention over K/V round-tripped through q8_0/q5_1
+diff --git a/crates/memra-engine/Cargo.toml b/crates/memra-engine/Cargo.toml
+index b89cfeb4ac..71eabd00fe 100644
+--- a/crates/memra-engine/Cargo.toml
++++ b/crates/memra-engine/Cargo.toml
+@@ -174,6 +174,10 @@ path = "src/bin/k27div_probe.rs"
+ name = "argmax-margin-probe"
+ path = "src/bin/argmax_margin_probe.rs"
+ 
++[[bin]]
++name = "row-bisect"
++path = "src/bin/row_bisect.rs"
++
+ [[bin]]
+ name = "kernel-check"
+ path = "src/bin/kernel_check.rs"
+diff --git a/crates/memra-engine/src/bin/row_bisect.rs b/crates/memra-engine/src/bin/row_bisect.rs
+new file mode 100644
+index 0000000000..6b282402db
+--- /dev/null
++++ b/crates/memra-engine/src/bin/row_bisect.rs
+@@ -0,0 +1,387 @@
++//! row-bisect (memra#1203): at chosen prompt rows, record the last-row hidden state of every
++//! layer under the prefill reference (`forward_last` over the prefix, f32 K/V) and under the
++//! eager decode (`decode_step` over the quantized cache), and the batched prime's logits, then
++//! print where the two programs part.
++//!
++//! usage: row-bisect <model.gguf> <prompt-file> <row,row,...> [--out DIR] [--no-prime]
++//!
++//! A row `r` is the logits row after `prompt[..=r]` (the argmax-margin-probe's `pos`). Per row
++//! and program it prints the top-2 ids and margin; per layer the relative L2 distance of the
++//! mixer output, of the post-attention residual and of the residual after the layer; and for a
++//! MoE layer the router's top-k computed on the host from each program's own post-attention
++//! residual (rms_norm with the layer's post_attn_norm, then the f32 router rows, softmax), with
++//! the score gap between the last selected and the first unselected expert. `--out` writes
++//! every tap as little-endian f32 for offline analysis.
++
++use memra_engine::Engine;
++use memra_engine::hybrid::{Ffn, HybridModel, Mixer};
++use memra_engine::pp::new_cache as new_model_cache;
++use memra_engine::row_tap::{self, Tap};
++use memra_gguf::GgufFile;
++use memra_tokenizer::Tokenizer;
++use std::collections::BTreeMap;
++use std::io::Write as _;
++
++type Res<T> = Result<T, Box<dyn std::error::Error>>;
++
++fn top2(l: &[f32]) -> (usize, f32, usize, f32) {
++    let (mut a, mut b) = (0usize, usize::MAX);
++    for i in 1..l.len() {
++        if l[i] > l[a] {
++            b = a;
++            a = i;
++        } else if b == usize::MAX || l[i] > l[b] {
++            b = i;
++        }
++    }
++    (a, l[a], b, l[b])
++}
++
++fn rel(a: &[f32], b: &[f32]) -> (f64, f64) {
++    let mut num = 0f64;
++    let mut den = 0f64;
++    let mut mx = 0f64;
++    for (x, y) in a.iter().zip(b) {
++        let d = (*x as f64) - (*y as f64);
++        num += d * d;
++        den += (*y as f64) * (*y as f64);
++        mx = mx.max(d.abs());
++    }
++    ((num / den.max(1e-30)).sqrt(), mx)
++}
++
++struct Router {
++    /// [n_expert][n_embd] f32 rows
++    w: Vec<f32>,
++    norm: Vec<f32>,
++    n_expert: usize,
++}
++
++/// Host router: softmax(W . rms_norm(x1) * norm), top-k ids by score, and the gap (in router
++/// logit units) between the k-th and (k+1)-th logits.
++fn route(r: &Router, x1: &[f32], eps: f32, k: usize) -> (Vec<usize>, Vec<f64>, f64) {
++    let n = x1.len();
++    let ms: f64 = x1.iter().map(|v| (*v as f64) * (*v as f64)).sum::<f64>() / n as f64;
++    let inv = 1.0 / (ms + eps as f64).sqrt();
++    let z: Vec<f64> = x1
++        .iter()
++        .zip(&r.norm)
++        .map(|(v, g)| (*v as f64) * inv * (*g as f64))
++        .collect();
++    let logits: Vec<f64> = (0..r.n_expert)
++        .map(|j| {
++            r.w[j * n..(j + 1) * n]
++                .iter()
++                .zip(&z)
++                .map(|(a, b)| (*a as f64) * b)
++                .sum()
++        })
++        .collect();
++    let mut idx: Vec<usize> = (0..r.n_expert).collect();
++    idx.sort_by(|a, b| logits[*b].partial_cmp(&logits[*a]).unwrap());
++    let gap = logits[idx[k - 1]] - logits[idx[k]];
++    let sel = idx[..k].to_vec();
++    (sel, logits, gap)
++}
++
++fn by_key(taps: &[Tap]) -> BTreeMap<(usize, &'static str), &Vec<f32>> {
++    taps.iter().map(|t| ((t.layer, t.name), &t.row)).collect()
++}
++
++fn write_taps(
++    dir: &std::path::Path,
++    label: &str,
++    row: usize,
++    taps: &[Tap],
++    logits: &[f32],
++) -> Res<()> {
++    std::fs::create_dir_all(dir)?;
++    let mut f = std::fs::File::create(dir.join(format!("{label}-r{row}.f32")))?;
++    let mut idx = std::fs::File::create(dir.join(format!("{label}-r{row}.idx")))?;
++    for t in taps {
++        writeln!(idx, "{}\t{}\t{}", t.name, t.layer, t.row.len())?;
++        for v in &t.row {
++            f.write_all(&v.to_le_bytes())?;
++        }
++    }
++    writeln!(idx, "logits\t-1\t{}", logits.len())?;
++    for v in logits {
++        f.write_all(&v.to_le_bytes())?;
++    }
++    Ok(())
++}
++
++fn main() -> Res<()> {
++    let args: Vec<String> = std::env::args().skip(1).collect();
++    let mut pos = Vec::new();
++    let mut out: Option<std::path::PathBuf> = None;
++    let mut prime = true;
++    let mut it = args.iter();
++    while let Some(a) = it.next() {
++        match a.as_str() {
++            "--out" => out = Some(it.next().ok_or("--out DIR")?.into()),
++            "--no-prime" => prime = false,
++            _ => pos.push(a.clone()),
++        }
++    }
++    let [model_path, prompt_file, rows_arg] = pos.as_slice() else {
++        return Err(
++            "usage: row-bisect <model.gguf> <prompt-file> <row,row,...> [--out DIR] [--no-prime]"
++                .into(),
++        );
++    };
++    let mut rows: Vec<usize> = rows_arg
++        .split(',')
++        .map(|s| s.parse::<usize>())
++        .collect::<Result<_, _>>()?;
++    rows.sort_unstable();
++    rows.dedup();
++
++    let e = Engine::new(0)?;
++    let g = GgufFile::open(model_path)?;
++    let model = HybridModel::load_without_mtp(&e, &g)?;
++    let tok = Tokenizer::from_gguf(&g).map_err(|err| format!("tokenizer: {err}"))?;
++    let text = std::fs::read_to_string(prompt_file)?;
++    let prompt = tok.encode(&text, true);
++    let maxrow = *rows.last().ok_or("no rows")?;
++    assert!(maxrow + 1 < prompt.len(), "row past the prompt");
++    let eps = model.cfg.rms_eps;
++    let n_embd = model.cfg.n_embd as usize;
++    println!(
++        "row-bisect: T={} rows={rows:?} sm_count={} model={model_path}",
++        prompt.len(),
++        e.sm_count()
++    );
++    let envs = [
++        "MEMRA_GDN_MMA",
++        "MEMRA_GDN_CHUNKED",
++        "MEMRA_FAST",
++        "MEMRA_FA_F16PV",
++        "MEMRA_MMQ_W4A8",
++        "MEMRA_GDN_K45",
++    ];
++    let env_line: Vec<String> = envs
++        .iter()
++        .map(|k| {
++            format!(
++                "{k}={}",
++                std::env::var(k).unwrap_or_else(|_| "<unset>".into())
++            )
++        })
++        .collect();
++    println!("env: {}", env_line.join(" "));
++
++    // Host copies of each MoE layer's router and pre-FFN norm.
++    let k_used = model.cfg.moe.as_ref().map(|m| m.expert_used_count as usize);
++    let mut routers: BTreeMap<usize, Router> = BTreeMap::new();
++    for (il, layer) in model.layers.iter().enumerate() {
++        if let Ffn::Moe(m) = &layer.ffn {
++            let w = e.dtoh(m.gate_inp.float_data())?;
++            let norm = e.dtoh(layer.post_attn_norm.float_data())?;
++            let n_expert = w.len() / n_embd;
++            routers.insert(il, Router { w, norm, n_expert });
++        }
++    }
++    let kinds: Vec<&str> = model
++        .layers
++        .iter()
++        .map(|l| match &l.mixer {
++            Mixer::Full(_) => "attn",
++            Mixer::Linear(_) => "gdn",
++            Mixer::Mla(_) => "mla",
++            Mixer::Kda(_) => "kda",
++        })
++        .collect();
++
++    // Prefill side: one forward_last per row. `RB_PREFILL_ENV="K=V,K2=V2"` sets engine knobs
++    // for the prefill forwards only (for example MEMRA_NOFA, which the decode over a quantized
++    // cache refuses), and removes them before the decode pass.
++    let prefill_env: Vec<(String, String)> = std::env::var("RB_PREFILL_ENV")
++        .unwrap_or_default()
++        .split(',')
++        .filter_map(|kv| {
++            kv.split_once('=')
++                .map(|(k, v)| (k.to_string(), v.to_string()))
++        })
++        .collect();
++    println!("prefill-only env: {prefill_env:?}");
++    for (k, v) in &prefill_env {
++        // SAFETY: single-threaded research binary; nothing else reads the environment here.
++        unsafe { std::env::set_var(k, v) };
++    }
++    // RB_PREFILL_KVQ=1: the prefill's attention sees K/V round-tripped through q8_0/q5_1.
++    let kvq = std::env::var("RB_PREFILL_KVQ").as_deref() == Ok("1");
++    println!("prefill K/V round-trip through q8_0/q5_1: {kvq}");
++    row_tap::set_kv_roundtrip(kvq);
++    let mut pre: BTreeMap<usize, (Vec<Tap>, Vec<f32>)> = BTreeMap::new();
++    for &r in &rows {
++        row_tap::arm();
++        let l = model.forward_last(&e, &prompt[..=r])?;
++        pre.insert(r, (row_tap::take(), l));
++    }
++    row_tap::set_kv_roundtrip(false);
++    for (k, _) in &prefill_env {
++        // SAFETY: as above.
++        unsafe { std::env::remove_var(k) };
++    }
++    // Decode side: one eager pass, armed at the chosen steps.
++    let mut dec: BTreeMap<usize, (Vec<Tap>, Vec<f32>)> = BTreeMap::new();
++    {
++        let mut cache = new_model_cache(&e, &model.cfg, maxrow + 8)?;
++        for (i, &tk) in prompt[..=maxrow].iter().enumerate() {
++            let want = rows.binary_search(&i).is_ok();
++            if want {
++                row_tap::arm();
++            }
++            let l = model.decode_step(&e, tk, &mut cache)?;
++            if want {
++                dec.insert(i, (row_tap::take(), l));
++            }
++        }
++    }
++    // Batched prime over the quantized cache, per row (last-position logits only).
++    let mut prm: BTreeMap<usize, Vec<f32>> = BTreeMap::new();
++    if prime {
++        for &r in &rows {
++            let mut pc = new_model_cache(&e, &model.cfg, r + 9)?;
++            let (l, _, _) = model.prime_cache(&e, &prompt[..=r], &mut pc, 0)?;
++            prm.insert(r, l);
++        }
++    }
++
++    let text_of = |id: usize| format!("{:?}", tok.decode(&[id as u32]));
++    for &r in &rows {
++        let (pt, pl) = &pre[&r];
++        let (dt, dl) = &dec[&r];
++        println!(
++            "\n=== row {r} (next token {} = {})",
++            prompt[r + 1],
++            text_of(prompt[r + 1] as usize)
++        );
++        let mut progs: Vec<(&str, &Vec<f32>)> = vec![("prefill", pl), ("decode", dl)];
++        if let Some(l) = prm.get(&r) {
++            progs.push(("prime", l));
++        }
++        for (name, l) in &progs {
++            let (a, la, b, lb) = top2(l);
++            println!(
++                "  {name:8} top1 {a} {} {la:.4}  top2 {b} {} {lb:.4}  margin {:.4}  logit[next]={:.4}",
++                text_of(a),
++                text_of(b),
++                la - lb,
++                l[prompt[r + 1] as usize]
++            );
++        }
++        let (pa, _, pb, _) = top2(pl);
++        let (da, _, db, _) = top2(dl);
++        let mut ids = vec![pa, pb, da, db];
++        ids.sort_unstable();
++        ids.dedup();
++        for id in ids {
++            let ps: Vec<String> = progs
++                .iter()
++                .map(|(n, l)| format!("{n}={:.4}", l[id]))
++                .collect();
++            println!("  id {id} {}: {}", text_of(id), ps.join(" "));
++        }
++        let (rl, mx) = rel(pl, dl);
++        println!("  logits prefill vs decode: rel {rl:.3e} maxabs {mx:.4}");
++        if let Some(l) = prm.get(&r) {
++            let (a, b) = rel(l, dl);
++            let (c, d) = rel(pl, l);
++            println!(
++                "  logits prime vs decode: rel {a:.3e} maxabs {b:.4}; prefill vs prime: rel {c:.3e} maxabs {d:.4}"
++            );
++        }
++        let p = by_key(pt);
++        let d = by_key(dt);
++        println!(
++            "  layer kind  mix_rel     x1_rel      out_rel     out_maxabs  router(k) prefill-vs-decode"
++        );
++        let mut route_lines: Vec<String> = Vec::new();
++        for il in 0..model.layers.len() {
++            let (Some(pm), Some(dm), Some(px1), Some(dx1), Some(pf), Some(df)) = (
++                p.get(&(il, "mix")),
++                d.get(&(il, "mix")),
++                p.get(&(il, "x1")),
++                d.get(&(il, "x1")),
++                p.get(&(il, "ffn")),
++                d.get(&(il, "ffn")),
++            ) else {
++                println!("  {il:5} missing taps");
++                continue;
++            };
++            let (mr, _) = rel(pm, dm);
++            let (xr, _) = rel(px1, dx1);
++            let po: Vec<f32> = px1.iter().zip(pf.iter()).map(|(a, b)| a + b).collect();
++            let dout: Vec<f32> = dx1.iter().zip(df.iter()).map(|(a, b)| a + b).collect();
++            let (or, om) = rel(&po, &dout);
++            let mut rline = String::new();
++            if let (Some(rt), Some(k)) = (routers.get(&il), k_used) {
++                let (ps, plg, pg) = route(rt, px1, eps, k);
++                let (ds, dlg, dg) = route(rt, dx1, eps, k);
++                let mut pss = ps.clone();
++                pss.sort_unstable();
++                let mut dss = ds.clone();
++                dss.sort_unstable();
++                let same = pss == dss;
++                let maxdl = plg
++                    .iter()
++                    .zip(&dlg)
++                    .map(|(a, b)| (a - b).abs())
++                    .fold(0f64, f64::max);
++                rline = format!(
++                    "{} gap_p {pg:.4} gap_d {dg:.4} max|dlogit| {maxdl:.4}",
++                    if same { "same" } else { "DIFF" }
++                );
++                let fmt_sel = |sel: &[usize], lg: &[f64]| -> String {
++                    let mx = lg.iter().cloned().fold(f64::MIN, f64::max);
++                    let den: f64 = lg.iter().map(|v| (v - mx).exp()).sum();
++                    sel.iter()
++                        .map(|x| format!("{x}:{:.4}:{:.5}", lg[*x], (lg[*x] - mx).exp() / den))
++                        .collect::<Vec<_>>()
++                        .join(",")
++                };
++                route_lines.push(format!(
++                    "  route row={r} layer={il} prefill={} decode={}",
++                    fmt_sel(&ps, &plg),
++                    fmt_sel(&ds, &dlg)
++                ));
++                if !same {
++                    let only_p: Vec<usize> =
++                        pss.iter().filter(|x| !dss.contains(x)).copied().collect();
++                    let only_d: Vec<usize> =
++                        dss.iter().filter(|x| !pss.contains(x)).copied().collect();
++                    rline.push_str(&format!(" only_prefill {only_p:?} only_decode {only_d:?}"));
++                    for x in only_p.iter().chain(only_d.iter()) {
++                        rline.push_str(&format!(" [e{x} p={:.4} d={:.4}]", plg[*x], dlg[*x]));
++                    }
++                    rline.push_str(&format!(
++                        " kth_p {:.4} k1th_p {:.4}",
++                        plg[ps[k - 1]],
++                        plg[{
++                            let mut idx: Vec<usize> = (0..rt.n_expert).collect();
++                            idx.sort_by(|a, b| plg[*b].partial_cmp(&plg[*a]).unwrap());
++                            idx[k]
++                        }]
++                    ));
++                }
++            }
++            println!(
++                "  {il:5} {:5} {mr:.3e}   {xr:.3e}   {or:.3e}   {om:9.4}   {rline}",
++                kinds[il]
++            );
++        }
++        for line in &route_lines {
++            println!("{line}");
++        }
++        if let Some(dir) = &out {
++            write_taps(dir, "prefill", r, pt, pl)?;
++            write_taps(dir, "decode", r, dt, dl)?;
++            if let Some(l) = prm.get(&r) {
++                write_taps(dir, "prime", r, &[], l)?;
++            }
++        }
++    }
++    Ok(())
++}
+diff --git a/crates/memra-engine/src/decode.rs b/crates/memra-engine/src/decode.rs
+index b1541b29c7..c4ccd6c3ac 100644
+--- a/crates/memra-engine/src/decode.rs
++++ b/crates/memra-engine/src/decode.rs
+@@ -812,6 +812,7 @@ impl HybridModel {
+         let tail_from = self.layers.len().saturating_sub(2);
+         let mut pending: Option<(CudaSlice<f32>, CudaSlice<f32>)> = None;
+         for (il, layer) in self.layers.iter().enumerate() {
++            crate::row_tap::set_layer(il);
+             let anorm = layer.attn_norm.float_data();
+             let fuse = std::env::var("MEMRA_NO_FUSE_NORMQ").is_err()
+                 && self.mixer_in_q8_1_fast(e, &layer.mixer);
+@@ -880,6 +881,9 @@ impl HybridModel {
+             // fast path. Bit-identical to add + rms_norm + ffn (add_rms_norm == add then rms_norm,
+             // proven in kernel_check; add_rms_norm_q8_1 == add_rms_norm then quantize_q8_1).
+             let (x1, ffn_out) = self.residual_norm_ffn(e, layer, &x, &mixed, n_embd, il, eps)?;
++            crate::row_tap::emit(e, "mix", il, &mixed, 1, n_embd)?;
++            crate::row_tap::emit(e, "x1", il, &x1, 1, n_embd)?;
++            crate::row_tap::emit(e, "ffn", il, &ffn_out, 1, n_embd)?;
+             lap(
+                 if il >= tail_from { &B_FFN_TAIL } else { &B_FFN },
+                 &mut lap_start,
+@@ -3673,6 +3677,17 @@ impl HybridModel {
+                 key_dim,
+                 eps,
+             )?;
++            if crate::row_tap::armed() {
++                let gw = d_state * num_v;
++                crate::row_tap::emit(e, "la_qkv", usize::MAX, &qkv_mixed, 1, conv_dim)?;
++                crate::row_tap::emit(e, "la_z", usize::MAX, &z, 1, value_dim)?;
++                crate::row_tap::emit(e, "la_beta_raw", usize::MAX, &beta_raw, 1, num_v)?;
++                crate::row_tap::emit(e, "la_alpha", usize::MAX, &alpha, 1, num_v)?;
++                crate::row_tap::emit(e, "la_q", usize::MAX, &q_l2, 1, gw)?;
++                crate::row_tap::emit(e, "la_k", usize::MAX, &k_l2, 1, gw)?;
++                crate::row_tap::emit(e, "la_v", usize::MAX, &v_gd, 1, gw)?;
++                crate::row_tap::emit(e, "la_glog", usize::MAX, &g_log, 1, num_v)?;
++            }
+             // gdn reads ssm_state, writes the spare ssm_state_alt (disjoint resident fields).
+             let RecurLayer {
+                 ssm_state,
+@@ -3693,6 +3708,7 @@ impl HybridModel {
+                 scale,
+             )?;
+         }
++        crate::row_tap::emit(e, "la_o", usize::MAX, &o, 1, d_state * num_v)?;
+         if persistent_state {
+             // CAPTURE-safe (graph replay): the canonical state every replay reads must stay at a
+             // FIXED pointer (baked into the captured graph). Copy the freshly-written spare BACK
+diff --git a/crates/memra-engine/src/hybrid_forward.rs b/crates/memra-engine/src/hybrid_forward.rs
+index 6397b5505d..72e06544c3 100644
+--- a/crates/memra-engine/src/hybrid_forward.rs
++++ b/crates/memra-engine/src/hybrid_forward.rs
+@@ -6084,6 +6084,7 @@ impl HybridModel {
+             };
+         }
+         for (il, layer) in self.layers.iter().enumerate() {
++            crate::row_tap::set_layer(il);
+             let mut h = e.uninit(t * n_embd)?;
+             e.rms_norm(&x, layer.attn_norm.float_data(), &mut h, n_embd, t, eps)?;
+             if probe {
+@@ -6116,6 +6117,8 @@ impl HybridModel {
+             }
+             let mut x1 = e.uninit(t * n_embd)?;
+             e.add(&x, &mixed, &mut x1, t * n_embd)?;
++            crate::row_tap::emit(e, "mix", il, &mixed, t, n_embd)?;
++            crate::row_tap::emit(e, "x1", il, &x1, t, n_embd)?;
+             let mut z = e.uninit(t * n_embd)?;
+             e.rms_norm(
+                 &x1,
+@@ -6168,6 +6171,7 @@ impl HybridModel {
+                 e.stream().synchronize()?;
+                 eprintln!("[probe] L{il} ffn ok");
+             }
++            crate::row_tap::emit(e, "ffn", il, &ffn_out, t, n_embd)?;
+             let mut x2 = e.uninit(t * n_embd)?;
+             e.add(&x1, &ffn_out, &mut x2, t * n_embd)?;
+             x = x2;
+@@ -11011,7 +11015,7 @@ impl HybridModel {
+             Some(g3) => g3,
+             None => e.matmul_group(&[&fa.wq, &fa.wk, &fa.wv], h, t)?,
+         };
+-        let v = g3.pop().unwrap();
++        let mut v = g3.pop().unwrap();
+         let mut k = g3.pop().unwrap();
+         let qf = g3.pop().unwrap();
+         let (mut q, gate) = if gated {
+@@ -11052,6 +11056,14 @@ impl HybridModel {
+             1.0,
+         )?;
+ 
++        if crate::row_tap::kv_roundtrip() {
++            let mut kh = e.dtoh(&k)?;
++            let mut vh = e.dtoh(&v)?;
++            crate::row_tap::q8_0_roundtrip(&mut kh[..t * n_head_kv * head_dim]);
++            crate::row_tap::q5_1_roundtrip(&mut vh[..t * n_head_kv * head_dim]);
++            k = e.htod(&kh)?;
++            v = e.htod(&vh)?;
++        }
+         // SDPA
+         let mut attn = e.uninit(t * n_head * head_dim)?;
+         // hand-written FlashAttention prefill (head_dim 256/128 stamped twins). MEMRA_NOFA
+@@ -12971,6 +12983,16 @@ impl HybridModel {
+         let mut k_l2 = e.uninit(d_state * num_v * t)?;
+         e.l2_norm(&k_g, &mut k_l2, d_state, num_v * t, eps)?;
+         let v_gd = v_g;
++        if crate::row_tap::armed() {
++            let gw = d_state * num_v;
++            crate::row_tap::emit(e, "la_qkv", usize::MAX, &qkv_mixed, t, conv_dim)?;
++            crate::row_tap::emit(e, "la_z", usize::MAX, &z, t, value_dim)?;
++            crate::row_tap::emit(e, "la_beta_raw", usize::MAX, &beta_raw, t, num_v)?;
++            crate::row_tap::emit(e, "la_alpha", usize::MAX, &alpha, t, num_v)?;
++            crate::row_tap::emit(e, "la_q", usize::MAX, &q_l2, t, gw)?;
++            crate::row_tap::emit(e, "la_k", usize::MAX, &k_l2, t, gw)?;
++            crate::row_tap::emit(e, "la_v", usize::MAX, &v_gd, t, gw)?;
++        }
+ 
+         // beta = sigmoid(beta_raw) ; g_log = a * softplus(alpha + dt). Both need [num_v, T] layout
+         // (g[t*num_v + h]). beta_raw/alpha are [T, num_v] token-major == that layout already.
+@@ -13007,6 +13029,8 @@ impl HybridModel {
+             scale,
+             num_v,
+         )?;
++        crate::row_tap::emit(e, "la_glog", usize::MAX, &g_log, t, num_v)?;
++        crate::row_tap::emit(e, "la_o", usize::MAX, &o, t, d_state * num_v)?;
+ 
+         // gated RMSNorm: dst = RMSNorm(o, ssm_norm[head_v]) * silu(z). o is [d_state, num_v, T];
+         // rows of head_v=d_state, nrows = num_v*T. z must match row layout: z is [T, value_dim] token-major
+diff --git a/crates/memra-engine/src/lib.rs b/crates/memra-engine/src/lib.rs
+index 5d270566a4..771a80b6eb 100644
+--- a/crates/memra-engine/src/lib.rs
++++ b/crates/memra-engine/src/lib.rs
+@@ -205,6 +205,8 @@ pub mod progress;
+ /// gated against memra-reference (research/qwen4exp-bringup-20260829/GPU-EAGER.md).
+ pub mod qwen4exp_gpu;
+ pub mod round_stream;
++/// Per-layer last-row tap for prefill-against-decode bisects (memra#1203).
++pub mod row_tap;
+ pub mod spec;
+ pub mod spec_cost;
+ /// Per-burst spec-round phase attribution (`MEMRA_SPEC_TRACE`; glm5 alias honored) —
+diff --git a/crates/memra-engine/src/row_tap.rs b/crates/memra-engine/src/row_tap.rs
+new file mode 100644
+index 0000000000..79ae4b50f3
+--- /dev/null
++++ b/crates/memra-engine/src/row_tap.rs
+@@ -0,0 +1,128 @@
++//! Per-layer last-row tap for prefill-against-decode bisects (memra#1203).
++//!
++//! A research binary arms the tap around one call (`forward_last` over a prefix, or the one
++//! `decode_step` at the row it studies) and takes the recorded rows back afterwards. Each
++//! record is the LAST token row of one stage of one layer, read back to the host as f32.
++//!
++//! No environment variable: only code that calls [`arm`] turns it on. Disarmed, a tap site
++//! costs one relaxed atomic load. Armed, it adds a device-to-host copy per stage, which
++//! synchronizes the stream but does not change any kernel or its arithmetic.
++
++use cudarc::driver::CudaSlice;
++use std::sync::Mutex;
++use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
++
++/// One recorded stage: `name` (`mix`, `x1`, `ffn`), the layer index and the last row.
++#[derive(Debug, Clone)]
++pub struct Tap {
++    pub name: &'static str,
++    pub layer: usize,
++    pub row: Vec<f32>,
++}
++
++static ARMED: AtomicBool = AtomicBool::new(false);
++static TAPS: Mutex<Vec<Tap>> = Mutex::new(Vec::new());
++static LAYER: AtomicUsize = AtomicUsize::new(0);
++
++/// The trunk walk names the layer it is in, so a tap inside a mixer that does not know its own
++/// index (`emit` with `layer == usize::MAX`) records the right one.
++#[inline]
++pub(crate) fn set_layer(il: usize) {
++    LAYER.store(il, Ordering::Relaxed);
++}
++
++/// Start recording. Clears anything a previous arming left behind.
++pub fn arm() {
++    TAPS.lock().expect("row tap poisoned").clear();
++    ARMED.store(true, Ordering::Release);
++}
++
++/// Stop recording and return what was recorded, in emission order.
++pub fn take() -> Vec<Tap> {
++    ARMED.store(false, Ordering::Release);
++    std::mem::take(&mut *TAPS.lock().expect("row tap poisoned"))
++}
++
++#[inline]
++pub fn armed() -> bool {
++    ARMED.load(Ordering::Relaxed)
++}
++
++/// Record the last of `rows` rows of width `width` held in `buf`. `layer == usize::MAX` takes the
++/// layer the walk last named through [`set_layer`].
++pub(crate) fn emit(
++    e: &crate::Engine,
++    name: &'static str,
++    layer: usize,
++    buf: &CudaSlice<f32>,
++    rows: usize,
++    width: usize,
++) -> Result<(), Box<dyn std::error::Error>> {
++    if !armed() {
++        return Ok(());
++    }
++    let layer = if layer == usize::MAX {
++        LAYER.load(Ordering::Relaxed)
++    } else {
++        layer
++    };
++    let view = e.view(buf, rows * width);
++    let last = view.slice((rows - 1) * width..rows * width);
++    let mut host = e.uninit(width)?;
++    e.copy_view_into(&mut host, 0, &last, width)?;
++    let row = e.dtoh(&host)?;
++    TAPS.lock()
++        .expect("row tap poisoned")
++        .push(Tap { name, layer, row });
++    Ok(())
++}
++
++static KV_ROUNDTRIP: AtomicBool = AtomicBool::new(false);
++
++/// Research switch (memra#1203): while on, the prefill's full-attention layers round-trip their
++/// post-RoPE K through the cache's q8_0 format and V through q5_1 (fp16 block scales) on the
++/// host before attention, so an otherwise f32 prefill sees exactly the precision the decode's
++/// quantized cache holds. Only a research binary turns it on.
++pub fn set_kv_roundtrip(on: bool) {
++    KV_ROUNDTRIP.store(on, Ordering::Release);
++}
++
++pub(crate) fn kv_roundtrip() -> bool {
++    KV_ROUNDTRIP.load(Ordering::Relaxed)
++}
++
++fn f16_round(x: f32) -> f32 {
++    if x == 0.0 || !x.is_finite() {
++        return x;
++    }
++    let e = x.abs().log2().floor();
++    let step = (e - 10.0).exp2();
++    (x / step).round() * step
++}
++
++/// q8_0: blocks of 32, d = amax / 127 (fp16), q = round(x / d).
++pub(crate) fn q8_0_roundtrip(v: &mut [f32]) {
++    for b in v.chunks_mut(32) {
++        let amax = b.iter().fold(0f32, |m, x| m.max(x.abs()));
++        let d = f16_round(amax / 127.0);
++        let id = if d != 0.0 { 1.0 / d } else { 0.0 };
++        for x in b.iter_mut() {
++            *x = (*x * id).round().clamp(-127.0, 127.0) * d;
++        }
++    }
++}
++
++/// q5_1: blocks of 32, d = (max - min) / 31 and m = min (both fp16), q = trunc((x - m) / d + 0.5).
++pub(crate) fn q5_1_roundtrip(v: &mut [f32]) {
++    for b in v.chunks_mut(32) {
++        let mn = b.iter().cloned().fold(f32::INFINITY, f32::min);
++        let mx = b.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
++        let d = f16_round((mx - mn) / 31.0);
++        let m = f16_round(mn);
++        let id = if d != 0.0 { 1.0 / d } else { 0.0 };
++        for x in b.iter_mut() {
++            let q = ((*x - mn) * id + 0.5).trunc().clamp(0.0, 31.0);
++            *x = q * d + m;
++        }
++    }
++}

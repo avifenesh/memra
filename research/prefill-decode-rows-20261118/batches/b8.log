@@ -1,0 +1,74 @@
+   Compiling cfg-if v1.0.4
+   Compiling version_check v0.9.5
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling typenum v1.20.1
+   Compiling libc v0.2.186
+   Compiling quote v1.0.46
+   Compiling serde_core v1.0.228
+   Compiling zmij v1.0.21
+   Compiling serde v1.0.228
+   Compiling memchr v2.8.2
+   Compiling serde_json v1.0.150
+   Compiling itoa v1.0.18
+   Compiling simd-adler32 v0.3.10
+   Compiling autocfg v1.5.1
+   Compiling crc32fast v1.5.0
+   Compiling libloading v0.9.0
+   Compiling adler2 v2.0.1
+   Compiling cudarc v0.19.8
+   Compiling miniz_oxide v0.8.9
+   Compiling smallvec v1.15.2
+   Compiling fdeflate v0.3.7
+   Compiling generic-array v0.14.7
+   Compiling quick-error v2.0.1
+   Compiling regex-syntax v0.8.11
+   Compiling color_quant v1.1.0
+   Compiling aho-corasick v1.1.4
+   Compiling num-traits v0.2.19
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling bitflags v2.13.1
+   Compiling pxfm v0.1.30
+   Compiling byteorder-lite v0.1.0
+   Compiling zune-core v0.5.3
+   Compiling flate2 v1.1.9
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling weezl v0.1.12
+   Compiling syn v2.0.118
+   Compiling digest v0.10.7
+   Compiling png v0.18.1
+   Compiling image-webp v0.2.4
+   Compiling zune-jpeg v0.5.15
+   Compiling cpufeatures v0.2.17
+   Compiling memmap2 v0.9.11
+   Compiling memra-engine v0.141.1 (/home/avifenesh/.cache/memra-1203/tree/crates/memra-engine)
+   Compiling sha2 v0.10.9
+   Compiling gif v0.14.2
+   Compiling bytemuck v1.25.2
+   Compiling memra-sampling v0.141.1 (/home/avifenesh/.cache/memra-1203/tree/crates/memra-sampling)
+   Compiling base64 v0.22.1
+   Compiling memra-validate v0.141.1 (/home/avifenesh/.cache/memra-1203/tree/crates/memra-validate)
+   Compiling moxcms v0.8.1
+   Compiling serde_derive v1.0.228
+   Compiling image v0.25.10
+   Compiling memra-gguf v0.141.1 (/home/avifenesh/.cache/memra-1203/tree/crates/memra-gguf)
+   Compiling memra-tier v0.141.1 (/home/avifenesh/.cache/memra-1203/tree/crates/memra-tier)
+   Compiling memra-tokenizer v0.141.1 (/home/avifenesh/.cache/memra-1203/tree/crates/memra-tokenizer)
+   Compiling memra-kv v0.141.1 (/home/avifenesh/.cache/memra-1203/tree/crates/memra-kv)
+   Compiling memra-runtime v0.141.1 (/home/avifenesh/.cache/memra-1203/tree/crates/memra-runtime)
+   Compiling memra-reference v0.141.1 (/home/avifenesh/.cache/memra-1203/tree/crates/memra-reference)
+warning: memra-engine@0.141.1: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 4m 09s
+BUILD-RC 0 secs 249
+8986e5f67aedce4c9c90ef09376f97e975e93cdb1354837db9febeda6d89c272  /home/avifenesh/.cache/memra-1203/target3/release/row-bisect
+331435d30ef75390b00e5f09e63d07cf2ab1b96e9bc0b4c5520b56ea61849d1e  /home/avifenesh/.cache/memra-1203/target3/release/argmax-margin-probe
+BUILD-DONE
+waitfor: MET after 10m15s
+start q38-f8f4off-kvq 15:27:18
+end q38-f8f4off-kvq 15:29:01 rc=0 wall_s=102
+start q38-pf32-kvq 15:29:01
+end q38-pf32-kvq 15:34:52 rc=0 wall_s=351
+start orn-pf32-kvq 15:34:52
+end orn-pf32-kvq 15:36:07 rc=0 wall_s=75
+BATCH-DONE

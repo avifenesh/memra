@@ -1,0 +1,84 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+row-bisect: T=2048 rows=[1198] sm_count=48 model=/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+env: MEMRA_GDN_MMA=<unset> MEMRA_GDN_CHUNKED=<unset> MEMRA_FAST=<unset> MEMRA_FA_F16PV=<unset> MEMRA_MMQ_W4A8=<unset> MEMRA_GDN_K45=<unset>
+prefill-only env: []
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 73728 ml_len 24 -> 288 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 73728 -> 147456 ml_len 288 -> 576 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 147456 -> 294912 ml_len 576 -> 1152 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 294912 -> 589824 ml_len 1152 -> 2304 (retired kept, zero=false)
+
+=== row 1198 (next token 47 = "P")
+  prefill  top1 47 "P" 23.4736  top2 37 "F" 18.5572  margin 4.9164  logit[next]=23.4736
+  decode   top1 47 "P" 23.9476  top2 19797 "Ps" 15.3009  margin 8.6467  logit[next]=23.9476
+  prime    top1 47 "P" 23.4089  top2 37 "F" 18.3906  margin 5.0183  logit[next]=23.4089
+  id 37 "F": prefill=18.5572 decode=13.6901 prime=18.3906
+  id 47 "P": prefill=23.4736 decode=23.9476 prime=23.4089
+  id 19797 "Ps": prefill=13.3561 decode=15.3009 prime=13.0745
+  logits prefill vs decode: rel 4.497e-1 maxabs 10.9159
+  logits prime vs decode: rel 4.518e-1 maxabs 10.8539; prefill vs prime: rel 1.825e-2 maxabs 0.4077
+  layer kind  mix_rel     x1_rel      out_rel     out_maxabs  router(k) prefill-vs-decode
+      0 gdn   3.312e-4   3.300e-4   4.395e-4      0.0008   
+      1 gdn   4.862e-3   8.437e-4   1.105e-3      0.0091   
+      2 gdn   1.154e-2   1.542e-3   2.298e-3      0.0068   
+      3 attn  3.437e-3   1.827e-3   1.930e-3      0.0179   
+      4 gdn   1.533e-2   2.255e-3   2.356e-3      0.0364   
+      5 gdn   1.205e-2   2.435e-3   2.565e-3      0.0343   
+      6 gdn   2.153e-2   2.339e-3   2.694e-3      0.0046   
+      7 attn  1.023e-2   2.873e-3   2.936e-3      0.0284   
+      8 gdn   2.243e-2   3.063e-3   3.174e-3      0.0395   
+      9 gdn   1.639e-2   3.156e-3   3.170e-3      0.0400   
+     10 gdn   1.512e-2   3.181e-3   3.291e-3      0.0391   
+     11 attn  1.427e-2   3.667e-3   3.663e-3      0.0557   
+     12 gdn   1.608e-2   3.446e-3   3.441e-3      0.0350   
+     13 gdn   1.867e-2   3.466e-3   3.461e-3      0.0516   
+     14 gdn   1.862e-2   3.420e-3   3.501e-3      0.0249   
+     15 attn  2.144e-2   3.768e-3   3.781e-3      0.0347   
+     16 gdn   1.216e-2   3.806e-3   3.749e-3      0.0567   
+     17 gdn   1.553e-2   3.711e-3   3.736e-3      0.0360   
+     18 gdn   2.468e-2   4.080e-3   4.481e-3      0.0321   
+     19 attn  3.034e-2   5.099e-3   5.252e-3      0.0200   
+     20 gdn   2.797e-2   6.636e-3   7.106e-3      0.0544   
+     21 gdn   5.094e-2   8.008e-3   8.377e-3      0.0630   
+     22 gdn   4.807e-2   8.723e-3   9.190e-3      0.0833   
+     23 attn  5.329e-2   1.096e-2   1.174e-2      0.1009   
+     24 gdn   7.453e-2   1.643e-2   1.791e-2      0.1866   
+     25 gdn   1.140e-1   2.349e-2   2.538e-2      0.2861   
+     26 gdn   1.322e-1   3.255e-2   3.804e-2      0.4460   
+     27 attn  1.430e-1   4.799e-2   5.512e-2      0.7995   
+     28 gdn   2.177e-1   6.660e-2   7.668e-2      1.4930   
+     29 gdn   1.932e-1   8.448e-2   9.369e-2      1.6509   
+     30 gdn   2.883e-1   1.024e-1   1.160e-1      2.4261   
+     31 attn  3.292e-1   1.233e-1   1.366e-1      1.5226   
+     32 gdn   3.362e-1   1.427e-1   1.525e-1      1.3555   
+     33 gdn   3.345e-1   1.533e-1   1.627e-1      1.2056   
+     34 gdn   3.078e-1   1.692e-1   2.165e-1      3.0538   
+     35 attn  4.361e-1   2.309e-1   2.534e-1      1.9841   
+     36 gdn   4.943e-1   2.571e-1   2.757e-1      1.5595   
+     37 gdn   3.818e-1   2.612e-1   2.728e-1      1.6119   
+     38 gdn   5.216e-1   2.818e-1   3.130e-1      3.7289   
+     39 attn  7.074e-1   3.275e-1   3.238e-1      1.9581   
+     40 gdn   5.556e-1   3.203e-1   3.278e-1      2.0682   
+     41 gdn   6.866e-1   3.230e-1   3.287e-1      2.0678   
+     42 gdn   6.865e-1   3.316e-1   3.959e-1      3.6517   
+     43 attn  6.901e-1   3.804e-1   3.934e-1      2.8950   
+     44 gdn   7.589e-1   3.982e-1   4.161e-1      3.0188   
+     45 gdn   8.187e-1   4.219e-1   4.406e-1      3.0108   
+     46 gdn   7.556e-1   4.603e-1   5.452e-1      3.5959   
+     47 attn  8.295e-1   5.465e-1   5.085e-1      4.4114   
+     48 gdn   6.464e-1   5.692e-1   5.718e-1      4.6310   
+     49 gdn   2.548e0   7.089e-1   6.610e-1     16.8149   
+     50 gdn   8.503e-1   7.916e-1   1.048e0     11.6481   
+     51 attn  9.744e-1   9.756e-1   1.009e0     15.5925   
+     52 gdn   3.453e0   1.203e0   1.211e0     49.2581   
+     53 gdn   1.763e0   1.300e0   1.258e0     51.1361   
+     54 gdn   1.518e0   1.411e0   4.360e0    511.0203   
+     55 attn  1.600e0   3.570e0   2.725e0    339.7599   
+     56 gdn   1.917e0   2.508e0   2.480e0    306.4936   
+     57 gdn   1.895e0   2.510e0   2.496e0    318.1123   
+     58 gdn   4.811e0   3.156e0   5.361e0    820.8461   
+     59 attn  2.710e0   3.196e0   1.310e0    111.9143   
+     60 gdn   3.029e0   1.230e0   1.135e0     40.1815   
+     61 gdn   2.326e0   1.203e0   1.141e0     31.0538   
+     62 gdn   1.199e0   1.183e0   1.619e0    138.3061   
+     63 attn  1.250e0   1.226e0   1.189e0    178.4291   
