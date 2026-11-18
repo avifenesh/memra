@@ -1532,7 +1532,7 @@ class CommitBlobTests(unittest.TestCase):
         with mock.patch.object(boundary, "ROOT", self.root), self.assertRaises(RuntimeError):
             boundary.tree_candidates_at_refs(self.policy, ["refs/heads/no-such-ref"])
 
-    def test_the_ref_scan_matches_each_path_against_the_globs_once(self) -> None:
+    def test_the_ref_scan_takes_each_paths_glob_verdict_once(self) -> None:
         """memra#1356: refs repeat their paths, so the private-glob verdict is taken once per path,
         not once per (ref, path); per entry, it made the ls-tree pass about 9 times slower."""
         self.policy.private_paths["private"] = "deploy/private/**"
@@ -1541,22 +1541,65 @@ class CommitBlobTests(unittest.TestCase):
         for name in ("lane/x", "lane/y", "lane/z"):
             self.git("branch", name)
         calls: list = []
-        real = boundary.matches_glob
+        real = boundary.glob_matcher
 
-        def counted(path: str, glob: str) -> bool:
-            calls.append(path)
-            return real(path, glob)
+        class Counted:
+            def __init__(self, pattern) -> None:
+                self.pattern = pattern
+
+            def match(self, path: str):
+                calls.append(path)
+                return self.pattern.match(path)
 
         with mock.patch.object(boundary, "ROOT", self.root), mock.patch.object(
-            boundary, "matches_glob", counted
+            boundary, "glob_matcher", lambda globs: Counted(real(globs))
         ):
             groups = boundary.tree_candidates_at_refs(
                 self.policy, boundary.published_refs("refs/heads/**")
             )
         self.assertEqual(sorted(path for path, _ in groups), ["deploy/private/b.service"])
         self.assertEqual(len(next(iter(groups.values()))), 4)
-        globs = len(self.policy.private_paths)
-        self.assertLessEqual(max(calls.count(path) for path in calls), globs)
+        self.assertEqual(sorted(calls), ["a.md", "deploy/private/b.service"])
+
+    def test_the_private_glob_regex_agrees_with_matches_glob(self) -> None:
+        """Review of memra#1356: the ref scan's compiled regex and the checkout scan's
+        `matches_glob` give the same verdict, on the real policy's globs and near-misses of
+        each (a suffix, a parent directory, a sibling directory, a prefix)."""
+        globs = list(boundary.load_policy(boundary.POLICY_PATH).private_paths.values())
+        globs += ["research/*.log", "deploy/a*/b/**", "x?y/**"]
+        paths = ["", "a", "deploy/", "research/a/b.log", "xzy/q", "xy/q", "deploy/ab/b/c"]
+        for glob in globs:
+            stem = glob.rstrip("*")
+            paths += [
+                glob, stem, stem + "x", stem + "/x", stem.rstrip("/") + "X/y",
+                "a/" + glob, glob + ".orig", stem[:-1], stem + "a/b/c.service",
+            ]
+        regex = boundary.glob_matcher(globs)
+        assert regex is not None
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertEqual(
+                    regex.match(path) is not None,
+                    any(boundary.matches_glob(path, glob) for glob in globs),
+                )
+        self.assertIsNone(boundary.glob_matcher([]))
+
+    def test_exact_private_paths_and_their_near_misses_match_in_both_scans(self) -> None:
+        """Review of memra#1356: 13 of the 14 production rules are exact paths. The checkout scan
+        and the ref scan report the same private paths, and no near-miss."""
+        self.policy.private_paths.update({"priv": "tools/priv.sh", "dir": "deploy/private/**"})
+        for path in (
+            "tools/priv.sh", "tools/priv.sh.orig", "a/tools/priv.sh", "tools/priv.s",
+            "deploy/private/u.service", "deploy/privateX/u.service", "deploy/private.md",
+        ):
+            self.write(path, b"clean\n")
+        self.git("add", "-f", ".")
+        self.git("commit", "-q", "-m", "near misses")
+        with mock.patch.object(boundary, "ROOT", self.root):
+            checkout = sorted(v.path for v in boundary.evaluate(self.policy))
+            refs, _ = boundary.evaluate_refs(self.policy, boundary.published_refs("refs/heads/**"))
+        self.assertEqual(checkout, ["deploy/private/u.service", "tools/priv.sh"])
+        self.assertEqual(sorted(v.path for v in refs), checkout)
 
     def test_commit_scan_applies_private_path_rules(self) -> None:
         self.policy.private_paths["private"] = "private/**"
