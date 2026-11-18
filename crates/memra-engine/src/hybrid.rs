@@ -4081,14 +4081,14 @@ pub struct HybridModel {
     /// (high-water, self-measured — generic-model law: no per-family constant), and
     /// admission charges it per spec-capable session. 0 until the first capture is
     /// observed (the boot calibration probe usually supplies it).
-    pub(crate) draft_state_bytes: std::sync::atomic::AtomicUsize,
-    /// The graph pool's largest growth across one landed draft capture's bracket, in bytes
+    ///
+    /// Beside it, the graph pool's largest growth across one landed draft capture's bracket
     /// (memra#1360): the reserve every draft graph on the stream shares (32 MiB on GB10's MTP
     /// serving). The bracket's own growth, not the device-wide reading, so graphs of other
     /// tenants in the pool at that moment (the Qwen prime graph, DSpark verify graphs) are not
     /// counted. Admission charges only what the live pool holds less than this
     /// (`crate::spec::draft_state_charge`), not a per-session copy.
-    pub(crate) draft_graph_reserve_bytes: std::sync::atomic::AtomicUsize,
+    pub(crate) draft_state: crate::spec::DraftStateSlots,
     /// Test helper: extra device ordinals participating in this model for structural tests.
     pub test_extra_devices: Vec<usize>,
     /// This model's numeric profile (`crate::numeric_profile`), keyed once at load. Every
@@ -4216,17 +4216,13 @@ impl HybridModel {
     /// effective-free delta it measured across a session's captures. Returns the new
     /// high-water when it moved (so the caller can log the flip once, not per burst).
     pub fn record_draft_state_bytes(&self, observed: usize) -> Option<usize> {
-        use std::sync::atomic::Ordering;
-        let prev = self
-            .draft_state_bytes
-            .fetch_max(observed, Ordering::Relaxed);
-        (observed > prev).then_some(observed)
+        self.draft_state.record_per_session(observed)
     }
 
     /// Record the graph pool's growth across a landed draft capture's bracket (memra#1360),
     /// high-water (`crate::spec::raise_high_water`). Returns the new high-water when it rose.
     pub fn record_draft_graph_reserve(&self, graph_growth: usize) -> Option<usize> {
-        crate::spec::raise_high_water(&self.draft_graph_reserve_bytes, graph_growth)
+        self.draft_state.record_graph_reserve(graph_growth)
     }
 
     /// Per-session draft-graph state admission charge, in bytes (`crate::spec::draft_state_charge`):
@@ -4237,12 +4233,7 @@ impl HybridModel {
     /// per-session (memra#1360): every draft graph on the stream shares it, and while the pool
     /// holds it, it is in the free reading admission starts from.
     pub fn draft_session_admission_bytes(&self, graph_reserved_now: usize) -> usize {
-        use std::sync::atomic::Ordering;
-        crate::spec::draft_state_charge(
-            self.draft_state_bytes.load(Ordering::Relaxed),
-            self.draft_graph_reserve_bytes.load(Ordering::Relaxed),
-            graph_reserved_now,
-        )
+        self.draft_state.admission_bytes(graph_reserved_now)
     }
 
     /// Device-local bytes that are not yet materialized for this cache's rank-local Step KV.
@@ -6641,8 +6632,7 @@ impl HybridModel {
             hyper,
             hyper_head,
             glm5_dflash,
-            draft_state_bytes: std::sync::atomic::AtomicUsize::new(0),
-            draft_graph_reserve_bytes: std::sync::atomic::AtomicUsize::new(0),
+            draft_state: crate::spec::DraftStateSlots::default(),
             test_extra_devices: Vec::new(),
             numeric,
         };
