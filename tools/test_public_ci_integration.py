@@ -267,15 +267,28 @@ def bounded_public_witness(stall_seconds, cpu_seconds=PUBLIC_CI_CPU_SECONDS,
     liveness = WitnessLiveness(stall_seconds, cpu_seconds, time.monotonic(), meter.seconds(), wall_seconds)
     if check_seconds is None:
         check_seconds = min(15.0, stall_seconds / 4)
+    closed = False
 
     def check(_signal, frame):
         # The timer is one-shot and armed again when this check is done. A check that outlasts
         # the interval (a /proc scan on a starved host) is then never entered a second time on
         # top of itself, where the scan's cost was subtracted twice and the stack grew.
-        cpu = meter.seconds()
-        reason = liveness.verdict(time.monotonic(), cpu)
+        #
+        # Two rules for the arming. A check does nothing once the guard has closed: an alarm
+        # that fired just before the guard disarmed its timer is handled after the disarm, and
+        # a timer armed then would fire under whatever handler the guard restored. And the
+        # timer is armed whenever a check ends without a verdict, a check that raised included:
+        # the error goes to the witness, which may swallow it, and the guard must still be on.
+        if closed:
+            return
+        reason = cpu = None
+        try:
+            cpu = meter.seconds()
+            reason = liveness.verdict(time.monotonic(), cpu)
+        finally:
+            if reason is None:
+                signal.setitimer(signal.ITIMER_REAL, check_seconds)
         if reason is None:
-            signal.setitimer(signal.ITIMER_REAL, check_seconds)
             return
         detail = (f"{reason}; last event: {children.last_event}; "
                   f"cpu_seconds={max(0.0, cpu - liveness.first_cpu):.1f}")
@@ -302,6 +315,7 @@ def bounded_public_witness(stall_seconds, cpu_seconds=PUBLIC_CI_CPU_SECONDS,
         yield children
     finally:
         original_error = sys.exc_info()[1]
+        closed = True  # before the disarm: a check handled after it must not arm the timer again
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous)
         cleanup_errors = []
@@ -483,6 +497,54 @@ class LivenessGuard(unittest.TestCase):
         finally:
             module.process_cpu_seconds = real
         self.assertEqual(deepest, 1)
+
+    def test_a_closed_guard_never_arms_its_timer_again(self):
+        # The alarm fires just before the guard disarms its timer, and is handled just after:
+        # here the disarm itself runs the handler once it is done. A timer armed by that late
+        # check would fire with the guard gone, under the default handler, and end the process.
+        real = signal.setitimer
+        self.addCleanup(real, signal.ITIMER_REAL, 0)
+
+        def disarm_then_late_alarm(which, seconds, interval=0.0):
+            result = real(which, seconds, interval)
+            if seconds == 0:
+                signal.getsignal(signal.SIGALRM)(signal.SIGALRM, sys._getframe())
+            return result
+
+        signal.setitimer = disarm_then_late_alarm
+        try:
+            with bounded_public_witness(60, check_seconds=30):
+                pass
+        finally:
+            signal.setitimer = real
+        self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0.0, 0.0))
+
+    def test_a_check_that_raises_is_followed_by_the_next_one(self):
+        # The second reading fails. Its error lands in the witness, which swallows it and then
+        # blocks: the guard must still be on to stop it.
+        module = sys.modules[__name__]
+        real, readings = module.process_cpu_seconds, 0
+
+        def failing_once(sessions=(), pids=()):
+            nonlocal readings
+            readings += 1
+            if readings == 2:
+                raise OSError('a reading that fails')
+            return real(sessions, pids)
+
+        module.process_cpu_seconds = failing_once
+        swallowed = False
+        try:
+            with self.assertRaises(PublicWitnessDeadline):
+                with bounded_public_witness(_WINDOW, check_seconds=0.2):
+                    try:
+                        time.sleep(_BLOCKED_SECONDS)
+                    except OSError:
+                        swallowed = True
+                    time.sleep(_BLOCKED_SECONDS)
+        finally:
+            module.process_cpu_seconds = real
+        self.assertTrue(swallowed, 'the failed reading reached the witness')
 
     def test_the_guard_does_not_count_its_own_sampling(self):
         # A blocked witness does nothing but take readings. Readings that cost a quarter of a
