@@ -5384,11 +5384,13 @@ impl Engine {
 
     /// Bytes the driver's per-device CUDA GRAPH memory pool currently holds RESERVED
     /// (`cuDeviceGetGraphMemAttribute` RESERVED_MEM_CURRENT) — the backing store of every
-    /// captured alloc node, which on this engine means the dspark verify-graph pool
-    /// (decode/step graphs bake pre-allocated buffers and own no alloc nodes). This memory
-    /// is DISTINCT from the async pool above: `mem_get_info`'s `free` already excludes it,
-    /// it is never released back (the vgraph pool has no eviction by design), and it GROWS
-    /// as new (segment, vt)/(vt, rung, hi) keys capture — the growth is what
+    /// captured alloc node: the dspark verify-graph pool, the MTP and DFlash draft graphs (whose
+    /// one shared reserve memra#1360 charges once, `crate::spec::draft_state_charge`) and the
+    /// Qwen prime graphs (decode/step graphs bake pre-allocated buffers and own no alloc nodes).
+    /// This memory is DISTINCT from the async pool above: `mem_get_info`'s `free` already
+    /// excludes it. It is kept until a `cuDeviceGraphMemTrim` releases what no graph uses (the
+    /// prime graphs' teardown trims; the vgraph pool has no eviction by design), and it GROWS as
+    /// new (segment, vt)/(vt, rung, hi) keys capture — the growth is what
     /// `dspark_vg_admission_debt` charges at admission. Returns 0 if the attribute cannot
     /// be queried (never a false headroom claim, matching `pool_cached_bytes`).
     pub fn device_graph_mem_reserved(&self) -> usize {

@@ -23569,7 +23569,9 @@ pub fn run(
             let draft_state_bytes = match (estimate_spec, dspark_drafts.get(&model_key)) {
                 (false, _) => 0,
                 (true, Some(draft)) => draft.resident_kv_bytes(admission_cap),
-                (true, None) => loaded[&model_key].model.draft_session_admission_bytes(),
+                (true, None) => loaded[&model_key]
+                    .model
+                    .draft_session_admission_bytes(engine.device_graph_mem_reserved()),
             };
             // The serve side reads this, never its own guess (memra#1173): a drafter session
             // exists only where this pass charged its plane.
@@ -40641,7 +40643,9 @@ fn run_boot_calibration(
                 // rest-state reads below.
                 oom_teardown_fence(engine, loaded);
                 let charged_kv = admission_costs[name].context_bytes(probe_ctx, true);
-                let charged_draft = lm.model.draft_session_admission_bytes();
+                let charged_draft = lm
+                    .model
+                    .draft_session_admission_bytes(engine.device_graph_mem_reserved());
                 let tp_kv = lm
                     .model
                     .unmaterialized_state_bytes(None, probe_ctx)
@@ -56337,6 +56341,22 @@ mod tests {
     /// send because `health.mark_ready()` follows it; until then `WorkerHealth` is in
     /// PHASE_LOADING (`health::tests::loading_is_not_live_and_not_ready`). Anchored on the
     /// comment-stripped production text so a reorder is a red test, not a log archaeology.
+    /// memra#1360 review wiring: every worker caller of the draft-state charge passes the graph
+    /// pool's live reading, so a trim by anyone is charged until the pool holds the reserve again.
+    #[test]
+    fn the_draft_state_charge_reads_the_live_graph_pool() {
+        let src = include_str!("worker.rs");
+        let prod = &src[..src.find("\nmod tests").expect("tests module exists")];
+        let calls = prod.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert_eq!(calls.matches(".draft_session_admission_bytes(").count(), 2);
+        assert_eq!(
+            calls
+                .matches(".draft_session_admission_bytes(engine.device_graph_mem_reserved())")
+                .count(),
+            2
+        );
+    }
+
     #[test]
     fn readiness_follows_the_boot_calibration_probe() {
         let src = include_str!("worker.rs");

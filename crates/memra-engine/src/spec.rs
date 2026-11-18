@@ -618,6 +618,39 @@ pub(crate) fn capture_trim_keep(reserved: usize, driver_free: usize, required: u
     reserved.saturating_sub(required.saturating_sub(driver_free))
 }
 
+/// One landed capture's draft state split into its per-session part and the graph pool's growth
+/// (memra#1360). A capture's alloc nodes take memory from the device's graph memory pool, and
+/// graphs on one stream share that memory (CUDA programming guide §4.2.5.3.2: graphs uploaded to
+/// one stream "attempt to allocate the same physical memory"). On GB10's MTP serving the pool goes
+/// 0 -> 32 MiB at a process's first draft capture (the spec-cost calibration's) and stays at 32 /
+/// 32 MiB for every later capture, for the calibration's pooled four-session cohort with four
+/// live uploaded draft graphs, and through a respawn (`research/respawn-drafthw-20261118/`, PR
+/// #1353's branch, `gb10/wd-dm96/server.log`). The first capture's parked delta (34 MB) holds
+/// that growth; charged per session, it kept about 32 MB per speculative session back that no
+/// session needed. The sharing needs every draft graph on the one stream and balanced alloc and
+/// free nodes. Returns `(per_session, graph_growth)`: the parked delta less the growth, at least
+/// the capture-time default-pool peak, and the growth itself.
+pub(crate) fn split_draft_state(
+    parked_delta: usize,
+    peak_delta: usize,
+    graph_growth: usize,
+) -> (usize, usize) {
+    (
+        parked_delta.saturating_sub(graph_growth).max(peak_delta),
+        graph_growth,
+    )
+}
+
+/// The per-session draft-state charge (memra#1360): the per-session part, plus what the stream's
+/// graph reserve owes at this moment. `reserve_hw` is the highest graph-pool reading taken after a
+/// landed draft capture, `graph_now` the pool's reading now: while the pool holds the reserve it is
+/// in the free reading admission starts from and owes nothing; after a trim (the prime graphs'
+/// `cuDeviceGraphMemTrim` releases idle draft graphs' memory too) the next draft launch maps it
+/// again, and the shortfall is charged. A live reading heals after any trim, by anyone.
+pub(crate) fn draft_state_charge(per_session: usize, reserve_hw: usize, graph_now: usize) -> usize {
+    per_session.saturating_add(reserve_hw.saturating_sub(graph_now))
+}
+
 /// The parked half of the per-session draft-state measurement: effective free at the bracket's
 /// entry (`entry`, the delta reading plus the pool's cached blocks) less effective free at its end
 /// (`free_end`, the delta reading, plus `pool_cached_end`). It holds the keepers and the
@@ -633,36 +666,6 @@ pub(crate) fn capture_trim_keep(reserved: usize, driver_free: usize, required: u
 /// recorded 34 and 35 MB where the raw one recorded 46 and 55
 /// (`research/unified-readers-20261114/`). It can still read low while reclaim runs
 /// (`unified_memory.rs`).
-/// One landed capture's draft state split into its per-session part and the graph pool's growth
-/// (memra#1360). A capture's alloc nodes take memory from the device's graph memory pool, and
-/// every later capture on the stream reuses it: on GB10's MTP serving the pool goes 0 -> 32 MiB at
-/// a process's first capture and stays there for every later one and through a respawn
-/// (`research/respawn-drafthw-20261118/`, PR #1353's branch). The parked delta of the first
-/// capture (34 MB) holds that growth; charged per session, it kept about 32 MB per speculative
-/// session back that no session needed. Returns `(per_session, graph_reserve)`: the parked delta
-/// less the growth, at least the capture-time default-pool peak, and the growth itself.
-pub(crate) fn split_draft_state(
-    parked_delta: usize,
-    peak_delta: usize,
-    graph_growth: usize,
-) -> (usize, usize) {
-    (
-        parked_delta.saturating_sub(graph_growth).max(peak_delta),
-        graph_growth,
-    )
-}
-
-/// The per-session draft-state charge (memra#1360): the per-session part, plus the stream's graph
-/// reserve while it is not held (no capture holds it yet, or the pool was trimmed). Once held, the
-/// reserve is in the free reading admission starts from, so a second charge would count it twice.
-pub(crate) fn draft_state_charge(per_session: usize, graph_reserve: usize, held: bool) -> usize {
-    if held {
-        per_session
-    } else {
-        per_session.saturating_add(graph_reserve)
-    }
-}
-
 pub(crate) fn draft_state_parked_delta(
     entry: usize,
     free_end: usize,
@@ -13101,7 +13104,7 @@ impl HybridModel {
         let mut captured_now = false;
         let mut capture_oom_entry_eff: Option<usize> = None;
         let capture_need = {
-            let observed = self.draft_session_admission_bytes();
+            let observed = self.draft_session_admission_bytes(e.device_graph_mem_reserved());
             if observed > 0 {
                 observed
             } else {
@@ -13694,12 +13697,12 @@ impl HybridModel {
             let peak_delta = capture_peak.unwrap_or(0);
             let graph1 = e.device_graph_mem_reserved();
             let graph_growth = graph1.saturating_sub(cap_graph0);
-            let (observed, reserve) = split_draft_state(parked_delta, peak_delta, graph_growth);
-            if let Some(hw) = self.record_draft_graph_reserve(reserve) {
+            let (observed, _) = split_draft_state(parked_delta, peak_delta, graph_growth);
+            if let Some(hw) = self.record_draft_graph_reserve(graph1) {
                 eprintln!(
                     "[spec] draft graph-pool reserve: {}MB (the graph pool {}MB -> {}MB across \
-                     this capture; reused by every later capture on the stream, so charged \
-                     once, not per session)",
+                     this capture; shared by every draft graph on the stream, so charged only \
+                     while the pool holds less, not per session)",
                     hw / (1 << 20),
                     cap_graph0 / (1 << 20),
                     graph1 / (1 << 20),
@@ -18288,11 +18291,12 @@ mod capture_headroom_tests {
 
     /// memra#1360: the graph pool's growth across a capture is charged once, not per session.
     /// GB10's MTP serving (`research/respawn-drafthw-20261118/`, PR #1353's branch): the first
-    /// capture of a process parks 34 MB, 32 of them the graph pool's 0 -> 32 MiB, and every later
-    /// capture and a respawned worker's take no new graph memory and park 1 to 2 MB.
+    /// capture of a process parks 34 MB, 32 of them the graph pool's 0 -> 32 MiB; every later
+    /// capture, the pooled four-session cohort and a respawned worker's take no new graph memory
+    /// and park 1 to 2 MB.
     #[test]
     fn the_graph_pools_growth_is_charged_once_not_per_session() {
-        use super::{draft_state_charge, split_draft_state};
+        use super::split_draft_state;
         const MIB: usize = 1 << 20;
         // The first capture of a process: 34 parked, 32 of it the graph pool, 2 at the peak.
         assert_eq!(
@@ -18312,51 +18316,98 @@ mod capture_headroom_tests {
             split_draft_state(10 * MIB, 2 * MIB, 32 * MIB),
             (2 * MIB, 32 * MIB)
         );
-        // The charge: the reserve once held is in the free reading; before, it is owed.
-        assert_eq!(draft_state_charge(2 * MIB, 32 * MIB, true), 2 * MIB);
-        assert_eq!(draft_state_charge(2 * MIB, 32 * MIB, false), 34 * MIB);
-        assert_eq!(draft_state_charge(0, 0, false), 0);
-        // 32 sessions on GB10: main charged 32 x 34 MB; the split charges 32 x 2 MB, the reserve
-        // held once.
-        let sessions = 32;
+    }
+
+    /// memra#1360 review: what the reserve owes comes from the pool's live reading, so a trim by
+    /// anyone (the prime graphs' teardown, another model) is charged until the pool holds the
+    /// reserve again, and a pool that holds it owes nothing.
+    #[test]
+    fn the_graph_reserve_owes_what_the_live_pool_lacks() {
+        use super::draft_state_charge;
+        const MIB: usize = 1 << 20;
+        let (per_session, reserve_hw) = (2 * MIB, 32 * MIB);
+        // Held: the 32 MiB are in the free reading admission starts from.
         assert_eq!(
-            sessions * draft_state_charge(2 * MIB, 32 * MIB, true),
+            draft_state_charge(per_session, reserve_hw, 32 * MIB),
+            2 * MIB
+        );
+        // Trimmed after the capture: the next draft launch maps them again.
+        assert_eq!(draft_state_charge(per_session, reserve_hw, 0), 34 * MIB);
+        assert_eq!(
+            draft_state_charge(per_session, reserve_hw, 20 * MIB),
+            14 * MIB
+        );
+        // Other graphs in the pool (DSpark verify graphs): never a negative charge.
+        assert_eq!(
+            draft_state_charge(per_session, reserve_hw, 96 * MIB),
+            2 * MIB
+        );
+        // Nothing observed yet.
+        assert_eq!(draft_state_charge(0, 0, 0), 0);
+        // 32 sessions on GB10 with the pool holding the reserve: 32 x 2 MB, not 32 x 34.
+        assert_eq!(
+            32 * draft_state_charge(per_session, reserve_hw, 32 * MIB),
             64 * MIB
         );
+    }
 
-        // Wiring: the bracket reads the graph pool before its captures and splits at its end;
-        // the model's charge is `draft_state_charge`.
+    /// memra#1360 review wiring: the bracket reads the graph pool once, after the pool watermark
+    /// reset and before its first capture, splits at its end and records the absolute reading;
+    /// every caller of the charge passes the live graph-pool reading.
+    #[test]
+    fn the_graph_reserve_wiring_reads_the_live_pool() {
         let src = production_src();
         let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
-        let entry = src
-            .find("let cap_graph0 = e.device_graph_mem_reserved();")
-            .expect("entry");
-        let first_capture = src[entry..].find("captured_now = true").expect("a capture") + entry;
-        assert!(entry < first_capture);
-        let at = src
+        let open = src
+            .find("let (cap_eff0, cap_meas0) = match e.ctx().mem_get_info() {")
+            .expect("the bracket entry");
+        let close = src
             .find("PER-SESSION DRAFT-STATE MEASUREMENT bracket end")
             .expect("the bracket end");
+        let bracket = &src[open..close];
+        let reset = bracket
+            .find("let _ = e.pool_high_water_reset();")
+            .expect("the reset");
+        let first_capture = bracket.find("captured_now = true").expect("a capture");
+        let reads: Vec<usize> = bracket
+            .match_indices("let cap_graph0 = e.device_graph_mem_reserved();")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(reads.len(), 1, "one entry reading of the graph pool");
+        assert!(
+            reset < reads[0] && reads[0] < first_capture,
+            "{reset} {reads:?} {first_capture}"
+        );
+        // The entry reading and the guard's live reading; no second entry reading.
+        assert_eq!(bracket.matches("device_graph_mem_reserved()").count(), 2);
         let end = squash(
-            &src[at..at
-                + src[at..]
-                    .find("FAILURE IS AN OBSERVATION TOO")
-                    .expect("next")],
+            &src[close
+                ..close
+                    + src[close..]
+                        .find("FAILURE IS AN OBSERVATION TOO")
+                        .expect("next")],
         );
         for needle in [
+            "let graph1 = e.device_graph_mem_reserved();",
             "let graph_growth = graph1.saturating_sub(cap_graph0);",
-            "let (observed, reserve) = split_draft_state(parked_delta, peak_delta, graph_growth);",
-            "self.record_draft_graph_reserve(reserve)",
+            "let (observed, _) = split_draft_state(parked_delta, peak_delta, graph_growth);",
+            "self.record_draft_graph_reserve(graph1)",
             "self.record_draft_state_bytes(observed)",
         ] {
             assert!(end.contains(needle), "{needle}: {end}");
         }
+        // The guard asks with the live reading.
+        assert!(squash(src).contains(
+            "let observed = self.draft_session_admission_bytes(e.device_graph_mem_reserved());"
+        ));
         let hybrid = include_str!("hybrid.rs");
         let charge = &hybrid[hybrid
             .find("pub fn draft_session_admission_bytes(")
             .expect("charge")..];
         let charge = squash(&charge[..charge.find("\n    }\n").expect("its end")]);
         assert!(
-            charge.contains("crate::spec::draft_state_charge("),
+            charge.contains("crate::spec::draft_state_charge(")
+                && charge.contains("graph_reserved_now, )"),
             "{charge}"
         );
     }
