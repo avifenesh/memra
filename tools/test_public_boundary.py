@@ -1350,7 +1350,9 @@ class CommitBlobTests(unittest.TestCase):
         import tracemalloc
 
         cap = 1 << 20
-        level = self.tar_bytes({"run.log": b"row of clean text\n" * ((768 << 10) // 18)})
+        # A leaf of about 40% of the cap: one charged copy fits, the second does not, so the scan
+        # stops only when each copy is also subtracted from the budget (review round 4).
+        level = self.tar_bytes({"run.log": b"row of clean text\n" * ((410 << 10) // 18)})
         for i in range(6):
             level = self.tar_bytes({f"l{i}.tar": level})
         blob = gzip.compress(level, mtime=0)
