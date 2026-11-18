@@ -1,12 +1,12 @@
 # prime-hoist-20261113: the prime's per-layer transients move into the resident slab and one scan workspace (memra#1258, part 2)
 
-Verdict: open after review round 2. The chunked GDN scan's planes are one workspace per prime,
+Verdict: open after review round 3. The chunked GDN scan's planes are one workspace per prime,
 kept mapped only while the device holds a floor of free memory (2,048 MiB, or admission's
 driver-headroom floor when that is larger): between two calls of a prime, between primes, and
 later when the device gets short. The fold that asks the floor at those points is measured on
 two cells of the review's scenario and on an exactness run that takes its drop path; the rest
-are owed and listed under "Review round 1". Review round 2's six items are folded on top with
-CPU tests only: every GPU row in this record was measured before that fold.
+are owed and listed under "Review round 1". The folds of review rounds 2 and 3 sit on top with
+CPU tests only: every GPU row in this record was measured before them.
 
 - **RTX 5090 Laptop, ~5.7k tokens (before the fold):** main's prime fails inside its first call on
   one prompt at margins of 49 and 100 MiB with 1.3 GB unused inside the pool. With the change no
@@ -54,10 +54,10 @@ for every prime, without costing capacity on a 24 GB card?
 
 ## Change
 
-Six code commits: step 1, step 2, the park floor, the round-1 review fold in two (the fold, and
+Seven code commits: step 1, step 2, the park floor, the round-1 review fold in two (the fold, and
 one line that opens the numeric scope in `prime_abandoned`, which round 2 renames `prime_ended`),
-and the round-2 review fold. Each cell below names the main commit its builds stand on; no cell
-was built on the round-2 fold.
+and the folds of review rounds 2 and 3. Each cell below names the main commit its builds stand
+on; no cell was built on the round-2 or round-3 fold.
 
 - **Step 1**:
   - the FFN gate/up/down GEMMs write into the prime slab's planes through the W4A8 MMQ `_into` form;
@@ -115,6 +115,10 @@ was built on the round-2 fold.
     by a generation and not by one plane's address.
   - **The four drops** (the gap, the prime's end, the later reclaim, the replacement for a wider
     call) are four small generic functions with a test of what they free and when.
+- **Review round 3**: those functions take the floor reading and decide themselves, and the
+  park takes the workspace out of its slot, so no call site can turn the decision around or
+  release nothing ("Review round 3"). The synchronous spec prime releases after its last
+  segment.
 
 Placement only: the same kernels run on the same operands.
 
@@ -665,6 +669,26 @@ Every boot of an arm reads the same.
   under the floor between the two calls, and it is not a reason for anything in memra#1322. The
   unplaced per-call cell at 8.1k has not been run on the fold.
 
+## Review round 3 (2026-11-18)
+
+The third review approved the round-2 fold and found three mutations of its wiring that passed
+both suites. The census had counted the park decision's text at each call, not which way the
+decision went, and had pinned only two fragments of the release.
+
+| mutation | what it would do | now |
+|---|---|---|
+| the park's decision negated at the engine's call | a short device parks 504 MB after every prime | the decision is taken inside the slot action, from the floor reading the engine passes; the action's test runs it at the floor, under it and unreadable |
+| the reclaim's decision negated | a short device keeps the parked workspace while admission counts it as cached | the same |
+| the release taking nothing from the slab | every release point does nothing, and round 2's first item returns | the park takes the workspace out of its home slot itself; the engine's method takes the slot, and the two callers are pinned to passing the slab's own |
+
+The slot actions now take the device's free reading and the floor, and the engine's three
+methods take no decision of their own. Each of the five calls is pinned whole. Also folded,
+from the review's notes: the synchronous spec prime releases after its last segment, so a final
+segment that went tokenwise at 16 tokens or more no longer holds the workspace until its request
+retires.
+
+CPU only, like round 2: no GPU row ran on this fold.
+
 ## Exactness
 
 Each pair of binaries is built from one tree with only the engine files changed, and every
@@ -709,7 +733,7 @@ compared byte is in the receipts.
 
 ## CPU
 
-On the branch head (main 5a6ae2438e plus the six code commits), CPU only:
+On the branch head (main 5a6ae2438e plus the seven code commits), CPU only:
 
 - The workspace, census and schedule tests: `only_prime_layers_writes_gemm_outputs_into_slabs`,
   `only_prime_layers_lends_the_gdn_scan_workspace`, `the_admission_row_bytes_are_the_allocated_bytes`,
@@ -723,9 +747,11 @@ On the branch head (main 5a6ae2438e plus the six code commits), CPU only:
   tests.
 - Review round 2 adds, in the engine:
   - `a_workspace_under_the_floor_is_dropped_not_only_reported`: the four drop points on a
-    stand-in that counts the ones alive. Under the floor the workspace is freed before the call
-    returns; a replaced one is freed before its replacement is allocated; a failed allocation
-    leaves the slot empty.
+    stand-in that counts the ones alive, each with a free reading at the floor, one under it
+    and an unreadable one (round 3: the decision is the action's own). Under the floor the
+    workspace is freed before the call returns; the park takes it out of its home either way; a
+    replaced one is freed before its replacement is allocated; a failed allocation leaves the
+    slot empty.
   - `a_workspace_generation_is_never_reused`, and in the census the graph's key on the
     generation with no plane address left in it.
   - `a_tail_under_the_prime_floor_ends_the_batched_calls`: 0 to 15 tokens left end the batched
@@ -740,30 +766,33 @@ On the branch head (main 5a6ae2438e plus the six code commits), CPU only:
   `a_retiring_request_hands_the_workspace_back` (every request, at the one seam all of them
   leave through; it replaces `a_request_retired_mid_prime_hands_the_workspace_back`),
   `a_prompt_that_completes_hands_the_workspace_back`.
-- Red arms (tests kept), 37, each failing its test:
+- Red arms (tests kept), 44, each failing its test:
   - accounting (3): `pool_cached_bytes` without the parked bytes; the workspace charged whole; the
     calibration without the parked subtraction;
   - the floor (8): the decision always true; a zero or small floor from the server taken as it
-    is; round 1's form, where only zero left the default; the park without the decision; the
-    reading on raw `cuMemGetInfo`; the gap between two calls without the decision; the later
-    reclaim without it; the worker without the floor call;
-  - the ways out (14): a failed walk not releasing; a call with more to come never asking the
+    is; round 1's form, where only zero left the default; the reading on raw `cuMemGetInfo`;
+    the park, the gap between two calls and the later reclaim each handed another reading than
+    the device's; the worker without the floor call;
+  - the ways out (17): a failed walk not releasing; a call with more to come never asking the
     floor; a failed chunk not releasing; a pipeline chunk never reporting its result; the release
     reaching one engine only; a failed prime not releasing; the rung's entry without the release;
     the release after the rung's off switch; the retire seam without the hook; the retire seam
     releasing only mid-prime; a tail under 16 tokens not ending the batched calls (the test's
     form and the call's); the MTP walker not releasing at its trunk's end; the prefill tick not
-    releasing where the prompt completes;
-  - the drops as actions (5), the second review's four mutants and one more: the gap reporting
-    the drop and keeping the workspace; the park parking under the floor; the reclaim reporting
-    its bytes and parking again; a stale workspace alive while its replacement is allocated; the
-    slab allocating around the slot action;
+    releasing where the prompt completes; the release and the prime's last call each handing
+    the engine nothing; the synchronous spec prime not releasing after its last segment;
+  - the drops as actions (9), the second review's four mutants, the third's three and two
+    more: the gap reporting the drop and keeping the workspace; the park parking under the
+    floor; the reclaim reporting its bytes and parking again; a stale workspace alive while its
+    replacement is allocated; the slab allocating around the slot action; the park's, the
+    reclaim's and the gap's decision each negated; the park taking nothing out of its home;
   - the prime graph's key (4): keyed on `gcum`'s address again; no workspace key at all; every
     allocation given generation 1; the counter standing still;
   - sizing (3): `fits` without its row check; reuse without the row check; the slab reusing
     without the sizing decision.
 - Engine library suite 797 passed, server library suite 1,277 passed, clippy (engine and
   server, all targets) and fmt green.
+- The seven server arms last ran on the round-2 fold; the server crate has not changed since.
 - Before review round 2 the same checks read 793 and 1,276 on this main with 23 red arms, and
   before the rebase onto 5a6ae2438e 792 and 1,276 on main 0db086f87a.
 
@@ -800,9 +829,9 @@ On the branch head (main 5a6ae2438e plus the six code commits), CPU only:
 - **The rest of the review fold's cells.** Listed with their devices at the end of "Review round
   1": the fold is measured on the first-row cell (two boots on the laptop), one GB10 boot per
   arm, and the exactness passes and first mechanism rows on an RTX PRO 6000 Max-Q.
-- **Review round 2's fold on a GPU.** No row. Its changes are which call releases the workspace
+- **The folds of review rounds 2 and 3 on a GPU.** No row. Their changes are which call releases the workspace
   when a prime ends on `decode_step`, a floor that cannot be set under 2,048 MiB, the prime
   graph's key and the shape of the four drop points; the tests are CPU tests of those decisions
   and of the source. The exactness passes and every capacity row above ran on the head before
-  it. The prime graph runs only on an RTX 5090 desktop build (sm_120a, 170 SMs), which no cell of
+  them. The prime graph runs only on an RTX 5090 desktop build (sm_120a, 170 SMs), which no cell of
   this record used.
