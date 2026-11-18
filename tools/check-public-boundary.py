@@ -828,6 +828,9 @@ def ref_trees(refs: List[str]) -> Tuple[Dict[str, List[str]], Dict[str, List[Tre
         cwd=ROOT,
         input="".join(f"{ref}^{{tree}}\n" for ref in refs).encode(),
         capture_output=True,
+        # As in oids_at (memra#1368 review round 4): the objects the refs name, not a local
+        # refs/replace/* substitute.
+        env={**os.environ, "GIT_NO_REPLACE_OBJECTS": "1"},
     )
     lines = result.stdout.decode("utf-8", errors="replace").splitlines()
     if result.returncode != 0 or len(lines) != len(refs):
@@ -846,6 +849,7 @@ def ref_trees(refs: List[str]) -> Tuple[Dict[str, List[str]], Dict[str, List[Tre
             cwd=ROOT,
             input="".join(f"{oid}\n" for oid in level).encode(),
             capture_output=True,
+            env={**os.environ, "GIT_NO_REPLACE_OBJECTS": "1"},
         )
         if result.returncode != 0:
             message = result.stderr.decode("utf-8", errors="replace").strip()
@@ -911,7 +915,10 @@ def secret_blobs(patterns: Dict[str, str], oids: Iterable[str]) -> set[str]:
     ).stdout.strip()
     with tempfile.TemporaryDirectory(prefix="public-boundary-objects-", dir=common) as scratch:
         env = dict(
-            os.environ, GIT_OBJECT_DIRECTORY=scratch, GIT_ALTERNATE_OBJECT_DIRECTORIES=objects
+            os.environ,
+            GIT_OBJECT_DIRECTORY=scratch,
+            GIT_ALTERNATE_OBJECT_DIRECTORIES=objects,
+            GIT_NO_REPLACE_OBJECTS="1",
         )
         made = subprocess.run(
             ["git", "mktree", "-z", "--missing"],

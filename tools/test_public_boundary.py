@@ -1669,6 +1669,22 @@ class CommitBlobTests(unittest.TestCase):
         self.ref_scan_calls()
         self.assertEqual(sorted(v.path for v in self.found[0]), ["a/x/run.log", "b/x/run.log"])
 
+    def test_a_local_replace_ref_does_not_hide_a_ref_scan_finding(self) -> None:
+        """memra#1357, as memra#1368's review round 4 made verify do: a local refs/replace/*
+        substitute for the carrier's commit, its tree or the blob does not hide the finding."""
+        self.commit("receipts.md", b"clean\n", "clean")
+        base = self.git("rev-parse", "HEAD")
+        clean = self.git("rev-parse", "HEAD:receipts.md")
+        self.commit("receipts.md", b"alpha needle\n", "evidence")
+        tip = self.git("rev-parse", "HEAD")
+        blob = self.git("rev-parse", "HEAD:receipts.md")
+        trees = (self.git("rev-parse", "HEAD^{tree}"), self.git("rev-parse", f"{base}^{{tree}}"))
+        for replaced, by in ((tip, base), trees, (blob, clean)):
+            self.git("replace", "-f", replaced, by)
+            self.ref_scan_calls()
+            self.assertEqual([v.path for v in self.found[0]], ["receipts.md"], replaced)
+            self.git("replace", "-d", replaced)
+
     def test_the_ref_scan_skips_a_submodule_entry(self) -> None:
         """memra#1357: a gitlink names a commit of another repository, not a blob of this one."""
         self.commit("receipts.md", b"alpha needle\n", "evidence")
