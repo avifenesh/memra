@@ -80,13 +80,13 @@ cached blocks and then from the driver.
   and 5.7k cells of the fold are owed.
 - **GB10, both units:** the first call draws 1,201-1,204 MiB in every boot against main's
   1,474-1,477, with no trim and no pool growth inside a prime. Under a full page cache (MemFree
-  1.5-2.9 GB, `MemAvailable` about 120 GB) the workspace still parks. One boot per arm of the fold
-  reads the same (1,201-1,204 against 1,506-1,509 on the later main).
+  1.5-2.9 GB, `MemAvailable` about 120 GB) the workspace still parks. Two boots per arm of the fold
+  read the same (1,201-1,204 against 1,506-1,509 on the later main).
 - **Outputs:** `run-gen`, `run-spec` K=1..8 and `dspark_q38_gate` are identical to main's on the RTX
   5090 and on GB10 before the fold, and for the fold on an RTX PRO 6000 Max-Q on both of its
   paths: with the workspace parked, and with the card held to each process's peak plus 768 MiB,
   where the fold drops the workspace between calls 2 to 20 times per process. The served answer
-  texts equal main's in the 8.1k cells on the 5090 and in the GB10 cells, the fold's GB10 boot
+  texts equal main's in the 8.1k cells on the 5090 and in the GB10 cells, the fold's GB10 boots
   included.
 - **A PRO 6000 cannot stand in for the 24 GB card's capacity rows.** Admission's prefill charge is
   keyed on the laptop's name; held to 24 GB, a PRO 6000 prices the 8.1k prime plain and refuses

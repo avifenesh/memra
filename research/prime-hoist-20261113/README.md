@@ -28,13 +28,13 @@ CPU tests only: every GPU row in this record was measured before them.
   481 MB more pool in use after the first call than main and the fold has main's reading (one
   boot each; the rest of that cell is owed).
 - **GB10:** the first call's draw is 1,201-1,204 MiB against main's 1,474-1,477 at 5.7k, the same in
-  every boot on both units before the fold, and 1,201-1,204 against 1,506-1,509 in the fold's one
-  boot per arm on main 0db086f87a. Under a full page cache the workspace still parks.
+  every boot on both units before the fold, and 1,201-1,204 against 1,506-1,509 in the fold's two
+  boots per arm on main 0db086f87a. Under a full page cache the workspace still parks.
 - **Outputs:** identical in every exactness run, the fold's included: on an RTX PRO 6000 Max-Q
   `run-gen`, `run-spec` K=1..8 and `dspark_q38_gate` are equal to main's with the workspace
   parked and with it dropped between calls (the card held to each process's peak plus 768 MiB;
   2 to 20 drops per process). The served answer texts are equal to main's in the 8.1k and GB10
-  cells, the fold's GB10 boot included.
+  cells, the fold's GB10 boots included.
 - **Parking on a short device was measured and rejected:** it moved a failure to the step after the
   prime at zero margin. Holding the workspace between a prime's two calls on a short device was
   rejected the same way, by the 8,173 rows.
@@ -461,24 +461,31 @@ fold in the rows above, and they have not been run on the fold.
 Raw: `rtx5090/sweep/cap-{dmain2,ds2h2,ds2i}-first-8k-m100/s401-r*` (one directory per boot;
 `tools/first-table.py DIR...` prints one line per boot with the pool around the prime's two calls).
 
-### GB10 on the fold (unit-b, filled page cache, ~5.7k tokens, one boot per arm)
+### GB10 on the fold (unit-b, filled page cache, ~5.7k tokens, two boots per arm)
 
 The filled-cache cell of the section above, one boot per lease (`tools/gb10-cap-run-fill3.sh`):
-the page cache is filled until MemFree is about 2 GB, then one boot runs 12 cold primes beside the
+the page cache is filled until MemFree is under 3 GB, then one boot runs 12 cold primes beside the
 keeper. Builds of main 0db086f87a and of the fold for `sm_121a`.
 
-| arm | MemFree at the boot | need, first call, primes 1-2 | need from the 3rd prime | growth from the 4th prime | trims | out-of-memory lines |
-|---|---|---|---|---|---|---|
-| main (`dmain2`) | 1,914 MB | 1,473, 1,475 | 1,506-1,509 | 0 | 0 | 0 |
-| the fold (`ds2i`) | 2,073 MB | 1,281, 1,202 | 1,201-1,204 | 0 | 0 | 0 |
+| arm | boot | MemFree at the boot | need, first call, primes 1-2 | need from the 3rd prime | growth from the 4th prime | trims | out-of-memory lines |
+|---|---|---|---|---|---|---|---|
+| main (`dmain2`) | 1 | 1,914 MB | 1,473, 1,475 | 1,506-1,509 | 0 | 0 | 0 |
+| main (`dmain2`) | 2 | 2,865 MB | 1,473, 1,475 | 1,506-1,509 | 0 | 0 | 0 |
+| the fold (`ds2i`) | 1 | 2,073 MB | 1,281, 1,202 | 1,201-1,204 | 0 | 0 | 0 |
+| the fold (`ds2i`) | 2 | 2,143 MB | 1,281, 1,202 | 1,201-1,204 | 0 | 0 | 0 |
 
-- The 12 answer texts are equal row by row between the arms (`text_sha256` in `rows.jsonl`).
-- The fold's `serve.log` has no `[prime-ws]` line: under a full page cache the device still holds
-  the floor on the reading admission uses, so the workspace parks after every prime, as before the
-  fold.
-- One boot per arm. The second boot of each arm was not run.
+- Each arm's two boots read the same, prime by prime: the first call's need and its growth (main
+  1,024, 32, 32, then 0; the fold 832, then 0) are equal row for row between boot 1 and boot 2.
+- The 12 answer texts are equal row by row across the four boots (`text_sha256` in `rows.jsonl`).
+- The fold's `serve.log` has no `[prime-ws]` line in either boot: under a full page cache the
+  device still holds the floor on the reading admission uses, so the workspace parks after every
+  prime, as before the fold.
+- Boot 2 ran on 2026-11-18 with the binaries of boot 1 (the round-1 fold `f906e325ce` and main
+  0db086f87a, built for `sm_121a` on 11-14), one lease per boot. main's boot 2 started at 2,865 MB
+  of MemFree: the fill stops once MemFree is under 3 GB, and that boot's fill stopped there.
 
-Raw: `gb10/spread-{dmain2,ds2i}-5.7k-fill3/`.
+Raw: `gb10/spread-{dmain2,ds2i}-5.7k-fill3/` (`tools/fill3-boots.py gb10` prints the table's columns per boot
+and compares the texts).
 
 ### Cells of the fold that are still owed
 
@@ -491,7 +498,6 @@ Not run when this record was written. None of the statements above rests on them
 | the seven 8.1k prompts, one per fresh boot, 100 MiB | `dmain2`, `ds2i` | RTX 5090 Laptop | main's own failures (8,234, 8,215) on the fold |
 | a short cold prime placed after an unplaced 5.7k prime (the workspace parks, then the device gets short) | `dmain2`, `ds2h2`, `ds2i` | RTX 5090 Laptop | the later reclaim (`unparked`) under a placed margin |
 | margin sweeps and per-call demand at ~5.7k tokens | `dmain2`, `ds2i` | RTX 5090 Laptop | that the 5.7k rows of this record, measured before the fold, hold on it |
-| filled page cache, ~5.7k tokens, boot 2 of each arm | `dmain2`, `ds2i` | GB10 | the GB10 row above at two boots |
 | the mechanism cell with the laptop's admission arms forced: prompt 8,173 first row at 100 MiB (17 boots left of 18), at 150 MiB (6), parked-then-short (6) | `dmain2f`, `ds2h2f`, `ds2if` | RTX PRO 6000 Max-Q, held to the laptop's free memory | the fold's logic under the laptop's free reading, with the head before the fold as the control (next section) |
 
 Exactness on the fold's own binary was on this list; it ran on an RTX PRO 6000 Max-Q with the
@@ -727,7 +733,7 @@ compared byte is in the receipts.
     units, with the workspace parked.
   - The 5.7k cells on the 5090 predate the hash in the harness and carry no text.
   - GB10 at ~5.7k on the fold, `ds2i` against `dmain2` (main 0db086f87a): equal for all twelve
-    prompts in the one boot per arm, with the workspace parked.
+    prompts in both boots of each arm, with the workspace parked.
   - RTX 5090 at ~8.1k on the fold: the first-row cell's two boots answer with status 200; the
     sweep harness records no answer text, so there is nothing to compare.
 
@@ -827,7 +833,7 @@ On the branch head (main 5a6ae2438e plus the seven code commits), CPU only:
 - **The margin sweeps on GB10.** Their ballast would take the shared host's memory down to the
   admission margin.
 - **The rest of the review fold's cells.** Listed with their devices at the end of "Review round
-  1": the fold is measured on the first-row cell (two boots on the laptop), one GB10 boot per
+  1": the fold is measured on the first-row cell (two boots on the laptop), two GB10 boots per
   arm, and the exactness passes and first mechanism rows on an RTX PRO 6000 Max-Q.
 - **The folds of review rounds 2 and 3 on a GPU.** No row. Their changes are which call releases the workspace
   when a prime ends on `decode_step`, a floor that cannot be set under 2,048 MiB, the prime
