@@ -77,7 +77,8 @@ WORDS = (
 RE_COST = re.compile(r"\[admission\] request cost: model=\"[^\"]+\" ctx=(\d+) path=(\w+) = .* = (\d+)MB$")
 RE_DRAFT = re.compile(r"\[admission\] per-session draft-state charge: model=\"[^\"]+\" \+(\d+)MB \(")
 # The calibration line prints the floor in MiB (`>> 20`); the admission lines print decimal MB.
-RE_FLOOR = re.compile(r"\[admit-cal\] boot calibration done: .*? transient floor (\d+)MB \(static was")
+# MiB, labelled MiB since memra#1271 and MB before it (the receipts of earlier runs).
+RE_FLOOR = re.compile(r"\[admit-cal\] boot calibration done: .*? transient floor (\d+)Mi?B \(static was")
 OOM_LINES = ("out of memory", "CUDA_ERROR_OUT_OF_MEMORY")
 BAD_LINES = ("panicked", "[worker] FATAL", "[worker] respawn")
 TICK_LINES = ("[prime-yield]", "[dspark-acc]", "[admit-oom] step OOM")
@@ -90,7 +91,8 @@ RE_RESERVE = re.compile(r"< cost \d+MB \+ reserve (\d+)MB")
 
 def boot_floor(boot_text: str) -> int | None:
     """The boot-calibrated transient floor in bytes. The calibration line prints it in MiB
-    (`>> 20`) under the label MB; 1,576 there is 1,653 decimal MB on the admission lines."""
+    (`>> 20`, labelled MiB since memra#1271); 1,576 there is 1,653 decimal MB on the admission
+    lines."""
     m = RE_FLOOR.search(boot_text)
     return None if m is None else int(m.group(1)) * MIB
 

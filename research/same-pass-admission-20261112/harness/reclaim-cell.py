@@ -78,7 +78,7 @@ def main() -> None:
         row.update({"budget_mb": budget // MB, "entry_mb": entry // MB})
         if budget <= 2 * entry:
             g.refuse(f"derived budget {budget // MB}MB is on its two-entry floor; no partial reclaim")
-        floor = int(g.RE_FLOOR.search(text).group(1)) * MB
+        floor = int(g.RE_FLOOR.search(text).group(1)) * (1 << 20)
         # Learn A's and B's charges cold (each also publishes an entry), then fill the cache.
         prompts = {"A": g.prose(31, 1250), "B": g.prose(37, 4600)}
         learn = {}
@@ -103,9 +103,10 @@ def main() -> None:
         kt.start()
         time.sleep(6.0)
         busy = g.effective_free(server.fresh_metrics())
-        # The floor was read as decimal MB; the calibration line prints MiB, so 1,576 MiB is
-        # 1,653 MB. The 77 MB added here is that unit difference (the runs here used this form).
-        reserve_est = floor + 77 * MB
+        # The calibration line prints the floor in MiB (memra#1271). The runs recorded here read
+        # it as decimal MB and added 77 MB, the unit difference at their 1,576 MiB floor: the
+        # same bytes to within 1 MB.
+        reserve_est = floor
         lo = learn["A"]["charge"] + reserve_est
         hi = learn["B"]["charge"] + reserve_est
         target = (lo + hi) // 2

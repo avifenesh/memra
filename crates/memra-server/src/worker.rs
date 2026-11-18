@@ -40391,7 +40391,7 @@ fn run_boot_calibration(
                     });
                 if trimmed > 0 {
                     eprintln!(
-                        "[admit-cal] post-probe pool trim: released {}MB cached back to \
+                        "[admit-cal] post-probe pool trim: released {}MiB cached back to \
                          the driver",
                         trimmed / (1 << 20)
                     );
@@ -40417,7 +40417,7 @@ fn run_boot_calibration(
                     }
                     let dev_floor = calibration_transient_floor(res_high, res_rest, charged, 0);
                     parts.push(format!(
-                        "dev{device} peak-mapped {}MB rest-mapped {}MB charged {}MB -> {}MB",
+                        "dev{device} peak-mapped {}MiB rest-mapped {}MiB charged {}MiB -> {}MiB",
                         res_high / (1 << 20),
                         res_rest / (1 << 20),
                         charged / (1 << 20),
@@ -40432,8 +40432,8 @@ fn run_boot_calibration(
                 eprintln!(
                     "[admit-cal] boot calibration done: model={name:?} route={route} \
                      transient floor \
-                     {}MB (static was {}MB; measured {}MB; probe kv charge {}MB, \
-                     draft-state {}MB, drafted {drafted} accepted {accepted}; [{}]; {:.1}s)",
+                     {}MiB (static was {}MiB; measured {}MiB; probe kv charge {}MiB, \
+                     draft-state {}MiB, drafted {drafted} accepted {accepted}; [{}]; {:.1}s)",
                     floor / (1 << 20),
                     SPEC_SHRINK_RESERVE / (1 << 20),
                     floor_meas / (1 << 20),
@@ -55652,6 +55652,25 @@ mod tests {
     /// send because `health.mark_ready()` follows it; until then `WorkerHealth` is in
     /// PHASE_LOADING (`health::tests::loading_is_not_live_and_not_ready`). Anchored on the
     /// comment-stripped production text so a reorder is a red test, not a log archaeology.
+    /// memra#1271: the boot calibration's lines print every figure in MiB (`>> 20`) and say so.
+    /// They said `MB`, the label every admission line uses for decimal megabytes, so a 1,576 MiB
+    /// floor on the calibration line read as 77 MB less than the same reserve on the defer line.
+    #[test]
+    fn the_boot_calibration_lines_label_their_mib() {
+        let src = include_str!("worker.rs");
+        let prod = &src[..src.find("\nmod tests").expect("tests module exists")];
+        let at = prod
+            .find("fn run_boot_calibration(")
+            .expect("the calibration");
+        let body = &prod[at..at + prod[at..].find("\n}\n").expect("its end")];
+        assert!(body.matches("[admit-cal]").count() >= 7);
+        assert_eq!(body.matches("{}MiB").count(), 1 + 4 + 5);
+        assert!(
+            !body.contains("{}MB"),
+            "no MB label left in the calibration"
+        );
+    }
+
     #[test]
     fn readiness_follows_the_boot_calibration_probe() {
         let src = include_str!("worker.rs");
