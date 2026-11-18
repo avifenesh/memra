@@ -7,6 +7,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -1775,15 +1776,30 @@ class VerifyAllowlistTests(unittest.TestCase):
             "scope": "refs_only",
         }
 
-    def run_check(self, refs: list[str] | None = None) -> tuple[int, str]:
+    def run_check(
+        self, refs: list[str] | None = None, commits: list[str] | None = None
+    ) -> tuple[int, str]:
         output = io.StringIO()
         with (
             mock.patch.object(boundary, "ROOT", self.root),
             mock.patch.object(boundary, "ALLOWLIST_PATH", self.allowlist_path),
             contextlib.redirect_stdout(output),
         ):
-            rc = boundary.cmd_check(self.policy, refs=refs)
+            rc = boundary.cmd_check(self.policy, commits=commits, refs=refs)
         return rc, output.getvalue()
+
+    def assert_refs_only_section(self) -> None:
+        """The file's refs_only rows sit together, last, under REFS_ONLY_SECTION, given once."""
+        lines = self.allowlist_path.read_text().splitlines()
+        section = list(boundary.REFS_ONLY_SECTION)
+        self.assertEqual(lines.count(section[0]), 1, lines)
+        at = lines.index(section[0])
+        self.assertEqual(lines[at : at + len(section)], section)
+        rows = [json.loads(ln) for ln in lines if ln.startswith("{")]
+        scoped = [ln.startswith("{") and json.loads(ln).get("scope") == "refs_only" for ln in lines]
+        self.assertTrue(all(scoped[at + len(section) :]), lines)
+        self.assertFalse(any(scoped[:at]), lines)
+        self.assertTrue(any(row.get("scope") == "refs_only" for row in rows))
 
     def tag_old_version(self) -> bytes:
         """`deploy/old.txt` trips alpha at tag v1 and is clean in the checkout."""
@@ -1811,6 +1827,124 @@ class VerifyAllowlistTests(unittest.TestCase):
         rc, output = self.run_check()
         self.assertEqual(rc, 1, output)
         self.assertIn("deploy/old.txt", output)
+
+    def test_a_commit_that_brings_back_refs_only_bytes_is_a_finding(self) -> None:
+        """Review of memra#1368: the pre-push hook's commit scan, like the checkout scan, never
+        honours a refs_only entry. The same bytes pushed again are a new finding."""
+        old = self.tag_old_version()
+        self.write_allowlist(self.historical("deploy/old.txt", old, ["alpha"]))
+        self.commit("deploy/old.txt", old)
+        rc, output = self.run_check(commits=[self.git("rev-parse", "HEAD")])
+        self.assertEqual(rc, 1, output)
+        self.assertIn("deploy/old.txt", output)
+
+    def test_a_version_only_on_a_local_branch_is_at_no_published_ref(self) -> None:
+        """Review of memra#1368: a local head is not published. Only origin's heads (as
+        refs/remotes/origin/*), its PR heads and the tags count."""
+        old = b"alpha needle\n"
+        self.commit("deploy/old.txt", old)
+        self.git("branch", "x")
+        self.commit("deploy/old.txt", b"clean\n")
+        self.git("tag", "v1")
+        self.write_allowlist(self.historical("deploy/old.txt", old, ["alpha"]))
+        rc, output = self.run_verify()
+        self.assertEqual(rc, 1, output)
+        self.assertIn("at no published ref", output)
+
+    def test_verify_with_no_published_ref_fails_closed(self) -> None:
+        """Review of memra#1368: no published ref here means no refs_only entry was judged."""
+        old = b"alpha needle\n"
+        self.commit("deploy/old.txt", old)
+        self.commit("deploy/old.txt", b"clean\n")
+        self.write_allowlist(self.historical("deploy/old.txt", old, ["alpha"]))
+        rc, output = self.run_verify()
+        self.assertEqual(rc, 1, output)
+        self.assertIn("no refs matched", output)
+
+    def test_prune_keeps_refs_only_entries_unless_the_refs_mirror_origin(self) -> None:
+        """Review of memra#1368: a clone without origin's PR heads drifts every refs_only entry
+        those refs carry, so --prune there keeps them and fails; a clone with origin's heads and
+        PR heads prunes a drifted one."""
+        self.tag_old_version()
+        never = self.historical("deploy/old.txt", b"alpha needle, never pushed\n", ["alpha"])
+        self.write_allowlist(never)
+        rc, output = self.run_verify(prune=True)
+        self.assertEqual(rc, 1, output)
+        self.assertIn("kept 1 refs_only entries unpruned", output)
+        with mock.patch.object(boundary, "ROOT", self.root):
+            self.assertEqual(len(boundary.load_allowlist(self.allowlist_path)), 1)
+        head = self.git("rev-parse", "HEAD")
+        self.git("update-ref", "refs/remotes/origin/main", head)
+        self.git("update-ref", "refs/remotes/origin-pull/1", head)
+        rc, output = self.run_verify(prune=True)
+        self.assertEqual(rc, 0, output)
+        with mock.patch.object(boundary, "ROOT", self.root):
+            self.assertEqual(boundary.load_allowlist(self.allowlist_path), {})
+
+    def test_verify_fails_on_a_secret_inside_a_refs_only_private_version(self) -> None:
+        """Review of memra#1368: a private path's violation names its globs only, so the ref scan
+        would exempt a secret inside a listed private version unseen. Verify runs the secret
+        rules on every refs_only version and fails on a hit the entry does not name."""
+        self.policy.private_paths["priv"] = "deploy/private/**"
+        clean = b"a reviewed private version\n"
+        secret = b"a private version with an alpha needle\n"
+        self.commit("deploy/private/u.txt", clean)
+        self.git("tag", "v1")
+        self.commit("deploy/private/u.txt", secret)
+        self.git("tag", "v2")
+        self.git("rm", "-q", "deploy/private/u.txt")
+        self.git("commit", "-q", "-m", "moved out")
+        rows = [
+            {**self.historical("deploy/private/u.txt", data, ["priv"]), "category": "private_path"}
+            for data in (clean, secret)
+        ]
+        self.write_allowlist(*rows)
+        rc, output = self.run_verify()
+        self.assertEqual(rc, 1, output)
+        self.assertIn("1 allowlist entries no longer match", output)
+        self.assertIn(
+            f"sha256={rows[1]['sha256'][:12]}…  (rules the entry does not name: alpha)",
+            output,
+        )
+        # An entry that names the secret rule too (a reviewed placeholder) holds.
+        self.write_allowlist(rows[0], {**rows[1], "rules": ["alpha", "priv"]})
+        rc, output = self.run_verify()
+        self.assertEqual(rc, 0, output)
+
+    def test_prune_keeps_the_section_comment_over_refs_only_entries(self) -> None:
+        """Review of memra#1368: a rewrite puts the refs_only rows, under their comment, last."""
+        old = self.tag_old_version()
+        head = self.git("rev-parse", "HEAD")
+        self.git("update-ref", "refs/remotes/origin/main", head)
+        self.git("update-ref", "refs/remotes/origin-pull/1", head)
+        self.commit("deploy/live.txt", b"beta needle\n")
+        live = self.pin("deploy/live.txt", ["beta"])
+        self.commit("deploy/gone.txt", b"beta needle too\n")
+        gone = self.pin("deploy/gone.txt", ["beta"])
+        self.commit("deploy/gone.txt", b"clean\n")
+        kept = self.historical("deploy/old.txt", old, ["alpha"])
+        lines = ["# fixture allowlist", *boundary.REFS_ONLY_SECTION]
+        lines += [json.dumps(row, sort_keys=True) for row in (kept, live, gone)]
+        self.allowlist_path.write_text("\n".join(lines) + "\n")
+        rc, output = self.run_verify(prune=True)
+        self.assertEqual(rc, 0, output)
+        self.assertIn("dropped 1 entries", output)
+        self.assert_refs_only_section()
+        self.assertEqual(
+            self.allowlist_path.read_text().splitlines()[:2],
+            ["# fixture allowlist", json.dumps(live, sort_keys=True)],
+        )
+
+    def test_a_non_utf8_path_reads_at_a_ref(self) -> None:
+        """Review of memra#1368: git paths are bytes; one that is not UTF-8 must not stop the
+        `<ref>:<path>` passes."""
+        name = os.fsdecode(b"deploy/\xff.txt")
+        self.commit(name, b"alpha needle\n")
+        with mock.patch.object(boundary, "ROOT", self.root):
+            oids = boundary.oids_at([f"HEAD:{name}"])
+            blobs = boundary.blobs_at([f"HEAD:{name}"])
+        self.assertEqual(len(oids), 1)
+        self.assertEqual(list(blobs.values()), [b"alpha needle\n"])
 
     def test_verify_holds_a_refs_only_entry_to_a_published_ref(self) -> None:
         old = self.tag_old_version()
@@ -1878,13 +2012,28 @@ class VerifyAllowlistTests(unittest.TestCase):
             entries = boundary.load_allowlist(self.allowlist_path)
         self.assertEqual(entries[("deploy/old.txt", kept["sha256"])], kept)
         self.assertEqual(sorted(path for path, _ in entries), ["deploy/live.txt", "deploy/old.txt"])
+        self.assert_refs_only_section()
 
     def test_boundary_refs_runs_verify_allowlist(self) -> None:
-        """The full clone that holds every published ref is where refs_only entries are held."""
+        """The full clone that holds every published ref is where refs_only entries are held.
+        Review of memra#1368: the scan and the drift check run in one step, each failing the step
+        without skipping the other, and an allowlist or scanner change on a pull request runs the
+        drift check."""
         workflow = (Path(__file__).resolve().parent.parent / ".github/workflows/boundary-refs.yml")
-        lines = [ln.split("#", 1)[0] for ln in workflow.read_text().splitlines()]
-        self.assertIn("run: python3 tools/check-public-boundary.py verify-allowlist",
-                      [ln.strip() for ln in lines])
+        text = workflow.read_text()
+        steps = text.split("\n      - name: ")
+        step = next(s for s in steps if s.startswith("Public-boundary ref scan and allowlist drift"))
+        body = [ln.strip() for ln in step.split("run: |", 1)[1].splitlines() if ln.strip()]
+        self.assertNotIn("set -euo pipefail", body)
+        self.assertIn("if ! python3 tools/check-public-boundary.py verify-allowlist; then", body)
+        self.assertEqual(body.count("rc=1"), 2)
+        self.assertEqual(body[-1], 'exit "$rc"')
+        code = ["\n".join(ln for ln in s.splitlines() if not ln.strip().startswith("#")) for s in steps]
+        self.assertEqual(sum("verify-allowlist" in c for c in code), 1)
+        on = text.split("\njobs:", 1)[0]
+        pr = on.split("\n  pull_request:\n", 1)[1].split("\n  workflow_dispatch:", 1)[0]
+        for path in ("tools/public-boundary-allowlist.jsonl", "tools/check-public-boundary.py"):
+            self.assertIn(f'- "{path}"', pr)
 
     def test_empty_allowlist_never_requests_a_whole_tree_grep(self) -> None:
         self.commit("deploy/new.txt", b"alpha needle\n")

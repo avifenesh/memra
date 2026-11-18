@@ -51,6 +51,16 @@ on:
     # GitHub only schedules `on: schedule` from the DEFAULT BRANCH: this file living on a
     # lane branch is a job that never runs, which is what happened to it for a day.
     - cron: "10 6 * * *"
+  # A change to the allowlist or the scanner runs the allowlist half only (the refs_only entries
+  # judged against every published ref; ci.yml's boundary job is shallow and cannot). The whole
+  # ref scan stays off pull requests: it reports a backlog, and a red check on every such PR
+  # would be the gate nobody reads.
+  pull_request:
+    paths:
+      - "tools/public-boundary-allowlist.jsonl"
+      - "tools/public-boundary-policy.toml"
+      - "tools/check-public-boundary.py"
+      - ".github/workflows/boundary-refs.yml"
   workflow_dispatch:
     inputs:
       ref_glob:
@@ -144,26 +154,35 @@ jobs:
             exit 1
           fi
 
-      - name: Allowlist drift, refs_only entries included
-        # A `refs_only` allowlist entry pins a reviewed historical version that exists only on
-        # published refs. ci.yml's boundary job runs on a shallow clone with no published history,
-        # so this job, with every ref fetched above, is where such an entry is held to still being
-        # at some published ref and still tripping the rules it names.
-        run: python3 tools/check-public-boundary.py verify-allowlist
-
-      - name: Public-boundary ref scan
-        # Through env, not interpolated into the script: a dispatch input spliced into a run
-        # block is a shell-injection seam, and on a schedule run the input is empty anyway.
+      - name: Public-boundary ref scan and allowlist drift
+        # One step, so neither half can skip the other: an allowlist that drifts (say a lane head
+        # carrying a refs_only version is deleted) must not stop the daily scan, and a scan with
+        # findings must not stop the drift check. A `refs_only` allowlist entry pins a reviewed
+        # historical version that exists only on published refs; this clone, with every ref
+        # fetched above, is where it is held to still being at some published ref and still
+        # tripping the rules it names. A pull request runs the drift half only (see `on:`).
+        #
+        # The dispatch input goes through env, not interpolated into the script: a dispatch input
+        # spliced into a run block is a shell-injection seam, and on a schedule run it is empty.
         env:
           REF_GLOB: ${{ inputs.ref_glob }}
+          EVENT: ${{ github.event_name }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          rc=0
           default='refs/remotes/origin/**,refs/remotes/origin-pull/**,refs/tags/**'
-          if ! python3 tools/check-public-boundary.py check \
+          if [ "$EVENT" = pull_request ]; then
+            echo "pull request: the allowlist drift check only"
+          elif ! python3 tools/check-public-boundary.py check \
               --refs "${REF_GLOB:-$default}" --summary-only; then
             echo "::error::public-boundary: new violations on published refs. Counts and the"
             echo "::error::carrying refs are above; re-run locally without --summary-only for"
             echo "::error::paths (a public log must not publish a map to unremediated leaks):"
             echo "::error::  python3 tools/check-public-boundary.py check --refs --summary-only"
-            exit 1
+            rc=1
           fi
+          if ! python3 tools/check-public-boundary.py verify-allowlist; then
+            echo "::error::public-boundary: allowlist drift, refs_only entries included (above)."
+            rc=1
+          fi
+          exit "$rc"
