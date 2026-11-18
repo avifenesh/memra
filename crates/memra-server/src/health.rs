@@ -2144,6 +2144,37 @@ mod tests {
         );
     }
 
+    /// memra#1331: the respawn verdict takes the fresher of the beat and the prime odometer, as a
+    /// busy worker's does. A reload whose steps are far apart but whose calibration primes
+    /// advance the odometer is fed; with both stale it is withheld.
+    #[test]
+    fn a_respawn_reload_whose_odometer_moves_is_fed() {
+        let age = Arc::new(AtomicU64::new(0));
+        let odometer = age.clone();
+        let src: ProgressSource = Arc::new(move || {
+            Some(ForwardProgress {
+                rows: 1,
+                events: 1,
+                age_ms: odometer.load(Ordering::Acquire),
+            })
+        });
+        let clock = TestClock::start(1_000_000);
+        let h = WorkerHealth::with_stall_and_progress(1_000, src);
+        h.mark_ready();
+        h.mark_dead("worker thread panicked: test");
+        h.mark_respawn_pending();
+        h.mark_respawning();
+        clock.advance(5_000);
+        age.store(10, Ordering::Release);
+        assert!(
+            h.watchdog().is_ok(),
+            "a stale beat with a fresh odometer is a reload that moves"
+        );
+        age.store(5_000, Ordering::Release);
+        let why = h.watchdog().expect_err("both stale: the reload stopped");
+        assert!(why.contains("respawn stalled"), "{why}");
+    }
+
     /// memra#1331 wiring: the pinger asks `watchdog`, not `live`.
     #[test]
     fn the_sd_watchdog_pings_on_the_watchdog_verdict() {

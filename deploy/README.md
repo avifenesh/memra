@@ -2,7 +2,7 @@
 
 This directory holds one thing: `systemd/`, the example units that document the engine's
 supervision contract — `Type=notify` with `READY=1` after the models load and the socket binds,
-`WATCHDOG=1` only while inference is live, `STOPPING=1` and `EXTEND_TIMEOUT_USEC` so a drain is
+`WATCHDOG=1` while inference is live or a worker respawn's reload makes progress, `STOPPING=1` and `EXTEND_TIMEOUT_USEC` so a drain is
 not SIGKILLed, and exit 70 for an unrecoverable GPU distinguished from exit 1 for bad config.
 Copy them; do not symlink. Every path is site-specific, and the value is in the directive
 choices, each commented with the failure it prevents.
