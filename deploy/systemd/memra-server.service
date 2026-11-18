@@ -18,7 +18,9 @@
 # WHAT THE SERVER PROMISES THIS UNIT (crates/memra-server/src/health.rs):
 #   * READY=1 only after every model is resident AND the socket is bound — so `systemctl start`
 #     returning means "can serve", not "process exists".
-#   * WATCHDOG=1 pings while and only while inference is live. A wedged GPU stops the pings.
+#   * WATCHDOG=1 pings while inference is live, and during an in-process worker respawn while its
+#     reload makes progress (no step older than MEMRA_HEALTH_STALL_S). A wedged GPU or a reload
+#     that stops ends the pings.
 #   * STOPPING=1 + EXTEND_TIMEOUT_USEC on SIGTERM, so a legitimate drain is not SIGKILLed.
 #   * exit 70 when the GPU worker is unrecoverable (distinct from exit 1 = bad config).
 

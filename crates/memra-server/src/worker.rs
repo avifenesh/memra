@@ -21987,6 +21987,8 @@ pub fn run(
             panic!("MEMRA_DSPARK_SPEC=1 but no qwen-hybrid (non-gemma) model is loaded");
         }
     }
+    // The draft attaches (gemma, DSpark) are a load step of their own (memra#1331).
+    health.note_load_step();
     // MEMRA_MTP_SKIP serving policy (mtp-skip lane 2026-08-30; refuse-loud contract 2026-08-31,
     // hermes finding baf261e2bfdae118). The loader already refused the contradictory
     // combinations (skip+MEMRA_MTP_DRAFT; skip+trim on a per-block-head artifact); what only
@@ -22182,6 +22184,8 @@ pub fn run(
         }
         Err(_) => None,
     };
+    // The vision towers are a load step of their own (memra#1331).
+    health.note_load_step();
     // PLACEMENT ADMISSIBILITY, for EVERY vision family (memra #25; lane/glm53-vision-ppn
     // shipped it for glm5 alone). A loaded tower is not sufficient: the overlay's rows have to
     // be resident in the context of the engine that embeds (pp stage 0 under a per-stage-
@@ -41082,11 +41086,6 @@ pub fn spawn(
                         WORKER_RESPAWNS_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         h2.mark_dead(format!("worker thread panicked: {why}"));
                         eprintln!("[worker] PANIC in the GPU worker thread: {why}");
-                        if attempt <= worker_respawn_max() {
-                            // The reload to come keeps the systemd watchdog fed while it
-                            // moves (memra#1331).
-                            h2.mark_respawn_pending();
-                        }
                         if attempt > worker_respawn_max() {
                             eprintln!(
                                 "[worker] FATAL: worker unrecoverable after {} respawn \
@@ -41099,6 +41098,9 @@ pub fn spawn(
                             std::io::stderr().flush().ok();
                             std::process::exit(EXIT_WORKER_UNRECOVERABLE);
                         }
+                        // A respawn follows: its reload keeps the systemd watchdog fed while it
+                        // moves (memra#1331).
+                        h2.mark_respawn_pending();
                         // Backoff before reloading weights: a panic caused by a transient
                         // device condition needs the driver to settle, and an immediate
                         // reload would just re-hit it.
@@ -55983,16 +55985,10 @@ mod tests {
         );
     }
 
-    /// memra#524 (lane/spill-b-20260919 day 24): readiness waits for the one warmup the
-    /// server itself runs. In `run`, the boot calibration probe (one spec-shaped generation
-    /// through the real serving path: chunked prime, draft capture, sampled verify, pool
-    /// high-water read) precedes the `ready_tx` send, and `/readyz` cannot flip before that
-    /// send because `health.mark_ready()` follows it; until then `WorkerHealth` is in
-    /// PHASE_LOADING (`health::tests::loading_is_not_live_and_not_ready`). Anchored on the
-    /// comment-stripped production text so a reorder is a red test, not a log archaeology.
-    /// memra#1331 wiring: a respawn marks itself pending after the fault latch and before the
-    /// backoff, and `run`'s load steps stamp progress (the engine, each model, the loop's end,
-    /// the cost calibration), so the systemd watchdog sees a reload that moves.
+    /// memra#1331 wiring: a respawn marks itself pending after the fault latch and the give-up
+    /// exit, before the backoff, and `run`'s load steps stamp progress (the engine, each model,
+    /// the loop's end, the draft attaches, the vision towers, the cost calibration), so the
+    /// systemd watchdog sees a reload that moves.
     #[test]
     fn a_respawn_reload_stamps_its_load_steps_for_the_watchdog() {
         let src = include_str!("worker.rs");
@@ -56011,16 +56007,15 @@ mod tests {
         let backoff = prod
             .find("std::thread::sleep(backoff);")
             .expect("the backoff");
+        let give_up = dead
+            + prod[dead..]
+                .find("std::process::exit(EXIT_WORKER_UNRECOVERABLE);")
+                .expect("the give-up exit");
         assert!(
-            dead < pending && pending < backoff,
-            "{dead} {pending} {backoff}"
+            dead < give_up && give_up < pending && pending < backoff,
+            "{dead} {give_up} {pending} {backoff}"
         );
         assert_eq!(prod.matches("mark_respawn_pending()").count(), 1);
-        let gate = &prod[dead..pending];
-        assert!(
-            gate.contains("if attempt <= worker_respawn_max() {"),
-            "{gate}"
-        );
         let run_at = prod.find("pub fn run(").expect("worker::run exists");
         let body = &prod[run_at..];
         let body = &body[..body.find("health.mark_ready();").expect("run marks ready")];
@@ -56028,31 +56023,35 @@ mod tests {
             .match_indices("health.note_load_step();")
             .map(|(i, _)| i)
             .collect();
-        assert_eq!(
-            steps.len(),
-            4,
-            "the engine, each model, the loop's end, the cost calibration"
-        );
-        let engine = body.find("Engine::new(device)").expect("engine");
-        let each = body
-            .find("for (name, path, draft) in &models {")
-            .expect("the model loop");
-        let after = body
-            .find("bind_spec_k_device(&engine);")
-            .expect("after the loads");
-        let cost = body
-            .find("run_spec_cost_calibration(&engine")
-            .expect("cost calibration");
-        let probe = body.find("run_boot_calibration(").expect("probe");
+        assert_eq!(steps.len(), 6, "{steps:?}");
+        let at = |needle: &str| body.find(needle).unwrap_or_else(|| panic!("{needle}"));
+        let engine = at("Engine::new(device)");
+        let each = at("for (name, path, draft) in &models {");
+        let after = at("bind_spec_k_device(&engine);");
+        let dspark = at("if std::env::var(\"MEMRA_DSPARK_SPEC\").as_deref() == Ok(\"1\") {");
+        let mtp_skip = at("if std::env::var(\"MEMRA_MTP_SKIP\").as_deref() == Ok(\"1\") {");
+        let step_tower = at("let step_tower: Option<StepTowerPlacement> =");
+        let placement = at("let vision_placement_servable = vision_placement_admissible(");
+        let cost = at("run_spec_cost_calibration(&engine");
+        let probe = at("run_boot_calibration(");
         assert!(engine < steps[0] && steps[0] < each, "{steps:?}");
         assert!(
             each < steps[1] && steps[1] < each + 80,
             "the loop's first statement"
         );
         assert!(steps[2] < after && after - steps[2] < 80, "{steps:?}");
-        assert!(cost < steps[3] && steps[3] < probe, "{steps:?}");
+        assert!(dspark < steps[3] && steps[3] < mtp_skip, "{steps:?}");
+        assert!(step_tower < steps[4] && steps[4] < placement, "{steps:?}");
+        assert!(cost < steps[5] && steps[5] < probe, "{steps:?}");
     }
 
+    /// memra#524 (lane/spill-b-20260919 day 24): readiness waits for the one warmup the
+    /// server itself runs. In `run`, the boot calibration probe (one spec-shaped generation
+    /// through the real serving path: chunked prime, draft capture, sampled verify, pool
+    /// high-water read) precedes the `ready_tx` send, and `/readyz` cannot flip before that
+    /// send because `health.mark_ready()` follows it; until then `WorkerHealth` is in
+    /// PHASE_LOADING (`health::tests::loading_is_not_live_and_not_ready`). Anchored on the
+    /// comment-stripped production text so a reorder is a red test, not a log archaeology.
     #[test]
     fn readiness_follows_the_boot_calibration_probe() {
         let src = include_str!("worker.rs");
