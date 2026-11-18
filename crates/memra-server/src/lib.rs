@@ -11092,8 +11092,10 @@ fn validate_prompt_ids(ids: &[u32], caps: Option<&ModelCaps>) -> Result<(), Stri
 }
 
 /// `ignore_eos: true` is served by the deepseek-v4.1 route alone. Any other model refuses it, on
-/// `/v1/completions` and `/v1/chat/completions` alike: accepting it and stopping at the end id
-/// anyway would be a silent downgrade. `false` is accepted everywhere.
+/// every generation surface: `/v1/completions` and `/v1/chat/completions` in their handlers,
+/// `/v1/messages` and `/v1/responses` in their shared admission (`surfaces::admit_translated`).
+/// Accepting it and stopping at the end id anyway would be a silent downgrade. `false` is
+/// accepted everywhere.
 fn validate_ignore_eos(ignore_eos: bool, caps: Option<&ModelCaps>) -> Result<(), &'static str> {
     if ignore_eos && !caps.is_some_and(|c| c.dsv41) {
         return Err(
@@ -29493,6 +29495,7 @@ temperature = 0.6
         sampler_cfg: SamplerConfig,
         think: ThinkMode,
         reasoning_effort: Option<String>,
+        ignore_eos: bool,
     }
 
     /// Fake worker with per-model `caps` and a WORKER-TRUTH tap: each admitted request's
@@ -29518,6 +29521,7 @@ temperature = 0.6
                         sampler_cfg: req.sampler_cfg.clone(),
                         think: req.think,
                         reasoning_effort: req.reasoning_effort.clone(),
+                        ignore_eos: req.ignore_eos,
                     });
                 }
                 // Mirror handle_cmd: handlers reserve both the burst-yield gauge and the hard
@@ -33101,6 +33105,102 @@ request = "0"
                     .starts_with("ignore_eos is served by the deepseek-v4.1 route only"),
                 "chat={chat}"
             );
+        }
+    }
+
+    /// memra#1338: `/v1/messages` and `/v1/responses` take `ignore_eos` the way chat does. Both
+    /// build the internal chat request from named keys and had no such key, so `ignore_eos: true`
+    /// answered 200 and the worker ran with `false`. Read at the worker, behind the real
+    /// handlers: on the deepseek-v4.1 route the worker's request carries `true`; any other model
+    /// answers a 400 naming the field and nothing reaches the worker.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK orders this handler test against the admission-counter writers (DAY56 section 3)
+    async fn ignore_eos_on_messages_and_responses_is_served_or_refused() {
+        let _l = drain_lock();
+        let state_with = |caps: ModelCaps| {
+            let (tx, rx) = std::sync::mpsc::channel::<WorkerSaw>();
+            let st = fake_worker_state_full(
+                1,
+                std::time::Duration::ZERO,
+                HashMap::from([("m".to_string(), caps)]),
+                Some(tx),
+            );
+            (st, rx)
+        };
+        let v41 = ModelCaps {
+            chat_ok: true,
+            dsv4: true,
+            dsv41: true,
+            tools_branch: true,
+            context_length: 1_048_576,
+            ..Default::default()
+        };
+        let other = ModelCaps {
+            chat_ok: true,
+            ..Default::default()
+        };
+        let send = |st: AppState, messages: bool, ignore_eos: Option<bool>| async move {
+            let mut body = if messages {
+                json!({"model":"m", "max_tokens":4, "messages":[{"role":"user", "content":"t"}]})
+            } else {
+                json!({"model":"m", "max_output_tokens":4, "input":"t"})
+            };
+            if let Some(v) = ignore_eos {
+                body["ignore_eos"] = json!(v);
+            }
+            let body = axum::body::Bytes::from(body.to_string());
+            let response = if messages {
+                anthropic::messages(State(st), Default::default(), None, body).await
+            } else {
+                responses_api::responses(State(st), Default::default(), None, body).await
+            };
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            (status, body)
+        };
+        for messages in [true, false] {
+            let surface = if messages {
+                "/v1/messages"
+            } else {
+                "/v1/responses"
+            };
+            // The deepseek-v4.1 route: the field reaches the worker as sent.
+            let (st, saw) = state_with(v41.clone());
+            for (sent, want) in [(Some(true), true), (Some(false), false), (None, false)] {
+                let (status, body) = send(st.clone(), messages, sent).await;
+                assert_eq!(status, StatusCode::OK, "{surface} sent {sent:?}: {body}");
+                let saw = saw
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .unwrap_or_else(|_| panic!("{surface}: request never reached the worker"));
+                assert_eq!(saw.ignore_eos, want, "{surface} sent {sent:?}");
+            }
+            // Any other model: `true` is a 400 naming the field, and the worker sees nothing.
+            let (st, saw) = state_with(other.clone());
+            let (status, body) = send(st.clone(), messages, Some(true)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{surface}: {body}");
+            assert_eq!(body["error"]["type"], "invalid_request_error", "{surface}");
+            assert!(
+                body["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("ignore_eos is served by the deepseek-v4.1 route only"),
+                "{surface}: {body}"
+            );
+            if !messages {
+                // The Anthropic error body has no `param`; the OpenAI one names the field there too.
+                assert_eq!(body["error"]["param"], "ignore_eos", "{surface}");
+            }
+            assert!(
+                saw.try_recv().is_err(),
+                "{surface}: a refused request reached the worker"
+            );
+            // `false` is accepted everywhere.
+            let (status, body) = send(st.clone(), messages, Some(false)).await;
+            assert_eq!(status, StatusCode::OK, "{surface}: {body}");
+            assert!(!saw.recv().unwrap().ignore_eos, "{surface}");
         }
     }
 

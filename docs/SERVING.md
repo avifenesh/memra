@@ -245,7 +245,7 @@ and runs before the body is read. Connection limits, fixed in code:
   `<end_of_turn>`, `<turn|>` and the rest of its set) stop generation and never reach the client
   as text. One exception: on the deepseek-v4.1 route a request with `ignore_eos: true` treats the
   end-of-sentence id as an ordinary token, so it does not stop generation and its text is in the
-  stream ([`ignore_eos`](API-SURFACES.md#ignore_eos-on-completions-and-chat-deepseek-v41-route)).
+  stream ([`ignore_eos`](API-SURFACES.md#ignore_eos-deepseek-v41-route)).
 - **Disconnect abort.** A client that hangs up retires its session at the next tick on every serve
   path, and usage counts what was generated to that point (the `[abort]` line records prompt,
   cached and generated tokens). A request still queued or still in prefill when its client leaves

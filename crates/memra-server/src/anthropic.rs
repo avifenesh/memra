@@ -511,12 +511,25 @@ pub(crate) fn translate(v: &Value) -> Result<Value, String> {
         }
     };
 
+    // `ignore_eos` is memra's benchmark field, not an Anthropic one. It rides into the internal
+    // request as on the chat surface, and the shared admission serves it on the deepseek-v4.1
+    // route and refuses it elsewhere. This translation used to drop it: the request answered 200
+    // and stopped at the end id (memra#1338).
+    let ignore_eos = match obj.get("ignore_eos") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(b)) => *b,
+        Some(other) => return Err(format!("ignore_eos must be a boolean, got {other}")),
+    };
+
     let mut out = json!({
         "model": model,
         "messages": messages,
         "max_tokens": max_tokens,
         "stream": obj.get("stream").and_then(|s| s.as_bool()).unwrap_or(false),
     });
+    if ignore_eos {
+        out["ignore_eos"] = json!(true);
+    }
     if !tools.is_empty() {
         out["tools"] = Value::Array(tools);
     }
@@ -1348,6 +1361,44 @@ mod tests {
         assert_eq!(req.temperature, None, "null is absence, not greedy");
         assert_eq!(req.top_p, None);
         assert_eq!(req.top_k, None);
+    }
+
+    /// memra#1338: `ignore_eos` reaches the internal chat request from `/v1/messages`. The
+    /// translation builds that request from named keys and had no such key, so `ignore_eos: true`
+    /// was dropped and the request stopped at the end id.
+    #[test]
+    fn translate_carries_ignore_eos() {
+        for (sent, want) in [
+            (Some(json!(true)), true),
+            (Some(json!(false)), false),
+            (Some(json!(null)), false),
+            (None, false),
+        ] {
+            let mut body = json!({
+                "model": "m", "max_tokens": 16,
+                "messages": [{"role": "user", "content": "x"}]
+            });
+            if let Some(v) = &sent {
+                body["ignore_eos"] = v.clone();
+            }
+            let translated = translate(&body).expect("translate");
+            let req: ChatCompletionReq =
+                serde_json::from_value(translated).expect("internal shape");
+            assert_eq!(req.ignore_eos, want, "sent {sent:?}");
+        }
+        // A value that is not a boolean is refused by name, never read as absent.
+        for invalid in [json!("true"), json!(1), json!({}), json!([])] {
+            let err = translate(&json!({
+                "model": "m", "max_tokens": 16,
+                "messages": [{"role": "user", "content": "x"}],
+                "ignore_eos": invalid
+            }))
+            .unwrap_err();
+            assert!(
+                err.starts_with("ignore_eos must be a boolean"),
+                "ignore_eos={invalid}: {err}"
+            );
+        }
     }
 
     #[test]
