@@ -664,9 +664,9 @@ pub(crate) fn capture_headroom_refusal(e: &Engine, need: usize) -> Option<String
             required,
             effective,
         } => Some(format!(
-            "insufficient VRAM headroom for capture: effective free {}MB ({reading} {}MB + \
-             pool-cached {}MB) < required {}MB (2x appetite {}MB + floor {}MB); capture skipped \
-             pre-attempt",
+            "insufficient VRAM headroom for capture: effective free {}MiB ({reading} {}MiB + \
+             pool-cached {}MiB) < required {}MiB (2x appetite {}MiB + floor {}MiB); capture \
+             skipped pre-attempt",
             effective / (1 << 20),
             free / (1 << 20),
             pool_cached / (1 << 20),
@@ -678,8 +678,8 @@ pub(crate) fn capture_headroom_refusal(e: &Engine, need: usize) -> Option<String
             let trimmed = e.pool_trim_to_zero();
             if trimmed > 0 {
                 eprintln!(
-                    "[spec] pre-capture pool trim: released {}MB cached back to the driver \
-                     (driver free {}MB < required {}MB; instantiate allocates from the driver)",
+                    "[spec] pre-capture pool trim: released {}MiB cached back to the driver \
+                     (driver free {}MiB < required {}MiB; instantiate allocates from the driver)",
                     trimmed / (1 << 20),
                     free / (1 << 20),
                     required / (1 << 20),
@@ -695,8 +695,8 @@ pub(crate) fn capture_headroom_refusal(e: &Engine, need: usize) -> Option<String
             let trimmed = e.pool_trim_to(capture_trim_keep(reserved, free, required));
             if trimmed > 0 {
                 eprintln!(
-                    "[spec] pre-capture pool trim: released {}MB of {}MB cached back to the \
-                     driver (allocatable free {}MB < required {}MB; instantiate allocates \
+                    "[spec] pre-capture pool trim: released {}MiB of {}MiB cached back to the \
+                     driver (allocatable free {}MiB < required {}MiB; instantiate allocates \
                      from the driver)",
                     trimmed / (1 << 20),
                     pool_cached / (1 << 20),
@@ -18086,6 +18086,20 @@ mod capture_headroom_tests {
         let production = production_src();
         let body = &production[production.find(sig).unwrap()..];
         &body[..body.find("\n}\n").unwrap()]
+    }
+
+    /// memra#1358: the capture guard's refusal and its two pre-capture trim lines print
+    /// `/ (1 << 20)` figures, which are MiB; an admission line's `MB` is decimal megabytes. No
+    /// figure in the function is left under an `MB` label.
+    #[test]
+    fn the_capture_guard_labels_its_figures_mib() {
+        let body = guard_body();
+        assert!(!body.contains("}MB"), "a MiB figure under an MB label");
+        assert_eq!(
+            body.matches("}MiB").count(),
+            13,
+            "the refusal's 6 and the trims' 3 and 4"
+        );
     }
 
     /// memra#1307: the pooled DFlash2 verify's width reads the allocatable free memory, as the

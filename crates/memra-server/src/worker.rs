@@ -28716,7 +28716,7 @@ pub fn run(
             let trim_devices = reports.len();
             eprintln!(
                 "[admit-oom] step-OOM teardown complete: {} session(s) dropped behind a \
-                 device fence; pool trim released {}MB across {} device(s)",
+                 device fence; pool trim released {}MiB across {} device(s)",
                 oom_teardowns,
                 trimmed_total / (1 << 20),
                 trim_devices,
@@ -36777,12 +36777,12 @@ fn measured_wave_cap(
             Ok((two, one, one_tc)) => eprintln!(
                 "[wave-probe] 32 sessions at depth {SPEC_COST_DEPTH}: two 16-row waves {two:.1} ms, \
                  one 32-row wave {one:.1} ms (tensor-core tier {one_tc:.1} ms) -> wave cap {c}, \
-                 tensor-core b32 {} ({probe_s:.1}s; released {}MB of cached pool to the driver)",
+                 tensor-core b32 {} ({probe_s:.1}s; released {}MiB of cached pool to the driver)",
                 if tc { "on" } else { "off" },
                 released >> 20,
             ),
             Err(err) => eprintln!(
-                "[wave-probe] {} ({err}) after {probe_s:.1}s; wave cap 16; released {}MB of \
+                "[wave-probe] {} ({err}) after {probe_s:.1}s; wave cap 16; released {}MiB of \
                  cached pool to the driver",
                 if err.is::<memra_engine::spec_cost::ProbeDoesNotFit>() {
                     "skipped"
@@ -55582,6 +55582,27 @@ mod tests {
             reclaim < fence && fence < trim,
             "reclaim, then fence, then trim"
         );
+    }
+
+    /// memra#1358: the wave probe's and the step-OOM teardown's trim figures are `>> 20` and
+    /// `/ (1 << 20)`, so MiB; an admission line's `MB` is decimal megabytes. Neither prints a
+    /// MiB figure under an `MB` label.
+    #[test]
+    fn the_pool_trim_lines_label_their_figures_mib() {
+        let src = include_str!("worker.rs");
+        let prod = &src[..src.find("\nmod tests").expect("tests module exists")];
+        let at = prod
+            .find("fn measured_wave_cap(")
+            .expect("measured_wave_cap");
+        let body = &prod[at..at + prod[at..].find("\n}\n").expect("its end")];
+        assert!(!body.contains("}MB"), "{body}");
+        assert_eq!(body.matches("released {}MiB of").count(), 2, "{body}");
+        assert_eq!(
+            prod.matches("device fence; pool trim released {}MiB across {} device(s)")
+                .count(),
+            1
+        );
+        assert!(!prod.contains("pool trim released {}MB"));
     }
 
     /// The boot wave probe hands its pool back to the driver on both arms before the cap is
