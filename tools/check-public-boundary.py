@@ -44,12 +44,17 @@ from __future__ import annotations
 import argparse
 import datetime
 import fnmatch
+import gzip
 import hashlib
+import io
 import json
 import os
 import re
 import subprocess
 import sys
+import tarfile
+import tempfile
+import zlib
 
 try:
     import tomllib
@@ -66,7 +71,7 @@ except ImportError:  # Python < 3.11 (serving/spot boxes ship 3.10)
         )
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, FrozenSet, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, FrozenSet, Iterable, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 POLICY_PATH = ROOT / "tools" / "public-boundary-policy.toml"
@@ -469,6 +474,133 @@ def secret_candidates_at_refs(
     return pairs
 
 
+# ---------------------------------------------------------------------------------------------
+# GZIP BLOBS ARE JUDGED BY THEIR TEXT (memra#1198). Deflate bytes are close to random, so a short
+# name rule matches somewhere in a few hundred kilobytes of them by chance (15 of 90
+# recompressions of ten receipts in the issue did), and a real leak inside a compressed receipt is
+# invisible to a scan of the compressed bytes. A blob that starts with the gzip magic and
+# decompresses is judged by its decompressed members instead: a tar's regular files, or the one
+# stream. Binary content is left out by git's own test (a NUL in the first 8000 bytes), so tensor
+# and float dumps, which would match by chance just as deflate bytes do, stay quiet. A blob that
+# does not decompress is judged by its raw bytes, as before. The decompressed text is about seven
+# times the compressed bytes in this repo (4 GB from 575 MB), so the prefilter over it is git's
+# PCRE walker (`git grep --no-index` over temporary copies), not the per-rule Python pass, which
+# only reads the members git grep flags.
+GZIP_MAGIC = b"\x1f\x8b"
+BINARY_PROBE = 8000
+GREP_BATCH_BYTES = 512 << 20
+
+
+def is_gzip_name(path: str) -> bool:
+    return path.endswith((".gz", ".tgz"))
+
+
+def gzip_members(data: bytes) -> Optional[List[Tuple[str, bytes]]]:
+    """The text members a gzip blob is judged by, or None when `data` is not a gzip blob that
+    decompresses (it is then judged by its raw bytes). A tar's member is named by its path inside
+    the tar; a plain stream is one member named ''."""
+    if data[:2] != GZIP_MAGIC:
+        return None
+    try:
+        raw = gzip.decompress(data)
+    except (OSError, EOFError, zlib.error):
+        return None
+    members: List[Tuple[str, bytes]] = [("", raw)]
+    if raw[257:262] == b"ustar":
+        try:
+            with tarfile.open(fileobj=io.BytesIO(raw)) as tar:
+                members = []
+                for info in tar:
+                    if not info.isfile():
+                        continue
+                    handle = tar.extractfile(info)
+                    members.append((info.name, handle.read() if handle else b""))
+        except tarfile.TarError:
+            members = [("", raw)]
+    return [(name, body) for name, body in members if b"\0" not in body[:BINARY_PROBE]]
+
+
+def members_with_hits(
+    sources: Dict[str, str], blobs: List[Tuple[str, List[Tuple[str, bytes]]]]
+) -> Dict[str, List[Tuple[str, bytes]]]:
+    """The members, by blob key, in which any rule source matches, as `git grep --text -P` reads
+    them. One git grep per batch of about 512 MiB of temporary copies."""
+    flagged: Dict[str, List[Tuple[str, bytes]]] = {}
+    if not sources:
+        return flagged
+    args = ["git", "grep", "--no-index", "--text", "-z", "-l", "-P"]
+    for source in sources.values():
+        args.extend(("-e", source))
+    args.extend(("--", "."))
+    pending: List[Tuple[str, str, bytes]] = []
+
+    def run(tmp: str) -> None:
+        result = subprocess.run(args, cwd=tmp, capture_output=True)
+        if result.returncode not in (0, 1):
+            message = result.stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"git grep gzip prefilter failed: {message}")
+        hit = {raw.decode() for raw in result.stdout.split(b"\0") if raw}
+        for file_name, key, member in pending:
+            if file_name in hit:
+                flagged.setdefault(key, []).append(member)
+            os.unlink(os.path.join(tmp, file_name))
+        pending.clear()
+
+    with tempfile.TemporaryDirectory(prefix="public-boundary-gz-") as tmp:
+        size = 0
+        for key, members in blobs:
+            for name, body in members:
+                file_name = str(len(pending))
+                with open(os.path.join(tmp, file_name), "wb") as fh:
+                    fh.write(body)
+                pending.append((file_name, key, (name, body)))
+                size += len(body)
+                if size >= GREP_BATCH_BYTES:
+                    run(tmp)
+                    size = 0
+        if pending:
+            run(tmp)
+    return flagged
+
+
+def scan_members(
+    policy: Policy, members: List[Tuple[str, bytes]]
+) -> List[Tuple[str, int, str]]:
+    """The per-rule pass over the flagged members of one gzip blob, each hit's text prefixed with
+    its member's name so a report says where inside the archive it is."""
+    hits: List[Tuple[str, int, str]] = []
+    for name, body in members:
+        for rule, line, text in scan_secret_bytes(
+            body, policy.secret_union, policy.secret_groups, policy.secret_patterns
+        ):
+            hits.append((rule, line, f"{name}: {text}" if name else text))
+    hits.sort(key=lambda hit: (hit[1], hit[0]))
+    return hits
+
+
+def paths_at_ref(ref: str) -> List[str]:
+    """Every path at `ref`. `git ls-tree` takes no `:(glob)` pathspec (it fails with "pathspec
+    magic not supported by this command"), so globs are matched here."""
+    result = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", "-z", ref],
+        cwd=ROOT,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        message = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"git ls-tree {ref} failed: {message}")
+    return [
+        raw.decode("utf-8", errors="surrogateescape")
+        for raw in result.stdout.split(b"\0")
+        if raw
+    ]
+
+
+def gzip_candidates_at_ref(ref: str) -> List[str]:
+    """Paths at `ref` named as gzip blobs: their text is not what `git grep` sees."""
+    return [path for path in paths_at_ref(ref) if is_gzip_name(path)]
+
+
 def private_candidates_at_ref(policy: Policy, ref: str) -> List[str]:
     """Paths at `ref` under a private_paths glob, narrowed by git rather than by scanning."""
     if not policy.private_paths:
@@ -534,6 +666,8 @@ def evaluate_refs(
     for ref in refs:
         for path in private_candidates_at_ref(policy, ref):
             candidates.add((ref, path))
+        for path in gzip_candidates_at_ref(ref):
+            candidates.add((ref, path))
     candidates.update(secret_candidates_at_refs(policy.secret_sources, refs))
 
     violations: Dict[Tuple[str, str], Violation] = {}
@@ -543,12 +677,21 @@ def evaluate_refs(
     for start in range(0, len(ordered), chunk):
         batch = ordered[start : start + chunk]
         loaded = blobs_at([f"{ref}:{path}" for ref, path in batch])
+        gz = gzip_batch(
+            policy,
+            [
+                (f"{ref}:{path}", path, lambda spec=f"{ref}:{path}": loaded.get(spec))
+                for ref, path in batch
+                if is_gzip_name(path) or loaded.get(f"{ref}:{path}", b"")[:2] == GZIP_MAGIC
+            ],
+        )
         for ref, path in batch:
             data = loaded.get(f"{ref}:{path}")
             if data is None:
                 continue
             read += 1
-            violation = evaluate_content(policy, path, data)
+            spec = f"{ref}:{path}"
+            violation = gz[spec] if spec in gz else evaluate_content(policy, path, data)
             if violation is None:
                 continue
             key = (violation.path, violation.sha256)
@@ -752,6 +895,10 @@ def evaluate_content(policy: Policy, rel: str, data: bytes) -> Optional[Violatio
         )
     if bypass:
         return None
+    members = gzip_members(data)
+    if members is not None:
+        flagged = members_with_hits(policy.secret_sources, [(rel, members)]).get(rel, [])
+        return gzip_violation(policy, rel, data, flagged)
     if not raw_bytes_prefilter(data, policy.secret_sources):
         # Same gate the checkout scan applies through `git grep --text -P` before it decodes
         # anything: a rule must match the RAW bytes. Without it the commit and ref scans judged
@@ -768,6 +915,58 @@ def evaluate_content(policy: Policy, rel: str, data: bytes) -> Optional[Violatio
     return build_violation(
         policy, rel, hashlib.sha256(data).hexdigest(), "secret_pattern", hits
     )
+
+
+def gzip_violation(
+    policy: Policy, rel: str, data: bytes, flagged: List[Tuple[str, bytes]]
+) -> Optional[Violation]:
+    hits = scan_members(policy, flagged)
+    if not hits:
+        return None
+    return build_violation(
+        policy, rel, hashlib.sha256(data).hexdigest(), "secret_pattern", hits
+    )
+
+
+def gzip_batch(
+    policy: Policy, items: Iterable[Tuple[str, str, Callable[[], Optional[bytes]]]]
+) -> Dict[str, Optional[Violation]]:
+    """Judge the gzip blobs among `items` (key, path, a reader of its bytes) a batch at a time:
+    one prefilter per batch of about 512 MiB of decompressed members, so the decompressed text is
+    never all in memory. Returns a verdict by key for every blob judged here; a private path, a
+    bypassed path or a blob that does not decompress is left to the raw scan."""
+    verdicts: Dict[str, Optional[Violation]] = {}
+    judged: Dict[str, Tuple[str, bytes]] = {}
+    blobs: List[Tuple[str, List[Tuple[str, bytes]]]] = []
+    size = 0
+
+    def flush() -> None:
+        flagged = members_with_hits(policy.secret_sources, blobs)
+        for key, (rel, data) in judged.items():
+            verdicts[key] = gzip_violation(policy, rel, data, flagged.get(key, []))
+        judged.clear()
+        blobs.clear()
+
+    for key, rel, read in items:
+        if is_bypass(rel, policy.bypass_paths):
+            continue
+        if any(matches_glob(rel, glob) for glob in policy.private_paths.values()):
+            continue
+        data = read()
+        if data is None:
+            continue
+        members = gzip_members(data)
+        if members is None:
+            continue
+        judged[key] = (rel, data)
+        blobs.append((key, members))
+        size += len(data) + sum(len(body) for _, body in members)
+        if size >= GREP_BATCH_BYTES:
+            flush()
+            size = 0
+    if judged:
+        flush()
+    return verdicts
 
 
 _RAW_RULES: Dict[str, Optional[re.Pattern[bytes]]] = {}
@@ -803,6 +1002,7 @@ def evaluate(
         selected = set(paths)
         files = [rel for rel in files if rel in selected]
         secret_candidates = secret_candidate_files(policy.secret_sources, files)
+    gz_names: List[str] = []
     for rel in files:
         full = ROOT / rel
         # Do not ask is_file() to follow a symlink. Python 3.12 raises PermissionError when an
@@ -861,6 +1061,11 @@ def evaluate(
         # git grep does not prefilter symlink blobs, so the small tracked-symlink set is scanned
         # directly. This keeps the fast prefilter for ordinary files without making links a blind
         # spot.
+        if not bypass and not is_link and is_gzip_name(rel):
+            # Judged together after the walk (`gzip_batch`); one that does not decompress comes
+            # back to the raw scan below.
+            gz_names.append(rel)
+            continue
         if not bypass and (rel in secret_candidates or is_link):
             data = worktree_blob_bytes(full)
             hits = scan_secret_bytes(
@@ -877,6 +1082,26 @@ def evaluate(
                         hashlib.sha256(data).hexdigest(),
                         "secret_pattern",
                         hits,
+                    )
+                )
+    gz = gzip_batch(
+        policy,
+        [(rel, rel, lambda rel=rel: worktree_blob_bytes(ROOT / rel)) for rel in gz_names],
+    )
+    for rel in gz_names:
+        if rel in gz:
+            if gz[rel] is not None:
+                violations.append(gz[rel])
+            continue
+        if rel in secret_candidates:
+            data = worktree_blob_bytes(ROOT / rel)
+            hits = scan_secret_bytes(
+                data, policy.secret_union, policy.secret_groups, policy.secret_patterns
+            )
+            if hits:
+                violations.append(
+                    build_violation(
+                        policy, rel, hashlib.sha256(data).hexdigest(), "secret_pattern", hits
                     )
                 )
     return violations

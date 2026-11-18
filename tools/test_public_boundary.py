@@ -525,7 +525,14 @@ class AllowlistTests(unittest.TestCase):
         # unremediated entries and its grant was pruned. The docs/SERVING.md revoke example was
         # then rewritten to a non-key-shaped placeholder and its grant pruned 2026-08-24. A new
         # credential grant is a new decision: bump this count only with reviewed bytes named here.
-        self.assertEqual(len(granted), 13)
+        # 21 since memra#1198 (gzip blobs judged by their text): the eight `runtime-source*.tar.gz`
+        # source snapshots under research/mtp-context-depth-20260921/,
+        # research/mtp-continuing-session-20260921/ and research/prompt-depth-router-20260922/
+        # carry `crates/memra-server/src/auth.rs`, whose credential-shaped matches are, string for
+        # string, the six unit-test fixtures of the in-tree auth.rs grant (checked when granted).
+        snapshots = [i for i in granted if "runtime-source" in i["path"]]
+        self.assertEqual(len(snapshots), 8)
+        self.assertEqual(len(granted), 21)
         for item in granted:
             with self.subTest(path=item["path"]):
                 # `rules` is a whitelist, never a wildcard: a credential grant that did not
@@ -533,7 +540,9 @@ class AllowlistTests(unittest.TestCase):
                 self.assertTrue(credential_rules.intersection(item["rules"]))
         # Exactly one blob carries a minted key (the auth.rs unit-test fixtures); the rest are
         # revocation prefixes. A second minted-key grant is a new decision, not a reseed.
-        minted = [i for i in granted if "minted_api_key" in i["rules"]]
+        minted = [
+            i for i in granted if "minted_api_key" in i["rules"] and i not in snapshots
+        ]
         self.assertEqual([i["path"] for i in minted], ["crates/memra-server/src/auth.rs"])
 
 
@@ -936,6 +945,106 @@ class CommitBlobTests(unittest.TestCase):
             [(violation.path, violation.detail) for violation in violations],
             [("capture.bin", "alpha (first hit line 1)")],
         )
+
+    # --- memra#1198: a gzip blob is judged by its decompressed text ---------------------------
+
+    @staticmethod
+    def chance_gzip() -> tuple[bytes, str]:
+        """A gzip blob whose compressed bytes spell a four-letter run its text cannot hold: the
+        text is digits and newlines only, so any letters are the deflate stream's by chance."""
+        import gzip
+
+        payload = "\n".join(str(i * 7919 % 100003) for i in range(40000)).encode()
+        blob = gzip.compress(payload, mtime=0)
+        match = boundary.re.search(rb"[A-Za-z]{4}", blob[10:])
+        assert match is not None, "no letter run in 100 KB of deflate bytes"
+        return blob, match.group().decode()
+
+    def chance_policy(self, needle: str) -> "boundary.Policy":
+        return boundary.Policy(
+            secret_patterns={"chance": boundary.re.compile(needle)},
+            secret_sources={"chance": needle},
+            secret_union=boundary.re.compile(f"(?P<rule_0>{needle})"),
+            secret_groups={"rule_0": "chance"},
+            private_paths={},
+            bypass_paths=[],
+        )
+
+    def test_gzip_bytes_that_match_by_chance_are_not_a_finding(self) -> None:
+        """memra#1198: the compressed bytes match the rule, the text does not. The gate used to
+        refuse such a receipt; recompressing at another level made it pass."""
+        blob, needle = self.chance_gzip()
+        policy = self.chance_policy(needle)
+        self.assertTrue(boundary.raw_bytes_prefilter(blob, policy.secret_sources))
+        self.assertIsNone(boundary.evaluate_content(policy, "research/lane/rows.jsonl.gz", blob))
+        bad = self.commit("research/lane/rows.jsonl.gz", blob, "compressed receipt")
+        with mock.patch.object(boundary, "ROOT", self.root):
+            self.assertEqual(boundary.evaluate(policy), [])
+            self.assertEqual(boundary.evaluate_commits(policy, [bad]), [])
+            refs = boundary.published_refs("refs/heads/**")
+            self.assertEqual(boundary.evaluate_refs(policy, refs)[0], [])
+
+    def test_a_match_in_a_gzip_blobs_text_is_a_finding(self) -> None:
+        """memra#1198: the other half, a real match inside a compressed receipt. Its compressed
+        bytes do not spell it, so a scan of the bytes never saw it."""
+        import gzip
+
+        text = b"# trace\n" + b"row 1 ok\n" * 4000 + b"the alpha needle line\n"
+        blob = gzip.compress(text, mtime=0)
+        self.assertFalse(boundary.raw_bytes_prefilter(blob, self.policy.secret_sources))
+        violation = boundary.evaluate_content(self.policy, "research/lane/trace.log.gz", blob)
+        assert violation is not None
+        self.assertEqual(violation.rules, ("alpha",))
+        self.assertEqual(violation.lines, {"alpha": 4002})
+        bad = self.commit("research/lane/trace.log.gz", blob, "compressed trace")
+        with mock.patch.object(boundary, "ROOT", self.root):
+            self.assertEqual(
+                [v.path for v in boundary.evaluate(self.policy)], ["research/lane/trace.log.gz"]
+            )
+            self.assertEqual(
+                [v.path for v in boundary.evaluate_commits(self.policy, [bad])],
+                ["research/lane/trace.log.gz"],
+            )
+            refs = boundary.published_refs("refs/heads/**")
+            self.assertEqual(
+                [v.path for v in boundary.evaluate_refs(self.policy, refs)[0]],
+                ["research/lane/trace.log.gz"],
+            )
+
+    def test_a_tar_gz_is_judged_by_its_text_members(self) -> None:
+        """A tar's regular files are the members; binary content (a NUL in its first 8000 bytes,
+        git's own test) is left out, as tensor and float dumps would match by chance too."""
+        import gzip
+        import io
+        import tarfile
+
+        def tar_gz(members: dict[str, bytes]) -> bytes:
+            buf = io.BytesIO()
+            with tarfile.open(fileobj=buf, mode="w") as tar:
+                for name, body in members.items():
+                    info = tarfile.TarInfo(name)
+                    info.size = len(body)
+                    tar.addfile(info, io.BytesIO(body))
+            return gzip.compress(buf.getvalue(), mtime=0)
+
+        quiet = tar_gz({"weights.f32": b"\0\0\x80?alpha needle", "notes.md": b"clean\n"})
+        self.assertIsNone(boundary.evaluate_content(self.policy, "research/lane/r.tar.gz", quiet))
+        loud = tar_gz({"notes.md": b"clean\n", "src/run.log": b"x\nthe alpha needle\n"})
+        violation = boundary.evaluate_content(self.policy, "research/lane/r.tar.gz", loud)
+        assert violation is not None
+        self.assertEqual(violation.lines, {"alpha": 2})
+        self.assertEqual(
+            boundary.scan_members(self.policy, boundary.gzip_members(loud) or [])[0][2],
+            "src/run.log: the alpha needle",
+        )
+
+    def test_a_gzip_magic_that_does_not_decompress_is_judged_raw(self) -> None:
+        """A damaged archive is never a blind spot: it keeps the raw-byte scan."""
+        blob = b"\x1f\x8b\x08\x00garbage alpha needle\n"
+        self.assertIsNone(boundary.gzip_members(blob))
+        violation = boundary.evaluate_content(self.policy, "research/lane/bad.log.gz", blob)
+        assert violation is not None
+        self.assertEqual(violation.rules, ("alpha",))
 
     def test_ref_scan_finds_a_blob_the_checkout_no_longer_carries(self) -> None:
         """The gap that let two lanes stay unexamined: nothing re-reads a pushed branch.
