@@ -1887,6 +1887,8 @@ class VerifyAllowlistTests(unittest.TestCase):
         rc, output = self.run_verify(prune=True)
         self.assertEqual(rc, 1, output)
         self.assertIn("kept 1 refs_only entries unpruned", output)
+        # Review of memra#1368 round 3: the drift report says the set looks partial.
+        self.assertIn("verify: note: the refs here lack one of", output)
         with mock.patch.object(boundary, "ROOT", self.root):
             self.assertEqual(len(boundary.load_allowlist(self.allowlist_path)), 1)
         # Review of memra#1368 round 2: a plain clone (origin's branches and the tags, no PR
@@ -1896,19 +1898,83 @@ class VerifyAllowlistTests(unittest.TestCase):
         rc, output = self.run_verify(prune=True)
         self.assertEqual(rc, 1, output)
         self.assertIn("kept 1 refs_only entries unpruned: the published refs here lack one of", output)
-        # One PR head fetched of two that origin lists: the shape holds, the counts do not.
+        # One PR head fetched of two that origin lists: the shape holds, the names do not.
         self.mirror_origin(pull=2, fetched_pull=1)
         rc, output = self.run_verify(prune=True)
         self.assertEqual(rc, 1, output)
-        self.assertIn("(pull heads: 1 here, 2 on origin)", output)
+        self.assertIn("(1 missing here, e.g. refs/remotes/origin-pull/2)", output)
+        self.assertNotIn("verify: note:", output)
         self.mirror_origin(pull=2)
         rc, output = self.run_verify(prune=True)
         self.assertEqual(rc, 0, output)
         with mock.patch.object(boundary, "ROOT", self.root):
             self.assertEqual(boundary.load_allowlist(self.allowlist_path), {})
 
+    def lane_with(self, data: bytes) -> None:
+        """Origin's branch `lane` carries `data` at deploy/old.txt; the checkout stays put."""
+        self.git("checkout", "-q", "-b", "lane")
+        self.commit("deploy/old.txt", data)
+        self.git("checkout", "-q", "-")
+
+    def test_prune_keeps_refs_only_entries_when_a_tip_here_is_behind_origin(self) -> None:
+        """Review of memra#1368 round 3 (Q1): origin's `lane` moved to a commit that carries a
+        listed version and this clone's origin/lane is the old tip. Every count matches, the
+        carrier is not here, and --prune must keep the entry. Fetched, the entry holds (Q0)."""
+        self.tag_old_version()
+        version = b"alpha needle, on lane\n"
+        entry = self.historical("deploy/old.txt", version, ["alpha"])
+        self.git("branch", "lane")
+        self.mirror_origin()
+        self.git("checkout", "-q", "lane")
+        self.commit("deploy/old.txt", version)
+        self.git("checkout", "-q", "-")
+        self.write_allowlist(entry)
+        rc, output = self.run_verify(prune=True)
+        self.assertEqual(rc, 1, output)
+        self.assertIn(
+            "kept 1 refs_only entries unpruned: the refs here do not match origin's "
+            "(1 at another object here, e.g. refs/remotes/origin/lane)",
+            output,
+        )
+        with mock.patch.object(boundary, "ROOT", self.root):
+            self.assertEqual(len(boundary.load_allowlist(self.allowlist_path)), 1)
+        self.mirror_origin()
+        rc, output = self.run_verify(prune=True)
+        self.assertEqual(rc, 0, output)
+        self.assertIn("1 refs_only entries all pin versions", output)
+
+    def test_prune_keeps_refs_only_entries_when_a_stale_ref_hides_a_missing_one(self) -> None:
+        """Review of memra#1368 round 3 (Q2): a branch deleted on origin is still here and a new
+        one is not fetched yet, so the counts match while the new branch, which carries the
+        version, is missing."""
+        self.tag_old_version()
+        self.git("branch", "gone")
+        self.mirror_origin()
+        self.git("branch", "-q", "-D", "gone")
+        version = b"alpha needle, on a new lane\n"
+        self.lane_with(version)
+        self.write_allowlist(self.historical("deploy/old.txt", version, ["alpha"]))
+        rc, output = self.run_verify(prune=True)
+        self.assertEqual(rc, 1, output)
+        self.assertIn("(1 missing here, e.g. refs/remotes/origin/lane)", output)
+        with mock.patch.object(boundary, "ROOT", self.root):
+            self.assertEqual(len(boundary.load_allowlist(self.allowlist_path)), 1)
+
+    def test_prune_keeps_refs_only_entries_when_origin_lists_no_branch(self) -> None:
+        """Review of memra#1368 round 3 (Q4): `git ls-remote` of an empty origin succeeds and
+        lists nothing. That is a gap, as it is to boundary-refs.yml's fetch check."""
+        self.tag_old_version()
+        self.mirror_origin()
+        empty = self.root / ".git" / "empty-origin.git"
+        self.git("init", "-q", "--bare", str(empty))
+        self.git("remote", "set-url", "origin", str(empty))
+        self.write_allowlist(self.historical("deploy/old.txt", b"alpha never pushed\n", ["alpha"]))
+        rc, output = self.run_verify(prune=True)
+        self.assertEqual(rc, 1, output)
+        self.assertIn("(origin lists no branch)", output)
+
     def test_prune_without_an_origin_remote_keeps_refs_only_entries(self) -> None:
-        """Review of memra#1368 round 2: the refs' counts are compared with `git ls-remote
+        """Review of memra#1368 round 2: the refs are compared with `git ls-remote
         origin`; when that cannot run, the set is not known to be whole."""
         self.tag_old_version()
         self.mirror_origin()
@@ -1946,42 +2012,44 @@ class VerifyAllowlistTests(unittest.TestCase):
                     boundary.ref_set_looks_complete([ref for ref in whole if ref != missing])
                 )
 
-    def test_remote_ref_shortfall_counts_each_namespace(self) -> None:
+    def test_remote_ref_mismatch_compares_names_and_objects(self) -> None:
+        """Review of memra#1368 round 3: each branch, tag (its unpeeled object) and PR head origin
+        lists must be here at the same object; HEAD, merge refs and refs only here do not count."""
+        a, b, t, c = "a" * 40, "b" * 40, "c" * 40, "d" * 40
         listing = "\n".join(
-            f"{'0' * 40}\t{name}"
-            for name in (
-                "HEAD",
-                "refs/heads/main",
-                "refs/heads/lane",
-                "refs/tags/v1",
-                "refs/tags/v1^{}",
-                "refs/pull/1/head",
-                "refs/pull/1/merge",
-                "refs/pull/2/head",
+            f"{oid}\t{name}"
+            for oid, name in (
+                (a, "HEAD"),
+                (a, "refs/heads/main"),
+                (b, "refs/heads/lane"),
+                (t, "refs/tags/v1"),
+                (a, "refs/tags/v1^{}"),
+                (a, "refs/pull/1/head"),
+                (c, "refs/pull/1/merge"),
+                (b, "refs/pull/2/head"),
             )
         )
-        refs = [
-            "refs/remotes/origin/HEAD",
-            "refs/remotes/origin/main",
-            "refs/remotes/origin/lane",
-            "refs/remotes/origin-pull/1",
-            "refs/remotes/origin-pull/2",
-            "refs/tags/v1",
-        ]
-        self.assertEqual(boundary.remote_ref_shortfall(refs, listing), [])
+        local = {
+            "refs/remotes/origin/main": a,
+            "refs/remotes/origin/lane": b,
+            "refs/remotes/origin/local-only": c,
+            "refs/remotes/origin-pull/1": a,
+            "refs/remotes/origin-pull/2": b,
+            "refs/tags/v1": t,
+        }
+        self.assertEqual(boundary.remote_ref_mismatch(local, listing), [])
+        without = {k: v for k, v in local.items() if k not in ("refs/remotes/origin/lane", "refs/tags/v1")}
         self.assertEqual(
-            boundary.remote_ref_shortfall(
-                [ref for ref in refs if ref not in ("refs/remotes/origin/lane", "refs/tags/v1")], listing
-            ),
-            ["heads: 1 here, 2 on origin", "tags: 0 here, 1 on origin"],
+            boundary.remote_ref_mismatch(without, listing),
+            ["2 missing here, e.g. refs/remotes/origin/lane"],
         )
         self.assertEqual(
-            boundary.remote_ref_shortfall(refs[:2] + refs[3:], listing),
-            ["heads: 1 here, 2 on origin"],
+            boundary.remote_ref_mismatch({**local, "refs/tags/v1": a, "refs/remotes/origin-pull/2": a}, listing),
+            ["2 at another object here, e.g. refs/tags/v1"],
         )
         self.assertEqual(
-            boundary.remote_ref_shortfall(refs[:4] + refs[5:], listing),
-            ["pull heads: 1 here, 2 on origin"],
+            boundary.remote_ref_mismatch(local, ""),
+            ["origin lists no branch"],
         )
 
     def test_verify_fails_on_a_secret_inside_a_refs_only_private_version(self) -> None:
@@ -2156,8 +2224,9 @@ class VerifyAllowlistTests(unittest.TestCase):
                 for c_rc in (0, 1):
                     with self.subTest(event=event, v_rc=v_rc, c_rc=c_rc):
                         calls.write_text("")
+                        # Only PATH and the step's variables: a BASH_ENV or an exported shell
+                        # function from the caller would run ahead of the stub.
                         env = {
-                            **os.environ,
                             "PATH": f"{stub}:{os.environ['PATH']}",
                             "CALLS": str(calls),
                             "EVENT": event,
@@ -2178,6 +2247,13 @@ class VerifyAllowlistTests(unittest.TestCase):
                         else:
                             self.assertEqual(made, [verify, scan])
                             self.assertEqual(run.returncode, int(bool(v_rc or c_rc)), run.stdout)
+        # The stub run sets EVENT itself, so pin the step's own binding (round 3): bound to
+        # github.event.action, a pull request would run the full scan.
+        env_block = step.split("        env:\n", 1)[1].split("        run: |", 1)[0]
+        self.assertEqual(
+            sorted(ln.strip() for ln in env_block.splitlines() if ln.strip()),
+            ["EVENT: ${{ github.event_name }}", "REF_GLOB: ${{ inputs.ref_glob }}"],
+        )
         on = text.split("\njobs:", 1)[0]
         pr = on.split("\n  pull_request:\n", 1)[1].split("\n  workflow_dispatch:", 1)[0]
         listed = [ln.strip() for ln in pr.splitlines() if ln.strip().startswith("- ")]

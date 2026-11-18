@@ -1713,57 +1713,84 @@ def ref_set_looks_complete(refs: List[str]) -> bool:
     """Whether these published refs hold each namespace origin publishes, as boundary-refs.yml
     fetches them. A test of shape only: it cannot see a ref that is here but not on origin (a
     local-only tag counts as published), nor a namespace fetched in part; `--prune` also compares
-    the counts with `git ls-remote origin` (remote_ref_shortfall)."""
+    names and oids with `git ls-remote origin` (remote_ref_mismatch)."""
     return all(any(ref.startswith(ns) for ref in refs) for ns in PUBLISHED_NAMESPACES)
 
 
-def remote_ref_shortfall(refs: List[str], listing: str) -> List[str]:
-    """The namespaces where `git ls-remote origin` (its output is `listing`) lists more refs than
-    these published refs hold, as "NAME: N here, M on origin". Review of memra#1368: one fetched
-    PR head passes the shape test while the other thousand are missing, and a prune there would
-    drop entries that only the missing refs carry."""
-    remote = {"heads": 0, "tags": 0, "pull heads": 0}
+def remote_ref_mismatch(local: Dict[str, str], listing: str) -> List[str]:
+    """How these published refs differ from what `git ls-remote origin` lists (`listing`), or [] when
+    every branch, tag and PR head origin publishes is here at the same object. `local` maps each
+    published ref here to its oid. Origin's refs/heads/X is refs/remotes/origin/X here, its
+    refs/pull/N/head is refs/remotes/origin-pull/N, a tag keeps its name, and a tag is compared by
+    its own (unpeeled) object. Refs here that origin does not list are allowed: they can only keep
+    an entry, whose bytes origin then no longer publishes. Review of memra#1368: counts are not
+    enough, since a moved tip or a deleted-and-added pair keeps every count and still hides the
+    carrier of an entry; and a listing with no branch (an empty origin) is a gap, as it is to
+    boundary-refs.yml's own fetch check."""
+    missing: List[str] = []
+    moved: List[str] = []
+    heads = 0
     for line in listing.splitlines():
-        name = line.split("\t", 1)[-1]
+        oid, _, name = line.partition("\t")
         if name.endswith("^{}"):
             continue  # a peeled tag line repeats its tag
         if name.startswith("refs/heads/"):
-            remote["heads"] += 1
+            heads += 1
+            here = "refs/remotes/origin/" + name[len("refs/heads/") :]
         elif name.startswith("refs/tags/"):
-            remote["tags"] += 1
+            here = name
         elif name.startswith("refs/pull/") and name.endswith("/head"):
-            remote["pull heads"] += 1
-    local = {
-        # origin/HEAD is the symref a checkout leaves behind, not a branch.
-        "heads": sum(
-            ref.startswith("refs/remotes/origin/") and ref != "refs/remotes/origin/HEAD"
-            for ref in refs
-        ),
-        "tags": sum(ref.startswith("refs/tags/") for ref in refs),
-        "pull heads": sum(ref.startswith("refs/remotes/origin-pull/") for ref in refs),
-    }
-    return [
-        f"{name}: {local[name]} here, {remote[name]} on origin"
-        for name in remote
-        if local[name] < remote[name]
-    ]
+            here = "refs/remotes/origin-pull/" + name[len("refs/pull/") : -len("/head")]
+        else:
+            continue  # HEAD, refs/pull/N/merge: not published refs the job fetches
+        if here not in local:
+            missing.append(here)
+        elif local[here] != oid:
+            moved.append(here)
+    gaps = []
+    if not heads:
+        gaps.append("origin lists no branch")
+    if missing:
+        gaps.append(f"{len(missing)} missing here, e.g. {missing[0]}")
+    if moved:
+        gaps.append(f"{len(moved)} at another object here, e.g. {moved[0]}")
+    return gaps
 
 
 def prune_ref_set_gap(refs: List[str]) -> Optional[str]:
     """Why `--prune` must not judge refs_only entries against these refs, or None when they look
-    like origin's whole set by shape and by `git ls-remote origin`'s counts."""
+    like origin's whole set by shape and match `git ls-remote origin` by name and oid."""
     if not ref_set_looks_complete(refs):
         return "the published refs here lack one of " + ", ".join(
             f"{ns}*" for ns in PUBLISHED_NAMESPACES
         )
+    # A local --prune must not stop at a credential prompt; a failure here prunes nothing.
     listing = subprocess.run(
-        ["git", "ls-remote", "origin"], cwd=ROOT, capture_output=True, text=True
+        ["git", "ls-remote", "origin"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
     )
     if listing.returncode != 0:
         return "`git ls-remote origin` failed, so the refs here cannot be compared with origin's"
-    short = remote_ref_shortfall(refs, listing.stdout)
-    if short:
-        return "origin lists more refs than this clone holds (" + "; ".join(short) + ")"
+    wanted = set(refs)
+    local = {}
+    out = subprocess.run(
+        ["git", "for-each-ref", "--format=%(objectname) %(refname)"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    for line in out.splitlines():
+        oid, _, name = line.partition(" ")
+        if name in wanted:
+            local[name] = oid
+    gaps = remote_ref_mismatch(local, listing.stdout)
+    if gaps:
+        return "the refs here do not match origin's (" + "; ".join(gaps) + ")"
     return None
 
 
