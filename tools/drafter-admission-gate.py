@@ -118,7 +118,8 @@ WORDS = (
 
 RE_COST = re.compile(r"\[admission\] request cost: model=\"[^\"]+\" ctx=(\d+) path=(\w+) = .* = (\d+)MB$")
 RE_DRAFT = re.compile(r"\[admission\] per-session draft-state charge: model=\"[^\"]+\" \+(\d+)MB \(")
-RE_FLOOR = re.compile(r"\[admit-cal\] boot calibration done: .*? transient floor (\d+)MB \(static was")
+# MiB, labelled MiB since memra#1271 and MB before it.
+RE_FLOOR = re.compile(r"\[admit-cal\] boot calibration done: .*? transient floor (\d+)Mi?B \(static was")
 RE_RECEIPT = re.compile(
     r"\[admission\] drafter refused: .* draft plane (\d+)MB does not fit \(available (\d+)MB, "
     r"required (\d+)MB with it, (\d+)MB without(?:; arm ([a-z-]+))?\)"

@@ -3,7 +3,8 @@
 server just above one request's admission charge. The charge is read from the server's own lines
 for the log's last admitted request: `[admission] request cost: ... = N MB`, the
 `[admission] per-session draft-state charge: ... +N MB` before it when the route has one, and the
-transient reserve of `[admit-cal] boot calibration done: ... transient floor N MB` (MiB there).
+transient reserve of `[admit-cal] boot calibration done: ... transient floor N MiB` (labelled
+MB before memra#1271, MiB in both).
 Prints the target, or with --explain the terms."""
 import re
 import sys
@@ -12,7 +13,7 @@ log = open(sys.argv[1], errors="replace").read()
 margin = int(sys.argv[2])
 cost = re.findall(r"\[admission\] request cost: .*? = (\d+)MB", log)
 draft = re.findall(r"\[admission\] per-session draft-state charge: .*?\+(\d+)MB", log)
-floor = re.findall(r"\[admit-cal\] boot calibration done: .*?transient floor (\d+)MB", log)
+floor = re.findall(r"\[admit-cal\] boot calibration done: .*?transient floor (\d+)Mi?B", log)
 if not cost or not floor:
     sys.exit("charge.py: no request cost or transient floor in the log")
 cost_mb, draft_mb = int(cost[-1]), int(draft[-1]) if draft else 0

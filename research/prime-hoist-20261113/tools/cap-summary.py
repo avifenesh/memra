@@ -16,7 +16,7 @@ from pathlib import Path
 B = Path.home() / ".cache/memra-1258"
 RE_ROW = re.compile(r"^i (\d+): status (\d+) prompt (\d+) path (\S+) need (\d+) growth (\d+).*calls (\[.*\]) trims (\d+) oom (\d+)")
 RE_SW = re.compile(r"^rep (\d+) m(\d+): status (\d+) path (\S+) seen (-?\d+|None) eager \S+ oom (\d+)")
-RE_REST = re.compile(r"rest-mapped (\d+)MB")
+RE_REST = re.compile(r"rest-mapped (\d+)Mi?B")  # MiB, labelled MiB since memra#1271
 RE_PASS = re.compile(r"\[diag1255\] gate-pass id=\S+ prompt=(\d+) path=(\w+) cost=(\d+)MB draft=(\d+)MB reserve=(\d+)MB required=(\d+)MB")
 
 
