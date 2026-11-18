@@ -230,6 +230,22 @@ class SupportRecordDataInputs(unittest.TestCase):
         self.assertEqual(plan['mode'], 'scoped')
         self.assertEqual([c['id'] for c in plan['cpu_contracts']], ['support-records'])
 
+    def test_an_asked_ancestor_that_is_a_symlink_is_reported(self):
+        # The other half of the exact listing: the ancestors are asked in calls of their own, one
+        # depth at a time. A listing that asked only the leaves would lose a symlinked ancestor,
+        # which is the direction that matters (a missed symlink, not a false refusal).
+        shutil.rmtree(self.repo / 'research/support-fixture')
+        self.fixture.put('research/other-fixture/gates.txt', 'Config=passed\n')
+        (self.repo / 'research/support-fixture').symlink_to('other-fixture', target_is_directory=True)
+        self.fixture.commit()
+        asked = {GATE, 'research/support-fixture', 'research'}
+        for tree in (vp.Tree(self.repo, 'HEAD'), vp.LocalTree(self.repo)):
+            with self.subTest(tree=type(tree).__name__):
+                self.assertEqual(tree.symlinks_exact(asked),
+                                 {'research/support-fixture': 'other-fixture'})
+                with self.assertRaisesRegex(data.InputContractError, 'contains a symlink'):
+                    data.resolve(tree)
+
     def test_derived_required_missing_after_deletion_still_selects_contract(self):
         # Keep the copied parent present so this isolates required-file deletion.
         self.fixture.put('research/support-fixture/retained.txt', 'unrelated receipt content\n')
