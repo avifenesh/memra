@@ -1764,6 +1764,128 @@ class VerifyAllowlistTests(unittest.TestCase):
         self.assertEqual(rc, 0, output)
         self.assertIn("1 allowlist entries", output)
 
+    def historical(self, path: str, data: bytes, rules: list[str]) -> dict:
+        """A `refs_only` row for `data` at `path`: a version the checkout no longer carries."""
+        return {
+            "path": path,
+            "sha256": boundary.hashlib.sha256(data).hexdigest(),
+            "category": "secret_pattern",
+            "rules": rules,
+            "reason": "a reviewed historical version",
+            "scope": "refs_only",
+        }
+
+    def run_check(self, refs: list[str] | None = None) -> tuple[int, str]:
+        output = io.StringIO()
+        with (
+            mock.patch.object(boundary, "ROOT", self.root),
+            mock.patch.object(boundary, "ALLOWLIST_PATH", self.allowlist_path),
+            contextlib.redirect_stdout(output),
+        ):
+            rc = boundary.cmd_check(self.policy, refs=refs)
+        return rc, output.getvalue()
+
+    def tag_old_version(self) -> bytes:
+        """`deploy/old.txt` trips alpha at tag v1 and is clean in the checkout."""
+        old = b"alpha needle\n"
+        self.commit("deploy/old.txt", old)
+        self.git("tag", "v1")
+        self.commit("deploy/old.txt", b"clean\n")
+        return old
+
+    def test_a_refs_only_entry_exempts_the_ref_scan_and_never_the_tree(self) -> None:
+        """A reviewed historical version is grandfathered at the refs that carry it. The checkout
+        scan neither calls it stale nor lets it cover the same bytes coming back into the tree."""
+        old = self.tag_old_version()
+        with mock.patch.object(boundary, "ROOT", self.root):
+            tags = boundary.published_refs("refs/tags/**")
+        self.write_allowlist()
+        self.assertEqual(self.run_check(tags)[0], 1)
+        self.write_allowlist(self.historical("deploy/old.txt", old, ["alpha"]))
+        rc, output = self.run_check(tags)
+        self.assertEqual(rc, 0, output)
+        self.assertIn("(1 grandfathered, 0 new)", output)
+        rc, output = self.run_check()
+        self.assertEqual(rc, 0, output)
+        self.commit("deploy/old.txt", old)
+        rc, output = self.run_check()
+        self.assertEqual(rc, 1, output)
+        self.assertIn("deploy/old.txt", output)
+
+    def test_verify_holds_a_refs_only_entry_to_a_published_ref(self) -> None:
+        old = self.tag_old_version()
+        self.write_allowlist(self.historical("deploy/old.txt", old, ["alpha"]))
+        rc, output = self.run_verify()
+        self.assertEqual(rc, 0, output)
+        self.assertIn("1 refs_only entries all pin versions at published refs", output)
+        never = b"alpha needle, never pushed\n"
+        self.write_allowlist(self.historical("deploy/old.txt", never, ["alpha"]))
+        rc, output = self.run_verify()
+        self.assertEqual(rc, 1, output)
+        self.assertIn("at no published ref", output)
+        self.write_allowlist(self.historical("deploy/old.txt", old, ["alpha", "beta"]))
+        rc, output = self.run_verify()
+        self.assertEqual(rc, 1, output)
+        self.assertIn("rules no longer match: beta", output)
+
+    def test_a_shallow_clone_leaves_refs_only_entries_to_the_full_clone(self) -> None:
+        """ci.yml's boundary job is shallow: it says it did not judge them; --prune keeps them."""
+        self.tag_old_version()
+        self.commit("deploy/pinned.txt", b"alpha needle\n")
+        stale = self.pin("deploy/pinned.txt", ["alpha"])
+        self.commit("deploy/pinned.txt", b"clean\n")
+        kept = self.historical("deploy/old.txt", b"alpha needle, never pushed\n", ["alpha"])
+        self.write_allowlist(stale, kept)
+        with mock.patch.object(boundary, "is_shallow", lambda: True):
+            rc, output = self.run_verify(prune=True)
+        self.assertEqual(rc, 0, output)
+        self.assertIn("1 refs_only entries not checked here", output)
+        with mock.patch.object(boundary, "ROOT", self.root):
+            self.assertEqual(
+                list(boundary.load_allowlist(self.allowlist_path)),
+                [("deploy/old.txt", kept["sha256"])],
+            )
+
+    def test_a_refs_only_scope_is_the_only_scope(self) -> None:
+        entry = {**self.historical("deploy/old.txt", b"x", ["alpha"]), "scope": "refs"}
+        self.write_allowlist(entry)
+        with self.assertRaises(SystemExit):
+            boundary.load_allowlist(self.allowlist_path)
+
+    def test_a_refs_only_private_path_entry_carries_no_expiry(self) -> None:
+        """A version on immutable refs parks nothing, so the severity-4 date demand skips it."""
+        policy = boundary.Policy(
+            secret_patterns={}, secret_sources={}, secret_union=boundary.re.compile("(?!)"),
+            secret_groups={}, private_paths={"priv": "private/**"}, bypass_paths=[],
+            severity={"priv": 4},
+        )
+        entry = {**self.historical("private/a.md", b"x", ["priv"]), "category": "private_path"}
+        self.assertTrue(boundary.needs_expiry({**entry, "scope": None}, policy))
+        self.assertFalse(boundary.needs_expiry(entry, policy))
+
+    def test_seed_keeps_refs_only_entries(self) -> None:
+        """A reseed rebuilds the checkout's entries; it cannot regenerate a historical one."""
+        old = self.tag_old_version()
+        self.commit("deploy/live.txt", b"beta needle\n")
+        kept = self.historical("deploy/old.txt", old, ["alpha"])
+        self.write_allowlist(kept)
+        with (
+            mock.patch.object(boundary, "ROOT", self.root),
+            mock.patch.object(boundary, "ALLOWLIST_PATH", self.allowlist_path),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(boundary.cmd_seed(self.policy, force=True), 0)
+            entries = boundary.load_allowlist(self.allowlist_path)
+        self.assertEqual(entries[("deploy/old.txt", kept["sha256"])], kept)
+        self.assertEqual(sorted(path for path, _ in entries), ["deploy/live.txt", "deploy/old.txt"])
+
+    def test_boundary_refs_runs_verify_allowlist(self) -> None:
+        """The full clone that holds every published ref is where refs_only entries are held."""
+        workflow = (Path(__file__).resolve().parent.parent / ".github/workflows/boundary-refs.yml")
+        lines = [ln.split("#", 1)[0] for ln in workflow.read_text().splitlines()]
+        self.assertIn("run: python3 tools/check-public-boundary.py verify-allowlist",
+                      [ln.strip() for ln in lines])
+
     def test_empty_allowlist_never_requests_a_whole_tree_grep(self) -> None:
         self.commit("deploy/new.txt", b"alpha needle\n")
         self.write_allowlist()

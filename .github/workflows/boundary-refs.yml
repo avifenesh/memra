@@ -144,6 +144,13 @@ jobs:
             exit 1
           fi
 
+      - name: Allowlist drift, refs_only entries included
+        # A `refs_only` allowlist entry pins a reviewed historical version that exists only on
+        # published refs. ci.yml's boundary job runs on a shallow clone with no published history,
+        # so this job, with every ref fetched above, is where such an entry is held to still being
+        # at some published ref and still tripping the rules it names.
+        run: python3 tools/check-public-boundary.py verify-allowlist
+
       - name: Public-boundary ref scan
         # Through env, not interpolated into the script: a dispatch input spliced into a run
         # block is a shell-injection seam, and on a schedule run the input is empty anyway.

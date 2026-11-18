@@ -96,6 +96,15 @@ UNREMEDIATED_KEY = "unremediated"
 # of re-pinning a hash. (The exception-lists-need-expiry lesson, applied to this gate.)
 EXPIRY_KEY = "expires"
 LANE_KEY = "lane"
+# An entry for a reviewed HISTORICAL version: bytes that exist only on published refs (old lane
+# branches, immutable release tags), never in the checkout. Every edit to an allowlisted private
+# file leaves its old version on the tags that carry it, and the ref scan (`check --refs`) would
+# report it forever, since tags are not rewritten. Such an entry exempts that version in the ref
+# scan only: the checkout and commit scans ignore it, so the same bytes coming back into the tree
+# are a new finding, and the checkout scan never calls it stale. `verify-allowlist` checks that
+# the version still exists at some published ref and still trips the rules the entry names.
+SCOPE_KEY = "scope"
+REFS_ONLY = "refs_only"
 EXPIRY_SEVERITY = 4
 # A rule the policy does not rank cannot happen (load_policy refuses), but an ad-hoc Policy
 # built in a test has no ranks at all, and an unranked rule must not sort BELOW a ranked one.
@@ -291,11 +300,23 @@ def load_allowlist(path: Path) -> Dict[Tuple[str, str], dict]:
         lane = entry.get(LANE_KEY)
         if lane is not None and (not isinstance(lane, str) or not lane):
             raise SystemExit(f"{path}:{line_no}: {LANE_KEY} must be a non-empty string")
+        scope = entry.get(SCOPE_KEY)
+        if scope is not None and scope != REFS_ONLY:
+            raise SystemExit(f"{path}:{line_no}: {SCOPE_KEY} must be {REFS_ONLY!r} when present")
         key = (entry["path"], entry["sha256"])
         if key in entries:
             raise SystemExit(f"{path}:{line_no}: duplicate allowlist key: {key[0]}")
         entries[key] = entry
     return entries
+
+
+def is_refs_only(entry: dict) -> bool:
+    return entry.get(SCOPE_KEY) == REFS_ONLY
+
+
+def checkout_entries(allowlist: Dict[Tuple[str, str], dict]) -> Dict[Tuple[str, str], dict]:
+    """The entries the checkout and commit scans honour: every one but the `refs_only` ones."""
+    return {key: entry for key, entry in allowlist.items() if not is_refs_only(entry)}
 
 
 def needs_expiry(entry: dict, policy: Policy) -> bool:
@@ -308,7 +329,12 @@ def needs_expiry(entry: dict, policy: Policy) -> bool:
     every rule has one; a rule absent from the table only exists in hand-built test
     policies, and an implicit DEFAULT_SEVERITY here would put the expiry demand on
     fixtures that never declared a severity at all.
+
+    A `refs_only` entry parks nothing: its bytes are a version on immutable refs, with no lane
+    that could extract them, so it carries no date.
     """
+    if is_refs_only(entry):
+        return False
     return any(
         rule in policy.private_paths
         and policy.severity.get(rule, 0) >= EXPIRY_SEVERITY
@@ -1432,12 +1458,15 @@ def cmd_check(
         violations = evaluate(policy)
     else:
         violations = evaluate_commits(policy, commits)
+    # A `refs_only` entry exempts a historical version in the ref scan alone: in the checkout or
+    # a pushed commit the same bytes are back in the tree, which is a new finding.
+    exempting = allowlist if refs is not None else checkout_entries(allowlist)
     unmatched: List[Violation] = []
     grandfathered = 0
     partial = 0
     expired = 0
     for v in violations:
-        listed = allowlist.get((v.path, v.sha256))
+        listed = exempting.get((v.path, v.sha256))
         if listed is not None and entry_expired(listed, today):
             # The exemption died on its date. Resurface the finding with the parking
             # record attached, so the reader extends the date consciously (with the
@@ -1449,7 +1478,7 @@ def cmd_check(
             )
             unmatched.append(v)
             continue
-        exempt = exempt_rules(allowlist, v)
+        exempt = exempt_rules(exempting, v)
         if exempt is not None:
             # Rule-scoped: the entry covers the rules it names and nothing else. A blob whose
             # entry covers some of its rules is still a violation for the rest — that is the
@@ -1540,7 +1569,7 @@ def cmd_check(
         return 0
     # Stale entries must fail closed. Otherwise a removed private file can be restored later
     # with the same bytes and silently regain its historical exemption.
-    stale = stale_entries(allowlist, violations)
+    stale = stale_entries(checkout_entries(allowlist), violations)
     if stale:
         print(f"public-boundary: {len(stale)} stale allowlist entries (prune before merge):")
         for path, digest, why in stale:
@@ -1599,6 +1628,8 @@ def cmd_seed(policy: Policy, force: bool) -> int:
         )
         return 1
     violations = evaluate(policy)
+    # Reviewed historical versions are not in the checkout, so a reseed cannot regenerate them.
+    kept = [e for e in load_allowlist(ALLOWLIST_PATH).values() if is_refs_only(e)]
     ALLOWLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "# public-boundary allowlist — pinned SHA-256 grandfather list.",
@@ -1621,25 +1652,81 @@ def cmd_seed(policy: Policy, force: bool) -> int:
             "reason": v.detail,
         }
         lines.append(json.dumps(entry, sort_keys=True))
+    lines.extend(json.dumps(entry, sort_keys=True) for entry in kept)
     ALLOWLIST_PATH.write_text("\n".join(lines) + "\n")
     print(
         f"seed: wrote {len(violations)} entries to {ALLOWLIST_PATH.relative_to(ROOT)}"
+        + (f", and kept {len(kept)} {REFS_ONLY} entries" if kept else "")
     )
     return 0
+
+
+def is_shallow() -> bool:
+    out = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    return out == "true"
+
+
+def historical_violations(policy: Policy, entries: Dict[Tuple[str, str], dict]) -> List[Violation]:
+    """The violations of the `refs_only` entries' versions, as found at the published refs: each
+    entry's path is read at every ref (one `git cat-file` pass), and a version is judged when its
+    bytes are the pinned ones."""
+    refs = published_refs(DEFAULT_REF_GLOB)
+    paths = sorted({path for path, _ in entries})
+    oids = oids_at([f"{ref}:{path}" for ref in refs for path in paths])
+    versions = sorted({(spec.split(":", 1)[1], oid) for spec, oid in oids.items()})
+    loaded = blobs_at(sorted({oid for _, oid in versions}))
+    found: List[Violation] = []
+    for path, oid in versions:
+        data = loaded.get(oid)
+        if data is None or (path, hashlib.sha256(data).hexdigest()) not in entries:
+            continue
+        violation = evaluate_content(policy, path, data)
+        if violation is not None:
+            found.append(violation)
+    return found
 
 
 def cmd_verify(policy: Policy, prune: bool) -> int:
     allowlist = load_allowlist(ALLOWLIST_PATH)
     enforce_expiry_metadata(allowlist, policy)
+    checkout = checkout_entries(allowlist)
+    historical = {key: entry for key, entry in allowlist.items() if key not in checkout}
     # Drift concerns declared exemptions only. The separate check command still scans
     # every tracked blob for new violations, including paths with no exemption.
-    live_violations = evaluate(policy, paths={path for path, _ in allowlist})
-    drifted = stale_entries(allowlist, live_violations)
+    live_violations = evaluate(policy, paths={path for path, _ in checkout})
+    drifted = stale_entries(checkout, live_violations)
+    unchecked = 0
+    if historical and is_shallow():
+        # A shallow clone (ci.yml's boundary job) holds no published history to look in.
+        # boundary-refs.yml runs this mode on a full clone with every published ref.
+        unchecked = len(historical)
+        print(
+            f"verify: {unchecked} {REFS_ONLY} entries not checked here: a shallow clone has no "
+            f"published history (boundary-refs.yml checks them)."
+        )
+    elif historical:
+        found = historical_violations(policy, historical)
+        live_violations += found
+        drifted += [
+            (path, digest, why.replace("no live violation", "at no published ref, or no violation"))
+            for path, digest, why in stale_entries(historical, found)
+        ]
     if not drifted:
         print(
-            f"verify: {len(allowlist)} allowlist entries all pin live tracked files "
+            f"verify: {len(checkout)} allowlist entries all pin live tracked files "
             f"for the rules they name."
         )
+        if historical and not unchecked:
+            print(
+                f"verify: {len(historical)} {REFS_ONLY} entries all pin versions at published "
+                f"refs for the rules they name."
+            )
         return 0
     print(f"verify: {len(drifted)} allowlist entries no longer match tracked files:")
     for path, digest, why in drifted:
@@ -1656,6 +1743,9 @@ def cmd_verify(policy: Policy, prune: bool) -> int:
         dropped = 0
         narrowed = 0
         for key, entry in allowlist.items():
+            if unchecked and is_refs_only(entry):
+                pruned[key] = entry  # not judged here, so not pruned here
+                continue
             live = live_rules.get(key, set())
             keep = [rule for rule in entry.get("rules") or () if rule in live]
             if not keep:
