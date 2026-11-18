@@ -1,0 +1,6 @@
+orn-trace orn 41,1809 MEMRA_MOE_WEIGHT_TRACE=/home/avifenesh/.cache/memra-1203/runs/orn-trace-moe.txt
+orn-route orn 41,306,727,1809
+q38-nofa q38 1197,1198,1199 RB_PREFILL_ENV=MEMRA_NOFA=1
+q38-nofa-fast0 q38 1198 RB_PREFILL_ENV=MEMRA_NOFA=1,MEMRA_FAST=0
+orn-nofa orn 41,306,727,1809 RB_PREFILL_ENV=MEMRA_NOFA=1
+orn-nofa-fast0 orn 41,306,727,1809 RB_PREFILL_ENV=MEMRA_NOFA=1,MEMRA_FAST=0

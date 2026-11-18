@@ -1,0 +1,161 @@
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 120.95GB (expert budget 117.34GB) -> RESIDENT
+row-bisect: T=2048 rows=[41, 306, 1809] sm_count=48 model=/data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+env: MEMRA_GDN_MMA=<unset> MEMRA_GDN_CHUNKED=0 MEMRA_FAST=<unset> MEMRA_FA_F16PV=<unset> MEMRA_MMQ_W4A8=<unset> MEMRA_GDN_K45=<unset>
+[moe-sk-form] dev=0 qt=7 sms=48 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=142 max_m=14
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 49152 ml_len 16 -> 192 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+
+=== row 41 (next token 15 = "0")
+  prefill  top1 15 "0" 17.4118  top2 18 "3" 15.0349  margin 2.3769  logit[next]=17.4118
+  decode   top1 15 "0" 16.4298  top2 332 "**" 13.5304  margin 2.8994  logit[next]=16.4298
+  prime    top1 15 "0" 16.4580  top2 18 "3" 12.9351  margin 3.5229  logit[next]=16.4580
+  id 15 "0": prefill=17.4118 decode=16.4298 prime=16.4580
+  id 18 "3": prefill=15.0349 decode=11.6326 prime=12.9351
+  id 332 "**": prefill=13.4381 decode=13.5304 prime=11.5747
+  logits prefill vs decode: rel 1.010e-1 maxabs 3.5862
+  logits prime vs decode: rel 2.659e-1 maxabs 9.0489; prefill vs prime: rel 2.171e-1 maxabs 8.3147
+  layer kind  mix_rel     x1_rel      out_rel     out_maxabs  router(k) prefill-vs-decode
+      0 gdn   1.471e-2   1.030e-2   1.091e-2      0.0033   same gap_p 0.0159 gap_d 0.0220 max|dlogit| 0.0927
+      1 gdn   2.978e-2   1.237e-2   3.468e-2      0.0029   DIFF gap_p 0.0002 gap_d 0.0065 max|dlogit| 0.0540 only_prefill [87] only_decode [134] [e87 p=-4.1063 d=-4.1232] [e134 p=-4.1136 d=-4.1167] kth_p -4.1063 k1th_p -4.1064
+      2 gdn   5.363e-2   3.099e-2   3.113e-2      0.0040   DIFF gap_p 0.0147 gap_d 0.0146 max|dlogit| 0.1314 only_prefill [171] only_decode [0] [e171 p=-4.2534 d=-4.1993] [e0 p=-4.2681 d=-4.1847] kth_p -4.2534 k1th_p -4.2681
+      3 attn  2.990e-2   3.319e-2   5.494e-2      0.0077   DIFF gap_p 0.0092 gap_d 0.0077 max|dlogit| 0.1332 only_prefill [54] only_decode [94] [e54 p=-4.1777 d=-4.2281] [e94 p=-4.1893 d=-4.2041] kth_p -4.1801 k1th_p -4.1893
+      4 gdn   1.008e-1   5.105e-2   5.374e-2      0.0064   same gap_p 0.1102 gap_d 0.0562 max|dlogit| 0.1275
+      5 gdn   8.632e-2   5.202e-2   5.370e-2      0.0062   same gap_p 0.0285 gap_d 0.0035 max|dlogit| 0.1394
+      6 gdn   1.005e-1   5.206e-2   5.198e-2      0.0061   same gap_p 0.0328 gap_d 0.0588 max|dlogit| 0.1391
+      7 attn  6.742e-2   5.861e-2   6.068e-2      0.0161   same gap_p 0.0357 gap_d 0.0927 max|dlogit| 0.2274
+      8 gdn   6.669e-2   6.462e-2   9.075e-2      0.0131   same gap_p 0.2176 gap_d 0.1822 max|dlogit| 0.2450
+      9 gdn   1.329e-1   9.038e-2   8.703e-2      0.0157   same gap_p 0.0897 gap_d 0.0149 max|dlogit| 0.1990
+     10 gdn   1.260e-1   8.132e-2   8.685e-2      0.0150   DIFF gap_p 0.0139 gap_d 0.0166 max|dlogit| 0.1574 only_prefill [201] only_decode [67] [e201 p=-3.5761 d=-3.5771] [e67 p=-3.5900 d=-3.5605] kth_p -3.5761 k1th_p -3.5900
+     11 attn  9.011e-2   9.511e-2   1.026e-1      0.0192   DIFF gap_p 0.0182 gap_d 0.0839 max|dlogit| 0.3055 only_prefill [242] only_decode [48] [e242 p=-4.0551 d=-4.1693] [e48 p=-4.0733 d=-4.0787] kth_p -4.0551 k1th_p -4.0733
+     12 gdn   1.413e-1   1.033e-1   1.210e-1      0.0259   DIFF gap_p 0.1292 gap_d 0.0303 max|dlogit| 0.2241 only_prefill [201] only_decode [130] [e201 p=-3.8787 d=-3.9006] [e130 p=-4.0079 d=-3.8618] kth_p -3.8787 k1th_p -4.0079
+     13 gdn   1.891e-1   1.222e-1   1.171e-1      0.0204   same gap_p 0.1134 gap_d 0.1395 max|dlogit| 0.2993
+     14 gdn   1.520e-1   1.156e-1   1.124e-1      0.0234   DIFF gap_p 0.0848 gap_d 0.0024 max|dlogit| 0.3382 only_prefill [67] only_decode [143] [e67 p=-3.7493 d=-3.8895] [e143 p=-3.9191 d=-3.8382] kth_p -3.7493 k1th_p -3.8340
+     15 attn  1.443e-1   1.288e-1   1.240e-1      0.0223   same gap_p 0.1785 gap_d 0.1870 max|dlogit| 0.2588
+     16 gdn   2.039e-1   1.176e-1   1.235e-1      0.0269   same gap_p 0.0484 gap_d 0.0356 max|dlogit| 0.2488
+     17 gdn   2.127e-1   1.136e-1   1.360e-1      0.0575   DIFF gap_p 0.0432 gap_d 0.0419 max|dlogit| 0.1903 only_prefill [117] only_decode [43] [e117 p=-4.2399 d=-4.2082] [e43 p=-4.2831 d=-4.1663] kth_p -4.2399 k1th_p -4.2831
+     18 gdn   1.749e-1   1.135e-1   1.194e-1      0.0570   DIFF gap_p 0.0568 gap_d 0.0695 max|dlogit| 0.2070 only_prefill [139] only_decode [212] [e139 p=-4.2894 d=-4.3464] [e212 p=-4.3462 d=-4.2769] kth_p -4.2894 k1th_p -4.3462
+     19 attn  2.079e-1   1.386e-1   1.548e-1      0.1095   same gap_p 0.0073 gap_d 0.0780 max|dlogit| 0.2678
+     20 gdn   1.863e-1   1.540e-1   1.413e-1      0.0786   same gap_p 0.2412 gap_d 0.0213 max|dlogit| 0.4632
+     21 gdn   1.728e-1   1.316e-1   1.416e-1      0.0618   DIFF gap_p 0.0414 gap_d 0.2314 max|dlogit| 0.3991 only_prefill [160] only_decode [233] [e160 p=-3.9011 d=-4.0639] [e233 p=-3.9424 d=-3.8325] kth_p -3.9011 k1th_p -3.9424
+     22 gdn   1.932e-1   1.334e-1   1.199e-1      0.0461   same gap_p 0.1055 gap_d 0.2159 max|dlogit| 0.3467
+     23 attn  1.568e-1   1.319e-1   1.481e-1      0.0442   DIFF gap_p 0.0489 gap_d 0.0047 max|dlogit| 0.2964 only_prefill [248] only_decode [197] [e248 p=-4.3468 d=-4.4162] [e197 p=-4.4464 d=-4.2801] kth_p -4.3975 k1th_p -4.4464
+     24 gdn   2.566e-1   1.597e-1   1.691e-1      0.0409   same gap_p 0.0798 gap_d 0.0407 max|dlogit| 0.5545
+     25 gdn   3.332e-1   1.654e-1   1.802e-1      0.0439   DIFF gap_p 0.0796 gap_d 0.0604 max|dlogit| 0.3704 only_prefill [121] only_decode [126] [e121 p=-4.0924 d=-4.3554] [e126 p=-4.3742 d=-4.2481] kth_p -4.2282 k1th_p -4.3078
+     26 gdn   3.185e-1   1.700e-1   1.640e-1      0.0389   same gap_p 0.0494 gap_d 0.0378 max|dlogit| 0.3968
+     27 attn  2.182e-1   1.683e-1   1.728e-1      0.0860   same gap_p 0.0144 gap_d 0.2065 max|dlogit| 0.3782
+     28 gdn   2.935e-1   1.681e-1   1.657e-1      0.0791   same gap_p 0.1938 gap_d 0.3759 max|dlogit| 0.3312
+     29 gdn   2.693e-1   1.602e-1   1.711e-1      0.1213   DIFF gap_p 0.1110 gap_d 0.0245 max|dlogit| 0.2839 only_prefill [9] only_decode [121] [e9 p=-3.8899 d=-4.0583] [e121 p=-4.0292 d=-4.0338] kth_p -3.9183 k1th_p -4.0292
+     30 gdn   3.054e-1   1.642e-1   1.597e-1      0.0473   same gap_p 0.4125 gap_d 0.1644 max|dlogit| 0.2639
+     31 attn  1.711e-1   1.735e-1   1.835e-1      0.1335   DIFF gap_p 0.0234 gap_d 0.0471 max|dlogit| 0.2824 only_prefill [239] only_decode [87] [e239 p=-3.9900 d=-4.0687] [e87 p=-4.0408 d=-3.9117] kth_p -3.9900 k1th_p -4.0134
+     32 gdn   2.448e-1   1.913e-1   1.977e-1      0.1422   DIFF gap_p 0.0131 gap_d 0.0066 max|dlogit| 0.2176 only_prefill [144] only_decode [143] [e144 p=-4.3028 d=-4.3373] [e143 p=-4.3159 d=-4.2844] kth_p -4.3028 k1th_p -4.3159
+     33 gdn   2.856e-1   1.812e-1   1.730e-1      0.1300   same gap_p 0.0125 gap_d 0.0153 max|dlogit| 0.3928
+     34 gdn   2.640e-1   1.705e-1   1.587e-1      0.2989   same gap_p 0.2403 gap_d 0.2275 max|dlogit| 0.3898
+     35 attn  1.984e-1   1.843e-1   2.065e-1      0.0869   DIFF gap_p 0.0225 gap_d 0.0235 max|dlogit| 0.2602 only_prefill [1] only_decode [52] [e1 p=-4.2855 d=-4.3262] [e52 p=-4.3802 d=-4.3028] kth_p -4.2855 k1th_p -4.3081
+     36 gdn   1.753e-1   2.220e-1   2.538e-1      0.1331   DIFF gap_p 0.1511 gap_d 0.0731 max|dlogit| 0.3036 only_prefill [250] only_decode [138] [e250 p=-3.8768 d=-4.0958] [e138 p=-4.1273 d=-4.0150] kth_p -3.9763 k1th_p -4.1273
+     37 gdn   1.871e-1   2.608e-1   2.909e-1      0.1907   DIFF gap_p 0.0903 gap_d 0.0614 max|dlogit| 0.3300 only_prefill [248] only_decode [103] [e248 p=-4.1909 d=-4.2992] [e103 p=-4.3502 d=-4.2377] kth_p -4.1909 k1th_p -4.2812
+     38 gdn   2.623e-1   2.793e-1   2.357e-1      0.2006   DIFF gap_p 0.0004 gap_d 0.0409 max|dlogit| 0.2710 only_prefill [209] only_decode [102] [e209 p=-4.3517 d=-4.4186] [e102 p=-4.3521 d=-4.2701] kth_p -4.3517 k1th_p -4.3521
+     39 attn  1.201e-1   3.066e-1   3.141e-1      0.7375   same gap_p 0.0993 gap_d 0.1692 max|dlogit| 0.3576
+
+=== row 306 (next token 22 = "7")
+  prefill  top1 22 "7" 15.6869  top2 23 "8" 11.1621  margin 4.5248  logit[next]=15.6869
+  decode   top1 22 "7" 16.0933  top2 23 "8" 11.6082  margin 4.4851  logit[next]=16.0933
+  prime    top1 22 "7" 15.4300  top2 20 "5" 10.4251  margin 5.0049  logit[next]=15.4300
+  id 22 "7": prefill=15.6869 decode=16.0933 prime=15.4300
+  id 23 "8": prefill=11.1621 decode=11.6082 prime=10.2802
+  logits prefill vs decode: rel 5.150e-2 maxabs 1.6278
+  logits prime vs decode: rel 4.672e-2 maxabs 1.9305; prefill vs prime: rel 4.461e-2 maxabs 1.5793
+  layer kind  mix_rel     x1_rel      out_rel     out_maxabs  router(k) prefill-vs-decode
+      0 gdn   1.312e-2   9.262e-3   9.907e-3      0.0036   same gap_p 0.0561 gap_d 0.0197 max|dlogit| 0.1261
+      1 gdn   2.918e-2   1.054e-2   2.279e-2      0.0032   DIFF gap_p 0.0001 gap_d 0.0102 max|dlogit| 0.0426 only_prefill [84] only_decode [126] [e84 p=-4.5659 d=-4.5685] [e126 p=-4.5714 d=-4.5583] kth_p -4.5712 k1th_p -4.5714
+      2 gdn   4.435e-2   1.964e-2   2.427e-2      0.0041   DIFF gap_p 0.0186 gap_d 0.0496 max|dlogit| 0.0848 only_prefill [65] only_decode [2] [e65 p=-4.3399 d=-4.3263] [e2 p=-4.3585 d=-4.2767] kth_p -4.3399 k1th_p -4.3585
+      3 attn  5.218e-2   2.418e-2   2.545e-2      0.0026   same gap_p 0.0018 gap_d 0.0069 max|dlogit| 0.0715
+      4 gdn   8.899e-2   2.401e-2   3.773e-2      0.0050   DIFF gap_p 0.0017 gap_d 0.0211 max|dlogit| 0.0637 only_prefill [84] only_decode [22] [e84 p=-4.4049 d=-4.4185] [e22 p=-4.4066 d=-4.3975] kth_p -4.4049 k1th_p -4.4066
+      5 gdn   1.085e-1   3.703e-2   6.513e-2      0.0110   DIFF gap_p 0.0063 gap_d 0.0160 max|dlogit| 0.1187 only_prefill [79, 98] only_decode [167, 213] [e79 p=-4.4117 d=-4.4607] [e98 p=-4.3774 d=-4.3769] [e167 p=-4.4309 d=-4.3609] [e213 p=-4.4180 d=-4.3464] kth_p -4.4117 k1th_p -4.4180
+      6 gdn   1.397e-1   5.327e-2   4.936e-2      0.0117   same gap_p 0.0625 gap_d 0.0079 max|dlogit| 0.2273
+      7 attn  1.029e-1   6.370e-2   6.884e-2      0.0149   same gap_p 0.0753 gap_d 0.1242 max|dlogit| 0.2193
+      8 gdn   1.076e-1   7.365e-2   7.206e-2      0.0173   same gap_p 0.3192 gap_d 0.1148 max|dlogit| 0.1655
+      9 gdn   1.039e-1   6.356e-2   6.571e-2      0.0173   same gap_p 0.0158 gap_d 0.0412 max|dlogit| 0.1605
+     10 gdn   9.339e-2   5.909e-2   5.877e-2      0.0420   same gap_p 0.0380 gap_d 0.0023 max|dlogit| 0.1709
+     11 attn  1.340e-1   7.142e-2   6.071e-2      0.0102   DIFF gap_p 0.0221 gap_d 0.0521 max|dlogit| 0.1760 only_prefill [204] only_decode [7] [e204 p=-4.0563 d=-4.1405] [e7 p=-4.0933 d=-4.0884] kth_p -4.0712 k1th_p -4.0933
+     12 gdn   9.965e-2   5.577e-2   6.042e-2      0.0108   same gap_p 0.2481 gap_d 0.3429 max|dlogit| 0.1704
+     13 gdn   1.003e-1   6.066e-2   6.345e-2      0.0137   same gap_p 0.1176 gap_d 0.0707 max|dlogit| 0.1345
+     14 gdn   1.070e-1   6.669e-2   5.452e-2      0.0136   same gap_p 0.0163 gap_d 0.0661 max|dlogit| 0.1806
+     15 attn  7.370e-2   7.550e-2   7.313e-2      0.0376   same gap_p 0.1723 gap_d 0.0133 max|dlogit| 0.1950
+     16 gdn   1.290e-1   7.692e-2   7.291e-2      0.0154   same gap_p 0.0754 gap_d 0.0210 max|dlogit| 0.1562
+     17 gdn   8.635e-2   8.377e-2   8.213e-2      0.0197   same gap_p 0.2495 gap_d 0.3345 max|dlogit| 0.1951
+     18 gdn   1.241e-1   8.368e-2   9.041e-2      0.0157   DIFF gap_p 0.0120 gap_d 0.0102 max|dlogit| 0.1903 only_prefill [2] only_decode [105] [e2 p=-4.0120 d=-4.0676] [e105 p=-4.0240 d=-4.0574] kth_p -4.0120 k1th_p -4.0240
+     19 attn  1.318e-1   9.853e-2   1.068e-1      0.0199   DIFF gap_p 0.0475 gap_d 0.0036 max|dlogit| 0.2227 only_prefill [79] only_decode [35] [e79 p=-3.6742 d=-3.8273] [e35 p=-3.7765 d=-3.8237] kth_p -3.7290 k1th_p -3.7765
+     20 gdn   1.211e-1   1.184e-1   1.157e-1      0.0250   same gap_p 0.0121 gap_d 0.0244 max|dlogit| 0.2389
+     21 gdn   1.819e-1   1.183e-1   1.296e-1      0.0511   DIFF gap_p 0.0261 gap_d 0.0132 max|dlogit| 0.2939 only_prefill [164] only_decode [117] [e164 p=-4.1848 d=-4.2347] [e117 p=-4.2109 d=-4.2215] kth_p -4.1848 k1th_p -4.2109
+     22 gdn   1.906e-1   1.306e-1   1.264e-1      0.0243   same gap_p 0.1602 gap_d 0.3091 max|dlogit| 0.2170
+     23 attn  1.869e-1   1.348e-1   1.303e-1      0.0253   same gap_p 0.3287 gap_d 0.1191 max|dlogit| 0.3613
+     24 gdn   2.258e-1   1.286e-1   1.468e-1      0.0272   DIFF gap_p 0.0253 gap_d 0.0555 max|dlogit| 0.4229 only_prefill [151] only_decode [52] [e151 p=-4.0333 d=-4.0282] [e52 p=-4.0586 d=-3.9727] kth_p -4.0333 k1th_p -4.0586
+     25 gdn   1.970e-1   1.440e-1   1.425e-1      0.0286   same gap_p 0.3065 gap_d 0.1214 max|dlogit| 0.3854
+     26 gdn   2.534e-1   1.428e-1   1.407e-1      0.0293   same gap_p 0.0874 gap_d 0.0792 max|dlogit| 0.3223
+     27 attn  1.313e-1   1.483e-1   1.672e-1      0.0686   DIFF gap_p 0.0838 gap_d 0.0096 max|dlogit| 0.2802 only_prefill [217] only_decode [218] [e217 p=-3.8422 d=-3.9845] [e218 p=-3.9363 d=-3.9749] kth_p -3.8525 k1th_p -3.9363
+     28 gdn   1.475e-1   1.721e-1   1.664e-1      0.0594   same gap_p 0.2406 gap_d 0.3358 max|dlogit| 0.3847
+     29 gdn   2.114e-1   1.756e-1   1.773e-1      0.1140   same gap_p 0.1148 gap_d 0.1472 max|dlogit| 0.3006
+     30 gdn   2.441e-1   1.789e-1   1.786e-1      0.0438   same gap_p 0.1994 gap_d 0.0850 max|dlogit| 0.3093
+     31 attn  1.311e-1   1.839e-1   1.722e-1      0.0498   same gap_p 0.1055 gap_d 0.0785 max|dlogit| 0.4030
+     32 gdn   1.457e-1   1.873e-1   1.963e-1      0.1570   same gap_p 0.1365 gap_d 0.0024 max|dlogit| 0.3491
+     33 gdn   2.101e-1   1.985e-1   2.032e-1      0.2376   same gap_p 0.1296 gap_d 0.0074 max|dlogit| 0.3854
+     34 gdn   2.618e-1   1.997e-1   1.945e-1      0.0938   same gap_p 0.0113 gap_d 0.0120 max|dlogit| 0.2811
+     35 attn  2.114e-1   2.066e-1   2.236e-1      0.1856   same gap_p 0.3682 gap_d 0.4779 max|dlogit| 0.2899
+     36 gdn   2.110e-1   2.262e-1   2.325e-1      0.1745   DIFF gap_p 0.0107 gap_d 0.0009 max|dlogit| 0.3504 only_prefill [180] only_decode [102] [e180 p=-4.2317 d=-4.4372] [e102 p=-4.3378 d=-4.1995] kth_p -4.2317 k1th_p -4.2424
+     37 gdn   2.142e-1   2.224e-1   2.129e-1      0.2035   same gap_p 0.2928 gap_d 0.2427 max|dlogit| 0.2845
+     38 gdn   1.808e-1   1.783e-1   1.613e-1      0.2824   DIFF gap_p 0.0773 gap_d 0.0173 max|dlogit| 0.2903 only_prefill [102] only_decode [25] [e102 p=-3.9613 d=-3.9102] [e25 p=-4.0830 d=-3.8929] kth_p -3.9613 k1th_p -4.0386
+     39 attn  1.390e-1   1.701e-1   1.180e-1      0.3922   DIFF gap_p 0.0541 gap_d 0.0844 max|dlogit| 0.2140 only_prefill [229] only_decode [39] [e229 p=-5.0202 d=-5.0074] [e39 p=-5.0744 d=-4.9209] kth_p -5.0202 k1th_p -5.0744
+
+=== row 1809 (next token 4277 = "---")
+  prefill  top1 22 "7" 11.9066  top2 332 "**" 9.4523  margin 2.4543  logit[next]=8.5787
+  decode   top1 332 "**" 12.8324  top2 22 "7" 12.7619  margin 0.0705  logit[next]=12.3035
+  prime    top1 332 "**" 13.9360  top2 4277 "---" 13.2752  margin 0.6609  logit[next]=13.2752
+  id 22 "7": prefill=11.9066 decode=12.7619 prime=12.9075
+  id 332 "**": prefill=9.4523 decode=12.8324 prime=13.9360
+  logits prefill vs decode: rel 3.067e-1 maxabs 7.4065
+  logits prime vs decode: rel 1.191e-1 maxabs 2.1435; prefill vs prime: rel 4.416e-1 maxabs 9.0295
+  layer kind  mix_rel     x1_rel      out_rel     out_maxabs  router(k) prefill-vs-decode
+      0 gdn   2.158e-2   1.350e-2   1.570e-2      0.0023   same gap_p 0.4160 gap_d 0.4154 max|dlogit| 0.0884
+      1 gdn   3.225e-2   1.619e-2   1.780e-2      0.0017   same gap_p 0.0181 gap_d 0.0288 max|dlogit| 0.0727
+      2 gdn   2.900e-2   1.490e-2   1.498e-2      0.0016   same gap_p 0.0404 gap_d 0.0546 max|dlogit| 0.0743
+      3 attn  5.727e-2   2.153e-2   2.398e-2      0.0021   same gap_p 0.2393 gap_d 0.2548 max|dlogit| 0.0673
+      4 gdn   5.699e-2   2.197e-2   2.534e-2      0.0022   same gap_p 0.0880 gap_d 0.0659 max|dlogit| 0.0696
+      5 gdn   5.731e-2   2.304e-2   2.467e-2      0.0022   same gap_p 0.0020 gap_d 0.0272 max|dlogit| 0.0664
+      6 gdn   6.588e-2   2.453e-2   2.635e-2      0.0027   same gap_p 0.0824 gap_d 0.0723 max|dlogit| 0.0955
+      7 attn  7.005e-2   3.544e-2   3.730e-2      0.0042   same gap_p 0.0029 gap_d 0.0001 max|dlogit| 0.0930
+      8 gdn   7.974e-2   3.858e-2   3.918e-2      0.0046   same gap_p 0.0143 gap_d 0.0080 max|dlogit| 0.1298
+      9 gdn   8.487e-2   4.152e-2   4.331e-2      0.0074   same gap_p 0.0968 gap_d 0.0248 max|dlogit| 0.1070
+     10 gdn   6.803e-2   4.090e-2   4.013e-2      0.0181   same gap_p 0.1407 gap_d 0.1433 max|dlogit| 0.0932
+     11 attn  8.644e-2   5.035e-2   4.782e-2      0.0070   same gap_p 0.0949 gap_d 0.1765 max|dlogit| 0.1135
+     12 gdn   8.331e-2   5.419e-2   7.512e-2      0.0105   DIFF gap_p 0.0421 gap_d 0.0161 max|dlogit| 0.1395 only_prefill [33] only_decode [59] [e33 p=-3.9560 d=-3.9599] [e59 p=-3.9981 d=-3.9438] kth_p -3.9560 k1th_p -3.9981
+     13 gdn   1.449e-1   7.435e-2   7.052e-2      0.0132   same gap_p 0.1307 gap_d 0.0736 max|dlogit| 0.1568
+     14 gdn   1.162e-1   6.353e-2   6.927e-2      0.0149   DIFF gap_p 0.0187 gap_d 0.0064 max|dlogit| 0.1358 only_prefill [231] only_decode [64] [e231 p=-4.0283 d=-4.0605] [e64 p=-4.0499 d=-4.0541] kth_p -4.0312 k1th_p -4.0499
+     15 attn  1.082e-1   8.716e-2   8.790e-2      0.0270   same gap_p 0.0626 gap_d 0.0792 max|dlogit| 0.1810
+     16 gdn   1.718e-1   8.709e-2   8.737e-2      0.0151   same gap_p 0.0160 gap_d 0.0577 max|dlogit| 0.1572
+     17 gdn   1.824e-1   8.621e-2   8.534e-2      0.0156   same gap_p 0.1236 gap_d 0.0716 max|dlogit| 0.2115
+     18 gdn   1.687e-1   8.679e-2   7.935e-2      0.0190   same gap_p 0.5370 gap_d 0.5060 max|dlogit| 0.1352
+     19 attn  1.725e-1   8.356e-2   9.146e-2      0.0216   same gap_p 0.0207 gap_d 0.0041 max|dlogit| 0.1312
+     20 gdn   1.612e-1   8.837e-2   9.305e-2      0.0230   same gap_p 0.0578 gap_d 0.1067 max|dlogit| 0.1374
+     21 gdn   1.747e-1   9.114e-2   1.030e-1      0.0200   DIFF gap_p 0.0259 gap_d 0.0096 max|dlogit| 0.1336 only_prefill [191] only_decode [26] [e191 p=-4.1107 d=-4.1155] [e26 p=-4.1366 d=-4.1059] kth_p -4.1107 k1th_p -4.1366
+     22 gdn   1.397e-1   9.461e-2   7.998e-2      0.0264   same gap_p 0.1188 gap_d 0.0774 max|dlogit| 0.2404
+     23 attn  1.752e-1   9.484e-2   1.064e-1      0.0314   DIFF gap_p 0.0662 gap_d 0.0833 max|dlogit| 0.3401 only_prefill [188] only_decode [186] [e188 p=-4.4505 d=-4.6125] [e186 p=-4.6141 d=-4.4982] kth_p -4.5069 k1th_p -4.5731
+     24 gdn   1.964e-1   1.044e-1   1.133e-1      0.0343   DIFF gap_p 0.0410 gap_d 0.0230 max|dlogit| 0.2518 only_prefill [242] only_decode [32] [e242 p=-4.4022 d=-4.4572] [e32 p=-4.4432 d=-4.4342] kth_p -4.4022 k1th_p -4.4432
+     25 gdn   1.640e-1   1.066e-1   1.134e-1      0.0306   DIFF gap_p 0.0113 gap_d 0.0136 max|dlogit| 0.2150 only_prefill [6] only_decode [157] [e6 p=-4.3488 d=-4.3794] [e157 p=-4.3601 d=-4.3659] kth_p -4.3488 k1th_p -4.3601
+     26 gdn   2.602e-1   1.203e-1   1.054e-1      0.0533   same gap_p 0.0714 gap_d 0.1062 max|dlogit| 0.3513
+     27 attn  2.757e-1   1.150e-1   1.190e-1      0.0422   same gap_p 0.0408 gap_d 0.0230 max|dlogit| 0.2475
+     28 gdn   1.884e-1   1.151e-1   1.269e-1      0.0380   DIFF gap_p 0.0495 gap_d 0.1015 max|dlogit| 0.2165 only_prefill [134] only_decode [75] [e134 p=-4.1996 d=-4.3743] [e75 p=-4.2491 d=-4.2728] kth_p -4.1996 k1th_p -4.2491
+     29 gdn   1.955e-1   1.168e-1   1.290e-1      0.0349   DIFF gap_p 0.0103 gap_d 0.0107 max|dlogit| 0.2000 only_prefill [124] only_decode [250] [e124 p=-4.2963 d=-4.2836] [e250 p=-4.3067 d=-4.2713] kth_p -4.2963 k1th_p -4.3067
+     30 gdn   1.826e-1   1.219e-1   1.209e-1      0.0380   DIFF gap_p 0.0595 gap_d 0.0026 max|dlogit| 0.1888 only_prefill [43] only_decode [134] [e43 p=-4.2761 d=-4.4221] [e134 p=-4.3356 d=-4.4194] kth_p -4.2761 k1th_p -4.3356
+     31 attn  1.896e-1   1.268e-1   1.470e-1      0.0574   DIFF gap_p 0.0214 gap_d 0.0031 max|dlogit| 0.2128 only_prefill [163] only_decode [75] [e163 p=-4.3307 d=-4.3871] [e75 p=-4.3630 d=-4.3839] kth_p -4.3307 k1th_p -4.3522
+     32 gdn   2.050e-1   1.507e-1   1.453e-1      0.0633   same gap_p 0.0029 gap_d 0.0196 max|dlogit| 0.2825
+     33 gdn   1.821e-1   1.426e-1   2.473e-1      0.0997   DIFF gap_p 0.0298 gap_d 0.0199 max|dlogit| 0.2348 only_prefill [207, 240] only_decode [9, 93] [e207 p=-4.1457 d=-4.1663] [e240 p=-4.0401 d=-4.2217] [e9 p=-4.2410 d=-4.1464] [e93 p=-4.1755 d=-3.9863] kth_p -4.1457 k1th_p -4.1755
+     34 gdn   3.393e-1   2.524e-1   3.079e-1      0.7007   DIFF gap_p 0.0044 gap_d 0.0032 max|dlogit| 0.6806 only_prefill [232] only_decode [85] [e232 p=-4.1847 d=-4.2757] [e85 p=-4.3791 d=-4.0890] kth_p -4.3190 k1th_p -4.3234
+     35 attn  5.853e-1   2.511e-1   2.059e-1      0.1367   DIFF gap_p 0.0350 gap_d 0.0488 max|dlogit| 0.4342 only_prefill [58] only_decode [84] [e58 p=-4.7391 d=-4.6680] [e84 p=-4.7741 d=-4.3692] kth_p -4.7391 k1th_p -4.7741
+     36 gdn   1.675e-1   2.475e-1   2.574e-1      0.1740   DIFF gap_p 0.0107 gap_d 0.0145 max|dlogit| 0.3806 only_prefill [81, 109] only_decode [70, 174] [e81 p=-4.4301 d=-4.5546] [e109 p=-4.4463 d=-4.4863] [e70 p=-4.6589 d=-4.2782] [e174 p=-4.6046 d=-4.4717] kth_p -4.4675 k1th_p -4.4783
+     37 gdn   3.005e-1   2.880e-1   2.916e-1      0.2452   DIFF gap_p 0.0305 gap_d 0.0807 max|dlogit| 0.5383 only_prefill [72] only_decode [149] [e72 p=-4.4183 d=-4.7829] [e149 p=-4.7417 d=-4.5246] kth_p -4.6476 k1th_p -4.6781
+     38 gdn   4.500e-1   3.157e-1   3.029e-1      1.2405   DIFF gap_p 0.0025 gap_d 0.0323 max|dlogit| 0.8025 only_prefill [115, 193] only_decode [112, 202] [e115 p=-4.5656 d=-4.6482] [e193 p=-4.4890 d=-5.0722] [e112 p=-4.5681 d=-4.5451] [e202 p=-4.6128 d=-4.5849] kth_p -4.5656 k1th_p -4.5681
+     39 attn  3.053e-1   3.864e-1   5.255e-1      1.4811   DIFF gap_p 0.0273 gap_d 0.0282 max|dlogit| 0.7902 only_prefill [48, 162, 185, 192, 208] only_decode [38, 69, 110, 156, 243] [e48 p=-4.7270 d=-4.9495] [e162 p=-4.4474 d=-4.9209] [e185 p=-4.6661 d=-4.9578] [e192 p=-4.8743 d=-5.0006] [e208 p=-4.9101 d=-4.8760] [e38 p=-5.0660 d=-4.6190] [e69 p=-5.0578 d=-4.5800] [e110 p=-5.2905 d=-4.6661] [e156 p=-4.9652 d=-4.8033] [e243 p=-5.4465 d=-4.7808] kth_p -4.9379 k1th_p -4.9652
