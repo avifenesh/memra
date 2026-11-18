@@ -7432,6 +7432,24 @@ impl HybridModel {
         Ok(slabs.get(&dev).expect("prime slab inserted").clone())
     }
 
+    /// Whether this model's prime walks each stage's layer range on that stage's engine, so
+    /// that the cache it writes has to be stage-owned (memra#1295). It restates the conditions
+    /// of the split walks; keep it in step with them:
+    /// - the hyper walk (`prime_cache_hyper`) splits whenever the ppN door is open with
+    ///   per-stage streams, and does not read `MEMRA_PRIME_PP`;
+    /// - the serial residual splits under the same door with `MEMRA_PRIME_PP` on
+    ///   ([`Self::prime_chunk`]'s ppN arm, the pipe and wave arms of `prime_cache`, the step35
+    ///   batched prime);
+    /// - the gemma program never splits: its prime walks the whole trunk on the caller's engine.
+    ///
+    /// `generate` and `generate_with` pick their cache placement on it.
+    pub(crate) fn prime_is_stage_split(&self) -> bool {
+        if crate::pp::pp2_streams_off() || crate::pp::pp_cuts(self.layers.len()).is_none() {
+            return false;
+        }
+        self.hyper.is_some() || (!self.uses_gemma_program() && crate::pp::prime_pp_on())
+    }
+
     /// `seq_end` = the whole REQUEST's absolute end position (`cache.pos + prompt_len` at
     /// `prime_cache` entry), NOT this chunk's end. Chunk-size-invariant by construction; step35's
     /// SWA arm selects on it (see `step35_attn_pre_wo`). Every other arch ignores it.

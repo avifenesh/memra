@@ -3447,6 +3447,22 @@ pub fn new_cache_planned(
     new_cache_inner(e, cfg, Some(plan), max_ctx)
 }
 
+/// The placement half of the stage-owned cache door: a placement is named and the per-stage
+/// streams are on. `new_cache*` and [`cache_is_stage_owned`] both read it, so the two cannot
+/// drift apart.
+fn stage_owned_placement() -> bool {
+    pp2_devices_env().is_some() && !pp2_streams_off()
+}
+
+/// True when [`new_cache`] allocates each layer's cache through its owning stage's engine
+/// (`Cache::new_ppn`) for this model: the ppN door open, with a placement and per-stage
+/// streams. A caller that walks the whole trunk on one engine cannot use such a cache across
+/// devices, so it asks here before it picks its walk. Env-only read.
+pub fn cache_is_stage_owned(cfg: &memra_gguf::config::ModelConfig) -> bool {
+    let n_trunk = (cfg.n_layer - cfg.nextn_predict_layers) as usize;
+    pp_cuts(n_trunk).is_some() && stage_owned_placement()
+}
+
 fn new_cache_inner(
     e: &Engine,
     cfg: &memra_gguf::config::ModelConfig,
@@ -3455,7 +3471,7 @@ fn new_cache_inner(
 ) -> Result<crate::cache::Cache, Box<dyn std::error::Error>> {
     let n_trunk = (cfg.n_layer - cfg.nextn_predict_layers) as usize;
     if let Some(fence) = pp_cuts(n_trunk) {
-        if pp2_devices_env().is_some() && !pp2_streams_off() {
+        if stage_owned_placement() {
             let rt = PpNRt::get(e)?;
             rt.init_boundary_transport(e, cfg.n_embd as usize)?;
             let n_st = fence.len() - 1;

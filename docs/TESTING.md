@@ -136,7 +136,7 @@ change in its area. Receipt paths are under `research/`.
 | gate | command | passes when | runs in |
 |---|---|---|---|
 | `kernel-check` | `target/release/kernel-check --require-manifest tools/kernel-check-27b.cells --require-manifest tools/kernel-check-step35.cells` | last line `ALL GREEN (<n> cells, <m> skipped)`, every required cell present, skips within budget | local-ci, cell battery, tag |
-| run-gen argmax | `run-gen <model> <token ids...>` | the prefill-vs-decode argmax line ends `MATCH`; no `MISMATCH-STRUCTURED` from the batched-prime check (`FLIP-NEARTIE` is reported, not fatal) | local-ci, fast-gate tier 1 |
+| run-gen argmax | `run-gen <model> <token ids...>` | the prefill-vs-decode argmax line ends `MATCH`; no `MISMATCH-STRUCTURED` from the batched-prime check (`FLIP-NEARTIE` is reported, not fatal). On a GGUF model `run-gen` itself classes a flip of the prefill-vs-decode line (`FLIP-NEARTIE` goes on, `MISMATCH-STRUCTURED` fails); fast-gate still requires `MATCH` | local-ci, fast-gate tier 1 |
 | argmax margin gate | `tools/argmax-margin-gate.sh <model> [--decode eager\|batch]` | the floor rule and the stored rows both pass ([below](#argmax-margin-gate-floors-stored-rows-recalibration)) | local-ci, cell battery, tag |
 | `prime-gate` | `prime-gate <model> --prompts-file research/prime-gate-coverage-20260802/prompts-mixed.txt --steps 0` | batched prime and tokenwise first tokens agree; near-tie flips report, structured divergence fails | local-ci |
 | prime continuation | `qwen-a4-continuation-gate <model> <prompt> 9296 16 48 80` | `CONTINUATION GATE: PASS`: each head + tail split equals the one-call prime bitwise | local-ci |

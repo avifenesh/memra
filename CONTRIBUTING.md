@@ -93,7 +93,10 @@ Or run them one by one and paste the tails:
 - `kernel-check` compares every kernel with a CPU reference and ends with
   `ALL GREEN (<n> cells, <m> skipped)`.
 - `run-gen` prints a `verify-prefill` argmax line (batched prefill against token-by-token
-  decode) that must end in `MATCH`. On text prompts of 16 tokens or more it adds a
+  decode); paste a run where it ends in `MATCH`. On a GGUF model the line starts
+  `prefill argmax=`, and when it ends in `MISMATCH` the run classes the flip itself:
+  `FLIP-NEARTIE` (each program holds its token over the other's by a small margin) is reported
+  and the run goes on, `MISMATCH-STRUCTURED` fails it. On text prompts of 16 tokens or more it adds a
   `batched-prime` line, which compares `prime_cache` (the path that seeds real generation and
   serving) with the tokenwise reference: `MISMATCH-STRUCTURED` fails the run, `FLIP-NEARTIE` is
   reported. `prime-gate <model.gguf> --prompts-file <f> [--chat]` runs the batched-prime check
