@@ -128,7 +128,7 @@ def boot(cell, arm, binary, n):
     cap = first(r"decode wave cap \d+")
     prefix = first(r"\[prefix-cache\] (on: budget [0-9]+MB|WARNING: derived budget is 0 B)")
     boot_free = first(r"boot driver free \d+ B")
-    floor = first(r"transient floor \d+MB \(static[^\]]*\]")
+    floor = first(r"transient floor \d+Mi?B \(static[^\]]*\]")
     spec_cost = first(r"\[spec-cost\] (model=\S+ depth|calibration)[^\n]*")
     spec_cost_t = first(r"\[ *[0-9.]+\] \[device-trim\] reason=spec-cost-calibration")
     trims = re.findall(r"\[device-trim\] reason=(\S+) (\{[^\n]*\})", text)

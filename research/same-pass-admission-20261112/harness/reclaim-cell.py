@@ -28,7 +28,7 @@ import threading
 import time
 from pathlib import Path
 
-GATE = Path.home() / ".cache/memra-1255/wt/tools/same-pass-admission-gate.py"
+GATE = Path(__file__).resolve().parents[3] / "tools/same-pass-admission-gate.py"
 spec = importlib.util.spec_from_file_location("gate", GATE)
 g = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(g)
@@ -96,7 +96,7 @@ def main() -> None:
         inserts = sum(1 for l in log.read_text(errors="replace").splitlines()
                       if l.startswith("[prefix-cache] insert"))
         row.update({"learn": {k: {kk: v[kk] for kk in ("charge", "prompt_tokens")} for k, v in learn.items()},
-                    "floor_mb": floor // MB, "prefix_inserts": inserts})
+                    "floor_mib": floor >> 20, "prefix_inserts": inserts})
         # The keeper, then the placement: A fits, B fits neither reading.
         keeper: dict = {}
         kt = threading.Thread(target=lambda: keeper.update(server.complete(g.keeper_prompt(), args.keeper_tokens)))

@@ -265,7 +265,7 @@ def floor_ab():
             except urllib.error.HTTPError as e:
                 got = f"HTTP {e.code}: {e.read()[:160]!r}"
             log = s.text()
-            fl = [m.group(0) for m in re.finditer(r"transient floor \d+MB[^;]*; measured \d+MB[^\]]*\]", log)]
+            fl = [m.group(0) for m in re.finditer(r"transient floor \d+Mi?B[^;]*; measured \d+Mi?B[^\]]*\]", log)]
             caps = sorted({l.strip()[:140] for l in log.splitlines() if "max_sessions" in l or "session cap" in l})
             cell(f"floor-{tag}", got.startswith("admitted"), f"{got} | {fl[0][:200] if fl else 'no floor line'} | {'; '.join(caps)[:200]}")
         finally:
