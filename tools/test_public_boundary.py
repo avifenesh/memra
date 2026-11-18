@@ -1601,6 +1601,19 @@ class CommitBlobTests(unittest.TestCase):
         self.assertEqual(checkout, ["deploy/private/u.service", "tools/priv.sh"])
         self.assertEqual(sorted(v.path for v in refs), checkout)
 
+    def test_a_symlink_at_a_private_path_is_a_ref_scan_finding(self) -> None:
+        """Review of memra#1356: a symlink (mode 120000) is a blob whose content is its target, and
+        under a private glob it is a private path in the ref scan as in the checkout scan."""
+        self.policy.private_paths["private"] = "deploy/private/**"
+        self.symlink("deploy/private/link", "/etc/passwd")
+        self.git("add", "deploy/private/link")
+        self.git("commit", "-q", "-m", "a link at a private path")
+        with mock.patch.object(boundary, "ROOT", self.root):
+            checkout = [(v.path, v.category) for v in boundary.evaluate(self.policy)]
+            refs, _ = boundary.evaluate_refs(self.policy, boundary.published_refs("refs/heads/**"))
+        self.assertEqual(checkout, [("deploy/private/link", "private_path")])
+        self.assertEqual([(v.path, v.category) for v in refs], checkout)
+
     def test_commit_scan_applies_private_path_rules(self) -> None:
         self.policy.private_paths["private"] = "private/**"
         commit = self.commit("private/evidence.txt", b"safe\n", "private path")
