@@ -4082,6 +4082,14 @@ pub struct HybridModel {
     /// admission charges it per spec-capable session. 0 until the first capture is
     /// observed (the boot calibration probe usually supplies it).
     pub(crate) draft_state_bytes: std::sync::atomic::AtomicUsize,
+    /// The device graph memory pool's growth across a landed draft capture, high-water, in bytes
+    /// (memra#1360): the part of a capture's parked state that every later capture on the stream
+    /// reuses (32 MiB of GB10's 34 MB), so it is charged once, not per session.
+    pub(crate) draft_graph_reserve_bytes: std::sync::atomic::AtomicUsize,
+    /// Whether that reserve is held on the stream: set by the first landed capture, cleared by
+    /// whoever releases the graph pool (`cuDeviceGraphMemTrim`). While it is not held, the next
+    /// speculative session is charged for it as well.
+    pub(crate) draft_graph_reserve_held: std::sync::atomic::AtomicBool,
     /// Test helper: extra device ordinals participating in this model for structural tests.
     pub test_extra_devices: Vec<usize>,
     /// This model's numeric profile (`crate::numeric_profile`), keyed once at load. Every
@@ -4216,14 +4224,43 @@ impl HybridModel {
         (observed > prev).then_some(observed)
     }
 
-    /// Per-session draft-graph state admission charge, in bytes: the measured high-water
-    /// (see [`Self::record_draft_state_bytes`]), 0 until a capture has been observed.
-    /// Admission adds this to the SESSION cost of every spec-capable admit — it is
-    /// per-session state (each capturing session parks its own keepers and graphs),
-    /// unlike the shared transient floor.
-    pub fn draft_session_admission_bytes(&self) -> usize {
-        self.draft_state_bytes
+    /// Record a landed capture's graph-pool growth (memra#1360): the stream's graph reserve,
+    /// high-water, now held. Returns the new high-water when it rose.
+    pub fn record_draft_graph_reserve(&self, growth: usize) -> Option<usize> {
+        use std::sync::atomic::Ordering;
+        self.draft_graph_reserve_held.store(true, Ordering::Relaxed);
+        let prev = self
+            .draft_graph_reserve_bytes
+            .fetch_max(growth, Ordering::Relaxed);
+        (growth > prev).then_some(growth)
+    }
+
+    /// The graph pool's reserve was released (a `cuDeviceGraphMemTrim` with no graph holding
+    /// it): the next speculative session pays for it again.
+    pub fn release_draft_graph_reserve(&self) {
+        self.draft_graph_reserve_held
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The stream's draft graph reserve, in bytes (0 until a capture grew the graph pool).
+    pub fn draft_graph_reserve_bytes(&self) -> usize {
+        self.draft_graph_reserve_bytes
             .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Per-session draft-graph state admission charge, in bytes (`crate::spec::draft_state_charge`):
+    /// the measured per-session high-water (see [`Self::record_draft_state_bytes`]), plus the
+    /// stream's graph reserve while no capture holds it. 0 until a capture has been observed.
+    /// Admission adds this to the SESSION cost of every spec-capable admit. The graph reserve
+    /// is not per-session (memra#1360): every capture on the stream reuses it, and once held it
+    /// is in the free reading admission starts from.
+    pub fn draft_session_admission_bytes(&self) -> usize {
+        use std::sync::atomic::Ordering;
+        crate::spec::draft_state_charge(
+            self.draft_state_bytes.load(Ordering::Relaxed),
+            self.draft_graph_reserve_bytes.load(Ordering::Relaxed),
+            self.draft_graph_reserve_held.load(Ordering::Relaxed),
+        )
     }
 
     /// Device-local bytes that are not yet materialized for this cache's rank-local Step KV.
@@ -6623,6 +6660,8 @@ impl HybridModel {
             hyper_head,
             glm5_dflash,
             draft_state_bytes: std::sync::atomic::AtomicUsize::new(0),
+            draft_graph_reserve_bytes: std::sync::atomic::AtomicUsize::new(0),
+            draft_graph_reserve_held: std::sync::atomic::AtomicBool::new(false),
             test_extra_devices: Vec::new(),
             numeric,
         };
