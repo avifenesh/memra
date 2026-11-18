@@ -220,7 +220,8 @@ fi
 # hand-written gate's fixed port. A small holder claims it for this run by binding an
 # abstract-namespace unix socket named after the port: the name is host-wide in the same scope
 # as the port itself (the network namespace), needs no shared directory, and goes away with the
-# holder, which ends with this shell. A port a stranger is listening on is passed over.
+# holder, which ends with this shell. A port a stranger is listening on is passed over, on
+# whatever address the stranger listens: the holder asks the gate's own port guard.
 #
 # A pre-fix generator (v1) has no override variable: the fixture then keeps the emitted default,
 # as it always did.
@@ -228,10 +229,21 @@ fi
 RUN_PORT="$GATE_PORT"
 PORT_VAR=$(grep -oE '^PORT_ENV=MEMRA_[A-Z0-9_]+_B2GEO_PORT$' "$CODE" | head -1 | cut -d= -f2)
 if [ -n "$PORT_VAR" ]; then
-    python3 - "$GATE_PORT" "$REAL_PORTS" "$WORK/run-port.txt" "$$" <<'PY' &
-import os, socket, sys, time
-default, shell = int(sys.argv[1]), int(sys.argv[4])
+    python3 - "$GATE_PORT" "$REAL_PORTS" "$WORK/run-port.txt" "$$" "$ROOT/tools/port-guard.sh" <<'PY' &
+import os, socket, subprocess, sys, time
+default, shell, guard = int(sys.argv[1]), int(sys.argv[4]), sys.argv[5]
 fixed = {int(line) for line in open(sys.argv[2]) if line.strip()}
+
+
+def refused_by_the_guard(port):
+    # The gate's port guard refuses a port with a listener on any address: 127.0.0.2, [::1], a
+    # v6-only [::]. A bind on 127.0.0.1 sees none of those, so the holder asks the guard itself
+    # (exit 1 = a listener, 2 = it cannot observe listeners): a port the gate would refuse is
+    # not this run's.
+    return subprocess.run(["bash", guard, "check", "teeth-fixture", str(port)],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0
+
+
 claimed = "none"
 for port in range(18300, 18400):
     if port == default or port in fixed:
@@ -243,13 +255,19 @@ for port in range(18300, 18400):
         hold.close()
         continue  # another run of this fixture holds it
     probe = socket.socket()
+    # Bind as the stub server will, with SO_REUSEADDR: a port an earlier run left in TIME_WAIT
+    # is free to the stub, and without the option it would read as taken here.
+    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         probe.bind(("127.0.0.1", port))
+        bindable = True
     except OSError:
-        hold.close()
-        continue  # a stranger is on it
+        bindable = False  # the stub could not bind it either
     finally:
         probe.close()
+    if not bindable or refused_by_the_guard(port):
+        hold.close()
+        continue  # a stranger is on it
     claimed = str(port)
     break
 with open(sys.argv[3] + ".tmp", "w") as out:
@@ -259,15 +277,26 @@ os.replace(sys.argv[3] + ".tmp", sys.argv[3])
 while claimed != "none" and os.getppid() == shell:
     time.sleep(1)
 PY
-    echo "$!" > "$WORK/port-holder.pid"
-    for _ in $(seq 100); do
+    PORT_HOLDER=$!
+    echo "$PORT_HOLDER" > "$WORK/port-holder.pid"
+    # The holder answers in well under a second on a quiet host. On a loaded one it is waited for
+    # while it lives, up to a minute: slow is not the same as no port.
+    for _ in $(seq 600); do
         [ -s "$WORK/run-port.txt" ] && break
+        kill -0 "$PORT_HOLDER" 2>/dev/null || break
         sleep 0.1
     done
     RUN_PORT=$(cat "$WORK/run-port.txt" 2>/dev/null)
     case "$RUN_PORT" in
-        ''|*[!0-9]*)
-            echo "BROKEN FIXTURE: no free port for this run in the reserved band (got '${RUN_PORT:-nothing}')." >&2
+        '')
+            if kill -0 "$PORT_HOLDER" 2>/dev/null; then
+                echo "BROKEN FIXTURE: the port holder gave no answer in 60 s, so no port is claimed for this run." >&2
+            else
+                echo "BROKEN FIXTURE: the port holder ended without an answer, so no port is claimed for this run." >&2
+            fi
+            exit 3 ;;
+        *[!0-9]*)
+            echo "BROKEN FIXTURE: no free port for this run in the reserved band 18300-18399: every port is the emitted default, a gate's fixed port, claimed by another run, or refused by the port guard." >&2
             exit 3 ;;
     esac
 fi
