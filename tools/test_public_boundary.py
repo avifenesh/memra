@@ -1528,8 +1528,9 @@ class CommitBlobTests(unittest.TestCase):
             [["lane/old"], ["lane/older"]],
         )
 
-    def test_a_failed_ls_tree_stops_the_ref_scan(self) -> None:
-        """memra#1356: a refused `git ls-tree` returned [] and hid the bug; it now raises."""
+    def test_a_ref_without_a_tree_stops_the_ref_scan(self) -> None:
+        """memra#1356: a refused `git ls-tree` returned [] and hid the bug. A ref whose tree
+        cannot be read raises (memra#1357 reads the trees with `git cat-file`)."""
         self.commit("receipts.md", b"clean\n", "clean")
         with mock.patch.object(boundary, "ROOT", self.root), self.assertRaises(RuntimeError):
             boundary.tree_candidates_at_refs(self.policy, ["refs/heads/no-such-ref"])
@@ -1615,6 +1616,87 @@ class CommitBlobTests(unittest.TestCase):
             refs, _ = boundary.evaluate_refs(self.policy, boundary.published_refs("refs/heads/**"))
         self.assertEqual(checkout, [("deploy/private/link", "private_path")])
         self.assertEqual([(v.path, v.category) for v in refs], checkout)
+
+    def ref_scan_calls(self) -> list[list[str]]:
+        """Run the ref scan over every head, recording each subprocess it starts."""
+        calls: list[list[str]] = []
+        real = subprocess.run
+
+        def recorded(args, *a, **k):
+            calls.append([str(arg) for arg in args])
+            return real(args, *a, **k)
+
+        with mock.patch.object(boundary, "ROOT", self.root), mock.patch.object(
+            boundary.subprocess, "run", recorded
+        ):
+            self.found = boundary.evaluate_refs(
+                self.policy, boundary.published_refs("refs/heads/**")
+            )
+        return calls
+
+    def test_the_ref_scan_greps_each_distinct_blob_once(self) -> None:
+        """memra#1357: one `git grep` over a tree of the distinct blobs, not over every ref's whole
+        tree, and no `git ls-tree` per ref: published refs share almost all of their blobs."""
+        self.commit("receipts.md", b"alpha needle\n", "shared evidence")
+        for name in ("lane/one", "lane/two"):
+            self.git("branch", name)
+        calls = self.ref_scan_calls()
+        greps = [call for call in calls if call[:2] == ["git", "grep"]]
+        self.assertEqual(len(greps), 1)
+        self.assertFalse([arg for arg in greps[0] if arg.startswith("refs/")])
+        self.assertFalse([call for call in calls if "ls-tree" in call])
+        violations, carriers = self.found
+        self.assertEqual([v.path for v in violations], ["receipts.md"])
+        self.assertEqual(len(carriers[(violations[0].path, violations[0].sha256)]), 3)
+
+    def test_the_ref_scan_writes_no_object_to_the_repository(self) -> None:
+        """memra#1357: the synthetic tree goes to a scratch object directory, removed after."""
+        self.commit("receipts.md", b"alpha needle\n", "evidence")
+        objects = self.root / ".git" / "objects"
+        before = sorted(p.name for p in objects.rglob("*"))
+        self.ref_scan_calls()
+        self.assertEqual(sorted(p.name for p in objects.rglob("*")), before)
+        self.assertFalse(list((self.root / ".git").glob("public-boundary-objects-*")))
+        self.assertEqual(len(self.found[0]), 1)
+
+    def test_one_subtree_at_two_paths_is_found_at_both(self) -> None:
+        """memra#1357: a tree object is read once but walked once per path it sits at."""
+        self.write("a/x/run.log", b"alpha needle\n")
+        self.write("b/x/run.log", b"alpha needle\n")
+        self.git("add", "-f", ".")
+        self.git("commit", "-q", "-m", "one subtree twice")
+        self.assertEqual(self.git("rev-parse", "HEAD:a/x"), self.git("rev-parse", "HEAD:b/x"))
+        self.ref_scan_calls()
+        self.assertEqual(sorted(v.path for v in self.found[0]), ["a/x/run.log", "b/x/run.log"])
+
+    def test_the_ref_scan_skips_a_submodule_entry(self) -> None:
+        """memra#1357: a gitlink names a commit of another repository, not a blob of this one."""
+        self.commit("receipts.md", b"alpha needle\n", "evidence")
+        self.git("update-index", "--add", "--cacheinfo", f"160000,{'1' * 40},vendor/sub")
+        self.git("commit", "-q", "-m", "a submodule")
+        self.ref_scan_calls()
+        self.assertEqual([v.path for v in self.found[0]], ["receipts.md"])
+
+    def test_a_blob_git_grep_cannot_read_stops_the_ref_scan(self) -> None:
+        """memra#1357: git grep skips a blob it cannot read with an error line and exit 0 or 1."""
+        self.commit("receipts.md", b"alpha needle\n", "evidence")
+        with mock.patch.object(boundary, "ROOT", self.root):
+            real = self.git("rev-parse", "HEAD:receipts.md")
+            self.assertEqual(boundary.secret_blobs(self.policy.secret_sources, [real]), {real})
+            with self.assertRaises(RuntimeError):
+                boundary.secret_blobs(self.policy.secret_sources, [real, "1" * 40])
+
+    def test_the_ref_scan_reads_a_sha256_repository(self) -> None:
+        """memra#1357: tree objects are parsed with the repository's own oid width."""
+        self.tempdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.tempdir.cleanup)
+        self.root = Path(self.tempdir.name)
+        self.git("init", "-q", "--object-format=sha256")
+        self.git("config", "user.name", "Boundary Test")
+        self.git("config", "user.email", "boundary@example.invalid")
+        self.commit("deep/dir/receipts.md", b"alpha needle\n", "evidence")
+        self.ref_scan_calls()
+        self.assertEqual([v.path for v in self.found[0]], ["deep/dir/receipts.md"])
 
     def test_commit_scan_applies_private_path_rules(self) -> None:
         self.policy.private_paths["private"] = "private/**"
