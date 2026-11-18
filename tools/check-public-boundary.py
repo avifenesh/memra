@@ -768,25 +768,6 @@ def scan_members(
     return hits
 
 
-def private_candidates_at_ref(policy: Policy, ref: str) -> List[str]:
-    """Paths at `ref` under a private_paths glob, narrowed by git rather than by scanning."""
-    if not policy.private_paths:
-        return []
-    pathspecs = [f":(glob){glob}" for glob in policy.private_paths.values()]
-    result = subprocess.run(
-        ["git", "ls-tree", "-r", "--name-only", "-z", ref, "--", *pathspecs],
-        cwd=ROOT,
-        capture_output=True,
-    )
-    if result.returncode != 0:
-        return []
-    return [
-        raw.decode("utf-8", errors="surrogateescape")
-        for raw in result.stdout.split(b"\0")
-        if raw
-    ]
-
-
 def blobs_at(specs: List[str]) -> Dict[str, bytes]:
     """Map each `<ref>:<path>` spec to its bytes in one `git cat-file --batch` pass."""
     if not specs:
@@ -820,9 +801,19 @@ def blobs_at(specs: List[str]) -> Dict[str, bytes]:
 SCANNED_BLOBS = "scanned_blobs"
 
 
-def gzip_blobs_at_refs(refs: List[str]) -> Dict[Tuple[str, str], set[str]]:
-    """(path, oid) of every gzip-named blob at `refs`, with the refs that carry it: one
-    `git ls-tree` per ref, keeping the oids, so a blob shared by many refs is one entry."""
+def tree_candidates_at_refs(
+    policy: Policy, refs: List[str]
+) -> Dict[Tuple[str, str], set[str]]:
+    """(path, oid) of every blob at `refs` that is gzip-named or under a private_paths glob, with
+    the refs that carry it: one `git ls-tree` per ref, keeping the oids, so a blob shared by many
+    refs is one entry.
+
+    Private paths are matched here with `matches_glob`, as the checkout and commit scans match
+    them (memra#1356): the old per-ref `git ls-tree -- ':(glob)...'` was refused by git
+    ("pathspec magic not supported by this command: 'glob'"), and its silent `return []` meant
+    the ref scan never reported a private path. A failed `git ls-tree` now stops the scan.
+    """
+    private_globs = list(policy.private_paths.values())
     groups: Dict[Tuple[str, str], set[str]] = {}
     for ref in refs:
         result = subprocess.run(
@@ -832,13 +823,16 @@ def gzip_blobs_at_refs(refs: List[str]) -> Dict[Tuple[str, str], set[str]]:
             message = result.stderr.decode("utf-8", errors="replace").strip()
             raise RuntimeError(f"git ls-tree {ref} failed: {message}")
         for entry in result.stdout.split(b"\0"):
-            if not entry.endswith((b".gz", b".tgz")):
-                continue
             meta, _, raw_path = entry.partition(b"\t")
             parts = meta.split()
             if len(parts) != 3 or parts[1] != b"blob":
                 continue
             path = raw_path.decode("utf-8", errors="surrogateescape")
+            if not (
+                raw_path.endswith((b".gz", b".tgz"))
+                or any(matches_glob(path, glob) for glob in private_globs)
+            ):
+                continue
             groups.setdefault((path, parts[2].decode("ascii")), set()).add(ref)
     return groups
 
@@ -872,15 +866,11 @@ def evaluate_refs(
     carries it (1,119 refs held 4,385 distinct gzip blobs in 1.27 M (ref, path) pairs). The refs
     carrying each violation come from the groups, so a report can still say where to go and remove
     it. Gzip blobs are candidates by name at every ref, and by their magic when the raw
-    prefilter already made them candidates (the checkout scan sniffs every file's magic).
+    prefilter already made them candidates (the checkout scan sniffs every file's magic). Private
+    paths are candidates by their glob at every ref (memra#1356).
     """
-    groups: Dict[Tuple[str, str], set[str]] = gzip_blobs_at_refs(refs)
-    pairs: set[Tuple[str, str]] = set()
-    for ref in refs:
-        for path in private_candidates_at_ref(policy, ref):
-            pairs.add((ref, path))
-    pairs.update(secret_candidates_at_refs(policy.secret_sources, refs))
-    ordered_pairs = sorted(pairs)
+    groups: Dict[Tuple[str, str], set[str]] = tree_candidates_at_refs(policy, refs)
+    ordered_pairs = sorted(secret_candidates_at_refs(policy.secret_sources, refs))
     oids = oids_at([f"{ref}:{path}" for ref, path in ordered_pairs])
     for ref, path in ordered_pairs:
         oid = oids.get(f"{ref}:{path}")
