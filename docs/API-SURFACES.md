@@ -75,7 +75,8 @@ The stock server has no `/admin/*` route; a deployment binary adds its own throu
   tokenize, detokenize, audio); `/v1/messages` and `/v1/responses` parse their own bodies.
 - On chat and text completions an explicit `null` means absent for every field openai-python
   declares nullable (`stream: null` runs non-streaming, `prompt: null` is an omitted prompt), and
-  for memra's `ignore_eos` (`null` is `false`). Null is a 400 only where it has no absent meaning:
+  for memra's `ignore_eos` (`null` is `false`, on `/v1/messages` and `/v1/responses` too). Null is
+  a 400 only where it has no absent meaning:
   `model`, chat `messages` and `tools`, and memra's own `background` and `stop_token_ids`.
   `max_tokens` and `max_completion_tokens` name one cap; a body that sets both to values is a 400.
 - While the server drains after SIGTERM, new generation requests get a 503 with `Retry-After`.
@@ -202,9 +203,12 @@ stopped at the end id.
 
 Without `max_tokens`, a request that sets `ignore_eos: true` and meets no stop string or stop id
 runs to the output bound of any request that omits `max_tokens` (the rest of the context, or the
-model's declared output cap) and ends with `finish_reason: "length"`. Send `max_tokens` with it.
-`/v1/responses` without `max_output_tokens` runs to the same bound and ends with
-`status: "incomplete"`; `/v1/messages` always carries its required `max_tokens`.
+model's declared output cap) and ends with `finish_reason: "length"`; on `/v1/responses`, without
+`max_output_tokens`, with `status: "incomplete"`. A streaming or background request reaches that
+end. A blocking request is bounded by `timeout_ms` as well and, with the bound that far, meets its
+deadline first ([Deadlines](#deadlines-timeout_ms)): on `/v1/responses` that is a 408 with no
+output and no usage counted. Send a token cap with `ignore_eos`. `/v1/messages` always carries its
+required `max_tokens`.
 
 ### Multiple choices: `n`
 

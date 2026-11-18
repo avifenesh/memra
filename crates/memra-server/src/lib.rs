@@ -33189,8 +33189,12 @@ request = "0"
                     .starts_with("ignore_eos is served by the deepseek-v4.1 route only"),
                 "{surface}: {body}"
             );
-            if !messages {
-                // The Anthropic error body has no `param`; the OpenAI one names the field there too.
+            if messages {
+                // The Anthropic error body (`reshape_error`): typed "error", and no `param`.
+                assert_eq!(body["type"], "error", "{surface}: {body}");
+                assert!(body["error"].get("param").is_none(), "{surface}: {body}");
+            } else {
+                // The OpenAI error body names the field in `param` too.
                 assert_eq!(body["error"]["param"], "ignore_eos", "{surface}");
             }
             assert!(
