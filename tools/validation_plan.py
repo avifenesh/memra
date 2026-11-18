@@ -659,10 +659,12 @@ def local_git_command(repo, git=None):
 def git_text_batch(repo, requests):
     """Keep a builtin Git reader inside the existing tracked CLI group.
 
-    The 110-second read and two five-second teardown arms derive from its
-    existing 120-second child contract; the version probe (`git_version`, once
-    per binary, 10 s) runs before that budget starts. Local objects never
-    trigger lazy fetch (`local_git_command`).
+    The read has 110 seconds of wall time and each of the two teardown arms
+    five. They were sized to fit the public-ci witness's 120-second wall bound
+    on one child. That bound is gone (memra#1291: the witness reads CPU
+    progress), so these are this reader's own wall bounds now. The version
+    probe (`git_version`, once per binary, 10 s) runs before them. Local
+    objects never trigger lazy fetch (`local_git_command`).
     """
     argv, env = local_git_command(repo)
     command = [*argv, 'cat-file', '--batch']

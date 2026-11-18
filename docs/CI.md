@@ -82,8 +82,11 @@ static merge guard inputs, so a changed command or a missing mapping cannot sile
 a deliberate workflow edit updates its hashes in the same change.
 `python3 tools/test_public_ci_integration.py` drives routing and execution against real Git events.
 Its hang guard reads CPU progress, not the wall clock: the run is stopped when it and its children
-use no CPU for 300 seconds (120 for one child) or more than an hour of CPU in all, and never for
-being slow on a busy host. The hosted step keeps its own `timeout-minutes`.
+use no CPU for 300 seconds (120 for one child) or more than an hour of CPU in all (ten minutes for
+one child), and not for being slow on a busy host. A hang that polls uses a little CPU for ever
+and passes both rules, so each guard also has a wall backstop far above a slow run: one hour for a
+child, six for the witness. The hosted step has its own `timeout-minutes`, 20, about twice a
+hosted run of 10 to 12 minutes; the job's 30 minutes bound it as well.
 `tools/check-workflow-keys.py` (CI `gates` job and the pre-push hook, no skip switch) refuses a
 duplicate mapping key at any depth, since GitHub runs zero jobs for such a file; it reports a
 construct outside its scope as "cannot answer" (exit 2), never as green.
