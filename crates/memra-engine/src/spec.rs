@@ -657,8 +657,54 @@ pub(crate) fn raise_high_water(
 /// in the free reading admission starts from and owes nothing; after a trim (the prime graphs'
 /// `cuDeviceGraphMemTrim` releases idle draft graphs' memory too) the next draft launch maps it
 /// again, and the shortfall is charged. A live reading heals after any trim, by anyone.
+///
+/// `graph_now` is device-wide, so other tenants' graphs in the pool (the Qwen prime graph on the
+/// 5090, DSpark verify graphs) count as held reserve and can hide a draft shortfall (review of
+/// memra#1362, round 3). The under-charge is at most `reserve_hw` and lasts until the draft
+/// relaunch maps its graphs again, which the next reading sees; it is accepted.
+///
+/// `reserve_hw` can read low the same way (review round 3): graphs on one stream share physical
+/// memory, so a draft capture while another graph's memory sits in the pool (the prime graph on
+/// the 5090) grows the pool by less than the draft's own reserve, or by nothing. After the prime
+/// teardown's trim the draft relaunch then maps memory admission does not charge. This is
+/// accepted too: the under-charge is at most the draft's standalone reserve (32 MiB on GB10's MTP
+/// serving), and it corrects itself, since the first capture on a trimmed pool grows it by the
+/// whole reserve and the high-water keeps it.
 pub(crate) fn draft_state_charge(per_session: usize, reserve_hw: usize, graph_now: usize) -> usize {
     per_session.saturating_add(reserve_hw.saturating_sub(graph_now))
+}
+
+/// The two draft-state high-waters a model keeps for admission (memra#1360): the per-session
+/// part and the stream's graph reserve. The model's wrappers delegate here, so which slot a record
+/// raises and the order the charge reads them in are tested on this type (review of memra#1362,
+/// round 3), not only as source text.
+#[derive(Debug, Default)]
+pub(crate) struct DraftStateSlots {
+    /// The measured per-session draft-graph state high-water, in bytes.
+    per_session: std::sync::atomic::AtomicUsize,
+    /// The graph pool's largest growth across one landed draft capture's bracket, in bytes.
+    graph_reserve: std::sync::atomic::AtomicUsize,
+}
+
+impl DraftStateSlots {
+    /// Raise the per-session high-water; the new high-water when it rose.
+    pub(crate) fn record_per_session(&self, observed: usize) -> Option<usize> {
+        raise_high_water(&self.per_session, observed)
+    }
+
+    /// Raise the graph reserve's high-water; the new high-water when it rose.
+    pub(crate) fn record_graph_reserve(&self, graph_growth: usize) -> Option<usize> {
+        raise_high_water(&self.graph_reserve, graph_growth)
+    }
+
+    /// The charge against the graph pool's live reading `graph_now` ([`draft_state_charge`]).
+    pub(crate) fn admission_bytes(&self, graph_now: usize) -> usize {
+        draft_state_charge(
+            self.per_session.load(Ordering::Relaxed),
+            self.graph_reserve.load(Ordering::Relaxed),
+            graph_now,
+        )
+    }
 }
 
 /// The parked half of the per-session draft-state measurement: effective free at the bracket's
@@ -18389,8 +18435,10 @@ mod capture_headroom_tests {
         assert_eq!(raise_high_water(&reserve, 0), None);
         assert_eq!(raise_high_water(&reserve, 8 * MIB), None);
         assert_eq!(reserve.load(Ordering::Relaxed), 32 * MIB);
-        // A larger growth raises it.
+        // A larger growth raises it, and the slot holds it (review round 3: a first-only
+        // store would report 40 and keep 32).
         assert_eq!(raise_high_water(&reserve, 40 * MIB), Some(40 * MIB));
+        assert_eq!(reserve.load(Ordering::Relaxed), 40 * MIB);
     }
 
     /// memra#1360 review wiring: the bracket reads the graph pool once, after the pool watermark
@@ -18398,6 +18446,15 @@ mod capture_headroom_tests {
     /// every caller of the charge passes the live graph-pool reading.
     #[test]
     fn the_graph_reserve_wiring_reads_the_live_pool() {
+        // Comments dropped (review round 3), as readiness_follows_the_boot_calibration_probe does:
+        // a needle in a comment must not stand in for the code.
+        let code = |s: &str| {
+            s.lines()
+                .map(|l| l.split("//").next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        // The bracket's ends are comment banners, so they are found in the raw source.
         let src = production_src();
         let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
         let open = src
@@ -18406,7 +18463,7 @@ mod capture_headroom_tests {
         let close = src
             .find("PER-SESSION DRAFT-STATE MEASUREMENT bracket end")
             .expect("the bracket end");
-        let bracket = &src[open..close];
+        let bracket = &code(&src[open..close]);
         let reset = bracket
             .find("let _ = e.pool_high_water_reset();")
             .expect("the reset");
@@ -18420,39 +18477,83 @@ mod capture_headroom_tests {
             reset < reads[0] && reads[0] < first_capture,
             "{reset} {reads:?} {first_capture}"
         );
-        // The entry reading and the guard's live reading; no second entry reading, however it
-        // is spelled (`Engine::device_graph_mem_reserved(e)` too).
+        // The entry reading and the guard's live reading, and no other call of that name
+        // (`Engine::device_graph_mem_reserved(e)` included).
         assert_eq!(bracket.matches("device_graph_mem_reserved").count(), 2);
-        let end = squash(
+        let end = squash(&code(
             &src[close
                 ..close
                     + src[close..]
                         .find("FAILURE IS AN OBSERVATION TOO")
                         .expect("next")],
-        );
+        ));
         for needle in [
             "let graph1 = e.device_graph_mem_reserved();",
             "let graph_growth = graph1.saturating_sub(cap_graph0);",
-            "let (observed, _) = split_draft_state(parked_delta, peak_delta, graph_growth);",
-            "self.record_draft_graph_reserve(graph_growth)",
+            // Every landed capture records its growth, unconditionally (review round 3: a
+            // first-capture-only guard in front of the record is not this statement).
+            "let (observed, _) = split_draft_state(parked_delta, peak_delta, graph_growth); \
+             if let Some(hw) = self.record_draft_graph_reserve(graph_growth) {",
             "self.record_draft_state_bytes(observed)",
         ] {
             assert!(end.contains(needle), "{needle}: {end}");
         }
         // The guard asks with the live reading.
-        assert!(squash(src).contains(
+        assert!(squash(&code(src)).contains(
             "let observed = self.draft_session_admission_bytes(e.device_graph_mem_reserved());"
         ));
-        let hybrid = include_str!("hybrid.rs");
-        let charge = &hybrid[hybrid
-            .find("pub fn draft_session_admission_bytes(")
-            .expect("charge")..];
-        let charge = squash(&charge[..charge.find("\n    }\n").expect("its end")]);
-        assert!(
-            charge.contains("crate::spec::draft_state_charge(")
-                && charge.contains("graph_reserved_now, )"),
-            "{charge}"
-        );
+        // HybridModel's three wrappers (review round 3) delegate to the slot type, whose slots and
+        // argument order the_draft_state_slots_keep_each_record_apart tests by behaviour.
+        let hybrid = code(include_str!("hybrid.rs"));
+        let body = |sig: &str| {
+            let at = &hybrid[hybrid.find(sig).expect(sig)..];
+            squash(&at[..at.find("\n    }\n").expect("its end")])
+        };
+        for (sig, call) in [
+            (
+                "pub fn record_draft_state_bytes(",
+                "{ self.draft_state.record_per_session(observed)",
+            ),
+            (
+                "pub fn record_draft_graph_reserve(",
+                "{ self.draft_state.record_graph_reserve(graph_growth)",
+            ),
+            (
+                "pub fn draft_session_admission_bytes(",
+                "{ self.draft_state.admission_bytes(graph_reserved_now)",
+            ),
+        ] {
+            let b = body(sig);
+            assert!(b.ends_with(call), "{sig}: {b}");
+        }
+    }
+
+    /// memra#1362 review round 3: the model's draft-state slots. A record raises only its own slot,
+    /// and the charge is the per-session part plus the reserve's shortfall against the live pool.
+    /// A growth recorded as per-session state, or the two slots swapped in the charge, charges the
+    /// 32 MiB reserve while the pool holds it.
+    #[test]
+    fn the_draft_state_slots_keep_each_record_apart() {
+        use super::DraftStateSlots;
+        const MIB: usize = 1 << 20;
+        let slots = DraftStateSlots::default();
+        assert_eq!(slots.admission_bytes(0), 0);
+        assert_eq!(slots.record_graph_reserve(32 * MIB), Some(32 * MIB));
+        assert_eq!(slots.record_per_session(2 * MIB), Some(2 * MIB));
+        // The pool holds the reserve: the per-session part only.
+        assert_eq!(slots.admission_bytes(32 * MIB), 2 * MIB);
+        assert_eq!(slots.admission_bytes(64 * MIB), 2 * MIB);
+        // Trimmed, in full or in part: the reserve's shortfall is charged on top.
+        assert_eq!(slots.admission_bytes(0), 34 * MIB);
+        assert_eq!(slots.admission_bytes(20 * MIB), 14 * MIB);
+        // Each slot keeps its own high-water: neither record moves the other.
+        assert_eq!(slots.record_per_session(3 * MIB), Some(3 * MIB));
+        assert_eq!(slots.record_graph_reserve(8 * MIB), None);
+        assert_eq!(slots.admission_bytes(32 * MIB), 3 * MIB);
+        assert_eq!(slots.admission_bytes(0), 35 * MIB);
+        assert_eq!(slots.record_graph_reserve(40 * MIB), Some(40 * MIB));
+        assert_eq!(slots.record_per_session(2 * MIB), None);
+        assert_eq!(slots.admission_bytes(32 * MIB), 11 * MIB);
     }
 
     /// memra#1307: the per-session draft-state measurement takes its delta on the delta reading at
