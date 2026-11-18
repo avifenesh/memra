@@ -913,6 +913,26 @@ def ref_trees(refs: List[str]) -> Tuple[Dict[str, List[str]], Dict[str, List[Tre
     return roots, trees
 
 
+# git's default core.maxTreeDepth (git 2.44+): git refuses a tree nested deeper than this.
+DEFAULT_MAX_TREE_DEPTH = 2048
+
+
+def max_tree_depth() -> int:
+    """The deepest tree git reads in this repository: core.maxTreeDepth, or git's default."""
+    result = subprocess.run(
+        ["git", "config", "--type=int", "--get", "core.maxTreeDepth"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 1 and not result.stdout.strip():
+        return DEFAULT_MAX_TREE_DEPTH  # not set
+    if result.returncode != 0:
+        raise RuntimeError(f"git config core.maxTreeDepth failed: {result.stderr.strip()}")
+    return int(result.stdout.strip())
+
+
 # A scratch object directory older than this was left by a scan that was killed (a timeout
 # cancel sends SIGKILL after SIGTERM): no scan runs this long, so it is swept at the next start.
 STALE_SCRATCH_SECONDS = 24 * 3600
@@ -941,20 +961,24 @@ def secret_blobs(patterns: Dict[str, str], oids: Iterable[str]) -> set[str]:
     selected = sorted(set(oids))
     if not patterns or not selected:
         return set()
-    common = subprocess.run(
-        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    objects = subprocess.run(
-        ["git", "rev-parse", "--path-format=absolute", "--git-path", "objects"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
+    # Bytes, decoded as the file system names them: a repository under a directory whose name is
+    # not UTF-8 still scans (review of memra#1357 round 2).
+    common = os.fsdecode(
+        subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+    )
+    objects = os.fsdecode(
+        subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-path", "objects"],
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+    )
     stale = time.time() - STALE_SCRATCH_SECONDS
     for left in Path(common).glob("public-boundary-objects-*"):
         try:
@@ -1028,6 +1052,10 @@ def tree_candidates_at_refs(
     )
     private_re = glob_matcher(policy.private_paths.values())
     private: Dict[bytes, bool] = {}
+    # Each frame holds its whole prefix, so a walk's memory grows with depth squared; past the
+    # depth git itself refuses, the scan stops as git does rather than run out of memory on a
+    # fork's PR ref (review of memra#1357 round 2).
+    deepest = max_tree_depth()
     walked: Dict[Tuple[str, bytes], List[Tuple[bytes, str]]] = {}
 
     def candidate(raw_path: bytes, oid: str) -> bool:
@@ -1059,6 +1087,10 @@ def tree_candidates_at_refs(
                     continue
                 below = walked.get((oid, path + b"/"))
                 if below is None:
+                    if len(stack) > deepest:  # the root is depth 0, as in git's read_tree_at
+                        raise RuntimeError(
+                            f"tree depth past core.maxTreeDepth ({deepest}) at {path[:200]!r}"
+                        )
                     stack.append((oid, path + b"/", iter(trees[oid]), []))
                     break
                 found.extend(below)

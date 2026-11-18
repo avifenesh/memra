@@ -1769,6 +1769,22 @@ class CommitBlobTests(unittest.TestCase):
         self.ref_scan_calls()
         self.assertEqual([v.path for v in self.found[0]], [deep])
 
+    def test_a_tree_past_core_max_tree_depth_stops_the_ref_scan(self) -> None:
+        """Review of memra#1357 round 2: the walk's memory grows with depth squared, so past the
+        depth git refuses (core.maxTreeDepth, the root at depth 0) the scan stops as git does."""
+        with mock.patch.object(boundary, "ROOT", self.root):
+            self.assertEqual(boundary.max_tree_depth(), 2048)
+        self.git("config", "core.maxTreeDepth", "3")
+        needle = self.git_bytes("hash-object", "-w", "--stdin", data=b"alpha needle\n")
+        self.git("update-index", "--add", "--cacheinfo", f"100644,{needle},a/b/c/run.log")
+        self.head_at_tree(self.git("write-tree"), "at-limit")
+        self.ref_scan_calls()
+        self.assertIn("a/b/c/run.log", [v.path for v in self.found[0]])
+        self.git("update-index", "--add", "--cacheinfo", f"100644,{needle},a/b/c/d/run.log")
+        self.head_at_tree(self.git("write-tree"), "past-limit")
+        with self.assertRaisesRegex(RuntimeError, r"core\.maxTreeDepth \(3\)"):
+            self.ref_scan_calls()
+
     def test_the_ref_scan_greps_a_binary_blob_as_text(self) -> None:
         """Review of memra#1357 round 1: a NUL-bearing blob (a profiler capture) is a candidate,
         as in the checkout scan's prefilter. git grep -l lists it with or without --text, so this
@@ -1842,11 +1858,25 @@ class CommitBlobTests(unittest.TestCase):
         self.assertEqual([v.path for v in self.found[0]], ["receipts.md"])
 
     def test_the_ref_scan_reads_a_repository_under_a_path_with_a_colon(self) -> None:
-        """Review of memra#1357 round 1: the alternates variable is colon-separated, so the
-        repository's object path is passed quoted."""
+        """Review of memra#1357 rounds 1 and 2: the alternates variable is colon-separated, so
+        the repository's object path is passed C-quoted, its quote and backslash escaped."""
         self.tempdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tempdir.cleanup)
-        self.root = Path(self.tempdir.name) / "a:b"
+        self.root = Path(self.tempdir.name) / 'a:b"c\\d'
+        self.root.mkdir()
+        self.git("init", "-q")
+        self.git("config", "user.name", "Boundary Test")
+        self.git("config", "user.email", "boundary@example.invalid")
+        self.commit("receipts.md", b"alpha needle\n", "evidence")
+        self.ref_scan_calls()
+        self.assertEqual([v.path for v in self.found[0]], ["receipts.md"])
+
+    def test_the_ref_scan_reads_a_repository_under_a_path_that_is_not_utf8(self) -> None:
+        """Review of memra#1357 round 2: git's paths are read as bytes, as the file system names
+        them."""
+        self.tempdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.tempdir.cleanup)
+        self.root = Path(self.tempdir.name) / os.fsdecode(b"bad\xff")
         self.root.mkdir()
         self.git("init", "-q")
         self.git("config", "user.name", "Boundary Test")
