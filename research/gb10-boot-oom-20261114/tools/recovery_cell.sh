@@ -9,7 +9,9 @@
 #   holders.jsonl);
 #   the round waits (ARM_WAIT_S at most) until MemFree is back under ARM_MB;
 #   K creations follow (ctx_probe.py round: each `recover ARM` in a fresh process), GAP_MS apart,
-#   the arms of ARMS in turn; the first arm alternates between rounds.
+#   the arms of ARMS in turn; the first arm alternates over the rounds that make creations (a
+#   round that times out makes none, and alternating by round number would tie the first
+#   creation's arm to the episodes' length).
 # When MemFree does not come back under ARM_MB the round makes no creation and the episode ends:
 # the readers stop for PAUSE_S seconds and start again, then SETTLE_S seconds with no creation.
 # creations.jsonl has one row per creation with every try; memwatch.jsonl MemFree, MemAvailable,
@@ -54,7 +56,7 @@ go() {
   [ -s "$OUT/UNTIL" ] && UNTIL=$(cat "$OUT/UNTIL")
   [ $r -lt "$ROUNDS" ] && [ "$(date +%s)" -lt "$UNTIL" ] && [ ! -e "$STOP" ]
 }
-r=0; ep=0; ESTOP=$OUT/stop.0; EPIDS=$OUT/reader.pids.0
+r=0; e=0; ep=0; ESTOP=$OUT/stop.0; EPIDS=$OUT/reader.pids.0
 trap 'stop_readers; touch "$STOP"; log "cell stopped by signal"; exit 1' TERM INT
 while go; do
   ep=$((ep + 1))
@@ -70,8 +72,9 @@ while go; do
       echo "{\"round\": $r, \"episode\": $ep, \"rec\": ${line:-null}}" >> "$OUT/holders.jsonl"
       case $line in *'"released"'*) ;; *) log "round $r: holder failed: $(tail -n 1 "$OUT/hold.log")" ;; esac
     fi
-    python3 "$H/ctx_probe.py" round "$OUT/creations.jsonl" "$r" "$K" "$GAP_MS" "$ARM_MB" "$ARM_WAIT_S" "$arms_csv" < /dev/null 2>&1 | tee -a "$OUT/run.log"
+    ARM_START=$e python3 "$H/ctx_probe.py" round "$OUT/creations.jsonl" "$r" "$K" "$GAP_MS" "$ARM_MB" "$ARM_WAIT_S" "$arms_csv" < /dev/null 2>&1 | tee -a "$OUT/run.log"
     if [ "${PIPESTATUS[0]}" = 3 ]; then log "episode $ep ends at round $r: MemFree stayed over $ARM_MB MB"; break; fi
+    e=$((e + 1))
   done
   stop_readers
   go && sleep "$PAUSE_S"
