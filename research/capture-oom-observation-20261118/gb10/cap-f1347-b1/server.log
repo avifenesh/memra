@@ -1,0 +1,161 @@
+1794998567.132117 [server] build: memra-0.141.1-4eb5ab8319b1 (id: source-tree, git: unknown)
+1794998567.132173 [server] starting; models config = [("q38", "~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1794998567.132946 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1794998567.132993 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1794998567.333354 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1794998567.459997 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1794998567.460039 [worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1794998567.504920 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1794998574.716098 [mtp-draft] loading external MTP draft: ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/mtp-Qwen3.8-27B-NVFP4-frspec-sxc32768.gguf
+1794998574.794152 [mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+1794998575.244596 [frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+1794998575.519331 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1794998575.519389 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1794998575.519394 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+1794998575.519397 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1794998575.519400 [route-contract] model="q38" route=hybrid-worker capacity=32 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1794998617.404390 [fa-pool] grow #0 dev=0 o_len 0 -> 3244032 ml_len 0 -> 12672 (retired kept, zero=false)
+1794998617.710024 [fa-pool] grow #1 dev=0 o_len 3244032 -> 6488064 ml_len 12672 -> 25344 (retired kept, zero=false)
+1794998621.061927 [device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":17079205888,"still_owned_bytes":16616225792,"pool_reserved_bytes":16844324864,"pool_cached_bytes":228099072,"driver_free_bytes":30623981568,"synchronization_errors":[]}
+1794998621.061970 [wave-probe] 32 sessions at depth 2048: two 16-row waves 263.0 ms, one 32-row wave 263.9 ms (tensor-core tier 228.3 ms) -> wave cap 32, tensor-core b32 on (45.3s; released 16288MB of cached pool to the driver)
+1794998621.061975 [worker] q38: decode wave cap 32; scheduler tick cap 32 (exact-32 tier)
+1794998621.285483 [vision] tower loaded from ~/models/Qwen3.8-27B-NVFP4 (27 blocks, out_width 5120, f32-resident)
+1794998621.291245 [vision] overlay intake: tower dev0 -> intake dev0 (cross_context=false) publish=Auto servable=true
+1794998621.291321 [prefix-cache] on: budget 49822MB (49821976576 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from MEMRA_CTX; MEMRA_CTX set), unified memory: the larger of that and 1/2 of allocatable free after the transient reserve, driver headroom 2147483648 B and host tier 0 B, requested 49821976576 B; boot driver free 103402049536 B, post-reserve clamp 99643953152 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+1794998621.291327 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1794998671.355052 [func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+1794998671.355146 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q4_K_mmvq
+1794998671.355152 [func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q6_K_mmvq
+1794998671.355858 [func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+1794998671.355914 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+1794998671.355917 [func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+1794998671.361465 [spec] draft-session state high-water: 34MB (max of parked delta 34MB and capture-time pool peak 2MB; charged per spec admission and gating future captures)
+1794998671.373649 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1383.927
+1794998671.373692 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794998675.808224 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1386.082
+1794998675.808275 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794998677.622623 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1384.436
+1794998677.622653 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794998679.525947 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1389.471
+1794998679.526000 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794998681.343725 [prime-chunk] phase=mtp-trunk rows=2048 wall_ms=1388.349
+1794998681.343776 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794998681.863901 [spec-pool] pooled rows draft engaged: 4 members (arms [GraphGreedy, GraphGreedy, GraphGreedy, GraphGreedy])
+1794998684.998095 [spec-pool] pooled rows draft engaged: 2 members (arms [GraphGreedy, GraphGreedy])
+1794998687.369176 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":28834230272,"synchronization_errors":[]}
+1794998687.369222 [spec-cost] model="q38" depth=2048 pooled=true plain_cap=32 round_overhead=9.75ms draft_step=0.00ms pooled_overhead=Some((4, 3.1275955625000016)) pooled_draft_step=None verify_ms[1..16]=[76.1 74.2 74.0 74.8 75.6 76.4 77.9 79.4 82.0 84.6 87.2 89.8 91.9 94.0 96.2 98.3] plain_ms[1..]=[75.6 77.6 81.8 86.0 90.1 94.2 98.3 102.4 107.1 111.8 116.4 121.1 125.7 130.4 135.1 139.7 145.3 150.9 156.5 162.2 167.8 173.4 179.0 184.6 190.2 195.8 201.4 207.1 212.7 218.3 223.9 229.5] (66.1s)
+1794998687.369227 [prime-walk] model="q38" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+1794998689.928041 [func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+1794998689.928079 [func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+1794998689.955077 [prime-chunk] phase=mtp-trunk rows=4096 wall_ms=2564.770
+1794998689.955111 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794998692.522290 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":28044070912,"synchronization_errors":[]}
+1794998692.522338 [admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+1794998692.522341 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 1536MB (static was 1536MB; measured 1214MB; probe kv charge 127MB, draft-state 34MB, drafted 87 accepted 34; [dev0 peak-mapped 19808MB rest-mapped 18432MB charged 161MB -> 1214MB]; 5.2s)
+1794998692.522344 [admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1794998692.522368 [admit-oom] batch OOM recovery: OFF (no receipt for this card: a batched chunk's OOM ends the chunk's sessions)
+1794998692.522371 [admission] prefill workspace: cold (no receipt for this card: the widest call on an empty slab and a whole-prompt stack)
+1794998692.522374 [kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+1794998692.522377 [deadline] unified memory (48 SMs, served ctx 262144): streaming TTFT default/max 997311 ms (derived), SSE prefill commit 60000 ms; non-streaming default/max 3045311 ms (derived: full-context prefill + 8192 open output tokens at 4 tok/s). MEMRA_SSE_PREFILL_COMMIT_MS=0 restores the shipped 90 s windows
+1794998692.523069 [server] worker ready; serving models: ["q38"]
+1794998692.523755 [server] listening on http://127.0.0.1:8090
+1794998697.318963 [meter] admit id=chatcmpl-da6e5e60b9e7678bcaa0721b398371c7 tenant=default lane=interactive model="q38"
+1794998697.319345 [spec-cost] model="q38" n=1 rung=3 -> K=3 (exploring: no acceptance history yet)
+1794998697.319455 [admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+1794998697.319460 [admission] request cost: model="q38" ctx=256 path=spec = 31552 B/token x ctx + 29MB prefill-workspace + 0MB fixed = 37MB
+1794998697.330417 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=64 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1794998697.330538 [admission] fixed residual high-water: model="q38" 312MB (observed 318MB at ctx 200 path=spec)
+1794998697.330559 [prefix-loan] reconcile why=tick books=0 lent_live=0 adopted=0.0MB charged=0.0MB real=0.0MB adoptions=0 compactions=0 pool_used=19492.9MB
+1794998697.548428 [prime-chunk] phase=mtp-trunk rows=64 wall_ms=216.301
+1794998697.548500 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794998698.528684 [spec-acc] ctx=64 burst=22/33 cum=22/33=0.667
+1794998698.528723 [tick-spec] seq=1 slot=0 trace=- start_ms=0.007 gap_ms=0.007 wall_ms=1197.751 generated=0->34 rounds=11 drafted=33 accepted=22 k=3
+1794998698.528728 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1197.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794998698.528734 [prefix-cache] insert (spec-boundary): 32 tokens, 156.9MB (resident 156.9MB / 49822MB, model q38)
+1794998698.528738 [specpub] Lend publication why=spec-boundary pos=32 lent=1.0MB us=70 pool_reserved=20535312384 pool_used=19808496976
+1794998699.532730 [spec-acc] ctx=98 burst=21/36 cum=43/69=0.623
+1794998699.532797 [tick-spec] seq=1 slot=0 trace=- start_ms=0.105 gap_ms=0.105 wall_ms=1003.718 generated=34->67 rounds=12 drafted=36 accepted=21 k=3
+1794998699.532800 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1003.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794998699.532803 [prefix-loan] reconcile why=retire books=34 lent_live=34 adopted=0.0MB charged=156.9MB real=156.9MB adoptions=0 compactions=0 pool_used=19808.5MB
+1794998700.795485 [spec-acc] ctx=131 burst=17/45 cum=60/114=0.526
+1794998700.795550 [tick-spec] seq=1 slot=0 trace=- start_ms=0.075 gap_ms=0.075 wall_ms=1262.545 generated=67->99 rounds=15 drafted=45 accepted=17 k=3
+1794998700.795553 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1262.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794998701.888966 [spec-acc] ctx=163 burst=18/39 cum=78/153=0.510
+1794998701.889003 [tick-spec] seq=1 slot=0 trace=- start_ms=0.083 gap_ms=0.083 wall_ms=1093.653 generated=99->128 rounds=13 drafted=39 accepted=18 k=3
+1794998701.889008 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1093.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794998701.918294 [meter] admit id=chatcmpl-3c88d82228dabc6d49851313c8f40045 tenant=default lane=interactive model="q38"
+1794998701.964567 [admission] per-session draft-state charge: model="q38" +36MB (measured capture high-water)
+1794998701.964603 [admission] request cost: model="q38" ctx=256 path=spec = 31552 B/token x ctx + 29MB prefill-workspace + 312MB fixed = 349MB
+1794998701.969023 [worker] spec-affinity: grew parked session 200 -> 256 rows (request-owned need)
+1794998701.969057 [worker] spec-affinity: rewound to 32 of 64 prompt tokens (fingerprint; priming 32 suffix; model q38)
+1794998701.969060 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=64 cached=32 lcp=32 active=1 wave=1 placement=single-or-non-pp2
+1794998701.969063 [prefix-loan] compact: plane 1 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=8
+1794998701.969065 [prefix-loan] compact: plane 2 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969067 [prefix-loan] compact: plane 3 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969069 [prefix-loan] compact: plane 4 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=4
+1794998701.969071 [prefix-loan] compact: plane 5 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969073 [prefix-loan] compact: plane 6 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=4
+1794998701.969075 [prefix-loan] compact: plane 7 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969077 [prefix-loan] compact: plane 8 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969079 [prefix-loan] compact: plane 9 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969081 [prefix-loan] compact: plane 10 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969083 [prefix-loan] compact: plane 11 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969085 [prefix-loan] compact: plane 12 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969087 [prefix-loan] compact: plane 13 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969089 [prefix-loan] compact: plane 14 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969091 [prefix-loan] compact: plane 15 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969093 [prefix-loan] compact: plane 16 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969095 [prefix-loan] compact: plane 17 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969097 [prefix-loan] compact: plane 18 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969099 [prefix-loan] compact: plane 19 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969101 [prefix-loan] compact: plane 20 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969103 [prefix-loan] compact: plane 21 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969105 [prefix-loan] compact: plane 22 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969107 [prefix-loan] compact: plane 23 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=4
+1794998701.969109 [prefix-loan] compact: plane 24 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969111 [prefix-loan] compact: plane 25 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969113 [prefix-loan] compact: plane 26 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969115 [prefix-loan] compact: plane 27 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969117 [prefix-loan] compact: plane 28 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969119 [prefix-loan] compact: plane 29 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969122 [prefix-loan] compact: plane 30 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969124 [prefix-loan] compact: plane 31 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969155 [prefix-loan] compact: plane 32 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969157 [prefix-loan] compact: plane 33 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969159 [prefix-loan] compact: plane 34 held 0.2MB, its readers copied 0.0MB (0.0MB read) us=3
+1794998701.969161 [prefix-loan] reconcile why=tick books=0 lent_live=0 adopted=0.0MB charged=157.9MB real=157.9MB adoptions=34 compactions=34 pool_used=19652.7MB
+1794998702.168829 [prime-chunk] phase=mtp-trunk rows=32 wall_ms=199.460
+1794998702.168880 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794998703.140800 [spec-acc] ctx=32 burst=22/33 cum=22/33=0.667
+1794998703.140851 [tick-spec] seq=1 slot=0 trace=- start_ms=0.005 gap_ms=0.005 wall_ms=1171.425 generated=0->34 rounds=11 drafted=33 accepted=22 k=3
+1794998703.140855 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1171.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794998704.142253 [spec-acc] ctx=66 burst=21/36 cum=43/69=0.623
+1794998704.142308 [tick-spec] seq=1 slot=0 trace=- start_ms=0.057 gap_ms=0.057 wall_ms=1001.316 generated=34->67 rounds=12 drafted=36 accepted=21 k=3
+1794998704.142313 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1001.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794998704.142320 [spec-cost] model="q38" realized n=1 K=3: 31.3 tok/s (now priced from serving)
+1794998705.400473 [spec-acc] ctx=99 burst=17/45 cum=60/114=0.526
+1794998705.400504 [tick-spec] seq=1 slot=0 trace=- start_ms=0.056 gap_ms=0.056 wall_ms=1258.341 generated=67->99 rounds=15 drafted=45 accepted=17 k=3
+1794998705.400508 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1258.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794998706.491912 [spec-acc] ctx=131 burst=18/39 cum=78/153=0.510
+1794998706.491964 [tick-spec] seq=1 slot=0 trace=- start_ms=0.053 gap_ms=0.053 wall_ms=1091.144 generated=99->128 rounds=13 drafted=39 accepted=18 k=3
+1794998706.491968 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1091.2 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794998706.518688 [meter] admit id=chatcmpl-c988b485273498cdeb304608dacbf045 tenant=default lane=interactive model="q38"
+1794998706.566238 [worker] spec-affinity: declined (empty suffix; 1 parked, 64 prompt tokens; model q38)
+1794998706.566949 [spec-k] model="q38" tenant="" K=3 source=cost-model prompt=64 cached=0 lcp=32 active=1 wave=1 placement=single-or-non-pp2
+1794998706.781648 [prime-chunk] phase=mtp-trunk rows=64 wall_ms=214.623
+1794998706.781699 [prime-finalize] walker=memra_engine::spec::prime::MtpPrimeWalker<'_> wall_ms=0.001 success=true
+1794998707.762959 [spec-acc] ctx=64 burst=22/33 cum=22/33=0.667
+1794998707.763016 [tick-spec] seq=1 slot=0 trace=- start_ms=0.003 gap_ms=0.003 wall_ms=1195.903 generated=0->34 rounds=11 drafted=33 accepted=22 k=3
+1794998707.763021 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1195.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794998708.763896 [spec-acc] ctx=98 burst=21/36 cum=43/69=0.623
+1794998708.763950 [tick-spec] seq=1 slot=0 trace=- start_ms=0.067 gap_ms=0.067 wall_ms=1000.853 generated=34->67 rounds=12 drafted=36 accepted=21 k=3
+1794998708.763958 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1000.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794998710.021181 [spec-acc] ctx=131 burst=17/45 cum=60/114=0.526
+1794998710.021228 [tick-spec] seq=1 slot=0 trace=- start_ms=0.071 gap_ms=0.071 wall_ms=1257.026 generated=67->99 rounds=15 drafted=45 accepted=17 k=3
+1794998710.021235 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1257.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794998711.111314 [spec-acc] ctx=163 burst=18/39 cum=78/153=0.510
+1794998711.111362 [tick-spec] seq=1 slot=0 trace=- start_ms=0.062 gap_ms=0.062 wall_ms=1090.376 generated=99->128 rounds=13 drafted=39 accepted=18 k=3
+1794998711.111365 [tick] act=1 int=1 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=1090.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0 form_waits=0 form_wait_ms=0.00 stall_refresh=0
+1794998711.142446 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1794998711.142481 [server] drain complete in 0.0s; exiting
+1794998711.291679 [server] GPU worker shutdown complete
