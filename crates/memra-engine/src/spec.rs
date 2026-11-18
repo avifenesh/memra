@@ -18257,6 +18257,7 @@ mod capture_headroom_tests {
                 && entry.contains(".map(|d| d.saturating_add(meas_cached)),"),
             "{entry}"
         );
+        let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
         let at = src
             .find("PER-SESSION DRAFT-STATE MEASUREMENT bracket end")
             .expect("the bracket end");
@@ -18267,7 +18268,10 @@ mod capture_headroom_tests {
                     "&& let Some(f1) = crate::unified_memory::delta_free_bytes(e.unified_memory(), raw1)"
                 )
                 && !end.contains("is_unified(")
-                && end.contains("let parked_delta = draft_state_parked_delta(\n                meas0,\n                f1,\n                draft_state_cached(e.pool_cached_bytes(), e.device_graph_mem_cached()),\n")
+                && squash(end).contains(
+                    "let parked_delta = draft_state_parked_delta( meas0, f1, \
+                     draft_state_cached(e.pool_cached_bytes(), e.device_graph_mem_cached()),"
+                )
                 && !end.contains("allocatable_mem_info"),
             "the draft-state bracket end does not take the delta reading: {end}"
         );

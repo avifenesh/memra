@@ -4856,23 +4856,26 @@ impl Engine {
     /// `dspark_vg_admission_debt` charges at admission. Returns 0 if the attribute cannot
     /// be queried (never a false headroom claim, matching `pool_cached_bytes`).
     pub fn device_graph_mem_reserved(&self) -> usize {
+        self.graph_mem_attr(
+            cudarc::driver::sys::CUgraphMem_attribute::CU_GRAPH_MEM_ATTR_RESERVED_MEM_CURRENT,
+        )
+        .unwrap_or(0)
+    }
+
+    /// One `cuDeviceGetGraphMemAttribute` reading of this engine's device, in bytes; None when
+    /// it cannot be queried.
+    fn graph_mem_attr(&self, attr: cudarc::driver::sys::CUgraphMem_attribute) -> Option<usize> {
         use cudarc::driver::sys as cus;
-        let Ok(dev) = cudarc::driver::result::device::get(self.gpu.ctx.ordinal() as i32) else {
-            return 0;
-        };
+        let dev = cudarc::driver::result::device::get(self.gpu.ctx.ordinal() as i32).ok()?;
         let mut bytes: u64 = 0;
         let rc = unsafe {
             cus::cuDeviceGetGraphMemAttribute(
                 dev,
-                cus::CUgraphMem_attribute::CU_GRAPH_MEM_ATTR_RESERVED_MEM_CURRENT,
+                attr,
                 &mut bytes as *mut u64 as *mut std::ffi::c_void,
             )
         };
-        if rc == cus::cudaError_enum::CUDA_SUCCESS {
-            bytes as usize
-        } else {
-            0
-        }
+        (rc == cus::cudaError_enum::CUDA_SUCCESS).then_some(bytes as usize)
     }
 
     /// Bytes the device's graph memory pool holds reserved and no graph uses
@@ -4881,24 +4884,10 @@ impl Engine {
     /// graph reserve here, since the pool keeps it until the context goes. 0 if either attribute
     /// cannot be queried (never a false headroom claim, matching `pool_cached_bytes`).
     pub fn device_graph_mem_cached(&self) -> usize {
-        use cudarc::driver::sys as cus;
-        let Ok(dev) = cudarc::driver::result::device::get(self.gpu.ctx.ordinal() as i32) else {
-            return 0;
-        };
-        let read = |attr: cus::CUgraphMem_attribute| {
-            let mut bytes: u64 = 0;
-            let rc = unsafe {
-                cus::cuDeviceGetGraphMemAttribute(
-                    dev,
-                    attr,
-                    &mut bytes as *mut u64 as *mut std::ffi::c_void,
-                )
-            };
-            (rc == cus::cudaError_enum::CUDA_SUCCESS).then_some(bytes as usize)
-        };
+        use cudarc::driver::sys::CUgraphMem_attribute as attr;
         match (
-            read(cus::CUgraphMem_attribute::CU_GRAPH_MEM_ATTR_RESERVED_MEM_CURRENT),
-            read(cus::CUgraphMem_attribute::CU_GRAPH_MEM_ATTR_USED_MEM_CURRENT),
+            self.graph_mem_attr(attr::CU_GRAPH_MEM_ATTR_RESERVED_MEM_CURRENT),
+            self.graph_mem_attr(attr::CU_GRAPH_MEM_ATTR_USED_MEM_CURRENT),
         ) {
             (Some(reserved), Some(used)) => reserved.saturating_sub(used),
             _ => 0,
