@@ -1,0 +1,12 @@
+# memra#1321 review fold on one RTX PRO 6000 Max-Q card, second list (2026-11-18). LABEL<TAB>MODE<TAB>COMMAND; see maxq-cells.sh.
+# The first list's first-row boots showed that this card's admission (the cold prefill charge) prices the 8.1k prime plain and
+# refuses the placed row on a card held to 24 GB (HTTP 400, `does not fit an IDLE box`), so the 8.1k first-row cells are dropped here.
+# Order: exactness under 24 GB free, the parked-then-short boots, exactness on the roomy card.
+exact-m7-s2i-emul24	emul24	bash "$KIT/exact-maxq.sh" m7 s2i
+parked-short-ds2h2-a	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2h2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,50 --seed0 400
+parked-short-dmain2-a	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-dmain2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,50 --seed0 400
+parked-short-ds2i-a	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2i-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,50 --seed0 400
+parked-short-ds2h2-b	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2h2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,100 --seed0 400
+parked-short-dmain2-b	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-dmain2-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,100 --seed0 400
+parked-short-ds2i-b	emul24	python3 "$KIT/b-sweep.py" --bin "$KIT/bin/memra-server-ds2i-120a" --model "$MAXQ_GG" --draft "$MAXQ_DR" --out "$OUT" --port 18321 --env MEMRA_DSPARK_PREFIX_RESTORE=0 --words 940 --pre-words 3582 --margins 0,0,100 --seed0 400
+exact-m7-s2i-roomy	roomy	bash "$KIT/exact-maxq.sh" m7 s2i

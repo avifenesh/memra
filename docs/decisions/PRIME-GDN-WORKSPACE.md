@@ -2,8 +2,8 @@
 
 **Status:** adopted for dense GDN trunks on the mma scan route (memra#1258, part 2), with the review
 fold of 2026-11-14; some cells of the fold are still owed (listed in the record). Measured on an
-RTX 5090 Laptop (sm_120a) and on GB10 (sm_121a, both DGX Spark units) with Qwen3.8-27B NVFP4 +
-Q5_K and DFlash2. No env seam: the floor is the one admission keeps free
+RTX 5090 Laptop (sm_120a), on GB10 (sm_121a, both DGX Spark units) and, for the fold's exactness,
+on an RTX PRO 6000 Blackwell Max-Q (sm_120a), with Qwen3.8-27B NVFP4 + Q5_K and DFlash2. No env seam: the floor is the one admission keeps free
 (`MEMRA_ADMIT_DRIVER_HEADROOM_MB`), and 2,048 MiB when that is 0 or there is no admission.
 
 ## Question
@@ -70,8 +70,17 @@ cached blocks and then from the driver.
   1.5-2.9 GB, `MemAvailable` about 120 GB) the workspace still parks. One boot per arm of the fold
   reads the same (1,201-1,204 against 1,506-1,509 on the later main).
 - **Outputs:** `run-gen`, `run-spec` K=1..8 and `dspark_q38_gate` are identical to main's on the RTX
-  5090 and on GB10 before the fold; the served answer texts equal main's in the 8.1k cells on the
-  5090 and in the GB10 cells, the fold's GB10 boot included. Exactness on the fold's binary is owed.
+  5090 and on GB10 before the fold, and for the fold on an RTX PRO 6000 Max-Q on both of its
+  paths: with the workspace parked, and with the card held to each process's peak plus 768 MiB,
+  where the fold drops the workspace between calls 2 to 20 times per process. The served answer
+  texts equal main's in the 8.1k cells on the 5090 and in the GB10 cells, the fold's GB10 boot
+  included.
+- **A PRO 6000 cannot stand in for the 24 GB card's capacity rows.** Admission's prefill charge is
+  keyed on the laptop's name; held to 24 GB, a PRO 6000 prices the 8.1k prime plain and refuses
+  the placed row. With the laptop's admission arms forced in a diagnostic build and the card held
+  to the laptop's free memory, the gate prices as on the laptop, the head before the fold shows
+  the held 481 MB after the first call and the fold shows main's reading (one boot each; the
+  rest of that cell is owed).
 - **Required memory:** 2,320 MB against main's 2,353 on the 5090 at 5.7k (reserve 1,543 against
   1,576); within 17 MB of main's on GB10.
 - No timing was measured; the capacity cells read memory only.

@@ -5,19 +5,21 @@ plus a margin; reads the margin the gate actually saw ([diag1255] gate-pass, MiB
 prime ran out of memory. Works on the diag build (gate-pass lines) only.
 
 usage: b-sweep.py --bin BIN --model GGUF --draft DIR --out DIR [--margins 0,25,50,75,100,125,150]
-       [--words 3582] [--reps 1] [--seed0 400] [--trim 0|1] [--call-trim 0|1]
+       [--words 3582] [--reps 1] [--seed0 400] [--trim 0|1] [--call-trim 0|1] [--env NAME=VALUE]...
 """
 from __future__ import annotations
 
 import argparse
 import importlib.util
 import json
+import os
 import re
 import threading
 import time
 from pathlib import Path
 
-GATE = Path.home() / ".cache/memra-1258/harness/same-pass-admission-gate.py"
+# MEMRA_SWEEP_GATE names the harness when the kit is not under ~/.cache/memra-1258 (another box).
+GATE = Path(os.environ.get("MEMRA_SWEEP_GATE") or Path.home() / ".cache/memra-1258/harness/same-pass-admission-gate.py")
 spec = importlib.util.spec_from_file_location("gate", GATE)
 g = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(g)
@@ -49,7 +51,18 @@ def main() -> None:
     ap.add_argument("--pre-words", type=int, default=0,
                     help="before each placed row: drop the ballast and run one cold prime of this many words "
                          "unplaced (a long prime that parks its workspace on a roomy device), then place the row")
+    ap.add_argument("--env", action="append", default=[], metavar="NAME=VALUE",
+                    help="one more variable for the server's environment (repeatable); the harness strips "
+                         "every MEMRA_* it does not set itself, so a device default that differs between "
+                         "cards is pinned here (MEMRA_DSPARK_PREFIX_RESTORE=0 on a card whose default is on)")
+    ap.add_argument("--keeper-fresh", action="store_true",
+                    help="start a new keeper right before every placed row (after the old one ends): on a "
+                         "card where the keeper's 20,000 tokens are over within seconds, so that it is "
+                         "decoding while the placed prime runs, as on the RTX 5090 Laptop")
+    ap.add_argument("--keeper-sleep", type=float, default=6.0,
+                    help="seconds between a keeper's start and the next action (6 on the laptop)")
     args = ap.parse_args()
+    extra_env = dict(item.split("=", 1) for item in args.env)
     args.out.mkdir(parents=True, exist_ok=True)
     log = args.out / "serve.log"
     server = g.Server(args.bin, args.model, args.draft, args.port, 32768, log)
@@ -63,6 +76,7 @@ def main() -> None:
             if args.ring:
                 env["MEMRA_DIAG_RING"] = "1"
             env.pop("MEMRA_SPEC_GATE_LOW", None)
+            env.update(extra_env)
         return _popen(cmd, *a, **kw)
 
     g.subprocess.Popen = popen
@@ -82,7 +96,7 @@ def main() -> None:
             t = threading.Thread(target=lambda: keeper.update(server.complete(g.keeper_prompt(), 20000)),
                                  daemon=True)
             t.start()
-            time.sleep(6.0)
+            time.sleep(args.keeper_sleep)
             return t
 
         # A counting keeper on DFlash decodes ~100 tok/s, so 20,000 tokens last about 3 minutes:
@@ -98,6 +112,10 @@ def main() -> None:
                     ballast.set(0)
                     kt = start_keeper()
                 pre = None
+                if args.keeper_fresh and not args.pre_words:
+                    kt.join(timeout=120)
+                    ballast.set(0)
+                    kt = start_keeper()
                 if args.pre_words:
                     # The long prime runs with nothing placed, so the device holds the park floor
                     # at its end; the row that follows is then placed with the workspace parked.
@@ -108,6 +126,10 @@ def main() -> None:
                     pre_lines = g.log_lines(log, pre_start)
                     pre = {"status": pr["status"], "prompt_tokens": pr["prompt_tokens"],
                            "prime_ws_lines": [l for l in pre_lines if l.startswith("[prime-ws]")][-2:]}
+                    if args.keeper_fresh:
+                        # After the unplaced prime, so that the keeper is young when the row is placed.
+                        kt.join(timeout=120)
+                        kt = start_keeper()
                 target = required + margin * MIB
                 # Two corrections on fresh snapshots: the keeper and the last prime move the reading.
                 for _ in range(2):
@@ -125,6 +147,7 @@ def main() -> None:
                     print(f"required moved {required >> 20} -> {first[6]} MiB", flush=True)
                     required = int(first[6]) * MIB
                 row = {
+                    "keeper_alive_after": kt.is_alive(),
                     "rep": rep, "margin_target_mib": margin, "status": r["status"],
                     "prompt_tokens": r["prompt_tokens"],
                     "path": first[2] if first else None,

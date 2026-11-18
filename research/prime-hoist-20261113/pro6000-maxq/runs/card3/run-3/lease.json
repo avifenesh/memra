@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "wrapper_pid": 3862410,
+  "child_pid": 3862507,
+  "requested_uuids": [
+    "GPU-card3"
+  ],
+  "lock_order": [
+    "GPU-card3"
+  ],
+  "lock_files": {
+    "GPU-card3": "/tmp/memra-gpu-locks/GPU-card3.lock"
+  },
+  "lock_inodes": {
+    "GPU-card3": {
+      "inode": 243946,
+      "device_major": 0,
+      "device_minor": 47
+    }
+  },
+  "box_lock": "/data/work/evals/gpu3.lock",
+  "devices": [
+    {
+      "index": 3,
+      "uuid": "GPU-card3",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:F1:00.0"
+    }
+  ],
+  "all_devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-card0",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:01:00.0"
+    },
+    {
+      "index": 1,
+      "uuid": "GPU-card1",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:21:00.0"
+    },
+    {
+      "index": 2,
+      "uuid": "GPU-card2",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:C1:00.0"
+    },
+    {
+      "index": 3,
+      "uuid": "GPU-card3",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:F1:00.0"
+    }
+  ],
+  "command": [
+    "bash",
+    "~/.cache/memra-1321-maxq-c3/maxq-cells.sh",
+    "~/.cache/memra-1321-maxq-c3/steps-c3-calib.tsv"
+  ],
+  "started_unix": 1794961944.2471852,
+  "state": "finished",
+  "child_exit_code": 143,
+  "finished_unix": 1794962141.3591475,
+  "timed_out": false,
+  "interrupted_signal": null,
+  "lingering_compute": [],
+  "process_group_lingered": true,
+  "exit_code": 1
+}

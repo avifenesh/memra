@@ -3,7 +3,8 @@
 Verdict: open after review round 1. The chunked GDN scan's planes are one workspace per prime,
 kept mapped only while the device holds admission's driver-headroom floor: between two calls of a
 prime, between primes, and later when the device gets short. The fold that asks the floor at
-those points is measured on two cells so far; the rest are owed and listed under "Review round 1".
+those points is measured on two cells of the review's scenario and on an exactness run that
+takes its drop path; the rest are owed and listed under "Review round 1".
 
 - **RTX 5090 Laptop, ~5.7k tokens (before the fold):** main's prime fails inside its first call on
   one prompt at margins of 49 and 100 MiB with 1.3 GB unused inside the pool. With the change no
@@ -16,13 +17,18 @@ those points is measured on two cells so far; the rest are owed and listed under
   main ran it clean in 6 of 6. It held the workspace's 481 MiB across the gap between the prime's
   two calls. The fold drops the workspace there under the floor: 2 fresh boots of 2 clean, with
   main's pool readings. Main's own failures at this length (prompts 8,234 and 8,215, memra#1322)
-  passed before the fold and are not run on the fold.
+  passed before the fold and are not run on the fold. On an RTX PRO 6000 Max-Q held to the
+  laptop's free memory, with the laptop's admission arms forced, the head before the fold has
+  481 MB more pool in use after the first call than main and the fold has main's reading (one
+  boot each; the rest of that cell is owed).
 - **GB10:** the first call's draw is 1,201-1,204 MiB against main's 1,474-1,477 at 5.7k, the same in
   every boot on both units before the fold, and 1,201-1,204 against 1,506-1,509 in the fold's one
   boot per arm on main 0db086f87a. Under a full page cache the workspace still parks.
-- **Outputs:** identical in every exactness run (before the fold), and the served answer texts are
-  equal to main's in the 8.1k and GB10 cells, the fold's GB10 boot included. Exactness on the
-  fold's own binary is owed.
+- **Outputs:** identical in every exactness run, the fold's included: on an RTX PRO 6000 Max-Q
+  `run-gen`, `run-spec` K=1..8 and `dspark_q38_gate` are equal to main's with the workspace
+  parked and with it dropped between calls (the card held to each process's peak plus 768 MiB;
+  2 to 20 drops per process). The served answer texts are equal to main's in the 8.1k and GB10
+  cells, the fold's GB10 boot included.
 - **Parking on a short device was measured and rejected:** it moved a failure to the step after the
   prime at zero margin. Holding the workspace between a prime's two calls on a short device was
   rejected the same way, by the 8,173 rows.
@@ -375,7 +381,7 @@ a boot, which main passes; main's own failures, prompts 8,234 and 8,215, passed 
 So the change moved which prompts fail, and for 8,173 it was worse. The cell below reproduces
 that on main 0db086f87a, traces it, and measures the fold. It is not complete: the cards were
 taken for other work after the rows below, and the cells still owed are listed at the end of this
-section.
+section. The section after it has what an RTX PRO 6000 could carry in the meantime.
 
 Arms, all diagnostic builds on main 0db086f87a (`tools/mk-arms2.sh`: the `[diag1255]` lines and an
 allocation ring, `tools/diag-ring.py`): `dmain2` = main, `ds2h2` = this change before the fold
@@ -457,8 +463,138 @@ Not run when this record was written. None of the statements above rests on them
 | the seven 8.1k prompts, one per fresh boot, 100 MiB | `dmain2`, `ds2i` | RTX 5090 Laptop | main's own failures (8,234, 8,215) on the fold |
 | a short cold prime placed after an unplaced 5.7k prime (the workspace parks, then the device gets short) | `dmain2`, `ds2h2`, `ds2i` | RTX 5090 Laptop | the later reclaim (`unparked`) under a placed margin |
 | margin sweeps and per-call demand at ~5.7k tokens | `dmain2`, `ds2i` | RTX 5090 Laptop | that the 5.7k rows of this record, measured before the fold, hold on it |
-| `run-gen`, `run-spec` K=1..8 and `dspark_q38_gate`, main against the fold | | RTX 5090 Laptop | exactness on the fold's own binary |
 | filled page cache, ~5.7k tokens, boot 2 of each arm | `dmain2`, `ds2i` | GB10 | the GB10 row above at two boots |
+| the mechanism cell with the laptop's admission arms forced: prompt 8,173 first row at 100 MiB (17 boots left of 18), at 150 MiB (6), parked-then-short (6) | `dmain2f`, `ds2h2f`, `ds2if` | RTX PRO 6000 Max-Q, held to the laptop's free memory | the fold's logic under the laptop's free reading, with the head before the fold as the control (next section) |
+
+Exactness on the fold's own binary was on this list; it ran on an RTX PRO 6000 Max-Q with the
+drop path taken and is in the next section. The RTX 5090 rows stay owed on that card: the next
+section says why another card cannot stand in for them.
+
+## The fold on an RTX PRO 6000 Blackwell Max-Q (2026-11-18)
+
+Two cards of a four-card box, each running one step at a time (96 GB each, sm_120a, driver
+615.71.09), the arms built for the laptop cells (main 0db086f87a and the fold on it; each step's
+`guard.log` has the sha256 of what it ran), Qwen3.8-27B NVFP4 + Q5_K with DFlash2. A fixed ballast in a second process holds the card down to a set
+amount of free memory before each step (`tools/maxq-cells.sh`: `emul:N` holds it to N MiB free by
+nvidia-smi's total less used). The cells read memory and outputs, not time; the other cards of the
+box ran other jobs.
+
+### Exactness of the fold, with the workspace dropped between calls
+
+`tools/exact-maxq.sh`: the cell of the laptop's exactness runs (`run-gen` argmax at 4,106 and
+8,200 tokens, `run-spec` K=1..8 at 8,200, `dspark_q38_gate` at 2,000 / 4,106 / 8,200 / 16,500),
+arm `m7` = main 0db086f87a, `s2i` = the fold. An engine binary has no admission; since the fold
+it keeps the workspace only while the device has 2,048 MiB free and otherwise drops it at the end
+of every prime call (`[prime-ws] ... not held between calls`). Three passes:
+
+| pass | free memory before the process | `m7` | `s2i` | arms | `[prime-ws]` lines in the `s2i` logs |
+|---|---|---|---|---|---|
+| roomy (no ballast) | 97,885 MiB | all pass | all pass | `ARMS-EQUAL` | 0 |
+| held to a 24 GB card's free memory | 24,389 MiB | all pass | all pass | `ARMS-EQUAL` | 0 |
+| tight, `dspark_q38_gate` | 22,439 MiB | `ALL EXACT` | `ALL EXACT` | `ARMS-EQUAL` | 14, all `not held between calls` |
+| tight, `run-gen` 8,200 | 22,033 MiB | `MATCH` / `MATCH` | `MATCH` / `MATCH` | `ARMS-EQUAL` | 2 |
+| tight, `run-spec` 8,200 | 20,435 MiB | `STEP-IDENTITY` 0 of 1,986,560, `SELF-CONSISTENCY PASS` | the same | `ARMS-EQUAL` | 20 |
+| tight, `run-gen` 4,106 | 20,113 MiB | `MATCH` / `MATCH` | `MATCH` / `MATCH` | `ARMS-EQUAL` | 2 |
+
+- "all pass": `run-gen` `MATCH` / `MATCH` at both lengths with argmax 16602 and the same maxdiffs
+  in both arms (2.022e-1 / 1.879e-1 at 4,106, 1.758e-1 / 1.779e-1 at 8,200), `run-spec`
+  `STEP-IDENTITY ... 0 of 1986560 logits differ` and `SELF-CONSISTENCY PASS`, `dspark_q38_gate`
+  `ALL EXACT`. `ARMS-EQUAL`: the token streams and the gate's per-prompt digests of the two arms
+  are byte-equal files.
+- **A 24 GB card's free memory does not put an engine binary under the floor.** Without a keeper
+  and a server's planes the processes peak at 19.0 to 21.7 GB, so at 24,389 MiB free every call
+  ends above 2,048 MiB and the workspace stays (0 `[prime-ws]` lines): that pass compares the
+  path a roomy device takes, twice.
+- **The tight passes take the drop path.** The roomy pass samples the card's used memory twice a
+  second and records each process's peak (`peak ARM ITEM` lines in `guard.log`); a tight pass
+  holds the card to the larger arm's peak plus 768 MiB, one item per pass. The fold's calls then
+  end under the floor and it drops and reallocates the workspace, 2 to 20 times per process, and
+  every compared byte is still equal to main's.
+- The maxdiffs differ from the laptop's (1.727e-1 / 1.851e-1 there): the attention split ladder is
+  keyed on the SM count (188 here, 82 on the laptop). The comparison is between arms on one card.
+
+Raw: `pro6000-maxq/exact-m7-s2i-roomy`, `exact-m7-s2i-emul24`, `exact-tight-{dspark,rungen8200,runspec8200,rungen4106}`
+(`guard.log`, the per-process logs, the streams and digests; the prompt ids and texts are left
+out, `tools/exact-maxq.sh` derives them from the GGUF).
+
+### The server cells on this card: what is and is not the laptop's cell
+
+The capacity cells of this record are facts about the RTX 5090 Laptop: its `required`, its
+margins, which prompt fails where. They cannot be read off another card, for a reason that is in
+the code and was then measured.
+
+- **The gate's charge is keyed on the card's name.** Admission charges a prime the prefill
+  workspace it holds beside the resident slab on the RTX 5090 Laptop only
+  (`prefill_held_for_device`); every other card keeps the cold charge. For prompt 8,173 the
+  laptop's log prints both: `held=520MB cold=1963MB`.
+- **Measured, with the laptop's binaries and the card held to 24,389 MiB free:** the unplaced
+  8.1k prime reads `cost=2104MB draft=0MB required=3647MB path=plain` (laptop: `cost=890MB
+  draft=160MB required=2433MB path=spec`), and the placed row is refused before admission in all
+  three arms: `[admit-oom] capacity reject: model="gate" ctx=8253 does not fit an IDLE box
+  (available 3294MB)`, HTTP 400. The unplaced 5.7k prime of the parked-then-short cell is refused
+  the same way (`ctx=5823`). No prime ran, so these rows say nothing about the change
+  (`pro6000-maxq/first-8k-m100-{ds2h2,dmain2,ds2i}-r1`, `parked-short-ds2h2-a`).
+- Other arms that differ between the two cards: batch OOM recovery (on for the laptop, off
+  here), the DFlash prefix restore (off on every RTX 5090, on here; pinned off with
+  `MEMRA_DSPARK_PREFIX_RESTORE=0`), the attention split ladder (by SM count) and the spec cost
+  model's draft-step fit.
+
+So the 5090 cells that are owed stay owed on that card. What this card can carry is a
+**mechanism cell**: the same arms with the laptop's two admission arms forced
+(`tools/laptop-arms-door.diff`: `MEMRA_DIAG_LAPTOP_ARMS=1` makes `prefill_held_for_device` and
+`batch_oom_recover_default` answer as on the laptop; arms `dmain2f`, `ds2h2f`, `ds2if`), on a
+card held to the laptop's free memory. It asks whether the fold's logic does what it should under
+the same free reading, with the head before the fold as the positive control. It is not a
+capacity row of either card.
+
+Two things had to be calibrated before the cell matched the laptop's, and the rows before each
+are kept as they ran:
+
+- **Free memory after boot.** Held to 24,390 MiB free by nvidia-smi's total less used, the server
+  read 3,648 MiB of driver free at `calibration-complete` against the laptop's 4,621: the unplaced
+  prime then ended under the floor and did not park, and the row was placed at 675 to 708 MiB
+  seen (`f-first-8k-m100-*-r1`). Held to 25,363 MiB, it reads 4,846,845,952 bytes against the
+  laptop's 4,845,731,840.
+- **The keeper.** This card decodes the keeper's 20,000 tokens in seconds, so it had ended before
+  the placed prime and nothing was allocated in the gap between the prime's two calls. With
+  `--keeper-fresh --keeper-sleep 2` (`tools/b-sweep.py`) a new keeper starts right before each
+  placed row and is decoding during the prime.
+
+Prompt 8,173 as the first placed row of a boot at 100 MiB, the forced arms, one boot each:
+
+| pass | arm | seen | out of memory | pool reserved / used after call 1 | before call 2 | pool growth in the gap | allocated in the gap | `[prime-ws]` |
+|---|---|---|---|---|---|---|---|---|
+| held to 24,390 MiB, keeper ended | before the fold (`ds2h2f`) | 708 MiB | 0 | 20,992 / 19,876 MB | 20,992 / 19,876 MB | 0 MB | 0 MB | not parked |
+| | main (`dmain2f`) | 675 MiB | 0 | 20,992 / 19,395 MB | 20,992 / 19,395 MB | 0 MB | 0 MB | |
+| | the fold (`ds2if`) | 708 MiB | 0 | 20,992 / 19,395 MB | 20,992 / 19,395 MB | 0 MB | 0 MB | not held between calls, not parked |
+| held to 25,363 MiB, keeper decoding | before the fold (`ds2h2f`) | 99 MiB | 0 | 22,144 / 21,097 MB | 22,176 / 21,097 MB | 32 MB | 149 MB | not parked |
+
+- **The gate prices the forced arms as the laptop does**: `cost=890MB draft=160MB reserve=1543MB
+  required=2433MB path=spec` for prompt 8,173 in every forced row, the laptop's numbers.
+- **In the first pass the three arms already separate on the reading the fold changes.** After
+  the first call the head before the fold has 481 MB more pool in use than main (19,876 against
+  19,395): the workspace it holds across the gap. The fold has main's 19,395, with `[prime-ws]
+  ... not held between calls: free_bytes=858718208` in its log. Nothing ran in the gap in that
+  pass, so no arm was pushed further.
+- **The calibrated control row is the laptop's row.** `limiting_free=2532MB` at the gate (laptop
+  2,531), seen 99 (98), 149 MB allocated in the gap by the keeper (149), pool used after the
+  first call 21,097 MB (21,041), and the pool grew from the driver in the gap, 32 MB here against
+  64. This boot had no out-of-memory line; the laptop's control failed in 3 boots of 4 and its
+  first boot passed too. One boot is not a rate.
+- **Not run:** the card was taken back after that row. The calibrated boots of main and the
+  fold, the control's other boots, the 150 MiB row and the parked-then-short cell are prepared
+  (`pro6000-maxq/runs/`: the step lists) and listed with the owed cells above. Until they run,
+  this card's server rows show the held 481 MiB and its absence with the fold, and a stand-in
+  that reaches the laptop's pressure point, and nothing about a failure rate.
+
+Raw: `pro6000-maxq/f-first-8k-m100-{ds2h2f,dmain2f,ds2if}-r1`, `c-first-8k-m100-ds2h2f-r1`
+(`tools/first-table.py DIR...`), `pro6000-maxq/runs/card2`, `card3` (each run's lease, progress
+and heat log, and its step list). The runs were stopped and resumed several times for other
+work on the box; a stopped step has no DONE line and no directory here. The first stop left one
+engine process on the card for about two minutes (`runs/card2/run-1/lease.json` records it); the
+driver has ended a step's whole session since. Tools: `tools/maxq-cells.sh` (the run driver: one step per boot,
+the fixed ballast, a heat guard, a stop that ends the step's whole session), `tools/exact-maxq.sh`,
+`tools/b-sweep.py` (`--env`, `--keeper-fresh`), `tools/laptop-arms-door.diff`.
 
 ## Exactness
 
@@ -487,8 +623,9 @@ compared byte is in the receipts.
   and three parked reuses). A dropped workspace is allocated again by the next call, uninitialised,
   as step 2's first allocation and its allocation after a trim already are. Since the fold an
   engine binary keeps the park's own 2,048 MiB floor, so on a device with less than that free it
-  allocates per call. `run-gen`, `run-spec` and `dspark_q38_gate` on the fold's own binary are
-  owed (see "Review round 1").
+  allocates per call. `run-gen`, `run-spec` and `dspark_q38_gate` on the fold's own binary ran on
+  an RTX PRO 6000 Max-Q, on both paths (the section "The fold on an RTX PRO 6000 Blackwell
+  Max-Q"): equal to main's with the workspace parked and with it dropped between calls.
 - **Served answers, the path with the floor.** The 16 greedy tokens of every request, by sha256:
   - RTX 5090 at ~8.1k, `ds2h` against `dmain`: equal for all ten prompts in both boots. `ds2h` did
     not park after 10 of its 11 primes per boot, so these are primes on a newly allocated
@@ -560,10 +697,13 @@ On the branch head (main 5a6ae2438e plus the five code commits), CPU only:
   (`MEMRA_STEP_GEMM_PRIME_SUFFIX=0`, `MEMRA_STEP_GEMM_PRIME=0` or a vision overlay), on the trunk's
   dense layers. That was not run. Each stage's walk is single-device code on that stage's engine
   and its own slab.
-- **RTX PRO 6000, single card.** No cell. On a 96 GB card the margins these sweeps place are not
-  the constraint.
+- **RTX PRO 6000 capacity.** No capacity row: on a 96 GB card the margins these sweeps place
+  are not the constraint, and held down to 24 GB the card's own admission refuses the cell (the
+  cold prefill charge). What ran there is the fold's exactness and the start of a mechanism cell
+  with the laptop's admission arms forced.
 - **Prompts past 8k tokens.** The long-prompt footprint cells (7.6k to 18.7k) were not run.
 - **The margin sweeps on GB10.** Their ballast would take the shared host's memory down to the
   admission margin.
 - **The rest of the review fold's cells.** Listed with their devices at the end of "Review round
-  1": the fold is measured on the first-row cell (two boots) and one GB10 boot per arm.
+  1": the fold is measured on the first-row cell (two boots on the laptop), one GB10 boot per
+  arm, and the exactness passes and first mechanism rows on an RTX PRO 6000 Max-Q.

@@ -1,0 +1,27 @@
+2026-11-18T02:32:16+02:00
+step exact-tight-rungen4106 mode emul:@~/.cache/memra-1321-maxq/peaks/rungen4106.tight
+EXACT_ONLY=rungen4106 PROMPTS_FROM="$KIT/out/exact-m7-s2i-emul24/prompts" bash "$KIT/exact-maxq.sh" m7 s2i
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 615.71.09, 97887 MiB, 2 MiB, 80, 70 %, 116.93 W, 281.00 W
+fixed ballast 77213 MiB held; card total 97887 MiB used 77774 MiB free 20113 MiB (target 20114)
+2026-11-18T02:32:17+02:00
+4101c72ff04001dfad59e4345715360991fd50358906afbf422e3a38e9aa89d5  ~/.cache/memra-1321-maxq/bin/run-gen-m7-120a
+b6192aa1267ea27f1b04f5607377abe563d8e8337e376a2bd260b5589ca2810f  ~/.cache/memra-1321-maxq/bin/run-spec-m7-120a
+297360ebc9f2a8b1d1e7a7856f6d5b919ec7e366c0f48b2b7dcdc7ba2fcedddb  ~/.cache/memra-1321-maxq/bin/dspark-q38-gate-m7-120a
+cbe98be2f29cecf328e1017549e39e9b5a4904437ef8bc8f11e87b48d2df201c  ~/.cache/memra-1321-maxq/bin/run-gen-s2i-120a
+0a57a2462c63882753ea8a2492cb1d3d6f45d700a3ead3d7bd27f1b155bb0c73  ~/.cache/memra-1321-maxq/bin/run-spec-s2i-120a
+25397627d57d4df77956cadb2f7bdc73166d49a7f297fcd9073b780ec93ded70  ~/.cache/memra-1321-maxq/bin/dspark-q38-gate-s2i-120a
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 615.71.09, 79, 109.01 W, 281.00 W, 97887 MiB, 77774 MiB
+c1ab4ef7c6b9d367ab21a26ffa1929b0c9baabe9583ffa9c349e61eaca81a8d7  p16500.ids
+db7f73646e7ca7e4e47509ac4369baf3e766ebae0333618aa68f3eeb0f6fa430  p2000.ids
+bc51fe82e76bec80550a1da13719a154635b85841675976173ed43b02efb7fc7  p4106.ids
+e0cb3c60db396b6e862cbbf916ac5fde3e47cdbb431f7413d74db95429b9acec  p8200.ids
+m7 run-gen 4106 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=2.022e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.879e-1  MATCH
+peak m7 rungen4106: about 18991 MiB (card used before the runs 77774 MiB)
+s2i run-gen 4106 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=2.022e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.879e-1  MATCH
+peak s2i rungen4106: about 18991 MiB (card used before the runs 77774 MiB)
+ARMS-EQUAL
+prime-ws lines m7-rungen-4106.log: 0
+prime-ws lines s2i-rungen-4106.log: 2       2 [prime-ws] dev0 GDN scan workspace not held between calls;
+EXACT2-DONE rc=0 2026-11-18T02:34:34+02:00
+step rc=0 2026-11-18T02:34:35+02:00
+2 MiB, 84, 68 %

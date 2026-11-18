@@ -1,0 +1,10 @@
+c1ab4ef7c6b9d367ab21a26ffa1929b0c9baabe9583ffa9c349e61eaca81a8d7  p16500.ids
+db7f73646e7ca7e4e47509ac4369baf3e766ebae0333618aa68f3eeb0f6fa430  p2000.ids
+bc51fe82e76bec80550a1da13719a154635b85841675976173ed43b02efb7fc7  p4106.ids
+e0cb3c60db396b6e862cbbf916ac5fde3e47cdbb431f7413d74db95429b9acec  p8200.ids
+m7 run-gen 4106 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=2.022e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.879e-1  MATCH
+peak m7 rungen4106: about 18991 MiB (card used before the runs 77774 MiB)
+s2i run-gen 4106 rc=0 prefill argmax=16602  decode argmax=16602  logit maxdiff=2.022e-1  MATCH batched-prime argmax=16602  tokenwise argmax=16602  logit maxdiff=1.879e-1  MATCH
+peak s2i rungen4106: about 18991 MiB (card used before the runs 77774 MiB)
+ARMS-EQUAL
+EXACT2-DONE rc=0 2026-11-18T02:34:34+02:00

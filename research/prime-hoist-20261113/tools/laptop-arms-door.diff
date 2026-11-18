@@ -1,0 +1,27 @@
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -3774,6 +3774,12 @@
+ /// graph with a chunk graph kept per session, which no cell measured; it, every other card and
+ /// unified memory keep the cold charge until their own cell reads.
+ fn prefill_held_for_device(device_name: &str, unified: bool) -> bool {
++    // [diag1255] stand-in arm: MEMRA_DIAG_LAPTOP_ARMS=1 takes the RTX 5090 Laptop's arm on
++    // another discrete card (a card held to 24 GB by a ballast).
++    if !unified && std::env::var("MEMRA_DIAG_LAPTOP_ARMS").as_deref() == Ok("1") {
++        eprintln!("[diag1255] laptop arms forced: prefill workspace held");
++        return true;
++    }
+     !unified
+         && device_name.contains("Laptop")
+         && matches!(
+@@ -14655,6 +14661,11 @@
+ /// read the same on 2026-11-08 (research/c8-workspace-20261108); every other card, the desktop
+ /// RTX 5090 included, keeps the chunk's error arm.
+ fn batch_oom_recover_default(device_name: &str) -> bool {
++    // [diag1255] stand-in arm, as in `prefill_held_for_device`.
++    if std::env::var("MEMRA_DIAG_LAPTOP_ARMS").as_deref() == Ok("1") {
++        eprintln!("[diag1255] laptop arms forced: batch OOM recovery on");
++        return true;
++    }
+     memra_engine::parallel::HardwareTarget::is_pro6000_workstation(device_name)
+         || batch_oom_recover_laptop(device_name)
+ }
