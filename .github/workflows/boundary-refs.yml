@@ -74,12 +74,12 @@ permissions:
 jobs:
   refs:
     runs-on: ubuntu-24.04
-    # Measured 2026-08-19: 187 refs (68 heads, 119 tags), 45,237 candidate blob versions, ~25
-    # minutes wall on 4 nice'd cores of the dev rig. 45 was the heads-only budget and tags
-    # roughly tripled the tree count, so the ceiling moves rather than the job dying half-scanned
-    # — a timeout kill is a scan that proved nothing. The cost is dominated by one `git ls-tree
-    # -r` per ref plus one multi-tree `git grep`; the audit's object-DB sweep would be cheaper
-    # and cannot skip a commit, which is the next change here (see the decision record).
+    # Measured 2026-08-19: 187 refs, ~25 minutes on 4 nice'd cores of the dev rig. By 2026-11
+    # (1,354 refs) the per-(ref, path) `git grep` never finished inside 120 minutes (memra#1357).
+    # The scan now reads each tree object once and greps each distinct blob once: 1,354 refs
+    # (331 heads, 21 tags, 1,002 PR heads) in 9.3 minutes on the rig, 2.8 GB peak. The ceiling
+    # stays at 120 so that growth shows as a slow run, not a kill: a timeout kill is a scan
+    # that proved nothing.
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
