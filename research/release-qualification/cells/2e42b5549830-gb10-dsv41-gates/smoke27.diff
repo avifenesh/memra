@@ -1,0 +1,6 @@
+26,27c26,27
+< B=$R/bins/$TAG
+< O=$R/out/smoke5-$TAG; mkdir -p $O; : > $O/s.txt
+---
+> B=${SMOKE_BINS:?}
+> O=${SMOKE_OUT:?}; mkdir -p $O; : > $O/s.txt

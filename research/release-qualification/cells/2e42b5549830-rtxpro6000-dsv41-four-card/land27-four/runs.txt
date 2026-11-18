@@ -1,0 +1,30 @@
+kgate start 01:51:47 drops
+kgate rc 0 end 01:51:51 drops
+kgate: 1027 checks, 0 failed 0 FAIL lines
+gate-default start 01:51:51 drops
+gate-default rc 0 end 01:52:21 drops
+gate-default: 1056 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1, 2, 3]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1, 2, 3]: 51615979 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+gate-peer-pull start 01:52:21 drops
+gate-peer-pull rc 0 end 01:52:49 drops
+gate-peer-pull: 1054 checks, 0 failed 0 FAIL lines
+gate-host-canonical start 01:52:49 drops
+gate-host-canonical rc 0 end 01:53:20 drops
+gate-host-canonical: 1054 checks, 0 failed 0 FAIL lines
+run1-A start 01:53:20 drops
+run1-A rc 0 end 01:53:48 drops
+run2-B start 01:53:48 drops
+run2-B rc 0 end 01:54:18 drops
+run3-B start 01:54:18 drops
+run3-B rc 0 end 01:54:45 drops
+run4-A start 01:54:45 drops
+run4-A rc 0 end 01:55:12 drops
+run5-B start 01:55:12 drops
+run5-B rc 0 end 01:55:39 drops
+run6-A start 01:55:39 drops
+run6-A rc 0 end 01:56:05 drops
+run7-A start 01:56:05 drops
+run7-A rc 0 end 01:56:33 drops
+run8-B start 01:56:33 drops
+run8-B rc 0 end 01:56:59 drops

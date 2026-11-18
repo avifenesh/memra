@@ -1,0 +1,18 @@
+head 2e42b55498304eef14d1291e290fe0a00fe9db7b start 2026-11-18T02:06:54+02:00
+5dc186640d57af63015e667062a0db8f36d04f6dff6443a0d26f43f4ef4e5481  <land27>/bins1315/green/dsv41-gate
+177db757c4485d0e807c0c61aa5937b7768605399b728d227fa8b2e99a409d39  <land27>/bins1315/red/dsv41-gate
+bb18036fe36792b652c366d2dd518a41104ebf9563b68eda41e15523ce74ff59  <land27>/cells-work/bins/2e42b55498304eef14d1291e290fe0a00fe9db7b-120a/memra-server
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 172 MHz, 76, 270.00 W
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 180 MHz, 53, 266.00 W
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 1672 MHz, 82, 281.00 W
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 180 MHz, 53, 276.00 W
+Mem:            1002          76         181          51         693         926
+kernels: rc=0; 1027 checks, 0 failed; FAIL lines 0; 2 s; as expected: yes
+rowfault-a: rc=0; 9 checks, 0 failed; FAIL lines 0; 5 s; as expected: yes
+rowfault-b: rc=0; 9 checks, 0 failed; FAIL lines 0; 6 s; as expected: yes
+rowfault-e: rc=0; 9 checks, 0 failed; FAIL lines 0; 55 s; as expected: yes
+smoke_wrx2: rc=0; 16 PASS lines, 0 FAIL; 169 s; as expected: yes
+red-rowfault-a: rc=0; 9 checks, 0 failed; FAIL lines 0; 9 s; as expected: yes
+red-rowfault-b: rc=1; 2 checks, 1 failed; FAIL lines 1; 8 s; as expected: yes
+end 2026-11-18T02:11:08+02:00
+G1315 PASS
