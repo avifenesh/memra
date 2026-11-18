@@ -14218,6 +14218,10 @@ impl HybridModel {
                     prompt.len() - stops.last().copied().unwrap_or(0)
                 );
             }
+            // memra#1258: every segment is primed. A final segment that went tokenwise (the
+            // tokenwise prime, 16 tokens or more) made no last batched call, so the slab
+            // would keep the GDN scan workspace until the request retires.
+            self.prime_gdn_ws_release(e);
             prompt_h = Some(h_all);
         } else if batched_prime {
             let (l, _h_seed, hiddens) = self.prime_cache(e, prompt, &mut *cache, 0)?;
