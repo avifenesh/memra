@@ -142,9 +142,12 @@ context are `cuInit` and `cuDeviceGet`, which `CudaContext::new` makes anyway, a
 - The retry covers context creation only. No other boot step failed here; each now names itself
   if it does.
 - The recoveries measured are few (10 boots) and one of them took 8.5 s, so the tail is
-  not known. A boot that outlasts the 90 s fails as before, with every try in its log. The cell
-  that would measure the distribution, and a fixed 50 ms cadence against the ladder, is
-  memra#1330.
+  not known. A boot that outlasts the 90 s fails as before, with every try in its log.
+  memra#1330 (`research/gb10-ctx-retry-cadence-20261118/`) measured 59 failed driver-level
+  creations in the same state: all recovered, in 12.0 s at most, and a fixed 50 ms cadence
+  recovered no sooner than this ladder while making more calls, so the numbers above stand.
+  Its memory records hold a stretch of 45.1 s with no free 2 MiB block, longer than the
+  32.2 s the budget was set against; 90 s is still about twice that.
 - An active remedy was not tried: allocating more anonymous memory than is free, so that the
   kernel reclaims whole page-cache folios, might end the wait sooner, but it puts memory
   pressure on a shared host to help one boot.

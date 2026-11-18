@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tab_1330.py RUN_DIR [RUN_DIR...]: memra#1330's read-out of recovery cells (recovery_cell.sh).
+"""tab_1330.py RUN_DIR[:no-first] [RUN_DIR...]: memra#1330's read-out of recovery cells (recovery_cell.sh).
 Per arm and stratum: creations, first tries out of memory, and for those the time from the first
 try to the context (ms), the driver calls it took, the time spent inside failing calls and in
 waits; median, p90, p99 (nearest rank) and max; a two-sided Mann-Whitney test of the arms' times
@@ -13,13 +13,17 @@ import sys
 
 
 def load(dirs):
+    """DIR or DIR:no-first (leave out that cell's first-of-round creations)."""
     rows = []
     for d in dirs:
+        d, _, opt = d.partition(":")
         for line in open(f"{d}/creations.jsonl"):
             r = json.loads(line)
             if "skipped" in r:
                 continue
             r["stratum"] = "first" if r.get("idx") == 0 else "later"
+            if opt == "no-first" and r["stratum"] == "first":
+                continue
             r["cell"] = d.rstrip("/").split("/")[-1]
             rows.append(r)
         try:
@@ -116,6 +120,13 @@ def main(dirs):
             print(f"    ms inside failing calls:  {summ(in_calls)}")
             print(f"    ms of waits:              {summ([round(w, 1) for w in waits])}")
             print(f"    one failing call, ms:     {summ(fail_try_ms)}")
+            ok_try = [r["try"][-1][1] for r in ok]
+            print(f"    ms of the call that succeeded: {summ(ok_try)}")
+            longr = [r for r in ok if r["ms_to_ok"] > 1000]
+            if longr:
+                cps = [r["tries"] / (r["ms_to_ok"] / 1e3) for r in longr]
+                print(f"    over 1 s: {len(longr)}; calls per second in those: {summ([round(c, 2) for c in cps])}")
+            print(f"    over 1/2/5/10 s: {[sum(1 for v in ms if v > x) for x in (1000, 2000, 5000, 10000)]}")
             gave = [r for r in ok if r.get("shipped_policy_gives_up_after_try")]
             print(f"    over 90 s: {sum(1 for v in ms if v > 90000)}; ladder rows where the shipped policy would have given up: {len(gave)}")
         if len(arms) == 2:

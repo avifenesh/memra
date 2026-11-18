@@ -329,8 +329,9 @@ Dev desk, CPU only (`tools/dd_checks.sh` on the head, logs in `cpu/`, `cpu/summa
 - **Few recoveries, one long.** 10 arm-T boots and one full serving boot needed the
   retry; one of them needed 8.5 s. How long the state can last is not known (the memory records
   show over 30 s), and a boot that outlasts the 90 s fails as before, with every try in its
-  log. The cell that would measure the distribution of recovery times, and a fixed 50 ms
-  cadence against the ladder, is memra#1330; it was not run.
+  log. The cell that measures the distribution of recovery times, and a fixed 50 ms
+  cadence against the ladder, is memra#1330: `research/gb10-ctx-retry-cadence-20261118/` (59
+  failed creations, all recovered, 12.0 s at most; the cadence does not change the time).
 - **Excluded from the counts:** `gb10/unit-b/b1-live2-dip` (boots armed to start when MemFree
   fell under 800 MB: it never did in 26 s after an exit, so its boots ran at the timeout and came
   up); cells stopped before their first boot (not copied: two transition cells whose rounds
