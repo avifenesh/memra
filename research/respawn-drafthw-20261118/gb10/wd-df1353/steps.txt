@@ -1,0 +1,14 @@
+1795010199.629153 [sd-notify] watchdog armed: WATCHDOG_USEC=180000000, pinging every 90.0s while live
+1795010199.927212 [worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1795010289.630299 [sd-notify] withholding WATCHDOG=1: worker is (re)loading weights
+1795010320.741050 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":22260363264,"synchronization_errors":[]}
+1795010325.894680 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":21463105536,"synchronization_errors":[]}
+1795010325.894720 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 1536MB (static was 1536MB; measured 1214MB; probe kv charge 127MB, draft-state 34MB, drafted 87 accepted 34; [dev0 peak-mapped 19808MB rest-mapped 18432MB charged 161MB
+1795010325.896374 [server] listening on http://127.0.0.1:8090
+1795010330.602973 [worker] PANIC in the GPU worker thread: MEMRA_PANIC_AFTER=1 fault injection: deliberate worker panic after 1 completed request(s)
+1795010330.603007 [worker] respawn attempt 1/1 in 2s (reloading weights)
+1795010332.606832 [worker] loading model "q38" <- ~/models/memra-q38/Qwen3.8-27B-NVFP4-MTP-GGUF/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1795010379.631023 [sd-notify] withholding WATCHDOG=1: worker thread panicked: MEMRA_PANIC_AFTER=1 fault injection: deliberate worker panic after 1 completed request(s)
+1795010452.302041 [device-trim] reason=spec-cost-calibration {"device":0,"reclaimed_bytes":17246978048,"still_owned_bytes":18448529352,"pool_reserved_bytes":18555600896,"pool_cached_bytes":107071544,"driver_free_bytes":22148567040,"synchronization_errors":[]}
+1795010457.437878 [device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":19178338256,"pool_reserved_bytes":19327352832,"pool_cached_bytes":149014576,"driver_free_bytes":21359542272,"synchronization_errors":[]}
+1795010457.437917 [admit-cal] boot calibration done: model="q38" route=mtp transient floor 1536MB (static was 1536MB; measured 1246MB; probe kv charge 127MB, draft-state 2MB, drafted 87 accepted 34; [dev0 peak-mapped 19808MB rest-mapped 18432MB charged 129MB -
