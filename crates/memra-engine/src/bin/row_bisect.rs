@@ -193,12 +193,31 @@ fn main() -> Res<()> {
         })
         .collect();
 
-    // Prefill side: one forward_last per row.
+    // Prefill side: one forward_last per row. `RB_PREFILL_ENV="K=V,K2=V2"` sets engine knobs
+    // for the prefill forwards only (for example MEMRA_NOFA, which the decode over a quantized
+    // cache refuses), and removes them before the decode pass.
+    let prefill_env: Vec<(String, String)> = std::env::var("RB_PREFILL_ENV")
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|kv| {
+            kv.split_once('=')
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+        })
+        .collect();
+    println!("prefill-only env: {prefill_env:?}");
+    for (k, v) in &prefill_env {
+        // SAFETY: single-threaded research binary; nothing else reads the environment here.
+        unsafe { std::env::set_var(k, v) };
+    }
     let mut pre: BTreeMap<usize, (Vec<Tap>, Vec<f32>)> = BTreeMap::new();
     for &r in &rows {
         row_tap::arm();
         let l = model.forward_last(&e, &prompt[..=r])?;
         pre.insert(r, (row_tap::take(), l));
+    }
+    for (k, _) in &prefill_env {
+        // SAFETY: as above.
+        unsafe { std::env::remove_var(k) };
     }
     // Decode side: one eager pass, armed at the chosen steps.
     let mut dec: BTreeMap<usize, (Vec<Tap>, Vec<f32>)> = BTreeMap::new();
