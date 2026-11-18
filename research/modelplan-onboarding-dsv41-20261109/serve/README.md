@@ -173,6 +173,7 @@ sequence's capacity instead of the runner's `max_pos`, and `dsv41-run --experts-
 | numeric budget | `"63"` served (the prompt carries the budget line), `"101"` a 400 naming `[1, 100]` |
 | lib suites on the final binaries, in a one-card lease | memra-server 1,120 passed (10 ignored), memra-cli 30, the engine's dsv41 tests 10; clippy `-D warnings` and fmt clean (`receipts/tests/`) |
 | the shared benchmark client | every request served with its token counts, both stream shapes (below) |
+| `ignore_eos` on the chat surface (memra#1332), `memra-server` of `7729f4e6af` on one RTX PRO 6000 Max-Q, the whole 40-layer trunk on the one-card residency, greedy, `max_tokens` 32, single untimed run | 6 of 6 checks: `true` runs 32 tokens and ends `length`; `false` ends at the end id after 23 tokens, `stop`; no field and `null` answer byte for byte as `false`; `true`'s text begins with `false`'s; `/v1/completions` with `true` runs 32 tokens, `length` (`receipts/chat-ignore-eos-7729f4e6af/`: `s.txt`, the five responses, the server log, the script, the lease's summary and 250 ms telemetry gzipped with `raw.sha256`; built on the run box with CUDA 13.4 nvcc, server sha256 `7c67caf4b35a...`) |
 
 Served greedy against the vendor: capital, multiturn, sys_json, hebrew, needle and needle1200 give
 the vendor's tokens exactly (the decode lane's table, step 6); gsm parts from the vendor after

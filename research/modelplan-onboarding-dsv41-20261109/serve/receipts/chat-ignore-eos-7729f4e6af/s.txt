@@ -1,0 +1,20 @@
+7c67caf4b35a3fb165f514c19676216dc478fe3af8cc6e0ab43f7b60e83de271  /home/access/dsv41/perf-bins/chateos/memra-server
+7729f4e6af built 2026-11-18T02:07:26+02:00 on wrx, cuda 13.4, sm_120a
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 2347 MHz, 67
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 180 MHz, 34
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 1732 MHz, 54
+NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 180 MHz, 52
+boot: ready=1 after 52s
+request eos-true [,"ignore_eos":true]: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"The capital of France is **Paris**.<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 2^1000 how","reasoning":"We need answer simple. Need maybe just Paris. Ensure no issue.","reasoning_de
+request eos-false [,"ignore_eos":false]: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"The capital of France is **Paris**.","reasoning":"We need answer simple. Need maybe just Paris. Ensure no issue.","reasoning_details":[{"type":"reasoning.text","text":"We need answer simple. Need
+request eos-absent []: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"The capital of France is **Paris**.","reasoning":"We need answer simple. Need maybe just Paris. Ensure no issue.","reasoning_details":[{"type":"reasoning.text","text":"We need answer simple. Need
+request eos-null [,"ignore_eos":null]: http 200 {"object":"chat.completion","model":"v41","choices":[{"index":0,"message":{"role":"assistant","content":"The capital of France is **Paris**.","reasoning":"We need answer simple. Need maybe just Paris. Ensure no issue.","reasoning_details":[{"type":"reasoning.text","text":"We need answer simple. Need
+request completions: http 200 {"object":"text_completion","model":"v41","choices":[{"index":0,"text":" Paris.<｜end▁of▁sentence｜>\nThe<｜end▁of▁sentence｜>\nThe capital of France is Paris.\nThe capital of France is Paris.\nThe capital of France is Paris.\nThe capital of France","finish_reason":"length"}],"usage":{"p
+PASS eos-true runs to max_tokens: 32 tokens, finish length (32, 'length')
+PASS eos-false stops early: fewer than 32 tokens, finish stop (23, 'stop')
+PASS no field = eos-false, byte for byte 
+PASS null = no field, byte for byte 
+PASS eos-true's text begins with eos-false's (the same greedy program until the stop) 
+PASS completions with ignore_eos runs to 32 tokens (32, 'length')
+SMOKE PASS
+SMOKE-DONE 02:17:17

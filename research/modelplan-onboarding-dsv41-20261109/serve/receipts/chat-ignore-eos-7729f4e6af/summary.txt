@@ -1,0 +1,13 @@
+02:15:38 dssparks.l27-perf-done seen
+02:15:58 W13-START: card 3, gpu3.lock held; 7729f4e6af built 2026-11-18T02:07:26+02:00 on wrx, cuda 13.4, sm_120a; load 4.04 4.05 4.24
+02:17:19 smoke lease rc 0
+PASS eos-true runs to max_tokens: 32 tokens, finish length (32, 'length')
+PASS eos-false stops early: fewer than 32 tokens, finish stop (23, 'stop')
+PASS no field = eos-false, byte for byte 
+PASS null = no field, byte for byte 
+PASS eos-true's text begins with eos-false's (the same greedy program until the stop) 
+PASS completions with ignore_eos runs to 32 tokens (32, 'length')
+SMOKE PASS
+SMOKE-DONE 02:17:17
+02:17:19 gpu3.lock released, dsv41.eos-done touched
+02:17:19 W13-DONE
