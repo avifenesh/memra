@@ -30,6 +30,8 @@
 
 #include <atomic>
 
+#include "bs_small.cuh"
+
 typedef uint16_t v41_bf;  // raw bf16 bits
 
 #define V41_ERR()                                                   \
@@ -143,7 +145,7 @@ __device__ float v41_block_sum(float v, float* red) {
     return t;
 }
 
-__device__ __forceinline__ uint32_t v41_lds32(const uint8_t* p) { return *(const uint32_t*)p; }
+__device__ __forceinline__ uint32_t v41_lds32(const uint8_t* p) { return bs::lds32(p); }
 
 __device__ __forceinline__ void v41_mma_e4m3(float d[4], const uint32_t a[4], uint32_t b0, uint32_t b1) {
     asm volatile(
@@ -228,10 +230,8 @@ extern "C" int memra_v41_act_quant(const void* x, long ldx, const int* rowidx, v
 }
 
 // The scale-factor layout of the CUTLASS GEMMs (cu/dsv41_cutlass.cu): the code of row r, K block kb of a
-// tensor with kbn blocks a row, over rows padded to a multiple of 128.
-__device__ __forceinline__ long v41_sf_off(long r, long kb, long kbn) {
-    return (r / 128) * (((kbn + 3) / 4) * 512) + (kb / 4) * 512 + (r % 32) * 16 + ((r % 128) / 32) * 4 + kb % 4;
-}
+// tensor with kbn blocks a row, over rows padded to a multiple of 128 (`bs::sf32_off`, cu/bs_small.cuh).
+__device__ __forceinline__ long v41_sf_off(long r, long kb, long kbn) { return bs::sf32_off(r, kb, kbn); }
 
 // act_quant into the CUTLASS GEMMs' operands: the codes of row r at q[r] (rowidx gathers input rows), its
 // scales at scale row sfrow[r] of the layout (a negative entry places none; when sfrow is null, r for r < split
@@ -465,23 +465,15 @@ extern "C" int memra_v41_rope(void* x, long ld_row, int rows, int heads, int hd,
     V41_ERR();
 }
 
-// The device-planned dispatch (`memra_v41_moe_plan`): one entry per tile of an expert with rows
-struct V41Tile {
-    int row0;    // the expert's first pair
-    int rows;    // the expert's pairs
-    int m0;      // this tile's first row inside the expert
-    int expert;  // index into the rank's expert weight table
-};
+// The device-planned dispatch (`memra_v41_moe_plan`): one entry per tile of an expert with rows (the shared
+// skeleton's record, cu/bs_small.cuh).
+typedef bs::Tile V41Tile;
 
-__device__ __forceinline__ void v41_cp16(void* smem, const void* gmem, bool pred) {
-    uint32_t s = (uint32_t)__cvta_generic_to_shared(smem);
-    int n = pred ? 16 : 0;  // 0: the 16 bytes are zero-filled
-    asm volatile("cp.async.cg.shared.global [%0], [%1], 16, %2;\n" ::"r"(s), "l"(gmem), "r"(n));
-}
-__device__ __forceinline__ void v41_cp_commit() { asm volatile("cp.async.commit_group;\n" ::); }
+__device__ __forceinline__ void v41_cp16(void* smem, const void* gmem, bool pred) { bs::cp16(smem, gmem, pred); }
+__device__ __forceinline__ void v41_cp_commit() { bs::cp_commit(); }
 template <int N>
 __device__ __forceinline__ void v41_cp_wait() {
-    asm volatile("cp.async.wait_group %0;\n" ::"n"(N));
+    bs::cp_wait<N>();
 }
 
 // Rows of a call that the small-row bodies of the bf16, fp32 FMA and mHC families take in one group.
@@ -502,322 +494,25 @@ extern "C" void memra_v41_wide_rows(int family, int rows) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The small-row body of the grouped expert GEMMs (cu/dsv41_cutlass.cu runs every other width). One output
-// element is the program of CUTLASS's kernel exactly: the same block-scaled MMA (kind::mxf8f6f4, block_scale,
-// scale_vec::1X, ue8m0) with the weights as e2m1 in their 8-bit container (the nibble at bits 5..2, as CUTLASS
-// shifts them) and the activations as e4m3, the canonical m16n8k32 fragments, one fp32 accumulator chained over
-// the 32-wide K blocks in ascending order, bf16 out. On GB10 that chain equals CUTLASS's normal form bit for bit
-// in fp32 at 1 to 128 rows (the e2m1 probe; the same chain with the weights converted to e4m3 does not: 94 of
-// 1.9M elements differ by an ulp or two), so which body runs a call does not move a byte. Scales are read in
-// CUTLASS's interleaved layout: a weight row's four codes of K blocks kb..kb+3 are four adjacent bytes at
-// v41_sf_off(row, kb), and a pair's at v41_sf_off(sfrow[pair], kb).
-struct V41ExpW {  // the expert table record (`ExpW` of cu/dsv41_cutlass.cu): w1, w2, w3 codes and scales
-    const uint8_t* w[3];
-    const uint8_t* s[3];
-    float scale2[3];
-    int pad;
-};
-
-// e2m1 nibbles (four, element 0 lowest) -> four e2m1 bytes, each nibble at bits 5..2
-__device__ __forceinline__ uint32_t v41_e2m1_container4(uint32_t nib16) {
-    return ((nib16 & 0xFu) << 2) | (((nib16 >> 4) & 0xFu) << 10) | (((nib16 >> 8) & 0xFu) << 18) |
-           (((nib16 >> 12) & 0xFu) << 26);
-}
-// c += (A * sa) . (B * sb) over one 32-wide K block: A e2m1 [16][32] (the weights, row), B e4m3 [32][8] (the
-// activations, col). Scale selectors (PTX ISA "Block Scaling for mma.sync"): byte BA of lane t = 0 of quad g
-// holds weight row g's code and of lane t = 1 row g + 8's; byte BB of lane t = 0 holds activation column g's.
-template <int BA, int BB>
-__device__ __forceinline__ void v41_mma_e2m1(float c[4], const uint32_t a[4], uint32_t b0, uint32_t b1, uint32_t sa,
-                                             uint32_t sb) {
-#if defined(__CUDA_ARCH_FEAT_SM120_ALL) || defined(__CUDA_ARCH_FEAT_SM121_ALL)
-    asm("mma.sync.aligned.m16n8k32.row.col.kind::mxf8f6f4.block_scale.scale_vec::1X.f32.e2m1.e4m3.f32.ue8m0 "
-        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3}, %10, {%12, %13}, %11, {%14, %15};\n"
-        : "+f"(c[0]), "+f"(c[1]), "+f"(c[2]), "+f"(c[3])
-        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1), "r"(sa), "r"(sb), "n"(BA), "n"(0), "n"(BB),
-          "n"(0));
-#else
-    // the block-scaled MMA exists on the 120a family only; the other families never route here (the Rust side
-    // routes the grouped expert GEMMs only where the CUTLASS unit is built)
-    __trap();
-#endif
-}
-// K block u (0..3) of a stage: its codes are byte u of the scale words; u is a constant after unrolling
-__device__ __forceinline__ void v41_mma_e2m1_u(float c[4], const uint32_t a[4], uint32_t b0, uint32_t b1, uint32_t sa,
-                                               uint32_t sb, int u) {
-    switch (u) {
-        case 0: v41_mma_e2m1<0, 0>(c, a, b0, b1, sa, sb); break;
-        case 1: v41_mma_e2m1<1, 1>(c, a, b0, b1, sa, sb); break;
-        case 2: v41_mma_e2m1<2, 2>(c, a, b0, b1, sa, sb); break;
-        default: v41_mma_e2m1<3, 3>(c, a, b0, b1, sa, sb); break;
-    }
-}
-__device__ __forceinline__ void v41_cp4(void* smem, const void* gmem) {
-    uint32_t s = (uint32_t)__cvta_generic_to_shared(smem);
-    asm volatile("cp.async.ca.shared.global [%0], [%1], 4;\n" ::"r"(s), "l"(gmem));
-}
-
-// A warp's ring: PS stages of PK = 4 K blocks, each [CW weight rows][WR] + [RA activation rows][AR] + the weight
-// rows' scale words [CW][4] + the activation rows' [RA][4]. RA: the tile rows the launch holds, so a one-row call
-// keeps one row and the ring goes deep: the body is bound by the bytes it has in flight, not by its MMAs.
-template <int CW>
-struct V41Sx {
-    static constexpr int PK = 4;
-    static constexpr int PS = 6;
-    static constexpr int WR = PK * 16 + 16;  // +16: conflict-free fragment loads
-    static constexpr int AR = PK * 32 + 16;
-    static constexpr int W_B = CW * WR;
-    static constexpr int WS_B = (CW * 4 + 15) & ~15;
-    static constexpr int NW = 4;  // warps a block
-    __host__ __device__ static constexpr int stage(int ra) { return W_B + ra * AR + WS_B + ((ra * 4 + 15) & ~15); }
-    __host__ __device__ static constexpr int warp(int ra) { return PS * stage(ra); }
-    __host__ __device__ static constexpr int block(int ra) { return NW * warp(ra); }
-};
-
-// The tile list (every tile at most V41_SM_MAX rows): block y runs tile y (none past *ntiles), block z projection
-// z (p0 into d0, p1 into d1), block x NW warps of CW output columns each. Warp: weight rows rw0 .. rw0 + CW - 1 of
-// its expert's projection against the tile's rows (pairs t0 .. t0 + M - 1 of a, scale rows sfrow[pair], or the pair's
-// own row of a layout of the pairs when sfrow is null).
-template <int CW>
-__global__ void __launch_bounds__(128) v41_moe_small_kernel(const uint8_t* __restrict__ A, long lda,
-                                                            const uint8_t* __restrict__ asf,
-                                                            const int* __restrict__ sfrow,
-                                                            const V41Tile* __restrict__ tiles,
-                                                            const int* __restrict__ ntiles,
-                                                            const V41ExpW* __restrict__ ew, int p0, int p1, long ldb,
-                                                            v41_bf* __restrict__ d0, v41_bf* __restrict__ d1, long ldc,
-                                                            int N, int K, int BM) {
-    using P = V41Sx<CW>;
-    extern __shared__ __align__(16) uint8_t v41_sx_sm[];
-    // the tile is loaded with the count, not after it: one memory round trip (an entry past the count is inside
-    // the list's allocation and is not used)
-    const V41Tile tl = tiles[blockIdx.y];
-    if ((int)blockIdx.y >= *ntiles) return;
-    const int proj = blockIdx.z ? p1 : p0;
-    v41_bf* C = blockIdx.z ? d1 : d0;
-    const V41ExpW& w = ew[tl.expert];
-    const uint8_t* __restrict__ W = w.w[proj];
-    const uint8_t* __restrict__ WS = w.s[proj];
-    const long t0 = (long)tl.row0 + tl.m0;
-    const int M = min(tl.rows - tl.m0, BM);
-    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31, g = lane >> 2, t = lane & 3;
-    const int rw0 = (blockIdx.x * P::NW + warp) * CW;
-    const int nw = min(CW, N - rw0);  // live weight rows (the rest stay zero)
-    if (nw <= 0) return;
-    const int KB = K / 32, NS = KB / P::PK;
-    const int STAGE = P::stage(BM), WS_O = P::W_B + BM * P::AR, AS_O = WS_O + P::WS_B;
-    uint8_t* ring = v41_sx_sm + warp * P::warp(BM);
-    // lane r < M: activation row r's scale row (the pair itself when sfrow is null: a layout of the pairs)
-    const int srow = lane < M ? (sfrow ? sfrow[t0 + lane] : (int)(t0 + lane)) : 0;
-    float acc[4] = {0.f, 0.f, 0.f, 0.f};
-    // rows that are never copied (weight rows past N, activation rows past M) are never read: their fragments
-    // and scale words are zeros in registers
-    auto issue = [&](int i) {
-        uint8_t* st = ring + (i % P::PS) * STAGE;
-        int kb0 = i * P::PK;
-        for (int c = lane; c < nw * 4; c += 32) {
-            int r = c >> 2, q = c & 3;
-            v41_cp16(st + r * P::WR + q * 16, W + (long)(rw0 + r) * ldb + kb0 * 16 + q * 16, true);
-        }
-        for (int c = lane; c < M * 8; c += 32) {
-            int r = c >> 3, q = c & 7;
-            v41_cp16(st + P::W_B + r * P::AR + q * 16, A + (t0 + r) * lda + kb0 * 32 + q * 16, true);
-        }
-        if (lane < nw) v41_cp4(st + WS_O + lane * 4, WS + v41_sf_off(rw0 + lane, kb0, KB));
-        if (lane < M) v41_cp4(st + AS_O + lane * 4, asf + v41_sf_off(srow, kb0, KB));
-    };
-    for (int s = 0; s < P::PS - 1; ++s) {
-        if (s < NS) issue(s);
-        v41_cp_commit();
-    }
-    const bool w0 = g < nw, w1 = g + 8 < nw;
-    const int wsr = g + 8 * (t & 1);  // lane t = 0: weight row g's word, t = 1: row g + 8's
-    const bool wsok = wsr < nw;
-    for (int i = 0; i < NS; ++i) {
-        v41_cp_wait<P::PS - 2>();
-        __syncwarp();  // stage i landed for every lane; stage i - 1's readers are done
-        if (i + P::PS - 1 < NS) issue(i + P::PS - 1);
-        v41_cp_commit();
-        const uint8_t* st = ring + (i % P::PS) * STAGE;
-        const uint8_t* sa = st + P::W_B;
-        const uint32_t wsc = wsok ? *(const uint32_t*)(st + WS_O + wsr * 4) : 0u;
-        const uint32_t asc = g < M ? *(const uint32_t*)(st + AS_O + g * 4) : 0u;  // lane t = 0: column g's
-#pragma unroll
-        for (int kk = 0; kk < P::PK; ++kk) {
-            uint32_t af[4] = {0u, 0u, 0u, 0u};
-            if (w0) {
-                af[0] = v41_e2m1_container4(*(const uint16_t*)(st + g * P::WR + kk * 16 + 2 * t));
-                af[2] = v41_e2m1_container4(*(const uint16_t*)(st + g * P::WR + kk * 16 + 8 + 2 * t));
-            }
-            if (w1) {
-                af[1] = v41_e2m1_container4(*(const uint16_t*)(st + (g + 8) * P::WR + kk * 16 + 2 * t));
-                af[3] = v41_e2m1_container4(*(const uint16_t*)(st + (g + 8) * P::WR + kk * 16 + 8 + 2 * t));
-            }
-            uint32_t b0 = 0u, b1 = 0u;
-            if (g < M) {
-                const uint8_t* ar = sa + g * P::AR + kk * 32 + 4 * t;
-                b0 = v41_lds32(ar);
-                b1 = v41_lds32(ar + 16);
-            }
-            v41_mma_e2m1_u(acc, af, b0, b1, wsc, asc, kk);
-        }
-    }
-    v41_cp_wait<0>();
-    // lane (g, t): weight row g against activation rows 2t, 2t + 1 (acc[0], [1]) and weight row g + 8 ([2], [3])
-#pragma unroll
-    for (int e = 0; e < 4; ++e) {
-        int wr = g + (e >= 2 ? 8 : 0), row = 2 * t + (e & 1), col = rw0 + wr;
-        if (wr < CW && row < M && col < N) C[(t0 + row) * ldc + col] = v41_f2bf(acc[e]);
-    }
-}
-
-// The same tile list and output columns on a block-staged two-stage ring: a stage is PK K blocks (2 KB of weights a
-// warp: CW x PK = 128), the block's four warps stage their own weight rows and together the tile's activation rows,
-// which every warp reads (one copy a block, not a warp), and a barrier a stage hands the stage over. Shared memory
-// is the warps' weights and one copy of the activations: 19.5 to 23.9 KB a block at the shapes a served call takes,
-// so four such blocks are resident on an SM of the RTX PRO 6000 where the six-stage ring above holds one or two (the
-// 8-column shape at 6 to 8 tile rows takes 27.1 KB, three an SM; only the gate runs it, as served calls choose 8
-// columns at 3 rows or fewer). Each output element is the chain above: the same MMA,
-// fragments and scale selectors over the K blocks in ascending order, so the ring a call runs on is speed only.
-// The last stage of a K that is not a multiple of PK is shorter (a multiple of 4 K blocks).
-#define V41_MSB_NW 4
-template <int CW, int PK>
-struct V41Sb {
-    static constexpr int PW = PK / 4;  // scale words a row a stage
-    static constexpr int WR = PK * 16 + 16;
-    static constexpr int AR = PK * 32 + 16;
-    static constexpr int W_B = CW * WR;
-    static constexpr int WST = W_B + ((CW * PK + 15) & ~15);  // a warp's weight rows and their scale words
-    __host__ __device__ static constexpr int stage(int ra) {
-        return V41_MSB_NW * WST + ra * AR + ((ra * PK + 15) & ~15);
-    }
-    __host__ __device__ static constexpr int block(int ra) { return 2 * stage(ra); }
-};
-// both shapes stay under the default 48 KB of dynamic shared memory at the most tile rows (no attribute to set)
-static_assert(V41Sb<8, 16>::block(V41_SM_MAX) <= 48 * 1024 && V41Sb<16, 8>::block(V41_SM_MAX) <= 48 * 1024,
-              "block ring over 48 KB");
-
-template <int CW, int PK>
-__global__ void __launch_bounds__(V41_MSB_NW * 32) v41_moe_small_blk_kernel(
-    const uint8_t* __restrict__ A, long lda, const uint8_t* __restrict__ asf, const int* __restrict__ sfrow,
-    const V41Tile* __restrict__ tiles, const int* __restrict__ ntiles, const V41ExpW* __restrict__ ew, int p0, int p1,
-    long ldb, v41_bf* __restrict__ d0, v41_bf* __restrict__ d1, long ldc, int N, int K, int BM) {
-    using P = V41Sb<CW, PK>;
-    constexpr int PW = P::PW;
-    extern __shared__ __align__(16) uint8_t v41_sb_sm[];
-    const V41Tile tl = tiles[blockIdx.y];
-    if ((int)blockIdx.y >= *ntiles) return;
-    const int proj = blockIdx.z ? p1 : p0;
-    v41_bf* C = blockIdx.z ? d1 : d0;
-    const V41ExpW& w = ew[tl.expert];
-    const uint8_t* __restrict__ W = w.w[proj];
-    const uint8_t* __restrict__ WS = w.s[proj];
-    const long t0 = (long)tl.row0 + tl.m0;
-    const int M = min(tl.rows - tl.m0, BM);
-    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31, g = lane >> 2, t = lane & 3;
-    const int rw0 = (blockIdx.x * V41_MSB_NW + warp) * CW;
-    // live weight rows; a warp with none still copies activations and meets every barrier
-    const int nw = max(0, min(CW, N - rw0));
-    const int KB = K / 32, NS = (KB + PK - 1) / PK;
-    const int STAGE = P::stage(BM);
-    auto wst = [&](int i) { return v41_sb_sm + (i & 1) * STAGE + warp * P::WST; };
-    auto ast = [&](int i) { return v41_sb_sm + (i & 1) * STAGE + V41_MSB_NW * P::WST; };
-    auto issue = [&](int i) {
-        uint8_t* sw = wst(i);
-        uint8_t* sa = ast(i);
-        const int kb0 = i * PK, pk = min(PK, KB - kb0), pw = pk / 4;
-        for (int c = lane; c < nw * PK; c += 32) {
-            int r = c / PK, q = c % PK;
-            if (q < pk) v41_cp16(sw + r * P::WR + q * 16, W + (long)(rw0 + r) * ldb + kb0 * 16 + q * 16, true);
-        }
-        for (int c = lane; c < nw * PW; c += 32) {
-            int r = c / PW, j = c % PW;
-            if (j < pw) v41_cp4(sw + P::W_B + c * 4, WS + v41_sf_off(rw0 + r, kb0 + 4 * j, KB));
-        }
-        for (int c = threadIdx.x; c < M * 2 * PK; c += V41_MSB_NW * 32) {
-            int r = c / (2 * PK), q = c % (2 * PK);
-            if (q < 2 * pk) v41_cp16(sa + r * P::AR + q * 16, A + (t0 + r) * lda + kb0 * 32 + q * 16, true);
-        }
-        for (int c = threadIdx.x; c < M * PW; c += V41_MSB_NW * 32) {
-            int r = c / PW, j = c % PW;
-            int sr = sfrow ? sfrow[t0 + r] : (int)(t0 + r);
-            if (j < pw) v41_cp4(sa + BM * P::AR + c * 4, asf + v41_sf_off(sr, kb0 + 4 * j, KB));
-        }
-    };
-    issue(0);
-    v41_cp_commit();
-    const bool w0 = g < nw, w1 = g + 8 < nw;
-    const int wsr = g + 8 * (t & 1);  // lane t = 0: weight row g's word, t = 1: row g + 8's
-    const bool wsok = wsr < nw;
-    float acc[4] = {0.f, 0.f, 0.f, 0.f};
-    for (int i = 0; i < NS; ++i) {
-        v41_cp_wait<0>();
-        __syncthreads();  // stage i landed for every thread; every warp is done with stage i - 1's buffer
-        if (i + 1 < NS) issue(i + 1);
-        v41_cp_commit();
-        if (nw == 0) continue;
-        const uint8_t* st = wst(i);
-        const uint8_t* sa = ast(i);
-        const int pw = min(PK, KB - i * PK) / 4;
-#pragma unroll
-        for (int j = 0; j < PW; ++j) {
-            if (j < pw) {
-                const uint32_t wsc = wsok ? *(const uint32_t*)(st + P::W_B + (wsr * PW + j) * 4) : 0u;
-                // lane t = 0: column g's word
-                const uint32_t asc = g < M ? *(const uint32_t*)(sa + BM * P::AR + (g * PW + j) * 4) : 0u;
-#pragma unroll
-                for (int u = 0; u < 4; ++u) {
-                    const int kk = 4 * j + u;
-                    uint32_t af[4] = {0u, 0u, 0u, 0u};
-                    if (w0) {
-                        af[0] = v41_e2m1_container4(*(const uint16_t*)(st + g * P::WR + kk * 16 + 2 * t));
-                        af[2] = v41_e2m1_container4(*(const uint16_t*)(st + g * P::WR + kk * 16 + 8 + 2 * t));
-                    }
-                    if (w1) {
-                        af[1] = v41_e2m1_container4(*(const uint16_t*)(st + (g + 8) * P::WR + kk * 16 + 2 * t));
-                        af[3] = v41_e2m1_container4(*(const uint16_t*)(st + (g + 8) * P::WR + kk * 16 + 8 + 2 * t));
-                    }
-                    uint32_t b0 = 0u, b1 = 0u;
-                    if (g < M) {
-                        const uint8_t* ar = sa + g * P::AR + kk * 32 + 4 * t;
-                        b0 = v41_lds32(ar);
-                        b1 = v41_lds32(ar + 16);
-                    }
-                    v41_mma_e2m1_u(acc, af, b0, b1, wsc, asc, u);
-                }
-            }
-        }
-    }
-    v41_cp_wait<0>();
-    if (nw == 0) return;
-#pragma unroll
-    for (int e = 0; e < 4; ++e) {
-        int wr = g + (e >= 2 ? 8 : 0), row = 2 * t + (e & 1), col = rw0 + wr;
-        if (wr < CW && row < M && col < N) C[(t0 + row) * ldc + col] = v41_f2bf(acc[e]);
-    }
-}
+// The small-row bodies of the grouped expert GEMMs and of the dense FP8/FP4 GEMMs run on the shared small-batch
+// skeleton (cu/bs_small.cuh: the tile list, the two cp.async rings, the dense body) with this route's math policy
+// `bs::MxHw32` and the bf16 epilogue `bs::EpiBf16`; what stays here is the route's contracts, its seams and the
+// speed rules measured against its CUTLASS forms (docs/decisions/BS-SMALL-SKELETON.md).
+//
+// The grouped body (cu/dsv41_cutlass.cu runs every other width). One output element is the program of CUTLASS's
+// kernel exactly: the same block-scaled MMA (kind::mxf8f6f4, block_scale, scale_vec::1X, ue8m0) with the weights as
+// e2m1 in their 8-bit container (the nibble at bits 5..2, as CUTLASS shifts them) and the activations as e4m3, the
+// canonical m16n8k32 fragments, one fp32 accumulator chained over the 32-wide K blocks in ascending order, bf16 out.
+// On GB10 that chain equals CUTLASS's normal form bit for bit in fp32 at 1 to 128 rows (the e2m1 probe; the same
+// chain with the weights converted to e4m3 does not: 94 of 1.9M elements differ by an ulp or two), so which body
+// runs a call does not move a byte. Scales are read in CUTLASS's interleaved layout: a weight row's four codes of K
+// blocks kb..kb+3 are four adjacent bytes at v41_sf_off(row, kb), and a pair's at v41_sf_off(sfrow[pair], kb).
+// the expert table record (`bs::ExpW`, the one cu/dsv41_cutlass.cu reads): w1, w2, w3 codes and scales
+typedef bs::ExpW V41ExpW;
+static_assert(V41_SM_MAX == bs::kMaxTileRows, "the grouped body's tile rows are the small-row group's");
 
 // The SMs of the current device (cached a device).
-static int v41_sms() {
-    static int sms[64] = {0};
-    int dev = 0;
-    cudaGetDevice(&dev);
-    if (!sms[dev & 63]) cudaDeviceGetAttribute(&sms[dev & 63], cudaDevAttrMultiProcessorCount, dev);
-    return sms[dev & 63] > 0 ? sms[dev & 63] : 1;
-}
-
-// The current device's compute capability as major * 10 + minor (cached a device).
-static int v41_cc() {
-    static int cc[64] = {0};
-    int dev = 0;
-    cudaGetDevice(&dev);
-    if (!cc[dev & 63]) {
-        int ma = 0, mi = 0;
-        cudaDeviceGetAttribute(&ma, cudaDevAttrComputeCapabilityMajor, dev);
-        cudaDeviceGetAttribute(&mi, cudaDevAttrComputeCapabilityMinor, dev);
-        cc[dev & 63] = ma * 10 + mi;
-    }
-    return cc[dev & 63];
-}
+static int v41_sms() { return bs::sms(); }
 
 // Whether a grouped call of at most `max_tiles` tiles of `bm` rows is the small-row body's (the Rust side asks
 // before it picks the body; the two bodies give the same bytes, so this is speed only). Measured per card with
@@ -834,24 +529,25 @@ static int v41_cc() {
 //   split_out). Other sm_120 cards take this rule until measured.
 //
 // The ring a small-row call runs on (memra#1324; speed only, the same bytes): the RTX PRO 6000 (sm_120 with 188 SMs:
-// Workstation, Max-Q and Server Edition) runs `v41_moe_small_blk_kernel`, every other card the six-stage warp ring
-// `v41_moe_small_kernel`. On one Max-Q card at a four-rank share's calls (w1 + w3 n 576 k 5120, w2 n 1280 k 2304,
-// 64 routings a cell, interleaved rounds; receipts research/modelplan-onboarding-dsv41-20261109/perf/receipts/
-// moe1324): the block ring's w1 + w3, SwiGLU and w2 take 0.66-0.77 of the pre-CUTLASS kernels' time at 3 to 64 rows,
-// 0.81-0.92 at 1 and 2, where the warp ring took 0.91-1.27. The warp ring holds a ring of six stages of four K blocks
-// a warp, its own copy of the tile's activation rows (sized for the plan's tile rows: 8 from 9 rows on), so one or
-// two blocks fit an SM; the block ring's two stages of 2 KB of weights a warp and one copy of the activations fit
-// four at the shapes served calls take (three for the 8-column shape at 6 to 8 tile rows, which only the gate runs:
-// served calls choose 8 columns at 3 rows or fewer). Other cards keep the warp ring until measured (the RTX 5090's line was not measured for this change).
+// Workstation, Max-Q and Server Edition) runs the skeleton's two-stage block ring `bs::Block2`, every other card the
+// six-stage warp ring `bs::Warp6` (`bs::moe_block2_card`). On one Max-Q card at a four-rank share's calls (w1 + w3
+// n 576 k 5120, w2 n 1280 k 2304, 64 routings a cell, interleaved rounds; receipts
+// research/modelplan-onboarding-dsv41-20261109/perf/receipts/moe1324): the block ring's w1 + w3, SwiGLU and w2 take
+// 0.66-0.77 of the pre-CUTLASS kernels' time at 3 to 64 rows, 0.81-0.92 at 1 and 2, where the warp ring took
+// 0.91-1.27. The warp ring holds a ring of six stages of four K blocks a warp, its own copy of the tile's activation
+// rows (sized for the plan's tile rows: 8 from 9 rows on), so one or two blocks fit an SM; the block ring's two
+// stages of 2 KB of weights a warp and one copy of the activations fit four at the shapes served calls take (19.5
+// to 23.9 KB a block; three for the 8-column shape at 6 to 8 tile rows, 27.1 KB, which only the gate runs: served
+// calls choose 8 columns at 3 rows or fewer). Other cards keep the warp ring until measured (the RTX 5090's line
+// was not measured for this change).
 static std::atomic<int> v41_moe_ring{0};
-static bool v41_moe_blk_card() { return v41_cc() == 120 && v41_sms() >= 188; }
 // The kernel gate's choice of the ring: 0 by the card, 1 the six-stage warp ring, 2 the two-stage block ring.
 extern "C" void memra_v41_moe_small_ring(int ring) {
     if (ring >= 0 && ring <= 2) v41_moe_ring.store(ring, std::memory_order_relaxed);
 }
 extern "C" int memra_v41_moe_small_fits(int max_tiles, int n, int nproj, int bm) {
     if (max_tiles <= 0 || n <= 0 || nproj < 1 || bm < 1) return 0;
-    if (v41_cc() == 120) return bm <= V41_SM_MAX;
+    if (bs::cc() == 120) return bm <= V41_SM_MAX;
     long blocks = (long)max_tiles * ((n + 63) / 64) * nproj;
     return blocks * 3 <= 16L * v41_sms();
 }
@@ -871,274 +567,25 @@ extern "C" int memra_v41_moe_small(const void* a, long lda, const void* asf, con
     // expert table's, checked at load): an unaligned base is refused, not read wrong
     if ((uintptr_t)a % 16 || (uintptr_t)asf % 4) return 41027;
     if (max_tiles == 0) return 0;
-    cudaStream_t st = (cudaStream_t)stream;
-    const int ring = v41_moe_ring.load(std::memory_order_relaxed);
-    if (ring == 2 || (ring == 0 && v41_moe_blk_card())) {
-        // the block-staged ring: 8 columns a warp (16 K blocks a stage) while that launch is at most one wave of
-        // four blocks an SM, else 16 (8 K blocks a stage)
-        const long b8 = (long)((n + 31) / 32) * max_tiles * nproj;
-#define V41_SB(CWX, PKX)                                                                                         \
-    do {                                                                                                         \
-        dim3 gr((n + V41_MSB_NW * CWX - 1) / (V41_MSB_NW * CWX), max_tiles, nproj);                              \
-        v41_moe_small_blk_kernel<CWX, PKX><<<gr, V41_MSB_NW * 32, V41Sb<CWX, PKX>::block(bm), st>>>(             \
-            (const uint8_t*)a, lda, (const uint8_t*)asf, sfrow, (const V41Tile*)tiles, ntiles, (const V41ExpW*)ew, \
-            p0, p1, ldb, (v41_bf*)d0, (v41_bf*)d1, ldc, n, k, bm);                                               \
-    } while (0)
-        if (b8 <= 4L * v41_sms()) V41_SB(8, 16);
-        else V41_SB(16, 8);
-#undef V41_SB
-        V41_ERR();
-    }
-    // a warp's output columns: 16 while that gives at least four warps an SM, else 8, else 4 (a narrow output
-    // still spreads over the card; the MMA's empty rows are free next to the weight stream)
-    long want = 4L * v41_sms();
-    int cw = (long)((n + 15) / 16) * max_tiles >= want ? 16 : (long)((n + 7) / 8) * max_tiles >= want ? 8 : 4;
-#define V41_SX(CWX)                                                                                          \
-    do {                                                                                                     \
-        int sm_ = V41Sx<CWX>::block(bm);                                                                     \
-        V41_SMEM_LIMIT((v41_moe_small_kernel<CWX>), (V41Sx<CWX>::block(V41_SM_MAX)));                         \
-        dim3 gr((n + V41Sx<CWX>::NW * CWX - 1) / (V41Sx<CWX>::NW * CWX), max_tiles, nproj);                  \
-        v41_moe_small_kernel<CWX><<<gr, 128, sm_, st>>>((const uint8_t*)a, lda, (const uint8_t*)asf, sfrow,   \
-                                                        (const V41Tile*)tiles, ntiles, (const V41ExpW*)ew, p0, \
-                                                        p1, ldb, (v41_bf*)d0, (v41_bf*)d1, ldc, n, k, bm);    \
-    } while (0)
-    if (cw == 16) V41_SX(16);
-    else if (cw == 8) V41_SX(8);
-    else V41_SX(4);
-#undef V41_SX
+    bs::moe_small_launch<bs::MxHw32<1>, bs::EpiBf16>(
+        v41_moe_ring.load(std::memory_order_relaxed), n, max_tiles, nproj, bm, (cudaStream_t)stream,
+        (const uint8_t*)a, lda, (const uint8_t*)asf, sfrow, (const bs::Tile*)tiles, ntiles, (const bs::ExpW*)ew, p0,
+        p1, ldb, (v41_bf*)d0, (v41_bf*)d1, ldc, k);
     V41_ERR();
 }
 
 // ---------------------------------------------------------------------------------------------
 // The small-row body of the dense FP8/FP4 GEMMs (cu/dsv41_cutlass.cu runs the calls `memra_v41_dense_small_fits`
-// takes here and every other call on CUTLASS). An output element is CUTLASS's program exactly, as in the grouped
-// body above: the block-scaled MMA (kind::mxf8f6f4, block_scale, scale_vec::1X, ue8m0) with the weights on A
-// (e4m3, or e2m1 in its 8-bit container) and the activations on B (e4m3), the canonical m16n8k32 fragments, one
-// fp32 accumulator chained over the 32-wide K blocks in ascending order, bf16 out, the scales read in CUTLASS's
-// layout. `dsv41-gate kernels` checks it against every CUTLASS form byte for byte.
-// A decode call of a few rows is bound by its weight bytes and by that chain, not by its MMAs: CUTLASS's swapped
-// tileN-8 form runs it on n / 128 CTAs (4 to 10 on a rank's share at four ranks), each near 50 GB/s. Here the call
-// spreads over output columns only (never over K, which would cut the chain): each warp owns CW weight rows and
-// all of K, the warps cover every SM, and each streams its rows through its own ring of V41D_PS stages of PK K
-// blocks, PK picked a call so the card keeps about 8 KB a SM of weights in flight.
+// takes here and every other call on CUTLASS): the skeleton's `bs::dense_small_launch`. An output element is
+// CUTLASS's program exactly, as in the grouped body above: the block-scaled MMA (kind::mxf8f6f4, block_scale,
+// scale_vec::1X, ue8m0) with the weights on A (e4m3, or e2m1 in its 8-bit container) and the activations on B
+// (e4m3), the canonical m16n8k32 fragments, one fp32 accumulator chained over the 32-wide K blocks in ascending
+// order, bf16 out, the scales read in CUTLASS's layout. `dsv41-gate kernels` checks it against every CUTLASS form
+// byte for byte. A decode call of a few rows is bound by its weight bytes and by that chain, not by its MMAs:
+// CUTLASS's swapped tileN-8 form runs it on n / 128 CTAs (4 to 10 on a rank's share at four ranks), each near 50
+// GB/s; the skeleton's body spreads it over output columns only (never over K, which would cut the chain).
 #define V41D_MAX_M 16
-#define V41D_PS 4
-
-// c += (A * sa) . (B * sb) over one 32-wide K block, A e4m3 [16][32] (the weights, row), B e4m3 [32][8] (the
-// activations, col); the scale selectors as in `v41_mma_e2m1`.
-template <int BA, int BB>
-__device__ __forceinline__ void v41_mma_e4m3(float c[4], const uint32_t a[4], uint32_t b0, uint32_t b1, uint32_t sa,
-                                             uint32_t sb) {
-#if defined(__CUDA_ARCH_FEAT_SM120_ALL) || defined(__CUDA_ARCH_FEAT_SM121_ALL)
-    asm("mma.sync.aligned.m16n8k32.row.col.kind::mxf8f6f4.block_scale.scale_vec::1X.f32.e4m3.e4m3.f32.ue8m0 "
-        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3}, %10, {%12, %13}, %11, {%14, %15};\n"
-        : "+f"(c[0]), "+f"(c[1]), "+f"(c[2]), "+f"(c[3])
-        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1), "r"(sa), "r"(sb), "n"(BA), "n"(0), "n"(BB),
-          "n"(0));
-#else
-    __trap();  // the 120a family only (the dense GEMMs route here only where the CUTLASS unit is built)
-#endif
-}
-// K block u (0..3) of a scale word: WF 0 e4m3 weights, 1 e2m1
-template <int WF>
-__device__ __forceinline__ void v41_mma_w_u(float c[4], const uint32_t a[4], uint32_t b0, uint32_t b1, uint32_t sa,
-                                            uint32_t sb, int u) {
-    if (WF == 0) {
-        switch (u) {
-            case 0: v41_mma_e4m3<0, 0>(c, a, b0, b1, sa, sb); break;
-            case 1: v41_mma_e4m3<1, 1>(c, a, b0, b1, sa, sb); break;
-            case 2: v41_mma_e4m3<2, 2>(c, a, b0, b1, sa, sb); break;
-            default: v41_mma_e4m3<3, 3>(c, a, b0, b1, sa, sb); break;
-        }
-    } else {
-        v41_mma_e2m1_u(c, a, b0, b1, sa, sb, u);
-    }
-}
-
-// A block's shared memory: two buffers of the call's activation rows for one stage of PK K blocks, shared by the
-// block's warps ([M][AR] codes + their scale words [M][PK / 4]), then each warp's own ring of V41D_PS stages of its
-// weight rows ([CW][WR] codes + their scale words [CW][PK / 4]); +16 on a row: conflict-free fragment loads. The
-// activations come from L2 (written by the call's act_quant), so one stage of lead through registers covers them,
-// and the weights' ring keeps the shared memory: at 16 rows a four-deep activation ring would halve the weight stage.
-#define V41D_AREG 8  // 16-byte activation chunks a thread holds for the next stage
-#define V41D_SREG 2  // activation scale words a thread holds
-struct V41Dg {
-    int wr, ar, a_st, w_st;
-    __host__ __device__ V41Dg(int wf, int cw, int m, int pk) {
-        wr = pk * (wf == 0 ? 32 : 16) + 16;
-        ar = pk * 32 + 16;
-        a_st = m * ar + ((m * (pk / 4) * 4 + 15) & ~15);
-        w_st = cw * wr + ((cw * (pk / 4) * 4 + 15) & ~15);
-    }
-    __host__ __device__ int block(int nwb) const { return 2 * a_st + nwb * V41D_PS * w_st; }
-};
-
-// Block x: blockDim / 32 warps of CW output columns each, over the call's M <= 8 MR rows and all of K, PK = 1 << LPK
-// K blocks a stage (a power of two from 4). The block stages the activation rows once a stage for all its warps.
-template <int WF, int CW, int MR>
-__global__ void __launch_bounds__(128) v41_dense_small_kernel(const uint8_t* __restrict__ A, long lda,
-                                                              const uint8_t* __restrict__ asf,
-                                                              const uint8_t* __restrict__ W, long ldw,
-                                                              const uint8_t* __restrict__ wsf, v41_bf* __restrict__ C,
-                                                              long ldc, int M, int N, int K, int LPK) {
-    constexpr int WB = WF == 0 ? 32 : 16;  // a weight row's bytes a K block
-    extern __shared__ __align__(16) uint8_t v41_ds_sm[];
-    const int nthr = blockDim.x, tid = threadIdx.x;
-    const int warp = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
-    const int rw0 = (blockIdx.x * (nthr >> 5) + warp) * CW;
-    const int nw = max(0, min(CW, N - rw0));  // live weight rows (the rest stay zero; a warp with none only copies)
-    const int PK = 1 << LPK, KB = K / 32, NS = (KB + PK - 1) / PK;
-    const V41Dg G(WF, CW, M, PK);
-    uint8_t* abuf = v41_ds_sm;
-    uint8_t* wring = v41_ds_sm + 2 * G.a_st + warp * V41D_PS * G.w_st;
-    const int AS_O = M * G.ar, WS_O = CW * G.wr;
-    // 16-byte chunks of a row's stage (powers of two): weights, activations; scale words a row
-    const int lw = WF == 0 ? LPK + 1 : LPK, la = LPK + 1, lp = LPK - 2;
-    // rows that are never copied (weight rows past N, activation rows past M) are never read: their fragments and
-    // scale words are zeros in registers; a short last stage copies and reads only its own K blocks
-    auto issue_w = [&](int i) {
-        const int kb0 = i * PK, pk = min(PK, KB - kb0);
-        const int wl = pk * WB / 16, pl = pk / 4;
-        uint8_t* ws = wring + (i % V41D_PS) * G.w_st;
-        for (int c = lane; c < (nw << lw); c += 32) {
-            int r = c >> lw, q = c & ((1 << lw) - 1);
-            if (q < wl) v41_cp16(ws + r * G.wr + q * 16, W + (long)(rw0 + r) * ldw + (long)kb0 * WB + q * 16, true);
-        }
-        for (int c = lane; c < (nw << lp); c += 32) {
-            int r = c >> lp, u = c & ((1 << lp) - 1);
-            if (u < pl) v41_cp4(ws + WS_O + c * 4, wsf + v41_sf_off(rw0 + r, kb0 + 4 * u, KB));
-        }
-    };
-    // the activations of stage i into registers (each thread a fixed set of chunks and words), and from there into
-    // buffer i & 1
-    uint4 areg[V41D_AREG];
-    uint32_t sreg[V41D_SREG];
-    auto load_a = [&](int i) {
-        const int kb0 = i * PK, pk = min(PK, KB - kb0), al = pk * 2, pl = pk / 4;
-#pragma unroll
-        for (int j = 0; j < V41D_AREG; ++j) {
-            int c = j * nthr + tid, r = c >> la, q = c & ((1 << la) - 1);
-            if (c < (M << la) && q < al) areg[j] = __ldg((const uint4*)(A + (long)r * lda + (long)kb0 * 32 + q * 16));
-        }
-#pragma unroll
-        for (int j = 0; j < V41D_SREG; ++j) {
-            int c = j * nthr + tid, r = c >> lp, u = c & ((1 << lp) - 1);
-            if (c < (M << lp) && u < pl) sreg[j] = __ldg((const unsigned int*)(asf + v41_sf_off(r, kb0 + 4 * u, KB)));
-        }
-    };
-    auto store_a = [&](int i) {
-        const int pk = min(PK, KB - i * PK), al = pk * 2, pl = pk / 4;
-        uint8_t* as = abuf + (i & 1) * G.a_st;
-#pragma unroll
-        for (int j = 0; j < V41D_AREG; ++j) {
-            int c = j * nthr + tid, r = c >> la, q = c & ((1 << la) - 1);
-            if (c < (M << la) && q < al) *(uint4*)(as + r * G.ar + q * 16) = areg[j];
-        }
-#pragma unroll
-        for (int j = 0; j < V41D_SREG; ++j) {
-            int c = j * nthr + tid, u = c & ((1 << lp) - 1);
-            if (c < (M << lp) && u < pl) *(uint32_t*)(as + AS_O + c * 4) = sreg[j];
-        }
-    };
-    for (int s = 0; s < V41D_PS - 1; ++s) {
-        if (s < NS) issue_w(s);
-        v41_cp_commit();
-    }
-    load_a(0);
-    store_a(0);
-    if (NS > 1) load_a(1);
-    const bool w0 = g < nw, w1 = g + 8 < nw;
-    const int wsr = g + 8 * (t & 1);  // lane t = 0: weight row g's word, t = 1: row g + 8's
-    const bool wsok = wsr < nw;
-    float acc[MR][4];
-#pragma unroll
-    for (int mr = 0; mr < MR; ++mr) acc[mr][0] = acc[mr][1] = acc[mr][2] = acc[mr][3] = 0.f;
-    for (int i = 0; i < NS; ++i) {
-        v41_cp_wait<V41D_PS - 2>();
-        // weight stage i landed for every thread and activation stage i is in its buffer; every warp is done with
-        // stage i - 1 (its weight slot and the other activation buffer)
-        __syncthreads();
-        if (i + V41D_PS - 1 < NS) issue_w(i + V41D_PS - 1);
-        v41_cp_commit();
-        if (i + 1 < NS) store_a(i + 1);
-        if (i + 2 < NS) load_a(i + 2);
-        if (nw == 0) continue;
-        const uint8_t* sa = abuf + (i & 1) * G.a_st;
-        const uint8_t* sw = wring + (i % V41D_PS) * G.w_st;
-        const int pk = min(PK, KB - i * PK);
-        for (int j = 0; j < pk / 4; ++j) {
-            const uint32_t wsc = wsok ? *(const uint32_t*)(sw + WS_O + ((wsr << lp) + j) * 4) : 0u;
-            uint32_t asc[MR];
-#pragma unroll
-            for (int mr = 0; mr < MR; ++mr)  // lane t = 0: activation row mr * 8 + g's word
-                asc[mr] = mr * 8 + g < M ? *(const uint32_t*)(sa + AS_O + (((mr * 8 + g) << lp) + j) * 4) : 0u;
-#pragma unroll
-            for (int u = 0; u < 4; ++u) {
-                const int kk = j * 4 + u;
-                uint32_t af[4] = {0u, 0u, 0u, 0u};
-                if (WF == 0) {
-                    if (w0) {
-                        af[0] = v41_lds32(sw + g * G.wr + kk * 32 + 4 * t);
-                        af[2] = v41_lds32(sw + g * G.wr + kk * 32 + 16 + 4 * t);
-                    }
-                    if (w1) {
-                        af[1] = v41_lds32(sw + (g + 8) * G.wr + kk * 32 + 4 * t);
-                        af[3] = v41_lds32(sw + (g + 8) * G.wr + kk * 32 + 16 + 4 * t);
-                    }
-                } else {
-                    if (w0) {
-                        af[0] = v41_e2m1_container4(*(const uint16_t*)(sw + g * G.wr + kk * 16 + 2 * t));
-                        af[2] = v41_e2m1_container4(*(const uint16_t*)(sw + g * G.wr + kk * 16 + 8 + 2 * t));
-                    }
-                    if (w1) {
-                        af[1] = v41_e2m1_container4(*(const uint16_t*)(sw + (g + 8) * G.wr + kk * 16 + 2 * t));
-                        af[3] = v41_e2m1_container4(*(const uint16_t*)(sw + (g + 8) * G.wr + kk * 16 + 8 + 2 * t));
-                    }
-                }
-#pragma unroll
-                for (int mr = 0; mr < MR; ++mr) {
-                    uint32_t b0 = 0u, b1 = 0u;
-                    if (mr * 8 + g < M) {
-                        const uint8_t* ar = sa + (mr * 8 + g) * G.ar + kk * 32 + 4 * t;
-                        b0 = v41_lds32(ar);
-                        b1 = v41_lds32(ar + 16);
-                    }
-                    v41_mma_w_u<WF>(acc[mr], af, b0, b1, wsc, asc[mr], u);
-                }
-            }
-        }
-    }
-    v41_cp_wait<0>();
-    if (nw == 0) return;
-    // lane (g, t): weight row g against activation rows mr * 8 + 2t, + 1 (acc[mr][0], [1]) and row g + 8 ([2], [3])
-#pragma unroll
-    for (int mr = 0; mr < MR; ++mr)
-#pragma unroll
-        for (int e = 0; e < 4; ++e) {
-            int wr = g + (e >= 2 ? 8 : 0), row = mr * 8 + 2 * t + (e & 1);
-            if (wr < nw && row < M) C[(long)row * ldc + rw0 + wr] = v41_f2bf(acc[mr][e]);
-        }
-}
-
-// The current device's shared memory: the most a block may opt into, an SM's whole, and what each resident block
-// reserves (cached a device).
-struct V41Smem {
-    int optin, sm, per_block;
-};
-static V41Smem v41_smem() {
-    static V41Smem v[64] = {};
-    int dev = 0;
-    cudaGetDevice(&dev);
-    V41Smem& s = v[dev & 63];
-    if (!s.optin) {
-        cudaDeviceGetAttribute(&s.sm, cudaDevAttrMaxSharedMemoryPerMultiprocessor, dev);
-        cudaDeviceGetAttribute(&s.per_block, cudaDevAttrReservedSharedMemoryPerBlock, dev);
-        cudaDeviceGetAttribute(&s.optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
-        if (s.optin <= 0) s.optin = 48 * 1024;
-        if (s.sm <= 0) s.sm = s.optin;
-    }
-    return s;
-}
+static_assert(V41D_MAX_M == bs::kDenseMaxRows, "the dense body's rows");
 
 // Whether a dense call of m rows is the small-row body's (form 0 of `memra_v41_cutlass_gemm`); the two bodies give
 // the same bytes, so this is speed only. CUTLASS's swapped forms run a call on ceil(n / 128) CTAs, each near 50-60
@@ -1159,10 +606,8 @@ extern "C" int memra_v41_dense_small_fits(int m, int n, int k) {
 
 // c[m][n] (bf16, row pitch ldc) = a . w^T for m <= V41D_MAX_M rows: a e4m3 codes [m][lda], asf their scales in the
 // layout of m rows; w weight rows [n][ldw bytes] (wfmt 0 e4m3; 1 and 2 e2m1 pairs, low nibble first: a minted NVFP4
-// weight holds its ue8m0 codes), wsf their scales in the layout of n rows. k a multiple of 128.
-// The launch: an SM's share of the output columns in one block (up to four warps of 2 to 16 columns each), so the
-// whole call is resident at once, and the stage as deep as that leaves room for, up to about 48 KB a SM of weights
-// in flight (a sweep of 8 to 128 KB on the RTX 5090: 8 KB ran at 0.4 of the bandwidth, 32-64 KB level and best).
+// weight holds its ue8m0 codes), wsf their scales in the layout of n rows. k a multiple of 128. The launch geometry
+// is the skeleton's (`bs::dense_small_launch`); a shape it cannot stage is refused (41028).
 extern "C" int memra_v41_dense_small(const void* a, long lda, const void* asf, const void* w, long ldw,
                                      const void* wsf, int wfmt, void* c, long ldc, int m, int n, int k, void* stream) {
     if (m < 0 || m > V41D_MAX_M || n <= 0 || k <= 0 || k % 128 || lda % 16 || ldw % 16 || ldc < n) return 41028;
@@ -1171,52 +616,13 @@ extern "C" int memra_v41_dense_small(const void* a, long lda, const void* asf, c
     if (((uintptr_t)a | (uintptr_t)w) % 16 || ((uintptr_t)asf | (uintptr_t)wsf) % 4) return 41028;
     if (m == 0) return 0;
     cudaStream_t st = (cudaStream_t)stream;
-    const int wf = wfmt == 0 ? 0 : 1, wb = wf == 0 ? 32 : 16, kb = k / 32;
-    const long sms = v41_sms();
-    const V41Smem sm = v41_smem();
-    // an SM's output columns: CW the least of 2, 4, 8, 16 with four warps holding them, then the warps they need
-    const long per_sm = (n + sms - 1) / sms;
-    int cw = 2;
-    while (cw < 16 && 4L * cw < per_sm) cw <<= 1;
-    int nwb = (per_sm + cw - 1) / cw < 4 ? (int)((per_sm + cw - 1) / cw) : 4;
-    const long blocks = (n + (long)nwb * cw - 1) / ((long)nwb * cw);
-    const long bps = (blocks + sms - 1) / sms;  // blocks an SM holds at once
-    const long budget = sm.sm / bps - sm.per_block < sm.optin ? sm.sm / bps - sm.per_block : sm.optin;
-    // K blocks a stage: a power of two from 4 to 64, not past K, while the ring fits and the stages in flight
-    // (V41D_PS - 1) hold at most the in-flight target
-    const long want = 48L * 1024 / bps;
-    // (and the next stage's activation chunks and scale words fit the registers that carry them)
-    const int nthr = nwb * 32;
-    int lpk = 2;
-    while (lpk < 6 && (1 << lpk) < kb && V41Dg(wf, cw, m, 2 << lpk).block(nwb) <= budget &&
-           (long)(V41D_PS - 1) * nwb * cw * wb * (2 << lpk) <= want && (m << (lpk + 2)) <= V41D_AREG * nthr &&
-           (m << (lpk - 1)) <= V41D_SREG * nthr)
-        ++lpk;
-    if ((m << (lpk + 1)) > V41D_AREG * nthr || (m << (lpk - 2)) > V41D_SREG * nthr) return 41028;
-    const int smem = V41Dg(wf, cw, m, 1 << lpk).block(nwb);
-    if (smem > sm.optin) return 41028;
-    const unsigned grid = (unsigned)blocks;
     const uint8_t *A = (const uint8_t*)a, *As = (const uint8_t*)asf, *B = (const uint8_t*)w, *Bs = (const uint8_t*)wsf;
-#define V41_DS(WFX, CWX, MRX)                                                                                    \
-    do {                                                                                                         \
-        V41_SMEM_LIMIT((v41_dense_small_kernel<WFX, CWX, MRX>), sm.optin);                                       \
-        v41_dense_small_kernel<WFX, CWX, MRX><<<grid, nwb * 32, smem, st>>>(A, lda, As, B, ldw, Bs, (v41_bf*)c, ldc, \
-                                                                          m, n, k, lpk);                         \
-    } while (0)
-#define V41_DS_MR(WFX, CWX) \
-    do { if (m <= 8) V41_DS(WFX, CWX, 1); else V41_DS(WFX, CWX, 2); } while (0)
-#define V41_DS_CW(WFX)                                                                                     \
-    do {                                                                                                   \
-        if (cw == 16) V41_DS_MR(WFX, 16);                                                                  \
-        else if (cw == 8) V41_DS_MR(WFX, 8);                                                               \
-        else if (cw == 4) V41_DS_MR(WFX, 4);                                                               \
-        else V41_DS_MR(WFX, 2);                                                                            \
-    } while (0)
-    if (wf == 0) V41_DS_CW(0);
-    else V41_DS_CW(1);
-#undef V41_DS_CW
-#undef V41_DS_MR
-#undef V41_DS
+    const int r = wfmt == 0
+                      ? bs::dense_small_launch<bs::MxHw32<0>, bs::EpiBf16>(A, lda, As, B, ldw, Bs, (v41_bf*)c, ldc, m,
+                                                                            n, k, st)
+                      : bs::dense_small_launch<bs::MxHw32<1>, bs::EpiBf16>(A, lda, As, B, ldw, Bs, (v41_bf*)c, ldc, m,
+                                                                            n, k, st);
+    if (r) return 41028;
     V41_ERR();
 }
 
@@ -3493,214 +2899,18 @@ extern "C" int memra_v41_add_cast(const float* y, const void* add, void* out, lo
 }
 
 // ---------------------------------------------------------------------------------------------
-// The MoE dispatch plan on the device, the host `tp::MoePlan` order exactly: pairs sorted by expert
-// with tokens ascending inside an expert, each token's pair indices in ascending expert id, plus the
-// tile list of the grouped expert GEMMs (one entry per `bm` rows of an expert that has rows). No
-// host round trip: per-chunk expert counts, one block scanning them, then each chunk placing its
-// tokens in order. `err` counts expert ids outside [0, ne) (skipped, their order slot -1), and such an id
+// The MoE dispatch plan on the device: the skeleton's (`bs::moe_plan_launch`, cu/bs_small.cuh), the host
+// `tp::MoePlan` order exactly: pairs sorted by expert with tokens ascending inside an expert, each token's pair
+// indices in ascending expert id, plus the tile list of the grouped expert GEMMs (one entry per `bm` rows of an
+// expert that has rows). `err` counts expert ids outside [0, ne) (skipped, their order slot -1), and such an id
 // sets bit 0 of `*flag` when it is given (the rank's call flag, read with the call's logits) and, when
 // `rows_bad` is given, the bit of its row in that bitmap: bit `row0 + t` for row t of the plan (`row0`: the
 // slice's first row in its call), the last bit of the map's `rows_cap` for any row past it. The serving
-// route reads the map of each call to fail only the requests whose rows named no expert.
-
+// route reads the map of each call to fail only the requests whose rows named no expert. A call of at most
+// V41_PLAN_SMALL pairs is planned in one block instead of three kernels and three zero-fills (the same outputs:
+// the gate compares both forms with the host plan); a longer one in chunks of V41_PLAN_CH tokens.
 #define V41_PLAN_CH 256
-
-// a plan row's bit in the call's row map (see above)
-__device__ __forceinline__ void v41_row_bad(int* rows_bad, int row0, int rows_cap, int t) {
-    if (!rows_bad) return;
-    int b = min(row0 + t, rows_cap - 1);
-    atomicOr(&rows_bad[b >> 5], (int)(1u << (b & 31)));
-}
-
-__global__ void __launch_bounds__(V41_PLAN_CH) v41_moe_count_kernel(const int* __restrict__ sel, int rows, int topk,
-                                                                     int ne, int* __restrict__ counts,
-                                                                     int* __restrict__ err, int* flag, int* rows_bad,
-                                                                     int row0, int rows_cap) {
-    extern __shared__ int v41_cnt[];
-    for (int e = threadIdx.x; e < ne; e += blockDim.x) v41_cnt[e] = 0;
-    __syncthreads();
-    int t = blockIdx.x * V41_PLAN_CH + threadIdx.x;
-    if (t < rows)
-        for (int j = 0; j < topk; ++j) {
-            int e = sel[(long)t * topk + j];
-            if (e < 0 || e >= ne) {
-                atomicAdd(err, 1);
-                if (flag) atomicOr(flag, 1);
-                v41_row_bad(rows_bad, row0, rows_cap, t);
-            } else {
-                atomicAdd(&v41_cnt[e], 1);
-            }
-        }
-    __syncthreads();
-    for (int e = threadIdx.x; e < ne; e += blockDim.x) counts[(long)blockIdx.x * ne + e] = v41_cnt[e];
-}
-
-// counts [nch][ne] -> each chunk's base inside its expert (in place); off [ne + 1]; the tile list of
-// the experts [e0, e1) (a rank's share), expert index relative to e0
-__global__ void __launch_bounds__(1024) v41_moe_scan_kernel(int* __restrict__ counts, int nch, int ne, int bm,
-                                                            int e0, int e1, int* __restrict__ off,
-                                                            V41Tile* __restrict__ tiles, int* __restrict__ ntiles) {
-    __shared__ int s_off[1024], s_til[1024];
-    int e = threadIdx.x;
-    int run = 0;
-    if (e < ne)
-        for (int c = 0; c < nch; ++c) {
-            int v = counts[(long)c * ne + e];
-            counts[(long)c * ne + e] = run;
-            run += v;
-        }
-    s_off[e] = e < ne ? run : 0;
-    s_til[e] = (e >= e0 && e < e1) ? (run + bm - 1) / bm : 0;
-    __syncthreads();
-    if (threadIdx.x == 0) {
-        int o = 0, tt = 0;
-        for (int x = 0; x < ne; ++x) {
-            int c = s_off[x], n = s_til[x];
-            s_off[x] = o;
-            s_til[x] = tt;
-            o += c;
-            tt += n;
-        }
-        off[ne] = o;
-        *ntiles = tt;
-    }
-    __syncthreads();
-    if (e < ne) {
-        off[e] = s_off[e];
-        if (e >= e0 && e < e1)
-            for (int i = 0; i * bm < run; ++i) tiles[s_til[e] + i] = V41Tile{s_off[e], run, i * bm, e - e0};
-    }
-}
-
-// One thread per token of a 256-token chunk. A pair's slot is its expert's base plus the number of
-// earlier tokens of the chunk that picked the same expert (a token's experts are distinct): the
-// chunk's tokens set their bit in a per-expert bitmap, and a token counts the bits below its own.
-__global__ void __launch_bounds__(V41_PLAN_CH) v41_moe_place_kernel(const int* __restrict__ sel,
-                                                                    const float* __restrict__ selw, int rows, int topk,
-                                                                    int ne, const int* __restrict__ bases,
-                                                                    const int* __restrict__ off, int* __restrict__ ptok,
-                                                                    float* __restrict__ pw, int* __restrict__ order) {
-    extern __shared__ int v41_loc[];  // [ne] the chunk's first slot per expert, then [ne][8] the token bitmap
-    unsigned* mask = (unsigned*)(v41_loc + ne);
-    int tid = threadIdx.x;
-    for (int e = tid; e < ne; e += V41_PLAN_CH) v41_loc[e] = off[e] + bases[(long)blockIdx.x * ne + e];
-    for (int i = tid; i < ne * (V41_PLAN_CH / 32); i += V41_PLAN_CH) mask[i] = 0u;
-    __syncthreads();
-    int t = blockIdx.x * V41_PLAN_CH + tid;
-    int ev[16];
-    float wv[16];
-#pragma unroll
-    for (int j = 0; j < 16; ++j) {
-        ev[j] = -1;
-        wv[j] = 0.f;
-        if (j < topk && t < rows) {
-            int e = sel[(long)t * topk + j];
-            wv[j] = selw[(long)t * topk + j];
-            if (e >= 0 && e < ne) ev[j] = e;
-        }
-    }
-#pragma unroll
-    for (int j = 0; j < 16; ++j)
-        if (ev[j] >= 0) atomicOr(&mask[ev[j] * (V41_PLAN_CH / 32) + (tid >> 5)], 1u << (tid & 31));
-    __syncthreads();
-    if (t >= rows) return;
-    int n = 0;
-#pragma unroll
-    for (int j = 0; j < 16; ++j) n += ev[j] >= 0;
-#pragma unroll
-    for (int j = 0; j < 16; ++j) {
-        int e = ev[j];
-        if (e < 0) continue;
-        const unsigned* m = mask + e * (V41_PLAN_CH / 32);
-        int before = __popc(m[tid >> 5] & ((1u << (tid & 31)) - 1u));
-#pragma unroll
-        for (int w = 0; w < V41_PLAN_CH / 32; ++w)
-            if (w < (tid >> 5)) before += __popc(m[w]);
-        int p = v41_loc[e] + before;
-        ptok[p] = t;
-        pw[p] = wv[j];
-        int q = 0;  // this expert's rank among the token's experts: its place in the per-token order
-#pragma unroll
-        for (int k = 0; k < 16; ++k) q += (ev[k] >= 0 && ev[k] < e);
-        order[(long)t * topk + q] = p;
-    }
-#pragma unroll
-    for (int j = 0; j < 16; ++j)
-        if (j < topk && j >= n) order[(long)t * topk + j] = -1;
-}
-
-// The plan of a call of a few rows (at most V41_PLAN_SMALL pairs) in one block instead of three kernels and
-// three zero-fills: the same outputs (the gate compares both forms with the host plan). Nothing is zeroed
-// beforehand: the slots past the placed pairs are written here (token 0, weight 0), and err is stored.
 #define V41_PLAN_SMALL 256
-
-__global__ void __launch_bounds__(1024) v41_moe_plan_small_kernel(const int* __restrict__ sel,
-                                                                  const float* __restrict__ selw, int rows, int topk,
-                                                                  int ne, int bm, int e0, int e1, int* __restrict__ off,
-                                                                  int* __restrict__ ptok, float* __restrict__ pw,
-                                                                  int* __restrict__ order, V41Tile* __restrict__ tiles,
-                                                                  int* __restrict__ ntiles, int* __restrict__ err,
-                                                                  int* flag, int* rows_bad, int row0, int rows_cap) {
-    __shared__ int s_sel[V41_PLAN_SMALL], s_off[1024], s_til[1024], s_placed;
-    int tid = threadIdx.x, np = rows * topk;
-    if (tid < np) {
-        int e = sel[tid];
-        bool ok = e >= 0 && e < ne;
-        s_sel[tid] = ok ? e : -1;
-        if (!ok) v41_row_bad(rows_bad, row0, rows_cap, tid / topk);
-    }
-    __syncthreads();
-    int run = 0;  // expert tid's pairs
-    if (tid < ne)
-        for (int p = 0; p < np; ++p) run += s_sel[p] == tid;
-    s_off[tid] = run;
-    s_til[tid] = (tid >= e0 && tid < e1) ? (run + bm - 1) / bm : 0;
-    __syncthreads();
-    if (tid == 0) {
-        int o = 0, tt = 0, bad = 0;
-        for (int x = 0; x < ne; ++x) {
-            int c = s_off[x], n = s_til[x];
-            s_off[x] = o;
-            s_til[x] = tt;
-            o += c;
-            tt += n;
-        }
-        for (int p = 0; p < np; ++p) bad += s_sel[p] < 0;
-        off[ne] = o;
-        *ntiles = tt;
-        *err = bad;
-        if (bad && flag) atomicOr(flag, 1);
-        s_placed = o;
-    }
-    __syncthreads();
-    if (tid < ne) {
-        off[tid] = s_off[tid];
-        if (tid >= e0 && tid < e1)
-            for (int i = 0; i * bm < run; ++i) tiles[s_til[tid] + i] = V41Tile{s_off[tid], run, i * bm, tid - e0};
-    }
-    if (tid < np) {
-        int t = tid / topk, j = tid % topk, e = s_sel[tid];
-        int n = 0, q = 0;  // the token's experts in range, and those below e: e's place in the per-token order
-        for (int k = 0; k < topk; ++k) {
-            int x = s_sel[t * topk + k];
-            n += x >= 0;
-            q += x >= 0 && x < e;
-        }
-        if (e >= 0) {
-            int before = 0;  // earlier tokens that picked e (a token's experts are distinct)
-            for (int p = 0; p < t * topk; ++p) before += s_sel[p] == e;
-            int p = s_off[e] + before;
-            ptok[p] = t;
-            pw[p] = selw[tid];
-            order[t * topk + q] = p;
-        }
-        if (j >= n) order[t * topk + j] = -1;
-        if (tid >= s_placed) {
-            ptok[tid] = 0;
-            pw[tid] = 0.f;
-        }
-    }
-}
 
 // counts: scratch [ceil(rows / 256)][ne] ints (unused for at most V41_PLAN_SMALL pairs); tiles: room for
 // ceil(rows * topk / bm) + min(ne, rows * topk); the tile list covers experts [e0, e1)
@@ -3708,20 +2918,12 @@ extern "C" int memra_v41_moe_plan(const int* sel, const float* selw, int rows, i
                                   int* counts, int* off, int* ptok, float* pw, int* order, void* tiles, int* ntiles,
                                   int* err, int* flag, int* rows_bad, int row0, int rows_cap, void* stream) {
     if (rows <= 0) return rows < 0 ? 41025 : 0;
-    if (ne <= 0 || ne > 1024 || topk <= 0 || topk > 16 || bm <= 0 || e0 < 0 || e1 > ne || e0 > e1) return 41025;
+    if (ne <= 0 || ne > 1024 || topk <= 0 || topk > bs::kMaxTopk || bm <= 0 || e0 < 0 || e1 > ne || e0 > e1)
+        return 41025;
     if (rows_bad && (row0 < 0 || rows_cap <= 0)) return 41025;
-    cudaStream_t st = (cudaStream_t)stream;
-    if (rows * topk <= V41_PLAN_SMALL) {
-        v41_moe_plan_small_kernel<<<1, 1024, 0, st>>>(sel, selw, rows, topk, ne, bm, e0, e1, off, ptok, pw, order,
-                                                     (V41Tile*)tiles, ntiles, err, flag, rows_bad, row0, rows_cap);
-        V41_ERR();
-    }
-    int nch = (rows + V41_PLAN_CH - 1) / V41_PLAN_CH;
-    v41_moe_count_kernel<<<nch, V41_PLAN_CH, ne * 4, st>>>(sel, rows, topk, ne, counts, err, flag, rows_bad, row0,
-                                                           rows_cap);
-    v41_moe_scan_kernel<<<1, 1024, 0, st>>>(counts, nch, ne, bm, e0, e1, off, (V41Tile*)tiles, ntiles);
-    v41_moe_place_kernel<<<nch, V41_PLAN_CH, ne * 4 * (1 + V41_PLAN_CH / 32), st>>>(sel, selw, rows, topk, ne, counts,
-                                                                                  off, ptok, pw, order);
+    bs::moe_plan_launch<V41_PLAN_CH, 1024, V41_PLAN_SMALL>(sel, selw, rows, topk, ne, bm, e0, e1, counts, off, ptok, pw,
+                                                           order, (bs::Tile*)tiles, ntiles, err, flag, rows_bad, row0,
+                                                           rows_cap, (cudaStream_t)stream);
     V41_ERR();
 }
 
