@@ -364,7 +364,7 @@ def _burn(seconds):
 _WINDOW = 3.0
 _BUSY_SECONDS = 4.5
 # A blocked test fails by itself when nothing stops it for this long.
-_BLOCKED_SECONDS = 120
+_BLOCKED_SECONDS = 60
 # A child that uses CPU for _BUSY_SECONDS of wall time, then says so.
 _BUSY_CHILD = (f'import time\nend = time.monotonic() + {_BUSY_SECONDS}\n'
                'while time.monotonic() < end:\n    pass\nprint("done")\n')
@@ -379,8 +379,10 @@ _POLLING_CHILD = ('import time\n'
                   '    while time.process_time() - mark < 0.03:\n'
                   '        pass\n'
                   '    time.sleep(0.2)\n')
-# A child that uses CPU without end (ended by the test's cleanup).
-_SPINNING_CHILD = 'while True:\n    pass\n'
+# A child that uses CPU without a pause for ten windows. Only a CPU budget ends it sooner; with
+# none it ends by itself, and the test that expected it stopped fails.
+_SPINNING_CHILD = (f'import time\nend = time.monotonic() + {10 * _WINDOW}\n'
+                   'while time.monotonic() < end:\n    pass\n')
 
 
 class LivenessGuard(unittest.TestCase):
