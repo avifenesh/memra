@@ -1771,6 +1771,14 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         );
     }
 
+    // puts the grouped small-row body back on the card's ring when a ring loop ends, an early return included
+    struct RingReset;
+    impl Drop for RingReset {
+        fn drop(&mut self) {
+            // SAFETY: a plain store of the launcher's ring choice
+            unsafe { ffi::memra_v41_moe_small_ring(0) };
+        }
+    }
     // the device plan against the host plan, then the grouped GEMM in every form against the dense
     // normal form run per expert, on a 16-expert slice
     // (rows, experts, top-k, tile rows, output columns, inputs): 576 is a rank's share of the hidden columns at
@@ -1796,9 +1804,13 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             (_, 5120) => format!("_n{n}"),
             _ => format!("_n{n}_k{k}"),
         };
-        // the one 1-tile-row case shares its rows and columns with the 4-tile-row one: its checks
-        // that do not name bm carry `_bm1`, so every check name is unique
-        let bt = if bm == 1 { "_bm1" } else { "" };
+        // the 1-row cases run at two tile heights: names without the tile rows carry them there, so every check
+        // name is unique
+        let bt = if rows == 1 {
+            format!("_bm{bm}")
+        } else {
+            String::new()
+        };
         let mut sel = Vec::with_capacity(rows * topk);
         let mut selw = Vec::with_capacity(rows * topk);
         for _ in 0..rows {
@@ -2118,7 +2130,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             let (got, _, sfrow) = grouped(0, ne, form, &tabd, (0, 0), false)?;
             if form == 1 {
                 rep.raw(
-                    &format!("schedule/cutlass_sfrow/rows{rows}{bt}{nt}"),
+                    &format!("schedule/cutlass_sfrow/rows{rows}{nt}{bt}"),
                     sfrow == want_sfrow,
                     "each pair's scale row == the host's padded prefix",
                     format!("{np} pairs"),
@@ -2126,7 +2138,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             }
             same(
                 rep,
-                &format!("schedule/cutlass_moe/rows{rows}_form{form}{bt}{nt}"),
+                &format!("schedule/cutlass_moe/rows{rows}_form{form}{nt}{bt}"),
                 &got,
                 &want,
             );
@@ -2135,6 +2147,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         // (the warp ring under the old names, the block ring under `blk`): the same bytes
         let rings = [(1, ""), (2, "_blk")];
         if bm <= 8 {
+            let _card_ring = RingReset;
             for (ring, rn) in rings {
                 // SAFETY: a plain store of the launcher's ring choice
                 unsafe { ffi::memra_v41_moe_small_ring(ring) };
@@ -2146,8 +2159,6 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                     &want,
                 );
             }
-            // SAFETY: as above, back to the card's ring
-            unsafe { ffi::memra_v41_moe_small_ring(0) };
         }
         // a rank's range of experts [4, 12): its pairs' rows as above, every other row untouched
         {
@@ -2156,7 +2167,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             let outside = got[..p0].iter().chain(&got[p1..]).all(|&b| b == 0xA5);
             let inside = got[p0..p1] == want[p0..p1];
             rep.raw(
-                &format!("schedule/cutlass_moe_range/rows{rows}{bt}{nt}"),
+                &format!("schedule/cutlass_moe_range/rows{rows}{nt}{bt}"),
                 inside && outside,
                 "experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched",
                 format!("inside {inside}, outside untouched {outside}"),
@@ -2181,6 +2192,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             let (g1, _, _) = grouped(0, ne, 0, &tab2, (0, 0), false)?;
             let (u1, _, _) = grouped(0, ne, 0, &tab2, (2, 2), false)?;
             if bm <= 8 {
+                let _card_ring = RingReset;
                 for (ring, rn) in rings {
                     // SAFETY: a plain store of the launcher's ring choice
                     unsafe { ffi::memra_v41_moe_small_ring(ring) };
@@ -2188,13 +2200,13 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                     let (gs, us, _) = grouped(0, ne, 0, &tab2, (0, 2), true)?;
                     same(
                         rep,
-                        &format!("schedule/moe_small_pair/rows{rows}_w1{bt}{nt}{rn}"),
+                        &format!("schedule/moe_small_pair/rows{rows}_w1{nt}{bt}{rn}"),
                         &gs,
                         &g2,
                     );
                     same(
                         rep,
-                        &format!("schedule/moe_small_pair/rows{rows}_w3{bt}{nt}{rn}"),
+                        &format!("schedule/moe_small_pair/rows{rows}_w3{nt}{bt}{rn}"),
                         &us,
                         &u2,
                     );
@@ -2228,29 +2240,27 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                     })?;
                     same(
                         rep,
-                        &format!("schedule/moe_small_own_layout/rows{rows}_w1{bt}{nt}{rn}"),
+                        &format!("schedule/moe_small_own_layout/rows{rows}_w1{nt}{bt}{rn}"),
                         &d0.host(&st)?,
                         &gs,
                     );
                     same(
                         rep,
-                        &format!("schedule/moe_small_own_layout/rows{rows}_w3{bt}{nt}{rn}"),
+                        &format!("schedule/moe_small_own_layout/rows{rows}_w3{nt}{bt}{rn}"),
                         &d1.host(&st)?,
                         &us,
                     );
                 }
-                // SAFETY: as above, back to the card's ring
-                unsafe { ffi::memra_v41_moe_small_ring(0) };
             }
             same(
                 rep,
-                &format!("schedule/cutlass_moe_pair/rows{rows}_w1{bt}{nt}"),
+                &format!("schedule/cutlass_moe_pair/rows{rows}_w1{nt}{bt}"),
                 &g2,
                 &g1,
             );
             same(
                 rep,
-                &format!("schedule/cutlass_moe_pair/rows{rows}_w3{bt}{nt}"),
+                &format!("schedule/cutlass_moe_pair/rows{rows}_w3{nt}{bt}"),
                 &u2,
                 &u1,
             );

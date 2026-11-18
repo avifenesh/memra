@@ -16,6 +16,15 @@ per decode forward: a correctness route, not a fast one. The lane's shared bench
 against it unchanged. The pack is `NativeQualified` <!-- support: deepseek_v41-gpu-1x-pro6000 --> on this
 topology (record `deepseek_v41-gpu-1x-pro6000`).
 
+> **The routed-expert kernel changed on this card (memra#1324, 2026-11-18; the pin is not moved).** From
+> `4e80f97800` the route's grouped small-row expert calls run `v41_moe_small_blk_kernel` on an RTX PRO 6000 (188 SMs)
+> instead of `v41_moe_small_kernel`: the same program element for element, so the bytes do not move. Shown by
+> `dsv41-gate kernels` (every small-row check on both kernels), `dsv41-gate tp` (layer hashes equal to main's on four
+> and two ranks, three transports) and `memra model verify` checkpoint and serve at `4e80f97800` (verified=Checkpoint,
+> verified=Serve on one card): `../perf/receipts/moe1324/` (`moe1324-m1/` for the verify run). TinyParity was not
+> rerun there. The record `deepseek_v41-gpu-1x-pro6000` still pins `6371a9975b` (below); whether to re-pin is the landing's
+> call (`docs/decisions/DSV41-MOE-BLOCK-RING-PRO6000.md`).
+>
 > **Re-pinned (2026-11-14, the row map).** The record `deepseek_v41-gpu-1x-pro6000` now pins `6371a9975b`, the
 > head of memra#1315 on main `63c351a2f4`: the route's call flag with a row map, so a router row that names no
 > expert fails its own request alone (`../row-faults/README.md`), the first route-code change after the pin

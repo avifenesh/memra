@@ -22,8 +22,13 @@ for i in 0 1 2 3; do
   eval "FD$i=$fd"
 done
 export TP4_HELD=1
+# this script's own output (the start line with the box's CPU load, the cards' power limits) goes into the receipt
+# dir too: the A/Bs of 2026-11-18 kept it only in a log outside it
+mkdir -p receipts-perf/$TAG
+exec > >(tee -a receipts-perf/$TAG/moe_arm.log) 2>&1
 say "MOE-START $PHASE $TAG A=$A B=$B: all four box locks held; load $(cut -d' ' -f1-3 /proc/loadavg)"
-nvidia-smi --query-gpu=index,power.limit,clocks.max.sm,temperature.gpu --format=csv,noheader
+nvidia-smi --query-gpu=index,power.limit,clocks.max.sm,temperature.gpu --format=csv,noheader \
+  | tee receipts-perf/$TAG/cards-start.csv
 if [ $PHASE = gatehc ]; then
   # the tp gate on the third transport only (no kernel gate, no timed runs)
   env K3_ARM_A=$A K3_ARM_B=$B K3_TAG=$TAG K3_KGATE=0 K3_GATE_T="host-canonical" K3_ORDER=" " K3_ROWS="4" \

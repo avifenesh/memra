@@ -673,8 +673,10 @@ __global__ void __launch_bounds__(128) v41_moe_small_kernel(const uint8_t* __res
 // The same tile list and output columns on a block-staged two-stage ring: a stage is PK K blocks (2 KB of weights a
 // warp: CW x PK = 128), the block's four warps stage their own weight rows and together the tile's activation rows,
 // which every warp reads (one copy a block, not a warp), and a barrier a stage hands the stage over. Shared memory
-// is the warps' weights and one copy of the activations, so on an SM of the RTX PRO 6000 four such blocks are
-// resident where the six-stage ring above holds one or two. Each output element is the chain above: the same MMA,
+// is the warps' weights and one copy of the activations: 19.5 to 23.9 KB a block at the shapes a served call takes,
+// so four such blocks are resident on an SM of the RTX PRO 6000 where the six-stage ring above holds one or two (the
+// 8-column shape at 6 to 8 tile rows takes 27.1 KB, three an SM; only the gate runs it, as served calls choose 8
+// columns at 3 rows or fewer). Each output element is the chain above: the same MMA,
 // fragments and scale selectors over the K blocks in ascending order, so the ring a call runs on is speed only.
 // The last stage of a K that is not a multiple of PK is shorter (a multiple of 4 K blocks).
 #define V41_MSB_NW 4
@@ -835,14 +837,15 @@ static int v41_cc() {
 // Workstation, Max-Q and Server Edition) runs `v41_moe_small_blk_kernel`, every other card the six-stage warp ring
 // `v41_moe_small_kernel`. On one Max-Q card at a four-rank share's calls (w1 + w3 n 576 k 5120, w2 n 1280 k 2304,
 // 64 routings a cell, interleaved rounds; receipts research/modelplan-onboarding-dsv41-20261109/perf/receipts/
-// moe1324): the block ring's w1 + w3, SwiGLU and w2 take 0.66-0.78 of the pre-CUTLASS kernels' time at 3 to 64 rows,
+// moe1324): the block ring's w1 + w3, SwiGLU and w2 take 0.66-0.77 of the pre-CUTLASS kernels' time at 3 to 64 rows,
 // 0.81-0.92 at 1 and 2, where the warp ring took 0.91-1.27. The warp ring holds a ring of six stages of four K blocks
 // a warp, its own copy of the tile's activation rows (sized for the plan's tile rows: 8 from 9 rows on), so one or
 // two blocks fit an SM; the block ring's two stages of 2 KB of weights a warp and one copy of the activations fit
-// four. Other cards keep the warp ring until measured (the RTX 5090's line was not measured for this change).
+// four at the shapes served calls take (three for the 8-column shape at 6 to 8 tile rows, which only the gate runs:
+// served calls choose 8 columns at 3 rows or fewer). Other cards keep the warp ring until measured (the RTX 5090's line was not measured for this change).
 static std::atomic<int> v41_moe_ring{0};
 static bool v41_moe_blk_card() { return v41_cc() == 120 && v41_sms() >= 188; }
-// A gate's or bench's choice of the ring: 0 by the card, 1 the six-stage warp ring, 2 the two-stage block ring.
+// The kernel gate's choice of the ring: 0 by the card, 1 the six-stage warp ring, 2 the two-stage block ring.
 extern "C" void memra_v41_moe_small_ring(int ring) {
     if (ring >= 0 && ring <= 2) v41_moe_ring.store(ring, std::memory_order_relaxed);
 }
