@@ -16,7 +16,7 @@ case $ACT in
     /usr/bin/ssh -n "$HOST" "mkdir -p $R/jobs $R/runs $R/tmp $T $R/research/admit-headroom-unified-20261113/tools" || exit 1
     rsync -a --delete "$H/" "$HOST:$T/" || exit 1
     rsync -a "$H/../../admit-headroom-unified-20261113/tools/fill_cache2.sh" "$HOST:$R/research/admit-headroom-unified-20261113/tools/" || exit 1
-    /usr/bin/ssh -n "$HOST" "cd $R; (setsid nohup bash -c 'echo \$\$ > jobs/$NAME.pid; export TMPDIR=\$HOME/$R/tmp; NAME=$NAME $VARS bash $T/recovery_cell.sh') > jobs/$NAME.log 2>&1 < /dev/null & echo started" ;;
+    /usr/bin/ssh -n "$HOST" "cd $R; (setsid nohup bash -c 'echo \$\$ > jobs/$NAME.pid; export TMPDIR=\$HOME/$R/tmp; NAME=$NAME $VARS bash \$HOME/$T/recovery_cell.sh') > jobs/$NAME.log 2>&1 < /dev/null & echo started" ;;
   stop)
     /usr/bin/ssh -n "$HOST" "touch $R/runs/$NAME/STOP; echo stop requested" ;;
   kill)
