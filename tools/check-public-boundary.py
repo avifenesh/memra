@@ -110,9 +110,10 @@ REFS_ONLY = "refs_only"
 # rewrite never strands the comment away from the entries it describes.
 REFS_ONLY_SECTION = (
     "# refs_only entries: reviewed HISTORICAL versions that exist only on published refs, never in",
-    "# the checkout. Each one was read before it was listed and holds no secret; private content",
-    "# (such as the business-tier files) is never listed here. `verify-allowlist` holds each one",
-    "# to some published ref, run in a clone that mirrors origin's refs (boundary-refs.yml).",
+    "# the checkout. Each one was read before it was listed: none holds a real secret (an entry",
+    "# that keeps a reviewed placeholder names that secret rule too), and private content such as",
+    "# the business-tier files is never listed here. `verify-allowlist` holds each one to some",
+    "# published ref, run in a clone that mirrors origin's refs (boundary-refs.yml).",
 )
 EXPIRY_SEVERITY = 4
 # A rule the policy does not rank cannot happen (load_policy refuses), but an ad-hoc Policy
@@ -1703,14 +1704,67 @@ def is_shallow() -> bool:
     return out == "true"
 
 
+# The namespaces boundary-refs.yml fetches origin's refs into: its branches, GitHub's PR heads,
+# and the tags. A plain clone has no `refs/remotes/origin-pull/*`.
+PUBLISHED_NAMESPACES = ("refs/remotes/origin/", "refs/remotes/origin-pull/", "refs/tags/")
+
+
 def ref_set_looks_complete(refs: List[str]) -> bool:
-    """Whether these published refs look like origin's whole set: its branches AND GitHub's PR
-    heads, as boundary-refs.yml fetches them. A plain clone has no `refs/remotes/origin-pull/*`.
-    The test cannot see a ref that is here but not on origin (a local-only tag counts as
-    published), so only a clone that mirrors origin's refs judges `refs_only` entries for good."""
-    return any(ref.startswith("refs/remotes/origin/") for ref in refs) and any(
-        ref.startswith("refs/remotes/origin-pull/") for ref in refs
+    """Whether these published refs hold each namespace origin publishes, as boundary-refs.yml
+    fetches them. A test of shape only: it cannot see a ref that is here but not on origin (a
+    local-only tag counts as published), nor a namespace fetched in part; `--prune` also compares
+    the counts with `git ls-remote origin` (remote_ref_shortfall)."""
+    return all(any(ref.startswith(ns) for ref in refs) for ns in PUBLISHED_NAMESPACES)
+
+
+def remote_ref_shortfall(refs: List[str], listing: str) -> List[str]:
+    """The namespaces where `git ls-remote origin` (its output is `listing`) lists more refs than
+    these published refs hold, as "NAME: N here, M on origin". Review of memra#1368: one fetched
+    PR head passes the shape test while the other thousand are missing, and a prune there would
+    drop entries that only the missing refs carry."""
+    remote = {"heads": 0, "tags": 0, "pull heads": 0}
+    for line in listing.splitlines():
+        name = line.split("\t", 1)[-1]
+        if name.endswith("^{}"):
+            continue  # a peeled tag line repeats its tag
+        if name.startswith("refs/heads/"):
+            remote["heads"] += 1
+        elif name.startswith("refs/tags/"):
+            remote["tags"] += 1
+        elif name.startswith("refs/pull/") and name.endswith("/head"):
+            remote["pull heads"] += 1
+    local = {
+        # origin/HEAD is the symref a checkout leaves behind, not a branch.
+        "heads": sum(
+            ref.startswith("refs/remotes/origin/") and ref != "refs/remotes/origin/HEAD"
+            for ref in refs
+        ),
+        "tags": sum(ref.startswith("refs/tags/") for ref in refs),
+        "pull heads": sum(ref.startswith("refs/remotes/origin-pull/") for ref in refs),
+    }
+    return [
+        f"{name}: {local[name]} here, {remote[name]} on origin"
+        for name in remote
+        if local[name] < remote[name]
+    ]
+
+
+def prune_ref_set_gap(refs: List[str]) -> Optional[str]:
+    """Why `--prune` must not judge refs_only entries against these refs, or None when they look
+    like origin's whole set by shape and by `git ls-remote origin`'s counts."""
+    if not ref_set_looks_complete(refs):
+        return "the published refs here lack one of " + ", ".join(
+            f"{ns}*" for ns in PUBLISHED_NAMESPACES
+        )
+    listing = subprocess.run(
+        ["git", "ls-remote", "origin"], cwd=ROOT, capture_output=True, text=True
     )
+    if listing.returncode != 0:
+        return "`git ls-remote origin` failed, so the refs here cannot be compared with origin's"
+    short = remote_ref_shortfall(refs, listing.stdout)
+    if short:
+        return "origin lists more refs than this clone holds (" + "; ".join(short) + ")"
+    return None
 
 
 def historical_violations(
@@ -1768,6 +1822,8 @@ def cmd_verify(policy: Policy, prune: bool) -> int:
     drifted = stale_entries(checkout, live_violations)
     unchecked = 0
     complete = False
+    gap: Optional[str] = None
+    refs: List[str] = []
     unnamed: List[Tuple[str, str, str]] = []
     if historical and is_shallow():
         # A shallow clone (ci.yml's boundary job) holds no published history to look in.
@@ -1786,7 +1842,9 @@ def cmd_verify(policy: Policy, prune: bool) -> int:
                 f"entries were not judged. Fetch origin's refs as boundary-refs.yml does."
             )
             return 1
-        complete = ref_set_looks_complete(refs)
+        if prune:
+            gap = prune_ref_set_gap(refs)
+            complete = gap is None
         found, unnamed = historical_violations(policy, historical, refs)
         live_violations += found
         drifted += [
@@ -1808,6 +1866,12 @@ def cmd_verify(policy: Policy, prune: bool) -> int:
     print(f"verify: {len(drifted)} allowlist entries no longer match tracked files:")
     for path, digest, why in drifted:
         print(f"  [DRIFT] {path}  sha256={digest[:12]}…  ({why})")
+    if historical and not unchecked and not ref_set_looks_complete(refs):
+        print(
+            f"verify: note: the refs here lack one of "
+            f"{', '.join(ns + '*' for ns in PUBLISHED_NAMESPACES)}, so a {REFS_ONLY} entry 'at no "
+            f"published ref' may only be at a ref this clone did not fetch."
+        )
     if prune:
         # Prune the RULES that went dead, not the whole entry: an entry granted for two rules
         # where one has been remediated must keep covering the other, or --prune would silently
@@ -1845,9 +1909,8 @@ def cmd_verify(policy: Policy, prune: bool) -> int:
         print(f"verify: dropped {dropped} entries, narrowed {narrowed}")
         if refused:
             print(
-                f"verify: kept {refused} {REFS_ONLY} entries unpruned: the published refs here do "
-                f"not look like origin's whole set (no refs/remotes/origin/* or no "
-                f"refs/remotes/origin-pull/*). Prune them in a clone that mirrors origin's refs."
+                f"verify: kept {refused} {REFS_ONLY} entries unpruned: {gap}. Prune them in a "
+                f"clone that mirrors origin's refs."
             )
         # A secret rule an entry does not name is a finding, not a dead rule: no prune fixes it.
         return 1 if refused or unnamed else 0
