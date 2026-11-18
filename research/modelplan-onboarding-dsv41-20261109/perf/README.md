@@ -2647,8 +2647,9 @@ calls on the device plan's tile list, 384 experts, 64 routings a cell rotated th
 DRAM, every launch shape's outputs compared with the warp ring's on all 64 routings (0 differences in every run),
 then timed in rounds of alternating order against each other and against the base's kernels. The winner stages
 the activation rows once a block and runs two stages of 2 KB of weights a warp (16 columns x 8 K blocks, or 8 x 16
-while that launch is one wave of four blocks an SM), a block barrier a stage: 21.7 to 27.1 KB a block, four blocks
-an SM. w1 + w3, SwiGLU and w2 together, against the base's kernels (`receipts/moe1324/probe-runs/p3r`, `p3p`):
+while that launch is one wave of four blocks an SM), a block barrier a stage: 19.5 to 23.9 KB a block at the shapes
+served calls take, four blocks an SM (the 8-column shape at 6 to 8 tile rows takes 27.1 KB, three an SM; served calls
+choose 8 columns only at 3 rows or fewer, so only the kernel gate runs it). w1 + w3, SwiGLU and w2 together, against the base's kernels (`receipts/moe1324/probe-runs/p3r`, `p3p`):
 
 | rows | warp ring / base | block ring / base |
 |---|---|---|
@@ -2658,7 +2659,7 @@ an SM. w1 + w3, SwiGLU and w2 together, against the base's kernels (`receipts/mo
 
 `v41_moe_small_blk_kernel` (`cu/dsv41_gpu.cu`) is that shape; the launcher takes it on sm_120 cards with 188 SMs
 (the PRO 6000 family) and every other card keeps the warp ring and its rule. `memra_v41_moe_small_ring` forces
-either for a gate or a bench. Bytes: `dsv41-gate kernels` 1,089 of 1,089, every small-row check on both rings,
+either for the kernel gate. Bytes: `dsv41-gate kernels` 1,089 of 1,089, every small-row check on both rings,
 two new cases at w2's shape (72 K blocks: a short last stage on the 16-block stages); `dsv41-gate tp` on four ranks
 (needle capture, layers 1,2,14,20,21,24, two decode steps) 916 of 916 (default), 914 of 914 (peer-pull) and 914 of
 914 (host-canonical), the 180 layer hashes a transport equal to main's binary's on the same command
