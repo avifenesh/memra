@@ -71,7 +71,7 @@ except ImportError:  # Python < 3.11 (serving/spot boxes ship 3.10)
         )
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, FrozenSet, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, FrozenSet, Hashable, Iterable, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 POLICY_PATH = ROOT / "tools" / "public-boundary-policy.toml"
@@ -510,7 +510,9 @@ def has_gzip_magic(path: Path) -> bool:
 # zeros expand to GBs, and the scan holds a member in memory. Over it, the blob is a finding of its
 # own (`archive_over_scan_cap`), never a pass. Nested archives share their outer blob's budget.
 SCAN_CAP_BYTES = 1 << 30
-GZIP_NEST_DEPTH = 3
+# Containers opened inside a blob: a gzip and a tar each count one, so 8 is the outer tar.gz and three
+# nested tar.gz levels inside it.
+GZIP_NEST_DEPTH = 8
 GZIP_HEADER_MEMBER = "<gzip header>"
 TAR_TAIL_MEMBER = "<after the tar>"
 
@@ -566,6 +568,8 @@ def gunzip_capped(data: bytes, budget: List[int]) -> Tuple[bytes, bytes]:
         inflate = zlib.decompressobj(-zlib.MAX_WBITS)
         pending = data[pos:]
         while True:
+            if budget[0] < 0:
+                raise ScanCapExceeded()
             chunk = inflate.decompress(pending, budget[0] + 1)
             if len(chunk) > budget[0]:
                 raise ScanCapExceeded()
@@ -580,6 +584,75 @@ def gunzip_capped(data: bytes, budget: List[int]) -> Tuple[bytes, bytes]:
     return b"".join(out), b"\n".join(headers)
 
 
+def looks_like_tar(raw: bytes) -> bool:
+    """A tar stream: the `ustar` magic, or a first 512-byte header whose checksum holds (a v7
+    tar has no magic). Text and binary payloads fail the checksum."""
+    if raw[257:262] == b"ustar":
+        return True
+    if len(raw) < 512:
+        return False
+    try:
+        tarfile.TarInfo.frombuf(raw[:512], tarfile.ENCODING, "surrogateescape")
+    except tarfile.HeaderError:
+        return False
+    return True
+
+
+def container_members(
+    raw: bytes, depth: int, budget: List[int]
+) -> Optional[List[Tuple[str, bytes]]]:
+    """The members of a decompressed stream or of a tar member: a gzip inside it is opened in
+    turn and a tar is read by its files, up to `GZIP_NEST_DEPTH` levels of nesting; None when
+    `raw` is neither (it is then one member, judged as text). Raises ScanCapExceeded."""
+    if depth >= GZIP_NEST_DEPTH:
+        return None
+    if raw[:2] == GZIP_MAGIC:
+        return gzip_members(raw, depth + 1, budget)
+    if looks_like_tar(raw):
+        return tar_members(raw, depth + 1, budget)
+    return None
+
+
+def text_member(name: str, body: bytes) -> List[Tuple[str, bytes]]:
+    """One member, left out when it is binary by git's own test (a NUL in the first 8000 bytes):
+    tensor and float dumps would match by chance just as deflate bytes do."""
+    return [] if b"\0" in body[:BINARY_PROBE] else [(name, body)]
+
+
+def tar_members(raw: bytes, depth: int, budget: List[int]) -> List[Tuple[str, bytes]]:
+    """A tar's regular files by their path inside it, each opened in turn when it is an archive,
+    and the bytes after the tar's end that are not padding as a member of their own. A tar that
+    does not parse is judged as one stream, whatever it holds. The tar's bytes were charged to the
+    budget when they were decompressed; only a sparse member, which expands past its stored bytes,
+    is charged again."""
+    files: List[Tuple[str, bytes]] = []
+    try:
+        with tarfile.open(fileobj=io.BytesIO(raw)) as tar:
+            for info in tar:
+                if not info.isfile():
+                    continue
+                if info.issparse() and info.size > budget[0]:
+                    raise ScanCapExceeded()
+                handle = tar.extractfile(info)
+                body = handle.read() if handle else b""
+                if info.issparse():
+                    budget[0] -= len(body)
+                files.append((info.name, body))
+            tail = raw[tar.offset :]
+    except tarfile.TarError:
+        return [("", raw)]
+    members: List[Tuple[str, bytes]] = []
+    for name, body in files:
+        nested = container_members(body, depth, budget)
+        if nested is None:
+            members.extend(text_member(name, body))
+        else:
+            members.extend((f"{name}/{inner}" if inner else name, b) for inner, b in nested)
+    if tail.strip(b"\0"):
+        members.append((TAR_TAIL_MEMBER, tail))
+    return members
+
+
 def gzip_members(
     data: bytes, depth: int = 0, budget: Optional[List[int]] = None
 ) -> Optional[List[Tuple[str, bytes]]]:
@@ -587,14 +660,13 @@ def gzip_members(
     decompresses (it is then judged by its raw bytes). Raises ScanCapExceeded past the cap.
 
     - The gzip header's FEXTRA, FNAME and FCOMMENT fields, as a member of their own.
-    - A tar's regular files, by their path inside the tar; a gzip inside it is opened in turn, up
-      to `GZIP_NEST_DEPTH` levels. Bytes after the tar's end that are not padding are a member of
-      their own, and a tar that does not parse is judged as one stream.
-    - Otherwise the one stream, named ''.
+    - Every gzip member of the stream, decompressed and joined.
+    - A gzip or a tar inside it (a plain or v7 tar too) is opened in turn, up to
+      `GZIP_NEST_DEPTH` levels (`container_members`, `tar_members`).
+    - Otherwise the one stream, named '', unless it is binary (`text_member`).
 
-    Binary content is left out by git's own test (a NUL in the first 8000 bytes): tensor and float
-    dumps would match by chance just as deflate bytes do. The header fields, a tar's tail and a tar
-    that does not parse are judged whatever they hold, as the raw scan judged them before."""
+    The header fields, a tar's tail and a tar that does not parse are judged whatever they hold,
+    as the raw scan judged them before."""
     if data[:2] != GZIP_MAGIC:
         return None
     budget = [SCAN_CAP_BYTES] if budget is None else budget
@@ -605,66 +677,41 @@ def gzip_members(
     members: List[Tuple[str, bytes]] = []
     if header:
         members.append((GZIP_HEADER_MEMBER, header))
-    if raw[257:262] != b"ustar":
-        if b"\0" not in raw[:BINARY_PROBE]:
-            members.append(("", raw))
-        return members
-    files: List[Tuple[str, bytes]] = []
-    try:
-        with tarfile.open(fileobj=io.BytesIO(raw)) as tar:
-            for info in tar:
-                if not info.isfile():
-                    continue
-                if info.size > budget[0]:
-                    raise ScanCapExceeded()
-                handle = tar.extractfile(info)
-                body = handle.read() if handle else b""
-                budget[0] -= len(body)
-                files.append((info.name, body))
-            tail = raw[tar.offset :]
-    except tarfile.TarError:
-        members.append(("", raw))
-        return members
-    for name, body in files:
-        if body[:2] == GZIP_MAGIC and depth < GZIP_NEST_DEPTH:
-            nested = gzip_members(body, depth + 1, budget)
-            if nested is None:
-                members.append((name, body))
-            else:
-                members.extend((f"{name}/{inner}" if inner else name, b) for inner, b in nested)
-        elif b"\0" not in body[:BINARY_PROBE]:
-            members.append((name, body))
-    if tail.strip(b"\0"):
-        members.append((TAR_TAIL_MEMBER, tail))
+    nested = container_members(raw, depth, budget)
+    if nested is None:
+        members.extend(text_member("", raw))
+    else:
+        members.extend(nested)
     return members
 
 
-def scratch_dir() -> str:
+def scratch_dir() -> Optional[str]:
     """Where the decompressed copies go (review round 1): the git common dir, on the repository's
-    disk, rather than a RAM-backed /tmp."""
-    common = subprocess.run(
+    disk, rather than a RAM-backed /tmp; the system's temporary dir outside a repository."""
+    result = subprocess.run(
         ["git", "rev-parse", "--git-common-dir"],
         cwd=ROOT,
-        check=True,
         capture_output=True,
         text=True,
-    ).stdout.strip()
-    return str((ROOT / common).resolve())
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return str((ROOT / result.stdout.strip()).resolve())
 
 
 def members_with_hits(
-    sources: Dict[str, str], blobs: List[Tuple[str, List[Tuple[str, bytes]]]]
-) -> Dict[str, List[Tuple[str, bytes]]]:
+    sources: Dict[str, str], blobs: List[Tuple[Hashable, List[Tuple[str, bytes]]]]
+) -> Dict[Hashable, List[Tuple[str, bytes]]]:
     """The members, by blob key, in which any rule source matches, as `git grep --text -P` reads
     them. One git grep per batch of about 512 MiB of temporary copies."""
-    flagged: Dict[str, List[Tuple[str, bytes]]] = {}
+    flagged: Dict[Hashable, List[Tuple[str, bytes]]] = {}
     if not sources:
         return flagged
     args = ["git", "grep", "--no-index", "--text", "-z", "-l", "-P"]
     for source in sources.values():
         args.extend(("-e", source))
     args.extend(("--", "."))
-    pending: List[Tuple[str, str, bytes]] = []
+    pending: List[Tuple[str, Hashable, Tuple[str, bytes]]] = []
 
     def run(tmp: str) -> None:
         result = subprocess.run(args, cwd=tmp, capture_output=True)
@@ -836,10 +883,12 @@ def evaluate_refs(
     for start in range(0, len(ordered), chunk):
         batch = ordered[start : start + chunk]
         loaded = blobs_at([oid for _, oid in batch])
+        # Keyed by (path, oid), never the oid alone (review round 2): one blob at two paths is two
+        # verdicts, since the allowlist pins (path, sha256) and a private path keeps its own.
         gz = gzip_batch(
             policy,
             [
-                (oid, path, lambda oid=oid: loaded.get(oid))
+                ((path, oid), path, lambda oid=oid: loaded.get(oid))
                 for path, oid in batch
                 if is_gzip_name(path) or loaded.get(oid, b"")[:2] == GZIP_MAGIC
             ],
@@ -849,7 +898,8 @@ def evaluate_refs(
             if data is None:
                 continue
             read += 1
-            violation = gz[oid] if oid in gz else evaluate_content(policy, path, data)
+            key_blob = (path, oid)
+            violation = gz[key_blob] if key_blob in gz else evaluate_content(policy, path, data)
             if violation is None:
                 continue
             key = (violation.path, violation.sha256)
@@ -1106,15 +1156,15 @@ def gzip_violation(
 
 
 def gzip_batch(
-    policy: Policy, items: Iterable[Tuple[str, str, Callable[[], Optional[bytes]]]]
-) -> Dict[str, Optional[Violation]]:
+    policy: Policy, items: Iterable[Tuple[Hashable, str, Callable[[], Optional[bytes]]]]
+) -> Dict[Hashable, Optional[Violation]]:
     """Judge the gzip blobs among `items` (key, path, a reader of its bytes) a batch at a time:
     one prefilter per batch of about 512 MiB of decompressed members, so the decompressed text is
     never all in memory. Returns a verdict by key for every blob judged here; a private path, a
     bypassed path or a blob that does not decompress is left to the raw scan."""
-    verdicts: Dict[str, Optional[Violation]] = {}
-    judged: Dict[str, Tuple[str, bytes]] = {}
-    blobs: List[Tuple[str, List[Tuple[str, bytes]]]] = []
+    verdicts: Dict[Hashable, Optional[Violation]] = {}
+    judged: Dict[Hashable, Tuple[str, bytes]] = {}
+    blobs: List[Tuple[Hashable, List[Tuple[str, bytes]]]] = []
     size = 0
 
     def flush() -> None:

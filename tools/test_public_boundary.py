@@ -1189,6 +1189,170 @@ class CommitBlobTests(unittest.TestCase):
         self.assertEqual(checkout, ["research/lane/trace.bin"])
         self.assertEqual(commits, ["research/lane/trace.bin"])
 
+    # --- memra#1198 review round 2 (several from the reviewer's probes) ----------------------
+
+    def refs_scan(self, policy: "boundary.Policy | None" = None):
+        with mock.patch.object(boundary, "ROOT", self.root):
+            refs = boundary.published_refs("refs/heads/**")
+            return boundary.evaluate_refs(policy or self.policy, refs)
+
+    def test_one_gzip_blob_at_two_paths_is_two_verdicts(self) -> None:
+        """Review blocker: verdicts keyed by the oid alone reported the last path only."""
+        import gzip
+
+        blob = gzip.compress(b"row\nthe alpha needle\n", mtime=0)
+        self.write("research/a/trace.log.gz", blob)
+        self.write("research/b/trace.log.gz", blob)
+        self.git("add", "-f", ".")
+        self.git("commit", "-q", "-m", "two copies")
+        violations, _ = self.refs_scan()
+        self.assertEqual(
+            sorted(v.path for v in violations),
+            ["research/a/trace.log.gz", "research/b/trace.log.gz"],
+        )
+
+    def test_a_gzip_renamed_on_a_branch_names_each_paths_carriers(self) -> None:
+        """Review blocker: an old path on an old ref must not hide behind an allowlisted new one."""
+        import gzip
+
+        blob = gzip.compress(b"row\nthe alpha needle\n", mtime=0)
+        self.commit("research/a/trace.log.gz", blob, "receipt")
+        default = self.git("rev-parse", "--abbrev-ref", "HEAD")
+        self.git("checkout", "-q", "-b", "lane/x")
+        self.git("rm", "-q", "research/a/trace.log.gz")
+        self.write("research/b/trace.log.gz", blob)
+        self.git("add", "-f", "research/b/trace.log.gz")
+        self.git("commit", "-q", "-m", "rename")
+        self.git("checkout", "-q", default)
+        _, carriers = self.refs_scan()
+        self.assertEqual(
+            {key[0]: refs for key, refs in carriers.items()},
+            {"research/a/trace.log.gz": {default}, "research/b/trace.log.gz": {"lane/x"}},
+        )
+
+    def test_a_private_path_sharing_a_gzips_oid_keeps_its_violation(self) -> None:
+        """Review blocker: the public copy's verdict stood in for the private path's."""
+        import gzip
+
+        blob = gzip.compress(b"clean rows\n", mtime=0)
+        self.write("private/x.log.gz", blob)
+        self.write("research/x.log.gz", blob)
+        self.git("add", "-f", ".")
+        self.git("commit", "-q", "-m", "copies")
+        policy = boundary.Policy(
+            secret_patterns=self.policy.secret_patterns,
+            secret_sources=self.policy.secret_sources,
+            secret_union=self.policy.secret_union,
+            secret_groups=self.policy.secret_groups,
+            private_paths={"priv": "private/**"},
+            bypass_paths=[],
+        )
+        with mock.patch.object(
+            boundary, "private_candidates_at_ref", lambda _policy, _ref: ["private/x.log.gz"]
+        ):
+            violations, _ = self.refs_scan(policy)
+        self.assertEqual(
+            [(v.path, v.category) for v in violations], [("private/x.log.gz", "private_path")]
+        )
+
+    def test_the_cap_counts_a_tars_bytes_once(self) -> None:
+        """Review: the tar's members were charged on top of the tar's own decompressed bytes."""
+        import gzip
+
+        # A 6,000-byte member, then a small gzip whose decompression draws on what is left.
+        tarred = self.tar_bytes(
+            {"run.log": b"x" * 6000, "rows.log.gz": gzip.compress(b"clean\n" * 50, mtime=0)}
+        )
+        self.assertEqual(len(tarred), 10240)
+        blob = gzip.compress(tarred, mtime=0)
+        with mock.patch.object(boundary, "SCAN_CAP_BYTES", 15000):
+            self.assertIsNone(boundary.evaluate_content(self.policy, "research/l/c.tar.gz", blob))
+        with mock.patch.object(boundary, "SCAN_CAP_BYTES", 10000):
+            violation = boundary.evaluate_content(self.policy, "research/l/c.tar.gz", blob)
+        assert violation is not None
+        self.assertEqual(violation.rules, (boundary.SCAN_CAP_RULE,))
+
+    def test_a_sparse_tar_member_is_charged_against_the_cap(self) -> None:
+        """A sparse member expands past its stored bytes, so it is charged before it is read."""
+        import gzip
+        import tarfile
+
+        blob = gzip.compress(self.tar_bytes({"run.log": b"x" * 6000}), mtime=0)
+        with mock.patch.object(boundary, "SCAN_CAP_BYTES", 12000), mock.patch.object(
+            tarfile.TarInfo, "issparse", lambda _info: True
+        ):
+            violation = boundary.evaluate_content(self.policy, "research/l/s.tar.gz", blob)
+        assert violation is not None
+        self.assertEqual(violation.rules, (boundary.SCAN_CAP_RULE,))
+
+    def test_an_over_cap_gzip_is_a_finding_in_every_scan(self) -> None:
+        """Review: the batch path's over-cap verdict was dropped by no test."""
+        import gzip
+
+        self.commit("research/l/big.log.gz", gzip.compress(b"0" * 5000, mtime=0), "big")
+        with mock.patch.object(boundary, "SCAN_CAP_BYTES", 4096):
+            self.assertEqual(self.scans("research/l/big.log.gz"), [["research/l/big.log.gz"]] * 3)
+
+    def test_a_gzip_headers_extra_field_is_scanned(self) -> None:
+        import gzip
+
+        body = gzip.compress(b"clean rows\n", mtime=0)
+        extra = b"the alpha needle"
+        blob = (
+            body[:3]
+            + bytes([body[3] | 0x04])
+            + body[4:10]
+            + len(extra).to_bytes(2, "little")
+            + extra
+            + body[10:]
+        )
+        self.assertIsNotNone(boundary.evaluate_content(self.policy, "research/l/e.log.gz", blob))
+
+    def test_three_nested_tar_gz_levels_are_opened(self) -> None:
+        import gzip
+
+        level = self.tar_bytes({"run.log": b"x\nthe alpha needle\n"})
+        for i in range(3):
+            level = self.tar_bytes({f"l{i}.tar.gz": gzip.compress(level, mtime=0)})
+        blob = gzip.compress(level, mtime=0)
+        violation = boundary.evaluate_content(self.policy, "research/l/n.tar.gz", blob)
+        assert violation is not None
+        self.assertIn("l2.tar.gz/l1.tar.gz/l0.tar.gz/run.log", violation.detail + str(
+            boundary.scan_members(self.policy, boundary.gzip_members(blob) or [])
+        ))
+
+    def test_every_member_of_a_multi_member_gzip_is_read(self) -> None:
+        import gzip
+
+        blob = gzip.compress(b"clean\n", mtime=0) + gzip.compress(b"the alpha needle\n", mtime=0)
+        self.assertIsNotNone(boundary.evaluate_content(self.policy, "research/l/m.log.gz", blob))
+
+    def test_a_gzip_in_a_gzip_a_tar_in_a_tar_gz_and_a_v7_tar_are_opened(self) -> None:
+        """Review nits: all three were dropped by the binary probe."""
+        import gzip
+
+        twice = gzip.compress(gzip.compress(b"row\nthe alpha needle\n", mtime=0), mtime=0)
+        self.assertIsNotNone(boundary.evaluate_content(self.policy, "research/l/x.log.gz.gz", twice))
+        inner = self.tar_bytes({"run.log": b"x\nthe alpha needle\n"})
+        outer = gzip.compress(self.tar_bytes({"inner.tar": inner}), mtime=0)
+        self.assertIsNotNone(boundary.evaluate_content(self.policy, "research/l/o.tar.gz", outer))
+        raw = bytearray(self.tar_bytes({"run.log": b"x\nthe alpha needle\n"}))
+        raw[257:265] = b"\0" * 8  # no ustar magic or version: a v7 header
+        header = raw[:512]
+        header[148:156] = b" " * 8
+        raw[148:156] = b"%06o\0 " % sum(header)
+        v7 = gzip.compress(bytes(raw), mtime=0)
+        self.assertIsNotNone(boundary.evaluate_content(self.policy, "research/l/v7.tar.gz", v7))
+        self.assertFalse(boundary.looks_like_tar(b"plain text\n" * 100))
+
+    def test_the_scratch_dir_outside_a_repository_is_the_systems(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as outside, mock.patch.object(
+            boundary, "ROOT", boundary.Path(outside)
+        ):
+            self.assertIsNone(boundary.scratch_dir())
+
     def test_ref_scan_finds_a_blob_the_checkout_no_longer_carries(self) -> None:
         """The gap that let two lanes stay unexamined: nothing re-reads a pushed branch.
 
