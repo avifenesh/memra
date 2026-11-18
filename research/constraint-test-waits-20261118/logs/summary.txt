@@ -1,0 +1,15 @@
+start 2026-11-18T01:56:49+01:00 load 94.78 85.98 78.00
+7237b88c0ecc6d021cfa156acb33cf7b547b26470a042b9d347a094ba63443df  ~/.cache/memra-1335/base-main.rs
+50d49782285e378df837a00aaea1f476906ed4900e8fa4e0e438bde2d125b99f  ~/.cache/memra-1335/base-fix.rs
+main-plain rc=0 load 63.76 test result: ok. 2 passed; 0 failed; abandons=ok refuses=ok ;
+main-late-start rc=101 load 61.13 test result: FAILED. 0 passed; 2 failed; refuses=FAILED abandons=FAILED ; thread 'constrained::tests::compiler_refuses_at_cap_then_rearms_after_runaways_finish' (2652477) panicked at crates/memra-server/src/constrained.rs:1285:18: runaway compile did not start: Timeout
+main-late-dequeue rc=101 load 48.63 test result: FAILED. 0 passed; 2 failed; abandons=FAILED refuses=FAILED ; thread 'constrained::tests::compiler_abandons_runaway_job_and_drains_next_job' (2686289) panicked at crates/memra-server/src/constrained.rs:1213:14: runaway compile did not start: Timeout
+fix-late-start rc=0 load 45.36 test result: ok. 2 passed; 0 failed; abandons=ok refuses=ok ;
+fix-late-dequeue rc=0 load 49.27 test result: ok. 2 passed; 0 failed; abandons=ok refuses=ok ;
+fix-plain rc=0 load 58.31 test result: ok. 2 passed; 0 failed; abandons=ok refuses=ok ;
+fix-plain repeated: 20 of 20 passed; load 46.24 52.90 60.40
+server lib suite rc=0 test result: ok. 1272 passed; 0 failed; 18 ignored; 0 measured; 0 filtered out; finished in 14.55s
+clippy (memra-server, all targets) rc=0 0 error lines
+fmt rc=0
+tree restored to the fix
+CHECKS-DONE 2026-11-18T02:30:29+01:00 load 51.01 47.17 52.92

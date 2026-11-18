@@ -1,0 +1,9 @@
+warning: memra-engine@0.141.1: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.27s
+     Running unittests src/lib.rs (~/.cache/memra-1335/target/release/deps/memra_server-2100d3fe685d2a2e)
+
+running 2 tests
+test constrained::tests::compiler_abandons_runaway_job_and_drains_next_job ... ok
+test constrained::tests::compiler_refuses_at_cap_then_rearms_after_runaways_finish ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1288 filtered out; finished in 4.00s
