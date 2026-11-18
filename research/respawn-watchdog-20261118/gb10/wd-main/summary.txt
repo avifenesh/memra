@@ -1,0 +1,16 @@
+2026-11-18T12:57:55+02:00
+unit-a
+e8a7483287cf0a24f96f66e0e40bfd750a5e5f6b64034738220a3cbbbb107017  ~/.cache/memra-1255/gb10/bins/main/memra-server
+               total        used        free      shared  buff/cache   available
+Mem:          124608        6464       46801         523       72984      118143
+Running as unit: memra1255-wd-main.service
+first ready after 130 s: MainPID=2537820 Result=success NRestarts=0 ActiveState=active SubState=running
+request 1 done 2026-11-18T13:00:06+02:00: {"object":"chat.completion","model":"q38","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":"We need answer user: \"Say hello in five words.\" Need final exactly five","reasoning_details":[{"type":"reasoning.text","text":"We need answer user: \"Say hello in five words.\" N
+panic seen 2026-11-18T13:00:08+02:00
+ready again after 125 s from the panic: MainPID=2537820 Result=success NRestarts=0 ActiveState=active SubState=running
+request 2: {"object":"chat.completion","model":"q38","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":"We need answer user: \"Say hello in five words.\" Need final exactly five","reasoning_details":[{"type":"reasoning.text","text":"We need answer user: \"Say hello in five words.\" N
+final: MainPID=2537820 Result=success NRestarts=0 ActiveState=active SubState=running
+2026-11-18T12:57:55.473751+02:00 unit-a systemd[2299289]: Starting memra1255-wd-main.service - /usr/bin/python3 ~/.cache/memra-1255/gb10/bins/main/research/spec-capture-headroom-20261112/tools/tsrun.py ~/.cache/memra-1255/gb10/bins/main/memra-server...
+2026-11-18T13:00:01.751955+02:00 unit-a systemd[2299289]: Started memra1255-wd-main.service - /usr/bin/python3 ~/.cache/memra-1255/gb10/bins/main/research/spec-capture-headroom-20261112/tools/tsrun.py ~/.cache/memra-1255/gb10/bins/main/memra-server.
+withholding lines: 2
+WD-DONE main 2026-11-18T13:02:15+02:00
