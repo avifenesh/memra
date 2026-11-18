@@ -44,10 +44,34 @@ Nothing outside `mod tests` changes.
 
 The fixed tests then passed 20 of 20 runs, at 4.00 to 4.01 s each. The whole `memra-server` library suite on the fixed tree: 1,272 passed, 0 failed, 18 ignored. Clippy on `memra-server` (all targets, `-D warnings`) and `cargo fmt --all -- --check` are clean.
 
+## Review fold (memra#1340)
+
+The independent review approved the change and asked for two folds. Both are test code.
+
+1. **A runaway is reported at its own deadline.** Main's 250 ms wait for the result also checked, by accident, that the supervisor reports a timeout at the job's deadline; the 30 s wait dropped that. Each runaway's deadline is now kept, and its result's `finished_at` (the supervisor's clock at the report) must fall at the deadline or less than `RUNAWAY_COMPILE_DEADLINE` after it (`assert_reported_at_its_deadline`).
+2. **The third test with the same race.** `worker::tests::slow_constraint_compile_times_out_while_normal_decode_and_heartbeat_progress` gave its compiler job the 100 ms deadline on the wall clock, so a supervisor that dequeued it later dropped it and the test failed after its 10 s start wait. The job now gets a 30 s deadline. The pending entry keeps the 100 ms deadline, which that test judges on its step clock.
+
+`tools/mutate.py` has two more arms and `tools/dd-checks-fold.sh` ran them (`logs-fold/summary.txt`):
+
+- `wrong-deadline`, a mutation of the production code: the supervisor waits `CONSTRAINT_COMPILE_TIMEOUT` (5 s) for a worker instead of the job's deadline.
+- `worker-late-dequeue`: the third test's compile factory sleeps 300 ms on its first call.
+
+| cell | test code | result |
+|---|---|---|
+| `wrong-deadline` | before the fold | 2 passed, in 20 s: the lost check (every runaway reported 4 s after its deadline, and nothing saw it) |
+| `wrong-deadline` | the fold | 2 FAILED, `runaway compile 0 was reported 4.000227543s after its deadline` |
+| `worker-late-dequeue` | main's `worker.rs` | FAILED after the 10 s start wait, `test compiler did not start: Timeout` |
+| `worker-late-dequeue` | the fold | passed |
+| `late-start` | the fold | 2 passed |
+| `late-dequeue` | the fold | 2 passed |
+| no mutation, the three tests | the fold | 3 passed |
+
+The three tests then passed 20 of 20 runs, 4.00 s each. The whole `memra-server` library suite on the folded tree: 1,272 passed, 0 failed, 18 ignored. Clippy on `memra-server` (all targets, `-D warnings`) and `cargo fmt --all -- --check` are clean.
+
 ## Conditions
 
-CPU only, on 18 pinned threads of a 32-thread host at nice 15, with a 1-minute load of 45 to 64 from other work during the cells. sm_120a build, release profile. The fix needs no device evidence: it changes test code only.
+CPU only, on 18 pinned threads of a 32-thread host at nice 15, with a 1-minute load of 45 to 64 from other work during the first run's cells and 12 to 33 during the fold's. sm_120a build, release profile. The change is test code only. The impact rules class `constrained.rs` and `worker.rs` by path, so the push gate still asks device cells of it; it lands with a landing whose records cover them.
 
 ## Limits
 
-A supervisor that wakes more than a second after a submit would still drop the runaway job, and the test would then fail after its 30 s wait with the same message. The deadline is a wall-clock instant fixed at the submit, so the test cannot remove that bound without a clock seam in the compiler; it is ten times the old one.
+A supervisor that wakes more than a second after a submit would still drop the runaway job, and the test would then fail after its 30 s wait with the same message. The deadline is a wall-clock instant fixed at the submit, so the test cannot remove that bound without a clock seam in the compiler; it is ten times the old one. The review measured the limit with a delay in the production code: a dequeue 900 ms late passes and one 1,100 ms late fails. The same second bounds how late the supervisor may report a runaway. The one-second margin rests on the induced-delay cells and on the plain runs at the loads stated here; no run measured the supervisor's real wake-up lag at a load of 55 to 98.
