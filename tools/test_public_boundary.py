@@ -1247,7 +1247,6 @@ class CommitBlobTests(unittest.TestCase):
             private_paths={"priv": "private/**"},
             bypass_paths=[],
         )
-        # Found by its gzip name alone: no private_candidates_at_ref mock (review round 3).
         violations, _ = self.refs_scan(policy)
         self.assertEqual(
             [(v.path, v.category) for v in violations], [("private/x.log.gz", "private_path")]
@@ -1497,6 +1496,41 @@ class CommitBlobTests(unittest.TestCase):
             rc = boundary.cmd_check(self.policy, refs=[])
         self.assertEqual(rc, 1)
         self.assertIn("no refs matched", output.getvalue())
+
+    def test_ref_scan_reports_a_private_path_only_an_old_ref_carries(self) -> None:
+        """memra#1356: git ls-tree refused the ':(glob)' pathspec, so the ref scan never found a
+        private path by its glob. A clean private file is found on every ref that carries it,
+        one verdict per version, and a public ref without it stays clean."""
+        self.policy.private_paths["private"] = "deploy/private/**"
+        self.commit("receipts.md", b"clean\n", "clean default branch")
+        default = self.git("rev-parse", "--abbrev-ref", "HEAD")
+        self.git("checkout", "-q", "-b", "lane/old")
+        self.commit("deploy/private/unit/host.service", b"clean v1\n", "private v1")
+        self.git("branch", "lane/older")
+        self.commit("deploy/private/unit/host.service", b"clean v2\n", "private v2")
+        self.git("checkout", "-q", default)
+        with mock.patch.object(boundary, "ROOT", self.root):
+            self.assertEqual(
+                boundary.evaluate_refs(self.policy, boundary.published_refs(f"refs/heads/{default}"))[0],
+                [],
+            )
+            violations, carriers = boundary.evaluate_refs(
+                self.policy, boundary.published_refs("refs/heads/**")
+            )
+        self.assertEqual(
+            sorted((v.path, v.category) for v in violations),
+            [("deploy/private/unit/host.service", "private_path")] * 2,
+        )
+        self.assertEqual(
+            sorted(sorted(carriers[(v.path, v.sha256)]) for v in violations),
+            [["lane/old"], ["lane/older"]],
+        )
+
+    def test_a_failed_ls_tree_stops_the_ref_scan(self) -> None:
+        """memra#1356: a refused `git ls-tree` returned [] and hid the bug; it now raises."""
+        self.commit("receipts.md", b"clean\n", "clean")
+        with mock.patch.object(boundary, "ROOT", self.root), self.assertRaises(RuntimeError):
+            boundary.tree_candidates_at_refs(self.policy, ["refs/heads/no-such-ref"])
 
     def test_commit_scan_applies_private_path_rules(self) -> None:
         self.policy.private_paths["private"] = "private/**"
