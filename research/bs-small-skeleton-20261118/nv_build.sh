@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build host: compile cu/dsv41_gpu.cu and cu/dsv41_cutlass.cu with build.rs's flags for sm_120a and sm_121a,
-# and leave a marker (SASS is dumped on the laptop: the build host has no cuobjdump). usage: nv_build.sh TAG  (sources in ~/.cache/bs-small/src-TAG)
+# and leave a marker (dump.sh dumps the SASS on a machine with cuobjdump: the build host has none). usage: nv_build.sh TAG
+# (sources in ~/.cache/bs-small/src-TAG)
 set -u
 TAG=$1
 B=$HOME/.cache/bs-small

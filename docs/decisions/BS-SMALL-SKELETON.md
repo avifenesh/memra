@@ -9,30 +9,41 @@ header-only units that any route can instantiate:
   `bs_moe_count_kernel<CH>`, `bs_moe_scan_kernel<NE>`, `bs_moe_place_kernel<CH>`, `bs_moe_plan_small_kernel<NP,
   NE>`), the grouped expert GEMM's small-row body on its two cp.async rings (`bs_small_moe_kernel<Ring, Math,
   Epi, CW, PK>` with `Ring` = `bs::Warp6`, the six-stage warp ring, or `bs::Block2`, memra#1324's block ring;
-  `bs::SmallRowMoe`, `bs::moe_small_launch`), and the dense small-row body (`bs_small_dense_kernel<Math, Epi, CW,
-  MR>`, `bs::dense_small_launch`).
+  `bs::SmallRowMoe`), and the dense small-row body (`bs_small_dense_kernel<Math, Epi, CW, MR>`,
+  `bs::SmallRowDense`, `bs::dense_small_launch` on a caller's `bs::DenseLaunch`).
 - `crates/memra-engine/cu/bs_cutlass.cuh`: the CUTLASS configuration template `bs::cut::Cfg<EAct, EW, AlW,
   TileN, Swap, Grouped>` over CUTLASS 4.8.1's sm_120 block-scaled kernels, the dense launcher `bs::cut::plain`,
   and the grouped (ptr-array) call with its device setup kernel (`bs_cutlass_setup_kernel<Cfg>`,
   `bs::cut::grouped`).
 
 The first math policy is `bs::MxHw32<WF>`, the V4.1 program exactly; the first epilogue is `bs::EpiBf16`. The
-`memra_v41_*` FFI entry points stay as the route's thin wrappers (contracts, return codes, the kernel gate's ring
-seam and the speed rules measured against the route's CUTLASS forms), so no Rust caller changes. The extraction
+`memra_v41_*` FFI entry points stay as the route's wrappers (contracts, return codes, the kernel gate's ring seam
+and every speed rule: which calls take a small body, the ring and column choices, the dense geometry), so no Rust
+caller changes. The extraction
 is held to the same SASS, kernel for kernel, on sm_120a and sm_121a (below).
 
 ## What is shared and what stays with the route
 
 Shared (the census of 2026-11-18 found these generic): the tile list and the device plan (they take `bm`, `topk`
 and the rank's expert range, and know nothing of the model), both cp.async rings of the grouped body, the dense
-small body, the ring choice by card (`bs::moe_block2_card`: sm_120 with at least 188 SMs takes `Block2`, as
-memra#1324 measured on the RTX PRO 6000), each body's launch geometry, and the CUTLASS normal and swapped forms.
+small body, each instance's shared-memory size and limits (`Warp6` sets its limit once a device; every `Block2`
+instance is asserted under the default 48 KB at the most tile rows, since a policy's operand bytes set the stage
+size), the register-carry bound of the dense body's stage (`bs::dense_carries`), and the CUTLASS normal and
+swapped forms. The grouped body reads the fixed expert table record `bs::ExpW` (three projections' codes and scale
+streams, their second-level scales), not a policy type: a route whose experts have another table shape brings a
+record change with it.
 
 Per route: the math policy (operand formats, the scale stream's layout and meaning, the MMA, what follows a
-scale word's K blocks and the end of the chain), the epilogue, the FFI contracts and return codes, which calls a
-small body takes against the route's CUTLASS forms (`memra_v41_moe_small_fits`, `memra_v41_dense_small_fits`,
-both measured on the route's shapes), the form rule of the route's CUTLASS calls (`pick`), the scale-row kernel
-of its grouped calls (`sfrow_kernel`) and the seams its gates set (`memra_v41_moe_small_ring`).
+scale word's K blocks and the end of the chain), the epilogue, the FFI contracts and return codes, and every speed
+rule, each measured by its caller on its own shapes and cards. For the V4.1 route: which calls a small body takes
+against the route's CUTLASS forms (`memra_v41_moe_small_fits`, `memra_v41_dense_small_fits`); the grouped ring by
+card (`v41_moe_blk_card`: sm_120 with at least 188 SMs takes `Block2`, as memra#1324 measured on the RTX PRO
+6000) and each ring's column rule (Block2 8 columns while the launch is one wave of four blocks an SM, else 16;
+Warp6 16, 8 or 4 by warps an SM); the dense geometry (`v41_dense_geo`: an SM's columns in one block, the stage as
+deep as about 48 KB a SM of weights in flight allows); the form rule of its CUTLASS calls (`pick`); the scale-row
+kernel of its grouped calls (`sfrow_kernel`) and the seams its gates set (`memra_v41_moe_small_ring`). The
+skeleton takes geometry as arguments (`bs::SmallRowMoe<Ring, Math, Epi, CW, PK>::launch`, `bs::DenseLaunch`) and
+never picks it, so a new caller does not inherit V4.1's tuning: it measures its own and passes it.
 
 ## Why the math is a policy and not a scale parameter
 
@@ -44,9 +55,14 @@ identity scale and fold the 128-wide block's weight and activation scales into a
 (`cu/moe_kq_prims.cuh`). A granularity number cannot say which of these runs, and each route's bytes depend on
 its own program (AGENTS.md: one numeric program per request; a format is not supported by substituting another
 program). So the program is a type: an instantiation names its policy, its kernel symbol carries the policy
-(`bs_small_moe_kernel<bs::Block2, bs::MxHw32<1>, bs::EpiBf16, 8, 16>`), a trace shows which program ran, and
-two routes' instantiations never share a symbol. A policy also cannot be combined with a scale stream it does
-not read, which a numeric parameter would allow.
+(`bs_small_moe_kernel<bs::Block2, bs::MxHw32<1>, bs::EpiBf16, 8, 16>`) and a trace shows which program ran. A
+policy also cannot be combined with a scale stream it does not read, which a numeric parameter would allow.
+
+Instantiations with the same template arguments in two units are one symbol: the plan kernels (no policy), a
+policy two routes share, a shared CUTLASS configuration's setup kernel. Every unit that instantiates the same
+`bs::` kernel must therefore compile it identically (the same header revision and the same nvcc flags, `-fmad`
+included); otherwise which unit's copy runs is undefined. Today only the V4.1 units include the headers, and
+`dsv41_gpu.cu` (`-fmad=false`) and `dsv41_cutlass.cu` instantiate disjoint kernels.
 
 The weight format is part of the policy (`MxHw32<0>` e4m3, `MxHw32<1>` e2m1), not a separate template argument
 of the bodies as first proposed: Step-3.7's experts are e4m3 under a different program, so a body that fixed the
@@ -106,8 +122,10 @@ What had to match for that, found by the comparison and kept in the header's com
 - One scale-granularity parameter for every route (above).
 - Ring bodies as called functions taking the thread index as an argument: the same SASS for 103 of 104
   kernels, but the block ring's 8 x 16 shape differed; the kernel-body form gives 104 of 104.
-- Moving the route's speed rules (`memra_v41_*_fits`, the CUTLASS form rule) into the skeleton: they were
-  measured against this route's CUTLASS forms on this route's shapes, and another route measures its own.
+- Speed rules in the skeleton (a first version of this change kept the ring choice by card, the ring column rules
+  and the dense in-flight target in the shared launchers; the independent review of #1343 flagged them): they
+  were measured on this route's shapes and cards, so they moved to the route, and the skeleton takes geometry as
+  arguments. The SASS comparison below was rerun after the move.
 
 ## Not shown by this change
 

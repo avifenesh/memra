@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Laptop: fetch a build host build's objects (obj-TAG) and dump each one's SASS and resource usage with cuobjdump 13.1.
+# The checking machine (any box with cuobjdump 13.1; the build host has none): fetch a build host build's objects
+# (obj-TAG) and dump each one's SASS and resource usage.
 # usage: dump.sh TAG
 set -u
 BUILD=${BUILD:?set BUILD to the build host (ssh alias)}
