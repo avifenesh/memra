@@ -1,0 +1,27 @@
+[tensor-contract] bound 754 semantic tensors (pack step35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[step37-defaults] serving doors armed ON for the SlidingGatedMoe program (per-flag =0 kills, =1 forces; owner flip 2026-08-27)
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.789
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=425.260
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.94GB (expert budget 95.02GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.81GB (expert budget 94.90GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[q8rp] split-plane decode mirrors built: 1 tensors
+loaded step35 (45 trunk layers; optional MTP skipped)
+prompt tokens: [0, 271, 60329, 72756, 28, 3566, 1074, 9928, 89, 1173, 98531, 55698, 5252, 6634, 98260, 13040, 201, 835, 3, 55664, 23809, 362, 270, 15890, 5613, 343, 20050, 15354, 19, 7955, 59, 19777, 2518, 26887, 13424, 21, 754, 54186, 8555, 2048, 75856, 343, 61022, 15, 20, 3395, 835, 3, 565, 50511, 126664, 23809, 362, 3530, 58245, 2610, 14177, 343, 2438, 529, 377, 54186, 14, 95021]
+[moe-cache] in-token prefetch: off (card no-receipt-default)
+[fa-pool] grow #0 dev=0 o_len 0 -> 8192 ml_len 0 -> 64 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 8192 -> 16384 ml_len 64 -> 128 (retired kept, zero=false)
+[fa-pool] grow #2 dev=1 o_len 0 -> 12288 ml_len 0 -> 96 (retired kept, zero=false)
+prefill argmax=304  decode argmax=716  logit maxdiff=1.237e0  MISMATCH
+[gate] prefill: l[304]=17.8036 l[716]=17.3596 | decode: l[304]=17.6532 l[716]=17.6566
+[gate] top-2 margin: prefill 0.4441 decode 0.0034 | config spread at these ids 0.2970 -> NEAR-TIE class (the spread covers the margin; run tools/argmax-margin-gate.sh to see this position's margin against the prompt's own distribution)
+
+thread 'main' (2908725) panicked at crates/memra-engine/src/bin/run_gen.rs:1264:5:
+assertion `left == right` failed: decode-step diverges from prefill at the last position (see the [gate] lines above for the near-tie-vs-defect diagnosis; a wide-margin flip means a cache/threading/kernel bug, a margin inside the config spread is the documented cross-config drift class)
+  left: 304
+ right: 716
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+run-gen exit status: 101

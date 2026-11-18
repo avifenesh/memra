@@ -2607,15 +2607,40 @@ impl HybridModel {
         }
     }
 
+    /// Where one `generate` or `generate_with` call puts its cache, and whether the
+    /// device-counter doors may open on it (memra#1295): `pp::GenCachePlan::decide` on the
+    /// door as it reads now and this model's prime walk.
+    fn gen_cache_plan(&self) -> crate::pp::GenCachePlan {
+        crate::pp::GenCachePlan::decide(
+            crate::pp::DoorState::read(self.layers.len(), &self.cfg),
+            self.prime_walk(),
+        )
+    }
+
+    /// The cache of one `generate` or `generate_with` call, as [`Self::gen_cache_plan`] says.
+    fn new_gen_cache(
+        &self,
+        e: &Engine,
+        max_ctx: usize,
+    ) -> Result<Cache, Box<dyn std::error::Error>> {
+        if self.gen_cache_plan().through_pp {
+            crate::pp::new_cache(e, &self.cfg, max_ctx)
+        } else {
+            Cache::new(e, &self.cfg, max_ctx)
+        }
+    }
+
     /// The qwen dc door's plan predicate, shared by `generate` and `generate_with`. Every route
     /// inside that door (`decode_step_dc`, the `graph_decode_loop` capture) walks the serial
     /// residual over Full and Linear mixers only: step35 refuses in `full_attn_decode_dc_inner`,
     /// a hyper trunk refuses in `refuse_hyper`, and an MLA layer panics
     /// (`mla_path_unimplemented`). Those plans take the host-logits loop instead, whose
-    /// `decode_step_h` serves all three.
+    /// `decode_step_h` serves all three. So does a call whose cache is stage-owned
+    /// (`GenCachePlan::dc_doors_ok`).
     fn qwen_dc_plan_ok(&self) -> bool {
         !self.uses_sliding_gated_moe_program()
             && self.hyper.is_none()
+            && self.gen_cache_plan().dc_doors_ok()
             && self
                 .layers
                 .iter()
@@ -2633,7 +2658,8 @@ impl HybridModel {
     ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
         let _numeric = self.enter_numeric();
         let max_ctx = prompt.len() + max_new + 8;
-        let mut cache = Cache::new(e, &self.cfg, max_ctx)?;
+        // Stage-owned when the prime is stage-split: see `generate_with`'s allocation.
+        let mut cache = self.new_gen_cache(e, max_ctx)?;
         let mut last_logits = Vec::new();
         // prime: BATCHED cache prime (prime_cache — the prefill-throughput path, the measured #1
         // e2e gap: tokenwise primed at ~102/38 tok/s vs ~2000-5900 tok/s batched). Prompts below
@@ -2935,7 +2961,14 @@ impl HybridModel {
         let room = ctx_cap - prompt.len();
         let budget = params.max_new.min(room);
 
-        let mut cache = Cache::new(e, &self.cfg, ctx_cap)?;
+        // STAGE-OWNED KV (memra#1295). With the ppN door open across devices the split prime
+        // walks each stage's layers on that stage's engine, so each layer's KV has to live on
+        // its stage's device. This cache used to be homed on the primary whatever the prime,
+        // and the first stage-1 KV append failed the cross-device guard
+        // (`append_kv_quantized_rows.k_cache: tensor on dev0, stream on dev1`): `run-gen` could
+        // not generate on a card pair after its gates passed (they allocate through
+        // `pp::new_cache`). A prime that is not stage-split keeps the home cache it had.
+        let mut cache = self.new_gen_cache(e, ctx_cap)?;
         let mut last_logits = Vec::new();
         // BATCHED PRIME (2026-07-06 fix — generate_with was still tokenwise! run-gen's "decode"
         // numbers folded a ~40-100 tok/s tokenwise prime into the rate) + PRIME_NANOS contract.

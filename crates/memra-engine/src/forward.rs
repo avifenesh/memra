@@ -268,3 +268,261 @@ pub fn prime_gate_verdict(tokenwise: &[f32], batched: &[f32]) -> PrimeGateVerdic
         class,
     }
 }
+
+/// The verdict of run-gen's first gate (memra#1295): the batched prefill (`forward_last`)
+/// against the tokenwise decode loop at the last position.
+pub struct PrefillGateVerdict {
+    pub prefill_argmax: usize,
+    pub decode_argmax: usize,
+    /// How far the prefill holds its token over the decode's: `p[i] - p[j]`. 0 on a match.
+    pub prefill_margin: f32,
+    /// How far the decode holds its token over the prefill's: `d[j] - d[i]`. 0 on a match.
+    pub decode_margin: f32,
+    /// The larger of the two programs' differences at those two ids.
+    pub spread: f32,
+    /// Full-vocab maxdiff; NaN when a row holds a NaN or the rows differ in length. An id that
+    /// holds the same infinity in both rows counts as 0, one that is infinite in one row only
+    /// as infinite.
+    pub maxdiff: f32,
+    pub class: PrimeGateClass,
+}
+
+/// Judge a last-position row pair of run-gen's first gate. The two programs are different
+/// numeric configs, like the two primes of gate #46 above, so a flip is judged on the same
+/// calibrated bounds instead of asserted on:
+///
+/// - `Match`: the two argmax ids agree and are real ids. Passes whatever the maxdiff: this
+///   gate never bounded the drift of an agreeing row, and the ceiling was calibrated on the
+///   two primes.
+/// - `NearTieFlip`: the ids differ, each program holds its own token over the other's by at
+///   most `MEMRA_PRIME_GATE_MARGIN`, and the maxdiff is within `MEMRA_PRIME_GATE_MAXDIFF`.
+///   Reported; generation goes on.
+/// - `Structured`: any other flip, including one where a row holds a NaN; and any pair where
+///   a row has no finite value, so no argmax (two such rows "agree" on `TOKEN_NONE`). Fails
+///   the run.
+///
+/// The margins are taken between the two contending ids in BOTH programs, which is stricter
+/// than gate #46's tokenwise top-2 margin: a prefill that holds its token by 7 logits over a
+/// decode that has the two tied is two programs 7 logits apart on that pair, not a near tie.
+///
+/// The gate used to label a flip by comparing the spread at the two ids with the smaller
+/// margin, and then panicked on either label. That comparison cannot separate the classes:
+/// with prefill picking i and decode picking j, the differences (p_i - d_i) and (d_j - p_j)
+/// sum to the two margins' sum, so the larger one is at least the smaller margin for every
+/// flip.
+pub fn prefill_gate_verdict(prefill: &[f32], decode: &[f32]) -> PrefillGateVerdict {
+    prefill_gate_verdict_with(
+        prefill,
+        decode,
+        env_f32("MEMRA_PRIME_GATE_MAXDIFF", 8.0),
+        env_f32("MEMRA_PRIME_GATE_MARGIN", 1.0),
+    )
+}
+
+/// [`prefill_gate_verdict`] on explicit bounds (its unit tests read no environment).
+pub fn prefill_gate_verdict_with(
+    prefill: &[f32],
+    decode: &[f32],
+    maxdiff_bound: f32,
+    margin_bound: f32,
+) -> PrefillGateVerdict {
+    let (i, j) = (argmax(prefill), argmax(decode));
+    let maxdiff = if prefill.len() == decode.len() {
+        prefill
+            .iter()
+            .zip(decode)
+            // Equal values differ by 0, two equal infinities included (a masked id in both
+            // rows); `inf - inf` would read as a NaN.
+            .map(|(a, b)| if a == b { 0.0 } else { (a - b).abs() })
+            .fold(0.0f32, |m, d| {
+                if m.is_nan() || d.is_nan() {
+                    f32::NAN
+                } else {
+                    m.max(d)
+                }
+            })
+    } else {
+        f32::NAN
+    };
+    let mut v = PrefillGateVerdict {
+        prefill_argmax: i,
+        decode_argmax: j,
+        prefill_margin: 0.0,
+        decode_margin: 0.0,
+        spread: f32::NAN,
+        maxdiff,
+        class: PrimeGateClass::Match,
+    };
+    let seated = i < prefill.len() && i < decode.len() && j < prefill.len() && j < decode.len();
+    if seated {
+        v.spread = (prefill[i] - decode[i])
+            .abs()
+            .max((prefill[j] - decode[j]).abs());
+    }
+    // `argmax` gives `TOKEN_NONE` for a row with no finite value: not seated, and neither a
+    // match nor a near tie, whatever the other row holds.
+    if !seated {
+        v.prefill_margin = f32::NAN;
+        v.decode_margin = f32::NAN;
+        v.class = PrimeGateClass::Structured;
+        return v;
+    }
+    if i == j {
+        return v;
+    }
+    v.prefill_margin = prefill[i] - prefill[j];
+    v.decode_margin = decode[j] - decode[i];
+    // Plain comparisons, so that a NaN margin or maxdiff fails its own.
+    let near_tie = maxdiff <= maxdiff_bound
+        && v.prefill_margin <= margin_bound
+        && v.decode_margin <= margin_bound;
+    v.class = if near_tie {
+        PrimeGateClass::NearTieFlip
+    } else {
+        PrimeGateClass::Structured
+    };
+    v
+}
+
+#[cfg(test)]
+mod prefill_gate_tests {
+    use super::{PrimeGateClass, prefill_gate_verdict_with};
+
+    /// A flat row at -4.0 with the given (id, logit) entries set.
+    fn row(n: usize, set: &[(usize, f32)]) -> Vec<f32> {
+        let mut l = vec![-4.0f32; n];
+        for &(i, v) in set {
+            l[i] = v;
+        }
+        l
+    }
+
+    fn class(prefill: &[f32], decode: &[f32]) -> PrimeGateClass {
+        prefill_gate_verdict_with(prefill, decode, 8.0, 1.0).class
+    }
+
+    /// memra#1295's 4,100-token row: the programs hold their tokens by 0.038 and 0.117.
+    #[test]
+    fn near_tie_flip_is_reported_not_fatal() {
+        let prefill = row(400, &[(343, 18.9964), (16, 18.9582)]);
+        let decode = row(400, &[(343, 18.9904), (16, 19.1077)]);
+        let v = prefill_gate_verdict_with(&prefill, &decode, 8.0, 1.0);
+        assert_eq!((v.prefill_argmax, v.decode_argmax), (343, 16));
+        assert!(
+            (v.prefill_margin - 0.0382).abs() < 1e-3,
+            "{}",
+            v.prefill_margin
+        );
+        assert!(
+            (v.decode_margin - 0.1173).abs() < 1e-3,
+            "{}",
+            v.decode_margin
+        );
+        assert!((v.spread - 0.1495).abs() < 1e-3, "{}", v.spread);
+        assert_eq!(v.class, PrimeGateClass::NearTieFlip);
+    }
+
+    /// Both programs hold their token by 5 logits or more. The old inline label called this
+    /// row a near tie too (spread 6 against a smaller margin of 5).
+    #[test]
+    fn wide_margin_flip_fails() {
+        let prefill = row(64, &[(3, 10.0), (7, 4.0)]);
+        let decode = row(64, &[(3, 5.0), (7, 10.0)]);
+        assert_eq!(class(&prefill, &decode), PrimeGateClass::Structured);
+    }
+
+    /// One program near-tied is not enough, whichever program it is.
+    #[test]
+    fn flip_wide_in_one_program_fails() {
+        // decode has the two ids 0.1 apart, prefill holds its token by 4
+        let prefill = row(64, &[(3, 10.0), (7, 6.0)]);
+        let decode = row(64, &[(3, 9.9), (7, 10.0)]);
+        assert_eq!(class(&prefill, &decode), PrimeGateClass::Structured);
+        // prefill has the two ids 0.1 apart, decode holds its token by 4
+        let prefill = row(64, &[(3, 10.0), (7, 9.9)]);
+        let decode = row(64, &[(3, 6.0), (7, 10.0)]);
+        assert_eq!(class(&prefill, &decode), PrimeGateClass::Structured);
+    }
+
+    /// The margin is the one between the two contending ids, not each row's top-2 margin:
+    /// both rows have a runner-up within 0.5, and the prefill holds its token over the
+    /// decode's by 7. The maxdiff (7) is inside its bound, so the margin alone decides.
+    #[test]
+    fn flip_with_a_close_third_id_fails() {
+        let prefill = row(64, &[(3, 10.0), (5, 9.9), (7, 3.0)]);
+        let decode = row(64, &[(3, 9.5), (5, 9.4), (7, 10.0)]);
+        let v = prefill_gate_verdict_with(&prefill, &decode, 8.0, 1.0);
+        assert!(v.maxdiff <= 8.0, "{}", v.maxdiff);
+        assert_eq!((v.prefill_margin, v.decode_margin), (7.0, 0.5));
+        assert_eq!(v.class, PrimeGateClass::Structured);
+    }
+
+    /// The bounds are inclusive, and each one decides on its own.
+    #[test]
+    fn bounds_are_inclusive() {
+        let prefill = row(64, &[(3, 10.0), (7, 9.0)]);
+        let decode = row(64, &[(3, 9.0), (7, 10.0)]);
+        let at =
+            |maxdiff, margin| prefill_gate_verdict_with(&prefill, &decode, maxdiff, margin).class;
+        assert_eq!(at(8.0, 1.0), PrimeGateClass::NearTieFlip);
+        assert_eq!(at(8.0, 0.99), PrimeGateClass::Structured);
+        assert_eq!(at(1.0, 1.0), PrimeGateClass::NearTieFlip);
+        assert_eq!(at(0.99, 1.0), PrimeGateClass::Structured);
+    }
+
+    /// A flip on small margins under drift past the ceiling is not the near-tie class.
+    #[test]
+    fn flip_under_out_of_bounds_drift_fails() {
+        let mut prefill = row(64, &[(3, 10.0), (7, 9.9)]);
+        let decode = row(64, &[(3, 9.9), (7, 10.0)]);
+        prefill[40] = 8.5; // 12.5 logits away from decode's -4.0
+        assert_eq!(class(&prefill, &decode), PrimeGateClass::Structured);
+    }
+
+    /// A NaN anywhere in a flipped row pair, or a row with no finite value, fails.
+    #[test]
+    fn flip_on_a_broken_row_fails() {
+        let mut prefill = row(64, &[(3, 10.0), (7, 9.9)]);
+        let decode = row(64, &[(3, 9.9), (7, 10.0)]);
+        prefill[40] = f32::NAN;
+        let v = prefill_gate_verdict_with(&prefill, &decode, 8.0, 1.0);
+        assert!(v.maxdiff.is_nan());
+        assert_eq!(v.class, PrimeGateClass::Structured);
+        let dead = vec![f32::NAN; 64];
+        let v = prefill_gate_verdict_with(&dead, &decode, 8.0, 1.0);
+        assert_eq!(v.prefill_argmax, crate::TOKEN_NONE as usize);
+        assert_eq!(v.class, PrimeGateClass::Structured);
+        assert_eq!(class(&decode, &dead), PrimeGateClass::Structured);
+        // two dead rows "agree" on TOKEN_NONE: not a match
+        assert_eq!(class(&dead, &dead), PrimeGateClass::Structured);
+        assert_eq!(class(&prefill[..32], &decode), PrimeGateClass::Structured);
+    }
+
+    /// An id masked to -inf in both rows is no drift; masked in one row only it is.
+    #[test]
+    fn equal_infinities_are_not_drift() {
+        let mut prefill = row(64, &[(3, 10.0), (7, 9.9)]);
+        let mut decode = row(64, &[(3, 9.9), (7, 10.0)]);
+        prefill[40] = f32::NEG_INFINITY;
+        decode[40] = f32::NEG_INFINITY;
+        let v = prefill_gate_verdict_with(&prefill, &decode, 8.0, 1.0);
+        assert!((v.maxdiff - 0.1).abs() < 1e-4, "{}", v.maxdiff);
+        assert_eq!(v.class, PrimeGateClass::NearTieFlip);
+        decode[40] = -4.0;
+        let v = prefill_gate_verdict_with(&prefill, &decode, 8.0, 1.0);
+        assert_eq!(v.maxdiff, f32::INFINITY);
+        assert_eq!(v.class, PrimeGateClass::Structured);
+    }
+
+    /// An agreeing row passes whatever its drift, as before the change.
+    #[test]
+    fn agreeing_row_matches_whatever_the_drift() {
+        let mut prefill = row(64, &[(3, 30.0)]);
+        let decode = row(64, &[(3, 30.5)]);
+        prefill[40] = 8.5;
+        let v = prefill_gate_verdict_with(&prefill, &decode, 8.0, 1.0);
+        assert!(v.maxdiff > 8.0);
+        assert_eq!((v.prefill_margin, v.decode_margin), (0.0, 0.0));
+        assert_eq!(v.class, PrimeGateClass::Match);
+    }
+}

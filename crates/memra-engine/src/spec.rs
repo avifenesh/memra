@@ -12402,9 +12402,9 @@ impl HybridModel {
     /// 1e-2 away at the top logits on the fast path (up to 0.12 across the vocabulary on
     /// Qwen3.8-27B), so comparing those verifiers to it is a false red at near ties: MoE learned
     /// it 2026-08-14 AM, the dense hybrid the same day on Qwen3.8, and the session gate on
-    /// memra#1146. A sharded PP target must likewise stay on a split target step: `generate`
-    /// may select the unsplit device-counter loop, which correctly refuses remote weights
-    /// rather than peer-reading them.
+    /// memra#1146. A sharded PP target must likewise stay on a split target step: under
+    /// `MEMRA_PRIME_PP=0` `generate` may select the unsplit device-counter loop, which
+    /// correctly refuses remote weights rather than peer-reading them.
     ///
     /// Every other single-device family keeps the longstanding `generate` oracle, the class its
     /// verify forward runs. For a batch-served model among them that is NOT the class its plain

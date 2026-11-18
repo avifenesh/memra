@@ -1,0 +1,24 @@
+[tensor-contract] bound 754 semantic tensors (pack step35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[step37-defaults] serving doors armed ON for the SlidingGatedMoe program (per-flag =0 kills, =1 forces; owner flip 2026-08-27)
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.846
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=447.762
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.94GB (expert budget 95.02GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.81GB (expert budget 94.90GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[q8rp] split-plane decode mirrors built: 1 tensors
+loaded step35 (45 trunk layers; optional MTP skipped)
+prompt tokens: [0, 271, 60329, 72756, 28, 3566, 1074, 9928, 89, 1173, 98531, 55698, 5252, 6634, 98260, 13040, 201, 835, 3, 55664, 23809, 362, 270, 15890]
+[moe-cache] in-token prefetch: off (card no-receipt-default)
+[fa-pool] grow #0 dev=0 o_len 0 -> 8192 ml_len 0 -> 64 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 8192 -> 16384 ml_len 64 -> 128 (retired kept, zero=false)
+[fa-pool] grow #2 dev=1 o_len 0 -> 12288 ml_len 0 -> 96 (retired kept, zero=false)
+prefill argmax=5466  decode argmax=5466  logit maxdiff=6.187e-1  MATCH
+[step35-prime-batch] first concat prime: B=1 tokens=24
+[gemm-prime] ENGAGED t=24 base=0 seq_end=24 chunks<=4096 (GEMM trunk + grouped MoE)
+batched-prime argmax=5466  tokenwise argmax=5466  logit maxdiff=7.070e-1  MATCH
+prefill 24 tok in 0.4329s = 55.4 tok/s (pp24)
+Error: "PP cross-device tensor access at append_kv_quantized_rows.k_cache: tensor on dev0, stream on dev1"
+run-gen exit status: 1

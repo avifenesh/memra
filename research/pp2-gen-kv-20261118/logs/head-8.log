@@ -1,0 +1,25 @@
+[tensor-contract] bound 754 semantic tensors (pack step35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[step37-defaults] serving doors armed ON for the SlidingGatedMoe program (per-flag =0 kills, =1 forces; owner flip 2026-08-27)
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.851
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=445.362
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.94GB (expert budget 95.02GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.81GB (expert budget 94.90GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[q8rp] split-plane decode mirrors built: 1 tensors
+loaded step35 (45 trunk layers; optional MTP skipped)
+prompt tokens: [0, 271, 60329, 72756, 28, 3566, 1074, 9928]
+[moe-cache] in-token prefetch: off (card no-receipt-default)
+[fa-pool] grow #0 dev=0 o_len 0 -> 8192 ml_len 0 -> 64 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 8192 -> 16384 ml_len 64 -> 128 (retired kept, zero=false)
+[fa-pool] grow #2 dev=1 o_len 0 -> 12288 ml_len 0 -> 96 (retired kept, zero=false)
+prefill argmax=394  decode argmax=394  logit maxdiff=8.451e-1  MATCH
+prefill 8 tok in 0.3235s = 24.7 tok/s (pp8)
+generated 16 tokens in 0.132s = 121.62 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.060s) [stop: MaxNew]
+tokens: [394, 22125, 59823, 55698, 17, 9730, 98260, 13040, 201, 3103, 566, 9730, 2366, 9000, 1048, 23295]
+MoE cache: 15373 slots | cumulative hits=10227 misses=3021 (hit-rate=77.2%) | Stage-1 baseline = 2678 MB/decode-token (every block, every layer, every token)
+MoE cache STEADY-STATE window: 32 decode steps in 0.299s
+MoE cache STEADY-STATE (32 tokens after warmup): hit-rate=0.0% | 0.0 MB/decode-token (vs 2678 MB/token Stage-1 => infx less PCIe)
+run-gen exit status: 0

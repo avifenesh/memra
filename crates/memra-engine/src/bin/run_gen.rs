@@ -1228,45 +1228,66 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .zip(&dec_logits)
         .map(|(a, b)| (a - b).abs())
         .fold(0.0, f32::max);
+    use memra_engine::forward::PrimeGateClass;
+    let v = memra_engine::forward::prefill_gate_verdict(&prefill, &dec_logits);
     println!(
         "prefill argmax={am_p}  decode argmax={am_d}  logit maxdiff={maxdiff:.3e}  {}",
-        if am_p == am_d { "MATCH" } else { "MISMATCH" }
+        if v.class == PrimeGateClass::Match {
+            "MATCH"
+        } else {
+            "MISMATCH"
+        }
     );
-    if am_p != am_d {
-        // near-tie vs real-gap diagnosis before the panic: both sides' view of both ids, PLUS
-        // the number that actually decides which of the two it is (lane/q8-argmax,
-        // research/q8-argmax-20260806/VERDICT.md). A flip is only meaningful if the config
-        // spread at the contending ids is large enough to reach across the top-2 margin:
-        // margin >= spread means a real numeric defect moved a logit further than the gap it
-        // crossed; margin << spread is the documented near-tie coin. `logit maxdiff` above is
-        // NOT that number — it is the max over a ~250k-wide vocab, dominated by tail noise,
-        // and it is routinely LARGER on runs this same gate calls MATCH (measured: MATCH at
-        // 1.165 beside MISMATCH at 0.466). Do not read it as severity.
-        let margin_p = (prefill[am_p] - prefill[am_d]).abs();
-        let margin_d = (dec_logits[am_d] - dec_logits[am_p]).abs();
-        let spread = (prefill[am_p] - dec_logits[am_p])
-            .abs()
-            .max((prefill[am_d] - dec_logits[am_d]).abs());
+    if v.class == PrimeGateClass::Match && v.maxdiff.is_nan() {
+        // Not fatal, as it never was: this gate does not bound an agreeing row. Not silent
+        // either: a logits row never holds a NaN on a sound path.
         eprintln!(
-            "[gate] prefill: l[{am_p}]={:.4} l[{am_d}]={:.4} | decode: l[{am_p}]={:.4} l[{am_d}]={:.4}",
-            prefill[am_p], prefill[am_d], dec_logits[am_p], dec_logits[am_d]
-        );
-        eprintln!(
-            "[gate] top-2 margin: prefill {margin_p:.4} decode {margin_d:.4} | config spread at these ids {spread:.4} -> {}",
-            if spread > margin_p.min(margin_d) {
-                "NEAR-TIE class (the spread covers the margin; run tools/argmax-margin-gate.sh \
-                       to see this position's margin against the prompt's own distribution)"
-            } else {
-                "WIDE-MARGIN flip — the spread does NOT cover the margin; this is a real defect"
-            }
+            "[gate] the two rows agree on argmax {am_p} but hold a NaN (or differ in length): \
+             reported, not judged"
         );
     }
-    assert_eq!(
-        am_p, am_d,
-        "decode-step diverges from prefill at the last position (see the [gate] lines above for \
-         the near-tie-vs-defect diagnosis; a wide-margin flip means a cache/threading/kernel bug, \
-         a margin inside the config spread is the documented cross-config drift class)"
-    );
+    if v.class != PrimeGateClass::Match {
+        // A flip between two numeric programs is judged, not asserted on (memra#1295): the
+        // batched prefill and the tokenwise loop are two legitimate arithmetics, so a near-tie
+        // position can flip between them (research/q8-argmax-20260806/VERDICT.md). The rule is
+        // `forward::prefill_gate_verdict`, on the batched-prime gate's bounds: a flip where
+        // each program holds its token over the other's by a small margin is reported and the
+        // run goes on; any other flip fails. `logit maxdiff` above is NOT the severity: it is
+        // the max over the whole vocab, dominated by tail noise, and it is routinely LARGER on
+        // runs this gate calls MATCH (measured: MATCH at 1.165 beside MISMATCH at 0.466).
+        // tools/argmax-margin-gate.sh judges every position of a prompt against the cell's
+        // calibrated floor.
+        let at = |l: &[f32], id: usize| l.get(id).copied().unwrap_or(f32::NAN);
+        eprintln!(
+            "[gate] prefill: l[{am_p}]={:.4} l[{am_d}]={:.4} | decode: l[{am_p}]={:.4} l[{am_d}]={:.4}",
+            at(&prefill, am_p),
+            at(&prefill, am_d),
+            at(&dec_logits, am_p),
+            at(&dec_logits, am_d)
+        );
+        eprintln!(
+            "[gate] margin between these ids: prefill {:.4} decode {:.4} | config spread at these ids {:.4}",
+            v.prefill_margin, v.decode_margin, v.spread
+        );
+        if v.class == PrimeGateClass::NearTieFlip {
+            println!(
+                "prefill-vs-decode flip: FLIP-NEARTIE (margins {:.4} and {:.4}, cross-config \
+                 drift class; the run goes on)",
+                v.prefill_margin, v.decode_margin
+            );
+        } else {
+            println!(
+                "prefill-vs-decode flip: MISMATCH-STRUCTURED (margins {:.4} and {:.4})",
+                v.prefill_margin, v.decode_margin
+            );
+            return Err(
+                "decode-step diverges from prefill at the last position on a wide margin, under \
+                 out-of-bounds drift or on a row with no finite value (see the [gate] lines \
+                 above): a cache, threading or kernel bug, not the cross-config near-tie class"
+                    .into(),
+            );
+        }
+    }
 
     // --- gap #46: the BATCHED-PRIME config (prime_cache — what actually seeds generation in
     //     generate/generate_with and serving) was never argmax-gated. forward_last and the
@@ -1283,7 +1304,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && std::env::var("MEMRA_PRIME_GATE").as_deref() != Ok("0")
         && !e.frozen_cpu_experts_prefer_tokenwise_prime()
     {
-        use memra_engine::forward::PrimeGateClass;
         let mut pc = new_model_cache(&e, &model.cfg, prompt.len() + 8)?;
         let (l_bp, _, _) = model.prime_cache(&e, &prompt, &mut pc, 0)?;
         let v = memra_engine::forward::prime_gate_verdict(&dec_logits, &l_bp);

@@ -136,7 +136,7 @@ change in its area. Receipt paths are under `research/`.
 | gate | command | passes when | runs in |
 |---|---|---|---|
 | `kernel-check` | `target/release/kernel-check --require-manifest tools/kernel-check-27b.cells --require-manifest tools/kernel-check-step35.cells` | last line `ALL GREEN (<n> cells, <m> skipped)`, every required cell present, skips within budget | local-ci, cell battery, tag |
-| run-gen argmax | `run-gen <model> <token ids...>` | the prefill-vs-decode argmax line ends `MATCH`; no `MISMATCH-STRUCTURED` from the batched-prime check (`FLIP-NEARTIE` is reported, not fatal) | local-ci, fast-gate tier 1 |
+| run-gen argmax | `run-gen <model> <token ids...>` | the prefill-vs-decode argmax line ends `MATCH`; no `MISMATCH-STRUCTURED` from the batched-prime check (`FLIP-NEARTIE` is reported, not fatal). On a GGUF model `run-gen` itself classes a flip of the prefill-vs-decode line (`FLIP-NEARTIE` goes on, `MISMATCH-STRUCTURED` fails); fast-gate still requires `MATCH` | local-ci, fast-gate tier 1 |
 | argmax margin gate | `tools/argmax-margin-gate.sh <model> [--decode eager\|batch]` | the floor rule and the stored rows both pass ([below](#argmax-margin-gate-floors-stored-rows-recalibration)) | local-ci, cell battery, tag |
 | `prime-gate` | `prime-gate <model> --prompts-file research/prime-gate-coverage-20260802/prompts-mixed.txt --steps 0` | batched prime and tokenwise first tokens agree; near-tie flips report, structured divergence fails | local-ci |
 | prime continuation | `qwen-a4-continuation-gate <model> <prompt> 9296 16 48 80` | `CONTINUATION GATE: PASS`: each head + tail split equals the one-call prime bitwise | local-ci |
@@ -259,6 +259,7 @@ stage-split dispatch or a decode path a split walks re-runs them.
 | spec-verify split | `decode-batch-gate <model.gguf> --mode ppspec [--ts 2,5,9] [--stages N] [--reps R]` | verify split bit-identical per logit column, plus the `h_seed` column |
 | `pp2-gate` | `MEMRA_PP_DEVICES=0,1 pp2-gate <model.gguf> [P=16] [N=32] [split=n_layers/2]` | the N=2 eager gate; it resets `MEMRA_PP_STAGES`/`SPLITS` itself |
 | `pp-transport-smoke` | `pp-transport-smoke` | the peer boundary transport alone |
+| `run-gen` generation on a pair | `MEMRA_PP_STAGES=2 MEMRA_PP_DEVICES=0,1 MEMRA_NGEN=16 run-gen <model.gguf> <24 token ids>` | the generation cache is stage-owned under a stage-split prime (memra#1295): both gate lines `MATCH`, then 16 tokens and exit 0. With the cache homed on the caller it ends in `PP cross-device tensor access at append_kv_quantized_rows` |
 
 Keep `--reps` at 2 or more (the class these gates catch was intermittent), open the PP door before
 load, and keep the `unsplit@ppncache` and `epilogue` arms that localize a red. `MEMRA_PP_WAVE` is off

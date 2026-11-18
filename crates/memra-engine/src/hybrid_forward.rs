@@ -2910,6 +2910,11 @@ impl HybridModel {
             if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline) {
                 return Err("pipeline rewrite is not qualified for this ModelPlan".into());
             }
+            // SPLIT ENTRY (hyper). The same-stream seam walks on the caller's engine.
+            debug_assert!(
+                crate::pp::pp2_streams_off() || self.prime_is_stage_split(),
+                "prime_is_stage_split disagrees with this split walk (memra#1295)"
+            );
             // The mixed-embedding overlay rides the ppN twin too (lane/glm5-vision-default-on,
             // 2026-08-30): the splice is an EMBEDDING-INTAKE transform, and the ppN walk embeds
             // on stage 0 only — every later stage receives the already-expanded stream state.
@@ -6685,11 +6690,21 @@ impl HybridModel {
                             .into(),
                     );
                 }
+                // SPLIT ENTRY (PP-2 pipelined prime).
+                debug_assert!(
+                    self.prime_is_stage_split(),
+                    "prime_is_stage_split disagrees with this split walk (memra#1295)"
+                );
                 return self.prime_cache_pp2_pipelined(e, tokens, cache, seq_end, &ranges, &fence);
             }
             if let Some(fence) =
                 crate::pp::pp_cuts(self.layers.len()).filter(|f| matches!(f.len(), 4 | 5))
             {
+                // SPLIT ENTRY (PP-3/PP-4 prime: the wave route or the serial split below).
+                debug_assert!(
+                    self.prime_is_stage_split(),
+                    "prime_is_stage_split disagrees with this split walk (memra#1295)"
+                );
                 let wave_on = crate::pp::pp_wave_on()
                     .map_err(|reason| -> Box<dyn std::error::Error> { reason.into() })?;
                 let stages = fence.len() - 1;
@@ -7432,6 +7447,29 @@ impl HybridModel {
         Ok(slabs.get(&dev).expect("prime slab inserted").clone())
     }
 
+    /// How this model's prime walks its trunk under the ppN door.
+    pub(crate) fn prime_walk(&self) -> crate::pp::PrimeWalk {
+        if self.hyper.is_some() {
+            crate::pp::PrimeWalk::Hyper
+        } else if self.uses_gemma_program() {
+            crate::pp::PrimeWalk::Gemma
+        } else {
+            crate::pp::PrimeWalk::Serial
+        }
+    }
+
+    /// Whether this model's prime walks each stage's layer range on that stage's engine, so
+    /// that the cache it writes has to be stage-owned (memra#1295): `pp::prime_stage_split`
+    /// on the door as it reads now. `generate` and `generate_with` pick their cache placement
+    /// on it, and every split walk asserts it at its entry in a debug build
+    /// (`split_entries_assert_the_predicate`).
+    pub(crate) fn prime_is_stage_split(&self) -> bool {
+        crate::pp::prime_stage_split(
+            crate::pp::DoorState::read(self.layers.len(), &self.cfg),
+            self.prime_walk(),
+        )
+    }
+
     /// `seq_end` = the whole REQUEST's absolute end position (`cache.pos + prompt_len` at
     /// `prime_cache` entry), NOT this chunk's end. Chunk-size-invariant by construction; step35's
     /// SWA arm selects on it (see `step35_attn_pre_wo`). Every other arch ignores it.
@@ -7481,6 +7519,11 @@ impl HybridModel {
                          run single-device or MEMRA_PRIME_PP=0"
                     .into());
             }
+            // SPLIT ENTRY (prime_chunk).
+            debug_assert!(
+                self.prime_is_stage_split(),
+                "prime_is_stage_split disagrees with this split walk (memra#1295)"
+            );
             return self.prime_chunk_ppn(e, tokens, cache, seq_end, &fence);
         }
         if crate::pp::pp_host_bounce_active() {
@@ -9150,6 +9193,11 @@ impl HybridModel {
 
         let out = if !crate::pp::pp2_streams_off() && crate::pp::prime_pp_on() {
             if let Some(fence) = crate::pp::pp_cuts(self.layers.len()) {
+                // SPLIT ENTRY (step35 batched prime).
+                debug_assert!(
+                    self.prime_is_stage_split(),
+                    "prime_is_stage_split disagrees with this split walk (memra#1295)"
+                );
                 let rt = crate::pp::PpNRt::get(e)?;
                 let n_st = fence.len() - 1;
                 assert_eq!(
@@ -32824,5 +32872,74 @@ mod hyper_pipe_tap_tests {
         let mut consumer = HcTapSink::new(vec![3, 7], 4, 16);
         consumer.ingest_state = Some(Box::new(()));
         assert!(hyper_pipe_tap_refusal(Some(&consumer)).is_some());
+    }
+}
+
+#[cfg(test)]
+mod prime_split_entry_tests {
+    /// memra#1295: `prime_is_stage_split` restates the split walks' conditions, and `generate`
+    /// and `generate_with` place their cache on it. Each walk asserts the predicate where it
+    /// goes stage-split, so a walk whose condition moves trips in a debug build. This census
+    /// keeps the assertions in place: each split entry has one in the lines just before it.
+    #[test]
+    fn split_entries_assert_the_predicate() {
+        let src = include_str!("hybrid_forward.rs");
+        // Needles are built so that this test's own text cannot match them.
+        let predicate = concat!("self.prime_is_stage_", "split()");
+        let assertion = concat!("debug_", "assert!(");
+        // (entry, a needle that opens its function, the entry's line, lines to look back)
+        let entries: [(&str, &str, &str, usize); 5] = [
+            (
+                "hyper walk",
+                concat!("    fn prime_cache_", "hyper("),
+                concat!("let ranges = hyper_prime_", "ranges("),
+                20,
+            ),
+            (
+                "prime_chunk ppN arm",
+                concat!("    pub(crate) fn prime_", "chunk("),
+                concat!(
+                    "return self.prime_chunk_",
+                    "ppn(e, tokens, cache, seq_end, &fence);"
+                ),
+                5,
+            ),
+            (
+                "PP-2 pipelined prime",
+                "",
+                concat!(
+                    "return self.prime_cache_pp2_",
+                    "pipelined(e, tokens, cache, seq_end,"
+                ),
+                5,
+            ),
+            (
+                "PP-3/PP-4 prime",
+                "",
+                concat!("let wave_on = crate::pp::pp_wave_", "on()"),
+                5,
+            ),
+            (
+                "step35 batched prime",
+                "",
+                concat!("\"step35 prime batch stage count ", "mismatch\""),
+                10,
+            ),
+        ];
+        for (entry, open, line, back) in entries {
+            let from = src
+                .find(open)
+                .unwrap_or_else(|| panic!("{entry}: its function"));
+            let at = from
+                + src[from..]
+                    .find(line)
+                    .unwrap_or_else(|| panic!("{entry}: its entry line"));
+            let before: Vec<&str> = src[..at].lines().rev().skip(1).take(back).collect();
+            let window = before.join("\n");
+            assert!(
+                window.contains(assertion) && window.contains(predicate),
+                "{entry}: no {assertion}{predicate}) in the {back} lines before its entry:\n{window}"
+            );
+        }
     }
 }
