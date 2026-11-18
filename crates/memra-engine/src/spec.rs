@@ -539,6 +539,31 @@ pub(crate) fn draft_capture_bootstrap_estimate(
     captures.saturating_mul(per_capture).max(64 << 20)
 }
 
+/// The share of the free memory at a capture's entry that the capture must have taken itself
+/// for its out-of-memory failure to be read as its appetite: an eighth.
+pub(crate) const CAPTURE_OOM_APPETITE_SHARE: usize = 8;
+
+/// What a draft-graph capture that ran out of memory records as the per-session draft-state
+/// charge (memra#1319): the bytes, and whether the failure is read as the capture's appetite.
+///
+/// `entry_eff` is the effective free memory at the bracket's entry, `capture_peak` the pool
+/// bytes the failed attempt had in use at its peak. A capture that had taken an eighth of what
+/// was free, or more, ran the device short: its appetite exceeds `entry_eff`, and `entry_eff`
+/// is recorded, so every later gate refuses at the headroom that just failed. A capture that
+/// had taken less did not fail for want of that memory. The driver refused an allocation with
+/// memory available (memra#1316: `CUDA_ERROR_OUT_OF_MEMORY` with about 122 GB available, on a
+/// unified-memory host whose page cache was still filling). Recording `entry_eff` there
+/// charged every later speculative session with all the memory the device had free (17 to
+/// 83 GB at a GB10 boot capture, where the real state is 34 MiB) for the life of the server.
+/// It records what the attempt was seen to take, the quantity a capture that lands records.
+pub(crate) fn capture_oom_observation(entry_eff: usize, capture_peak: usize) -> (usize, bool) {
+    if capture_peak.saturating_mul(CAPTURE_OOM_APPETITE_SHARE) >= entry_eff {
+        (entry_eff, true)
+    } else {
+        (capture_peak, false)
+    }
+}
+
 /// OOM predicate for capture-failure recovery (engine-side twin of the worker's
 /// `is_cuda_oom` — the same quoted-text contract).
 pub(crate) fn capture_err_is_oom(reason: &str) -> bool {
@@ -12982,8 +13007,9 @@ impl HybridModel {
         // with the card's headroom still intact (the owner's single-session OOM was a capture
         // attempt walking the card to the edge and stranding the eager fallback at 5 MiB free).
         // Two entry readings, one value on a discrete card (memra#1307): `cap_eff0` is the raw
-        // driver reading a failed capture records as its appetite floor, `cap_meas0` opens the
-        // delta on the delta reading (see `draft_state_parked_delta`).
+        // driver reading a failed capture may record as its appetite floor
+        // (`capture_oom_observation`), `cap_meas0` opens the delta on the delta reading (see
+        // `draft_state_parked_delta`).
         let (cap_eff0, cap_meas0) = match e.ctx().mem_get_info() {
             Ok((raw, _)) => {
                 let cached = e.pool_cached_bytes();
@@ -13582,14 +13608,17 @@ impl HybridModel {
         // backing). Recorded as a model-owned high-water; admission charges it per
         // spec-capable session (see `draft_session_admission_bytes`). Both ends take the delta
         // reading (memra#1307, `draft_state_parked_delta`).
+        // The capture-time pool peak of this bracket, read once: a landed capture's measurement
+        // and a failed capture's observation both take it.
+        let capture_peak = (captured_now || capture_oom_entry_eff.is_some())
+            .then(|| e.pool_high_water_reset().1.saturating_sub(cap_used0));
         if captured_now
             && let Some(meas0) = cap_meas0
             && let Ok((raw1, _)) = e.ctx().mem_get_info()
             && let Some(f1) = crate::unified_memory::delta_free_bytes(e.unified_memory(), raw1)
         {
             let parked_delta = draft_state_parked_delta(meas0, f1, e.pool_cached_bytes());
-            let (_res_high, used_high) = e.pool_high_water_reset();
-            let peak_delta = used_high.saturating_sub(cap_used0);
+            let peak_delta = capture_peak.unwrap_or(0);
             let observed = parked_delta.max(peak_delta);
             if observed > 0
                 && let Some(hw) = self.record_draft_state_bytes(observed)
@@ -13604,22 +13633,48 @@ impl HybridModel {
                 );
             }
         }
-        // FAILURE IS AN OBSERVATION TOO: a capture that OOM'd at entry-effective E proved
-        // the capture-time peak exceeds E. Feed E into the gauge so every future gate
-        // refuses at or below the headroom that just failed (self-healing even when the
-        // boot probe is disarmed and the bootstrap estimate was blind). E is the raw driver
-        // reading (memra#1307): on unified memory it is at most what the capture could get, so
-        // the bound it records is proven; `MemAvailable` is the kernel's estimate, and an
-        // estimate above what the driver could reclaim would stick in this high-water as an
-        // over-charge on every later speculative session.
-        if let Some(entry_eff) = capture_oom_entry_eff
-            && let Some(hw) = self.record_draft_state_bytes(entry_eff)
-        {
-            eprintln!(
-                "[spec] draft-session capture appetite floor raised to {}MB: a capture \
-                 attempt OOM'd with that much effective free (failure-observed bound)",
-                hw / (1 << 20)
-            );
+        // FAILURE IS AN OBSERVATION TOO: a capture that OOM'd at entry-effective E after
+        // taking a real share of E itself proved the capture-time peak exceeds E. Feed E into
+        // the gauge so every future gate refuses at or below the headroom that just failed
+        // (self-healing even when the boot probe is disarmed and the bootstrap estimate was
+        // blind). E is the raw driver reading (memra#1307): on unified memory it is at most
+        // what the capture could get, so the bound it records is proven; `MemAvailable` is the
+        // kernel's estimate, and an estimate above what the driver could reclaim would stick in
+        // this high-water as an over-charge on every later speculative session.
+        //
+        // A capture that OOM'd having taken almost none of E proved nothing about E
+        // (memra#1319): the driver refused an allocation with memory available. E is then all
+        // the free memory the device had, and it is not recorded; the attempt's own peak is
+        // (`capture_oom_observation`).
+        if let Some(entry_eff) = capture_oom_entry_eff {
+            let (observed, appetite) =
+                capture_oom_observation(entry_eff, capture_peak.unwrap_or(0));
+            if !appetite {
+                eprintln!(
+                    "[spec] WARN: a capture attempt ran out of memory with {}MB effective free \
+                     after taking {}MB itself: a driver failure with memory available, not the \
+                     capture's appetite; the per-session draft-state charge is not raised to \
+                     the free memory",
+                    entry_eff / (1 << 20),
+                    observed / (1 << 20),
+                );
+            }
+            if let Some(hw) = self.record_draft_state_bytes(observed) {
+                if appetite {
+                    eprintln!(
+                        "[spec] draft-session capture appetite floor raised to {}MB: a capture \
+                         attempt OOM'd with that much effective free (failure-observed bound)",
+                        hw / (1 << 20)
+                    );
+                } else {
+                    eprintln!(
+                        "[spec] draft-session state high-water: {}MB (the pool peak of a \
+                         capture attempt the driver failed; charged per spec admission and \
+                         gating future captures)",
+                        hw / (1 << 20)
+                    );
+                }
+            }
         }
         // ---- REGIME GUARD, the enforceable half (lane/graph-s-key-exactness-20260819,
         // widened by lane/step37-draft-graph-serving-20260830) ----
@@ -18222,6 +18277,64 @@ mod capture_headroom_tests {
             4
         );
         assert!(!src.contains(".max(cap_meas0)"));
+    }
+
+    /// memra#1319: what a capture that ran out of memory records. The GB10 boot bracket of
+    /// memra#1307's cells holds 15,996 MB of cached blocks, and the raw reading is 1.2 to 2.5 GB
+    /// under a full page cache and 61 to 67 GB without one: an entry reading of 17 to 83 GB. A
+    /// driver OOM there (memra#1316) had the capture's real state, 34 MiB, in use. Recorded as
+    /// the appetite, the entry reading became the charge of every later speculative session.
+    #[test]
+    fn a_capture_oom_with_memory_available_does_not_record_the_free_memory() {
+        use super::{CAPTURE_OOM_APPETITE_SHARE, capture_oom_observation};
+        const MIB: usize = 1 << 20;
+        const GB: usize = 1_000_000_000;
+        let state = 34 * MIB;
+        for entry_eff in [17 * GB, 83 * GB] {
+            assert_eq!(
+                capture_oom_observation(entry_eff, state),
+                (state, false),
+                "entry {entry_eff}: the attempt's own peak, not the device's free memory"
+            );
+        }
+        // A capture that failed before it took anything records nothing (0 never raises the
+        // high-water).
+        assert_eq!(capture_oom_observation(17 * GB, 0), (0, false));
+        // The other arm, a card that is short: the capture walked 7 GiB of free memory to the
+        // edge with 5 GiB of its own in the pool. The entry reading is its proven floor.
+        assert_eq!(
+            capture_oom_observation(7_168 * MIB, 5_120 * MIB),
+            (7_168 * MIB, true)
+        );
+        // The line between the two is an eighth of the entry reading, inclusive.
+        let entry = 8_192 * MIB;
+        let share = entry / CAPTURE_OOM_APPETITE_SHARE;
+        assert_eq!(capture_oom_observation(entry, share), (entry, true));
+        assert_eq!(
+            capture_oom_observation(entry, share - 1),
+            (share - 1, false)
+        );
+        // A reading of 0 (an unreadable device records none) asks nothing of the peak.
+        assert_eq!(capture_oom_observation(0, 0), (0, true));
+
+        // Wiring: the bracket's end records what the decision returns, from one reading of the
+        // capture-time peak, and never the entry reading itself.
+        let src = production_src();
+        let at = src
+            .find("FAILURE IS AN OBSERVATION TOO")
+            .expect("the failure arm");
+        let end = &src[at..at + src[at..].find("---- REGIME GUARD").expect("the next block")];
+        assert!(
+            end.contains("capture_oom_observation(entry_eff, capture_peak.unwrap_or(0));")
+                && end.contains("self.record_draft_state_bytes(observed)")
+                && !end.contains("record_draft_state_bytes(entry_eff)"),
+            "{end}"
+        );
+        assert_eq!(src.matches("e.pool_high_water_reset()").count(), 2);
+        assert!(
+            src.contains("let capture_peak = (captured_now || capture_oom_entry_eff.is_some())")
+                && src.contains(".then(|| e.pool_high_water_reset().1.saturating_sub(cap_used0));")
+        );
     }
 
     /// memra#1221: the guard's decision, as a table. A unified-memory device compares the
