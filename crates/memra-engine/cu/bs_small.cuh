@@ -1,27 +1,33 @@
 // The shared small-batch skeleton of the block-scaled GEMMs: the device MoE plan and its tile list, the two
 // cp.async rings of the grouped expert GEMM's small-row body, and the dense small-row body. Header-only: each TU
-// that runs it includes this file and instantiates the kernels with its own math policy, so the policy types keep
-// one route's instantiations apart from another's. First caller: the DeepSeek-V4.1 route (cu/dsv41_gpu.cu,
-// cu/dsv41_cutlass.cu), whose program is the policy `MxHw32`. The CUTLASS forms of the same GEMMs are in
-// cu/bs_cutlass.cuh. Decision record: docs/decisions/BS-SMALL-SKELETON.md.
+// that runs it includes this file and instantiates the kernels with a math policy and an epilogue. First caller:
+// the DeepSeek-V4.1 route (cu/dsv41_gpu.cu, cu/dsv41_cutlass.cu), whose program is the policy `MxHw32`. The CUTLASS
+// forms of the same GEMMs are in cu/bs_cutlass.cuh. Decision record: docs/decisions/BS-SMALL-SKELETON.md.
 //
-// What is shared and what is a policy:
-//   - the skeleton owns the launch geometry, the tile list, the staging (which bytes go to shared memory when),
-//     the loop over stages, the m16n8k32 fragment addressing and the order of the K blocks inside the chain
-//     (ascending, one accumulator an output, never split over K);
+// What is shared, what is a policy and what is the caller's:
+//   - the skeleton owns the tile list, the staging (which bytes go to shared memory when), the loop over stages,
+//     the m16n8k32 fragment addressing, the order of the K blocks inside the chain (ascending, one accumulator an
+//     output, never split over K) and each instance's shared-memory size and limits;
 //   - the math policy owns the operand formats (bytes a row and K block on each side), the A register made from
 //     staged bytes, the scale stream (where a row's scale word is, and which rows a lane reads), the MMA and what
 //     happens at the end of a scale word's K blocks (`block_end`) and of the chain (`finish`);
-//   - the epilogue policy owns the output type and its conversion.
-// A ring stages a row's scale stream as PK bytes a stage (one 4-byte word a row and four K blocks of 32); the
-// policy decides what the word holds. Rows past the live ones are never copied and never read: their fragments
-// and scale words are zeros in registers.
+//   - the epilogue policy owns the output type and its conversion;
+//   - the caller owns the launch geometry: which ring and column width a grouped call runs on, the dense body's
+//     columns, warps and stage depth, and which calls take a small body at all. Those are speed rules measured on
+//     the caller's shapes and cards; the skeleton takes them as arguments and never picks them.
+// The grouped body reads the fixed expert table record `ExpW` (three projections' codes and scale streams), not a
+// policy type. A ring stages a row's scale stream as PK bytes a stage (one 4-byte word a row and four K blocks of
+// 32); the policy decides what the word holds. Rows past the live ones are never copied and never read: their
+// fragments and scale words are zeros in registers.
 //
 // The bodies keep the expression forms of the route kernels they came from (the order operands are formed in,
 // scalars rather than aggregates, thread index reads in the kernel): nvcc's output depends on them, and the
 // extraction was held to the same SASS kernel for kernel (the decision record has the method).
 //
-// Every function here is inline or a template, so the header can be included by several TUs of one archive.
+// Every function here is inline or a template, so the header can be included by several TUs of one archive. Two
+// units that instantiate the same `bs::` kernel (the same template arguments, such as the plan kernels or a shared
+// policy) get one symbol for both: they must compile it identically (the same header revision and the same nvcc
+// flags, `-fmad` included), or which unit's copy runs is undefined.
 #pragma once
 
 #include <cuda_bf16.h>
@@ -289,7 +295,7 @@ struct Warp6 {
 // tile's activation rows, which every warp reads (one copy a block, not a warp), and a barrier a stage hands the
 // stage over. Shared memory is the warps' weights and one copy of the activations, so several blocks fit an SM
 // where Warp6 holds one or two. The last stage of a K that is not a multiple of PK is shorter (a multiple of four K
-// blocks). Taken on cards with many SMs (`moe_block2_card`).
+// blocks). Which calls take it is the caller's measured rule (the V4.1 route: the RTX PRO 6000).
 struct Block2 {
     static constexpr int kKind = kRingBlock2;
     static constexpr int kThreads = 128;
@@ -517,65 +523,28 @@ __global__ void __launch_bounds__(Ring::kThreads)
     }
 }
 
-// One instantiation of the grouped body: its shared memory and its launch.
+// One instantiation of the grouped body: its shared memory and its launch. The caller picks the instantiation (ring,
+// CW, PK) by its own measured rules; nothing here chooses geometry for it. A Warp6 instance's dynamic shared memory
+// limit is set once a device to its size at the most tile rows; a Block2 instance stays under the default 48 KB at
+// the most tile rows (checked here for every instance, since a policy's operand bytes set the stage size).
 template <class Ring, class Math, class Epi, int CW, int PK>
 struct SmallRowMoe {
     using G = typename Ring::template Geo<Math, CW, PK>;
+    static_assert(Ring::kKind != kRingBlock2 || G::block(kMaxTileRows) <= 48 * 1024,
+                  "a Block2 instance over the default 48 KB of dynamic shared memory at the most tile rows");
     static constexpr int kCols = Ring::NW * CW;  // output columns a block
     static int smem(int bm) { return G::block(bm); }
+    // max_tiles > 0, 1 <= bm <= kMaxTileRows (contract checked by the caller)
     static void launch(int n, int max_tiles, int nproj, int bm, cudaStream_t st, const uint8_t* a, long lda,
                        const uint8_t* asf, const int* sfrow, const Tile* tiles, const int* ntiles, const ExpW* ew,
                        int p0, int p1, long ldb, typename Epi::Out* d0, typename Epi::Out* d1, long ldc, int k) {
+        if constexpr (Ring::kKind == kRingWarp6)
+            BS_SMEM_LIMIT((bs_small_moe_kernel<Ring, Math, Epi, CW, PK>), (G::block(kMaxTileRows)));
         dim3 gr((n + kCols - 1) / kCols, max_tiles, nproj);
         bs_small_moe_kernel<Ring, Math, Epi, CW, PK><<<gr, Ring::kThreads, G::block(bm), st>>>(
             a, lda, asf, sfrow, tiles, ntiles, ew, p0, p1, ldb, d0, d1, ldc, n, k, bm);
     }
 };
-
-// The two block ring shapes stay under the default 48 KB of dynamic shared memory at the most tile rows, for a
-// policy of e2m1 weights and e4m3 activations (no attribute to set).
-static_assert(Block2::Geo<MxHw32<1>, 8, 16>::block(kMaxTileRows) <= 48 * 1024 &&
-                  Block2::Geo<MxHw32<1>, 16, 8>::block(kMaxTileRows) <= 48 * 1024,
-              "block ring over 48 KB");
-
-// Whether the card takes ring Block2 when the caller leaves the ring to the card: the RTX PRO 6000 (sm_120 with
-// 188 SMs: Workstation, Max-Q and Server Edition; memra#1324). Every other card keeps Warp6 until measured.
-static inline bool moe_block2_card() { return cc() == 120 && sms() >= 188; }
-
-// One grouped small-row call (contract checked by the caller; max_tiles > 0, 1 <= bm <= kMaxTileRows). ring: 0 by
-// the card, 1 Warp6, 2 Block2.
-// - Block2: 8 columns a warp (16 K blocks a stage) while that launch is at most one wave of four blocks an SM, else
-//   16 (8 K blocks a stage).
-// - Warp6: a warp's output columns are 16 while that gives at least four warps an SM, else 8, else 4 (a narrow
-//   output still spreads over the card; the MMA's empty rows are free next to the weight stream).
-template <class Math, class Epi>
-static inline void moe_small_launch(int ring, int n, int max_tiles, int nproj, int bm, cudaStream_t st,
-                                    const uint8_t* a, long lda, const uint8_t* asf, const int* sfrow,
-                                    const Tile* tiles, const int* ntiles, const ExpW* ew, int p0, int p1, long ldb,
-                                    typename Epi::Out* d0, typename Epi::Out* d1, long ldc, int k) {
-    if (ring == 2 || (ring == 0 && moe_block2_card())) {
-        const long b8 = (long)((n + 31) / 32) * max_tiles * nproj;
-        if (b8 <= 4L * sms())
-            SmallRowMoe<Block2, Math, Epi, 8, 16>::launch(n, max_tiles, nproj, bm, st, a, lda, asf, sfrow, tiles,
-                                                          ntiles, ew, p0, p1, ldb, d0, d1, ldc, k);
-        else
-            SmallRowMoe<Block2, Math, Epi, 16, 8>::launch(n, max_tiles, nproj, bm, st, a, lda, asf, sfrow, tiles,
-                                                          ntiles, ew, p0, p1, ldb, d0, d1, ldc, k);
-        return;
-    }
-    long want = 4L * sms();
-    int cw = (long)((n + 15) / 16) * max_tiles >= want ? 16 : (long)((n + 7) / 8) * max_tiles >= want ? 8 : 4;
-#define BS_SX(CWX)                                                                                               \
-    do {                                                                                                         \
-        using S_ = SmallRowMoe<Warp6, Math, Epi, CWX, 4>;                                                        \
-        BS_SMEM_LIMIT((bs_small_moe_kernel<Warp6, Math, Epi, CWX, 4>), (S_::smem(kMaxTileRows)));                \
-        S_::launch(n, max_tiles, nproj, bm, st, a, lda, asf, sfrow, tiles, ntiles, ew, p0, p1, ldb, d0, d1, ldc, k); \
-    } while (0)
-    if (cw == 16) BS_SX(16);
-    else if (cw == 8) BS_SX(8);
-    else BS_SX(4);
-#undef BS_SX
-}
 
 // ---------------------------------------------------------------------------------------------
 // The dense small-row body (calls of at most kDenseMaxRows rows): block x holds blockDim / 32 warps of CW output
@@ -757,55 +726,53 @@ __global__ void __launch_bounds__(128) bs_small_dense_kernel(const uint8_t* __re
         }
 }
 
-// One dense small-row call (contract checked by the caller: 1 <= m <= kDenseMaxRows, k a multiple of 128, aligned
-// bases). The launch: an SM's share of the output columns in one block (up to four warps of 2 to 16 columns each),
-// so the whole call is resident at once, and the stage as deep as that leaves room for, up to about 48 KB a SM of
-// weights in flight (a sweep of 8 to 128 KB on the RTX 5090: 8 KB ran at 0.4 of the bandwidth, 32-64 KB level and
-// best). Returns 0 launched, -1 a shape the body cannot stage (nothing launched).
-template <class Math, class Epi>
-static inline int dense_small_launch(const uint8_t* A, long lda, const uint8_t* As, const uint8_t* B, long ldw,
-                                     const uint8_t* Bs, typename Epi::Out* c, long ldc, int m, int n, int k,
-                                     cudaStream_t st) {
-    const int wb = Math::kWB, ab = Math::kAB, kb = k / 32;
-    const long nsm = sms();
-    const Smem sm = smem();
-    // an SM's output columns: CW the least of 2, 4, 8, 16 with four warps holding them, then the warps they need
-    const long per_sm = (n + nsm - 1) / nsm;
-    int cw = 2;
-    while (cw < 16 && 4L * cw < per_sm) cw <<= 1;
-    int nwb = (per_sm + cw - 1) / cw < 4 ? (int)((per_sm + cw - 1) / cw) : 4;
-    const long blocks = (n + (long)nwb * cw - 1) / ((long)nwb * cw);
-    const long bps = (blocks + nsm - 1) / nsm;  // blocks an SM holds at once
-    const long budget = sm.sm / bps - sm.per_block < sm.optin ? sm.sm / bps - sm.per_block : sm.optin;
-    // K blocks a stage: a power of two from 4 to 64, not past K, while the ring fits and the stages in flight
-    // (kDenseStages - 1) hold at most the in-flight target
-    const long want = 48L * 1024 / bps;
-    // (and the next stage's activation chunks and scale words fit the registers that carry them)
-    const int nthr = nwb * 32;
+// Whether a stage of 1 << lpk K blocks of m activation rows fits the registers that carry it to the next stage
+// (each of nthr threads holds kDenseAReg 16-byte chunks and kDenseSReg scale words): a fact of the body, which any
+// caller's geometry must respect.
+template <class Math>
+static inline bool dense_carries(int m, int nthr, int lpk) {
     constexpr int la = log2c(Math::kAB / 16);
-    int lpk = 2;
-    while (lpk < 6 && (1 << lpk) < kb && DenseGeo(wb, ab, cw, m, 2 << lpk).block(nwb) <= budget &&
-           (long)(kDenseStages - 1) * nwb * cw * wb * (2 << lpk) <= want &&
-           (m << (lpk + 1 + la)) <= kDenseAReg * nthr &&
-           (m << (lpk - 1)) <= kDenseSReg * nthr)
-        ++lpk;
-    if ((m << (lpk + la)) > kDenseAReg * nthr || (m << (lpk - 2)) > kDenseSReg * nthr) return -1;
-    const int smem_b = DenseGeo(wb, ab, cw, m, 1 << lpk).block(nwb);
-    if (smem_b > sm.optin) return -1;
-    const unsigned grid = (unsigned)blocks;
-#define BS_DS(CWX, MRX)                                                                                          \
-    do {                                                                                                         \
-        BS_SMEM_LIMIT((bs_small_dense_kernel<Math, Epi, CWX, MRX>), sm.optin);                                   \
-        bs_small_dense_kernel<Math, Epi, CWX, MRX><<<grid, nwb * 32, smem_b, st>>>(A, lda, As, B, ldw, Bs, c, ldc, m, \
-                                                                                 n, k, lpk);                     \
+    return (m << (lpk + la)) <= kDenseAReg * nthr && (m << (lpk - 2)) <= kDenseSReg * nthr;
+}
+
+// A dense call's launch geometry, chosen by the caller by its own measured rules: CW output columns a warp (2, 4, 8
+// or 16), nwb warps a block, PK = 1 << lpk K blocks a stage, grid blocks, smem bytes a block (`DenseGeo::block`),
+// and the opt-in limit the kernel's attribute is set to once a device.
+struct DenseLaunch {
+    int cw, nwb, lpk;
+    unsigned grid;
+    int smem, optin;
+};
+
+// One instantiation of the dense body and its launch.
+template <class Math, class Epi, int CW, int MR>
+struct SmallRowDense {
+    static void launch(const DenseLaunch& g, cudaStream_t st, const uint8_t* A, long lda, const uint8_t* As,
+                       const uint8_t* B, long ldw, const uint8_t* Bs, typename Epi::Out* c, long ldc, int m, int n,
+                       int k) {
+        BS_SMEM_LIMIT((bs_small_dense_kernel<Math, Epi, CW, MR>), g.optin);
+        bs_small_dense_kernel<Math, Epi, CW, MR><<<g.grid, g.nwb * 32, g.smem, st>>>(A, lda, As, B, ldw, Bs, c, ldc, m,
+                                                                                    n, k, g.lpk);
+    }
+};
+
+// One dense small-row call on the caller's geometry (contract checked by the caller: 1 <= m <= kDenseMaxRows, k a
+// multiple of 128, aligned bases, g within the body's limits): the instance for g.cw and the call's rows (MR 1 up
+// to 8 rows, 2 up to 16). Returns 0 launched, -1 a cw the body has no instance for (nothing launched).
+template <class Math, class Epi>
+static inline int dense_small_launch(const DenseLaunch& g, cudaStream_t st, const uint8_t* A, long lda,
+                                     const uint8_t* As, const uint8_t* B, long ldw, const uint8_t* Bs,
+                                     typename Epi::Out* c, long ldc, int m, int n, int k) {
+#define BS_DS(CWX)                                                                                             \
+    do {                                                                                                       \
+        if (m <= 8) SmallRowDense<Math, Epi, CWX, 1>::launch(g, st, A, lda, As, B, ldw, Bs, c, ldc, m, n, k);  \
+        else SmallRowDense<Math, Epi, CWX, 2>::launch(g, st, A, lda, As, B, ldw, Bs, c, ldc, m, n, k);         \
     } while (0)
-#define BS_DS_MR(CWX) \
-    do { if (m <= 8) BS_DS(CWX, 1); else BS_DS(CWX, 2); } while (0)
-    if (cw == 16) BS_DS_MR(16);
-    else if (cw == 8) BS_DS_MR(8);
-    else if (cw == 4) BS_DS_MR(4);
-    else BS_DS_MR(2);
-#undef BS_DS_MR
+    if (g.cw == 16) BS_DS(16);
+    else if (g.cw == 8) BS_DS(8);
+    else if (g.cw == 4) BS_DS(4);
+    else if (g.cw == 2) BS_DS(2);
+    else return -1;
 #undef BS_DS
     return 0;
 }
@@ -1019,8 +986,9 @@ __global__ void __launch_bounds__(NE) bs_moe_plan_small_kernel(const int* __rest
 }
 
 // One plan (contract checked by the caller: rows > 0, 0 < ne <= NE, 0 < topk <= kMaxTopk, bm > 0,
-// 0 <= e0 <= e1 <= ne, and row0 >= 0, rows_cap > 0 when rows_bad is given). counts: scratch [ceil(rows / CH)][ne] ints (unused for at most NP pairs); tiles: room for
-// ceil(rows * topk / bm) + min(ne, rows * topk); the tile list covers experts [e0, e1).
+// 0 <= e0 <= e1 <= ne, and row0 >= 0, rows_cap > 0 when rows_bad is given). counts: scratch [ceil(rows / CH)][ne]
+// ints (unused for at most NP pairs); tiles: room for ceil(rows * topk / bm) + min(ne, rows * topk); the tile list
+// covers experts [e0, e1).
 template <int CH, int NE, int NP>
 static inline void moe_plan_launch(const int* sel, const float* selw, int rows, int topk, int ne, int bm, int e0,
                                    int e1, int* counts, int* off, int* ptok, float* pw, int* order, Tile* tiles,
