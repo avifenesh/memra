@@ -6116,6 +6116,8 @@ impl HybridModel {
             }
             let mut x1 = e.uninit(t * n_embd)?;
             e.add(&x, &mixed, &mut x1, t * n_embd)?;
+            crate::row_tap::emit(e, "mix", il, &mixed, t, n_embd)?;
+            crate::row_tap::emit(e, "x1", il, &x1, t, n_embd)?;
             let mut z = e.uninit(t * n_embd)?;
             e.rms_norm(
                 &x1,
@@ -6168,6 +6170,7 @@ impl HybridModel {
                 e.stream().synchronize()?;
                 eprintln!("[probe] L{il} ffn ok");
             }
+            crate::row_tap::emit(e, "ffn", il, &ffn_out, t, n_embd)?;
             let mut x2 = e.uninit(t * n_embd)?;
             e.add(&x1, &ffn_out, &mut x2, t * n_embd)?;
             x = x2;

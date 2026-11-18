@@ -880,6 +880,9 @@ impl HybridModel {
             // fast path. Bit-identical to add + rms_norm + ffn (add_rms_norm == add then rms_norm,
             // proven in kernel_check; add_rms_norm_q8_1 == add_rms_norm then quantize_q8_1).
             let (x1, ffn_out) = self.residual_norm_ffn(e, layer, &x, &mixed, n_embd, il, eps)?;
+            crate::row_tap::emit(e, "mix", il, &mixed, 1, n_embd)?;
+            crate::row_tap::emit(e, "x1", il, &x1, 1, n_embd)?;
+            crate::row_tap::emit(e, "ffn", il, &ffn_out, 1, n_embd)?;
             lap(
                 if il >= tail_from { &B_FFN_TAIL } else { &B_FFN },
                 &mut lap_start,

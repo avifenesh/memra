@@ -205,6 +205,8 @@ pub mod progress;
 /// gated against memra-reference (research/qwen4exp-bringup-20260829/GPU-EAGER.md).
 pub mod qwen4exp_gpu;
 pub mod round_stream;
+/// Per-layer last-row tap for prefill-against-decode bisects (memra#1203).
+pub mod row_tap;
 pub mod spec;
 pub mod spec_cost;
 /// Per-burst spec-round phase attribution (`MEMRA_SPEC_TRACE`; glm5 alias honored) —
