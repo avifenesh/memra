@@ -5,6 +5,7 @@
 # to end after its round (STOP file); `cell_1330.sh HOST kill NAME` stops its whole process group.
 # usage: cell_1330.sh HOST start NAME 'VAR=... VAR=...'   (the cell's settings, see recovery_cell.sh)
 #        cell_1330.sh HOST stop|kill|status NAME
+#        cell_1330.sh HOST until NAME UNIX
 set -u
 HOST=$1; ACT=$2; NAME=$3
 H=$(cd "$(dirname "$0")" && pwd)
@@ -17,6 +18,8 @@ case $ACT in
     rsync -a --delete "$H/" "$HOST:$T/" || exit 1
     rsync -a "$H/../../admit-headroom-unified-20261113/tools/fill_cache2.sh" "$HOST:$R/research/admit-headroom-unified-20261113/tools/" || exit 1
     /usr/bin/ssh -n "$HOST" "cd $R; (setsid nohup bash -c 'echo \$\$ > jobs/$NAME.pid; export TMPDIR=\$HOME/$R/tmp; NAME=$NAME $VARS bash \$HOME/$T/recovery_cell.sh') > jobs/$NAME.log 2>&1 < /dev/null & echo started" ;;
+  until)  # move the cell's end to unix time $4 (keep it inside the lease)
+    /usr/bin/ssh -n "$HOST" "echo $4 > $R/runs/$NAME/UNTIL; echo until \$(date -d @$4 +%H:%M)" ;;
   stop)
     /usr/bin/ssh -n "$HOST" "touch $R/runs/$NAME/STOP; echo stop requested" ;;
   kill)
