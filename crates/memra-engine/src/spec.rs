@@ -543,24 +543,62 @@ pub(crate) fn draft_capture_bootstrap_estimate(
 /// for its out-of-memory failure to be read as its appetite: an eighth.
 pub(crate) const CAPTURE_OOM_APPETITE_SHARE: usize = 8;
 
-/// What a draft-graph capture that ran out of memory records as the per-session draft-state
-/// charge (memra#1319): the bytes, and whether the failure is read as the capture's appetite.
+/// What a draft-graph capture that ran out of memory leaves for the per-session draft-state
+/// charge (memra#1319).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CaptureOomObservation {
+    /// The failure is read as the capture's appetite: the device ran short.
+    pub(crate) appetite: bool,
+    /// What the attempt was seen to take (its pool peak), or the entry reading on the
+    /// appetite arm.
+    pub(crate) seen: usize,
+    /// The bytes to record as the draft-state high-water, if any.
+    pub(crate) record: Option<usize>,
+}
+
+/// What a draft-graph capture that ran out of memory records (memra#1319).
 ///
-/// `entry_eff` is the effective free memory at the bracket's entry, `capture_peak` the pool
-/// bytes the failed attempt had in use at its peak. A capture that had taken an eighth of what
-/// was free, or more, ran the device short: its appetite exceeds `entry_eff`, and `entry_eff`
-/// is recorded, so every later gate refuses at the headroom that just failed. A capture that
-/// had taken less did not fail for want of that memory. The driver refused an allocation with
-/// memory available (memra#1316: `CUDA_ERROR_OUT_OF_MEMORY` with about 122 GB available, on a
-/// unified-memory host whose page cache was still filling). Recording `entry_eff` there
-/// charged every later speculative session with all the memory the device had free (17 to
-/// 83 GB at a GB10 boot capture, where the real state is 34 MiB) for the life of the server.
-/// It records what the attempt was seen to take, the quantity a capture that lands records.
-pub(crate) fn capture_oom_observation(entry_eff: usize, capture_peak: usize) -> (usize, bool) {
-    if capture_peak.saturating_mul(CAPTURE_OOM_APPETITE_SHARE) >= entry_eff {
-        (entry_eff, true)
-    } else {
-        (capture_peak, false)
+/// `entry_eff` is the effective free memory at the bracket's entry, `capture_peak` the
+/// default pool's bytes in use at the failed attempt's peak (`None` when the pool cannot be
+/// read), `capture_need` the appetite the pre-capture guard asked for (the recorded
+/// high-water, else the bootstrap estimate).
+///
+/// - Appetite arm, main's behaviour: the attempt's peak is an eighth of `entry_eff` or more, or
+///   the pool could not be read. `entry_eff` is recorded, so every later gate refuses at the
+///   headroom that just failed.
+/// - Low arm: the attempt took less. The driver refused an allocation with memory available
+///   (memra#1316: `CUDA_ERROR_OUT_OF_MEMORY` with about 122 GB available on a unified-memory host
+///   whose page cache was still filling), and `entry_eff` there was all the memory the device
+///   had free (17 to 83 GB at a GB10 boot capture). Nothing is recorded unless the peak exceeds
+///   `capture_need`: the default pool under-reads a capture (its in-capture allocations land in
+///   the graph's own pool, instantiated `AUTO_FREE_ON_LAUNCH`), so a recorded peak below the
+///   guard's appetite would lower the guard under its bootstrap estimate for good.
+///
+/// Why an eighth holds although the pool under-reads. A guarded attempt starts with at least
+/// twice its appetite plus two `CAPTURE_HEADROOM_FLOOR`s of effective free (3 GiB or more,
+/// `capture_headroom_plan`), so a capture that really ran the device short took gigabytes. The
+/// pool misses a small, roughly constant part of a capture: in the repo's GB10 receipts a
+/// landed capture's parked state reads 34 to 49 MB against a pool peak of 2 to 12 MB. Where the
+/// state is large the pool sees nearly all of it (a parked 2,608 MB against a pool peak of
+/// 2,619 MB), so a capture that runs a card short shows a peak on the appetite arm.
+pub(crate) fn capture_oom_observation(
+    entry_eff: usize,
+    capture_peak: Option<usize>,
+    capture_need: usize,
+) -> CaptureOomObservation {
+    match capture_peak {
+        Some(peak) if peak.saturating_mul(CAPTURE_OOM_APPETITE_SHARE) < entry_eff => {
+            CaptureOomObservation {
+                appetite: false,
+                seen: peak,
+                record: (peak > capture_need).then_some(peak),
+            }
+        }
+        _ => CaptureOomObservation {
+            appetite: true,
+            seen: entry_eff,
+            record: Some(entry_eff),
+        },
     }
 }
 
@@ -13611,7 +13649,9 @@ impl HybridModel {
         // The capture-time pool peak of this bracket, read once: a landed capture's measurement
         // and a failed capture's observation both take it.
         let capture_peak = (captured_now || capture_oom_entry_eff.is_some())
-            .then(|| e.pool_high_water_reset().1.saturating_sub(cap_used0));
+            .then(|| e.pool_high_water_reset_checked())
+            .flatten()
+            .map(|(_, used_high)| used_high.saturating_sub(cap_used0));
         if captured_now
             && let Some(meas0) = cap_meas0
             && let Ok((raw1, _)) = e.ctx().mem_get_info()
@@ -13645,21 +13685,23 @@ impl HybridModel {
         // A capture that OOM'd having taken almost none of E proved nothing about E
         // (memra#1319): the driver refused an allocation with memory available. E is then all
         // the free memory the device had, and it is not recorded; the attempt's own peak is
-        // (`capture_oom_observation`).
+        // recorded only above the guard's appetite (`capture_oom_observation`).
         if let Some(entry_eff) = capture_oom_entry_eff {
-            let (observed, appetite) =
-                capture_oom_observation(entry_eff, capture_peak.unwrap_or(0));
+            let seen = capture_oom_observation(entry_eff, capture_peak, capture_need);
+            let appetite = seen.appetite;
             if !appetite {
                 eprintln!(
                     "[spec] WARN: a capture attempt ran out of memory with {}MB effective free \
-                     after taking {}MB itself: a driver failure with memory available, not the \
-                     capture's appetite; the per-session draft-state charge is not raised to \
-                     the free memory",
+                     after taking {}MB itself in the pool: a driver failure with memory \
+                     available, not the capture's appetite; the per-session draft-state charge \
+                     is not raised to the free memory",
                     entry_eff / (1 << 20),
-                    observed / (1 << 20),
+                    seen.seen / (1 << 20),
                 );
             }
-            if let Some(hw) = self.record_draft_state_bytes(observed) {
+            if let Some(observed) = seen.record
+                && let Some(hw) = self.record_draft_state_bytes(observed)
+            {
                 if appetite {
                     eprintln!(
                         "[spec] draft-session capture appetite floor raised to {}MB: a capture \
@@ -18282,58 +18324,91 @@ mod capture_headroom_tests {
     /// memra#1319: what a capture that ran out of memory records. The GB10 boot bracket of
     /// memra#1307's cells holds 15,996 MB of cached blocks, and the raw reading is 1.2 to 2.5 GB
     /// under a full page cache and 61 to 67 GB without one: an entry reading of 17 to 83 GB. A
-    /// driver OOM there (memra#1316) had the capture's real state, 34 MiB, in use. Recorded as
-    /// the appetite, the entry reading became the charge of every later speculative session.
+    /// landed GB10 capture there reads a default-pool peak of about 2 MB (its parked state is
+    /// 34 MB; the in-capture allocations land in the graph's own pool), so a driver OOM there
+    /// (memra#1316) shows a peak of about 2 MiB. Recorded as the appetite, the entry reading
+    /// became the charge of every later speculative session.
     #[test]
     fn a_capture_oom_with_memory_available_does_not_record_the_free_memory() {
-        use super::{CAPTURE_OOM_APPETITE_SHARE, capture_oom_observation};
+        use super::{CAPTURE_OOM_APPETITE_SHARE, CaptureOomObservation, capture_oom_observation};
         const MIB: usize = 1 << 20;
         const GB: usize = 1_000_000_000;
-        let state = 34 * MIB;
+        // The guard's appetite with nothing recorded yet: the bootstrap estimate of a one-head
+        // DFlash draft (vocab 248,320, n_embd 5,120).
+        let bootstrap = super::draft_capture_bootstrap_estimate(1, 248_320, 5_120);
+        let peak = 2 * MIB;
+        assert!(peak < bootstrap);
         for entry_eff in [17 * GB, 83 * GB] {
             assert_eq!(
-                capture_oom_observation(entry_eff, state),
-                (state, false),
-                "entry {entry_eff}: the attempt's own peak, not the device's free memory"
+                capture_oom_observation(entry_eff, Some(peak), bootstrap),
+                CaptureOomObservation {
+                    appetite: false,
+                    seen: peak,
+                    record: None
+                },
+                "entry {entry_eff}: neither the device's free memory nor an under-read below \
+                 the guard's appetite is recorded"
             );
         }
-        // A capture that failed before it took anything records nothing (0 never raises the
-        // high-water).
-        assert_eq!(capture_oom_observation(17 * GB, 0), (0, false));
+        // A failure before any allocation records nothing either.
+        assert_eq!(
+            capture_oom_observation(17 * GB, Some(0), bootstrap).record,
+            None
+        );
+        // A low-arm peak above what the guard asked for is a real observation and is recorded.
+        let above = bootstrap + 64 * MIB;
+        assert_eq!(
+            capture_oom_observation(17 * GB, Some(above), bootstrap),
+            CaptureOomObservation {
+                appetite: false,
+                seen: above,
+                record: Some(above)
+            }
+        );
         // The other arm, a card that is short: the capture walked 7 GiB of free memory to the
         // edge with 5 GiB of its own in the pool. The entry reading is its proven floor.
         assert_eq!(
-            capture_oom_observation(7_168 * MIB, 5_120 * MIB),
-            (7_168 * MIB, true)
+            capture_oom_observation(7_168 * MIB, Some(5_120 * MIB), bootstrap),
+            CaptureOomObservation {
+                appetite: true,
+                seen: 7_168 * MIB,
+                record: Some(7_168 * MIB)
+            }
         );
-        // The line between the two is an eighth of the entry reading, inclusive.
+        // An unreadable pool keeps main's behaviour: the entry reading is the floor.
+        assert_eq!(
+            capture_oom_observation(17 * GB, None, bootstrap).record,
+            Some(17 * GB)
+        );
+        // The line between the two arms is an eighth of the entry reading, inclusive.
         let entry = 8_192 * MIB;
         let share = entry / CAPTURE_OOM_APPETITE_SHARE;
-        assert_eq!(capture_oom_observation(entry, share), (entry, true));
         assert_eq!(
-            capture_oom_observation(entry, share - 1),
-            (share - 1, false)
+            capture_oom_observation(entry, Some(share), bootstrap).record,
+            Some(entry)
         );
-        // A reading of 0 (an unreadable device records none) asks nothing of the peak.
-        assert_eq!(capture_oom_observation(0, 0), (0, true));
+        let below = capture_oom_observation(entry, Some(share - 1), 0);
+        assert!(!below.appetite && below.record == Some(share - 1));
 
-        // Wiring: the bracket's end records what the decision returns, from one reading of the
-        // capture-time peak, and never the entry reading itself.
+        // Wiring: the bracket's end records what the decision returns, from one checked
+        // reading of the capture-time peak, and never the entry reading itself.
         let src = production_src();
         let at = src
             .find("FAILURE IS AN OBSERVATION TOO")
             .expect("the failure arm");
         let end = &src[at..at + src[at..].find("---- REGIME GUARD").expect("the next block")];
         assert!(
-            end.contains("capture_oom_observation(entry_eff, capture_peak.unwrap_or(0));")
+            end.contains("capture_oom_observation(entry_eff, capture_peak, capture_need);")
+                && end.contains("if let Some(observed) = seen.record")
                 && end.contains("self.record_draft_state_bytes(observed)")
                 && !end.contains("record_draft_state_bytes(entry_eff)"),
             "{end}"
         );
-        assert_eq!(src.matches("e.pool_high_water_reset()").count(), 2);
+        assert_eq!(src.matches("e.pool_high_water_reset()").count(), 1);
+        assert_eq!(src.matches("e.pool_high_water_reset_checked()").count(), 1);
         assert!(
             src.contains("let capture_peak = (captured_now || capture_oom_entry_eff.is_some())")
-                && src.contains(".then(|| e.pool_high_water_reset().1.saturating_sub(cap_used0));")
+                && src.contains(".then(|| e.pool_high_water_reset_checked())")
         );
     }
 

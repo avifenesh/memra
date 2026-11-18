@@ -4935,13 +4935,19 @@ impl Engine {
     /// (0, 0) if the pool cannot be queried (never a false claim, matching
     /// `pool_cached_bytes`).
     pub fn pool_high_water_reset(&self) -> (usize, usize) {
+        self.pool_high_water_reset_checked().unwrap_or((0, 0))
+    }
+
+    /// The same pair and reset, `None` when the pool cannot be queried: for a caller that must
+    /// tell an unreadable pool from a peak of zero (memra#1319, a failed capture's observation).
+    pub fn pool_high_water_reset_checked(&self) -> Option<(usize, usize)> {
         use cudarc::driver::sys;
         unsafe {
             let mut pool: sys::CUmemoryPool = std::ptr::null_mut();
             if sys::cuDeviceGetDefaultMemPool(&mut pool, self.gpu.ctx.ordinal() as sys::CUdevice)
                 != sys::CUresult::CUDA_SUCCESS
             {
-                return (0, 0);
+                return None;
             }
             let (mut reserved, mut used) = (0u64, 0u64);
             if sys::cuMemPoolGetAttribute(
@@ -4950,7 +4956,7 @@ impl Engine {
                 &mut reserved as *mut u64 as *mut core::ffi::c_void,
             ) != sys::CUresult::CUDA_SUCCESS
             {
-                return (0, 0);
+                return None;
             }
             if sys::cuMemPoolGetAttribute(
                 pool,
@@ -4958,7 +4964,7 @@ impl Engine {
                 &mut used as *mut u64 as *mut core::ffi::c_void,
             ) != sys::CUresult::CUDA_SUCCESS
             {
-                return (0, 0);
+                return None;
             }
             // Setting a *_HIGH attribute resets the watermark to the pool's current value
             // (the value argument must be 0 per the driver contract).
@@ -4974,7 +4980,7 @@ impl Engine {
                 sys::CUmemPool_attribute_enum::CU_MEMPOOL_ATTR_USED_MEM_HIGH,
                 &mut zero2 as *mut u64 as *mut core::ffi::c_void,
             );
-            (reserved as usize, used as usize)
+            Some((reserved as usize, used as usize))
         }
     }
 
