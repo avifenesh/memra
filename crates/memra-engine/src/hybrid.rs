@@ -495,6 +495,12 @@ fn load_mixer_kind(
             )
             .into());
         }
+        // Hy4-flash gated MLA has no hybrid mixer either; refuse at load the same way.
+        AttentionPlan::HyV4(_) => {
+            return Err(
+                format!("layer {il}: gated MLA (hy_v4_flash) has no hybrid-engine mixer").into(),
+            );
+        }
         AttentionPlan::Mla(mla) => Mixer::Mla(MlaAttnLayer::load(e, src, il, mla)?),
         AttentionPlan::Full(full)
         | AttentionPlan::SlidingWindow {
@@ -3599,6 +3605,12 @@ impl Step35MtpGeom {
         let activation = match &layer.mlp {
             MlpPlan::Dense(dense) => &dense.activation,
             MlpPlan::Moe(moe) => &moe.activation,
+            MlpPlan::LatentMoe(_) => {
+                return Err(format!(
+                    "MTP block {} carries a latent MoE (hy_v4_flash), not a Step MTP MLP",
+                    layer.index
+                ));
+            }
         };
         let clamp_shexp = match activation {
             ActivationPlan::SwiGluClamped { limit } if *limit > 0.0 => Some(*limit),

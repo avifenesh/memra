@@ -1,0 +1,12 @@
+basis	checkpoint_physical_bytes
+plan_sha256	02d5ff9e03b8552a68dfe3cc19902de88b4e2826afddaf2b6ba15003ebe68ab2
+context_tokens	0
+warning	not exact HBM: loader expansions, repacks, mirrors, KV and workspaces require runtime planning
+status	passed
+MEMRA_PP_STAGES	2
+MEMRA_PP_DEVICES	0,1
+MEMRA_PP_SPLITS	21
+max_stage_bytes	81320957646
+stage	device	layers	weight_bytes	fixed_bytes	total_bytes
+0	0	0..21	78081591632	1675650528	79757242160
+1	1	21..42	79858817328	1462140318	81320957646

@@ -556,6 +556,16 @@ impl ModelParallelContract {
             .iter()
             .take_while(|layer| matches!(layer.mlp, MlpPlan::Dense(_)))
             .count();
+        // The Hy4-flash latent MoE (hy_v4_flash) has no generic parallel loader.
+        if plan
+            .layers
+            .iter()
+            .any(|layer| matches!(layer.mlp, MlpPlan::LatentMoe(_)))
+        {
+            return Err(TopologyError::new(
+                "generic parallel loader has no latent-MoE (hy_v4_flash) program",
+            ));
+        }
         if plan.layers[dense_prefix_layers..]
             .iter()
             .any(|layer| matches!(layer.mlp, MlpPlan::Dense(_)))
@@ -584,14 +594,14 @@ impl ModelParallelContract {
             .enumerate()
             .filter_map(|(layer, plan)| match plan.mlp {
                 MlpPlan::Moe(_) => Some(layer),
-                MlpPlan::Dense(_) => None,
+                MlpPlan::Dense(_) | MlpPlan::LatentMoe(_) => None,
             })
             .collect::<Vec<_>>();
         let moe_layers = layers
             .iter()
             .filter_map(|layer| match &layer.mlp {
                 MlpPlan::Moe(moe) => Some(moe),
-                MlpPlan::Dense(_) => None,
+                MlpPlan::Dense(_) | MlpPlan::LatentMoe(_) => None,
             })
             .collect::<Vec<_>>();
         let (expert_count, experts_per_token, expert_ffn_size, shared_expert_ffn_size) =
@@ -1611,6 +1621,7 @@ mod tests {
             mla: None,
             dsv4: None,
             dsv41: None,
+            hy_v4_flash: None,
             mimo: None,
             qwen4exp: None,
             qwen35_vision: None,

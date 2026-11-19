@@ -47,6 +47,9 @@ impl<'a> ConfigObject<'a> {
                         | "linear_attn_config"
                         | "mtp"
                         | "attention_other_setting"
+                        // hy_v4_flash writes null for "no low-rank output / gate projection".
+                        | "o_lora_rank"
+                        | "gate_lora_rank"
                 ) =>
             {
                 Ok(None)
@@ -196,6 +199,36 @@ impl<'a> ConfigObject<'a> {
         Ok(self
             .string_array(key)?
             .and_then(|values| values.into_iter().next()))
+    }
+    /// An array of arrays of unsigned integers (hy_v4_flash `engram_layer_head_vocab_sizes`).
+    pub(super) fn u64_matrix(&self, key: &str) -> Result<Option<Vec<Vec<u64>>>> {
+        self.array(key, false)?
+            .map(|rows| {
+                rows.iter()
+                    .enumerate()
+                    .map(|(i, row)| {
+                        let row_key = format!("{key}[{i}]");
+                        row.as_array()
+                            .ok_or_else(|| self.invalid(&row_key, "an array"))?
+                            .iter()
+                            .enumerate()
+                            .map(|(j, v)| self.unsigned(v, &format!("{row_key}[{j}]"), u64::MAX))
+                            .collect()
+                    })
+                    .collect()
+            })
+            .transpose()
+    }
+    /// The raw JSON object under `key`, for readers that interpret a whole block themselves
+    /// (the ModelOpt per-layer quantization map).
+    pub(super) fn raw_object(&self, key: &str) -> Result<Option<&'a Map<String, Value>>> {
+        self.value(key)?
+            .map(|value| {
+                value
+                    .as_object()
+                    .ok_or_else(|| self.invalid(key, "an object"))
+            })
+            .transpose()
     }
     pub(super) fn object(&self, key: &str) -> Result<Option<Self>> {
         self.value(key)?

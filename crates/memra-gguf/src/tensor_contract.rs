@@ -348,7 +348,10 @@ pub enum QuantConstraint {
     Fp8Block32,
     /// FP8 e4m3 with one scale per 32 elements of each row (DeepSeek-V4.1 Engram tables).
     Fp8Row32,
+    /// FP8 e4m3 with one F32 scale per whole row (hy_v4_flash Engram tables).
+    Fp8RowF32,
     I64,
+    I32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -380,6 +383,7 @@ pub enum FloatType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntegerType {
     I64,
+    I32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -710,7 +714,10 @@ impl TensorContract {
                         actual: entry.shape.clone(),
                     });
                 }
-                if !requirement.quant.accepts(&entry.storage) {
+                if !requirement
+                    .quant
+                    .accepts(&entry.storage, &requirement.shape)
+                {
                     return Err(TensorContractError::QuantLayoutMismatch {
                         id: requirement.id.clone(),
                         name: entry.name.clone(),
@@ -787,15 +794,17 @@ pub(crate) fn rope_factor_width(plan: &ModelPlan) -> Option<u32> {
                 .then_some(rope.dimensions / 2),
             },
             // CSA2 rotates with YaRN factors derived from config, never checkpoint factors.
+            // CSA2 rotates with YaRN factors derived from config; Hy4-flash with plain RoPE.
             AttentionPlan::GatedDeltaNet(_)
             | AttentionPlan::KimiDeltaNet(_)
-            | AttentionPlan::Csa2(_) => None,
+            | AttentionPlan::Csa2(_)
+            | AttentionPlan::HyV4(_) => None,
         })
         .max()
 }
 
 impl QuantConstraint {
-    fn accepts(self, storage: &StorageLayout) -> bool {
+    fn accepts(self, storage: &StorageLayout, shape: &[u64]) -> bool {
         match self {
             Self::FloatOnly => matches!(storage, StorageLayout::Float(_)),
             Self::Weight => true,
@@ -827,7 +836,15 @@ impl QuantConstraint {
                 StorageLayout::Quantized(layout)
                     if layout.format == "FP8_E4M3" && layout.block_shape == [1, 32]
             ),
+            Self::Fp8RowF32 => matches!(
+                storage,
+                StorageLayout::Quantized(layout)
+                    if layout.format == "FP8_E4M3"
+                        && shape.len() == 2
+                        && layout.block_shape == [1, shape[1] as u32]
+            ),
             Self::I64 => matches!(storage, StorageLayout::Integer(IntegerType::I64)),
+            Self::I32 => matches!(storage, StorageLayout::Integer(IntegerType::I32)),
         }
     }
 }
@@ -1109,6 +1126,12 @@ fn add_layer(
                 operation: "CSA2 attention in the canonical tensor schema",
             });
         }
+        // Hy4-flash names are pack-owned (`model_packs::hy_v4_flash`).
+        AttentionPlan::HyV4(_) => {
+            return Err(TensorContractError::UnsupportedPlanOperation {
+                operation: "Hy4-flash attention in the canonical tensor schema",
+            });
+        }
     }
     if let ResidualTopology::HyperConnections { streams, .. } = layer.residual {
         add_hyper_connections(builder, plan, index, streams);
@@ -1168,6 +1191,12 @@ fn add_layer(
             },
         ) => add_gemma_parallel_moe(builder, plan, index, moe, parallel)?,
         (MlpPlan::Moe(moe), _) => add_moe_mlp(builder, plan, index, moe)?,
+        // The hy_v4_flash pack derives its own schema; the canonical builder has no latent MoE.
+        (MlpPlan::LatentMoe(_), _) => {
+            return Err(TensorContractError::UnsupportedPlanOperation {
+                operation: "latent MoE (hy_v4_flash pack schema only)",
+            });
+        }
     }
     if let ResidualTopology::Gemma { post_mlp_norm, .. } = layer.residual {
         builder.float(
