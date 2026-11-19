@@ -560,8 +560,11 @@ pub(crate) struct CaptureOomObservation {
 ///
 /// `entry_eff` is the effective free memory at the bracket's entry, `capture_peak` the
 /// default pool's bytes in use at the failed attempt's peak (`None` when the pool cannot be
-/// read), `capture_need` the appetite the pre-capture guard asked for (the recorded
-/// high-water, else the bootstrap estimate).
+/// read), `capture_need` the appetite to compare the peak with: the draft-state charge with the
+/// graph pool's whole reserve owed (memra#1360), else the bootstrap estimate. The bracket passes
+/// the larger of the guard's appetite and that full charge (review of memra#1362, round 6): while
+/// the pool holds the reserve the guard asks for the per-session part alone, and a peak between
+/// the two (2 to 34 MB on GB10) would then be recorded, which the threshold below exists to stop.
 ///
 /// - Appetite arm, main's behaviour: the attempt's peak is an eighth of `entry_eff` or more, or
 ///   the pool could not be read. `entry_eff` is recorded, so every later gate refuses at the
@@ -708,6 +711,21 @@ impl DraftStateSlots {
             self.graph_reserve.load(Ordering::Relaxed),
             graph_now,
         )
+    }
+
+    /// The appetite the pre-capture guard asks for: the charge against `graph_now` once a capture
+    /// has measured a per-session part, else `bootstrap` plus that charge (what the reserve owes
+    /// now). The per-session slot decides, not the charge (review of memra#1362, round 6): a
+    /// landed capture whose parked delta fell within the pool's growth and whose peak read zero
+    /// leaves a charge that is all reserve, and on a trimmed pool the guard would ask for the
+    /// 32 MiB shortfall alone, under the bootstrap estimate.
+    pub(crate) fn capture_appetite(&self, graph_now: usize, bootstrap: usize) -> usize {
+        let charge = self.admission_bytes(graph_now);
+        if self.per_session.load(Ordering::Relaxed) > 0 {
+            charge
+        } else {
+            bootstrap.saturating_add(charge)
+        }
     }
 }
 
@@ -13163,18 +13181,14 @@ impl HybridModel {
         let cap_graph0 = e.device_graph_mem_reserved();
         let mut captured_now = false;
         let mut capture_oom_entry_eff: Option<usize> = None;
-        let capture_need = {
-            let observed = self.draft_session_admission_bytes(e.device_graph_mem_reserved());
-            if observed > 0 {
-                observed
-            } else {
-                draft_capture_bootstrap_estimate(
-                    if chain_mode { self.mtp_head_count() } else { 1 },
-                    d_vocab,
-                    n_embd,
-                )
-            }
-        };
+        let capture_need = self.draft_state.capture_appetite(
+            e.device_graph_mem_reserved(),
+            draft_capture_bootstrap_estimate(
+                if chain_mode { self.mtp_head_count() } else { 1 },
+                d_vocab,
+                n_embd,
+            ),
+        );
         if spec_capture_gate_on()
             && graph_draft
             && !sampled
@@ -13795,9 +13809,14 @@ impl HybridModel {
         // A capture that OOM'd having taken almost none of E proved nothing about E
         // (memra#1319): the driver refused an allocation with memory available. E is then all
         // the free memory the device had, and it is not recorded; the attempt's own peak is
-        // recorded only above the guard's appetite (`capture_oom_observation`).
+        // recorded only above the guard's appetite with the graph reserve owed in full
+        // (`capture_oom_observation`; review of memra#1362, round 6).
         if let Some(entry_eff) = capture_oom_entry_eff {
-            let seen = capture_oom_observation(entry_eff, capture_peak, capture_need);
+            let seen = capture_oom_observation(
+                entry_eff,
+                capture_peak,
+                capture_need.max(self.draft_session_admission_bytes(0)),
+            );
             let appetite = seen.appetite;
             if !appetite {
                 eprintln!(
@@ -18512,8 +18531,19 @@ mod capture_headroom_tests {
             // back into the growth). Every landed capture records its growth, unconditionally
             // (review round 3: a first-capture-only guard in front of the record is not this).
             // The peak is the bracket's one checked reading, shared with a failed capture's
-            // observation (memra#1347), so the split sees the same peak the failure arm does.
-            "let peak_delta = capture_peak.unwrap_or(0); \
+            // observation (memra#1347), so the split sees the same peak the failure arm does: the
+            // run starts at that reading (review round 6), so no rebinding or second reset of it
+            // fits between the reading, the landed arm's header and the split.
+            "let capture_peak = (captured_now || capture_oom_entry_eff.is_some()) \
+             .then(|| e.pool_high_water_reset_checked()) \
+             .flatten() \
+             .map(|(_, used_high)| used_high.saturating_sub(cap_used0)); \
+             if captured_now \
+             && let Some(meas0) = cap_meas0 \
+             && let Ok((raw1, _)) = e.ctx().mem_get_info() \
+             && let Some(f1) = crate::unified_memory::delta_free_bytes(e.unified_memory(), raw1) \
+             { let parked_delta = draft_state_parked_delta(meas0, f1, e.pool_cached_bytes()); \
+             let peak_delta = capture_peak.unwrap_or(0); \
              let graph1 = e.device_graph_mem_reserved(); \
              let graph_growth = graph1.saturating_sub(cap_graph0); \
              let (observed, _) = split_draft_state(parked_delta, peak_delta, graph_growth); \
@@ -18524,9 +18554,22 @@ mod capture_headroom_tests {
         ] {
             assert!(end.contains(needle), "{needle}: {end}");
         }
-        // The guard asks with the live reading.
+        // The shared reading has three uses, its binding, the split and the failure arm, and no
+        // rebinding after the landed arm either (review round 6).
+        let arms = code(
+            &src[close
+                ..close
+                    + src[close..]
+                        .find("---- REGIME GUARD")
+                        .expect("the next block")],
+        );
+        assert_eq!(arms.matches("capture_peak").count(), 3, "{arms}");
+        // The guard asks with the live reading, falling back on the bootstrap estimate while no
+        // per-session part is measured (review round 6).
         assert!(squash(&code(src)).contains(
-            "let observed = self.draft_session_admission_bytes(e.device_graph_mem_reserved());"
+            "let capture_need = self.draft_state.capture_appetite( \
+             e.device_graph_mem_reserved(), \
+             draft_capture_bootstrap_estimate("
         ));
         // HybridModel's three wrappers (review round 3) delegate to the slot type, whose slots and
         // argument order the_draft_state_slots_keep_each_record_apart tests by behaviour.
@@ -18580,6 +18623,61 @@ mod capture_headroom_tests {
         assert_eq!(slots.record_graph_reserve(40 * MIB), Some(40 * MIB));
         assert_eq!(slots.record_per_session(2 * MIB), None);
         assert_eq!(slots.admission_bytes(32 * MIB), 11 * MIB);
+    }
+
+    /// memra#1362 review round 6: the pre-capture guard asks for the bootstrap estimate until a
+    /// capture has measured a per-session part, plus what the reserve owes. A landed capture that
+    /// measured only the graph reserve leaves a charge that is all reserve; on a trimmed pool the
+    /// guard asking for that alone would ask for 32 MiB, under the 64 MiB bootstrap floor.
+    #[test]
+    fn the_guard_asks_the_bootstrap_until_a_per_session_part_is_measured() {
+        use super::DraftStateSlots;
+        const MIB: usize = 1 << 20;
+        let bootstrap = 64 * MIB;
+        let slots = DraftStateSlots::default();
+        assert_eq!(slots.capture_appetite(0, bootstrap), bootstrap);
+        // Only the reserve measured: the bootstrap, plus the shortfall on a trimmed pool.
+        slots.record_graph_reserve(32 * MIB);
+        assert_eq!(slots.capture_appetite(32 * MIB, bootstrap), bootstrap);
+        assert_eq!(slots.capture_appetite(0, bootstrap), 96 * MIB);
+        assert_eq!(slots.capture_appetite(20 * MIB, bootstrap), 76 * MIB);
+        // A per-session part measured: the charge, below the bootstrap estimate too.
+        slots.record_per_session(2 * MIB);
+        assert_eq!(slots.capture_appetite(32 * MIB, bootstrap), 2 * MIB);
+        assert_eq!(slots.capture_appetite(0, bootstrap), 34 * MIB);
+    }
+
+    /// memra#1362 review round 6: a failed capture's low arm compares its pool peak with the
+    /// guard's appetite with the graph reserve owed in full, as memra#1347 documents, not with the
+    /// per-session part the guard asks for while the pool holds the reserve. On the GB10 shape (a
+    /// 2 MiB per-session part, a 32 MiB reserve) a driver failure whose peak is 2 to 34 MiB
+    /// records nothing.
+    #[test]
+    fn a_failed_capture_compares_its_peak_with_the_full_charge() {
+        use super::{DraftStateSlots, capture_oom_observation};
+        const MIB: usize = 1 << 20;
+        const GB: usize = 1 << 30;
+        let slots = DraftStateSlots::default();
+        slots.record_graph_reserve(32 * MIB);
+        slots.record_per_session(2 * MIB);
+        let need = slots.capture_appetite(32 * MIB, 64 * MIB);
+        assert_eq!(need, 2 * MIB);
+        // What the bracket passes the failure arm.
+        let threshold = need.max(slots.admission_bytes(0));
+        assert_eq!(threshold, 34 * MIB);
+        for peak in [2 * MIB + 1, 20 * MIB, 34 * MIB] {
+            let seen = capture_oom_observation(17 * GB, Some(peak), threshold);
+            assert!(!seen.appetite && seen.record.is_none(), "{peak}: {seen:?}");
+            // The per-session part alone would have recorded it.
+            assert_eq!(
+                capture_oom_observation(17 * GB, Some(peak), need).record,
+                Some(peak)
+            );
+        }
+        assert_eq!(
+            capture_oom_observation(17 * GB, Some(34 * MIB + 1), threshold).record,
+            Some(34 * MIB + 1)
+        );
     }
 
     /// memra#1307: the per-session draft-state measurement takes its delta on the delta reading at
@@ -18758,15 +18856,22 @@ mod capture_headroom_tests {
             .find("FAILURE IS AN OBSERVATION TOO")
             .expect("the failure arm");
         let end = &src[at..at + src[at..].find("---- REGIME GUARD").expect("the next block")];
+        // The low arm's threshold is the guard's appetite with the graph reserve owed in full
+        // (review of memra#1362, round 6).
+        let squashed = end.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(
-            end.contains("capture_oom_observation(entry_eff, capture_peak, capture_need);")
-                && end.contains("if let Some(observed) = seen.record")
+            squashed.contains(
+                "capture_oom_observation( entry_eff, capture_peak, \
+                 capture_need.max(self.draft_session_admission_bytes(0)), );"
+            ) && end.contains("if let Some(observed) = seen.record")
                 && end.contains("self.record_draft_state_bytes(observed)")
                 && !end.contains("record_draft_state_bytes(entry_eff)"),
             "{end}"
         );
-        assert_eq!(src.matches("e.pool_high_water_reset()").count(), 1);
-        assert_eq!(src.matches("e.pool_high_water_reset_checked()").count(), 1);
+        // Counted by name, whatever the receiver (`Engine::pool_high_water_reset(e)` included;
+        // review of memra#1362, round 6): the entry reset and the one checked reading.
+        assert_eq!(src.matches("pool_high_water_reset").count(), 2);
+        assert_eq!(src.matches("pool_high_water_reset_checked").count(), 1);
         assert!(
             src.contains("let capture_peak = (captured_now || capture_oom_entry_eff.is_some())")
                 && src.contains(".then(|| e.pool_high_water_reset_checked())")
