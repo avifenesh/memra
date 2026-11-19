@@ -18511,7 +18511,10 @@ mod capture_headroom_tests {
             // growth, the split and the record can rebind either of them (n6 folded `graph1`
             // back into the growth). Every landed capture records its growth, unconditionally
             // (review round 3: a first-capture-only guard in front of the record is not this).
-            "let graph1 = e.device_graph_mem_reserved(); \
+            // The peak is the bracket's one checked reading, shared with a failed capture's
+            // observation (memra#1347), so the split sees the same peak the failure arm does.
+            "let peak_delta = capture_peak.unwrap_or(0); \
+             let graph1 = e.device_graph_mem_reserved(); \
              let graph_growth = graph1.saturating_sub(cap_graph0); \
              let (observed, _) = split_draft_state(parked_delta, peak_delta, graph_growth); \
              if let Some(hw) = self.record_draft_graph_reserve(graph_growth) {",
