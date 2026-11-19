@@ -314,7 +314,13 @@ fn hyper_connections_and_norms_match() {
         }
     }
     let (input, output) = o.module("hc_head");
-    let got = hyper_head(&numerics(), RMS_EPS, &head_weights(&o), &input[0], 16);
+    let got = hyper_head(
+        &numerics(),
+        plan(0).pre_attention_norm,
+        &head_weights(&o),
+        &input[0],
+        16,
+    );
     close(&got, &output[0], "hc_head");
 }
 
@@ -384,7 +390,13 @@ fn decoder_layers_and_the_stack_match() {
         );
         streams = decoder_layer(&layer, &w, &streams, &positions, 16);
     }
-    let collapsed = hyper_head(&numerics(), RMS_EPS, &head_weights(&o), &streams, 16);
+    let collapsed = hyper_head(
+        &numerics(),
+        plan(0).pre_attention_norm,
+        &head_weights(&o),
+        &streams,
+        16,
+    );
     let norm = plan(0).pre_attention_norm;
     let last = rms_norm(&collapsed, o.w("norm.weight"), norm);
     close(
@@ -394,9 +406,9 @@ fn decoder_layers_and_the_stack_match() {
     );
 }
 
-/// Red arms: a sink dropped, the shared expert clamped like the routed experts, the
-/// hyper-connection without its write-back magnitude, and a sliding layer read as full
-/// attention each move the output far past the bound.
+/// Red arms: a sink dropped, a sliding layer read as full attention, the hyper-connection
+/// without its write-back magnitude, gate and up swapped, and the router's correction bias
+/// ignored each move the output far past the bound.
 #[test]
 fn the_bound_tells_programs_apart() {
     let o = oracle();

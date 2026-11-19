@@ -112,6 +112,20 @@ pub fn gated_mla_attention(
             index.top_k
         );
     }
+    assert_eq!(
+        plan.sink,
+        memra_gguf::model_plan::TensorPresence::Required,
+        "every layer has sinks"
+    );
+    assert_eq!(
+        plan.rope.factors,
+        memra_gguf::model_plan::RopeFactors::None,
+        "plain RoPE only"
+    );
+    assert_eq!(
+        plan.rope.dimensions, plan.qk_rope_head_dim,
+        "RoPE spans the rope head dims"
+    );
     let base = plan.rope.base as f64;
 
     let q_resid = rms_norm(&linear(x, w.q_a, hidden, q_lora), w.q_a_norm, norm);
@@ -276,7 +290,8 @@ pub struct LatentMoeWeights<'a> {
 }
 
 /// `HYV4FlashMoE.forward`: sigmoid router (the bias steers the top-k selection only; the
-/// selected raw scores are renormalized with `+1e-20` and scaled), routed experts on
+/// selected raw scores are renormalized with `+1e-20` and scaled; an exact tie in the biased
+/// scores picks the lower expert index, where torch's `topk` order is unspecified), routed experts on
 /// `latent_down(x)` with the pre-clamped SwiGLU, `latent_up` back, plus the shared expert on
 /// `x`, then the output norm.
 pub fn latent_moe(
@@ -352,12 +367,16 @@ pub fn latent_moe(
         }
     }
     let routed_out = linear(&routed, w.latent_up, latent, hidden);
-    let shared = plan
+    let shared_plan = plan
         .moe
         .shared
         .as_ref()
-        .expect("hy_v4_flash has a shared expert")
-        .intermediate_size as usize;
+        .expect("hy_v4_flash has a shared expert");
+    assert!(
+        !shared_plan.gated,
+        "the Hy4-flash shared expert has no sigmoid gate"
+    );
+    let shared = shared_plan.intermediate_size as usize;
     let shared_out = dense_mlp(x, w.shared_gate, w.shared_up, w.shared_down, hidden, shared);
     let sum: Vec<f64> = routed_out
         .iter()
@@ -369,11 +388,12 @@ pub fn latent_moe(
 
 /// `HYV4FlashHyperHead.forward`: the exit collapse of the streams into one row per token,
 /// `sum_s (sigmoid(mix_s * inv_rms * scale + base_s) + eps) * stream_s` with the plan's
-/// `exit_epsilon` and the mix norm at `norm_epsilon` (the model's RMS epsilon). `w.scale` has one
-/// entry.
+/// `exit_epsilon`; its mix norm takes the model's RMS epsilon, which the plan carries as
+/// `output_norm` (`HYV4FlashHyperHead.input_norm` and `model.norm` share `rms_norm_eps`).
+/// `w.scale` has one entry.
 pub fn hyper_head(
     numerics: &HyV4FlashNumerics,
-    norm_epsilon: f32,
+    output_norm: NormPlan,
     w: &HyperConnectionWeights,
     streams: &[f64],
     hidden: usize,
@@ -386,7 +406,8 @@ pub fn hyper_head(
     for t in 0..tokens {
         let row = &streams[t * flat..(t + 1) * flat];
         let inv = 1.0
-            / (row.iter().map(|v| v * v).sum::<f64>() / flat as f64 + norm_epsilon as f64).sqrt();
+            / (row.iter().map(|v| v * v).sum::<f64>() / flat as f64 + output_norm.epsilon as f64)
+                .sqrt();
         for s in 0..n {
             let pre = sigmoid(mixes[t * n + s] * inv * w.scale[0] + w.base[s])
                 + numerics.exit_epsilon as f64;
@@ -454,7 +475,7 @@ pub fn decoder_layer(
     let x = rms_norm(&read, w.mlp_input_norm, layer.pre_mlp_norm);
     let mlp = match (&layer.mlp, &w.mlp) {
         (
-            memra_gguf::model_plan::MlpPlan::Dense(_),
+            memra_gguf::model_plan::MlpPlan::Dense(dense),
             MlpWeights::Dense {
                 gate,
                 up,
@@ -462,11 +483,22 @@ pub fn decoder_layer(
                 output_norm,
                 intermediate,
             },
-        ) => rms_norm(
-            &dense_mlp(&x, gate, up, down, hidden, *intermediate),
-            output_norm,
-            residual.mlp_output_norm,
-        ),
+        ) => {
+            assert_eq!(
+                dense.activation,
+                ActivationPlan::Silu,
+                "plain SwiGLU dense MLP"
+            );
+            assert_eq!(
+                dense.intermediate_size as usize, *intermediate,
+                "dense MLP width"
+            );
+            rms_norm(
+                &dense_mlp(&x, gate, up, down, hidden, *intermediate),
+                output_norm,
+                residual.mlp_output_norm,
+            )
+        }
         (memra_gguf::model_plan::MlpPlan::LatentMoe(plan), MlpWeights::Latent(weights)) => {
             latent_moe(plan, residual.mlp_output_norm, weights, &x, hidden)
         }
