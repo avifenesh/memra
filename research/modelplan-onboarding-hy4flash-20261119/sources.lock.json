@@ -1,0 +1,67 @@
+{
+  "format": "memra-hy4flash-onboarding-sources-v1",
+  "captured_utc": "2026-11-19T21:20:00Z",
+  "policy": "Every pin was resolved against its source before it was written (sources/verify_pins.py, output in sources/verify-pins.jsonl). Checkpoint facts come from the pinned revision's own files and safetensors headers read by HTTP range requests; no weights were downloaded.",
+  "pins": [
+    {
+      "id": "checkpoint",
+      "kind": "hf_model",
+      "repo": "Avifenesh/Hy4-flash-NVFP4",
+      "revision": "f9eac06cf022cfd3dc2e8ed423922466b2adcd87",
+      "role": "the artifact this lane onboards: weight-only NVFP4 routed experts, FP8 block-128 attention projections, FP8 per-row Engram tables, everything else as in the BF16 source",
+      "config_sha256": "c88f950d8050be7402a9d969a28fa2af8d09fa46bce04920a3a14ae0dbf4b999",
+      "hf_quant_config_sha256": "9b84bf91465f41fbfbcbb4d9ce2ffca8ee6653af894cc792a11e98e80a7dad9f",
+      "quant_config_sha256": "46577b670e0b620c8fb95b9d227c421b50de81b66a9bcfecc5b7bf04981c9d93",
+      "index_sha256": "c7b1103618c2396b776fa91a13127ac8a6650faaacda92e4970487a952f69618",
+      "tokenizer_sha256": "2e3f3d22065c2be5765ce99ab2410411ae338b32ce809ea20dcdb61d00198e83",
+      "tokenizer_config_sha256": "99454b593e1f893db010ab3d8968d32ff886e3711051e3e52243f0f6fc3b92dc",
+      "chat_template_sha256": "63ddd5de294df36f10c8f2c8e5f7b2a9dc2011c8481335422f04554256aee4ad",
+      "generation_config_sha256": "38dbc352f8019bb74b69a3c95a32e3baf54cf636358505e2045cbef62643327a",
+      "census_file": "census/header-census.tsv",
+      "census_sha256": "26526e1f45a0bbcb648a1ceeaf950592dadc53b15b4647aa262fb907a1e67c72",
+      "tensor_count": 2429,
+      "shard_count": 50,
+      "tensor_payload_bytes": 161078199806,
+      "tensor_dtypes": {"BF16": 1332, "F32": 669, "F8_E4M3": 283, "U8": 141, "I32": 4}
+    },
+    {
+      "id": "bf16-source",
+      "kind": "hf_model",
+      "repo": "tencent/Hy4-flash",
+      "revision": "d88c9dfd96ba4f2e6b92adba0b8e8f1c8696f959",
+      "role": "the BF16 source every checkpoint byte was produced from; config.json equals the checkpoint's minus its added quantization_config block",
+      "config_sha256": "a59ea10f98683e83c6515e340c85e24eb2e48c91d75af491ed3d6e88c3bc1b3c",
+      "index_sha256": "0cd31d2ffceb989e4d465d0c80be5731f6941dbf434ad84506e30930fa02e192",
+      "index_entries": 1964
+    },
+    {
+      "id": "transformers-pr-50903",
+      "kind": "github_pr",
+      "repo": "huggingface/transformers",
+      "number": 50903,
+      "revision": "b865850d05326cf20e306b31f14b0027de802da3",
+      "head_repo": "ManaEstras/transformers",
+      "state_at_capture": "open, not merged",
+      "role": "semantic reference (modeling and configuration of hy_v4_flash); the CPU oracle of the CheckpointParity step",
+      "files": [
+        {"path": "src/transformers/models/hy_v4_flash/modeling_hy_v4_flash.py", "blob": "2d796211a4f867bd4c46d4a952cfee0375929f72"},
+        {"path": "src/transformers/models/hy_v4_flash/configuration_hy_v4_flash.py", "blob": "16cb099b7991c190c4d5d85dd30b78e0b4c62770"}
+      ]
+    },
+    {
+      "id": "vllm-pr-68296",
+      "kind": "github_pr",
+      "repo": "vllm-project/vllm",
+      "number": 68296,
+      "revision": "8cbb80efa3974d10bb09c87580627bd874a3606b",
+      "head_repo": "jeejeelee/vllm",
+      "state_at_capture": "closed, merged (merge commit b067b6f6fa509a8c98c5a79d75b2aa3742d539c6, 2026-11-19T01:22:19Z)",
+      "role": "second reading of the same program (weight loading, Engram layer indexing, lookup-table handling); not an oracle",
+      "files": [
+        {"path": "vllm/models/hy_v4_flash/nvidia/model.py", "blob": "bdfd9f893b19ab78c8ab51d4a159181f1128ac68"},
+        {"path": "vllm/models/hy_v4_flash/nvidia/engram.py", "blob": "a5812e21b19f03ebfe3e8d193e5b66c75a97567a"},
+        {"path": "vllm/models/hy_v4_flash/configs.py", "blob": "8a72b6f84b4d481b30605287af54e39aa690e5b3"}
+      ]
+    }
+  ]
+}
