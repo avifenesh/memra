@@ -1,5 +1,9 @@
 # DeepSeek-V4.1: the grouped small-row body on a block-staged ring on the RTX PRO 6000 (2026-11-18)
 
+> Since 2026-11-18 both rings are instances of the shared skeleton's `bs_small_moe_kernel` (`bs::Warp6` was
+> `v41_moe_small_kernel`, `bs::Block2` was `v41_moe_small_blk_kernel`), the same SASS kernel for kernel:
+> [BS-SMALL-SKELETON](BS-SMALL-SKELETON.md).
+
 ## Decision
 
 On an RTX PRO 6000 Blackwell (sm_120 with 188 SMs) the routed experts' small-row calls (tiles of at most 8

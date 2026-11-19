@@ -1,0 +1,71 @@
+pass (pair): rc=0  last: 19:32:32 BATTERY PASS pair
+    19:32:31 release-battery HEAD card 0 rc 0
+    19:32:31 release-battery HEAD card 1 rc 0
+    19:32:31 run-gen M1 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    19:32:31 run-gen M 2 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    19:32:32 board: 2 of 2 supported models passed
+  kgate rc=0 19:32:32 BATTERY PASS kgate
+pass-all (tp4): rc=0  last: 19:32:32 BATTERY PASS tp4
+board-missing (pair): rc=1  last: 19:32:32 BATTERY FAIL pair: 1 failure(s), the FAIL lines above
+    19:32:32 FAIL: BOARD /home/avifenesh/.cache/bs-small/dry/w-board-missing/nope.tsv missing, unreadable or empty
+    19:32:32 release-battery HEAD card 0 rc 0
+    19:32:32 release-battery HEAD card 1 rc 0
+board-partial (pair): rc=1  last: 19:32:32 BATTERY FAIL pair: 1 failure(s), the FAIL lines above
+    19:32:32 FAIL: board model M 2: not run to a pass
+    19:32:32 release-battery HEAD card 0 rc 0
+    19:32:32 release-battery HEAD card 1 rc 0
+    19:32:32 run-gen M1 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    19:32:32 board: 1 of 2 supported models passed
+board-nonl (pair): rc=0  last: 19:32:33 BATTERY PASS pair
+    19:32:32 release-battery HEAD card 0 rc 0
+    19:32:33 release-battery HEAD card 1 rc 0
+    19:32:33 run-gen M1 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    19:32:33 run-gen M 2 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    19:32:33 board: 2 of 2 supported models passed
+model-absent (pair): rc=1  last: 19:32:33 BATTERY FAIL pair: 2 failure(s), the FAIL lines above
+    19:32:33 FAIL: board M 2: model ABSENT (/home/avifenesh/.cache/bs-small/dry/w-model-absent/models/m2.gguf)
+    19:32:33 FAIL: board model M 2: not run to a pass
+    19:32:33 release-battery HEAD card 0 rc 0
+    19:32:33 release-battery HEAD card 1 rc 0
+    19:32:33 run-gen M1 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    19:32:33 board: 1 of 2 supported models passed
+lock-unopenable (pair): rc=1  last: 19:32:33 BATTERY FAIL pair: 1 failure(s), the FAIL lines above
+    19:32:33 FAIL: box lock /home/avifenesh/.cache/bs-small/dry/w-lock-unopenable/no-such-dir/gpu.lock cannot be opened
+binary-missing (build): rc=1  last: 19:32:33 BATTERY FAIL build: 1 failure(s), the FAIL lines above
+    19:32:33 FAIL: build HEAD: binary run-spec missing (/home/avifenesh/.cache/bs-small/dry/w-binary-missing/out/target-HEAD/release/run-spec)
+rg-mismatch (pair): rc=1  last: 19:32:34 BATTERY FAIL pair: 4 failure(s), the FAIL lines above
+    19:32:34 FAIL: run-gen M1: rc 1, 0 MATCH, 1 MISMATCH
+    19:32:34 FAIL: run-gen M 2: rc 1, 0 MATCH, 1 MISMATCH
+    19:32:34 FAIL: board model M1: not run to a pass
+    19:32:34 FAIL: board model M 2: not run to a pass
+    19:32:33 release-battery HEAD card 0 rc 0
+    19:32:33 release-battery HEAD card 1 rc 0
+    19:32:34 run-gen M1 rc 1: 0 MATCH, 1 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    19:32:34 run-gen M 2 rc 1: 0 MATCH, 1 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    19:32:34 board: 0 of 2 supported models passed
+rg-neartie (pair): rc=0  last: 19:32:34 BATTERY PASS pair
+    19:32:34 release-battery HEAD card 0 rc 0
+    19:32:34 release-battery HEAD card 1 rc 0
+    19:32:34 run-gen M1 rc 0: 1 MATCH, 0 MISMATCH, 1 FLIP-NEARTIE (reported, passes)
+    19:32:34 run-gen M 2 rc 0: 1 MATCH, 0 MISMATCH, 1 FLIP-NEARTIE (reported, passes)
+    19:32:34 board: 2 of 2 supported models passed
+rb-fail (pair): rc=1  last: 19:32:34 BATTERY FAIL pair: 2 failure(s), the FAIL lines above
+    19:32:34 FAIL: release-battery HEAD card 0 rc 1
+    19:32:34 FAIL: release-battery HEAD card 1 rc 1
+    19:32:34 release-battery HEAD card 0 rc 1
+    19:32:34 FAIL: release-battery HEAD card 0 rc 1
+    19:32:34 release-battery HEAD card 1 rc 1
+    19:32:34 FAIL: release-battery HEAD card 1 rc 1
+    19:32:34 run-gen M1 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+    19:32:34 run-gen M 2 rc 0: 2 MATCH, 0 MISMATCH, 0 FLIP-NEARTIE (reported, passes)
+kgate-differ (kgate): rc=1  last: 19:32:34 BATTERY FAIL kgate: 1 failure(s), the FAIL lines above
+    19:32:34 FAIL: kgate: check lines differ between the arms (diff lines-BASE.txt lines-HEAD.txt)
+kgate-count-differ (kgate): rc=1  last: 19:32:35 BATTERY FAIL kgate: 1 failure(s), the FAIL lines above
+    19:32:35 FAIL: kgate HEAD: rc 0, '1090 checks, 0 failed' (want 1091 checks, 0 failed)
+kgate-below-floor (kgate): rc=1  last: 19:32:35 BATTERY FAIL kgate: 2 failure(s), the FAIL lines above
+    19:32:35 FAIL: kgate BASE: '1088 checks, 0 failed' is below memra#1337's 1089 checks
+    19:32:35 FAIL: kgate HEAD: '1088 checks, 0 failed' is below memra#1337's 1089 checks
+kgate-pinned (kgate): rc=1  last: 19:32:35 BATTERY FAIL kgate: 2 failure(s), the FAIL lines above
+    19:32:35 FAIL: kgate BASE: rc 0, '1091 checks, 0 failed' (want 1092 checks, 0 failed)
+    19:32:35 FAIL: kgate HEAD: rc 0, '1091 checks, 0 failed' (want 1092 checks, 0 failed)
+relative-out (pair): rc=2  last: OUT must be an absolute path (got relative/out)
