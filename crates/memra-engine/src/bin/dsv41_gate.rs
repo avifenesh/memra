@@ -1793,6 +1793,9 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
         } else {
             format!("_n{n}")
         };
+        // the one 1-tile-row case shares its rows and columns with the 4-tile-row one: its checks
+        // that do not name bm carry `_bm1`, so every check name is unique
+        let bt = if bm == 1 { "_bm1" } else { "" };
         let mut sel = Vec::with_capacity(rows * topk);
         let mut selw = Vec::with_capacity(rows * topk);
         for _ in 0..rows {
@@ -2114,7 +2117,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             let (got, _, sfrow) = grouped(0, ne, form, &tabd, (0, 0), false)?;
             if form == 1 {
                 rep.raw(
-                    &format!("schedule/cutlass_sfrow/rows{rows}{nt}"),
+                    &format!("schedule/cutlass_sfrow/rows{rows}{bt}{nt}"),
                     sfrow == want_sfrow,
                     "each pair's scale row == the host's padded prefix",
                     format!("{np} pairs"),
@@ -2122,7 +2125,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             }
             same(
                 rep,
-                &format!("schedule/cutlass_moe/rows{rows}_form{form}{nt}"),
+                &format!("schedule/cutlass_moe/rows{rows}_form{form}{bt}{nt}"),
                 &got,
                 &want,
             );
@@ -2144,7 +2147,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             let outside = got[..p0].iter().chain(&got[p1..]).all(|&b| b == 0xA5);
             let inside = got[p0..p1] == want[p0..p1];
             rep.raw(
-                &format!("schedule/cutlass_moe_range/rows{rows}{nt}"),
+                &format!("schedule/cutlass_moe_range/rows{rows}{bt}{nt}"),
                 inside && outside,
                 "experts [4, 12) of 16: their pairs' rows == the full call's, other rows untouched",
                 format!("inside {inside}, outside untouched {outside}"),
@@ -2173,13 +2176,13 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 let (gs, us, _) = grouped(0, ne, 0, &tab2, (0, 2), true)?;
                 same(
                     rep,
-                    &format!("schedule/moe_small_pair/rows{rows}_w1{nt}"),
+                    &format!("schedule/moe_small_pair/rows{rows}_w1{bt}{nt}"),
                     &gs,
                     &g2,
                 );
                 same(
                     rep,
-                    &format!("schedule/moe_small_pair/rows{rows}_w3{nt}"),
+                    &format!("schedule/moe_small_pair/rows{rows}_w3{bt}{nt}"),
                     &us,
                     &u2,
                 );
@@ -2213,26 +2216,26 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
                 })?;
                 same(
                     rep,
-                    &format!("schedule/moe_small_own_layout/rows{rows}_w1{nt}"),
+                    &format!("schedule/moe_small_own_layout/rows{rows}_w1{bt}{nt}"),
                     &d0.host(&st)?,
                     &gs,
                 );
                 same(
                     rep,
-                    &format!("schedule/moe_small_own_layout/rows{rows}_w3{nt}"),
+                    &format!("schedule/moe_small_own_layout/rows{rows}_w3{bt}{nt}"),
                     &d1.host(&st)?,
                     &us,
                 );
             }
             same(
                 rep,
-                &format!("schedule/cutlass_moe_pair/rows{rows}_w1{nt}"),
+                &format!("schedule/cutlass_moe_pair/rows{rows}_w1{bt}{nt}"),
                 &g2,
                 &g1,
             );
             same(
                 rep,
-                &format!("schedule/cutlass_moe_pair/rows{rows}_w3{nt}"),
+                &format!("schedule/cutlass_moe_pair/rows{rows}_w3{bt}{nt}"),
                 &u2,
                 &u1,
             );
