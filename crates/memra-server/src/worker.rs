@@ -9029,7 +9029,11 @@ fn unbuilt_session_booking(active: &[Session], workspace_booked: bool) -> usize 
 /// booking) sum their sessions' charges, so a session carries the shortfall in them only where
 /// the active sessions of its model do not carry it already. A carrier released before the
 /// launch takes its carry out of the active set, and the next admission carries the shortfall
-/// again. Once the pool holds the reserve no admission owes any.
+/// again. Until that admission the books are one reserve short: the other sessions of the burst
+/// will still map it at their launch, and an arrival of another route or model in that gap is
+/// booked without it. So "once per stream" is not "always booked while owed"; no live gate
+/// charges another session's unmapped reserve, on main or here. Once the pool holds the reserve
+/// no admission owes any.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct DraftStateAdmission {
     /// What the live gate charges: the per-session part plus the reserve's whole shortfall.
