@@ -4236,6 +4236,15 @@ impl HybridModel {
         self.draft_state.admission_bytes(graph_reserved_now)
     }
 
+    /// [`Self::draft_session_admission_bytes`] in its per-session and per-stream parts
+    /// (memra#1379), so admission books the reserve's shortfall once per stream.
+    pub fn draft_session_admission_charge(
+        &self,
+        graph_reserved_now: usize,
+    ) -> crate::spec::DraftStateCharge {
+        self.draft_state.admission_charge(graph_reserved_now)
+    }
+
     /// Device-local bytes that are not yet materialized for this cache's rank-local Step KV.
     ///
     /// The owning-stage shadow cache remains allocated as the rollback oracle. Native Step

@@ -680,7 +680,35 @@ pub(crate) fn raise_high_water(
 /// teardown's trim the draft relaunch maps the existing draft graphs before any new capture, so a
 /// later capture finds the reserve held and grows the pool by nothing.
 pub(crate) fn draft_state_charge(per_session: usize, reserve_hw: usize, graph_now: usize) -> usize {
-    per_session.saturating_add(reserve_hw.saturating_sub(graph_now))
+    DraftStateCharge::of(per_session, reserve_hw, graph_now).total()
+}
+
+/// [`draft_state_charge`] in its two parts (memra#1379). The per-session part is every session's
+/// own; the reserve's shortfall is the stream's, owed once however many sessions read it. After a
+/// trim every spec admission before the first draft launch reads the same short pool, so an
+/// admission's books carry the shortfall only where no active session of the model carries it yet
+/// (the worker's `draft_state_admission`); its live gate still checks the whole shortfall.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DraftStateCharge {
+    /// The measured per-session draft-state high-water, in bytes.
+    pub per_session: usize,
+    /// What the stream's graph reserve lacks in the pool's live reading, in bytes.
+    pub reserve_owed: usize,
+}
+
+impl DraftStateCharge {
+    /// The parts against the pool's live reading `graph_now`.
+    pub(crate) fn of(per_session: usize, reserve_hw: usize, graph_now: usize) -> Self {
+        Self {
+            per_session,
+            reserve_owed: reserve_hw.saturating_sub(graph_now),
+        }
+    }
+
+    /// The whole charge: the per-session part plus the reserve's shortfall.
+    pub fn total(&self) -> usize {
+        self.per_session.saturating_add(self.reserve_owed)
+    }
 }
 
 /// The two draft-state high-waters a model keeps for admission (memra#1360): the per-session
@@ -709,6 +737,15 @@ impl DraftStateSlots {
     /// The charge against the graph pool's live reading `graph_now` ([`draft_state_charge`]).
     pub(crate) fn admission_bytes(&self, graph_now: usize) -> usize {
         draft_state_charge(
+            self.per_session.load(Ordering::Relaxed),
+            self.graph_reserve.load(Ordering::Relaxed),
+            graph_now,
+        )
+    }
+
+    /// The same charge in its two parts ([`DraftStateCharge`]).
+    pub(crate) fn admission_charge(&self, graph_now: usize) -> DraftStateCharge {
+        DraftStateCharge::of(
             self.per_session.load(Ordering::Relaxed),
             self.graph_reserve.load(Ordering::Relaxed),
             graph_now,
@@ -18623,6 +18660,10 @@ mod capture_headroom_tests {
                 "pub fn draft_session_admission_bytes(",
                 "{ self.draft_state.admission_bytes(graph_reserved_now)",
             ),
+            (
+                "pub fn draft_session_admission_charge(",
+                "{ self.draft_state.admission_charge(graph_reserved_now)",
+            ),
         ] {
             let b = body(sig);
             assert!(b.ends_with(call), "{sig}: {b}");
@@ -18655,6 +18696,14 @@ mod capture_headroom_tests {
         assert_eq!(slots.record_graph_reserve(40 * MIB), Some(40 * MIB));
         assert_eq!(slots.record_per_session(2 * MIB), None);
         assert_eq!(slots.admission_bytes(32 * MIB), 11 * MIB);
+        // memra#1379: the same charge in its parts, the per-session slot apart from the shortfall.
+        let charge = slots.admission_charge(0);
+        assert_eq!(
+            (charge.per_session, charge.reserve_owed),
+            (3 * MIB, 40 * MIB)
+        );
+        assert_eq!(charge.total(), slots.admission_bytes(0));
+        assert_eq!(slots.admission_charge(40 * MIB).reserve_owed, 0);
     }
 
     /// memra#1362 review round 6: the pre-capture guard asks for the bootstrap estimate until a
