@@ -55,8 +55,9 @@ pub static PACK: ModelPack = ModelPack {
     aliases: &["hy_v4_flash", "hy-v4-flash", "hy4-flash"],
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
-    // The artifact ships `chat_template.jinja`; the hy_v4 dialect and tool parser are a later
-    // step of the lane.
+    // The artifact ships `chat_template.jinja`; memra-tokenizer reproduces it byte for byte
+    // (`chat::apply_hy4_template`, gated in `tests/hy4_chat.rs` against transformers' own render)
+    // and memra-server parses its tool calls (`ToolStreamParser::hy4`, gated against vLLM's).
     template: TemplateContract::ArtifactRequired,
     // Nothing runs the plan: no reference executor, no tuned surface.
     support: None,

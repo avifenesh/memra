@@ -224,6 +224,10 @@ pub struct ToolStreamParser {
     /// Tencent HY3 dialect: reasoning closes with `</think:opensource>` and calls use the
     /// suffixed `<tool_calls:opensource>` protocol.
     hy3: bool,
+    /// Tencent Hy4-flash: the HY3 framing and seam, but each call is
+    /// `<tool_call:opensource>NAME<arg_key:opensource>…` with no `<tool_sep:opensource>` and no
+    /// newlines (vLLM `HYV4ToolExtractor`). Implies `hy3`.
+    hy4: bool,
     /// Separator-newline budget right after `</think>` (the template emits `</think>\n\n`).
     postthink_nl: u8,
     initial_skip_think: bool,
@@ -315,6 +319,7 @@ impl ToolStreamParser {
             dsml: &DSML_V4,
             glm5: false,
             hy3: false,
+            hy4: false,
             postthink_nl: 0,
             initial_skip_think: skip_think,
             json_arguments: false,
@@ -402,6 +407,7 @@ impl ToolStreamParser {
         parser.dsml = self.dsml;
         parser.glm5 = self.glm5;
         parser.hy3 = self.hy3;
+        parser.hy4 = self.hy4;
         parser.json_arguments = self.json_arguments;
         parser.stream = self.stream;
         parser.opening_uncapped = self.opening_uncapped;
@@ -458,6 +464,15 @@ impl ToolStreamParser {
         let mut p = Self::new(schemas, skip_think);
         p.scan_tools = false;
         p.hy3 = true;
+        p
+    }
+
+    /// Tencent Hy4-flash parser: the HY3 seam (`</think:opensource>`) and call block, with the
+    /// Hy4 call body (name, then `<arg_key>`/`<arg_value>` pairs, no separator token).
+    #[allow(dead_code)] // allow: the Hy4-flash serve route, a later step of its lane, is the first non-test caller
+    pub fn hy4(schemas: HashMap<String, HashMap<String, String>>, skip_think: bool) -> Self {
+        let mut p = Self::hy3(schemas, skip_think);
+        p.hy4 = true;
         p
     }
 
@@ -1164,12 +1179,19 @@ impl ToolStreamParser {
             let call = &body[..call_end];
             rest = &body[call_end + HY3_CALL_CLOSE.len()..];
 
-            let sep = call.find(HY3_TOOL_SEP)?;
-            let name = call[..sep].trim();
+            // HY3 ends the name with `<tool_sep:opensource>`; Hy4 with the first
+            // `<arg_key:opensource>` (or the call's end when it has no arguments).
+            let (name, fields_start) = if self.hy4 {
+                let sep = call.find(HY3_ARG_KEY_OPEN).unwrap_or(call.len());
+                (call[..sep].trim(), sep)
+            } else {
+                let sep = call.find(HY3_TOOL_SEP)?;
+                (call[..sep].trim(), sep + HY3_TOOL_SEP.len())
+            };
             if name.is_empty() || name.contains(['<', '>', '\n']) {
                 return None;
             }
-            let mut fields = call[sep + HY3_TOOL_SEP.len()..].trim_start_matches(['\n', '\r']);
+            let mut fields = call[fields_start..].trim_start_matches(['\n', '\r']);
             let mut args = serde_json::Map::new();
             while !fields.trim().is_empty() {
                 fields = fields.trim_start_matches(['\n', '\r']);
@@ -1400,6 +1422,7 @@ Paris\n</parameter>\n<parameter=days>\n3\n</parameter>\n<parameter=metric>\ntrue
             ToolStreamParser::gemma_thought(),
             ToolStreamParser::dsv4(true),
             ToolStreamParser::hy3(HashMap::new(), true),
+            ToolStreamParser::hy4(HashMap::new(), true),
             ToolStreamParser::glm5(true, HashMap::new()),
             ToolStreamParser::new(HashMap::new(), false).with_json_arguments(),
             ToolStreamParser::gemma_tools().with_json_arguments(),
@@ -1428,6 +1451,7 @@ Paris\n</parameter>\n<parameter=days>\n3\n</parameter>\n<parameter=metric>\ntrue
             assert_eq!(fresh.dsv4, original.dsv4);
             assert_eq!(fresh.glm5, original.glm5);
             assert_eq!(fresh.hy3, original.hy3);
+            assert_eq!(fresh.hy4, original.hy4);
             assert_eq!(fresh.json_arguments, original.json_arguments);
         }
     }
@@ -2403,6 +2427,126 @@ flexible:true,note:<|\"|>a{b,c}:d<|\"|>,workdir:None}<tool_call|>";
         );
         assert_eq!(calls[1].arguments, r#"{"city":"Rome"}"#);
         assert_ne!(calls[0].id, calls[1].id);
+    }
+
+    /// Hy4-flash parse gate: every fixture of the vendor parser (vLLM PR #68296
+    /// `HYV4ToolExtractor.extract_tool_calls`, strict, as `HYV4ToolParser` builds it;
+    /// research/modelplan-onboarding-hy4flash-20261119/chat/fixtures/parses.json) parses to the
+    /// same calls, typed arguments and content. One documented difference: text after the
+    /// closing `</tool_calls:opensource>` stays content here (the vendor drops it), so no model
+    /// output is discarded.
+    #[test]
+    fn hy4_parses_match_the_vendor_parser() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
+            "../../research/modelplan-onboarding-hy4flash-20261119/chat/fixtures/parses.json",
+        );
+        let text = std::fs::read_to_string(&path).unwrap();
+        let fixtures: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let cases = fixtures["cases"].as_array().unwrap();
+        assert!(cases.len() >= 15, "fixture set shrank");
+        let mut called = 0;
+        for case in cases {
+            let name = case["name"].as_str().unwrap();
+            let mut schemas: HashMap<String, HashMap<String, String>> = HashMap::new();
+            for tool in case["tools"].as_array().unwrap() {
+                let f = &tool["function"];
+                let props = f["parameters"]["properties"].as_object();
+                schemas.insert(
+                    f["name"].as_str().unwrap().to_string(),
+                    props
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|(k, v)| Some((k.clone(), v["type"].as_str()?.to_string())))
+                        .collect(),
+                );
+            }
+            let output = case["output"].as_str().unwrap();
+            let mut parser = ToolStreamParser::hy4(schemas.clone(), false);
+            let mut pieces = parser.push(output);
+            pieces.extend(parser.finish());
+            // The same output one char at a time (a stream) parses to the same pieces.
+            let mut streamed = ToolStreamParser::hy4(schemas, false);
+            let mut stream_pieces = Vec::new();
+            let mut buf = [0u8; 4];
+            for ch in output.chars() {
+                stream_pieces.extend(streamed.push(ch.encode_utf8(&mut buf)));
+            }
+            stream_pieces.extend(streamed.finish());
+            let joined = |pieces: &[Piece]| {
+                let mut content = String::new();
+                let mut calls = Vec::new();
+                for piece in pieces {
+                    match piece {
+                        Piece::Content(c) => content.push_str(c),
+                        Piece::Call(c) => calls.push((c.name.clone(), c.arguments.clone())),
+                        Piece::Reasoning(r) => content.push_str(&format!("<reasoning {r}>")),
+                    }
+                }
+                (content, calls)
+            };
+            assert_eq!(joined(&stream_pieces), joined(&pieces), "{name}: streamed");
+            let mut content = String::new();
+            let mut calls = Vec::new();
+            for piece in pieces {
+                match piece {
+                    Piece::Content(c) => content.push_str(&c),
+                    Piece::Call(call) => calls.push((
+                        call.name,
+                        serde_json::from_str::<serde_json::Value>(&call.arguments).unwrap(),
+                    )),
+                    Piece::Reasoning(r) => panic!("{name}: reasoning {r:?} outside a think tail"),
+                }
+            }
+            let want: Vec<(String, serde_json::Value)> = case["tool_calls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| {
+                    (
+                        c["name"].as_str().unwrap().to_string(),
+                        c["arguments"].clone(),
+                    )
+                })
+                .collect();
+            assert_eq!(calls, want, "{name}: calls");
+            let mut want_content = case["content"].as_str().unwrap_or_default().to_string();
+            if case["tools_called"].as_bool().unwrap() {
+                called += 1;
+                let close = output.rfind(HY3_CLOSE).unwrap();
+                want_content.push_str(&output[close + HY3_CLOSE.len()..]);
+            }
+            assert_eq!(content, want_content, "{name}: content");
+        }
+        assert_eq!(called, 10, "calls parsed in ten fixtures");
+    }
+
+    /// The Hy4 body has no `<tool_sep:opensource>`: the HY3 parser surfaces it verbatim, the Hy4
+    /// parser reads it, and a HY3 body (with the separator) is malformed for Hy4.
+    #[test]
+    fn hy4_and_hy3_call_bodies_do_not_cross() {
+        let hy4 = "<tool_calls:opensource><tool_call:opensource>get_weather\
+                   <arg_key:opensource>city</arg_key:opensource>\
+                   <arg_value:opensource>Paris</arg_value:opensource>\
+                   </tool_call:opensource></tool_calls:opensource>";
+        let mut parser = ToolStreamParser::hy4(weather_schema(), false);
+        let mut pieces = parser.push(hy4);
+        pieces.extend(parser.finish());
+        assert!(
+            matches!(pieces.as_slice(), [Piece::Call(c)] if c.name == "get_weather"
+            && c.arguments == r#"{"city":"Paris"}"#)
+        );
+        let mut parser = ToolStreamParser::hy3(weather_schema(), false);
+        let mut pieces = parser.push(hy4);
+        pieces.extend(parser.finish());
+        assert_eq!(pieces, vec![Piece::Content(hy4.to_string())]);
+        let hy3 = "<tool_calls:opensource><tool_call:opensource>get_weather<tool_sep:opensource>\
+                   <arg_key:opensource>city</arg_key:opensource>\
+                   <arg_value:opensource>Paris</arg_value:opensource>\
+                   </tool_call:opensource></tool_calls:opensource>";
+        let mut parser = ToolStreamParser::hy4(weather_schema(), false);
+        let mut pieces = parser.push(hy3);
+        pieces.extend(parser.finish());
+        assert_eq!(pieces, vec![Piece::Content(hy3.to_string())]);
     }
 
     #[test]
