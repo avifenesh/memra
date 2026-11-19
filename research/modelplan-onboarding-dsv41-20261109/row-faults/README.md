@@ -105,7 +105,9 @@ both trees is the same binary (sha256 `73bef935...`), and `memra-server` differs
 
 **Kernels.** The new check is `schedule/moe_plan/out_of_range_id_rows700` (the three-kernel plan: 4
 out-of-range pairs in 700 rows, rows 5, 650 and 651 marked and no other); `out_of_range_id` (the
-one-block plan) now also checks the marked row, at a non-zero `row0`.
+one-block plan) now also checks the marked row, at a non-zero `row0`. The same check runs on the 576-column
+700-row case; these receipts list both under the one name, and from memra#1376 on the 576-column one is
+`out_of_range_id_rows700_n576`.
 
 **`dsv41-gate rowfault`** runs the serving route's runner on the checkpoint's first 2 trunk layers,
 with a request poisoned the way the fault door does it (`Runner::poison`):
