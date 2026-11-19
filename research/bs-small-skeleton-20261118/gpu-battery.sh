@@ -3,8 +3,8 @@
 # run: no RTX PRO 6000 box was free. The change's device code is the same SASS kernel for kernel (README.md), so
 # every count below is the base arm's count, and the two arms must agree line for line.
 #
-# Arms: BASE = the commit the change sits on (801243f06e while it stacks on memra#1337; after the rebase, the main
-# commit it rebased onto), HEAD = the PR head. Each arm is built from its own source tree into its own target dir.
+# Arms: BASE = the commit the change sits on (17c6b4fd75, memra#1337's head after its rebase onto main; once
+# memra#1337 lands, the main commit this change rebases onto), HEAD = the PR head. Each arm is built from its own source tree into its own target dir.
 #
 # usage: gpu-battery.sh PHASE        PHASE: build | kgate | tp4 | pair | all
 # env (no defaults; the script refuses an unset one):
@@ -25,8 +25,11 @@
 # the cards' state at each phase start. Every check that misses its expected figure is a FAIL line; the last line is
 # "BATTERY PASS PHASE" (exit 0) or "BATTERY FAIL PHASE: n failure(s)" (exit 1).
 #
-# Expected (the base arm's figures from memra#1337's receipts, research/modelplan-onboarding-dsv41-20261109/perf/
-# receipts/moe1324/; both arms must print the same):
+# Expected: both arms print the same check count with 0 failed. The count each arm must reach is the BASE arm's own
+# count, or EXPECT_KGATE / EXPECT_TP_DEFAULT / EXPECT_TP_OTHER when set. memra#1337's receipts
+# (research/modelplan-onboarding-dsv41-20261109/perf/receipts/moe1324/) predate its rebase onto main, whose gates
+# added checks (the 700-row out-of-range plan cases of memra#1315, the 9- and 10-row tp calls of memra#1327), so
+# their figures below are a floor, not the count of the current base:
 #   kgate  `dsv41-gate kernels DATA/fixtures-gpu/rand`: "dsv41-gate: 1089 checks, 0 failed" on each arm
 #          (80 small-row checks, 40 on each ring; the ring seam forces both rings on the one card)
 #   tp4    `dsv41-gate tp` needle, layers 1,2,14,20,21,24, four ranks, decode 2, MEMRA_FULL_PREC=1,
@@ -83,7 +86,7 @@ build() {
 kgate() {
   for v in DATA CARD1; do [ -n "${!v:-}" ] || { fail "set $v"; return 1; }; done
   mkdir -p "$OUT/kgate"; cards
-  local want=${EXPECT_KGATE:-1089}
+  local want=${EXPECT_KGATE:-}
   for a in $arms; do
     CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$CARD1 MEMRA_FULL_PREC=1 \
       "$(bin "$a" dsv41-gate)" kernels "$DATA/fixtures-gpu/rand" --out "$OUT/kgate/kgate-$a.json" \
@@ -91,6 +94,9 @@ kgate() {
     rc=$?
     c=$(count "$OUT/kgate/kgate-$a.log")
     say "kgate $a rc $rc: $c"
+    # without a pin the BASE arm's count is the figure (BASE runs first)
+    [ -n "$want" ] || want=$(echo "$c" | awk '{print $1}')
+    [ -n "$want" ] && [ "$want" -ge 1089 ] || fail "kgate $a: '$c' is below memra#1337's 1089 checks"
     [ $rc -eq 0 ] && [ "$c" = "$want checks, 0 failed" ] || fail "kgate $a: rc $rc, '$c' (want $want checks, 0 failed)"
     # every check line in full (name, bytes, differing bytes, verdict), not only names and verdicts
     grep -a -E '^(PASS|FAIL)' "$OUT/kgate/kgate-$a.log" > "$OUT/kgate/lines-$a.txt"
@@ -106,8 +112,8 @@ tp4() {
   for v in DATA CKPT CARDS4; do [ -n "${!v:-}" ] || { fail "set $v"; return 1; }; done
   mkdir -p "$OUT/tp4"; cards
   for t in default peer-pull host-canonical; do
-    if [ $t = default ]; then want=${EXPECT_TP_DEFAULT:-916}; tr=(-u MEMRA_TP_TRANSPORT)
-    else want=${EXPECT_TP_OTHER:-914}; tr=(MEMRA_TP_TRANSPORT=$t); fi
+    if [ $t = default ]; then want=${EXPECT_TP_DEFAULT:-}; floor=916; tr=(-u MEMRA_TP_TRANSPORT)
+    else want=${EXPECT_TP_OTHER:-}; floor=914; tr=(MEMRA_TP_TRANSPORT=$t); fi
     for a in $arms; do
       env "${tr[@]}" CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=$CARDS4 MEMRA_FULL_PREC=1 \
         MEMRA_DSV41_TP_ISSUE=parallel "$(bin "$a" dsv41-gate)" tp "$CKPT" "$DATA/captures-v2/needle" \
@@ -117,6 +123,8 @@ tp4() {
       grep -a '^HASH' "$OUT/tp4/tp-$t-$a.log" > "$OUT/tp4/tp-$t-$a.hash"
       c=$(count "$OUT/tp4/tp-$t-$a.log"); h=$(wc -l < "$OUT/tp4/tp-$t-$a.hash")
       say "tp4 $t $a rc $rc: $c, $h HASH lines"
+      [ -n "$want" ] || want=$(echo "$c" | awk '{print $1}')
+      [ -n "$want" ] && [ "$want" -ge $floor ] || fail "tp4 $t $a: '$c' is below memra#1337's $floor checks"
       [ $rc -eq 0 ] && [ "$c" = "$want checks, 0 failed" ] && [ "$h" -eq "${EXPECT_TP_HASH:-180}" ] \
         || fail "tp4 $t $a: rc $rc, '$c', $h HASH lines (want $want checks, 0 failed, ${EXPECT_TP_HASH:-180} HASH)"
     done
