@@ -560,11 +560,13 @@ pub(crate) struct CaptureOomObservation {
 ///
 /// `entry_eff` is the effective free memory at the bracket's entry, `capture_peak` the
 /// default pool's bytes in use at the failed attempt's peak (`None` when the pool cannot be
-/// read), `capture_need` the appetite to compare the peak with: the draft-state charge with the
-/// graph pool's whole reserve owed (memra#1360), else the bootstrap estimate. The bracket passes
-/// the larger of the guard's appetite and that full charge (review of memra#1362, round 6): while
-/// the pool holds the reserve the guard asks for the per-session part alone, and a peak between
-/// the two (2 to 34 MB on GB10) would then be recorded, which the threshold below exists to stop.
+/// read), `capture_need` the appetite to compare the peak with. The bracket passes the guard's
+/// appetite with the graph pool's whole reserve owed (memra#1360), whatever the pool holds now
+/// (review of memra#1362, rounds 6 and 7): once a per-session part is measured, that part plus the
+/// reserve; before, the bootstrap estimate plus any reserve a capture measured. While the pool
+/// holds the reserve the guard itself asks for less (the per-session part alone), and a peak
+/// between the two (2 to 34 MiB on GB10) would then be recorded, which the threshold below exists
+/// to stop.
 ///
 /// - Appetite arm, main's behaviour: the attempt's peak is an eighth of `entry_eff` or more, or
 ///   the pool could not be read. `entry_eff` is recorded, so every later gate refuses at the
@@ -13181,14 +13183,14 @@ impl HybridModel {
         let cap_graph0 = e.device_graph_mem_reserved();
         let mut captured_now = false;
         let mut capture_oom_entry_eff: Option<usize> = None;
-        let capture_need = self.draft_state.capture_appetite(
-            e.device_graph_mem_reserved(),
-            draft_capture_bootstrap_estimate(
-                if chain_mode { self.mtp_head_count() } else { 1 },
-                d_vocab,
-                n_embd,
-            ),
+        let capture_bootstrap = draft_capture_bootstrap_estimate(
+            if chain_mode { self.mtp_head_count() } else { 1 },
+            d_vocab,
+            n_embd,
         );
+        let capture_need = self
+            .draft_state
+            .capture_appetite(e.device_graph_mem_reserved(), capture_bootstrap);
         if spec_capture_gate_on()
             && graph_draft
             && !sampled
@@ -13809,13 +13811,13 @@ impl HybridModel {
         // A capture that OOM'd having taken almost none of E proved nothing about E
         // (memra#1319): the driver refused an allocation with memory available. E is then all
         // the free memory the device had, and it is not recorded; the attempt's own peak is
-        // recorded only above the guard's appetite with the graph reserve owed in full
-        // (`capture_oom_observation`; review of memra#1362, round 6).
+        // recorded only above the guard's appetite with the graph reserve owed in full, whatever
+        // the pool holds now (`capture_oom_observation`; review of memra#1362, rounds 6 and 7).
         if let Some(entry_eff) = capture_oom_entry_eff {
             let seen = capture_oom_observation(
                 entry_eff,
                 capture_peak,
-                capture_need.max(self.draft_session_admission_bytes(0)),
+                capture_need.max(self.draft_state.capture_appetite(0, capture_bootstrap)),
             );
             let appetite = seen.appetite;
             if !appetite {
@@ -18306,6 +18308,36 @@ mod capture_headroom_tests {
     }
 
     /// The production source, up to this test module.
+    /// Source text with `//` comments dropped (review of memra#1362, round 3), as
+    /// readiness_follows_the_boot_calibration_probe does: a needle in a comment must not stand in
+    /// for the code. String-aware (round 4): a `//` counts as a comment only after an even number
+    /// of unescaped `"` on its line, so a `"//"` literal cannot hide the rest of a line of code.
+    /// Module scope since round 7, so every wiring pin here reads code, not comments.
+    fn code(s: &str) -> String {
+        s.lines()
+            .map(|l| {
+                let b = l.as_bytes();
+                let (mut quotes, mut i) = (0usize, 0usize);
+                while i + 1 < b.len() {
+                    match b[i] {
+                        b'\\' => i += 1,
+                        b'"' => quotes += 1,
+                        b'/' if b[i + 1] == b'/' && quotes % 2 == 0 => return &l[..i],
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                l
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Whitespace runs folded to one space, so a needle does not depend on line breaks.
+    fn squash(s: &str) -> String {
+        s.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
     fn production_src() -> &'static str {
         let src = include_str!("spec.rs");
         &src[..src.find("mod capture_headroom_tests").unwrap()]
@@ -18455,32 +18487,8 @@ mod capture_headroom_tests {
     /// every caller of the charge passes the live graph-pool reading.
     #[test]
     fn the_graph_reserve_wiring_reads_the_live_pool() {
-        // Comments dropped (review round 3), as readiness_follows_the_boot_calibration_probe does:
-        // a needle in a comment must not stand in for the code.
-        // String-aware (review round 4): a `//` counts as a comment only after an even number of
-        // unescaped `"` on its line, so a `"//"` literal cannot hide the rest of a line of code.
-        let code = |s: &str| {
-            s.lines()
-                .map(|l| {
-                    let b = l.as_bytes();
-                    let (mut quotes, mut i) = (0usize, 0usize);
-                    while i + 1 < b.len() {
-                        match b[i] {
-                            b'\\' => i += 1,
-                            b'"' => quotes += 1,
-                            b'/' if b[i + 1] == b'/' && quotes % 2 == 0 => return &l[..i],
-                            _ => {}
-                        }
-                        i += 1;
-                    }
-                    l
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
         // The bracket's ends are comment banners, so they are found in the raw source.
         let src = production_src();
-        let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
         let open = src
             .find("let (cap_eff0, cap_meas0) = match e.ctx().mem_get_info() {")
             .expect("the bracket entry");
@@ -18550,12 +18558,36 @@ mod capture_headroom_tests {
                         .expect("the next block")],
         );
         assert_eq!(arms.matches("capture_peak").count(), 3, "{arms}");
+        // The other values both arms read are bound once from the bracket's entry to the next
+        // block (review round 7: a `capture_need` or `cap_used0` rebound in front of the arms
+        // passed every test), and the bootstrap is bound once too.
+        let whole = code(
+            &src[open..close
+                + src[close..]
+                    .find("---- REGIME GUARD")
+                    .expect("the next block")],
+        );
+        for name in ["capture_need", "cap_used0", "capture_bootstrap"] {
+            let bindings = whole.matches(&format!("let {name}")).count()
+                + whole.matches(&format!("let mut {name}")).count();
+            assert_eq!(bindings, 1, "{name}");
+        }
+        // And no assignment to a `let mut` one either: `capture_need` is bound, asked by the guard
+        // twice and passed to the failure arm; `cap_used0` is bound and read by the peak.
+        assert_eq!(whole.matches("capture_need").count(), 4, "capture_need");
+        assert_eq!(whole.matches("cap_used0").count(), 2, "cap_used0");
         // The guard asks with the live reading, falling back on the bootstrap estimate while no
-        // per-session part is measured (review round 6).
+        // per-session part is measured (review round 6), with the chain's head count (review
+        // round 7).
         assert!(squash(&code(src)).contains(
-            "let capture_need = self.draft_state.capture_appetite( \
-             e.device_graph_mem_reserved(), \
-             draft_capture_bootstrap_estimate("
+            "let capture_bootstrap = draft_capture_bootstrap_estimate( \
+             if chain_mode { self.mtp_head_count() } else { 1 }, \
+             d_vocab, \
+             n_embd, \
+             ); \
+             let capture_need = self \
+             .draft_state \
+             .capture_appetite(e.device_graph_mem_reserved(), capture_bootstrap);"
         ));
         // HybridModel's three wrappers (review round 3) delegate to the slot type, whose slots and
         // argument order the_draft_state_slots_keep_each_record_apart tests by behaviour.
@@ -18663,6 +18695,51 @@ mod capture_headroom_tests {
         assert_eq!(
             capture_oom_observation(17 * GB, Some(34 * MIB + 1), threshold).record,
             Some(34 * MIB + 1)
+        );
+    }
+
+    /// memra#1362 review round 7: the failed capture's threshold does not depend on what the pool
+    /// holds now. A landed capture that measured only a reserve (no per-session part) leaves the
+    /// threshold at the bootstrap estimate plus that reserve, with the pool holding it or trimmed;
+    /// the guard's own appetite moves with the pool, the threshold does not.
+    #[test]
+    fn a_failed_captures_threshold_holds_with_only_a_reserve_measured() {
+        use super::{DraftStateSlots, capture_oom_observation};
+        const MIB: usize = 1 << 20;
+        const GB: usize = 1 << 30;
+        let bootstrap = 64 * MIB;
+        let slots = DraftStateSlots::default();
+        slots.record_graph_reserve(32 * MIB);
+        // What the bracket passes the failure arm, from the live pool reading.
+        let threshold = |graph_now: usize| {
+            slots
+                .capture_appetite(graph_now, bootstrap)
+                .max(slots.capture_appetite(0, bootstrap))
+        };
+        for (graph_now, need) in [(32 * MIB, 64 * MIB), (20 * MIB, 76 * MIB), (0, 96 * MIB)] {
+            assert_eq!(slots.capture_appetite(graph_now, bootstrap), need);
+            assert_eq!(threshold(graph_now), 96 * MIB, "{graph_now}");
+            // A peak between the bootstrap and the bootstrap plus the reserve records nothing,
+            // held or trimmed; above it, it records in both.
+            let peak = 80 * MIB;
+            assert_eq!(
+                capture_oom_observation(17 * GB, Some(peak), threshold(graph_now)).record,
+                None
+            );
+            assert_eq!(
+                capture_oom_observation(17 * GB, Some(96 * MIB + 1), threshold(graph_now)).record,
+                Some(96 * MIB + 1)
+            );
+        }
+        // While the pool holds the reserve, the guard's appetite alone would record that peak.
+        assert_eq!(
+            capture_oom_observation(
+                17 * GB,
+                Some(80 * MIB),
+                slots.capture_appetite(32 * MIB, bootstrap)
+            )
+            .record,
+            Some(80 * MIB)
         );
     }
 
@@ -18841,14 +18918,15 @@ mod capture_headroom_tests {
         let at = src
             .find("FAILURE IS AN OBSERVATION TOO")
             .expect("the failure arm");
-        let end = &src[at..at + src[at..].find("---- REGIME GUARD").expect("the next block")];
-        // The low arm's threshold is the guard's appetite with the graph reserve owed in full
-        // (review of memra#1362, round 6).
-        let squashed = end.split_whitespace().collect::<Vec<_>>().join(" ");
+        // Read with comments dropped (review of memra#1362, round 7): a needle left in a comment
+        // above a changed call passed.
+        let end = code(&src[at..at + src[at..].find("---- REGIME GUARD").expect("the next block")]);
+        // The low arm's threshold is the guard's appetite with the graph reserve owed in full,
+        // whatever the pool holds (review of memra#1362, rounds 6 and 7).
         assert!(
-            squashed.contains(
+            squash(&end).contains(
                 "capture_oom_observation( entry_eff, capture_peak, \
-                 capture_need.max(self.draft_session_admission_bytes(0)), );"
+                 capture_need.max(self.draft_state.capture_appetite(0, capture_bootstrap)), );"
             ) && end.contains("if let Some(observed) = seen.record")
                 && end.contains("self.record_draft_state_bytes(observed)")
                 && !end.contains("record_draft_state_bytes(entry_eff)"),
@@ -18856,6 +18934,8 @@ mod capture_headroom_tests {
         );
         // Counted by name, whatever the receiver (`Engine::pool_high_water_reset(e)` included;
         // review of memra#1362, round 6): the entry reset and the one checked reading.
+        // Over the code, so a name in a comment cannot stand in for a removed call (round 7).
+        let src = code(src);
         assert_eq!(src.matches("pool_high_water_reset").count(), 2);
         assert_eq!(src.matches("pool_high_water_reset_checked").count(), 1);
         assert!(
