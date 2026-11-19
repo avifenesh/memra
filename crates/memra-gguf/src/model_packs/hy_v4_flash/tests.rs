@@ -1,6 +1,7 @@
 use super::*;
 use crate::config::HfConfig;
 use crate::model_plan::OperationKind;
+use crate::model_plan::{HyV4EngramMultiplierBound, HyV4EngramNormEpsilon};
 use crate::modelopt_quant::LayerQuantMap;
 use crate::safetensors::StInfo;
 use crate::source::census_from_safetensors_headers;
@@ -219,6 +220,9 @@ fn plan_is_typed_gated_mla_with_pooled_index_latent_moe_and_engram() {
                     moe.moe.activation,
                     ActivationPlan::SwiGluPreClamped { limit: 10.0 }
                 );
+                // The shared expert is the unclamped HYV4FlashMLP.
+                assert_eq!(moe.shared_activation, ActivationPlan::Silu);
+                assert_eq!(moe.moe.shared.as_ref().unwrap().intermediate_size, 1536);
             }
             other => panic!("layer {il}: {other:?}"),
         }
@@ -238,6 +242,18 @@ fn plan_is_typed_gated_mla_with_pooled_index_latent_moe_and_engram() {
             _ => None,
         };
         assert_eq!(engram, expected, "layer {il}");
+        if let Some(engram) = residual.engram {
+            assert_eq!(
+                engram.multiplier_bound,
+                HyV4EngramMultiplierBound::LookupTableMaxPlusOne
+            );
+            assert_eq!(engram.norm_epsilon, HyV4EngramNormEpsilon::InputDtype);
+            assert_eq!(
+                (engram.heads, engram.head_dim, engram.max_ngram),
+                (16, 96, 3)
+            );
+            assert_eq!(engram.lookup_table_size, 120_818);
+        }
         let StatePlan::HyV4(state) = layer.state else {
             panic!("layer {il} state")
         };
@@ -579,7 +595,24 @@ fn gate_and_up_keep_separate_scales() {
         Err(TensorContractError::Missing { .. })
     ));
 
-    // A map that declares the fused bank names a module the program does not have.
+    // A map that adds a fused bank beside gate and up names a module the program does not have.
+    let config = edited(|json| {
+        let layers = json["quantization_config"]["quantized_layers"]
+            .as_object_mut()
+            .unwrap();
+        let gate = layers["model.layers.4.mlp.experts.gate_proj"].clone();
+        layers.insert("model.layers.4.mlp.experts.gate_up_proj".into(), gate);
+    })
+    .unwrap();
+    match PACK.compile_plan(&config) {
+        Err(PlanCompileError::UnsupportedSemantics { value, .. }) => assert!(
+            value.contains("names model.layers.4.mlp.experts.gate_up_proj, which is not"),
+            "{value}"
+        ),
+        other => panic!("{other:?}"),
+    }
+
+    // A map that replaces gate and up by the fused bank leaves gate_proj unlisted.
     let error = edited(|json| {
         let layers = json["quantization_config"]["quantized_layers"]
             .as_object_mut()
@@ -595,7 +628,7 @@ fn gate_and_up_keep_separate_scales() {
     match error {
         Err(PlanCompileError::UnsupportedSemantics { value, .. }) => {
             assert!(
-                value.contains("gate_proj") || value.contains("gate_up_proj"),
+                value.starts_with("model.layers.4.mlp.experts.gate_proj is neither"),
                 "{value}"
             )
         }
@@ -636,7 +669,8 @@ fn the_engram_layer_id_is_one_based() {
         .unwrap()
     };
     // Read 0-based ([1, 11, 21, 31]): the memory lands on layers 0/10/20/30 and seeds with id 1.
-    // Layer 0 is wholly excluded from the quant map, so the plan refuses the table there.
+    // With the artifact's map, layer 0's `model.layers.0.*` exclusion also covers the table,
+    // so the plan refuses it.
     let early = shifted(-1);
     let hy = early.hy_v4_flash.as_ref().unwrap();
     assert_eq!(hy.engram_slot(0), Some(0));
@@ -651,6 +685,44 @@ fn the_engram_layer_id_is_one_based() {
         }
         other => panic!("{other:?}"),
     }
+    // Without that wildcard (layer 0's attention excluded by name) the plan compiles, and the
+    // real headers refuse the table on layer 0.
+    let narrowed = |json: &mut Value| {
+        let ignore = json["quantization_config"]["ignore"]
+            .as_array_mut()
+            .unwrap();
+        let at = ignore.iter().position(|p| p == "model.layers.0.*").unwrap();
+        ignore[at] = Value::from("model.layers.0.self_attn.*");
+    };
+    let early = edited(|json| {
+        narrowed(json);
+        let t = text(json);
+        t.insert(
+            "engram_layer_ids".into(),
+            serde_json::json!([1, 11, 21, 31]),
+        );
+        let sizes = t["engram_layer_head_vocab_sizes"]
+            .as_object()
+            .unwrap()
+            .clone();
+        let moved: serde_json::Map<String, Value> = sizes
+            .into_iter()
+            .map(|(k, v)| ((k.parse::<i64>().unwrap() - 1).to_string(), v))
+            .collect();
+        t.insert("engram_layer_head_vocab_sizes".into(), Value::Object(moved));
+    })
+    .unwrap();
+    let (artifact, _, _) = pinned_census();
+    match contract_for(&early).bind(&entries(&artifact)) {
+        Err(TensorContractError::Missing { accepted_names, .. }) => assert!(
+            accepted_names[0].starts_with("model.layers.0.engram_layer."),
+            "{accepted_names:?}"
+        ),
+        other => panic!("{other:?}"),
+    }
+    // The narrowed map alone (true ids) still binds: the refusal is the index, not the map.
+    let control = edited(narrowed).unwrap();
+    contract_for(&control).bind(&entries(&artifact)).unwrap();
     // One layer late ([3, 13, 23, 33]): the plan compiles and the real headers refuse it.
     let late = shifted(1);
     let plan = PACK.compile_plan(&late).unwrap();
@@ -759,4 +831,88 @@ fn switches_of_another_program_refuse_by_name() {
         }
         other => panic!("{other:?}"),
     }
+}
+
+/// The map's FP8 blocks are 128x128 and layer 0's dense MLP is BF16; a map that says otherwise
+/// refuses the config rather than compiling a plan that reads another format.
+#[test]
+fn the_quant_map_cannot_move_a_module_to_another_format() {
+    let config = edited(|json| {
+        json["quantization_config"]["quantized_layers"]["model.layers.5.self_attn.o_proj"]
+            ["group_size"] = Value::from(64);
+    })
+    .unwrap();
+    match PACK.compile_plan(&config) {
+        Err(PlanCompileError::UnsupportedSemantics { value, .. }) => {
+            assert!(value.contains("FP8_PB_WO group_size 64"), "{value}")
+        }
+        other => panic!("{other:?}"),
+    }
+    let config = edited(|json| {
+        let ignore = json["quantization_config"]["ignore"]
+            .as_array_mut()
+            .unwrap();
+        let at = ignore.iter().position(|p| p == "model.layers.0.*").unwrap();
+        ignore[at] = Value::from("model.layers.0.self_attn.*");
+        json["quantization_config"]["quantized_layers"]
+            .as_object_mut()
+            .unwrap()
+            .insert(
+                "model.layers.0.mlp.gate_proj".into(),
+                serde_json::json!({"quant_algo": "W4A16_NVFP4", "group_size": 16}),
+            );
+    })
+    .unwrap();
+    match PACK.compile_plan(&config) {
+        Err(PlanCompileError::UnsupportedSemantics { value, .. }) => assert!(
+            value.contains("model.layers.0.mlp.gate_proj is W4A16_NVFP4"),
+            "{value}"
+        ),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// Source readers check the artifact's `hf_quant_config.json` against the config's map: it
+/// must be present, strictly valid JSON and the same map.
+#[test]
+fn hf_quant_config_must_match_the_config_map() {
+    let config = config();
+    let map = config.per_layer_quant_map().unwrap();
+    map.check_hf_quant_config(Some(HF_QUANT_CONFIG)).unwrap();
+    assert!(
+        map.check_hf_quant_config(None)
+            .unwrap_err()
+            .contains("absent")
+    );
+    let mut file: Value = serde_json::from_str(HF_QUANT_CONFIG).unwrap();
+    file["quantization"]["quantized_layers"]["model.layers.1.self_attn.o_proj"] =
+        serde_json::json!({"quant_algo": "W4A16_NVFP4", "group_size": 16});
+    let regrouped = file.to_string();
+    let error = map.check_hf_quant_config(Some(&regrouped)).unwrap_err();
+    assert!(error.contains("model.layers.1.self_attn.o_proj"), "{error}");
+    let duplicated = HF_QUANT_CONFIG.replacen(
+        r#""quant_algo": "MIXED_PRECISION","#,
+        r#""quant_algo": "MIXED_PRECISION", "quant_algo": "MIXED_PRECISION","#,
+        1,
+    );
+    assert_ne!(duplicated, HF_QUANT_CONFIG, "fixture spelling");
+    assert!(map.check_hf_quant_config(Some(&duplicated)).is_err());
+}
+
+/// `o_lora_rank: null` means "no output LoRA" only for hy_v4_flash; another family that reads
+/// the key keeps refusing a null as a parse error.
+#[test]
+fn a_null_low_rank_is_read_as_absent_only_here() {
+    let mut json: Value = serde_json::from_str(CONFIG).unwrap();
+    assert!(json["text_config"]["o_lora_rank"].is_null());
+    assert!(json["text_config"]["gate_lora_rank"].is_null());
+    config();
+    text(&mut json).insert("o_lora_rank".into(), Value::from(64));
+    let error = HfConfig::try_parse(&json.to_string()).unwrap_err();
+    assert!(error.contains("o_lora_rank"), "{error}");
+    let mut v41: Value =
+        serde_json::from_str(include_str!("../deepseek_v41/fixtures/config.json")).unwrap();
+    v41["o_lora_rank"] = Value::Null;
+    let error = HfConfig::try_parse(&v41.to_string()).unwrap_err();
+    assert!(error.contains("o_lora_rank must be a non-null"), "{error}");
 }

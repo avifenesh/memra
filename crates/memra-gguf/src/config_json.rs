@@ -47,9 +47,6 @@ impl<'a> ConfigObject<'a> {
                         | "linear_attn_config"
                         | "mtp"
                         | "attention_other_setting"
-                        // hy_v4_flash writes null for "no low-rank output / gate projection".
-                        | "o_lora_rank"
-                        | "gate_lora_rank"
                 ) =>
             {
                 Ok(None)
@@ -199,6 +196,11 @@ impl<'a> ConfigObject<'a> {
         Ok(self
             .string_array(key)?
             .and_then(|values| values.into_iter().next()))
+    }
+    /// True when `key` is present with an explicit JSON null (hy_v4_flash writes null for "no
+    /// low-rank output / gate projection"; other families keep refusing a null there).
+    pub(super) fn is_null(&self, key: &str) -> bool {
+        matches!(self.object.get(key), Some(Value::Null))
     }
     /// An array of arrays of unsigned integers (hy_v4_flash `engram_layer_head_vocab_sizes`).
     pub(super) fn u64_matrix(&self, key: &str) -> Result<Option<Vec<Vec<u64>>>> {

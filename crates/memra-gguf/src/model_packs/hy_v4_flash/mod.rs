@@ -30,10 +30,10 @@ use crate::config::{HyV4FlashConfig, HyV4LayerKind};
 use crate::dsv4::TensorSpec;
 use crate::model_plan::{
     ActivationPlan, AttentionPlan, DenseMlpPlan, DraftSourcePlan, HyV4AttentionKind,
-    HyV4AttentionPlan, HyV4EngramPlan, HyV4FlashNumerics, HyV4ResidualPlan, HyV4StatePlan,
-    HyV4WeightFormat, IndexPoolPlan, LatentMoePlan, LayerPlan, MlpPlan, MoeMlpPlan, NormKind,
-    NormPlan, ResidualTopology, RopeFactors, RopePlan, RouterPlan, SharedMlpPlan, StatePlan,
-    TensorPresence, WeightTransform,
+    HyV4AttentionPlan, HyV4EngramMultiplierBound, HyV4EngramNormEpsilon, HyV4EngramPlan,
+    HyV4FlashNumerics, HyV4ResidualPlan, HyV4StatePlan, HyV4WeightFormat, IndexPoolPlan,
+    LatentMoePlan, LayerPlan, MlpPlan, MoeMlpPlan, NormKind, NormPlan, ResidualTopology,
+    RopeFactors, RopePlan, RouterPlan, SharedMlpPlan, StatePlan, TensorPresence, WeightTransform,
 };
 use crate::modelopt_quant::{LayerQuant, ModeloptAlgo};
 use crate::tensor_contract::{
@@ -249,6 +249,8 @@ fn layer_plan(
                 // +-limit, then silu(gate) * up.
                 activation,
             },
+            // transformers `HYV4FlashMoE.shared_experts` is the plain `HYV4FlashMLP`: no clamp.
+            shared_activation: ActivationPlan::Silu,
         })
     };
     let engram = hy.engram_slot(il).map(|slot| HyV4EngramPlan {
@@ -259,6 +261,8 @@ fn layer_plan(
         head_dim: hy.engram_head_dim(),
         table_rows: hy.engram_table_rows(slot),
         lookup_table_size: hy.engram_lookup_table_size,
+        multiplier_bound: HyV4EngramMultiplierBound::LookupTableMaxPlusOne,
+        norm_epsilon: HyV4EngramNormEpsilon::InputDtype,
         pad_token_id: hy.engram_pad_id,
         table_fp8_per_row: true,
     });
@@ -379,9 +383,11 @@ pub fn expected_census(hy: &HyV4FlashConfig) -> Result<BTreeMap<String, TensorSp
         let m = format!("{p}mlp.");
         if hy.dense_layers[il as usize] {
             let inter = u64::from(hy.intermediate_size);
-            census.linear(&format!("{m}gate_proj"), inter, h)?;
-            census.linear(&format!("{m}up_proj"), inter, h)?;
-            census.linear(&format!("{m}down_proj"), h, inter)?;
+            // The plan's dense MLP carries no weight format: it is BF16, and a map that
+            // quantizes it refuses.
+            census.bf16_linear(&format!("{m}gate_proj"), inter, h)?;
+            census.bf16_linear(&format!("{m}up_proj"), inter, h)?;
+            census.bf16_linear(&format!("{m}down_proj"), h, inter)?;
             census.put(&format!("{m}post_fc2_norm.weight"), "BF16", vec![h]);
         } else {
             let experts = u64::from(hy.n_routed_experts);
@@ -620,6 +626,14 @@ impl Census<'_> {
                 algo: ModeloptAlgo::Fp8PbWo,
                 group_size,
             }) => {
+                // The census labels every `weight_scale_inv` grid as 128x128 blocks, and the
+                // contract binds it as `Fp8Block128`; another group size is another program.
+                if group_size != 128 {
+                    return Err(format!(
+                        "{module}: FP8_PB_WO group_size {group_size}; this program's FP8 \
+                         blocks are 128x128"
+                    ));
+                }
                 let g = u64::from(group_size);
                 self.put(&format!("{module}.weight"), "F8_E4M3", vec![out, input]);
                 self.put(

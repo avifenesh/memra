@@ -100,8 +100,9 @@ pub struct HyV4FlashConfig {
     pub engram_pad_id: u32,
     pub engram_seed: u64,
     pub engram_fp8_embedding: bool,
-    /// transformers `engram_lookup_table_size`: not in the artifact's config, so the
-    /// configuration class default (120818) applies; the census checks the tensor's shape.
+    /// transformers `engram_lookup_table_size`, read when declared. The pinned artifact's config
+    /// does not declare it, so the configuration class default (120818) applies; the census
+    /// checks the tensor's shape against it.
     pub engram_lookup_table_size: u32,
     pub tie_word_embeddings: bool,
     pub quant: LayerQuantMap,
@@ -296,14 +297,19 @@ impl HyV4FlashConfig {
             true,
             "the engram rows are read through a per-row FP8 quantization",
         )?;
-        if let Some(rank) = text.u32("o_lora_rank")? {
+        // The artifact writes null for both: no low-rank projection. A number is another program.
+        if !text.is_null("o_lora_rank")
+            && let Some(rank) = text.u32("o_lora_rank")?
+        {
             return Err(refuse(
                 "o_lora_rank",
                 &rank,
                 "no output LoRA in this program",
             ));
         }
-        if let Some(rank) = text.u32("gate_lora_rank")? {
+        if !text.is_null("gate_lora_rank")
+            && let Some(rank) = text.u32("gate_lora_rank")?
+        {
             return Err(refuse(
                 "gate_lora_rank",
                 &rank,
@@ -437,7 +443,21 @@ impl HyV4FlashConfig {
             qk_nope_head_dim: u("qk_nope_head_dim")?,
             qk_rope_head_dim: qk_rope,
             v_head_dim: u("v_head_dim")?,
-            rope_theta: rope_theta("deepseek_sparse_attention", qk_rope)?,
+            // The artifact's spelling, or transformers' canonical one: exactly one must be there.
+            rope_theta: match (
+                rope.object("deepseek_sparse_attention")?.is_some(),
+                rope.object("indexed_attention")?.is_some(),
+            ) {
+                (true, false) => rope_theta("deepseek_sparse_attention", qk_rope)?,
+                (false, true) => rope_theta("indexed_attention", qk_rope)?,
+                both => {
+                    return Err(refuse(
+                        "rope_parameters.deepseek_sparse_attention/indexed_attention",
+                        &both,
+                        "exactly one parameter set for the indexed layers",
+                    ));
+                }
+            },
         };
         let sliding = HyV4HeadGeometry {
             heads: u("swa_num_attention_heads")?,
@@ -556,8 +576,12 @@ impl HyV4FlashConfig {
             }
             engram_head_vocab_sizes.push(orders.into_iter().flatten().collect());
         }
+        // Declared values win; absent, the configuration class default applies.
+        let engram_lookup_table_size = text
+            .u32("engram_lookup_table_size")?
+            .unwrap_or(ENGRAM_LOOKUP_TABLE_SIZE);
         let engram_pad_id = u("engram_pad_id")?;
-        if engram_pad_id >= ENGRAM_LOOKUP_TABLE_SIZE {
+        if engram_pad_id >= engram_lookup_table_size {
             return Err(refuse(
                 "engram_pad_id",
                 &engram_pad_id,
@@ -685,7 +709,7 @@ impl HyV4FlashConfig {
                 .u64("engram_seed")?
                 .ok_or_else(|| missing("engram_seed"))?,
             engram_fp8_embedding: b("engram_fp8_embedding")?,
-            engram_lookup_table_size: ENGRAM_LOOKUP_TABLE_SIZE,
+            engram_lookup_table_size,
             tie_word_embeddings: tie,
             quant,
             vision,

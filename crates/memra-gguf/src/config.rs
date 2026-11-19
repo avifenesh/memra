@@ -1925,6 +1925,12 @@ fn qwen3next_expert_alias_warning(raw_arch: &str, moe: Option<&MoeConfig>) -> Op
 }
 
 impl ModelConfig {
+    /// The per-layer ModelOpt map the config carries (hy_v4_flash), which a source reader checks
+    /// against the artifact's `hf_quant_config.json`. `None` for every config without one.
+    pub fn per_layer_quant_map(&self) -> Option<&crate::modelopt_quant::LayerQuantMap> {
+        self.hy_v4_flash.as_ref().map(|hy| &hy.quant)
+    }
+
     #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     pub fn from_gguf(g: &GgufFile) -> Self {
         let raw_arch = g.arch().unwrap_or("unknown");
@@ -4837,7 +4843,10 @@ impl HfConfig {
         if let Some(v) = o.u32("qk_rope_head_dim")? {
             self.qk_rope_head_dim = Some(v);
         }
-        if let Some(v) = o.u32("o_lora_rank")? {
+        // hy_v4_flash writes null (no output LoRA); its own parser reads the key.
+        if Arch::from_hf_model_type(&self.model_type) != Arch::HyV4Flash
+            && let Some(v) = o.u32("o_lora_rank")?
+        {
             self.o_lora_rank = Some(v);
         }
         if let Some(v) = o.u32("o_groups")? {

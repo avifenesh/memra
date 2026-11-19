@@ -182,7 +182,7 @@ memra model inspect Avifenesh/Hy4-flash-NVFP4@f9eac06cf022cfd3dc2e8ed423922466b2
 
 `inspect/artifact.lock`: `config_sha256=c88f950d8050...` (the `config.json` bytes, also the pack
 fixture), `census_sha256=406b097584513b88...` (`inspect/tensor-census.tsv.gz` unpacks to the
-hashed text), `plan_sha256=02d5ff9e03b8552a...`, `binding=passed`, `tokenizer=passed`
+hashed text), `plan_sha256=a5c4fdf4264eb087...`, `binding=passed`, `tokenizer=passed`
 (`dialect=artifact`: the template hash only; the hy_v4 dialect and its parity are the next step).
 
 The census has 2,005 rows: each quantized weight row carries its scale planes (424 of the 2,429
@@ -204,23 +204,31 @@ header tensors).
   a fine indexer pass, an output or gate LoRA, an isolated U+FFFD namespace, a window other than
   `sliding_window - 1` back) or a missing field. `layer_types` and `swa_pattern` must agree, the
   indexer aliases must equal the canonical `index_*` fields, and the drafter's target layers must
-  be indexed layers. `engram_lookup_table_size` is not in the artifact's config; the configuration
-  class default (120818) applies and the census checks the tensor's shape against it.
+  be indexed layers. `engram_lookup_table_size` is read when declared; the artifact's config does
+  not declare it, so the configuration class default (120818) applies and the census checks the
+  tensor's shape against it. `o_lora_rank: null` and `gate_lora_rank: null` read as absent for
+  this family only.
 - `modelopt_quant` reads the per-layer ModelOpt map from `hf_quant_config.json` and from
-  `config.json`'s `quantization_config`; the pack test checks the two copies give the same map.
-  Only `W4A16_NVFP4` and `FP8_PB_WO` are accepted. The census is derived from that map: a
-  quantizable module the map neither quantizes nor excludes, a map entry no module consumes, or a
-  BF16-only module the map quantizes refuses the config.
+  `config.json`'s `quantization_config`, both through the strict JSON decoder (a key listed twice
+  refuses). The pack compiles from the `config.json` copy; `memra model inspect` (local and remote
+  sources) refuses unless the artifact's `hf_quant_config.json` is present and is the same map.
+  Only `W4A16_NVFP4` (group 16) and `FP8_PB_WO` (group 128) are accepted. The census is derived
+  from the map: a quantizable module the map neither quantizes nor excludes, a map entry no module
+  consumes, or a module the plan keeps BF16 (layer 0's dense MLP included) that the map quantizes
+  refuses the config.
 - The plan: `AttentionPlan::HyV4` (gated MLA, indexed with an `IndexPoolPlan` or sliding with its
   window, head geometry per layer type), `MlpPlan::LatentMoe` (dense SwiGLU on layer 0),
+  whose routed experts run pre-clamped SwiGLU and whose shared expert runs plain SwiGLU,
   `ResidualTopology::HyV4` (independent hyper-connections, the MLP output norm, Engram on the
-  layer `id - 1`, seeded with the 1-based id), `StatePlan::HyV4`, and `ModelPlan::hy_v4_flash`
+  layer `id - 1`, seeded with the 1-based id, multipliers bounded by `max(lookup_table) + 1`, norm
+  epsilon from the input dtype), `StatePlan::HyV4`, and `ModelPlan::hy_v4_flash`
   (stream copy, `hc_head` exit, F32 head). Nine new `OperationKind`s, all registry rows with no
   surface; `ModelPlan::compile`, the reference executor, the hybrid engine and the generic
   parallel loader refuse the family by name.
 - The census: the safetensors reader now labels an FP8 weight with one F32 `weight_scale` per row
   as block `[1, in]` (`QuantConstraint::Fp8RowF32`) instead of the 128x128 default, and reads a
-  standalone I32 tensor (`QuantConstraint::I32`). Every other family's census is unchanged.
+  standalone I32 tensor (`QuantConstraint::I32`), which binds only through an explicit `I32`
+  requirement, never as a canonical weight. Every other family's census is unchanged.
 - The DFly2 drafter and the vision tower are contract-owned and not in the text plan. The DFly2
   MLP width (9,216) is not in the config; the vendor runtime takes it from the checkpoint, so the
   pack pins it as a constant that the census checks.
@@ -236,9 +244,14 @@ by `census_classes.py` from `census/header-census.tsv`, which it must expand bac
 - the census gate: all 2,429 tensors derived with names, dtypes and shapes, every header byte in
   one census row, the contract binds, the loader boundary (`bind_census`) accepts it;
 - negative: up's `weight_scale_2` removed (auxiliary mismatch), one fused `gate_up_proj` bank
-  (missing tensors), a map that names the fused bank (config refusal);
-- negative: the Engram ids read 0-based (refused at the plan) or one layer late (the real headers
-  refuse the contract), and the size table keyed by the shifted ids (refused by name);
+  (missing tensors), a map that adds a fused bank beside gate and up (names a module the program
+  lacks) or replaces them by it (gate unlisted);
+- negative: the Engram ids read 0-based (refused at the plan through layer 0's exclusion
+  wildcard, and, with that wildcard narrowed, refused by the real headers while the narrowed map
+  alone binds) or one layer late (the real headers refuse it), and shifted ids against the true
+  size table (refused by name);
+- negative: an FP8 group other than 128, a quantized layer-0 dense MLP, an `hf_quant_config.json`
+  that is absent, differs on one module or repeats a key;
 - negative: one head count for both layer types (shape mismatch on the real headers), and a
   `swa_pattern` that contradicts `layer_types`;
 - every program switch above refuses by name.

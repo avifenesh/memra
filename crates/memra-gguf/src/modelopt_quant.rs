@@ -57,8 +57,9 @@ pub struct LayerQuantMap {
 impl LayerQuantMap {
     /// Parse `hf_quant_config.json`.
     pub fn from_hf_quant_config(json: &str) -> Result<Self, String> {
-        let root: Value = serde_json::from_str(json)
-            .map_err(|e| format!("hf_quant_config.json is not JSON: {e}"))?;
+        // Strict decode: a key listed twice is refused, not resolved last-wins.
+        let root = crate::strict_json::parse_object(json)
+            .map_err(|e| format!("hf_quant_config.json: {e}"))?;
         let quant = root
             .get("quantization")
             .and_then(Value::as_object)
@@ -167,6 +168,35 @@ impl LayerQuantMap {
             ));
         }
         Ok(map)
+    }
+
+    /// Check an artifact's `hf_quant_config.json` against this map (read from `config.json`):
+    /// the file must exist and describe the same per-module map. `None` means the file is absent.
+    pub fn check_hf_quant_config(&self, hf_quant_config: Option<&str>) -> Result<(), String> {
+        let json = hf_quant_config.ok_or(
+            "hf_quant_config.json is absent; the per-layer ModelOpt map ships in both files",
+        )?;
+        let file = Self::from_hf_quant_config(json)?;
+        if file.excluded != self.excluded {
+            return Err(format!(
+                "hf_quant_config.json exclude_modules {:?} != config.json quantization_config.ignore {:?}",
+                file.excluded, self.excluded
+            ));
+        }
+        let differing: Vec<&String> = file
+            .layers
+            .keys()
+            .chain(self.layers.keys())
+            .filter(|module| file.layers.get(*module) != self.layers.get(*module))
+            .collect();
+        if let Some(module) = differing.first() {
+            return Err(format!(
+                "hf_quant_config.json and config.json disagree on {module}: {:?} vs {:?}",
+                file.layers.get(*module),
+                self.layers.get(*module)
+            ));
+        }
+        Ok(())
     }
 
     /// The algorithm a module was quantized with, if any.
