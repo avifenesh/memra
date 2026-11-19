@@ -138,7 +138,7 @@ def boot(cell, arm, binary, n):
         return m.group(0).strip() if m else None
 
     floor = first(r"transient floor \d+Mi?B \(static[^\]]*\]")
-    measured = re.search(r"measured (\d+)MB", floor or "")
+    measured = re.search(r"measured (\d+)Mi?B", floor or "")
     measured = int(measured.group(1)) if measured else None
     trims = [(why, json.loads(j)) for why, j in re.findall(r"\[device-trim\] reason=(\S+) (\{[^\n]*\})", text)]
     panics = [l.strip()[:300] for l in lines if "panicked at" in l or "PANIC in the GPU worker" in l]
