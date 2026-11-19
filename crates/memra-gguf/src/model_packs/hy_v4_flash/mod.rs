@@ -49,7 +49,7 @@ const FAMILY: &str = "hy_v4_flash";
 pub const DFLY_FFN_WIDTH: u64 = 9216;
 
 pub static PACK: ModelPack = ModelPack {
-    family: FAMILY,
+    family: "hy_v4_flash",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
     aliases: &["hy_v4_flash", "hy-v4-flash", "hy4-flash"],
