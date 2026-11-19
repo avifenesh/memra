@@ -667,9 +667,13 @@ pub(crate) fn raise_high_water(
 /// memory, so a draft capture while another graph's memory sits in the pool (the prime graph on
 /// the 5090) grows the pool by less than the draft's own reserve, or by nothing. After the prime
 /// teardown's trim the draft relaunch then maps memory admission does not charge. This is
-/// accepted too: the under-charge is at most the draft's standalone reserve (32 MiB on GB10's MTP
-/// serving), and it corrects itself, since the first capture on a trimmed pool grows it by the
-/// whole reserve and the high-water keeps it.
+/// accepted too: the under-charge is at most one standalone reserve (32 MiB on GB10's MTP serving)
+/// across all sessions, which share it. It does not arise when the boot calibration probe
+/// captures on an empty pool, the usual case. Otherwise only a capture on a pool without the
+/// reused memory corrects it: the boot probe's, or a respawned worker's first capture after PR
+/// #1363's trim. Steady serving does not (review of memra#1362, round 4): after the prime
+/// teardown's trim the draft relaunch maps the existing draft graphs before any new capture, so a
+/// later capture finds the reserve held and grows the pool by nothing.
 pub(crate) fn draft_state_charge(per_session: usize, reserve_hw: usize, graph_now: usize) -> usize {
     per_session.saturating_add(reserve_hw.saturating_sub(graph_now))
 }
@@ -18448,9 +18452,24 @@ mod capture_headroom_tests {
     fn the_graph_reserve_wiring_reads_the_live_pool() {
         // Comments dropped (review round 3), as readiness_follows_the_boot_calibration_probe does:
         // a needle in a comment must not stand in for the code.
+        // String-aware (review round 4): a `//` counts as a comment only after an even number of
+        // unescaped `"` on its line, so a `"//"` literal cannot hide the rest of a line of code.
         let code = |s: &str| {
             s.lines()
-                .map(|l| l.split("//").next().unwrap_or(""))
+                .map(|l| {
+                    let b = l.as_bytes();
+                    let (mut quotes, mut i) = (0usize, 0usize);
+                    while i + 1 < b.len() {
+                        match b[i] {
+                            b'\\' => i += 1,
+                            b'"' => quotes += 1,
+                            b'/' if b[i + 1] == b'/' && quotes % 2 == 0 => return &l[..i],
+                            _ => {}
+                        }
+                        i += 1;
+                    }
+                    l
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         };
@@ -18488,13 +18507,17 @@ mod capture_headroom_tests {
                         .expect("next")],
         ));
         for needle in [
-            "let graph1 = e.device_graph_mem_reserved();",
-            "let graph_growth = graph1.saturating_sub(cap_graph0);",
-            // Every landed capture records its growth, unconditionally (review round 3: a
-            // first-capture-only guard in front of the record is not this statement).
-            "let (observed, _) = split_draft_state(parked_delta, peak_delta, graph_growth); \
+            // One run of statements (review round 4): nothing between the end reading, the
+            // growth, the split and the record can rebind either of them (n6 folded `graph1`
+            // back into the growth). Every landed capture records its growth, unconditionally
+            // (review round 3: a first-capture-only guard in front of the record is not this).
+            "let graph1 = e.device_graph_mem_reserved(); \
+             let graph_growth = graph1.saturating_sub(cap_graph0); \
+             let (observed, _) = split_draft_state(parked_delta, peak_delta, graph_growth); \
              if let Some(hw) = self.record_draft_graph_reserve(graph_growth) {",
-            "self.record_draft_state_bytes(observed)",
+            // Adjacent to its one guard (review round 4): no extra condition, such as a
+            // first-capture-only `graph_growth == 0`, in front of the per-session record.
+            "if observed > 0 && let Some(hw) = self.record_draft_state_bytes(observed) {",
         ] {
             assert!(end.contains(needle), "{needle}: {end}");
         }
