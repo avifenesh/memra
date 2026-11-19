@@ -36,3 +36,7 @@ path = "src/bin/tok_parity.rs"
 [[bin]]
 name = "tok-mimo-template-gate"
 path = "src/bin/tok_mimo_template_gate.rs"
+
+[dev-dependencies]
+# hy4_chat fixtures: tool objects must keep their key order (the template renders them in order).
+serde_json = { version = "1", features = ["preserve_order"] }
