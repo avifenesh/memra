@@ -172,7 +172,9 @@ fn shared_format(
     Ok(weight_format(hy.quant.get(&modules[0])))
 }
 
-fn layer_plan(
+/// One trunk layer's typed plan. Public so the reference executor's module gates compile
+/// their tiny layers through the same code as the pack.
+pub fn layer_plan(
     hy: &HyV4FlashConfig,
     il: u32,
     norm: NormPlan,

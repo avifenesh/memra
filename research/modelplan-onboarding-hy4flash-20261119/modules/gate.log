@@ -1,0 +1,50 @@
+   Compiling memra-reference v0.141.1 (<checkout>/crates/memra-reference)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.73s
+     Running tests/hy_v4_flash_modules.rs (<target>/debug/deps/hy_v4_flash_modules-67be4bcd176b451e)
+
+running 5 tests
+test attention_matches_on_indexed_and_sliding_layers ... layer 0 attention: max_abs 1.3877787807814457e-15 (scale 2.316)
+layer 1 attention: max_abs 7.771561172376096e-16 (scale 2.253)
+layer 2 attention: max_abs 1.1102230246251565e-15 (scale 2.791)
+layer 3 attention: max_abs 1.1102230246251565e-15 (scale 2.309)
+ok
+test decoder_layers_and_the_stack_match ... layer 0: max_abs 2.1094237467877974e-15 (scale 4.196)
+layer 1: max_abs 2.9976021664879227e-15 (scale 5.446)
+layer 2: max_abs 3.774758283725532e-15 (scale 7.003)
+layer 3: max_abs 2.220446049250313e-15 (scale 10.156)
+last hidden state: max_abs 6.827871601444713e-15 (scale 2.831)
+ok
+test hyper_connections_and_norms_match ... layer 0 attn_hc post: max_abs 2.220446049250313e-16 (scale 1.254)
+layer 0 attn_hc read: max_abs 2.220446049250313e-16 (scale 2.019)
+layer 0 ffn_hc post: max_abs 2.220446049250313e-16 (scale 1.331)
+layer 0 ffn_hc read: max_abs 8.881784197001252e-16 (scale 7.945)
+layer 0 input_layernorm: max_abs 8.881784197001252e-16 (scale 3.109)
+layer 0 post_attention_layernorm: max_abs 8.881784197001252e-16 (scale 2.989)
+layer 1 attn_hc post: max_abs 4.440892098500626e-16 (scale 1.708)
+layer 1 attn_hc read: max_abs 0e0 (scale 6.182)
+layer 1 ffn_hc post: max_abs 2.220446049250313e-16 (scale 1.169)
+layer 1 ffn_hc read: max_abs 8.881784197001252e-16 (scale 6.824)
+layer 1 input_layernorm: max_abs 4.440892098500626e-16 (scale 2.680)
+layer 1 post_attention_layernorm: max_abs 8.881784197001252e-16 (scale 2.454)
+layer 2 attn_hc post: max_abs 3.3306690738754696e-16 (scale 1.683)
+layer 2 attn_hc read: max_abs 1.7763568394002505e-15 (scale 10.731)
+layer 2 ffn_hc post: max_abs 2.7755575615628914e-16 (scale 1.891)
+layer 2 ffn_hc read: max_abs 1.7763568394002505e-15 (scale 12.618)
+layer 2 input_layernorm: max_abs 8.881784197001252e-16 (scale 2.751)
+layer 2 post_attention_layernorm: max_abs 0e0 (scale 3.001)
+layer 3 attn_hc post: max_abs 2.220446049250313e-16 (scale 1.186)
+layer 3 attn_hc read: max_abs 1.7763568394002505e-15 (scale 12.307)
+layer 3 ffn_hc post: max_abs 1.1102230246251565e-16 (scale 1.301)
+layer 3 ffn_hc read: max_abs 8.881784197001252e-16 (scale 13.087)
+layer 3 input_layernorm: max_abs 4.440892098500626e-16 (scale 2.555)
+layer 3 post_attention_layernorm: max_abs 8.881784197001252e-16 (scale 2.547)
+hc_head: max_abs 1.7763568394002505e-15 (scale 12.692)
+ok
+test latent_moe_matches ... layer 1 MoE: max_abs 8.881784197001252e-16 (scale 2.720)
+layer 2 MoE: max_abs 1.1934897514720433e-15 (scale 2.439)
+layer 3 MoE: max_abs 8.881784197001252e-16 (scale 3.107)
+ok
+test the_bound_tells_programs_apart ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+
