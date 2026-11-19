@@ -1945,7 +1945,7 @@ fn schedules(ops: &Ops, rep: &mut Report) -> Result<(), String> {
             let name = if rows == 3 {
                 "schedule/moe_plan/out_of_range_id".to_string()
             } else {
-                format!("schedule/moe_plan/out_of_range_id_rows{rows}")
+                format!("schedule/moe_plan/out_of_range_id_rows{rows}{nt}")
             };
             rep.raw(
                 &name,
