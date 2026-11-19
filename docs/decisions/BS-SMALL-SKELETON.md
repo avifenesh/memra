@@ -97,7 +97,7 @@ the ascending K order.
 No GPU was available for this change. The proof is the compiled code: `cu/dsv41_gpu.cu` and
 `cu/dsv41_cutlass.cu` with build.rs's flags (nvcc 13.1, `-O3 -std=c++17 --expt-relaxed-constexpr`, `-fmad=false`
 for the first, the vendored CUTLASS includes for the second) for sm_120a and sm_121a, before (`801243f06e`, the
-head of #1337) and after; `cuobjdump -sass` and `-res-usage` of each object; each kernel's SASS body (every
+head of #1337; `17c6b4fd75` since the rebase below) and after; `cuobjdump -sass` and `-res-usage` of each object; each kernel's SASS body (every
 instruction and encoding) and its resource line compared, kernel for kernel, after masking nvcc's
 directory-derived internal-linkage prefixes (the kernel-object method of the V4.1 record's
 `perf/receipts/cfix-pro6000/kcmp/`) and mapping each moved kernel's new name to its old one. Result: 104 of 104
@@ -105,6 +105,13 @@ kernels of `dsv41_gpu.cu` and 9 of 9 of `dsv41_cutlass.cu` equal on each arch (2
 + 25 moved, 8 + 8 CUTLASS kernels unmoved and 1 + 1 setup kernel moved). The other build arches compile
 `dsv41_gpu.cu` too (the CUTLASS unit is its stub there): 104 of 104 equal on each of sm_89, sm_90a and sm_100a.
 Receipts: `research/bs-small-skeleton-20261118/`.
+
+Rebased on 2026-11-19 onto `17c6b4fd75` (#1337 rebased onto main), the skeleton's plan carries memra#1315's row
+map as main has it: `bs_row_bad` and the `rows_bad`, `row0`, `rows_cap` arguments on the count kernel, the
+one-block plan kernel and `bs::moe_plan_launch`, with the argument check in the route's wrapper. Against the new
+base the result is again 104 of 104 and 9 of 9 on each arch; the two plan kernels memra#1315 changed differ
+between the old and the new base and between the old and the rebased head with the same digests, so the rebase
+adds the row map and nothing else (`research/bs-small-skeleton-20261118/README.md`, rebase section).
 
 What had to match for that, found by the comparison and kept in the header's comments:
 

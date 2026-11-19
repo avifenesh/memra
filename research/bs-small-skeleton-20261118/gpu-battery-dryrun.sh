@@ -24,7 +24,8 @@ for arm in BASE HEAD; do
 if [ "$1" = kernels ]; then
   echo "PASS a: 10 bytes, 0 differ"
   if [ "${FAKE_KG_DIFF:-}" = "$ARM" ]; then echo "PASS b: 10 bytes, 1 differ"; else echo "PASS b: 10 bytes, 0 differ"; fi
-  echo "dsv41-gate: 1089 checks, 0 failed"; exit 0
+  n=${FAKE_KG_N:-1091}; [ "${FAKE_KG_HEAD_N:+x}" = x ] && [ "$ARM" = HEAD ] && n=$FAKE_KG_HEAD_N
+  echo "dsv41-gate: $n checks, 0 failed"; exit 0
 fi
 # tp: the default transport must arrive with MEMRA_TP_TRANSPORT unset
 want=916; [ -n "${MEMRA_TP_TRANSPORT+x}" ] && want=914
@@ -74,6 +75,9 @@ case $CASE in
   rg-neartie) export FAKE_RG=neartie ;;
   rb-fail) export FAKE_RB_FAIL=1 ;;
   kgate-differ) export FAKE_KG_DIFF=HEAD; PH=kgate ;;
+  kgate-count-differ) export FAKE_KG_HEAD_N=1090; PH=kgate ;;
+  kgate-below-floor) export FAKE_KG_N=1088; PH=kgate ;;
+  kgate-pinned) export EXPECT_KGATE=1092; PH=kgate ;;
   relative-out) OUT=relative/out ;;
 esac
 export BOARD MEMRA_GPU_LOCK OUT
