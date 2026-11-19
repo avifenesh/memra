@@ -1392,37 +1392,71 @@ fn apply_gemma4_template(
 // instruction it was handed in-context: the GGUF-template-mint failure mode exactly — fluent,
 // and invisible without a byte oracle.
 
-/// GLM-5.3-Flash template detector: the `[gMASK]<sop>` sequence head AND the `<|observation|>`
-/// tool-result turn prefix. Both are unique to the GLM dialect among every committed template
-/// (`rg` over research/**/*.jinja finds them only in the glm53 lane), and neither can appear in
-/// a ChatML/gemma/hy3/dsv4 template by accident. Shared by the renderer dispatch, the tools
-/// probe and the worker caps, so one law keys all three.
 /// Tencent Hy4-flash (`hy_v4_flash`) `chat_template.jinja`: it spells every turn
 /// `<｜hy_start:opensource｜>{role}<｜hy_middle:opensource｜>…<｜hy_end:opensource｜>` and builds the
 /// tokens from a suffix variable, so the literal `<｜hy_start{}｜>` and `<｜reasoning_mode{}｜>`
-/// format strings identify it. Hy3's template (`hy_User`) carries neither.
+/// format strings identify it together. Hy3's template shares `<｜reasoning_mode{}｜>` but has no
+/// `<｜hy_start{}｜>` (its turns are `hy_User` / `hy_Assistant`), so the pair never matches it.
 pub fn template_is_hy4(t: &str) -> bool {
     t.contains("<\u{ff5c}hy_start{}\u{ff5c}>") && t.contains("<\u{ff5c}reasoning_mode{}\u{ff5c}>")
 }
 
 /// The Hy4-flash reasoning ladder. An explicit `reasoning_effort` must be one the template
 /// accepts (`no_think` / `high` / `max`; it raises on anything else, `low` and `medium`
-/// included). Without one, `ThinkMode::NoThink` asks for `no_think` and everything else takes
-/// the template's own default, `high`.
+/// included). A thinking-off request (`ThinkMode::NoThink`) renders `no_think` whatever effort
+/// it names, as the HY3 arm does; otherwise an explicit effort wins, and without one the
+/// template's own default, `high`, applies.
 pub fn hy4_reasoning_effort(
     think: ThinkMode,
     reasoning_effort: Option<&str>,
 ) -> Result<&'static str, String> {
-    match reasoning_effort {
+    let explicit = match reasoning_effort {
+        None => None,
+        Some(level @ ("no_think" | "high" | "max")) => Some(level),
+        Some(other) => {
+            return Err(format!(
+                "reasoning_effort error : {other}, should be no_think/high/max"
+            ));
+        }
+    };
+    if think == ThinkMode::NoThink {
+        return Ok("no_think");
+    }
+    match explicit {
         Some("no_think") => Ok("no_think"),
         Some("high") => Ok("high"),
         Some("max") => Ok("max"),
-        Some(other) => Err(format!(
-            "reasoning_effort error : {other}, should be no_think/high/max"
-        )),
-        None if think == ThinkMode::NoThink => Ok("no_think"),
-        None => Ok("high"),
+        _ => Ok("high"),
     }
+}
+
+/// One tool DECLARATION as the Hy4 template's `tool_to_json` macro writes it: the function
+/// object's keys in insertion order minus `defer_loading` and `strict`, each key written raw
+/// between quotes (`'"' ~ k ~ '": '`, no escaping) and each value through `tojson`
+/// (`json.dumps(ensure_ascii=False)`). The GLM macro escapes its keys; this one does not.
+fn hy4_tool_json(func: &Val) -> String {
+    let mut out = String::new();
+    let Some(obj) = as_obj(func) else {
+        py_json(func, &mut out);
+        return out;
+    };
+    out.push('{');
+    let mut first = true;
+    for (k, v) in obj {
+        if k == "defer_loading" || k == "strict" {
+            continue;
+        }
+        if !first {
+            out.push_str(", ");
+        }
+        first = false;
+        out.push('"');
+        out.push_str(k);
+        out.push_str("\": ");
+        py_json(v, &mut out);
+    }
+    out.push('}');
+    out
 }
 
 /// A turn's content as the template's `render_content` writes it: the string, or its text
@@ -1507,7 +1541,7 @@ pub fn apply_hy4_template(
                 out.push('\n');
             }
             first = false;
-            out.push_str(&glm5_tool_json(function));
+            out.push_str(&hy4_tool_json(function));
         }
         out.push_str("\n</tools>\n\nFor function call returns, you should first print ");
         out.push_str(CALLS_BEGIN);
@@ -1708,6 +1742,11 @@ pub fn apply_hy4_template(
     Ok(out)
 }
 
+/// GLM-5.3-Flash template detector: the `[gMASK]<sop>` sequence head AND the `<|observation|>`
+/// tool-result turn prefix. Both are unique to the GLM dialect among every committed template
+/// (`rg` over research/**/*.jinja finds them only in the glm53 lane), and neither can appear in
+/// a ChatML/gemma/hy3/dsv4 template by accident. Shared by the renderer dispatch, the tools
+/// probe and the worker caps, so one law keys all three.
 pub fn template_is_glm5(t: &str) -> bool {
     t.contains("[gMASK]<sop>") && t.contains("<|observation|>")
 }

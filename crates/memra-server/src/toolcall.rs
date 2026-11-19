@@ -1169,8 +1169,20 @@ impl ToolStreamParser {
     fn parse_hy3_calls(&mut self, inner: &str) -> Option<Vec<ParsedToolCall>> {
         let mut calls = Vec::new();
         let mut rest = inner;
+        // Hy4 follows vLLM's strict `HYV4ToolExtractor`: any whitespace may sit between calls
+        // and between argument pairs, a key's close must be followed directly by its value's
+        // open, and a repeated key keeps its first position with the last value (a Python dict).
+        // HY3 keeps its newline-only separators and refuses a repeated key.
+        let skip = |text: &'_ str, hy4: bool| -> usize {
+            let trimmed = if hy4 {
+                text.trim_start()
+            } else {
+                text.trim_start_matches(['\n', '\r'])
+            };
+            text.len() - trimmed.len()
+        };
         loop {
-            rest = rest.trim_start_matches(['\n', '\r']);
+            rest = &rest[skip(rest, self.hy4)..];
             if rest.trim().is_empty() {
                 break;
             }
@@ -1191,18 +1203,25 @@ impl ToolStreamParser {
             if name.is_empty() || name.contains(['<', '>', '\n']) {
                 return None;
             }
-            let mut fields = call[fields_start..].trim_start_matches(['\n', '\r']);
+            let mut fields = &call[fields_start..];
             let mut args = serde_json::Map::new();
             while !fields.trim().is_empty() {
-                fields = fields.trim_start_matches(['\n', '\r']);
+                fields = &fields[skip(fields, self.hy4)..];
                 let keyed = fields.strip_prefix(HY3_ARG_KEY_OPEN)?;
                 let key_end = keyed.find(HY3_ARG_KEY_CLOSE)?;
                 let key = &keyed[..key_end];
-                if key.is_empty() || key.contains(['<', '>', '\n']) || args.contains_key(key) {
+                if key.is_empty()
+                    || key.contains(['<', '>', '\n'])
+                    || (!self.hy4 && args.contains_key(key))
+                {
                     return None;
                 }
-                let after_key =
-                    keyed[key_end + HY3_ARG_KEY_CLOSE.len()..].trim_start_matches(['\n', '\r']);
+                let after_close = &keyed[key_end + HY3_ARG_KEY_CLOSE.len()..];
+                let after_key = if self.hy4 {
+                    after_close
+                } else {
+                    after_close.trim_start_matches(['\n', '\r'])
+                };
                 let valued = after_key.strip_prefix(HY3_ARG_VALUE_OPEN)?;
                 let value_end = valued.find(HY3_ARG_VALUE_CLOSE)?;
                 let value = &valued[..value_end];
@@ -2432,9 +2451,10 @@ flexible:true,note:<|\"|>a{b,c}:d<|\"|>,workdir:None}<tool_call|>";
     /// Hy4-flash parse gate: every fixture of the vendor parser (vLLM PR #68296
     /// `HYV4ToolExtractor.extract_tool_calls`, strict, as `HYV4ToolParser` builds it;
     /// research/modelplan-onboarding-hy4flash-20261119/chat/fixtures/parses.json) parses to the
-    /// same calls, typed arguments and content. One documented difference: text after the
-    /// closing `</tool_calls:opensource>` stays content here (the vendor drops it), so no model
-    /// output is discarded.
+    /// same calls, typed arguments and content, except where the fixture records memra's own
+    /// behavior beside the vendor's (`memra`, with the reason). Text after the closing
+    /// `</tool_calls:opensource>` stays content here (the vendor drops it), so no model output
+    /// is discarded.
     #[test]
     fn hy4_parses_match_the_vendor_parser() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
@@ -2443,8 +2463,8 @@ flexible:true,note:<|\"|>a{b,c}:d<|\"|>,workdir:None}<tool_call|>";
         let text = std::fs::read_to_string(&path).unwrap();
         let fixtures: serde_json::Value = serde_json::from_str(&text).unwrap();
         let cases = fixtures["cases"].as_array().unwrap();
-        assert!(cases.len() >= 15, "fixture set shrank");
-        let mut called = 0;
+        assert!(cases.len() >= 24, "fixture set shrank");
+        let mut divergent = 0;
         for case in cases {
             let name = case["name"].as_str().unwrap();
             let mut schemas: HashMap<String, HashMap<String, String>> = HashMap::new();
@@ -2497,7 +2517,15 @@ flexible:true,note:<|\"|>a{b,c}:d<|\"|>,workdir:None}<tool_call|>";
                     Piece::Reasoning(r) => panic!("{name}: reasoning {r:?} outside a think tail"),
                 }
             }
-            let want: Vec<(String, serde_json::Value)> = case["tool_calls"]
+            let expected = match case.get("memra") {
+                Some(memra) => {
+                    divergent += 1;
+                    assert!(memra["divergence"].is_string(), "{name}: reason");
+                    memra
+                }
+                None => case,
+            };
+            let want: Vec<(String, serde_json::Value)> = expected["tool_calls"]
                 .as_array()
                 .unwrap()
                 .iter()
@@ -2509,15 +2537,53 @@ flexible:true,note:<|\"|>a{b,c}:d<|\"|>,workdir:None}<tool_call|>";
                 })
                 .collect();
             assert_eq!(calls, want, "{name}: calls");
-            let mut want_content = case["content"].as_str().unwrap_or_default().to_string();
-            if case["tools_called"].as_bool().unwrap() {
-                called += 1;
+            let mut want_content = expected["content"].as_str().unwrap_or_default().to_string();
+            if expected["tools_called"].as_bool().unwrap() {
                 let close = output.rfind(HY3_CLOSE).unwrap();
                 want_content.push_str(&output[close + HY3_CLOSE.len()..]);
             }
             assert_eq!(content, want_content, "{name}: content");
         }
-        assert_eq!(called, 10, "calls parsed in ten fixtures");
+        assert_eq!(divergent, 5, "the five recorded divergences");
+    }
+
+    /// The default Hy4 generation prompt leaves the think open (high/max): the parser starts in
+    /// the reasoning, splits at `</think:opensource>`, then parses the calls.
+    #[test]
+    fn hy4_splits_an_open_think_from_its_calls() {
+        let text = "Need the weather.</think:opensource>Checking.<tool_calls:opensource>\
+                    <tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource>\
+                    <arg_value:opensource>Paris</arg_value:opensource><arg_key:opensource>days\
+                    </arg_key:opensource><arg_value:opensource>3</arg_value:opensource>\
+                    </tool_call:opensource></tool_calls:opensource>";
+        let mut parser = ToolStreamParser::hy4(weather_schema(), true);
+        let mut pieces = parser.push(text);
+        pieces.extend(parser.finish());
+        let reasoning: String = pieces
+            .iter()
+            .filter_map(|p| match p {
+                Piece::Reasoning(r) => Some(r.as_str()),
+                _ => None,
+            })
+            .collect();
+        let content: String = pieces
+            .iter()
+            .filter_map(|p| match p {
+                Piece::Content(c) => Some(c.as_str()),
+                _ => None,
+            })
+            .collect();
+        let calls: Vec<&ParsedToolCall> = pieces
+            .iter()
+            .filter_map(|p| match p {
+                Piece::Call(c) => Some(c),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(reasoning, "Need the weather.");
+        assert_eq!(content, "Checking.");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].arguments, r#"{"city":"Paris","days":3}"#);
     }
 
     /// The Hy4 body has no `<tool_sep:opensource>`: the HY3 parser surfaces it verbatim, the Hy4
