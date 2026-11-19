@@ -1,8 +1,9 @@
 //! Hy4-flash (`hy_v4_flash`) pack: config normalization, the typed plan and the config-derived
 //! tensor schema of the ModelOpt NVFP4 artifact (`Avifenesh/Hy4-flash-NVFP4@f9eac06cf022`,
-//! research/modelplan-onboarding-hy4flash-20261119/). No executor runs the plan yet: every
-//! Hy4-flash operation is a registry row with no surface, and `ModelPlan::compile` and the
-//! reference executor refuse the family.
+//! research/modelplan-onboarding-hy4flash-20261119/). No executor runs the whole plan yet:
+//! memra-reference implements the attention, residual and MoE operations module by module
+//! (`memra_reference::hy_v4_flash`), every Hy4-flash operation is a registry row with no surface,
+//! and `ModelPlan::compile` and the reference executor's entry points refuse the family.
 //!
 //! Checkpoint namespaces (2,429 header tensors):
 //!   model.embed_tokens / lm_head / model.norm / model.hc_head   embedding, F32-computed head,
@@ -59,7 +60,7 @@ pub static PACK: ModelPack = ModelPack {
     // (`chat::apply_hy4_template`, gated in `tests/hy4_chat.rs` against transformers' own render)
     // and memra-server parses its tool calls (`ToolStreamParser::hy4`, gated against vLLM's).
     template: TemplateContract::ArtifactRequired,
-    // Nothing runs the plan: no reference executor, no tuned surface.
+    // Nothing runs the whole plan yet (module-level reference operations only), no tuned surface.
     support: None,
     gates: &[
         Gate::Config,
