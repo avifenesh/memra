@@ -62,7 +62,7 @@ By dtype: 1,332 BF16, 669 F32, 283 F8_E4M3, 141 U8, 4 I32.
   groups of 4 by an F32 softmax gate (`key_value_projection`, `key_gate_projection`,
   `intra_group_ape`, `key_norm`), RoPE on the trailing 64 dims at the query position and at each
   group's first position, ReLU scores weighted by `head_weight_projection`; a query keeps the 511
-  best closed groups plus its own (2,048 tokens). Below 2,048 keys the layer attends densely.
+  best closed groups plus its own (2,048 tokens). With at most 2,048 keys the layer attends densely.
 - Residual: 4 hyper-connection streams without Sinkhorn (`enable_ihc`). Per sublayer,
   `hc_pre.hc_fn [8, 4*3072]` mixes the RMS-normalized flat streams into 4 pre and 4 post logits;
   `pre = sigmoid(l*scale0 + base) + eps` collapses the streams, `post = 2.0 * sigmoid(...) + eps`
@@ -107,8 +107,18 @@ loads it and refuses unless all Engram layers carry the same map.
 `sources/lookup_tables.py` range-reads all four (`sources/lookup-tables-nvfp4.json`, and the BF16
 source in `sources/lookup-tables-bf16-source.json`): the four are byte-identical and identical to
 the source (sha256 `87c7b2e1c2fc...`), values 0..92,619 (92,620 distinct, the compressed
-vocabulary), identity only for ids 0-63, and the pad id 120002 maps to 91,804. The table is
-load-bearing: the `arange` default would hash a different program.
+vocabulary), an identity prefix for ids 0-63 (id 64 is the first that maps elsewhere), and the
+pad id 120002 maps to 91,804. The table is load-bearing twice: it maps the ids, and it bounds the
+hash multipliers. Both implementations draw them as `integers(0, int64::MAX // V // 2) * 2 + 1`
+with `V = max(lookup_table) + 1`, 92,620 here (transformers `_init_weights` redraws them after
+the table loads; vLLM `load_lookup`), not with the table length 120,818. The `arange` default
+would hash a different program on both counts.
+
+The four Engram RMS norms (`lookup_per_head_norms`, `norm_key`, `norm_query`, the weightless
+`unified_rmsnorm`) are `torch.nn.RMSNorm` with `eps=None`, so transformers uses
+`torch.finfo(input dtype).eps`: 2^-7 on BF16 activations. vLLM uses the F32 epsilon
+(`finfo(float32).eps`) for the per-head and unified norms. memra follows transformers, the
+oracle, and carries the rule in the plan rather than a number.
 
 Ids 120818-120831 (14 tokenizer placeholders, `<｜hy_place▁holder▁no▁800｜>` to `..813｜>`) lie
 past the table. transformers reads them as the pad id's entry; vLLM extends the map with the
