@@ -255,3 +255,11 @@ by `census_classes.py` from `census/header-census.tsv`, which it must expand bac
 - negative: one head count for both layer types (shape mismatch on the real headers), and a
   `swa_pattern` that contradicts `layer_types`;
 - every program switch above refuses by name.
+
+# Open questions
+
+| question | owner step |
+|---|---|
+| DFly2 dense MLP width: 9,216 in the checkpoint, not in the config. The vLLM derivation defaults `dfly_intermediate_size` to `intermediate_size` (13,824) and then materializes the width from the checkpoint. Confirm against the DFly2 program before pinning it beyond the census. | PR 10 (DFly2) |
+| Whether transformers' per-row FP8 round trip of a BF16 Engram row equals this checkpoint's stored `q * weight_scale` bit for bit. | CheckpointParity |
+| The Engram norm epsilon is `finfo(input dtype).eps` in transformers (2^-7 on BF16); vLLM uses the F32 epsilon. The oracle must run BF16 activations for the band to mean anything. | CheckpointParity |
