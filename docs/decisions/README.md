@@ -95,6 +95,7 @@ line here.
 
 | Record | Date | Verdict | Decides |
 |---|---|---|---|
+| [DSV41-MOE-BLOCK-RING-PRO6000.md](DSV41-MOE-BLOCK-RING-PRO6000.md) | 2026-11-18 | Adopted | On the RTX PRO 6000 the deepseek-v4.1 route's grouped small-row expert body runs a two-stage block-staged ring (same bytes): four cards 0.87-0.96 of main's step time at 1 to 16 rows and 0.87-0.96 of the route before the CUTLASS lane; other cards keep the warp ring (memra#1324). |
 | [GB10-F8F4-GEMM-V2.md](GB10-F8F4-GEMM-V2.md) | 2026-11-06 | Amended | GB10 runs F8F4 prefill GEMMs of 2,048+ rows on the v2 tile; GB10-F8F4-GEMM-V3 replaced its mainloop on 2026-11-08. |
 | [GB10-F8F4-GEMM-V3.md](GB10-F8F4-GEMM-V3.md) | 2026-11-08 | Adopted | The v2 tile's mainloop is fed by TMA under mbarriers on GB10; `MEMRA_MMQ_F8F4_V3=0` is the rollback; discrete cards keep v1. |
 | [GB10-PRIME-ATTENTION-H2.md](GB10-PRIME-ATTENTION-H2.md) | 2026-11-06 | Superseded | GB10 primes quantized-KV attention with the two-head (h2) twin. Superseded on GB10 by GB10-PRIME-ATTENTION-H2P, which keeps h2's numbers. |
@@ -121,6 +122,7 @@ line here.
 |---|---|---|---|
 | [PRO6000-MULTICARD.md](PRO6000-MULTICARD.md) | undated | Adopted | `MEMRA_PARALLEL=auto` (opt-in) plans one model over 2-4 RTX PRO 6000 cards: contiguous PP for dense, whole-expert EP for a routed MoE when every rank keeps its reserve, else PP or a refusal. |
 | [DSV4-TPEP-DEFAULT.md](DSV4-TPEP-DEFAULT.md) | 2026-09-25 | Amended | DSv4-Flash on two cards loads TP/EP by default; since 2026-11-04 PP-2 is the explicit `pp` placement, not a rollback seam. |
+| [DSV41-MOE-BLOCK-RING-PRO6000.md](DSV41-MOE-BLOCK-RING-PRO6000.md) | 2026-11-18 | Adopted | On the RTX PRO 6000 the deepseek-v4.1 route's grouped small-row expert body runs a two-stage block-staged ring (same bytes): four cards 0.87-0.96 of main's step time at 1 to 16 rows and 0.87-0.96 of the route before the CUTLASS lane; other cards keep the warp ring (memra#1324). |
 | [DSV41-ROWS-ABOVE-8-FOUR-RANKS.md](DSV41-ROWS-ABOVE-8-FOUR-RANKS.md) | 2026-11-14 | Amended | The deepseek-v4.1 route on more than two ranks issues no call above 8 rows by default until memra#1311 is fixed (four cards: +0.9 / +6.8 / +3.6% at 9 / 12 / 16 rows against the route before the CUTLASS lane). Amended the same day: the gather fix measured level at 12 rows and 1.3% faster at 16 in two halves. Amended 2026-11-17: the final binary passed its four-card confirm against main (0.949 / 0.944 / 0.954 at 10 / 12 / 16 rows, 1.000 at 9; device-push, not timed on peer-pull or host-canonical); 9, 10 and 4 rows stay 0.2 to 1.0% behind the base, unexplained (memra#1324). |
 | [TP-PEER-PULL-DEFAULT.md](TP-PEER-PULL-DEFAULT.md) | 2026-11-04 | Amended | An armed TP walk with no transport set uses peer pull on sm_100a builds and host-canonical elsewhere; the glm5 symmetric posture takes device-push. |
 | [GLM5-TP-DEVICE-SAMPLER-DEFAULT.md](GLM5-TP-DEVICE-SAMPLER-DEFAULT.md) | 2026-11-04 | Adopted | The GLM TP-2 plain route samples on the device on sm_100a builds; the host sampler stays everywhere else; `MEMRA_GLM5_TP_DEVICE_SAMPLE` deleted. |

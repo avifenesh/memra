@@ -1,0 +1,52 @@
+memra#1324: the routed experts' grouped small-row body at a four-rank share's calls on the RTX PRO 6000.
+
+probe/: probe1324.cu (one card: the split route's w1 + w3 (n 576, k 5120, two projections) and w2 (n 1280,
+  k 2304) calls on the device plan's tile list, 384 experts, 64 routings a cell rotated through a graph of 64
+  calls so every call reads DRAM; every variant's outputs compared byte for byte with the warp ring's on all
+  64 routings, then timed in rounds of alternating order; -DBASE: the pre-CUTLASS kernels 8031c7ef90's
+  swiglu_tiles + gemm_f8_tiles on the same shapes; -DHEAD: the engine's own launcher with its ring forced),
+  build.sh (CUDA 13.1, sm_120a, -O3 -fmad=false as the engine), run1.sh (one card, its box lock, 250 ms
+  telemetry), summ.py, table.py.
+probe-runs/: one RTX PRO 6000 Blackwell Max-Q a run (power limit 266-281 W), 2026-11-18:
+  p1            first sweep (rows 1 4 9 16), launch-shape variants of the warp ring
+  p2r, p2p      block-shared activations added; random routing (p2r) and pooled routing (p2p: a call's
+                tokens draw their experts from a pool, as the traced prompt's rows share experts)
+  p3r, p3p      the neighbourhood of the winner, rows 1 to 64
+  p4r-notquiet  the engine's launcher (ring 0 = by the card, ring 2 = the block ring) against the warp ring,
+                random routing; taken on a card while another session ran on two other cards of the box: not
+                a quiet-box timing (bytes: equal)
+  Every run: "bytes differ 0" on every variant line.
+moe_arm.sh: the four-card steps (gates: arm B's kernel gate and tp gates; ab: A B B A B A A B).
+moe_trace.sh: the traced block of t1324 for arm B, and the per-kernel and per-family tables against it.
+Four cards (RTX PRO 6000 Blackwell Max-Q x4, 40 layers, four ranks), arm B = 4e80f97800 (perf-bins moe1324a):
+  moe1324-gates       B's dsv41-gate kernels (1089/0) and tp gates (default 916/0, peer-pull 914/0)
+  moe1324-gates-main  the same gates of main 0db086f87a (kernels 1025/0, tp 916/0, 914/0): the tp gates' 180
+                      HASH lines a transport equal B's
+  moe1324-gatehc      B's tp gate on host-canonical (914/0); moe1324-gatehc-main: main's (914/0), the 180 HASH
+                      lines equal B's
+  moe1324-pair        two ranks (cards 0, 1): B's tp gates (default 480/0, peer-pull 478/0, host-canonical 478/0)
+                      and main's default (480/0); the 108 HASH lines of each B gate equal main's
+  moe1324-pair-long   two ranks on needle4800 layer 20: B default 47/0, peer-pull 45/0, host-canonical 45/0, main
+                      default 47/0; the 6 default hashes equal main's (the other two print 3 of the 6, equal too)
+  moe1324-one         one card, decode gates gsm 256/0, straddle126 256/0, capital 72/0 in both arms (NOTE.txt: its
+                      layer-gate lines are a harness error, files left out)
+  moe1324-one2        one card: kernels 1089/0 (B) and 1025/0 (main); layer gate needle with floor 161/0 both arms
+  moe1324-one3        one card: layer 20 with floor on needle1200 and needle4800, 6/0 both arms
+  moe1324-m1          one card, a full-binary build of 4e80f97800: memra model verify checkpoint (verified=Checkpoint)
+                      and verify serve (verified=Serve: Config, TokenizerTemplate, TensorCensus, CheckpointParity,
+                      Serve passed; TinyParity, RewriteParity pending); verify/ the small files, raw.sha256 the rest
+  All of these untimed, MEMRA_FULL_PREC=1.
+  moe1324-ab          A = main 0db086f87a, A B B A B A A B, one-row decode + rows 4 8 9 10 12 16; per_run.md
+  moe1324-ab-base     A = base 8031c7ef90 (before the CUTLASS lane), the same cells; per_run.md
+  t1324               memra#1324's traced block (base route2, #1327's head gather2, main main25), kern/fam tables
+  t1324b              the same traced block for B; kern-rows*.md and fam-rows*.md compare it with t1324's base
+                      and main traces
+traces.sha256: the nsys reports of t1324 and t1324b (kept on the box, not in the repo).
+
+Not in any receipt here: the four-card steps' power limits and the box's CPU load at their start. moe_arm.sh printed
+both to its stdout, which went to logs outside the receipt dirs on the box (not copied before the box was taken
+back), so they are not recorded here. The PR and the record quote the power limits as read from the gates step's
+log (270 / 266 / 281 / 276 W at 00:51) and the load from the A/B logs' start lines; the A/B steps' own power-limit
+lines were not read. The cards' power draw, clocks and temperatures are in each step's lease.telemetry.csv.gz, and
+the probe runs' smi.csv carries the power limit on every line. moe_arm.sh now tees its output into the receipt dir
+(moe_arm.log, cards-start.csv).

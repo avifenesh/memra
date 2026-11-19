@@ -670,6 +670,132 @@ __global__ void __launch_bounds__(128) v41_moe_small_kernel(const uint8_t* __res
     }
 }
 
+// The same tile list and output columns on a block-staged two-stage ring: a stage is PK K blocks (2 KB of weights a
+// warp: CW x PK = 128), the block's four warps stage their own weight rows and together the tile's activation rows,
+// which every warp reads (one copy a block, not a warp), and a barrier a stage hands the stage over. Shared memory
+// is the warps' weights and one copy of the activations: 19.5 to 23.9 KB a block at the shapes a served call takes,
+// so four such blocks are resident on an SM of the RTX PRO 6000 where the six-stage ring above holds one or two (the
+// 8-column shape at 6 to 8 tile rows takes 27.1 KB, three an SM; only the gate runs it, as served calls choose 8
+// columns at 3 rows or fewer). Each output element is the chain above: the same MMA,
+// fragments and scale selectors over the K blocks in ascending order, so the ring a call runs on is speed only.
+// The last stage of a K that is not a multiple of PK is shorter (a multiple of 4 K blocks).
+#define V41_MSB_NW 4
+template <int CW, int PK>
+struct V41Sb {
+    static constexpr int PW = PK / 4;  // scale words a row a stage
+    static constexpr int WR = PK * 16 + 16;
+    static constexpr int AR = PK * 32 + 16;
+    static constexpr int W_B = CW * WR;
+    static constexpr int WST = W_B + ((CW * PK + 15) & ~15);  // a warp's weight rows and their scale words
+    __host__ __device__ static constexpr int stage(int ra) {
+        return V41_MSB_NW * WST + ra * AR + ((ra * PK + 15) & ~15);
+    }
+    __host__ __device__ static constexpr int block(int ra) { return 2 * stage(ra); }
+};
+// both shapes stay under the default 48 KB of dynamic shared memory at the most tile rows (no attribute to set)
+static_assert(V41Sb<8, 16>::block(V41_SM_MAX) <= 48 * 1024 && V41Sb<16, 8>::block(V41_SM_MAX) <= 48 * 1024,
+              "block ring over 48 KB");
+
+template <int CW, int PK>
+__global__ void __launch_bounds__(V41_MSB_NW * 32) v41_moe_small_blk_kernel(
+    const uint8_t* __restrict__ A, long lda, const uint8_t* __restrict__ asf, const int* __restrict__ sfrow,
+    const V41Tile* __restrict__ tiles, const int* __restrict__ ntiles, const V41ExpW* __restrict__ ew, int p0, int p1,
+    long ldb, v41_bf* __restrict__ d0, v41_bf* __restrict__ d1, long ldc, int N, int K, int BM) {
+    using P = V41Sb<CW, PK>;
+    constexpr int PW = P::PW;
+    extern __shared__ __align__(16) uint8_t v41_sb_sm[];
+    const V41Tile tl = tiles[blockIdx.y];
+    if ((int)blockIdx.y >= *ntiles) return;
+    const int proj = blockIdx.z ? p1 : p0;
+    v41_bf* C = blockIdx.z ? d1 : d0;
+    const V41ExpW& w = ew[tl.expert];
+    const uint8_t* __restrict__ W = w.w[proj];
+    const uint8_t* __restrict__ WS = w.s[proj];
+    const long t0 = (long)tl.row0 + tl.m0;
+    const int M = min(tl.rows - tl.m0, BM);
+    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31, g = lane >> 2, t = lane & 3;
+    const int rw0 = (blockIdx.x * V41_MSB_NW + warp) * CW;
+    // live weight rows; a warp with none still copies activations and meets every barrier
+    const int nw = max(0, min(CW, N - rw0));
+    const int KB = K / 32, NS = (KB + PK - 1) / PK;
+    const int STAGE = P::stage(BM);
+    auto wst = [&](int i) { return v41_sb_sm + (i & 1) * STAGE + warp * P::WST; };
+    auto ast = [&](int i) { return v41_sb_sm + (i & 1) * STAGE + V41_MSB_NW * P::WST; };
+    auto issue = [&](int i) {
+        uint8_t* sw = wst(i);
+        uint8_t* sa = ast(i);
+        const int kb0 = i * PK, pk = min(PK, KB - kb0), pw = pk / 4;
+        for (int c = lane; c < nw * PK; c += 32) {
+            int r = c / PK, q = c % PK;
+            if (q < pk) v41_cp16(sw + r * P::WR + q * 16, W + (long)(rw0 + r) * ldb + kb0 * 16 + q * 16, true);
+        }
+        for (int c = lane; c < nw * PW; c += 32) {
+            int r = c / PW, j = c % PW;
+            if (j < pw) v41_cp4(sw + P::W_B + c * 4, WS + v41_sf_off(rw0 + r, kb0 + 4 * j, KB));
+        }
+        for (int c = threadIdx.x; c < M * 2 * PK; c += V41_MSB_NW * 32) {
+            int r = c / (2 * PK), q = c % (2 * PK);
+            if (q < 2 * pk) v41_cp16(sa + r * P::AR + q * 16, A + (t0 + r) * lda + kb0 * 32 + q * 16, true);
+        }
+        for (int c = threadIdx.x; c < M * PW; c += V41_MSB_NW * 32) {
+            int r = c / PW, j = c % PW;
+            int sr = sfrow ? sfrow[t0 + r] : (int)(t0 + r);
+            if (j < pw) v41_cp4(sa + BM * P::AR + c * 4, asf + v41_sf_off(sr, kb0 + 4 * j, KB));
+        }
+    };
+    issue(0);
+    v41_cp_commit();
+    const bool w0 = g < nw, w1 = g + 8 < nw;
+    const int wsr = g + 8 * (t & 1);  // lane t = 0: weight row g's word, t = 1: row g + 8's
+    const bool wsok = wsr < nw;
+    float acc[4] = {0.f, 0.f, 0.f, 0.f};
+    for (int i = 0; i < NS; ++i) {
+        v41_cp_wait<0>();
+        __syncthreads();  // stage i landed for every thread; every warp is done with stage i - 1's buffer
+        if (i + 1 < NS) issue(i + 1);
+        v41_cp_commit();
+        if (nw == 0) continue;
+        const uint8_t* st = wst(i);
+        const uint8_t* sa = ast(i);
+        const int pw = min(PK, KB - i * PK) / 4;
+#pragma unroll
+        for (int j = 0; j < PW; ++j) {
+            if (j < pw) {
+                const uint32_t wsc = wsok ? *(const uint32_t*)(st + P::W_B + (wsr * PW + j) * 4) : 0u;
+                // lane t = 0: column g's word
+                const uint32_t asc = g < M ? *(const uint32_t*)(sa + BM * P::AR + (g * PW + j) * 4) : 0u;
+#pragma unroll
+                for (int u = 0; u < 4; ++u) {
+                    const int kk = 4 * j + u;
+                    uint32_t af[4] = {0u, 0u, 0u, 0u};
+                    if (w0) {
+                        af[0] = v41_e2m1_container4(*(const uint16_t*)(st + g * P::WR + kk * 16 + 2 * t));
+                        af[2] = v41_e2m1_container4(*(const uint16_t*)(st + g * P::WR + kk * 16 + 8 + 2 * t));
+                    }
+                    if (w1) {
+                        af[1] = v41_e2m1_container4(*(const uint16_t*)(st + (g + 8) * P::WR + kk * 16 + 2 * t));
+                        af[3] = v41_e2m1_container4(*(const uint16_t*)(st + (g + 8) * P::WR + kk * 16 + 8 + 2 * t));
+                    }
+                    uint32_t b0 = 0u, b1 = 0u;
+                    if (g < M) {
+                        const uint8_t* ar = sa + g * P::AR + kk * 32 + 4 * t;
+                        b0 = v41_lds32(ar);
+                        b1 = v41_lds32(ar + 16);
+                    }
+                    v41_mma_e2m1_u(acc, af, b0, b1, wsc, asc, u);
+                }
+            }
+        }
+    }
+    v41_cp_wait<0>();
+    if (nw == 0) return;
+#pragma unroll
+    for (int e = 0; e < 4; ++e) {
+        int wr = g + (e >= 2 ? 8 : 0), row = 2 * t + (e & 1), col = rw0 + wr;
+        if (wr < CW && row < M && col < N) C[(t0 + row) * ldc + col] = v41_f2bf(acc[e]);
+    }
+}
+
 // The SMs of the current device (cached a device).
 static int v41_sms() {
     static int sms[64] = {0};
@@ -706,6 +832,23 @@ static int v41_cc() {
 //   up to 8 rows take the small-row body: level at 8 rows, and a split MoE call that takes it quantizes its rows
 //   straight into a layout of their own (no scale-row or placing launches; `dsv41_gpu::tp` split_hidden and
 //   split_out). Other sm_120 cards take this rule until measured.
+//
+// The ring a small-row call runs on (memra#1324; speed only, the same bytes): the RTX PRO 6000 (sm_120 with 188 SMs:
+// Workstation, Max-Q and Server Edition) runs `v41_moe_small_blk_kernel`, every other card the six-stage warp ring
+// `v41_moe_small_kernel`. On one Max-Q card at a four-rank share's calls (w1 + w3 n 576 k 5120, w2 n 1280 k 2304,
+// 64 routings a cell, interleaved rounds; receipts research/modelplan-onboarding-dsv41-20261109/perf/receipts/
+// moe1324): the block ring's w1 + w3, SwiGLU and w2 take 0.66-0.77 of the pre-CUTLASS kernels' time at 3 to 64 rows,
+// 0.81-0.92 at 1 and 2, where the warp ring took 0.91-1.27. The warp ring holds a ring of six stages of four K blocks
+// a warp, its own copy of the tile's activation rows (sized for the plan's tile rows: 8 from 9 rows on), so one or
+// two blocks fit an SM; the block ring's two stages of 2 KB of weights a warp and one copy of the activations fit
+// four at the shapes served calls take (three for the 8-column shape at 6 to 8 tile rows, which only the gate runs:
+// served calls choose 8 columns at 3 rows or fewer). Other cards keep the warp ring until measured (the RTX 5090's line was not measured for this change).
+static std::atomic<int> v41_moe_ring{0};
+static bool v41_moe_blk_card() { return v41_cc() == 120 && v41_sms() >= 188; }
+// The kernel gate's choice of the ring: 0 by the card, 1 the six-stage warp ring, 2 the two-stage block ring.
+extern "C" void memra_v41_moe_small_ring(int ring) {
+    if (ring >= 0 && ring <= 2) v41_moe_ring.store(ring, std::memory_order_relaxed);
+}
 extern "C" int memra_v41_moe_small_fits(int max_tiles, int n, int nproj, int bm) {
     if (max_tiles <= 0 || n <= 0 || nproj < 1 || bm < 1) return 0;
     if (v41_cc() == 120) return bm <= V41_SM_MAX;
@@ -729,6 +872,23 @@ extern "C" int memra_v41_moe_small(const void* a, long lda, const void* asf, con
     if ((uintptr_t)a % 16 || (uintptr_t)asf % 4) return 41027;
     if (max_tiles == 0) return 0;
     cudaStream_t st = (cudaStream_t)stream;
+    const int ring = v41_moe_ring.load(std::memory_order_relaxed);
+    if (ring == 2 || (ring == 0 && v41_moe_blk_card())) {
+        // the block-staged ring: 8 columns a warp (16 K blocks a stage) while that launch is at most one wave of
+        // four blocks an SM, else 16 (8 K blocks a stage)
+        const long b8 = (long)((n + 31) / 32) * max_tiles * nproj;
+#define V41_SB(CWX, PKX)                                                                                         \
+    do {                                                                                                         \
+        dim3 gr((n + V41_MSB_NW * CWX - 1) / (V41_MSB_NW * CWX), max_tiles, nproj);                              \
+        v41_moe_small_blk_kernel<CWX, PKX><<<gr, V41_MSB_NW * 32, V41Sb<CWX, PKX>::block(bm), st>>>(             \
+            (const uint8_t*)a, lda, (const uint8_t*)asf, sfrow, (const V41Tile*)tiles, ntiles, (const V41ExpW*)ew, \
+            p0, p1, ldb, (v41_bf*)d0, (v41_bf*)d1, ldc, n, k, bm);                                               \
+    } while (0)
+        if (b8 <= 4L * v41_sms()) V41_SB(8, 16);
+        else V41_SB(16, 8);
+#undef V41_SB
+        V41_ERR();
+    }
     // a warp's output columns: 16 while that gives at least four warps an SM, else 8, else 4 (a narrow output
     // still spreads over the card; the MMA's empty rows are free next to the weight stream)
     long want = 4L * v41_sms();
