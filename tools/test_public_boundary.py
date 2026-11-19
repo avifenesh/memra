@@ -233,6 +233,95 @@ class AllowlistTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertRegex(sample, policy.secret_patterns[name])
 
+    def test_backlog_false_positive_shapes_are_not_hits(self) -> None:
+        """memra#1357's backlog triage: three rules hit shapes that name no private surface (a
+        receipt schema, cargo's test binaries, the rustls crypto crates). Each shape is gone and a
+        real-shaped value of the same rule still hits, through the union and the per-rule pass,
+        and through git grep -P, the prefilter every scan runs first."""
+        policy = boundary.load_policy(boundary.POLICY_PATH)
+        joined = "".join
+        cases = {
+            "serve_prefix": (
+                [
+                    joined(("unit memra-", "prod on box 2")),
+                    joined(("unit memra-", "prod-2")),
+                    joined(("host memra-", "gateway-01")),
+                    joined(("dir memra-", "servetest")),
+                    joined(("svc memra-", "serve-qwen3")),
+                    # The rule ends `prod` at `producer` alone: a digit or another letter after
+                    # a named prefix is still a serve unit's name (review of memra#1372).
+                    joined(("ssh memra-", "prod2")),
+                    joined(("unit memra-", "production.service")),
+                    joined(("host memra-", "prodbox")),
+                    joined(("unit memra-", "gatewayd")),
+                    joined(("dir memra-", "servetests")),
+                ],
+                [joined(('"schema":"memra-', 'producer-completion-v1"'))],
+            ),
+            "live_fingerprint": (
+                [
+                    joined(("binary=memra-01234567", "89abcdef")),
+                    joined(("/usr/local/bin/memra-01234567", "89abcdef")),
+                    # Only cargo's 16-hex hash after `deps/` is skipped (review of memra#1372).
+                    joined(("logs/memra-01234567", "89abcdef")),
+                    joined(("deps/memra-01234567", "89ab")),
+                    joined(("deps/memra-01234567", "89abcdef0123")),
+                ],
+                [
+                    joined(("Running unittests (target/debug/deps/memra-01234567", "89abcdef)")),
+                    joined(("target/release/deps/memra-01234567", "89abcdef")),
+                ],
+            ),
+            "provider_name_aws": (
+                [
+                    joined(("the rented A", "WS box")),
+                    joined(("a", "ws-cli configure")),
+                    joined(("bought on Ama", "zon")),
+                    # Only aws-lc-rs, aws-lc-sys and aws-lc-fips-sys are skipped, as whole names
+                    # (review of memra#1372).
+                    joined(("an a", "ws-lambda function")),
+                    joined(("A", "WS-LC-bench run")),
+                    joined(("the a", "ws-lc-system crate")),
+                ],
+                [
+                    joined(('name = "a', 'ws-lc-rs"')),
+                    joined(('name = "a', 'ws-lc-sys"')),
+                    joined(('name = "a', 'ws-lc-fips-sys"')),
+                ],
+            ),
+        }
+        for rule, (hits, misses) in cases.items():
+            for line in hits + misses:
+                expected = [rule] if line in hits else []
+                with self.subTest(rule=rule, line=line):
+                    for patterns in (None, policy.secret_patterns):
+                        found = boundary.scan_secret_bytes(
+                            line.encode(), policy.secret_union, policy.secret_groups, patterns
+                        )
+                        self.assertEqual([hit[0] for hit in found], expected)
+                    self.assertEqual(
+                        boundary.raw_bytes_prefilter(
+                            line.encode(), {rule: policy.secret_sources[rule]}
+                        ),
+                        bool(expected),
+                    )
+        with tempfile.TemporaryDirectory() as tmp:
+            for rule, (hits, misses) in cases.items():
+                for at, line in enumerate(hits + misses):
+                    Path(tmp, f"{rule}-{at}.txt").write_text(line + "\n")
+            for rule, (hits, misses) in cases.items():
+                listed = subprocess.run(
+                    ["git", "grep", "--no-index", "-l", "-P", "-e", policy.secret_sources[rule]],
+                    cwd=tmp,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertIn(listed.returncode, (0, 1), listed.stderr)
+                self.assertEqual(
+                    sorted(listed.stdout.split()),
+                    sorted(f"{rule}-{at}.txt" for at in range(len(hits))),
+                )
+
     def test_host_destination_and_cloud_inventory_shapes_are_detected(self) -> None:
         """Shapes that reached pushed lane branches while every rule above stayed silent.
 
