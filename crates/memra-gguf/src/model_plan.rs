@@ -16,8 +16,9 @@ pub use deepseek_v41::{
     EngramPlan, SinglePassHcPlan,
 };
 pub use hy_v4_flash::{
-    HyV4AttentionKind, HyV4AttentionPlan, HyV4EngramPlan, HyV4FlashNumerics, HyV4ResidualPlan,
-    HyV4StatePlan, HyV4WeightFormat, IndexPoolPlan, LatentMoePlan,
+    HyV4AttentionKind, HyV4AttentionPlan, HyV4EngramMultiplierBound, HyV4EngramNormEpsilon,
+    HyV4EngramPlan, HyV4FlashNumerics, HyV4ResidualPlan, HyV4StatePlan, HyV4WeightFormat,
+    IndexPoolPlan, LatentMoePlan,
 };
 use speech::WhisperPlan;
 
@@ -2115,10 +2116,11 @@ impl LayerPlan {
                     RouterPlan::SqrtSoftplus { .. } => OperationKind::SqrtSoftplusRouter,
                     RouterPlan::TokenIdHash { .. } => OperationKind::TokenHashRouter,
                 });
+                push_activation(&latent.moe.activation, operations);
                 if latent.moe.shared.is_some() {
                     operations.push(OperationKind::SharedMlp);
+                    push_activation(&latent.shared_activation, operations);
                 }
-                push_activation(&latent.moe.activation, operations);
             }
         }
         operations.push(match self.residual {

@@ -10,7 +10,7 @@
 //! checkpoint lookup table. No reference executor or tuned surface implements them yet; every
 //! operation they emit is a registry row with no surface.
 
-use super::{MoeMlpPlan, NormPlan, RopePlan, TensorPresence};
+use super::{ActivationPlan, MoeMlpPlan, NormPlan, RopePlan, TensorPresence};
 
 /// Storage of a weight the program multiplies by, as the checkpoint ships it. Weight-only:
 /// activations stay BF16 (the artifact has no activation or KV-cache scales).
@@ -82,6 +82,25 @@ pub struct HyV4AttentionPlan {
     pub projection_weights: HyV4WeightFormat,
 }
 
+/// The size the Engram hash multipliers are bounded by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HyV4EngramMultiplierBound {
+    /// `V = max(lookup_table) + 1`, the compressed vocabulary of the loaded table (92,620 on the
+    /// pinned artifact): multipliers are `integers(0, int64::MAX // V // 2) * 2 + 1`
+    /// (transformers `_init_weights` redraws them once the table loads; vLLM `load_lookup`).
+    /// Not the table length.
+    LookupTableMaxPlusOne,
+}
+
+/// The epsilon of the Engram RMS norms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HyV4EngramNormEpsilon {
+    /// `torch.nn.RMSNorm(eps=None)`: `torch.finfo(input dtype).eps`, 2^-7 on the BF16 activations
+    /// of this program (transformers). vLLM uses the F32 epsilon for two of the four norms; the
+    /// oracle is transformers.
+    InputDtype,
+}
+
 /// transformers `HYV4FlashEngramLayer`, added to the hidden streams before the layer's
 /// attention hyper-connection. `layer_id` is the config's 1-based id; the module runs in 0-based
 /// decoder layer `layer_id - 1`. Token ids map through the checkpoint `lookup_table` (ids past it
@@ -99,6 +118,9 @@ pub struct HyV4EngramPlan {
     pub head_dim: u32,
     pub table_rows: u64,
     pub lookup_table_size: u32,
+    pub multiplier_bound: HyV4EngramMultiplierBound,
+    /// `lookup_per_head_norms`, `norm_key`, `norm_query` and the weightless `unified_rmsnorm`.
+    pub norm_epsilon: HyV4EngramNormEpsilon,
     pub pad_token_id: u32,
     /// FP8 e4m3 rows with one F32 scale per row (`weight_scale`).
     pub table_fp8_per_row: bool,
@@ -122,11 +144,13 @@ pub struct HyV4ResidualPlan {
 
 /// transformers `HYV4FlashMoE`: the router and the shared expert read the full-width input; the
 /// routed experts read `routed_expert_down_proj(x)` (`latent_size` wide) and their weighted sum
-/// returns through `routed_expert_up_proj`.
+/// returns through `routed_expert_up_proj`. `moe.activation` is the routed experts' activation
+/// only; the shared expert runs `shared_activation` (transformers `HYV4FlashMLP`, unclamped).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LatentMoePlan {
     pub latent_size: u32,
     pub moe: MoeMlpPlan,
+    pub shared_activation: ActivationPlan,
     pub expert_weights: HyV4WeightFormat,
 }
 

@@ -807,7 +807,9 @@ impl QuantConstraint {
     fn accepts(self, storage: &StorageLayout, shape: &[u64]) -> bool {
         match self {
             Self::FloatOnly => matches!(storage, StorageLayout::Float(_)),
-            Self::Weight => true,
+            // A standalone I32 tensor (the hy_v4_flash Engram token map) binds only through an
+            // explicit `I32` requirement, never as a weight of the canonical contract.
+            Self::Weight => !matches!(storage, StorageLayout::Integer(IntegerType::I32)),
             Self::ExactFloat(expected) => {
                 matches!(storage, StorageLayout::Float(actual) if *actual == expected)
             }
@@ -2699,6 +2701,39 @@ fn norm_transform(transform: WeightTransform) -> TensorTransform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A standalone I32 tensor binds through an explicit `I32` requirement and never as a
+    /// canonical weight, so the census reader's I32 storage reaches no other family's contract.
+    #[test]
+    fn an_i32_tensor_binds_only_as_i32() {
+        let entry = TensorCensusEntry {
+            name: "t".into(),
+            shape: vec![4],
+            storage: StorageLayout::Integer(IntegerType::I32),
+            physical_bytes: 16,
+        };
+        let contract = |quant| TensorContract {
+            dialect: CheckpointDialect::HfSafetensors,
+            requirements: vec![TensorRequirement {
+                id: TensorId::TokenEmbedding,
+                names: vec!["t".into()],
+                match_mode: TensorMatch::OneOf,
+                shape: vec![4],
+                owner: TensorOwner::Global,
+                transform: TensorTransform::Identity,
+                quant,
+                auxiliaries: None,
+                required: true,
+            }],
+        };
+        contract(QuantConstraint::I32)
+            .bind(std::slice::from_ref(&entry))
+            .unwrap();
+        assert!(matches!(
+            contract(QuantConstraint::Weight).bind(std::slice::from_ref(&entry)),
+            Err(TensorContractError::QuantLayoutMismatch { .. })
+        ));
+    }
     use crate::config::{HfConfig, ModelConfig};
 
     fn qwen3_plan() -> ModelPlan {
