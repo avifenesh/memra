@@ -18,6 +18,8 @@ pub mod gemma4_moe;
 pub mod glm5_next;
 pub mod glm_dsa;
 pub mod hy3;
+/// Hy4-flash: its own config, typed plan and census; the canonical compiler refuses it.
+pub mod hy_v4_flash;
 pub mod llama_dense;
 pub mod mimo_v2;
 pub mod minimax_m3;
@@ -223,6 +225,7 @@ pub const PACKS: &[&ModelPack] = &[
     &qwen4_exp::PACK,
     &step35::PACK,
     &hy3::PACK,
+    &hy_v4_flash::PACK,
     &olmoe::PACK,
     &minimax_m3::PACK,
     // Last: the plainest dense stack, so a family with its own pack is always matched first.

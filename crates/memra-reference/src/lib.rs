@@ -298,7 +298,21 @@ fn refuse_deepseek_v41(plan: &ModelPlan, operation: &'static str) -> Result<(), 
     Ok(())
 }
 
+/// Hy4-flash plans have no reference program yet (gated MLA with sinks, the pooled indexer,
+/// independent hyper-connections, the latent MoE and Engram are registry rows with no surface):
+/// every entry point refuses them before reading a weight.
+fn refuse_hy_v4_flash(plan: &ModelPlan) -> Result<(), ReferenceError> {
+    if plan.hy_v4_flash.is_some() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation: "Hy4-flash reference execution",
+        });
+    }
+    Ok(())
+}
+
 pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, ReferenceError> {
+    refuse_hy_v4_flash(plan)?;
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::fixture(plan);
     }
@@ -459,6 +473,12 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
                     operation: "single-pass mHC",
                 });
             }
+            ResidualTopology::HyV4(_) => {
+                return Err(ReferenceError::UnsupportedOperation {
+                    layer: Some(layer.index),
+                    operation: "Hy4-flash independent hyper-connections",
+                });
+            }
         }
         // qwen4_exp has no input_layernorm/post_attention_layernorm modules — the read
         // gate's grouped hc_norm IS the sublayer normalization (SEMANTICS.md §Layer stack).
@@ -515,6 +535,12 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
                     operation: "CSA2 attention",
                 });
             }
+            AttentionPlan::HyV4(_) => {
+                return Err(ReferenceError::UnsupportedOperation {
+                    layer: Some(layer.index),
+                    operation: "Hy4-flash gated MLA attention",
+                });
+            }
         }
         match &layer.mlp {
             MlpPlan::Dense(mlp) => {
@@ -531,6 +557,12 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
                 ) {
                     add_gemma_parallel_moe_fixture(&mut weights, layer.index, moe, hidden)?;
                 }
+            }
+            MlpPlan::LatentMoe(_) => {
+                return Err(ReferenceError::UnsupportedOperation {
+                    layer: Some(layer.index),
+                    operation: "Hy4-flash latent MoE",
+                });
             }
         }
     }
@@ -2132,6 +2164,7 @@ pub fn execute_tokens(
     token_ids: &[u32],
     decode_from: Option<usize>,
 ) -> Result<ReferenceOutput, ReferenceError> {
+    refuse_hy_v4_flash(plan)?;
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::execute(plan, weights, token_ids, decode_from);
     }
@@ -2149,6 +2182,7 @@ pub fn execute(
     weights: &ReferenceWeights,
     token_ids: &[u32],
 ) -> Result<ReferenceOutput, ReferenceError> {
+    refuse_hy_v4_flash(plan)?;
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::execute(plan, weights, token_ids, None);
     }
@@ -2175,6 +2209,7 @@ pub fn execute_multimodal(
     vision_input: &ReferenceVisionInput,
 ) -> Result<ReferenceMultimodalOutput, ReferenceError> {
     refuse_deepseek_v41(plan, "DeepSeek-V4.1 multimodal reference execution")?;
+    refuse_hy_v4_flash(plan)?;
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
             layer: None,
@@ -3919,6 +3954,12 @@ fn execute_dspark_layer(
             hidden,
             vocab,
         )?,
+        MlpPlan::LatentMoe(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "Hy4-flash latent MoE",
+            });
+        }
     };
     Ok(memra_gguf::dsv4_forward::hc_post(
         &mlp,
@@ -4454,6 +4495,12 @@ fn execute_layer(
                 operation: "CSA2 attention",
             });
         }
+        AttentionPlan::HyV4(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "Hy4-flash gated MLA attention",
+            });
+        }
     };
     let mut output = input.to_vec();
     add_in_place(&mut output, &attention);
@@ -4480,6 +4527,12 @@ fn execute_layer(
             hidden,
             vocab,
         )?,
+        MlpPlan::LatentMoe(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "Hy4-flash latent MoE",
+            });
+        }
     };
     add_in_place(&mut output, &mlp);
     Ok((output, layer_state))
@@ -4868,6 +4921,12 @@ fn execute_hyper_layer(
                 operation: "CSA2 attention",
             });
         }
+        AttentionPlan::HyV4(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "Hy4-flash gated MLA attention",
+            });
+        }
     };
     let attention_residual = memra_gguf::dsv4_forward::hc_post(
         &attention,
@@ -4931,6 +4990,12 @@ fn execute_hyper_layer(
             hidden,
             vocab,
         )?,
+        MlpPlan::LatentMoe(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "Hy4-flash latent MoE",
+            });
+        }
     };
     let output = memra_gguf::dsv4_forward::hc_post(
         &mlp,
@@ -5103,6 +5168,12 @@ fn execute_gated_residual_layer(
             hidden,
             vocab,
         )?,
+        MlpPlan::LatentMoe(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "Hy4-flash latent MoE",
+            });
+        }
     };
     gated_residual_write(&mut wide_state, &mlp, &inject, tokens, streams, hidden);
     Ok((wide_state, state))
@@ -5977,6 +6048,7 @@ pub fn execute_mtp_standalone(
     trunk_hidden: &[f32],
 ) -> Result<Vec<ReferenceMtpOutput>, ReferenceError> {
     refuse_deepseek_v41(plan, "DeepSeek-V4.1 standalone MTP reference execution")?;
+    refuse_hy_v4_flash(plan)?;
     let hidden = plan.hidden_size as usize;
     let vocab = plan.vocab_size as usize;
     let tokens = token_ids.len();

@@ -4,6 +4,11 @@
 
 use crate::{GgufFile, MetaValue};
 
+pub mod hy_v4_flash;
+pub use hy_v4_flash::{
+    HyV4DflyConfig, HyV4FlashConfig, HyV4HeadGeometry, HyV4LayerKind, HyV4VisionConfig,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Arch {
     Qwen3, // vanilla dense transformer
@@ -41,6 +46,12 @@ pub enum Arch {
     // 4-branch gated residual (rank-320 hyper-connections, 10240-wide stream), 20M-entry
     // n-gram/PLE embedding at layer 1 (0-based), fused-q attention gate, 1 NextN/MTP
     // full-attn block, ViT tower (research/qwen4exp-bringup-20260829).
+    /// Hy4-flash (HF `hy_v4_flash`): gated MLA on every layer (12 indexed layers with a pooled
+    /// compressed indexer, 30 sliding-window layers with their own head count), learned sinks,
+    /// 4-stream independent hyper-connections (no Sinkhorn), a 512-expert sigmoid MoE in a
+    /// 1536 latent, Engram n-gram memory on four layers, DFly2 drafter, ViT tower. Its own pack
+    /// (`hy_v4_flash`); the canonical compiler refuses it.
+    HyV4Flash,
     Glm5Next, // GLM-5.3-Flash: hybrid 34 KDA (Kimi Delta Attention) linear-attn + 11 MLA+DSA
     // sparse-attn layers, NoPE MLA (rope dim 0), k-pool-compressed indexer, sigmoid noaux_tc
     // 288-expert MoE + 1 shared, Sinkhorn hyper-connections (mHC), 1 NextN/MTP layer with its
@@ -78,6 +89,8 @@ impl Arch {
             "qwen4exp" => Arch::Qwen4Exp,
             // No public GGUF writes this arch yet; the name is memra's own (safetensors-first).
             "glm5-next" => Arch::Glm5Next,
+            // No public GGUF writes this arch; the name is memra's own (safetensors-first).
+            "hy-v4-flash" => Arch::HyV4Flash,
             "llama" => Arch::Llama,
             other => Arch::Other(other.to_string()),
         }
@@ -113,6 +126,9 @@ impl Arch {
             // GLM-5.3-Flash (HF `Glm5NextForConditionalGeneration`): the VL wrapper model_type
             // is `glm5_next`, text_config's is `glm5_next_text` — same text architecture.
             "glm5_next" | "glm5_next_text" => "glm5-next",
+            // Hy4-flash (HF `HYV4FlashForConditionalGeneration`): wrapper and text_config both
+            // carry `hy_v4_flash`.
+            "hy_v4_flash" => "hy-v4-flash",
             // Gemma-4 dense text decoder. The 12B "Unified" checkpoint declares
             // `gemma4_unified` / `gemma4_unified_text`: field-for-field the same text
             // program (QKNorm, p-RoPE 0.25 on global, V=K globals, 5:1 local:global,
@@ -185,6 +201,10 @@ impl Arch {
             // GLM-5.3-Flash MLA layers carry no fused q gate; KDA layers gate inside the mixer
             // via separate g_a_proj/g_b_proj tensors, not the attention q layout.
             Arch::Glm5Next => Some(AttentionGateKind::None),
+            // `q_b_proj` out-features are exactly heads x qk_head_dim: no gate rides beside Q.
+            // The elementwise sigmoid gate is its own `linear_gate` tensor in the
+            // hy_v4_flash plan, which no generic loader reads.
+            Arch::HyV4Flash => Some(AttentionGateKind::None),
             // An arch string we have never seen. Declares nothing, and callers must refuse
             // rather than pick a layout — see `ModelConfig::validate_attention_gate_layout`.
             Arch::Other(_) => None,
@@ -212,6 +232,12 @@ impl Arch {
     /// GLM-5.3-Flash (HF `glm5_next`/`glm5_next_text`) — safetensors-first bring-up.
     pub fn is_glm5_next(&self) -> bool {
         matches!(self, Arch::Glm5Next)
+    }
+
+    /// Hy4-flash (HF `hy_v4_flash`): safetensors-first, compiled only by the `hy_v4_flash`
+    /// pack.
+    pub fn is_hy_v4_flash(&self) -> bool {
+        matches!(self, Arch::HyV4Flash)
     }
 }
 
@@ -1785,6 +1811,8 @@ pub struct ModelConfig {
     pub dsv4: Option<DeepSeekV4Config>,
     // DeepSeek-V4.1-Flash extras: `deepseek_v41` only (None for every other arch)
     pub dsv41: Option<DeepSeekV41Config>,
+    // Hy4-flash extras: `hy_v4_flash` only (None for every other arch)
+    pub hy_v4_flash: Option<HyV4FlashConfig>,
     // MiMo-V2.6 extras — exact hybrid geometry and source-specific attention math.
     pub mimo: Option<MiMoV2Config>,
     // Qwen3.8-Flash-Next extras — `qwen4_exp` only (None for every other arch)
@@ -2287,6 +2315,7 @@ impl ModelConfig {
             step35,
             dsv4: None,  // safetensors-first arch: no GGUF artifact exists (loader lane)
             dsv41: None, // safetensors-first arch: no GGUF artifact exists
+            hy_v4_flash: None, // safetensors-first arch: no GGUF artifact exists
             mimo: None,  // MiMo-V2.6 is safetensors-first and has no GGUF pack.
             qwen4exp: None, // safetensors-first arch: no GGUF artifact exists (loader lane)
             qwen35_vision: None, // GGUF qwen35 trunks carry no tower
@@ -3244,6 +3273,7 @@ impl ModelConfig {
             step35,
             dsv4,
             dsv41,
+            hy_v4_flash: c.hy_v4_flash.clone(),
             mimo,
             qwen4exp,
             qwen35_vision: c.qwen35_vision.clone(),
@@ -3754,6 +3784,8 @@ pub struct HfConfig {
     pub quant_expert_dtype: Option<String>,
     /// `vision_config` of model_type `deepseek_v41_vision` (DeepSeek-ViT).
     pub dsv41_vision: Option<DeepSeekV41VisionConfig>,
+    /// The whole `hy_v4_flash` config, parsed by name (`config::hy_v4_flash`).
+    pub hy_v4_flash: Option<HyV4FlashConfig>,
     // ---- GLM-5.3-Flash (`glm5_next` text_config) ----
     pub kv_lora_rank: Option<u32>,
     pub qk_head_dim: Option<u32>,
@@ -3973,6 +4005,7 @@ impl Default for HfConfig {
             quant_scale_fmt: None,
             quant_expert_dtype: None,
             dsv41_vision: None,
+            hy_v4_flash: None,
             kv_lora_rank: None,
             qk_head_dim: None,
             qk_nope_head_dim: None,
@@ -4121,6 +4154,15 @@ impl HfConfig {
             .is_some_and(|kind| Arch::from_hf_model_type(kind) == Arch::MiMoV2);
         let mut cfg = HfConfig::default();
         cfg.apply(&top, glm_dsa)?;
+        if effective_type
+            .as_deref()
+            .is_some_and(|kind| Arch::from_hf_model_type(kind) == Arch::HyV4Flash)
+        {
+            let text = text
+                .as_ref()
+                .ok_or("hy_v4_flash config.json missing required field text_config")?;
+            cfg.hy_v4_flash = Some(HyV4FlashConfig::parse(&top, text)?);
+        }
         if let Some(q) = top.object("quantization_config")? {
             cfg.quant_algo = q.string("quant_algo")?;
             let method = q.string("quant_method")?;
@@ -4836,7 +4878,6 @@ impl HfConfig {
             (&mut self.candidate_topk_blocks, "candidate_topk_blocks"),
             (&mut self.candidate_block_size, "candidate_block_size"),
             (&mut self.engram_max_ngram_size, "engram_max_ngram_size"),
-            (&mut self.engram_vocab_size, "engram_vocab_size"),
             (&mut self.engram_n_heads, "engram_n_heads"),
             (&mut self.engram_head_dim, "engram_head_dim"),
             (&mut self.engram_pad_token_id, "engram_pad_token_id"),
@@ -4856,6 +4897,13 @@ impl HfConfig {
             if let Some(v) = o.u32(key)? {
                 *field = Some(v);
             }
+        }
+        // hy_v4_flash writes `engram_vocab_size` as a per-order array; its own parser
+        // (`config::hy_v4_flash`) reads the Engram block, so the V4.1 scalar is not read there.
+        if Arch::from_hf_model_type(&self.model_type) != Arch::HyV4Flash
+            && let Some(v) = o.u32("engram_vocab_size")?
+        {
+            self.engram_vocab_size = Some(v);
         }
         // ---- GLM-5.3-Flash keys ----
         if let Some(v) = o.u32("kv_lora_rank")? {

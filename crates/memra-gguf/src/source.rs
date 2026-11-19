@@ -478,6 +478,10 @@ fn safetensors_storage(
     if info.dtype == "I64" && auxiliaries.is_empty() {
         return Ok((info.shape.clone(), StorageLayout::Integer(IntegerType::I64)));
     }
+    // hy_v4_flash `engram_layer.lookup_table`: a checkpoint token map, not a weight.
+    if info.dtype == "I32" && auxiliaries.is_empty() {
+        return Ok((info.shape.clone(), StorageLayout::Integer(IntegerType::I32)));
+    }
     if auxiliaries.is_empty() {
         return Err(format!(
             "unsupported standalone safetensors dtype {}",
@@ -550,6 +554,18 @@ fn fp8_block_shape(
     headers: &BTreeMap<String, StInfo>,
 ) -> Result<Vec<u32>, String> {
     let legacy = vec![128, 128];
+    // One F32 `weight_scale` per row of a 2-D weight (hy_v4_flash Engram tables): the block
+    // is the whole row, `[1, in]`. A per-row grid is never labeled as the 128x128 default.
+    if let ([only], [out, input]) = (auxiliaries, shape)
+        && only.ends_with(".weight_scale")
+        && let Some(scale) = headers.get(only)
+        && scale.dtype == "F32"
+        && scale.shape == [*out]
+    {
+        let input = u32::try_from(*input)
+            .map_err(|_| format!("FP8 per-row weight row of {input} elements overflows u32"))?;
+        return Ok(vec![1, input]);
+    }
     let scale = match auxiliaries {
         [only] if only.ends_with(".scale") => headers.get(only).map(|scale| (only, scale)),
         _ => None,

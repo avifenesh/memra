@@ -44,6 +44,7 @@ pub mod hf_mapping;
 pub mod micro_gguf;
 pub mod model_packs;
 pub mod model_plan;
+pub mod modelopt_quant;
 pub mod nemo;
 pub mod nvfp4_repack;
 pub mod op_registry;
