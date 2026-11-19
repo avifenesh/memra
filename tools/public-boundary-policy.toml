@@ -75,9 +75,15 @@ runpod_pod_id_bare = "\\b(?<!\\.)(?<!\\\\)(?!0x)(?![0-9a-z]{0,11}[0-9]x[0-9])(?=
 vast_serve_host = "\\bssh[0-9]*\\.vast\\.ai\\b"
 runpod_api = "api\\.runpod\\.io/graphql"
 # Serve-box operating paths and live-binary fingerprints, also structural.
-serve_prefix = "\\bmemra-(servetest|gateway|prod|serve-[a-z0-9_-]+)[a-z0-9_-]*\\b"
+# `prod` is not `producer` (memra#1357 backlog triage): it ran on into
+# `memra-producer-completion-v1`, a receipt schema name, 259 versions on one open PR. Any other
+# continuation (`-production`, `prodbox`, `gatewayd`, `servetests`) is still a serve unit's name.
+serve_prefix = "\\bmemra-(servetest|gateway|prod(?!ucer)|serve-[a-z0-9_-]+)[a-z0-9_-]*\\b"
 serve_data_root = "/data/memra-(servetest|gateway|prod|serve-[a-z0-9_-]+)[a-z0-9_-]*"
-live_fingerprint = "\\bmemra-[0-9a-f]{12,}\\b"
+# Not a cargo test binary (`target/<profile>/deps/memra-<hash>` in a test log): cargo names
+# every build that way, with a 16-hex metadata hash, so it is no live fingerprint (memra#1357
+# backlog triage: 41 versions, every one after `deps/`). Any other length there still hits.
+live_fingerprint = "(?!(?<=deps/)memra-[0-9a-f]{16}\\b)\\bmemra-[0-9a-f]{12,}\\b"
 
 # Owner and account identity (added 2026-08-16 after a sweep found none of these were
 # detectable). Every category below was published in this repo for weeks because the
@@ -134,7 +140,9 @@ serve_role_provider = "(?i)\\b(vast|runpod|aws)\\b[^\\n]{0,48}\\b(serv(e|es|ing)
 # provider as historical measurement provenance (a dated receipt is a record, not an ad),
 # grandfathered with per-file reasons; every live doc, comment and workflow mention was
 # scrubbed in the same commit that added this rule.
-provider_name_aws = "(?i)\\b(aws|amazon|e[c]2)\\b"
+# Not the `aws-lc-rs`, `aws-lc-sys` and `aws-lc-fips-sys` crates (rustls' crypto backend), which
+# every Cargo.lock names (memra#1357 backlog triage: 9 lockfile versions).
+provider_name_aws = "(?i)\\b(aws(?!-lc-(?:rs|sys|fips-sys)\\b)|amazon|e[c]2)\\b"
 provider_machine_id = "(?i)(vast|runpod|machine|instance)[^\\n]{0,20}\\bmachine\\s*#?\\d{4,6}\\b"
 # `provider_machine_id` only matches the literal word "machine". A rented box is just as
 # identifiable through the CONTRACT it was rented on, which is the number the provider's own
