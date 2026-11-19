@@ -168,10 +168,12 @@ fn every_render_matches_the_artifact_template() {
 #[test]
 fn every_render_tokenizes_to_the_reference_ids() {
     let tok = tokenizer();
+    let mut checked = 0;
     for case in renders() {
         let Some(text) = case.get("expected").and_then(Value::as_str) else {
             continue;
         };
+        checked += 1;
         let want: Vec<u32> = case["ids"]
             .as_array()
             .unwrap()
@@ -180,6 +182,7 @@ fn every_render_tokenizes_to_the_reference_ids() {
             .collect();
         assert_eq!(tok.encode(text, false), want, "{}", case["name"]);
     }
+    assert_eq!(checked, 22, "every render carries its ids");
 }
 
 #[test]
@@ -222,13 +225,70 @@ fn the_raw_corpus_tokenizes_to_the_reference_ids_in_both_modes() {
     assert!(cases >= 130, "corpus shrank: {cases}");
 }
 
-/// The Hy4 detection does not capture the Hy3 template, and the Hy3 marker does not occur in
-/// the Hy4 one: the two dialects never dispatch to each other's renderer.
+/// The Hy4 detection does not capture the real Hy3 template (which shares the
+/// `<｜reasoning_mode{}｜>` format string), and the Hy3 marker does not occur in the Hy4 one: the
+/// two dialects never dispatch to each other's renderer.
 #[test]
 fn hy3_and_hy4_templates_stay_apart() {
     let hy4 = read(&lane().join("artifact/chat_template.jinja"));
     assert!(!hy4.contains("hy_User"));
-    assert!(!template_is_hy4(
-        "... hy_User ... <tools> ... <tool_calls{}> ..."
-    ));
+    let hy3 = read(&lane().join("../../step-sku-20260807/templates/hy3.chat_template.jinja"));
+    assert!(
+        hy3.contains("<\u{ff5c}reasoning_mode{}\u{ff5c}>"),
+        "the shared marker"
+    );
+    assert!(!template_is_hy4(&hy3));
+}
+
+/// A thinking-off request renders `no_think` whatever effort it names; an explicit effort wins
+/// otherwise; the template's `high` is the default; the efforts it raises on are refused.
+#[test]
+fn the_effort_ladder_resolves_as_the_template_does() {
+    use memra_tokenizer::chat::hy4_reasoning_effort;
+    assert_eq!(
+        hy4_reasoning_effort(ThinkMode::NoThink, Some("max")),
+        Ok("no_think")
+    );
+    assert_eq!(
+        hy4_reasoning_effort(ThinkMode::NoThink, None),
+        Ok("no_think")
+    );
+    assert_eq!(
+        hy4_reasoning_effort(ThinkMode::Think, Some("max")),
+        Ok("max")
+    );
+    assert_eq!(
+        hy4_reasoning_effort(ThinkMode::Default, Some("no_think")),
+        Ok("no_think")
+    );
+    assert_eq!(hy4_reasoning_effort(ThinkMode::Default, None), Ok("high"));
+    assert!(hy4_reasoning_effort(ThinkMode::NoThink, Some("low")).is_err());
+}
+
+/// The template writes a tool definition's keys raw between quotes; a key with a quote in it
+/// is not escaped (the GLM macro, which escapes, is a different program).
+#[test]
+fn tool_definition_keys_are_written_raw() {
+    let template = read(&lane().join("artifact/chat_template.jinja"));
+    let tool = Val::Obj(vec![
+        ("name".into(), Val::Str("f".into())),
+        ("x\"y".into(), Val::Num("1".into())),
+    ]);
+    let turns = [Turn {
+        role: "user".into(),
+        content: "q".into(),
+        ..Default::default()
+    }];
+    let out = apply_chat_template_tools_ex(
+        Some(&template),
+        &turns,
+        true,
+        &["{}".into()],
+        &[tool],
+        ThinkMode::Default,
+        None,
+        None,
+    )
+    .unwrap();
+    assert!(out.contains(r#"{"name": "f", "x"y": 1}"#), "{out}");
 }

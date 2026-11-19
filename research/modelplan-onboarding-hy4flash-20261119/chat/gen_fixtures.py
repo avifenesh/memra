@@ -85,6 +85,16 @@ SEARCH = {
         },
     },
 }
+LISTTYPED = {
+    "type": "function",
+    "function": {
+        "name": "count",
+        "parameters": {
+            "type": "object",
+            "properties": {"n": {"type": ["integer", "null"]}, "opts": {"type": "object"}},
+        },
+    },
+}
 DEFERRED = {
     "type": "function",
     "function": {
@@ -395,7 +405,43 @@ PARSE_CASES = [
     ("unbalanced-call-tags", CALLS + CALL + "get_weather" + CALLS_END, [WEATHER]),
     ("payload-outside-args", CALLS + CALL + "get_weather" + KEY + "city" + KEY_END + VAL + "Paris" + VAL_END + "junk" + CALL_END + CALLS_END, [WEATHER]),
     ("empty-name", calls_text(("", [("city", "Paris")])), [WEATHER]),
+    ("spaces-between-pairs", CALLS + CALL + "get_weather " + KEY + "city" + KEY_END + VAL + "Oslo" + VAL_END + "  \n " + KEY + "days" + KEY_END + VAL + "2" + VAL_END + " " + CALL_END + CALLS_END, [WEATHER]),
+    ("spaces-between-calls", CALLS + " " + CALL + "get_weather" + KEY + "city" + KEY_END + VAL + "A" + VAL_END + CALL_END + " \t " + CALL + "get_weather" + KEY + "city" + KEY_END + VAL + "B" + VAL_END + CALL_END + "\n" + CALLS_END, [WEATHER]),
+    ("newline-between-key-and-value", CALLS + CALL + "get_weather" + KEY + "city" + KEY_END + "\n" + VAL + "Oslo" + VAL_END + CALL_END + CALLS_END, [WEATHER]),
+    ("duplicate-key-last-wins", calls_text(("get_weather", [("city", "First"), ("days", "1"), ("city", "Last")])), [WEATHER]),
+    # Divergences: memra's own behavior is recorded beside the vendor's (see "memra" below).
+    ("bare-call-no-wrapper", CALL + "get_weather" + KEY + "city" + KEY_END + VAL + "Oslo" + VAL_END + CALL_END, [WEATHER]),
+    ("second-calls-block", calls_text(("get_weather", [("city", "A")])) + calls_text(("get_weather", [("city", "B")])), [WEATHER]),
+    ("hy3-style-separator", CALLS + CALL + "get_weather<tool_sep:opensource>" + KEY + "city" + KEY_END + VAL + "Oslo" + VAL_END + CALL_END + CALLS_END, [WEATHER]),
+    ("list-typed-parameter", calls_text(("count", [("n", "3")])), [LISTTYPED]),
+    ("python-literal-object", calls_text(("count", [("opts", "{'a': 1}")])), [LISTTYPED]),
 ]
+
+# What memra does where it differs from the vendor, and why (each is checked as written).
+MEMRA = {
+    "bare-call-no-wrapper": {
+        "tools_called": False, "tool_calls": [], "content": None,
+        "divergence": "memra requires the <tool_calls> wrapper the template prints and surfaces a bare call verbatim; vLLM restores the wrapper",
+    },
+    "second-calls-block": {
+        "tools_called": True,
+        "tool_calls": [{"name": "get_weather", "arguments": {"city": "A"}}, {"name": "get_weather", "arguments": {"city": "B"}}],
+        "content": None,
+        "divergence": "memra parses every <tool_calls> block; vLLM parses the first and drops the rest",
+    },
+    "hy3-style-separator": {
+        "tools_called": False, "tool_calls": [], "content": None,
+        "divergence": "memra refuses a name containing a tag (the HY3 separator); vLLM accepts it as part of the name",
+    },
+    "list-typed-parameter": {
+        "tools_called": True, "tool_calls": [{"name": "count", "arguments": {"n": "3"}}], "content": None,
+        "divergence": "memra's request schema reads a plain-string `type` only, so a list type coerces nothing; vLLM reads list and anyOf types (serve-route step)",
+    },
+    "python-literal-object": {
+        "tools_called": True, "tool_calls": [{"name": "count", "arguments": {"opts": "{'a': 1}"}}], "content": None,
+        "divergence": "memra parses a declared non-string value as JSON only; vLLM falls back to ast.literal_eval",
+    },
+}
 parses = []
 for name, text, tools in PARSE_CASES:
     result = extractor.extract_tool_calls(text, schemas(tools))
@@ -411,6 +457,12 @@ for name, text, tools in PARSE_CASES:
             ],
         }
     )
+    if name in MEMRA:
+        memra = dict(MEMRA[name])
+        if memra["content"] is None and not memra["tools_called"]:
+            memra["content"] = text
+        parses[-1]["memra"] = memra
+assert set(MEMRA) <= {c["name"] for c in parses}
 
 # ------------------------------------------------------------- raw id corpus
 STEP = HERE.parents[1] / "step-sku-20260807" / "corpus.tsv"
