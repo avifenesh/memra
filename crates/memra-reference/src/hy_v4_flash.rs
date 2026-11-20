@@ -470,6 +470,14 @@ pub struct EngramInputs<'a> {
 
 /// RMSNorm over each row of `x` with an optional elementwise weight.
 fn rms_rows(x: &[f64], width: usize, weight: Option<&[f64]>, epsilon: f64) -> Vec<f64> {
+    assert!(
+        width > 0 && x.len().is_multiple_of(width),
+        "rows of {width} over {} values",
+        x.len()
+    );
+    if let Some(w) = weight {
+        assert_eq!(w.len(), width, "norm weight [{width}]");
+    }
     let mut y = Vec::with_capacity(x.len());
     for row in x.chunks(width) {
         let inv = 1.0 / (row.iter().map(|v| v * v).sum::<f64>() / width as f64 + epsilon).sqrt();
@@ -553,6 +561,27 @@ pub fn engram_at_epsilon(
     );
     assert_eq!(w.table.scales.len() as u64, plan.table_rows, "table rows");
     assert_eq!(w.head_norms.len(), heads, "one norm per hash head");
+    for norm in &w.head_norms {
+        assert_eq!(norm.len(), dim, "lookup_per_head_norms [head_dim]");
+    }
+    assert_eq!(
+        w.value.len(),
+        hidden * width,
+        "value_proj [hidden, heads * head_dim]"
+    );
+    assert_eq!(w.pre_gamma.len(), hidden, "unified_pre_gamma [hidden]");
+    for key in &w.keys {
+        assert_eq!(
+            key.len(),
+            hidden * width,
+            "key_projs [hidden, heads * head_dim]"
+        );
+    }
+    for per_stream_vector in [&w.norm_key, &w.norm_query, &w.stream_scales] {
+        for v in per_stream_vector {
+            assert_eq!(v.len(), hidden, "per-stream Engram vector [hidden]");
+        }
+    }
     for per_stream in [
         &w.keys,
         &w.key_biases,

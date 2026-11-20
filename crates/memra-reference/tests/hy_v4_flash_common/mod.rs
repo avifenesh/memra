@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use memra_gguf::config::{
-    HyV4DflyConfig, HyV4FlashConfig, HyV4HeadGeometry, HyV4LayerKind, HyV4VisionConfig,
+    HyV4DflyConfig, HyV4FlashConfig, HyV4HeadGeometry, HyV4LayerKind, HyV4VisionConfig, hy_v4_flash,
 };
 use memra_gguf::model_packs::hy_v4_flash::layer_plan;
 use memra_gguf::model_plan::{LayerPlan, NormKind, NormPlan, WeightTransform};
@@ -166,6 +166,8 @@ pub fn config(index: Index) -> HyV4FlashConfig {
         engram_seed: 0,
         engram_fp8_embedding: true,
         engram_lookup_table_size: 1,
+        image_token_id: hy_v4_flash::IMAGE_TOKEN_ID,
+        video_token_id: hy_v4_flash::VIDEO_TOKEN_ID,
         tie_word_embeddings: false,
         quant: LayerQuantMap {
             layers: BTreeMap::new(),
@@ -295,8 +297,14 @@ pub fn moe_weights<'a>(o: &'a Oracle, il: u32, banks: &'a Owned) -> LatentMoeWei
     }
 }
 
+/// The largest absolute difference. Both sides must be finite: `f64::max` drops a NaN operand,
+/// so a NaN coordinate would otherwise count as no error.
 pub fn max_abs(a: &[f64], b: &[f64]) -> f64 {
     assert_eq!(a.len(), b.len(), "length");
+    assert!(
+        a.iter().chain(b).all(|v| v.is_finite()),
+        "a compared value is not finite"
+    );
     a.iter()
         .zip(b)
         .map(|(x, y)| (x - y).abs())

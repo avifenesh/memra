@@ -501,8 +501,11 @@ Per Engram layer (config id `L`, decoder layer `L - 1`), from the plan and the c
   its own `lookup_per_head_norms`, and the 1,536-wide memory feeds 4 per-stream key projections
   (`key_projs`, `norm_key`, against `norm_query` of that stream) and one value projection
   (`value_proj`, the weightless `unified_rmsnorm`, `unified_pre_gamma`). Stream `s` gets
-  `sigmoid(sqrt(max(|g|, 1e-6)) * sign(g)) * v + unified_per_hc_scales.s * v`; the pad id adds
-  nothing. The result is added to the streams before the attention hyper-connection.
+  `sigmoid(sqrt(max(|g|, 1e-6)) * sign(g)) * v + unified_per_hc_scales.s * v`. A position whose
+  token is the pad id, the image placeholder (120120) or the video placeholder (120124) adds
+  nothing (`HYV4FlashModel.build_engram_inputs`; the plan's `masked_token_ids`, from the
+  top-level `image_token_id` and `video_token_id`). The result is added to the streams before
+  the attention hyper-connection.
 
 Host code: `crates/memra-gguf/src/hy_v4_flash_engram.rs` (n-gram tokens, mask, compressed
 vocabulary, multipliers, hash ids, head offsets). Reference: `engram` in
@@ -540,7 +543,9 @@ module equals the formula at `finfo(float32).eps` exactly and differs from the o
 `finfo(input dtype).eps` by 2.1 and 0.63. The plan's rule is now
 `HyV4EngramNormEpsilon::OpMathF32` (`value()` is `f32::EPSILON`), the plan hash moves and
 `inspect/` is refreshed (`plan_sha256=fd44fd62f4c4ed0a...`; the only diff is the four
-`norm_epsilon` lines). With the artifact's row RMS around 0.85 (0.43 at the lowest sampled), the
+`norm_epsilon` lines). The mask's `masked_token_ids` (pad, image and video ids) move it again:
+`plan_sha256=47a593754e167e86...`, with the four `masked_token_ids` lists in `model-plan.txt` and
+`image_token_id`/`video_token_id` in `normalized-config.txt` as the only other diff. With the artifact's row RMS around 0.85 (0.43 at the lowest sampled), the
 step 0 reading would have moved each per-head norm by about 0.5%.
 
 ## Oracle
@@ -550,9 +555,10 @@ step 0 reading would have moved each per-head norm by about 0.5%.
 
 - `artifact_hash`: the pinned config class on the pinned `config.json` (sha256 checked), the
   lookup table range-read from the artifact (sha256 checked), and the pinned
-  `draw_hash_multipliers`, `build_ngram_tokens` and `hash_ngrams` run as unbound methods on
-  stand-in objects. 205 tokens: the identity prefix and the first ids past it, random ids, the pad
-  id, all 14 placeholders, a repeated trigram and a packed second document. It keeps the table
+  `draw_hash_multipliers`, `build_ngram_tokens`, `build_engram_inputs` (the mask) and
+  `hash_ngrams` run as unbound methods on stand-in objects. 210 tokens: the identity prefix and
+  the first ids past it, random ids, the pad id, all 14 placeholders, a repeated trigram, the
+  image and video placeholders and a packed second document. It keeps the table
   entries those tokens read, not the table.
 - `tiny`: the step 4 tiny model (41 tokens past the indexer budget) with `engram_layer_ids` [2],
   2 orders of 2 heads of 4 dims, primes 29, 31, 37, 41, a 60-entry map onto 40 ids on a 64-token
@@ -571,12 +577,15 @@ step 0 reading would have moved each per-head norm by about 0.5%.
   entries is a sentinel, so a hash that read any other entry would fail.
 - Hash red arms, each changing the hash ids: multipliers bounded by the table length (and those
   equal the pinned draw at that bound), the 0-based seed, placeholders read as themselves, the
-  two orders' moduli swapped.
+  two orders' moduli swapped. A pad-only mask differs from the pinned mask, and a zero modulus
+  with the same total is refused.
 - On the tiny model: the hash ids, the Engram residual (masked tokens exactly zero), every decoder
   layer and the stack to the last hidden state.
 - Float red arms, each moving the Engram residual past 1e-6: the 2^-7 epsilon (0.16), stream 0's
   key projection for every stream (0.32), the per-stream scales dropped (0.46), head 0's norm
   for every head (1.7), the mask ignored (0.73).
+- Every compared value must be finite (a NaN fails the comparison), and a short Engram weight
+  is refused rather than truncated.
 
 ## For the whole-trunk and checkpoint steps
 
@@ -590,4 +599,4 @@ step 0 reading would have moved each per-head norm by about 0.5%.
   F64), which reproduces the stored rows bit for bit, or attribute the difference to it.
 - vLLM, the second reading, loads FP8 tables with a BF16 row scale (`weight_scale_inv`) and runs
   no round trip on a BF16 table, and zeroes a token whose hash ids are all negative where
-  transformers masks the pad id. Neither is the oracle.
+  transformers masks the pad id and the image and video placeholders. Neither is the oracle.

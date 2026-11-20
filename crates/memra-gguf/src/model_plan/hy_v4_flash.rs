@@ -153,7 +153,11 @@ pub struct HyV4EngramPlan {
     pub multiplier_bound: HyV4EngramMultiplierBound,
     /// `lookup_per_head_norms`, `norm_key`, `norm_query` and the weightless `unified_rmsnorm`.
     pub norm_epsilon: HyV4EngramNormEpsilon,
+    /// Fills the n-gram slots before a document's start.
     pub pad_token_id: u32,
+    /// The ids whose positions own no n-gram and add nothing (`build_engram_inputs`): the pad
+    /// id, the image placeholder and the video placeholder.
+    pub masked_token_ids: [u32; 3],
     /// FP8 e4m3 rows with one F32 scale per row (`weight_scale`).
     pub table_fp8_per_row: bool,
 }

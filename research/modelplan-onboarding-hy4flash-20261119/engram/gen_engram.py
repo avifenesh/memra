@@ -3,10 +3,11 @@
 1. `artifact_hash`: the integer program on the artifact's own config and lookup table. The
    pinned config class reads the pinned `config.json`; the lookup table of `model.layers.1` is
    range-read from the artifact (the four are byte-identical, sources/lookup-tables-nvfp4.json).
-   The pinned `draw_hash_multipliers` (NumPy `default_rng`), `build_ngram_tokens` and
-   `hash_ngrams` run as unbound methods on stand-in objects, so no 63 GB table is built. The
-   tokens cover the identity prefix, random ids, the pad id, the 14 placeholders past the table
-   and a packed second document. Recorded: the multipliers per layer, the n-gram tokens, the
+   The pinned `draw_hash_multipliers` (NumPy `default_rng`), `build_ngram_tokens`,
+   `build_engram_inputs` (the mask) and `hash_ngrams` run as unbound methods on stand-in
+   objects, so no 63 GB table is built. The tokens cover the identity prefix, random ids, the
+   pad id, the 14 placeholders past the table, the image and video placeholders and a packed
+   second document. Recorded: the multipliers per layer, the n-gram tokens, the
    mask and the hash ids, plus the table entries those tokens read (not the table).
 
 2. `tiny`: the pinned model on the step 4 tiny config (41 tokens past the indexer budget) with
@@ -65,7 +66,8 @@ def flat(t):
 # ---- part 1: the artifact's integer program ----------------------------------------------
 raw_config = open(sys.argv[1], "rb").read()
 assert hashlib.sha256(raw_config).hexdigest() == CONFIG_SHA256, "config pin"
-text = json.loads(raw_config)["text_config"]
+top = json.loads(raw_config)
+text = top["text_config"]
 cfg = conf_mod.HYV4FlashTextConfig(**{k: v for k, v in text.items() if k != "model_type"})
 
 
@@ -105,6 +107,7 @@ first = torch.cat(
         torch.tensor([cfg.engram_pad_id, 17, 18, 19, cfg.engram_pad_id, cfg.engram_pad_id]),
         torch.arange(120818, 120832),  # the 14 placeholders past the table
         torch.tensor([17, 18, 19, 17, 18, 19, 120831, 0, 120002, 92619, 120817]),
+        torch.tensor([top["image_token_id"], 17, 18, top["video_token_id"], 19]),  # masked placeholders
     ]
 )
 second = torch.cat([torch.tensor([120818, 17, 18, 19]), torch.randint(0, cfg.vocab_size, (40,), generator=gen)])
@@ -112,7 +115,15 @@ ids = torch.cat([first, second])[None]
 positions = torch.cat([torch.arange(first.shape[0]), torch.arange(second.shape[0])])[None]
 model_stub = types.SimpleNamespace(config=cfg)
 ngram = model_mod.HYV4FlashTextModel.build_ngram_tokens(model_stub, ids, positions)
-mask = ids != cfg.engram_pad_id
+# The pinned mask builder: the pad id and the image and video placeholders own no n-gram.
+inputs_stub = types.SimpleNamespace(
+    config=types.SimpleNamespace(image_token_id=top["image_token_id"], video_token_id=top["video_token_id"]),
+    language_model=types.SimpleNamespace(
+        config=cfg, build_ngram_tokens=lambda i, p: model_mod.HYV4FlashTextModel.build_ngram_tokens(model_stub, i, p)
+    ),
+)
+built_ngram, mask = model_mod.HYV4FlashModel.build_engram_inputs(inputs_stub, ids, positions)
+assert torch.equal(built_ngram, ngram)
 
 layers = {}
 for layer_id in cfg.engram_layer_ids:
