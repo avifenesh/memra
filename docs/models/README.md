@@ -23,6 +23,7 @@ Measured serving routes with no standing gate:
 - [Step-3.7-Flash 196B-A11B](step37-flash.md) (two or more cards)
 - [DeepSeek-V4-Flash](deepseek-v4-flash.md) (two cards, own serve door)
 - [DeepSeek-V4.1-Flash](deepseek-v41-flash.md) (one card, own route): NativeQualified on one RTX PRO 6000, a correctness route <!-- support: deepseek_v41-gpu-1x-pro6000 -->
+- [Hy4-flash](hy4-flash.md) (one GB10, own route): NativeQualified on one GB10, a correctness route; NativeReference on CPU <!-- support: hy_v4_flash-gpu-1x-gb10,hy_v4_flash-reference -->
 - [GLM-5.3-Flash](glm53-flash.md): its `glm5_next` pack is NativeReference <!-- support: glm5_next-reference -->
 - [Qwen3-Embedding-8B](qwen3-embedding-8b.md) and [Qwen3-Reranker-8B](qwen3-reranker-8b.md) (capture models)
 
@@ -30,7 +31,6 @@ Engine cells or reference executor only, no gated serving route:
 
 - [Gemma-4 E4B](gemma4-e4b.md): engine cells pass, `memra-server` serving is not gated
 - [Hy3](hy3.md): NativeReference for the canonical plan and the W4A16 profile; the 2026-08-30 four-card gates are reported, not tracked <!-- support: hy3-bf16-reference,hy3_nvfp4-modelopt-w4a16 -->
-- [Hy4-flash](hy4-flash.md): NativeReference on CPU, no native runner yet <!-- support: hy_v4_flash-reference -->
 - [Qwen3.8-Flash-Next](qwen38-flash-next.md): bring-up only
 
 A card is specific to its checkpoint, quantization, drafter and hardware. It promises nothing about

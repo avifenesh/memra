@@ -28,11 +28,11 @@
 //!                                     (lane/qos-p95 2026-08-02).
 //!   POST /v1/completions         -> {model,prompt|prompt_ids,max_tokens,temperature?,top_p?,top_k?,
 //!                                     seed?,stop?,chat?,stream?,cache_salt?,ignore_eos? (the
-//!                                     deepseek-v4.1 route only)}. stream=true => SSE
+//!                                     deepseek-v4.1 and hy_v4_flash routes)}. stream=true => SSE
 //!                                     token-by-token; else a single JSON {text,tokens,stop_reason}.
 //!   POST /v1/chat/completions    -> OpenAI chat messages rendered by the GGUF chat template;
 //!                                     OpenAI message/chunk response shapes; `ignore_eos?` as on
-//!                                     completions (the deepseek-v4.1 route only). `tools`/`tool_choice`
+//!                                     completions (the deepseek-v4.1 and hy_v4_flash routes). `tools`/`tool_choice`
 //!                                     (auto|none) + role:"tool" turns render through the
 //!                                     template's own <tools> branch; emitted <tool_call> blocks
 //!                                     parse into OpenAI `tool_calls` (+"tool_calls" finish);
@@ -115,6 +115,7 @@ mod embed_api;
 mod handoff_io;
 mod histogram;
 mod http_metrics;
+mod hy4f_serve;
 mod hybrid_telemetry;
 mod image_fetch;
 mod job_publication;
@@ -7094,6 +7095,12 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
             "[server] {live} deepseek-v4.1 serving thread(s) still in a step; exiting anyway"
         );
     }
+    let live = crate::hy4f_serve::join_threads(
+        deadline.saturating_duration_since(std::time::Instant::now()),
+    );
+    if live > 0 {
+        eprintln!("[server] {live} hy_v4_flash serving thread(s) still in a step; exiting anyway");
+    }
     Ok(())
 }
 
@@ -8418,6 +8425,10 @@ fn openrouter_supported_parameters(
         "repetition_penalty",
         "stop",
     ] {
+        // the hy_v4_flash route's sampler refuses min_p by name
+        if name == "min_p" && caps.is_some_and(|c| c.hy4) {
+            continue;
+        }
         parameters.insert(name.into(), json!({ "type": "unknown" }));
     }
     parameters.insert("top_k".into(), json!({ "type": "integer", "min": 0 }));
@@ -8444,7 +8455,7 @@ fn openrouter_supported_parameters(
     // surface (embedders, rerankers) nothing chat-shaped is advertised at all.
     if is_chat
         && caps.is_some_and(|c| {
-            !c.dsv4 && !(c.qwen_think && !c.think_switch && c.think_close.is_empty())
+            !c.dsv4 && !c.hy4 && !(c.qwen_think && !c.think_switch && c.think_close.is_empty())
         })
     {
         parameters.insert("json_mode".into(), json!({ "type": "boolean" }));
@@ -8488,6 +8499,14 @@ fn openrouter_supported_parameters(
         parameters.insert(
             "reasoning_effort".into(),
             json!({ "type": "enum", "values": ["low", "high", "max"] }),
+        );
+    }
+    // Hy4-flash's template defines no_think, high and max (low and medium are accepted and
+    // render high): its native rungs, as for glm5.
+    if is_chat && caps.is_some_and(|c| c.hy4) {
+        parameters.insert(
+            "reasoning_effort".into(),
+            json!({ "type": "enum", "values": ["no_think", "high", "max"] }),
         );
     }
     // Qwen3.8 carries its own ladder too (`ModelCaps::qwen_effort`): xhigh is
@@ -8929,8 +8948,9 @@ fn model_entry_v1(
     // thought channel) means the model reasons and the reasoning knobs are live.
     let thinking = caps.is_some_and(|c| c.qwen_think || c.effort_levels || c.gemma_think || c.dsv4);
     // rung-3 model-row honesty: the dsv4 route refuses response_format by name and
-    // serves no prefix cache (n_cached honestly 0) — its row must not claim either.
-    let is_dsv4 = caps.is_some_and(|c| c.dsv4);
+    // serves no prefix cache (n_cached honestly 0) — its row must not claim either. The
+    // hy_v4_flash route (`ModelCaps::hy4`) serves neither too.
+    let own_route = caps.is_some_and(|c| c.dsv4 || c.hy4);
     let per_1m = |v: Option<&str>| match v.and_then(per_million_price) {
         Some(p) => json!(p),
         None => serde_json::Value::Null,
@@ -8997,10 +9017,10 @@ fn model_entry_v1(
             // v0.123.0 and advertised false for step37 while the server served schema-valid
             // constrained output on it.
             "structured_output": is_chat
-                && !is_dsv4
+                && !own_route
                 && !caps.is_some_and(|c| c.qwen_think && !c.think_switch && c.think_close.is_empty()),
             "reasoning": is_chat && thinking,
-            "prompt_caching": is_chat && !is_dsv4,
+            "prompt_caching": is_chat && !own_route,
         },
         "pricing": {
             "currency": "USD",
@@ -9766,16 +9786,33 @@ fn build_chat_request_with_trace(
         ));
     }
     let vllm_switch = resolve_vllm_think_switch(req.enable_thinking, &req.chat_template_kwargs)?;
+    // Hy4-flash (`ModelCaps::hy4`): its template spells reasoning off `no_think`, the table's
+    // `none`; the vendor's clients send that spelling.
+    let is_hy4 = caps.is_some_and(|c| c.hy4);
+    let effort_in = match req.reasoning_effort.as_deref() {
+        Some("no_think") if is_hy4 => Some("none".to_string()),
+        _ => req.reasoning_effort.clone(),
+    };
+    // the same spelling inside the OpenRouter `reasoning` object (the Anthropic and Responses
+    // translations land there too)
+    let mut reasoning_in = req.reasoning.clone();
+    if is_hy4
+        && let Some(obj) = reasoning_in.as_mut().and_then(|v| v.as_object_mut())
+        && obj.get("effort").and_then(|e| e.as_str()) == Some("no_think")
+    {
+        obj.insert("effort".into(), json!("none"));
+    }
     let (mut think, effort_level, think_client_explicit) = parse_think(
-        &req.reasoning_effort,
-        &req.reasoning,
+        &effort_in,
+        &reasoning_in,
         vllm_switch,
         req.include_reasoning,
         default_effort,
-        // Templates with a real rung ABOVE `high`: deepseek-v4's BEYOND_MAX prefix and
-        // GLM-5.3-Flash's `Reasoning Effort: Max` (its own default). Clamping xhigh/max/ultra
-        // into `high` on these silently drops the tier the client asked for.
-        caps.is_some_and(|c| c.dsv4 || c.glm5),
+        // Templates with a real rung ABOVE `high`: deepseek-v4's BEYOND_MAX prefix,
+        // GLM-5.3-Flash's `Reasoning Effort: Max` (its own default) and Hy4-flash's `max`.
+        // Clamping xhigh/max/ultra into `high` on these silently drops the tier the client
+        // asked for.
+        caps.is_some_and(|c| c.dsv4 || c.glm5 || c.hy4),
         // deepseek-v4.1 reads a numeric budget (1..=100) as well as the levels.
         caps.is_some_and(|c| c.dsv41),
     )?;
@@ -9852,12 +9889,26 @@ fn build_chat_request_with_trace(
     // as the default level under both, the never-corrupt clamp). Gate on the capability so
     // every other model's prompt stays byte-identical.
     let reasoning_effort = if level_template { effort_level } else { None };
+    // Hy4-flash's ladder is no_think / high / max (its template raises on any other level):
+    // `low` and `medium` ask for reasoning, so they translate to the lowest reasoning rung,
+    // `high` (a thinking-off request still renders `no_think`: `chat::hy4_reasoning_effort`).
+    let reasoning_effort = match reasoning_effort.as_deref() {
+        Some("low" | "medium") if is_hy4 => Some("high".to_string()),
+        _ => reasoning_effort,
+    };
     // response_format -> grammar spec (constrained decoding). None/text = unconstrained,
     // the exact legacy path; unknown/malformed forms are loud 400s.
     let response_grammar = constrained::parse_response_format(req.response_format.as_ref())?;
     if response_grammar.is_some() && tool_language.is_some() {
         return Err(
             "response_format cannot be combined with constrained tool_choice/parallel_tool_calls"
+                .into(),
+        );
+    }
+    if is_hy4 && response_grammar.is_some() {
+        return Err(
+            "response_format is not available on the hy_v4_flash route (no constrained decoding \
+             in this dialect yet)"
                 .into(),
         );
     }
@@ -10042,6 +10093,10 @@ fn build_chat_request_with_trace(
     };
     let parser = if glm5 {
         Some(ToolStreamParser::glm5(think_open, schemas))
+    } else if is_hy4 {
+        // Hy4-flash: armed on every chat request like dsv4; the generation prompt leaves the
+        // think open unless reasoning is off (the template's default effort is `high`)
+        Some(ToolStreamParser::hy4(schemas, think != ThinkMode::NoThink))
     } else if is_hy3 && (hy3_tools || hy3_think_open) {
         Some(ToolStreamParser::hy3(schemas, hy3_think_open))
     } else if is_dsv4 && (dsv4_tools || dsv4_think_open) {
@@ -11097,10 +11152,10 @@ fn validate_prompt_ids(ids: &[u32], caps: Option<&ModelCaps>) -> Result<(), Stri
 /// Accepting it and stopping at the end id anyway would be a silent downgrade. `false` is
 /// accepted everywhere.
 fn validate_ignore_eos(ignore_eos: bool, caps: Option<&ModelCaps>) -> Result<(), &'static str> {
-    if ignore_eos && !caps.is_some_and(|c| c.dsv41) {
+    if ignore_eos && !caps.is_some_and(|c| c.dsv41 || c.hy4) {
         return Err(
-            "ignore_eos is served by the deepseek-v4.1 route only; this model stops at its \
-             end-of-sentence token",
+            "ignore_eos is served by the deepseek-v4.1 and hy_v4_flash routes only; this model \
+             stops at its end-of-sentence token",
         );
     }
     Ok(())
@@ -11208,14 +11263,20 @@ mod prompt_ids_tests {
         }
     }
 
-    /// Only the deepseek-v4.1 route serves `ignore_eos: true`; every other model refuses it on
-    /// both surfaces (the handlers answer the error as a 400 naming the field).
+    /// Only the deepseek-v4.1 and hy_v4_flash routes serve `ignore_eos: true`; every other model
+    /// refuses it on both surfaces (the handlers answer the error as a 400 naming the field).
     #[test]
     fn ignore_eos_is_refused_outside_the_deepseek_v41_route() {
         let v41 = ModelCaps {
             dsv41: true,
             ..Default::default()
         };
+        let hy4 = ModelCaps {
+            hy3: true,
+            hy4: true,
+            ..Default::default()
+        };
+        assert!(validate_ignore_eos(true, Some(&hy4)).is_ok());
         let other = ModelCaps {
             chat_ok: true,
             ..Default::default()
@@ -11224,7 +11285,7 @@ mod prompt_ids_tests {
         assert!(
             validate_ignore_eos(true, Some(&other))
                 .unwrap_err()
-                .contains("deepseek-v4.1 route only")
+                .contains("hy_v4_flash routes only")
         );
         assert!(validate_ignore_eos(true, None).is_err());
         for caps in [None, Some(&other), Some(&v41)] {
@@ -14384,6 +14445,28 @@ mod tests {
         }
     }
 
+    /// The caps `hy4f_serve::caps` gives a Hy4-flash checkpoint.
+    fn hy4_tool_caps() -> ModelCaps {
+        ModelCaps {
+            tools_branch: true,
+            hy3: true,
+            hy4: true,
+            chat_ok: true,
+            effort_levels: true,
+            instruct_type: Some("hy4".into()),
+            ..Default::default()
+        }
+    }
+
+    /// The pinned Hy4-flash `chat_template.jinja` (the onboarding's step 2 fixtures).
+    fn hy4_template() -> String {
+        let path = format!(
+            "{}/../../research/modelplan-onboarding-hy4flash-20261119/chat/artifact/chat_template.jinja",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+    }
+
     fn gemma_template(kind: &str) -> String {
         let file = match kind {
             "qat" => "qat-trunk-template.jinja",
@@ -15094,6 +15177,41 @@ mod tests {
             .unwrap(),
             chat::apply_chat_template_str(Some(&tmpl), &plain_msgs, true)
         );
+    }
+
+    /// The hy_v4_flash route serves no constrained decoding, no prefix cache and no min_p: its
+    /// model row and its OpenRouter parameters claim none of them, and publish its rungs.
+    #[test]
+    fn hy4_catalogs_claim_only_what_its_route_serves() {
+        let caps = hy4_tool_caps();
+        let row = model_entry_v1("tencent/hy4-flash", Some(&caps), None);
+        assert_eq!(row["capabilities"]["structured_output"], json!(false));
+        assert_eq!(row["capabilities"]["prompt_caching"], json!(false));
+        assert_eq!(row["capabilities"]["tools"], json!(true));
+        assert_eq!(row["capabilities"]["reasoning"], json!(true));
+        let params = openrouter_supported_parameters(Some(&caps), None, true);
+        for absent in ["structured_outputs", "json_mode", "min_p"] {
+            assert!(params.get(absent).is_none(), "{absent}: {params}");
+        }
+        assert_eq!(
+            params.get("reasoning_effort"),
+            Some(&json!({ "type": "enum", "values": ["no_think", "high", "max"] }))
+        );
+        assert!(params.get("reasoning").is_some(), "{params}");
+        let (tx, _rx) = worker::event_channel();
+        assert!(
+            build_chat_request(
+                weather_request(json!({"response_format": {"type": "json_object"}})),
+                Some(&caps),
+                tx,
+                lanes::Lane::Interactive,
+                None,
+            )
+            .is_err()
+        );
+        // a model without the cap keeps min_p
+        let plain = openrouter_supported_parameters(Some(&tool_caps()), None, true);
+        assert!(plain.get("min_p").is_some());
     }
 
     /// `/v1/models` must not advertise a capability the server refuses by name. A template
@@ -16543,6 +16661,119 @@ mod tests {
             if call.name == "get_weather" && call.arguments == r#"{"city":"Paris"}"#)));
     }
 
+    /// Hy4-flash through the real chat plan and the pinned template: the ladder is
+    /// no_think / high / max (the template raises on anything else), `max` and its aliases keep
+    /// their rung, the native `no_think` spelling turns reasoning off, `low`/`medium` ask for
+    /// reasoning and render `high`; every chat request arms the Hy4 parser (the default effort
+    /// opens the think), and a tools request stops on the calls' close.
+    #[test]
+    fn hy4_efforts_tools_and_reasoning_flow_through_the_real_chat_plan() {
+        let template = hy4_template();
+        let plan_for = |extra: serde_json::Value| {
+            let (tx, _rx) = worker::event_channel();
+            build_chat_request(
+                weather_request(extra),
+                Some(&hy4_tool_caps()),
+                tx,
+                lanes::Lane::Interactive,
+                None,
+            )
+            .unwrap()
+        };
+        let render = |plan: &ChatPlan| {
+            chat::apply_chat_template_tools_ex(
+                Some(&template),
+                &plan.request.chat_turns,
+                true,
+                &plan.request.tools_json,
+                &plan.request.tools_struct,
+                plan.request.think,
+                plan.request.reasoning_effort.as_deref(),
+                None,
+            )
+            .unwrap()
+        };
+        let open = "<\u{ff5c}hy_start:opensource\u{ff5c}>assistant<\u{ff5c}hy_middle:opensource\u{ff5c}><think:opensource>";
+        let closed = format!("{open}</think:opensource>");
+        for (effort, level, think_open) in [
+            (None, "high", true),
+            (Some("high"), "high", true),
+            (Some("max"), "max", true),
+            (Some("xhigh"), "max", true),
+            (Some("low"), "high", true),
+            (Some("medium"), "high", true),
+            (Some("no_think"), "no_think", false),
+            (Some("none"), "no_think", false),
+        ] {
+            let extra = match effort {
+                Some(e) => json!({"reasoning_effort": e}),
+                None => json!({}),
+            };
+            let plan = plan_for(extra);
+            let rendered = render(&plan);
+            assert!(
+                rendered.contains(&format!("reasoning_effort:{level}")),
+                "{effort:?}: {rendered}"
+            );
+            if think_open {
+                assert!(rendered.ends_with(open), "{effort:?}");
+            } else {
+                assert!(rendered.ends_with(&closed), "{effort:?}");
+            }
+            assert!(
+                plan.request
+                    .stop_strings
+                    .iter()
+                    .any(|stop| stop == "</tool_calls:opensource>"),
+                "{effort:?}"
+            );
+            let mut parser = plan.parser.expect("every Hy4 chat request arms its parser");
+            let think = if think_open {
+                "Need weather.</think:opensource>"
+            } else {
+                ""
+            };
+            let pieces = parser.push(&format!(
+                "{think}<tool_calls:opensource><tool_call:opensource>get_weather\
+                 <arg_key:opensource>city</arg_key:opensource>\
+                 <arg_value:opensource>Paris</arg_value:opensource>\
+                 </tool_call:opensource></tool_calls:opensource>"
+            ));
+            if think_open {
+                assert!(pieces.contains(&Piece::Reasoning("Need weather.".into())));
+            }
+            assert!(
+                pieces.iter().any(|piece| matches!(piece, Piece::Call(call)
+                    if call.name == "get_weather" && call.arguments == r#"{"city":"Paris"}"#)),
+                "{effort:?}: {pieces:?}"
+            );
+        }
+        // the template's own refusals stay refusals: a level outside the table is a 400
+        let (tx, _rx) = worker::event_channel();
+        assert!(
+            build_chat_request(
+                weather_request(json!({"reasoning_effort": "turbo"})),
+                Some(&hy4_tool_caps()),
+                tx,
+                lanes::Lane::Interactive,
+                None,
+            )
+            .is_err()
+        );
+        // constrained tool calls are not served in this dialect
+        let (tx, _rx) = worker::event_channel();
+        assert!(
+            build_chat_request(
+                weather_request(json!({"tool_choice": "required"})),
+                Some(&hy4_tool_caps()),
+                tx,
+                lanes::Lane::Interactive,
+                None,
+            )
+            .is_err()
+        );
+    }
+
     #[test]
     fn tool_choice_none_strips_tools_and_parser() {
         let (tx, _rx) = worker::event_channel();
@@ -16700,6 +16931,7 @@ mod tests {
             },
             ModelCaps {
                 glm5: true,
+                hy4: false,
                 ..tool_caps()
             },
         ] {
@@ -31755,6 +31987,7 @@ temperature = 0.6
             dsv4: false,
             dsv41: false,
             glm5: false,
+            hy4: false,
             chat_temperature_default: None,
             chat_top_p_default: None,
             n_vocab: 151_936,
@@ -33099,10 +33332,9 @@ request = "0"
             assert_eq!(body["error"]["param"], "ignore_eos", "chat={chat}");
             assert_eq!(body["error"]["type"], "invalid_request_error");
             assert!(
-                body["error"]["message"]
-                    .as_str()
-                    .unwrap()
-                    .starts_with("ignore_eos is served by the deepseek-v4.1 route only"),
+                body["error"]["message"].as_str().unwrap().starts_with(
+                    "ignore_eos is served by the deepseek-v4.1 and hy_v4_flash routes only"
+                ),
                 "chat={chat}"
             );
         }
@@ -33183,10 +33415,9 @@ request = "0"
             assert_eq!(status, StatusCode::BAD_REQUEST, "{surface}: {body}");
             assert_eq!(body["error"]["type"], "invalid_request_error", "{surface}");
             assert!(
-                body["error"]["message"]
-                    .as_str()
-                    .unwrap()
-                    .starts_with("ignore_eos is served by the deepseek-v4.1 route only"),
+                body["error"]["message"].as_str().unwrap().starts_with(
+                    "ignore_eos is served by the deepseek-v4.1 and hy_v4_flash routes only"
+                ),
                 "{surface}: {body}"
             );
             if messages {

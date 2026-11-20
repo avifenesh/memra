@@ -1097,3 +1097,135 @@ decode near 24 tokens/s on this box (step 0).
   spare and refused otherwise; a call that fails leaves the route refusing until `reset` starts a
   new request (a failed call may have rewritten a ring row an earlier position owns).
 - The NativeQualified record, the model card's serving row and the serve gates are step 9's.
+
+# Step 9: the serve route on one GB10, NativeQualified (2026-11-20)
+
+Verdict: memra-server serves Hy4-flash on one GB10 (DGX Spark, sm_121a) through its own
+`hy_v4_flash` route over the GPU route of step 8, running free on its own router and indexer picks,
+and `memra model verify checkpoint` and `memra model verify serve --against hy_v4_flash` pass on the
+pinned artifact with that binary (`verified=Checkpoint`, `verified=Serve`). Served greedy answers
+equal the route's own greedy ids token for token on the three checkpoint requests, every
+teacher-forced decode position served as its own prompt equals the step 8 tape, chunked prefills
+give the same logits as whole ones bit for bit (chunks of 7 to 2,048 tokens, across the 2,048-key
+indexer budget and the 512-key window), and two to six requests served at once answer byte for byte
+as alone. The pack is `NativeQualified` on this topology (record `hy_v4_flash-gpu-1x-gb10`). A
+correctness route, not a fast one: one request decodes at about 6 tokens per second; nothing is
+tuned.
+
+## The route
+
+`crates/memra-server/src/hy4f_serve.rs`, wired beside the deepseek-v4.1 route in `worker.rs` (a
+checkpoint directory whose `model_type` is `hy_v4_flash` loads here and never through
+`HybridModel`):
+
+- **Program.** The step 8 class, `hy-v4-flash-bf16x2-activations`, with the route's own picks. A
+  request's prompt is scored in prefill calls of at most `MEMRA_HY4F_PREFILL_CHUNK` tokens (default
+  2,048) on its own session, then one decode call per generated token. Every kernel computes a row
+  on its own, so a chunk boundary changes no value (measured below), and the transition from prefill
+  to decode is the same program.
+- **Sessions.** `hy4f_route::Session` holds a request's cache (576 F32 a token a layer, a 512-row
+  ring on the 30 sliding layers, the indexer's token and group keys on the 12 indexed layers) and
+  its history; the weights and the call scratch are shared. `Route::call_in` swaps a session in for
+  one call. Each step runs the oldest prefilling request's next chunk, then one decode call per
+  generating request, each a call of its own, so a long prompt does not stall the others' decode
+  for longer than one chunk.
+- **Load.** The whole checkpoint binds to the pack's contract first (2,005 contract entries, the
+  drafter's and the vision tower's among them, each present with its shape), then the weights upload in their
+  stored formats: 87.5 GiB resident in 83 to 91 s. The Engram tables (66 GB) stay on disk; their rows
+  are read through the checkpoint's own read-only mapping (`madvise` random), so they live in the
+  page cache, which the kernel reclaims. A warm-up of two chunks and a decode call grows the call
+  scratch to its chunk-sized maximum (3.04 GiB) and checks the logits are finite.
+- **Memory book (unified memory).** The ceiling is MemAvailable after the weights and the warm-up,
+  less the route's 4 GiB headroom: 20.9 to 21.0 GB here. A session books its cache at its capacity
+  (prompt plus token budget: 35.4 MB plus 35,328 bytes a position) and the one call scratch that
+  grows with the context (the indexer's group logits of a chunk) plus a 1 GiB margin. A request
+  that cannot fit with the route idle is refused as a context-length error naming the largest
+  session that fits; one that fits alone waits until running requests finish; then a live
+  MemAvailable check (the new session's cache and the scratch growth still owed to the longest
+  session) and every allocation's own check refuse rather than run the box out of memory. The
+  served context is the largest session the book holds with the route idle: 531,000 positions here
+  (the config declares 1,048,576), so the 256k scope target fits one session with room for a second
+  of about 270k.
+- **Pool.** The server's engine pins the device pool's release threshold high, so a finished
+  session's cache would stay mapped and out of MemAvailable. The route trims the pool when a session
+  ends (`Dev::trim_pool`). The first full gate run found this: the third of three 212k-token
+  sessions was refused with 9.95 GB available and nothing running (`serve/receipts/gate-65d5e8d00f-pool/`).
+- **Sampling and stops.** Greedy is the first of equal maxima (the tapes' rule); temperature,
+  top-p, top-k, seeds and penalties draw through the DSv4 route's position-keyed host sampler;
+  `min_p` is refused. Stops: the end-of-sentence id (unless `ignore_eos`), stop ids, stop strings
+  (the Hy4 calls' close `</tool_calls:opensource>` stays in the stream so the parser closes the
+  block), the budget and the session's capacity.
+- **Chat surface.** The HTTP layer renders with step 2's Hy4 template and parses with
+  `ToolStreamParser::hy4` (`ModelCaps::hy4`, set with `hy3`, which carries the shared seam and
+  framing). `reasoning_effort` takes `no_think` (also `none`), `high` (the template's default) and
+  `max` (also `xhigh`); `low` and `medium` ask for reasoning and render `high`; any other level is a
+  400. Every chat request arms the parser with the think open unless reasoning is off.
+- **Policy contract** (`route_contract::RouteContract::hy4f_thread`): every surface implemented,
+  prime fairness by the chunk-a-step schedule.
+- **Not served, by name:** `response_format`, image and video parts, `min_p`, DFly2 drafts,
+  prefix reuse.
+
+## Gates
+
+On one GB10 (sm_121a, 128 GB unified memory, CUDA 13.0), every run alone on the box, the binaries of
+`2e915e65a9` (`serve/receipts/verify-2e915e65a9/bins.sha256`):
+
+| gate | result |
+|---|---|
+| `memra model verify checkpoint <artifact> --against hy_v4_flash --native-runner hy4f-gpu` | `verified=Checkpoint`, numbers equal to step 8's receipt line for line (max abs 0.054, argmax at all 4,263 positions) |
+| `memra model verify serve <artifact> --against hy_v4_flash --native-runner memra-server` | `verified=Serve`; Config, TokenizerTemplate, TensorCensus, CheckpointParity and Serve passed in the bundle (`serve/receipts/verify-2e915e65a9/gates.txt`) |
+| `memra model verify tiny --against hy_v4_flash` and `ci:verify-tiny`'s test on the same tree | `verified=Tiny`, every oracle hash equal to step 6's; the test passed (`serve/receipts/verify-2e915e65a9-tiny/`) |
+| the route after the session split, against step 8's tapes | `long` whole and with prefill chunks of 500, 511, 1,000 and 2,048, `long-split` with chunks of 7 and 512: all 2,112 positions' logits have step 8's sha256 (`36feabb7...`); `chat` forced whole and in chunks of 5: step 8's (`78376ab8...`) (`serve/receipts/route/`) |
+| render | `/v1/tokenize` of the probes' user turns (reasoning off) equals the requests' prompt ids up to the generation prompt |
+| route | served greedy `/v1/completions` on the three requests' prompts equals `hy4f-gpu --gen` (chat 1 token and EOS, long 33 and EOS, long-split 72) |
+| forced | 23 teacher-forced positions (every decode position of `chat` and `long`; `long-split` at 2,047 to 2,050 and every eighth to 2,112, across the budget) served as prompts: each token equals step 8's free tape. The free route's tape equals the f64 oracle's argmax at every one of these positions except 2,072 of `long-split`, where the free route had already left the oracle at its first own near-tie pick (position 426) |
+| concurrent | c = 2, 3, 4 and 6 requests at once (the 2,104-token `long` prefill among them): every answer's ids equal its solo ids |
+| stream | SSE deltas equal the blocking answer, finish reason and `[DONE]` present |
+| efforts | `no_think`/`none` answer without reasoning, `high` and `max` with it; `low`/`medium` equal `high`, `xhigh` equals `max`; `turbo` is a 400 |
+| tools | a tool call round trip with reasoning off (`get_weather`, JSON arguments, the follow-up with the tool's answer served) and a call with reasoning on |
+| sampled | seed 1017, T 0.8, top-p 0.95, top-k 40: the same answer twice alone and once beside three others, unlike greedy |
+| stops, penalties, refusals | a stop string cuts before its first occurrence; `max_tokens` 5 stops at the budget; penalties repeat; an image part and `response_format` are 400s |
+| cancel | a streamed client that leaves after 3 of 400 tokens: its session ends at the next step and the next request runs alone |
+| admission | three requests with 212,400-token budgets on the 531,000-position context: two admitted at once, the third deferred, then admitted, all three the full greedy answer |
+| long | a needle at the middle of a 30,934-token prompt (15 times the indexer budget) found, greedy, 191 s |
+| `MEMRA_HY4F_PREFILL_CHUNK=500` | the same served gates with 500-token chunks |
+
+## Readings (measurement only)
+
+One GB10, the binaries of `2e915e65a9`, through the server (`serve/scripts/bench.py`: memra's own
+stream shape, `prompt_ids`, greedy, `ignore_eos`, one warm-up then three samples a workload, N = 3;
+GPU at 61 to 65 C after each sample, SM clock read 2,177 to 2,184 MHz;
+`serve/receipts/gate-2e915e65a9/bench.jsonl`). TTFT is request to first token; prefill tokens/s is the
+prompt over TTFT; decode tokens/s is per request after its first token; aggregate is every request's
+tokens over the sample's wall time. Medians, ranges in brackets:
+
+| workload | prompt / output tokens | TTFT | prefill tok/s | decode tok/s per request | aggregate tok/s |
+|---|---:|---:|---:|---:|---:|
+| chat, c = 1 | 36 / 128 | 0.43 s | 83 | 5.96 | 5.89 |
+| long, c = 1 | 2,104 / 64 | 10.26 s | 205 | 5.42 | 2.92 |
+| chat, c = 4 | 36 / 128 | 1.16 s [0.43 to 2.22] | 33 [16 to 84] | 1.49 | 5.89 |
+| long, c = 4 | 2,104 / 32 | 26.1 s [10.3 to 42.7] | 84 [49 to 205] | 0.86 [0.61 to 1.46] | 2.00 |
+
+The route runs one call at a time, so four requests share the decode rate of one (each about a
+quarter) and the c = 4 prefills queue one 2,048-token chunk a step behind each other. The 2,104-token
+prefill reads 205 tokens/s through the server in two calls (step 8's bench, one call: 225). The
+30,934-token needle prompt took 191 s end to end, about 162 tokens/s. Noted for the speed lane, not
+done here: running the generating requests' decode rows through one call (the deepseek-v4.1 route's
+batched step) is the lever for aggregate throughput, and needs its own batched-vs-solo gate.
+
+## What is left
+
+- Speed (a separate lane): batched decode across sessions (calls run one at a time, so aggregate
+  throughput is flat in the number of requests), tensor-core attention, fused and staged GEMMs,
+  launch count, overlapped Engram reads, CUDA graphs. A batched-vs-solo gate comes with any batching.
+- DFly2 drafts (step 10), with the open question of the drafter's dense MLP width: 9,216 in the
+  checkpoint's tensors, not in the config, where the vLLM derivation defaults it to
+  `intermediate_size` (13,824) before reading the checkpoint (step 1's open questions).
+- The sm_120a record and the device battery cells for this stack (the landing runs them).
+- Prefix reuse, `response_format`, vision, logprobs.
+
+## Commands
+
+`serve/scripts/`: `serve_gate.sh TAG [gate|bench|both] [ENV=...]` boots the server, runs
+`chat_gate.py` and `bench.py` against it and stops it; the lane's other scripts are in
+`serve/receipts/scripts/` with the run box's paths.

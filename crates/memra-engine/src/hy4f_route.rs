@@ -41,6 +41,7 @@ use memra_gguf::safetensors::StModel;
 use std::collections::HashMap;
 use std::os::unix::fs::FileExt;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub const NUMERIC_CLASS: &str = "hy-v4-flash-bf16x2-activations";
 
@@ -405,6 +406,14 @@ pub struct DBuf {
     _s: CudaSlice<u8>,
     p: u64,
     bytes: usize,
+    /// the device's count of live bytes, decremented when the buffer is freed
+    live: Arc<AtomicUsize>,
+}
+
+impl Drop for DBuf {
+    fn drop(&mut self) {
+        self.live.fetch_sub(self.bytes, Ordering::Relaxed);
+    }
 }
 
 impl DBuf {
@@ -425,7 +434,10 @@ impl DBuf {
 pub struct Dev {
     st: Arc<CudaStream>,
     sp: *mut std::os::raw::c_void,
+    /// bytes ever allocated (growths included)
     pub allocated: std::cell::Cell<usize>,
+    /// bytes allocated and not yet freed
+    live: Arc<AtomicUsize>,
     /// host output the running call admitted and has not allocated yet
     host_reserve: std::cell::Cell<usize>,
 }
@@ -440,8 +452,14 @@ impl Dev {
             st,
             sp,
             allocated: std::cell::Cell::new(0),
+            live: Arc::new(AtomicUsize::new(0)),
             host_reserve: std::cell::Cell::new(0),
         })
+    }
+
+    /// Device bytes the route holds now (weights, sessions' caches and scratch).
+    pub fn live_bytes(&self) -> usize {
+        self.live.load(Ordering::Relaxed)
     }
 
     pub fn alloc(&self, bytes: usize) -> Result<DBuf, String> {
@@ -453,7 +471,13 @@ impl Dev {
             p
         };
         self.allocated.set(self.allocated.get() + bytes);
-        Ok(DBuf { _s: s, p, bytes })
+        self.live.fetch_add(bytes, Ordering::Relaxed);
+        Ok(DBuf {
+            _s: s,
+            p,
+            bytes,
+            live: self.live.clone(),
+        })
     }
 
     fn zeros(&self, bytes: usize) -> Result<DBuf, String> {
@@ -503,6 +527,26 @@ impl Dev {
 
     pub fn sync(&self) -> Result<(), String> {
         cu!(memra_hy4r_sync(self.sp))
+    }
+
+    /// Hand the device pool's freed blocks back to the system (`cuMemPoolTrimTo(0)`): the server's
+    /// engine pins the pool's release threshold high, so a freed session's cache would otherwise
+    /// stay mapped and out of MemAvailable. Live allocations are untouched.
+    pub fn trim_pool(&self) -> Result<(), String> {
+        self.sync()?;
+        use cudarc::driver::sys;
+        unsafe {
+            let mut pool = std::ptr::null_mut();
+            let rc = sys::cuDeviceGetDefaultMemPool(&mut pool, self.st.context().cu_device());
+            if rc != sys::CUresult::CUDA_SUCCESS {
+                return Err(format!("the device's default memory pool: {rc:?}"));
+            }
+            let rc = sys::cuMemPoolTrimTo(pool, 0);
+            if rc != sys::CUresult::CUDA_SUCCESS {
+                return Err(format!("trim the device memory pool: {rc:?}"));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -850,8 +894,10 @@ struct Engram {
     multipliers: Vec<i64>,
     moduli: Vec<u64>,
     offsets: Vec<u64>,
-    table: (Arc<std::fs::File>, usize),
-    scales: (Arc<std::fs::File>, usize),
+    /// the shard mappings (the checkpoint's own read-only `mmap`) and the tensors' byte
+    /// offsets in them: the tables stay on disk and the page cache holds the rows read
+    table: (Arc<memmap2::Mmap>, usize),
+    scales: (Arc<memmap2::Mmap>, usize),
     head_norms: DBuf,
     value: W,
     value_bias: DBuf,
@@ -1071,17 +1117,49 @@ pub struct Route<'a> {
     hc_head: Hc,
     final_norm: DBuf,
     final_eps: f32,
-    caches: Vec<Cache>,
-    cap: usize,
+    /// the request whose cache the calls read and write (`call_in` swaps another one in)
+    sess: Session,
     /// per RoPE base: (base, device inv_freq)
     bases: Vec<(f32, DBuf)>,
     sc: Scratch,
+    /// the current call records its selections (a device sync per layer)
+    recording: bool,
+}
+
+/// One request's carried state: its cache rows and its token history. The weights and the
+/// call scratch are the route's and shared; a call reads and writes only its session's rows, so
+/// requests served one call at a time through one route keep their numbers apart.
+pub struct Session {
+    caches: Vec<Cache>,
+    cap: usize,
     /// tokens seen so far (the Engram n-grams read the history)
     history: Vec<u32>,
     /// a call failed mid-way: refuse until `reset`
     broken: bool,
-    /// the current call records its selections (a device sync per layer)
-    recording: bool,
+}
+
+impl Session {
+    /// Positions the session has scored.
+    pub fn positions(&self) -> usize {
+        self.history.len()
+    }
+
+    /// Positions the cache holds at most.
+    pub fn capacity(&self) -> usize {
+        self.cap
+    }
+
+    /// Whether a call failed mid-way (every later call refuses until `reset`).
+    pub fn broken(&self) -> bool {
+        self.broken
+    }
+
+    /// Start a new request on the same rows: every cache row a later call reads is written by
+    /// it first.
+    pub fn reset(&mut self) {
+        self.history.clear();
+        self.broken = false;
+    }
 }
 
 fn attention_plan(layer: &memra_gguf::model_plan::LayerPlan) -> Result<&HyV4AttentionPlan, String> {
@@ -1339,30 +1417,7 @@ impl<'a> Route<'a> {
             scale: ck.vec(&dev, "model.hc_head.hc_head_scale", &[1])?,
         };
         let final_norm = ck.vec(&dev, "model.norm.weight", &[h])?;
-        let mut caches = Vec::new();
-        for l in &out_layers {
-            let ring = match l.attn.plan.kind {
-                HyV4AttentionKind::Sliding { window } => window as usize,
-                HyV4AttentionKind::Indexed(_) => 0,
-            };
-            let rows = if ring > 0 { ring } else { cap + 1 };
-            let (tk, gk) = match &l.attn.indexer {
-                Some(ix) => {
-                    let id = ix.plan.head_dim as usize;
-                    (
-                        Some(dev.zeros((cap + 1) * id * 4)?),
-                        Some(dev.zeros((cap / ix.plan.pool as usize + 1) * id * 4)?),
-                    )
-                }
-                None => (None, None),
-            };
-            caches.push(Cache {
-                kv: dev.zeros(rows * 576 * 4)?,
-                ring,
-                tk,
-                gk,
-            });
-        }
+        let sess = Self::alloc_session(&dev, &out_layers, cap)?;
         dev.sync()?;
         Ok(Self {
             dev,
@@ -1375,14 +1430,115 @@ impl<'a> Route<'a> {
             hc_head,
             final_norm,
             final_eps: plan.output_norm.epsilon,
-            caches,
-            cap,
+            sess,
             bases,
             sc: Scratch::default(),
-            history: Vec::new(),
-            broken: false,
             recording: false,
         })
+    }
+
+    /// The cache of one request at `cap` positions: per layer the latent and rope key rows (a
+    /// ring of the window on sliding layers), and on indexed layers the token keys and the
+    /// pooled group keys. Every byte is zeroed.
+    fn alloc_session(dev: &Dev, layers: &[Layer], cap: usize) -> Result<Session, String> {
+        let mut caches = Vec::new();
+        for (ring, tk, gk) in Self::cache_shape(layers, cap) {
+            caches.push(Cache {
+                kv: dev.zeros(if ring > 0 { ring } else { cap + 1 } * 576 * 4)?,
+                ring,
+                tk: if tk > 0 { Some(dev.zeros(tk)?) } else { None },
+                gk: if gk > 0 { Some(dev.zeros(gk)?) } else { None },
+            });
+        }
+        Ok(Session {
+            caches,
+            cap,
+            history: Vec::new(),
+            broken: false,
+        })
+    }
+
+    /// Per layer: (ring rows, token-key bytes, group-key bytes) of a cache at `cap` positions.
+    fn cache_shape(layers: &[Layer], cap: usize) -> Vec<(usize, usize, usize)> {
+        layers
+            .iter()
+            .map(|l| {
+                let ring = match l.attn.plan.kind {
+                    HyV4AttentionKind::Sliding { window } => window as usize,
+                    HyV4AttentionKind::Indexed(_) => 0,
+                };
+                match &l.attn.indexer {
+                    Some(ix) => {
+                        let id = ix.plan.head_dim as usize;
+                        (
+                            ring,
+                            (cap + 1) * id * 4,
+                            (cap / ix.plan.pool as usize + 1) * id * 4,
+                        )
+                    }
+                    None => (ring, 0, 0),
+                }
+            })
+            .collect()
+    }
+
+    /// Device bytes a session of `cap` positions allocates ([`Self::new_session`]), each buffer
+    /// at least the allocator's 16 bytes as `Dev::alloc` rounds it.
+    pub fn session_bytes(&self, cap: usize) -> usize {
+        Self::cache_shape(&self.layers, cap)
+            .into_iter()
+            .map(|(ring, tk, gk)| {
+                let kv = if ring > 0 { ring } else { cap + 1 } * 576 * 4;
+                kv.max(16)
+                    + if tk > 0 { tk.max(16) } else { 0 }
+                    + if gk > 0 { gk.max(16) } else { 0 }
+            })
+            .sum()
+    }
+
+    /// A new request's session of `cap` positions, admitted against MemAvailable with the
+    /// route's headroom (refused rather than allocated past it).
+    pub fn new_session(&self, cap: usize) -> Result<Session, String> {
+        admit(self.session_bytes(cap), "a session's cache")?;
+        let s = Self::alloc_session(&self.dev, &self.layers, cap)?;
+        self.dev.sync()?;
+        Ok(s)
+    }
+
+    /// The scratch a call of `rows` tokens grows for the indexer's group logits when its
+    /// session holds up to `cap` positions (`rows * (cap / pool)` F32 values): the one call
+    /// scratch whose size follows the context rather than the call. Every other scratch buffer
+    /// is bounded by the call's rows, the window and the indexer budget.
+    pub fn index_scratch_bytes(&self, rows: usize, cap: usize) -> usize {
+        self.layers
+            .iter()
+            .filter_map(|l| l.attn.indexer.as_ref())
+            .map(|ix| rows * (cap / ix.plan.pool as usize + 1) * 4)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Bytes the indexer's group-logit scratch holds now (it grows with the longest context a
+    /// call has scored and is kept): what a session's [`Self::index_scratch_bytes`] need not
+    /// allocate again.
+    pub fn index_scratch_held(&self) -> usize {
+        self.sc.ilog.0.as_ref().map_or(0, |b| b.bytes)
+    }
+
+    /// Score `tokens` on `sess` (another request's session): [`Self::call`] with that session's
+    /// cache and history swapped in for the call and back out after it.
+    pub fn call_in(
+        &mut self,
+        sess: &mut Session,
+        tokens: &[u32],
+        all_logits: bool,
+        rec: Option<&mut Vec<(usize, LayerRec)>>,
+        forced: Option<&Forced>,
+    ) -> Result<Vec<f32>, String> {
+        std::mem::swap(&mut self.sess, sess);
+        let out = self.call(tokens, all_logits, rec, forced);
+        std::mem::swap(&mut self.sess, sess);
+        out
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1411,12 +1567,16 @@ impl<'a> Route<'a> {
         let sname = e("multi_head_embedding.embedding.weight_scale");
         ck.check(&tname, "F8_E4M3", &[rows, dim])?;
         ck.check(&sname, "F32", &[rows])?;
-        let (_, tf, ts, _) = ck.st.raw_extent(&tname).ok_or("no table extent")?;
-        let (_, sf, ss, _) = ck.st.raw_extent(&sname).ok_or("no scale extent")?;
-        use std::os::unix::io::AsRawFd;
-        unsafe {
-            libc::posix_fadvise(tf.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM);
+        let (tm, _, ts, tlen) = ck.st.raw_extent(&tname).ok_or("no table extent")?;
+        let (sm, _, ss, slen) = ck.st.raw_extent(&sname).ok_or("no scale extent")?;
+        if tlen != rows * dim || slen != rows * 4 || ts + tlen > tm.len() || ss + slen > sm.len() {
+            return Err(format!(
+                "layer {il}: the Engram table extents are not {rows} rows"
+            ));
         }
+        // rows are read at random: no read-ahead around them
+        tm.advise_range(memmap2::Advice::Random, ts, tlen)
+            .map_err(|e| format!("layer {il}: madvise the Engram table: {e}"))?;
         let mut norms = Vec::with_capacity(width);
         for k in 0..heads {
             norms.extend(ck.f32s(&e(&format!("lookup_per_head_norms.{k}.weight")), &[dim])?);
@@ -1439,8 +1599,8 @@ impl<'a> Route<'a> {
             multipliers,
             moduli,
             offsets,
-            table: (tf, ts),
-            scales: (sf, ss),
+            table: (tm, ts),
+            scales: (sm, ss),
             head_norms: dev.upload(&norms)?,
             value: ck.weight(dev, &e("value_proj.weight"), h, width, bf)?,
             value_bias: ck.vec(dev, &e("value_proj.bias"), &[h])?,
@@ -1453,13 +1613,12 @@ impl<'a> Route<'a> {
     }
 
     pub fn positions(&self) -> usize {
-        self.history.len()
+        self.sess.positions()
     }
 
     /// Start a new request: every cache row a later call reads is written by it first.
     pub fn reset(&mut self) {
-        self.history.clear();
-        self.broken = false;
+        self.sess.reset();
     }
 
     /// The host memory a call's output takes: its logits, and with records the host copies of
@@ -1471,7 +1630,7 @@ impl<'a> Route<'a> {
             for l in &self.layers {
                 if let Some(ix) = &l.attn.indexer {
                     let ks = (ix.plan.top_k / ix.plan.pool) as usize;
-                    host += t * (ks + self.cap / ix.plan.pool as usize + 1) * 4;
+                    host += t * (ks + self.sess.cap / ix.plan.pool as usize + 1) * 4;
                 }
                 if let Mlp::Moe { experts, topk, .. } = &l.mlp {
                     host += t * (experts + topk) * 4;
@@ -1501,7 +1660,7 @@ impl<'a> Route<'a> {
     ) -> Result<Vec<f32>, String> {
         // a call that fails may have written cache rows (a sliding ring row of an earlier
         // position among them): the route refuses every call until `reset` starts a new request
-        if self.broken {
+        if self.sess.broken {
             return Err(
                 "an earlier call failed mid-way; reset the route and replay the request".into(),
             );
@@ -1509,7 +1668,7 @@ impl<'a> Route<'a> {
         let out = self.call_inner(tokens, all_logits, rec, forced);
         self.dev.host_reserve.set(0);
         if out.is_err() {
-            self.broken = true;
+            self.sess.broken = true;
         }
         out
     }
@@ -1523,15 +1682,15 @@ impl<'a> Route<'a> {
     ) -> Result<Vec<f32>, String> {
         self.recording = rec.is_some();
         let t = tokens.len();
-        let p0 = self.history.len();
+        let p0 = self.sess.history.len();
         if t == 0 {
             return Ok(Vec::new());
         }
-        if p0 + t > self.cap {
+        if p0 + t > self.sess.cap {
             return Err(format!(
                 "{} positions past the cache's {}",
                 p0 + t,
-                self.cap
+                self.sess.cap
             ));
         }
         // the call's host output (logits, records); its device scratch is admitted where it
@@ -1545,7 +1704,7 @@ impl<'a> Route<'a> {
                 return Err(format!("token {tk} past the vocabulary {v}"));
             }
         }
-        self.history.extend_from_slice(tokens);
+        self.sess.history.extend_from_slice(tokens);
         let h = self.plan.hidden_size as usize;
         let n = self.hy.hc_mult as usize;
         let dev = &self.dev;
@@ -1864,7 +2023,7 @@ impl<'a> Route<'a> {
             sp
         ))?;
         // the cache rows of this call
-        let cache = &self.caches[il];
+        let cache = &self.sess.caches[il];
         let late = usize::from(self.red.kv_off_by_one && t == 1);
         let kv_len = p0 + t;
         let scale = (256f64).powf(-0.5) as f32;
@@ -2486,7 +2645,7 @@ impl<'a> Route<'a> {
         // n-grams over the history: a window that starts `max_ngram - 1` tokens back
         let back = (ep.max_ngram as usize).saturating_sub(1);
         let w0 = p0.saturating_sub(back);
-        let ids = &self.history[w0..p0 + t];
+        let ids = &self.sess.history[w0..p0 + t];
         let positions: Vec<u32> = (w0..p0 + t).map(|p| p as u32).collect();
         let ngrams = hashing::ngram_tokens(ep, ids, &positions);
         let hashes = hashing::hash_ids(ep, &eg.lookup, &eg.multipliers, &eg.moduli, &ngrams)?;
@@ -2496,7 +2655,7 @@ impl<'a> Route<'a> {
             .skip(skip)
             .map(|r| r.iter().zip(&eg.offsets).map(|(a, b)| a + b).collect())
             .collect();
-        let mask: Vec<u8> = hashing::engram_mask(ep, &self.history[p0..p0 + t])
+        let mask: Vec<u8> = hashing::engram_mask(ep, &self.sess.history[p0..p0 + t])
             .into_iter()
             .map(u8::from)
             .collect();
@@ -2504,8 +2663,9 @@ impl<'a> Route<'a> {
         let mut codes = vec![0u8; t * width];
         let mut scales = vec![0f32; t * heads];
         {
-            let (tf, ts) = (&eg.table.0, eg.table.1);
-            let (sf, ss) = (&eg.scales.0, eg.scales.1);
+            // each row's bytes from the mapped shard, its scale from the mapped scale tensor
+            let tb = &eg.table.0[eg.table.1..eg.table.1 + total * dim];
+            let sbytes = &eg.scales.0[eg.scales.1..eg.scales.1 + total * 4];
             let flat: Vec<(usize, u64)> = rows
                 .iter()
                 .flat_map(|r| r.iter().copied())
@@ -2528,14 +2688,15 @@ impl<'a> Route<'a> {
                         .map(|chunk| {
                             sc.spawn(move || {
                                 let mut out = Vec::with_capacity(chunk.len());
-                                let mut sb = [0u8; 4];
                                 for &(i, ri) in chunk {
-                                    let mut c = vec![0u8; dim];
-                                    tf.read_exact_at(&mut c, (ts + ri as usize * dim) as u64)
-                                        .map_err(|e| format!("Engram pread: {e}"))?;
-                                    sf.read_exact_at(&mut sb, (ss + ri as usize * 4) as u64)
-                                        .map_err(|e| format!("Engram pread: {e}"))?;
-                                    out.push((i, c, f32::from_le_bytes(sb)));
+                                    let r = ri as usize;
+                                    let c = tb[r * dim..(r + 1) * dim].to_vec();
+                                    let sb = &sbytes[r * 4..r * 4 + 4];
+                                    out.push((
+                                        i,
+                                        c,
+                                        f32::from_le_bytes([sb[0], sb[1], sb[2], sb[3]]),
+                                    ));
                                 }
                                 Ok(out)
                             })

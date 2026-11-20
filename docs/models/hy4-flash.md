@@ -4,50 +4,60 @@ Tencent's Hy4-flash as a native ModelPlan pack, onboarded on its weight-only Mod
 artifact: gated MLA on every layer (12 indexed layers with a pooled indexer, 30 sliding-window
 layers), 4-stream hyper-connections, a latent MoE of 512 experts and the Engram n-gram memory.
 
-Support state: **NativeReference**. The reference executor runs the whole text program, <!-- support: hy_v4_flash-reference -->
-prefill and decode, and matches the pinned transformers code to the bit on the tiny fixture. The
-native checkpoint runner `hy4f-run` runs the artifact on one GB10 and passes CheckpointParity
-against the pinned transformers program in f64, and so does the GPU route `hy4f-gpu` (weights
-resident, a carried cache, tensor-core GEMMs on two BF16 input terms) in its own numeric class.
-RewriteParity and Serve are pending and nothing serves the pack. NativeQualified needs those gates on a pinned topology first. <!-- support: none; not NativeQualified -->
-
 | | |
 |---|---|
-| **Serving route** | none |
-| **Pack** | `hy_v4_flash` (aliases `hy-v4-flash`, `hy4-flash`) |
+| **Serving route** | memra-server's `hy_v4_flash` route (`hy4f_serve` over the GPU route `hy4f_route`) on one GB10 (DGX Spark, sm_121a): weights resident in their stored formats, a carried F32 cache per request, the Engram tables read from disk; `verify checkpoint` and `verify serve` pass at `2e915e65a9`, served greedy answers equal the route's own. A correctness route: about 6 tok/s decode for one request, nothing tuned |
+| **Pack** | `hy_v4_flash` (aliases `hy-v4-flash`, `hy4-flash`), **NativeQualified** on that route (record `hy_v4_flash-gpu-1x-gb10`) and **NativeReference** on CPU (record `hy_v4_flash-reference`) <!-- support: hy_v4_flash-gpu-1x-gb10,hy_v4_flash-reference --> |
 | **Artifact** | `Avifenesh/Hy4-flash-NVFP4@f9eac06cf022cfd3dc2e8ed423922466b2adcd87`, from `tencent/Hy4-flash@d88c9dfd96ba4f2e6b92adba0b8e8f1c8696f959`: NVFP4 routed experts, FP8 128x128 attention projections, FP8 Engram rows, BF16 and F32 elsewhere; 2,429 tensors, 161.08 GB |
+| **Hardware** | one GB10 with 128 GB of unified memory: 87.5 GiB of weights resident, about 21 GB left for sessions; CPU for the reference gates |
 | **Drafters** | the checkpoint's DFly2 drafter is contract-owned and not run |
-| **Hardware** | CPU for the reference gates; one GB10 (DGX Spark, sm_121a) for the checkpoint runner and the GPU route (87.4 GiB of weights resident, the Engram tables read from disk) |
-| **Input** | text; the artifact's chat template and tool-call format; image parts are out of scope |
+| **Input** | text; the artifact's chat template, efforts and tool-call format; image and video parts are refused |
+
+## Serve it
+
+```bash
+MEMRA_MODELS=hy4=/path/Hy4-flash-NVFP4 memra-server
+```
+
+- The served context is the largest session the memory book holds with the route idle: 531,000
+  positions on a GB10 (the config declares 1,048,576). A request that cannot fit is refused by
+  name; one that fits alone waits for running requests to finish.
+- Long prompts are prefilled in chunks of `MEMRA_HY4F_PREFILL_CHUNK` tokens (default 2,048), one
+  chunk a step beside the other requests' decode; the chunk size never changes a value.
+- `reasoning_effort` takes `no_think` (or `none`), `high` (the template's default) and `max` (or
+  `xhigh`); `low` and `medium` render `high`. Tool calls parse from the Hy4 call format.
+- Greedy, temperature, top-p, top-k, seeds, penalties, stop strings and `ignore_eos` are served;
+  `min_p`, `response_format` and image parts are not.
 
 ## Gates
 
-- Config, TokenizerTemplate and TensorCensus pass at `memra model inspect` on the pinned revision,
-  over HTTP with no weights downloaded.
+- Config, TokenizerTemplate and TensorCensus pass at `memra model inspect` on the pinned revision.
 - TinyParity: `memra model verify tiny --against hy_v4_flash` on the artifact's config at hidden
   64, past the 512-token window and the indexer budget, with splits below each.
 - CheckpointParity: `memra model verify checkpoint <artifact> --against hy_v4_flash --oracle
-  <tapes> --native-runner hy4f-run` scores a chat turn and a 2,112-token request (prefilled on
-  each side of the indexer budget) at every position: indexer and router picks and Engram rows
-  first, then argmax and the class band. `--native-runner hy4f-gpu` scores the GPU route
-  (class `hy-v4-flash-bf16x2-activations`) on the same f64 tapes with the oracle's picks applied,
-  its own picks and selection scores checked within their bands.
+  <tapes> --native-runner hy4f-run` (f32, the source program) and `--native-runner hy4f-gpu`
+  (class `hy-v4-flash-bf16x2-activations`, the oracle's picks applied) against the pinned
+  transformers program in f64.
+- Serve: `memra model verify serve <artifact> --against hy_v4_flash --native-runner memra-server`,
+  and the served-answer gates: served greedy equal to the route's, teacher-forced positions equal
+  to the verified tapes, chunked prefills bit-equal to whole ones, concurrent requests equal to
+  solo, streaming, efforts, a tool call round trip, sampling, stops, cancellation, admission and a
+  30,934-token needle.
 
 ## Limits
 
-- The checkpoint runner is a correctness route: one layer at a time from disk, f32, minutes per
-  request. No serving route.
-- The GPU route is untuned: a first reading of 225 tokens/s prefill on a 2,104-token prompt and
-  5.4 tokens/s decode at c=1 on one GB10.
-- Vision is out of scope; the tower's tensors are owned by the contract and not run.
-- The context the pack would serve is not measured.
+- Untuned: about 6 tok/s decode and 205 tok/s prefill on a 2,104-token prompt for one request;
+  requests run one call at a time, so throughput does not grow with concurrency.
+- No DFly2 drafts, prefix reuse, constrained decoding or vision.
+- One GB10 only; the record covers no other device.
 
 ## Deeper sources
 
 - The lane: [`research/modelplan-onboarding-hy4flash-20261119/`](../../research/modelplan-onboarding-hy4flash-20261119/)
-  (pins, semantics, each step's oracle and gate).
+  (pins, semantics, each step's oracle and gate; step 9 is the serve route).
 - Pack: `crates/memra-gguf/src/model_packs/hy_v4_flash/`; reference:
   `crates/memra-reference/src/hy_v4_flash.rs` and `hy_v4_flash_trunk.rs`; checkpoint runner:
   `crates/memra-engine/src/hy4f_gpu.rs`, `src/bin/hy4f_run.rs`, `cu/hy4f_gpu.cu`; GPU route:
   `src/hy4f_route.rs`, `src/bin/hy4f_gpu.rs`, `cu/hy4f_route.cu`
-  ([activation format](../decisions/HY4F-GPU-ACTIVATION-FORMAT.md)).
+  ([activation format](../decisions/HY4F-GPU-ACTIVATION-FORMAT.md)); serve route:
+  `crates/memra-server/src/hy4f_serve.rs`.
