@@ -115,6 +115,28 @@ pub struct CheckpointRequestPin {
 pub struct ClassParityGate {
     pub numeric_class: &'static str,
     pub gate: CheckpointParityGate,
+    /// How the tape-set gate ([`ModelPack::checkpoint_requests`]) scores this native class;
+    /// `None` for a class the tape-set gate does not run.
+    pub tape: Option<TapeClassGate>,
+}
+
+/// The tape-set gate's terms for one native numeric class. The gate scores a native tape of this
+/// class against oracle tapes of `oracle_class`: the native's own selections must be its own
+/// scores' top-k under the plan's tie order, every own selection score must sit within the
+/// selection band of the oracle's, and a pick that differs from the oracle's passes only when
+/// every entry that entered or left scores within that band of the oracle's last kept one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TapeClassGate {
+    /// the numeric class the oracle tapes name
+    pub oracle_class: &'static str,
+    /// selection band of the router's selection scores (absolute)
+    pub router_band: f64,
+    /// selection band of the indexer's finite group logits (absolute)
+    pub indexer_band: f64,
+    /// the native runs with the oracle tape's router and indexer picks applied, as the class's
+    /// band backend ran, so the logit band measures the class's numeric spread along the same
+    /// selections; the native's own picks and scores are still recorded and checked
+    pub forced_selections: bool,
 }
 
 /// Who owns the output projection when the checkpoint carries no `output.weight` /
@@ -187,6 +209,18 @@ impl ModelPack {
 
     /// The checkpoint-parity band for an oracle of `numeric_class`: the class's own gate when
     /// the pack names one, else the pack's default gate.
+    /// The tape-set gate's terms for a native class: its logit band and its tape terms. Only a
+    /// class the pack names with tape terms; no fallback.
+    pub fn checkpoint_tape_class(
+        &self,
+        numeric_class: &str,
+    ) -> Option<(CheckpointParityGate, TapeClassGate)> {
+        self.checkpoint_parity_classes
+            .iter()
+            .find(|c| c.numeric_class == numeric_class)
+            .and_then(|c| c.tape.map(|t| (c.gate, t)))
+    }
+
     pub fn checkpoint_parity_for(&self, numeric_class: &str) -> Option<CheckpointParityGate> {
         self.checkpoint_parity_classes
             .iter()

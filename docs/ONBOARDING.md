@@ -291,6 +291,16 @@ oracle's own logits), each Engram call's table rows exactly, then every position
 band. Hy4-flash pins a chat turn and one request past its indexer budget, prefilled on each side
 of the budget (`research/modelplan-onboarding-hy4flash-20261119/checkpoint/`).
 
+The tape-set gate scores a native class on the terms its pack names (`ClassParityGate::tape`): the
+oracle class it is scored against (a GPU class against the source program's f64 tapes), its
+router and indexer selection bands (every own selection score must sit within them, and a
+differing pick passes only as a near tie inside them), and whether it runs forced. A forced class
+runs with the oracle tape's picks applied (`--force-selections <tape>`) while it records and is
+checked on its own, the way its band backend was run: where a near-tie flip would move every
+later position, the logit band then measures the class's numeric spread along the same
+selections. The runner names its class (`RUNNER --numeric-class`). The Hy4-flash GPU route is
+such a class (`research/modelplan-onboarding-hy4flash-20261119/gpu/`).
+
 ## 4. Prove tokenizer, template, tools and thinking
 
 The pack declares where the tokenizer comes from (`tokenizer_sources`: `TokenizerJson`,

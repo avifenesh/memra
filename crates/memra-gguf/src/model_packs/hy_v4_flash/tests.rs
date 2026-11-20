@@ -989,6 +989,30 @@ fn tiny_config_is_the_artifact_program_at_small_width() {
 }
 
 #[test]
+fn the_gpu_route_class_is_scored_forced_against_the_f64_source_program() {
+    let pack = by_alias("hy_v4_flash").unwrap();
+    let (source, source_terms) = pack
+        .checkpoint_tape_class("hy-v4-flash-source-program")
+        .unwrap();
+    let (gpu, terms) = pack
+        .checkpoint_tape_class("hy-v4-flash-bf16x2-activations")
+        .unwrap();
+    // both classes are scored against the same f64 oracle tapes
+    assert_eq!(terms.oracle_class, "hy-v4-flash-source-program");
+    assert_eq!(source_terms.oracle_class, "hy-v4-flash-source-program");
+    // the GPU route runs with the oracle's selections applied, as its band backend ran; the
+    // source-program runner runs free
+    assert!(terms.forced_selections && !source_terms.forced_selections);
+    assert!(gpu.require_argmax && source.require_argmax);
+    assert!(gpu.max_abs > 0.0 && terms.router_band > 0.0 && terms.indexer_band > 0.0);
+    // a class the pack does not name has no terms, and no fallback
+    assert!(
+        pack.checkpoint_tape_class("hy-v4-flash-bf16-activations")
+            .is_none()
+    );
+}
+
+#[test]
 fn the_checkpoint_gate_scores_a_chat_turn_and_both_sides_of_the_indexer_budget() {
     let pack = by_alias("hy_v4_flash").unwrap();
     let hy = config().hy_v4_flash.unwrap();

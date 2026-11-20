@@ -639,6 +639,11 @@ fn main() {
             // 128x128 blocks, NVFP4) and the sink attention core, portable CUDA C in f32, no arch
             // stub; -fmad=false below keeps its products and sums separate.
             "cu/hy4f_gpu.cu",
+            // Hy4-flash GPU route (`hy4f-gpu`): BF16-activation tensor-core GEMMs over the stored
+            // formats (BF16, FP8 128x128 blocks, NVFP4), MLA attention over the latent cache,
+            // the pooled indexer, router, hyper-connections and Engram kernels; portable CUDA
+            // (mma.sync m16n8k16, sm_80 and up), no arch stub.
+            "cu/hy4f_route.cu",
             // Pinned MiMo source QKV shard outputs gathered on-device.
             "cu/mimo_qkv_gather.cu",
             // Bounded f32 MiMo attention reference component with learned sink.

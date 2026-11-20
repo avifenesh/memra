@@ -96,15 +96,50 @@ pub static PACK: ModelPack = ModelPack {
     // the chat turn), argmax equal at every position. The band is twice that, the factor the
     // deepseek_v41 class uses; the smallest wrong program the gate refuses on logits moves them
     // by 2.49 (research/modelplan-onboarding-hy4flash-20261119/checkpoint/). Selections are
-    // compared before the band, with their own near-tie bands (memra-cli `checkpoint_tape`).
-    checkpoint_parity_classes: &[ClassParityGate {
-        numeric_class: "hy-v4-flash-source-program",
-        gate: CheckpointParityGate {
-            max_abs: 0.12,
-            max_rel: 0.0,
-            require_argmax: true,
+    // compared before the band, with their own selection bands: twice the same forced f32
+    // backend's spread of the router's selection scores (4.43e-3) and of the indexer's group
+    // logits (1.18e-2) against f64's. The native runs free (memra-cli `checkpoint_tape`).
+    checkpoint_parity_classes: &[
+        ClassParityGate {
+            numeric_class: "hy-v4-flash-source-program",
+            gate: CheckpointParityGate {
+                max_abs: 0.12,
+                max_rel: 0.0,
+                require_argmax: true,
+            },
+            tape: Some(TapeClassGate {
+                oracle_class: "hy-v4-flash-source-program",
+                router_band: 0.009,
+                indexer_band: 0.024,
+                forced_selections: false,
+            }),
         },
-    }],
+        // The GPU route (memra-engine `hy4f_route`, binary `hy4f-gpu`): every weight GEMM takes
+        // its input as two BF16 terms on the tensor cores, F32 elsewhere, an F32 cache; scored
+        // against the same f64 oracle tapes. Its band is set from the pinned program's own
+        // backend at that input format (`bf16x2a`: the f32 backend with every linear input the
+        // program runs at its activation dtype carried as hi + lo BF16), never from the route:
+        // forced to the f64 run's selections it differs from f64 by at most 0.0555 on `long`
+        // (3.1e-4 on the chat turn), argmax equal at every position, router selection
+        // scores within 2.89e-3 and group logits within 1.12e-2. Each band is twice that. The
+        // route runs with the oracle's selections applied, as that backend ran: left free, 19 of
+        // 86,592 router picks of `long` flip at near ties and the flips move later positions, the
+        // same thing the f32 backend does free (research/modelplan-onboarding-hy4flash-20261119/gpu/).
+        ClassParityGate {
+            numeric_class: "hy-v4-flash-bf16x2-activations",
+            gate: CheckpointParityGate {
+                max_abs: 0.111,
+                max_rel: 0.0,
+                require_argmax: true,
+            },
+            tape: Some(TapeClassGate {
+                oracle_class: "hy-v4-flash-source-program",
+                router_band: 0.0058,
+                indexer_band: 0.0224,
+                forced_selections: true,
+            }),
+        },
+    ],
     // A real chat turn in the hy_v4 dialect: the artifact's template (reasoning_effort
     // "no_think") on "What is the capital of France? Answer in one word.", answered "Paris."
     // and teacher-forced (checkpoint/gen_probes.py). The default 1,2,3,4 is no conversation.

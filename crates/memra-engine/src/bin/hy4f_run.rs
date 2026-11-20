@@ -5,6 +5,7 @@
 //!
 //! usage: hy4f-run CKPT_DIR (--request FILE | TOKEN ...) [--tape DIR] [--red ARM]...
 //!                 [--layers N] [--gen N] [--device D]
+//!        hy4f-run --numeric-class   print the class (the checkpoint gate asks)
 //!   MEMRA_FULL_PREC=1      required: the route has one numeric program
 //!   MEMRA_ORACLE_OUT=FILE  with TOKEN args: write the `memra-checkpoint-oracle-v1` tape of the
 //!                          last token (the whole prompt as the prefill)
@@ -173,6 +174,11 @@ fn pass(runner: &Runner, req: &Request, layers: usize) -> Result<Pass, String> {
 }
 
 fn run() -> Result<(), String> {
+    // the checkpoint gate asks a runner for its numeric class before it runs it
+    if std::env::args().nth(1).as_deref() == Some("--numeric-class") {
+        println!("{NUMERIC_CLASS}");
+        return Ok(());
+    }
     if std::env::var("MEMRA_FULL_PREC").as_deref() != Ok("1") {
         return Err("MEMRA_FULL_PREC=1 is required: this route has one numeric program".into());
     }

@@ -2516,12 +2516,22 @@ fn format_lock(
     // only a pack that declares a class band or a probe writes these lines: every other lock
     // keeps its bytes
     for class in pack.checkpoint_parity_classes {
-        writeln!(
+        write!(
             output,
             "checkpoint_class={} atol={} rtol={} require_argmax={}",
             class.numeric_class, class.gate.max_abs, class.gate.max_rel, class.gate.require_argmax
         )
         .unwrap();
+        // the tape-set gate's terms are part of the class's record
+        if let Some(t) = class.tape {
+            write!(
+                output,
+                " oracle_class={} router_band={} indexer_band={} forced_selections={}",
+                t.oracle_class, t.router_band, t.indexer_band, t.forced_selections
+            )
+            .unwrap();
+        }
+        writeln!(output).unwrap();
     }
     if let Some(probe) = pack.checkpoint_probe {
         writeln!(output, "checkpoint_probe_sha256={}", probe_sha256(probe)).unwrap();
