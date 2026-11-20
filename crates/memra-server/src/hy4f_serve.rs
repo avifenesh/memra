@@ -760,12 +760,11 @@ fn admit_session(
         return Ok(None);
     }
     // the live check: a co-tenant may hold memory the book's ceiling assumed free. The scratch
-    // an earlier long request grew stays allocated (MemAvailable no longer counts it), so only
-    // the growth this session would add is needed free.
+    // an earlier long request grew stays allocated (MemAvailable no longer counts it), so what
+    // must be free is the new session's cache and the scratch growth still owed to the longest
+    // session (running or new) beyond what the route holds.
     let live = mem_available().unwrap_or(0);
-    let growth = book
-        .index_scratch(cap)
-        .saturating_sub(route.index_scratch_held());
+    let growth = live_scratch_growth(book, running, cap, route.index_scratch_held());
     let need = book.state(cap) + growth + MARGIN_BYTES + HEADROOM_BYTES;
     if live < need {
         if running.is_empty() {
@@ -791,6 +790,18 @@ fn admit_session(
             Ok(None)
         }
     }
+}
+
+/// The index scratch growth a step may still need beyond `held`: the largest of the running
+/// sessions' and the new one's.
+fn live_scratch_growth(book: &Book, running: &[usize], cap: usize, held: usize) -> usize {
+    running
+        .iter()
+        .chain(std::iter::once(&cap))
+        .map(|&c| book.index_scratch(c))
+        .max()
+        .unwrap_or(0)
+        .saturating_sub(held)
 }
 
 /// Why the memory door answers the request at the queue head instead of admitting it.
@@ -1454,6 +1465,23 @@ mod tests {
     fn the_greedy_pick_is_the_first_of_equal_maxima() {
         assert_eq!(argmax(&[0.0, 2.0, 2.0, 1.0]), 1);
         assert!(choose(vec![0.0, f32::NAN], 0, None, None, &[]).is_err());
+    }
+
+    /// The live check reserves the scratch a running long session still owes, not only the new
+    /// one's: a small request beside a long prefill must leave its growth free.
+    #[test]
+    fn the_live_check_keeps_a_running_sessions_scratch_growth() {
+        let b = book(24 << 30);
+        let held = b.index_scratch(4096);
+        assert_eq!(live_scratch_growth(&b, &[], 4096, held), 0);
+        let long = live_scratch_growth(&b, &[600_000], 4096, held);
+        assert_eq!(long, b.index_scratch(600_000) - held);
+        assert!(long > 0);
+        // a scratch already grown for the long session is not booked twice
+        assert_eq!(
+            live_scratch_growth(&b, &[600_000], 4096, b.index_scratch(600_000)),
+            0
+        );
     }
 
     #[test]
