@@ -28,11 +28,11 @@
 //!                                     (lane/qos-p95 2026-08-02).
 //!   POST /v1/completions         -> {model,prompt|prompt_ids,max_tokens,temperature?,top_p?,top_k?,
 //!                                     seed?,stop?,chat?,stream?,cache_salt?,ignore_eos? (the
-//!                                     deepseek-v4.1 route only)}. stream=true => SSE
+//!                                     deepseek-v4.1 and hy_v4_flash routes)}. stream=true => SSE
 //!                                     token-by-token; else a single JSON {text,tokens,stop_reason}.
 //!   POST /v1/chat/completions    -> OpenAI chat messages rendered by the GGUF chat template;
 //!                                     OpenAI message/chunk response shapes; `ignore_eos?` as on
-//!                                     completions (the deepseek-v4.1 route only). `tools`/`tool_choice`
+//!                                     completions (the deepseek-v4.1 and hy_v4_flash routes). `tools`/`tool_choice`
 //!                                     (auto|none) + role:"tool" turns render through the
 //!                                     template's own <tools> branch; emitted <tool_call> blocks
 //!                                     parse into OpenAI `tool_calls` (+"tool_calls" finish);
@@ -8451,7 +8451,7 @@ fn openrouter_supported_parameters(
     // surface (embedders, rerankers) nothing chat-shaped is advertised at all.
     if is_chat
         && caps.is_some_and(|c| {
-            !c.dsv4 && !(c.qwen_think && !c.think_switch && c.think_close.is_empty())
+            !c.dsv4 && !c.hy4 && !(c.qwen_think && !c.think_switch && c.think_close.is_empty())
         })
     {
         parameters.insert("json_mode".into(), json!({ "type": "boolean" }));
@@ -8936,8 +8936,9 @@ fn model_entry_v1(
     // thought channel) means the model reasons and the reasoning knobs are live.
     let thinking = caps.is_some_and(|c| c.qwen_think || c.effort_levels || c.gemma_think || c.dsv4);
     // rung-3 model-row honesty: the dsv4 route refuses response_format by name and
-    // serves no prefix cache (n_cached honestly 0) — its row must not claim either.
-    let is_dsv4 = caps.is_some_and(|c| c.dsv4);
+    // serves no prefix cache (n_cached honestly 0) — its row must not claim either. The
+    // hy_v4_flash route (`ModelCaps::hy4`) serves neither too.
+    let own_route = caps.is_some_and(|c| c.dsv4 || c.hy4);
     let per_1m = |v: Option<&str>| match v.and_then(per_million_price) {
         Some(p) => json!(p),
         None => serde_json::Value::Null,
@@ -9004,10 +9005,10 @@ fn model_entry_v1(
             // v0.123.0 and advertised false for step37 while the server served schema-valid
             // constrained output on it.
             "structured_output": is_chat
-                && !is_dsv4
+                && !own_route
                 && !caps.is_some_and(|c| c.qwen_think && !c.think_switch && c.think_close.is_empty()),
             "reasoning": is_chat && thinking,
-            "prompt_caching": is_chat && !is_dsv4,
+            "prompt_caching": is_chat && !own_route,
         },
         "pricing": {
             "currency": "USD",
@@ -9780,9 +9781,18 @@ fn build_chat_request_with_trace(
         Some("no_think") if is_hy4 => Some("none".to_string()),
         _ => req.reasoning_effort.clone(),
     };
+    // the same spelling inside the OpenRouter `reasoning` object (the Anthropic and Responses
+    // translations land there too)
+    let mut reasoning_in = req.reasoning.clone();
+    if is_hy4
+        && let Some(obj) = reasoning_in.as_mut().and_then(|v| v.as_object_mut())
+        && obj.get("effort").and_then(|e| e.as_str()) == Some("no_think")
+    {
+        obj.insert("effort".into(), json!("none"));
+    }
     let (mut think, effort_level, think_client_explicit) = parse_think(
         &effort_in,
-        &req.reasoning,
+        &reasoning_in,
         vllm_switch,
         req.include_reasoning,
         default_effort,
@@ -9880,6 +9890,13 @@ fn build_chat_request_with_trace(
     if response_grammar.is_some() && tool_language.is_some() {
         return Err(
             "response_format cannot be combined with constrained tool_choice/parallel_tool_calls"
+                .into(),
+        );
+    }
+    if is_hy4 && response_grammar.is_some() {
+        return Err(
+            "response_format is not available on the hy_v4_flash route (no constrained decoding \
+             in this dialect yet)"
                 .into(),
         );
     }
@@ -11123,10 +11140,10 @@ fn validate_prompt_ids(ids: &[u32], caps: Option<&ModelCaps>) -> Result<(), Stri
 /// Accepting it and stopping at the end id anyway would be a silent downgrade. `false` is
 /// accepted everywhere.
 fn validate_ignore_eos(ignore_eos: bool, caps: Option<&ModelCaps>) -> Result<(), &'static str> {
-    if ignore_eos && !caps.is_some_and(|c| c.dsv41) {
+    if ignore_eos && !caps.is_some_and(|c| c.dsv41 || c.hy4) {
         return Err(
-            "ignore_eos is served by the deepseek-v4.1 route only; this model stops at its \
-             end-of-sentence token",
+            "ignore_eos is served by the deepseek-v4.1 and hy_v4_flash routes only; this model \
+             stops at its end-of-sentence token",
         );
     }
     Ok(())
@@ -11234,14 +11251,20 @@ mod prompt_ids_tests {
         }
     }
 
-    /// Only the deepseek-v4.1 route serves `ignore_eos: true`; every other model refuses it on
-    /// both surfaces (the handlers answer the error as a 400 naming the field).
+    /// Only the deepseek-v4.1 and hy_v4_flash routes serve `ignore_eos: true`; every other model
+    /// refuses it on both surfaces (the handlers answer the error as a 400 naming the field).
     #[test]
     fn ignore_eos_is_refused_outside_the_deepseek_v41_route() {
         let v41 = ModelCaps {
             dsv41: true,
             ..Default::default()
         };
+        let hy4 = ModelCaps {
+            hy3: true,
+            hy4: true,
+            ..Default::default()
+        };
+        assert!(validate_ignore_eos(true, Some(&hy4)).is_ok());
         let other = ModelCaps {
             chat_ok: true,
             ..Default::default()
@@ -11250,7 +11273,7 @@ mod prompt_ids_tests {
         assert!(
             validate_ignore_eos(true, Some(&other))
                 .unwrap_err()
-                .contains("deepseek-v4.1 route only")
+                .contains("hy_v4_flash routes only")
         );
         assert!(validate_ignore_eos(true, None).is_err());
         for caps in [None, Some(&other), Some(&v41)] {
@@ -33262,10 +33285,9 @@ request = "0"
             assert_eq!(body["error"]["param"], "ignore_eos", "chat={chat}");
             assert_eq!(body["error"]["type"], "invalid_request_error");
             assert!(
-                body["error"]["message"]
-                    .as_str()
-                    .unwrap()
-                    .starts_with("ignore_eos is served by the deepseek-v4.1 route only"),
+                body["error"]["message"].as_str().unwrap().starts_with(
+                    "ignore_eos is served by the deepseek-v4.1 and hy_v4_flash routes only"
+                ),
                 "chat={chat}"
             );
         }
@@ -33346,10 +33368,9 @@ request = "0"
             assert_eq!(status, StatusCode::BAD_REQUEST, "{surface}: {body}");
             assert_eq!(body["error"]["type"], "invalid_request_error", "{surface}");
             assert!(
-                body["error"]["message"]
-                    .as_str()
-                    .unwrap()
-                    .starts_with("ignore_eos is served by the deepseek-v4.1 route only"),
+                body["error"]["message"].as_str().unwrap().starts_with(
+                    "ignore_eos is served by the deepseek-v4.1 and hy_v4_flash routes only"
+                ),
                 "{surface}: {body}"
             );
             if messages {

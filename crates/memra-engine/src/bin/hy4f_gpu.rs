@@ -390,7 +390,10 @@ fn bench(route: &mut Route, a: &Args, vocab: usize, load_s: f64) -> Result<(), S
         route.reset();
         route.dev.sync()?;
         let tp = Instant::now();
-        let logits = route.call(prompt, false, None, None)?;
+        let mut logits = Vec::new();
+        for (s0, s1) in prefill_calls(prompt.len(), a.chunk) {
+            logits = route.call(&prompt[s0..s1], false, None, None)?;
+        }
         route.dev.sync()?;
         let prefill_s = tp.elapsed().as_secs_f64();
         let mut next = argmax(&logits[..vocab]) as u32;
@@ -411,6 +414,7 @@ fn bench(route: &mut Route, a: &Args, vocab: usize, load_s: f64) -> Result<(), S
             "run": run,
             "warmup": run == 0,
             "prompt_tokens": prompt.len(),
+            "prefill_chunk": a.chunk,
             "prefill_s": prefill_s,
             "prefill_tok_s": prompt.len() as f64 / prefill_s,
             "decode_calls": steps.len(),

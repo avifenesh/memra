@@ -553,6 +553,8 @@ fn prepare(
         ));
     }
     let prompt = crate::dsv4_serve::render_prompt_tok(tok, req)?;
+    // the request's own context bound (`max_ctx`) tightens the route's
+    let ctx = request_ctx(max_seq, req.params.max_ctx);
     let vocab = tok.vocab_size();
     if let Some(&bad) = prompt.iter().find(|&&t| vocab > 0 && t as usize >= vocab) {
         return Err(EngineError::invalid_param(
@@ -560,13 +562,13 @@ fn prepare(
             "prompt",
         ));
     }
-    if prompt.len() >= max_seq {
+    if prompt.len() >= ctx {
         return Err(EngineError::context_length(format!(
-            "prompt ({} tok) leaves no room in the {max_seq}-position context",
+            "prompt ({} tok) leaves no room in the {ctx}-position context",
             prompt.len()
         )));
     }
-    let budget = req.params.max_new.min(max_seq - prompt.len()).max(1);
+    let budget = req.params.max_new.min(ctx - prompt.len()).max(1);
     let sc = &req.sampler_cfg;
     let greedy = sc.temperature <= 0.0;
     if !greedy && sc.min_p != 0.0 {
@@ -598,6 +600,11 @@ fn prepare(
         sample,
         pen,
     })
+}
+
+/// A request's context: the route's served context, tightened by the request's `max_ctx`.
+fn request_ctx(max_seq: usize, max_ctx: Option<usize>) -> usize {
+    max_ctx.map_or(max_seq, |c| c.min(max_seq))
 }
 
 /// The ids that end a request's generation: the request's own and the model's end-of-sentence
@@ -760,6 +767,11 @@ fn admit_session(
     }
     match route.new_session(cap) {
         Ok(s) => Ok(Some(s)),
+        // an allocation the device refused is memory pressure; a device that no longer
+        // synchronizes is a fault the route cannot serve past
+        Err(e) if route.dev.sync().is_err() => Err(Door::Dead(format!(
+            "hy_v4_flash route stopped: the device failed allocating a {cap}-token session: {e}"
+        ))),
         Err(e) if running.is_empty() => Err(Door::Engine(format!(
             "hy_v4_flash: the cache of a {cap}-token session: {e}"
         ))),
@@ -776,6 +788,8 @@ enum Door {
     Never(Admission),
     /// the memory is held by something the route does not own: the engine's error answers
     Engine(String),
+    /// the device failed: the route stops serving
+    Dead(String),
 }
 
 /// The loaded route and its books, on the serving thread.
@@ -865,6 +879,26 @@ fn bring_up<'a>(
             need as f64 / (1u64 << 30) as f64
         ));
     }
+    // the whole checkpoint binds to the pack's contract first (every declared tensor class,
+    // the drafter's and the vision tower's included, present with its shape), before any byte
+    // is uploaded
+    let (mc, _) = compile(&cfg.config_text)?;
+    let source = memra_gguf::source::SafetensorsSource::open(&cfg.dir)
+        .map_err(|e| format!("open {}: {e}", cfg.dir.display()))?;
+    let binding = memra_gguf::checkpoint_binding::bind_source(&source, &mc, plan)
+        .map_err(|e| format!("the checkpoint does not bind to the hy_v4_flash contract: {e}"))?;
+    if binding.family() != "hy_v4_flash" {
+        return Err(format!(
+            "the checkpoint binds to the {} pack, not hy_v4_flash",
+            binding.family()
+        ));
+    }
+    eprintln!(
+        "[hy4f-serve] {}: checkpoint bound to the hy_v4_flash contract ({} tensors)",
+        cfg.name,
+        binding.bound.tensors.len()
+    );
+    drop(source);
     let ck = Ckpt::open(&cfg.dir)?;
     let dev = Dev::new(0)?;
     let tl = Instant::now();
@@ -1041,6 +1075,13 @@ fn serve_loop(
                     });
                 }
                 Ok(None) => break,
+                Err(Door::Dead(why)) => {
+                    eprintln!("[hy4f-serve] {why}");
+                    fail_all(&mut act, health, &why);
+                    drain_into(rx, &mut pending);
+                    fail_pending(&mut pending, health, &why);
+                    return Some(why);
+                }
                 Err(Door::Engine(why)) => {
                     let mut pr = pending.pop_front().expect("the head exists");
                     eprintln!("[hy4f-serve] request_id={:?}: {why}", pr.req.request_id);
@@ -1386,6 +1427,13 @@ mod tests {
     fn the_greedy_pick_is_the_first_of_equal_maxima() {
         assert_eq!(argmax(&[0.0, 2.0, 2.0, 1.0]), 1);
         assert!(choose(vec![0.0, f32::NAN], 0, None, None, &[]).is_err());
+    }
+
+    #[test]
+    fn a_requests_max_ctx_tightens_the_served_context() {
+        assert_eq!(request_ctx(4096, None), 4096);
+        assert_eq!(request_ctx(4096, Some(110)), 110);
+        assert_eq!(request_ctx(4096, Some(1 << 20)), 4096);
     }
 
     #[test]
