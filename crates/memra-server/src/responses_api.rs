@@ -2042,6 +2042,7 @@ mod tests {
             },
             crate::worker::ModelCaps {
                 glm5: true,
+                hy4: false,
                 ..base_caps.clone()
             },
         ] {

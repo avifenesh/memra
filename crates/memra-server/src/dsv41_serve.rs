@@ -493,6 +493,7 @@ pub fn caps(m: &Dsv41Model) -> ModelCaps {
         dsv4: true,
         dsv41: true,
         glm5: false,
+        hy4: false,
         chat_temperature_default: None,
         chat_top_p_default: None,
         n_vocab: m.tok.vocab_size(),
