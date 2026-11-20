@@ -115,10 +115,11 @@ the table loads; vLLM `load_lookup`), not with the table length 120,818. The `ar
 would hash a different program on both counts.
 
 The four Engram RMS norms (`lookup_per_head_norms`, `norm_key`, `norm_query`, the weightless
-`unified_rmsnorm`) are `torch.nn.RMSNorm` with `eps=None`, so transformers uses
-`torch.finfo(input dtype).eps`: 2^-7 on BF16 activations. vLLM uses the F32 epsilon
-(`finfo(float32).eps`) for the per-head and unified norms. memra follows transformers, the
-oracle, and carries the rule in the plan rather than a number.
+`unified_rmsnorm`) are `torch.nn.RMSNorm` with `eps=None`. Corrected in step 5: this step read
+that as `torch.finfo(input dtype).eps`, 2^-7 on BF16 activations, from the module's
+documentation. ATen's default is the epsilon of the op-math type instead, `f32::EPSILON`
+(2^-23) for BF16 inputs, which is also the value vLLM writes out (`finfo(float32).eps`), so the
+two implementations agree. memra carries the rule in the plan rather than a number.
 
 Ids 120818-120831 (14 tokenizer placeholders, `<｜hy_place▁holder▁no▁800｜>` to `..813｜>`) lie
 past the table. transformers reads them as the pad id's entry; vLLM extends the map with the
@@ -262,8 +263,8 @@ by `census_classes.py` from `census/header-census.tsv`, which it must expand bac
 | question | owner step |
 |---|---|
 | DFly2 dense MLP width: 9,216 in the checkpoint, not in the config. The vLLM derivation defaults `dfly_intermediate_size` to `intermediate_size` (13,824) and then materializes the width from the checkpoint. Confirm against the DFly2 program before pinning it beyond the census. | PR 10 (DFly2) |
-| Whether transformers' per-row FP8 round trip of a BF16 Engram row equals this checkpoint's stored `q * weight_scale` bit for bit. | CheckpointParity |
-| The Engram norm epsilon is `finfo(input dtype).eps` in transformers (2^-7 on BF16); vLLM uses the F32 epsilon. The oracle must run BF16 activations for the band to mean anything. | CheckpointParity |
+| Resolved in step 5. Whether transformers' per-row FP8 round trip of a BF16 Engram row equals this checkpoint's stored `q * weight_scale` bit for bit. Answer: yes in F32, on all 8,192 sampled rows, because the artifact was written by the same rule; no under BF16 activations, where transformers computes the scale in BF16 (`engram/`). memra reads `q * weight_scale` and runs no second round trip. | was CheckpointParity |
+| Resolved in step 5. The Engram norm epsilon. Answer: `nn.RMSNorm(eps=None)` adds ATen's op-math epsilon, `f32::EPSILON` (2^-23) on BF16 activations, not `finfo(bfloat16).eps`; vLLM's explicit F32 epsilon is the same value. The plan says `HyV4EngramNormEpsilon::OpMathF32`. | was CheckpointParity |
 
 # Step 2: tokenizer, chat template and tool-call parser (2026-11-20)
 
@@ -471,3 +472,131 @@ indexed layer now carries its indexer weights.
   any band.
 - Exact zero ties do not depend on precision: they follow the tie order, which every memra
   surface must implement as the plan states.
+
+# Step 5: the Engram memory (2026-11-20)
+
+Verdict: memra hashes the artifact's n-grams bit for bit as the pinned transformers code does,
+on the artifact's own config and lookup table: the NumPy multipliers of all four Engram layers,
+the n-gram tokens, the mask and every hash id. memra-reference implements the float half of
+`HYV4FlashEngramLayer` in f64 from the stored FP8 rows and matches the pinned code to 3.3e-16 on
+the module and 2.0e-14 on a 4-layer stack with one Engram layer past the indexer budget
+(`engram/gate.log`). Both open questions of step 0 on Engram are answered from the pinned code
+and measured; one corrects the plan. No GPU was used.
+
+## The program
+
+Per Engram layer (config id `L`, decoder layer `L - 1`), from the plan and the config:
+
+- Token ids map through the checkpoint's `lookup_table` (120,818 entries). The 14 placeholder
+  ids 120818-120831 past it read the pad id's entry, as transformers does (vLLM extends the map
+  with the identity).
+- The multipliers are NumPy `default_rng(engram_seed + 10007 * L).integers(0, int64::MAX // V //
+  2, size=3) * 2 + 1` with `V = max(lookup_table) + 1 = 92,620` (`dsv41_forward`'s PCG64 port,
+  now seeded by a caller: `numpy_odd_multipliers`).
+- Each position takes the 3 tokens ending there; a slot before the start of its document reads
+  the pad id. Orders 2 and 3 XOR the first 2 or 3 products, and each order's 8 heads take the
+  value modulo their own prime (`engram_layer_head_vocab_sizes`, 16 primes per layer summing to
+  the table's rows). Row = hash + the head's offset in the one table.
+- A row is its 96 e4m3 codes times its F32 `weight_scale`; each of the 16 heads is normalized by
+  its own `lookup_per_head_norms`, and the 1,536-wide memory feeds 4 per-stream key projections
+  (`key_projs`, `norm_key`, against `norm_query` of that stream) and one value projection
+  (`value_proj`, the weightless `unified_rmsnorm`, `unified_pre_gamma`). Stream `s` gets
+  `sigmoid(sqrt(max(|g|, 1e-6)) * sign(g)) * v + unified_per_hc_scales.s * v`. A position whose
+  token is the pad id, the image placeholder (120120) or the video placeholder (120124) adds
+  nothing (`HYV4FlashModel.build_engram_inputs`; the plan's `masked_token_ids`, from the
+  top-level `image_token_id` and `video_token_id`). The result is added to the streams before
+  the attention hyper-connection.
+
+Host code: `crates/memra-gguf/src/hy_v4_flash_engram.rs` (n-gram tokens, mask, compressed
+vocabulary, multipliers, hash ids, head offsets). Reference: `engram` in
+`crates/memra-reference/src/hy_v4_flash.rs`, wired into `decoder_layer`.
+
+## FP8 rows: the round trip question
+
+`engram/fp8_rows.py` range-reads 8 blocks of 256 consecutive rows from each of the four tables of
+the BF16 source and of the artifact (8,192 rows, none all-zero) and runs the pinned
+`_fp8_round_trip` on them (`engram/fp8-rows.json`, `fp8-rows.log`):
+
+| check | rows |
+|---|---:|
+| artifact scale = `f32(amax) / 448` of the source row, bit for bit | 8,192 / 8,192 |
+| artifact codes = the source row rounded to nearest even, saturated at 448, by value | 8,192 / 8,192 |
+| the same, byte for byte (4 rows hold a zero the producer writes as +0 and torch as -0) | 8,188 / 8,192 |
+| pinned round trip of the source row in F32 = stored `q * scale` in F32, bit for bit | 8,192 / 8,192 |
+| pinned round trip on BF16 activations = stored row in BF16, bit for bit | 808 / 8,192 |
+| round trip of the stored row = the stored row (F32; and F64 on the exact `q * scale`) | 8,192 / 8,192 |
+| largest code of the row is 448 | 8,192 / 8,192 |
+
+On BF16 activations transformers computes the scale in BF16, up to 0.33% off the stored F32
+scale, and rounds the result to BF16: 70.5% of the elements agree, and an element whose code
+crosses a rounding boundary moves by up to 11.5%. So the artifact's rows are the F32 program, and
+memra reads them as stored with no second round trip (which would be the identity).
+
+## The norm epsilon
+
+`torch.nn.RMSNorm(eps=None)` adds the epsilon of the op-math type, not of the input dtype:
+PyTorch v2.15.0 `aten/src/ATen/native/layer_norm.cpp` (`rms_norm_composite`,
+`eps.value_or(std::numeric_limits<float>::epsilon())` for BF16, F16 and F32 inputs) and the fused
+CUDA kernel in `cuda/layer_norm_kernel.cu` (the same default on the accumulate type).
+`engram/eps_check.py` measures it on torch 2.15.0 (`eps-check.log`): on BF16 and F16 inputs the
+module equals the formula at `finfo(float32).eps` exactly and differs from the one at
+`finfo(input dtype).eps` by 2.1 and 0.63. The plan's rule is now
+`HyV4EngramNormEpsilon::OpMathF32` (`value()` is `f32::EPSILON`), the plan hash moves and
+`inspect/` is refreshed (`plan_sha256=fd44fd62f4c4ed0a...`; the only diff is the four
+`norm_epsilon` lines). The mask's `masked_token_ids` (pad, image and video ids) move it again:
+`plan_sha256=47a593754e167e86...`, with the four `masked_token_ids` lists in `model-plan.txt` and
+`image_token_id`/`video_token_id` in `normalized-config.txt` as the only other diff. With the artifact's row RMS around 0.85 (0.43 at the lowest sampled), the
+step 0 reading would have moved each per-head norm by about 0.5%.
+
+## Oracle
+
+`engram/gen_engram.py` (pinned blobs checked; `OMP_NUM_THREADS=1`) records two parts of
+`engram/engram.json`:
+
+- `artifact_hash`: the pinned config class on the pinned `config.json` (sha256 checked), the
+  lookup table range-read from the artifact (sha256 checked), and the pinned
+  `draw_hash_multipliers`, `build_ngram_tokens`, `build_engram_inputs` (the mask) and
+  `hash_ngrams` run as unbound methods on stand-in objects. 210 tokens: the identity prefix and
+  the first ids past it, random ids, the pad id, all 14 placeholders, a repeated trigram, the
+  image and video placeholders and a packed second document. It keeps the table
+  entries those tokens read, not the table.
+- `tiny`: the step 4 tiny model (41 tokens past the indexer budget) with `engram_layer_ids` [2],
+  2 orders of 2 heads of 4 dims, primes 29, 31, 37, 41, a 60-entry map onto 40 ids on a 64-token
+  vocabulary (ids 60-63 lie past it), seed 3, the pad id at one position. The four Engram norms
+  get `eps = 2^-23`, the program's value (in a float64 run ATen's default would be the F64
+  epsilon). The table is recorded as the round trip's codes and scales; `q * scale` equals the
+  pinned round trip's output exactly (asserted).
+
+## What the gate covers
+
+`crates/memra-reference/tests/hy_v4_flash_engram.rs`:
+
+- On the artifact's config, compiled by the pack: the four Engram plans sit in layers 1, 11, 21,
+  31 with ids 2, 12, 22, 32, 16 heads of 96 and the op-math epsilon; the multipliers, n-gram
+  tokens, mask and hash ids equal the pinned ones exactly. The lookup table outside the recorded
+  entries is a sentinel, so a hash that read any other entry would fail.
+- Hash red arms, each changing the hash ids: multipliers bounded by the table length (and those
+  equal the pinned draw at that bound), the 0-based seed, placeholders read as themselves, the
+  two orders' moduli swapped. A pad-only mask differs from the pinned mask, and a zero modulus
+  with the same total is refused.
+- On the tiny model: the hash ids, the Engram residual (masked tokens exactly zero), every decoder
+  layer and the stack to the last hidden state.
+- Float red arms, each moving the Engram residual past 1e-6: the 2^-7 epsilon (0.16), stream 0's
+  key projection for every stream (0.32), the per-stream scales dropped (0.46), head 0's norm
+  for every head (1.7), the mask ignored (0.73).
+- Every compared value must be finite (a NaN fails the comparison), and a short Engram weight
+  is refused rather than truncated.
+
+## For the whole-trunk and checkpoint steps
+
+- Hashing is integer and exact. Any hash difference is a bug, never a tolerance.
+- The f64 oracle must set the Engram norms' epsilon to 2^-23; left at `None`, a float64 run adds
+  the F64 epsilon and moves the norms by about `6e-8 / ms` relative, past a 1e-12 bound.
+- A transformers run with a BF16 model re-quantizes every Engram row with a BF16 scale (0.33% per
+  row, absorbed by the per-head norm) and moves codes across rounding boundaries (29.5% of the
+  elements, up to 11.5% each, not absorbed). Against memra, which reads the stored F32 rows, that
+  is a BF16-oracle artefact: run the CheckpointParity oracle's Engram path in F32 (or mapped to
+  F64), which reproduces the stored rows bit for bit, or attribute the difference to it.
+- vLLM, the second reading, loads FP8 tables with a BF16 row scale (`weight_scale_inv`) and runs
+  no round trip on a BF16 table, and zeroes a token whose hash ids are all negative where
+  transformers masks the pad id and the image and video placeholders. Neither is the oracle.

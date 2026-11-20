@@ -267,8 +267,9 @@ pub fn layer_plan(
         table_rows: hy.engram_table_rows(slot),
         lookup_table_size: hy.engram_lookup_table_size,
         multiplier_bound: HyV4EngramMultiplierBound::LookupTableMaxPlusOne,
-        norm_epsilon: HyV4EngramNormEpsilon::InputDtype,
+        norm_epsilon: HyV4EngramNormEpsilon::OpMathF32,
         pad_token_id: hy.engram_pad_id,
+        masked_token_ids: [hy.engram_pad_id, hy.image_token_id, hy.video_token_id],
         table_fp8_per_row: true,
     });
     Ok(LayerPlan {

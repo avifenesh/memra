@@ -113,10 +113,21 @@ pub enum HyV4EngramMultiplierBound {
 /// The epsilon of the Engram RMS norms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HyV4EngramNormEpsilon {
-    /// `torch.nn.RMSNorm(eps=None)`: `torch.finfo(input dtype).eps`, 2^-7 on the BF16 activations
-    /// of this program (transformers). vLLM uses the F32 epsilon for two of the four norms; the
-    /// oracle is transformers.
-    InputDtype,
+    /// `torch.nn.RMSNorm(eps=None)`: ATen's default, the epsilon of the op-math type the norm
+    /// computes in, not of its input dtype. BF16, F16 and F32 inputs compute in F32, so the
+    /// program's epsilon is `f32::EPSILON` (2^-23) on its BF16 activations (PyTorch v2.15.0
+    /// `aten/src/ATen/native/layer_norm.cpp` `rms_norm_composite` and the fused CUDA kernel in
+    /// `cuda/layer_norm_kernel.cu`, `eps.value_or(std::numeric_limits<float>::epsilon())`).
+    /// vLLM's explicit `finfo(float32).eps` is the same value.
+    OpMathF32,
+}
+
+impl HyV4EngramNormEpsilon {
+    pub fn value(self) -> f32 {
+        match self {
+            HyV4EngramNormEpsilon::OpMathF32 => f32::EPSILON,
+        }
+    }
 }
 
 /// transformers `HYV4FlashEngramLayer`, added to the hidden streams before the layer's
@@ -124,9 +135,12 @@ pub enum HyV4EngramNormEpsilon {
 /// decoder layer `layer_id - 1`. Token ids map through the checkpoint `lookup_table` (ids past it
 /// read as the pad id's entry), each n-gram order mixes the mapped ids with odd multipliers drawn
 /// from `numpy.random.default_rng(hash_seed)` and XOR, and `heads` hash heads take the mixed
-/// value modulo their own prime to gather one `head_dim` row each from the table. Rows are read
-/// through a per-row FP8 quantization, normalized per head, keyed against every stream and
-/// written back through a signed-square-root sigmoid gate.
+/// value modulo their own prime to gather one `head_dim` row each from the table. A row is its
+/// stored FP8 codes times its F32 row scale, normalized per head, keyed against every stream and
+/// written back through a signed-square-root sigmoid gate. The stored row is transformers'
+/// per-row FP8 round trip (`_fp8_round_trip`, `engram_fp8_embedding`) of the BF16 source row in
+/// F32, bit for bit, and the round trip of a stored row is the row itself, so no second round
+/// trip runs (research/modelplan-onboarding-hy4flash-20261119/engram/).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HyV4EngramPlan {
     pub layer_id: u32,
@@ -139,7 +153,11 @@ pub struct HyV4EngramPlan {
     pub multiplier_bound: HyV4EngramMultiplierBound,
     /// `lookup_per_head_norms`, `norm_key`, `norm_query` and the weightless `unified_rmsnorm`.
     pub norm_epsilon: HyV4EngramNormEpsilon,
+    /// Fills the n-gram slots before a document's start.
     pub pad_token_id: u32,
+    /// The ids whose positions own no n-gram and add nothing (`build_engram_inputs`): the pad
+    /// id, the image placeholder and the video placeholder.
+    pub masked_token_ids: [u32; 3],
     /// FP8 e4m3 rows with one F32 scale per row (`weight_scale`).
     pub table_fp8_per_row: bool,
 }

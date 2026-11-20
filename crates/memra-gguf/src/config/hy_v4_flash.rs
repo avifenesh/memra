@@ -104,6 +104,11 @@ pub struct HyV4FlashConfig {
     /// does not declare it, so the configuration class default (120818) applies; the census
     /// checks the tensor's shape against it.
     pub engram_lookup_table_size: u32,
+    /// Top-level `image_token_id` and `video_token_id` (configuration class defaults 120120 and
+    /// 120124 when absent): `HYV4FlashModel.build_engram_inputs` masks them out of the Engram
+    /// with the pad id, since their positions carry projector output rather than tokens.
+    pub image_token_id: u32,
+    pub video_token_id: u32,
     pub tie_word_embeddings: bool,
     pub quant: LayerQuantMap,
     pub vision: HyV4VisionConfig,
@@ -112,6 +117,9 @@ pub struct HyV4FlashConfig {
 
 /// transformers `HYV4FlashTextConfig.engram_lookup_table_size` default.
 pub const ENGRAM_LOOKUP_TABLE_SIZE: u32 = 120_818;
+/// transformers `HYV4FlashConfig.image_token_id` and `video_token_id` defaults.
+pub const IMAGE_TOKEN_ID: u32 = 120_120;
+pub const VIDEO_TOKEN_ID: u32 = 120_124;
 
 impl HyV4FlashConfig {
     pub fn trunk_layers(&self) -> u32 {
@@ -589,6 +597,10 @@ impl HyV4FlashConfig {
             ));
         }
 
+        // Declared values win; absent, the configuration class defaults apply.
+        let image_token_id = top.u32("image_token_id")?.unwrap_or(IMAGE_TOKEN_ID);
+        let video_token_id = top.u32("video_token_id")?.unwrap_or(VIDEO_TOKEN_ID);
+
         let hc_mult = u("hc_mult")?;
         let n_routed_experts = u("n_routed_experts")?;
         let num_experts_per_tok = u("num_experts_per_tok")?;
@@ -710,6 +722,8 @@ impl HyV4FlashConfig {
                 .ok_or_else(|| missing("engram_seed"))?,
             engram_fp8_embedding: b("engram_fp8_embedding")?,
             engram_lookup_table_size,
+            image_token_id,
+            video_token_id,
             tie_word_embeddings: tie,
             quant,
             vision,
