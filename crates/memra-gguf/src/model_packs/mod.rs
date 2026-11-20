@@ -96,6 +96,17 @@ pub struct CheckpointParityGate {
     pub require_argmax: bool,
 }
 
+/// One request of a pack's tape-set checkpoint gate ([`ModelPack::checkpoint_requests`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CheckpointRequestPin {
+    pub name: &'static str,
+    /// sha256 of the request's token ids written as decimal, comma-separated
+    pub tokens_sha256: &'static str,
+    pub positions: usize,
+    /// the prefill is `token_ids[..decode_from]`; every later token is one decode call
+    pub decode_from: usize,
+}
+
 /// A checkpoint-parity gate for one oracle numeric class. A pack whose checkpoint runs under
 /// more than one numeric program (a correctly rounded CPU reference and a hardware-primitive
 /// GPU route, say) names each class's band here; the oracle's `numeric_class` picks it, and a
@@ -151,6 +162,12 @@ pub struct ModelPack {
     /// probe, tokens 1,2,3,4; a pack declares its own when that probe cannot tell programs apart
     /// on its family (the declaration and its reason belong next to the pack's band).
     pub checkpoint_probe: Option<&'static [u32]>,
+    /// Requests `memra model verify checkpoint` scores at every position (a prefill, then one
+    /// teacher-forced decode call per later token) against an oracle tape set
+    /// (`memra-checkpoint-tape-v2`). Empty: the gate scores the last token of the probe against a
+    /// `memra-checkpoint-oracle-v1` tape. Each pin binds the oracle's request by its token ids'
+    /// sha256; the first is the declared probe.
+    pub checkpoint_requests: &'static [CheckpointRequestPin],
     matches_config: fn(&ModelConfig) -> bool,
     plan_builder: fn(&ModelConfig) -> Result<ModelPlan, PlanCompileError>,
     tensor_schema: fn(
@@ -307,6 +324,7 @@ pub(super) fn canonical_tensor_schema(
 mod tests {
     use super::*;
     use crate::config::HfConfig;
+    use sha2::Digest as _;
     use std::collections::BTreeSet;
 
     #[test]
@@ -357,7 +375,40 @@ mod tests {
                 assert!(pack.checkpoint_parity.is_none());
                 assert!(pack.checkpoint_parity_classes.is_empty());
                 assert!(pack.checkpoint_probe.is_none());
+                assert!(pack.checkpoint_requests.is_empty());
             } else {
+                if let Some(first) = pack.checkpoint_requests.first() {
+                    // the tape set's first request is the declared probe, scored at every position
+                    let probe = pack
+                        .checkpoint_probe
+                        .expect("a tape set declares its probe");
+                    let text = probe
+                        .iter()
+                        .map(u32::to_string)
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let sha: String = sha2::Sha256::digest(text.as_bytes())
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect();
+                    assert_eq!(
+                        first.tokens_sha256, sha,
+                        "{}: first request is the probe",
+                        pack.family
+                    );
+                    assert_eq!(first.positions, probe.len());
+                    let mut names = BTreeSet::new();
+                    for r in pack.checkpoint_requests {
+                        assert!(
+                            names.insert(r.name),
+                            "{}: duplicate request {}",
+                            pack.family,
+                            r.name
+                        );
+                        assert!(r.decode_from > 0 && r.decode_from <= r.positions);
+                        assert_eq!(r.tokens_sha256.len(), 64);
+                    }
+                }
                 for c in pack.checkpoint_parity_classes {
                     assert!(c.gate.max_abs >= 0.0 && c.gate.max_rel >= 0.0);
                     assert!(

@@ -81,14 +81,63 @@ pub static PACK: ModelPack = ModelPack {
     // below 544 positions (1.2e-10 at 1M), summation order by 1e-15 relative. 1e-5 absolute plus
     // 1e-5 relative is at least 40 times the largest and four orders under the smallest wrong
     // program the gate refuses (0.72). Selections are compared exactly, not inside the band.
-    // The native runner's CheckpointParity band is its own class, set when that runner lands.
     checkpoint_parity: Some(CheckpointParityGate {
         max_abs: 1e-5,
         max_rel: 1e-5,
         require_argmax: true,
     }),
-    checkpoint_parity_classes: &[],
-    checkpoint_probe: None,
+    // The native checkpoint runner (memra-engine `hy4f_gpu`, binary `hy4f-run`) runs the
+    // checkpoint program in f32: class `hy-v4-flash-source-program`, against the pinned
+    // transformers program on CPU in f64 with every weight dequantized exactly. The band is set
+    // from that program's own spread between two of its backends, never from the runner: the
+    // same pinned code in f32, its router and indexer picks forced to the f64 run's (else one
+    // router near tie, a 5.4e-7 gap at layer 40 of the `long` request, sends the f32 run 16
+    // logits away), differs from f64 by at most 0.0567 over 2,112 positions of `long` (1.6e-4 on
+    // the chat turn), argmax equal at every position. The band is twice that, the factor the
+    // deepseek_v41 class uses; the smallest wrong program the gate refuses on logits moves them
+    // by 2.49 (research/modelplan-onboarding-hy4flash-20261119/checkpoint/). Selections are
+    // compared before the band, with their own near-tie bands (memra-cli `checkpoint_tape`).
+    checkpoint_parity_classes: &[ClassParityGate {
+        numeric_class: "hy-v4-flash-source-program",
+        gate: CheckpointParityGate {
+            max_abs: 0.12,
+            max_rel: 0.0,
+            require_argmax: true,
+        },
+    }],
+    // A real chat turn in the hy_v4 dialect: the artifact's template (reasoning_effort
+    // "no_think") on "What is the capital of France? Answer in one word.", answered "Paris."
+    // and teacher-forced (checkpoint/gen_probes.py). The default 1,2,3,4 is no conversation.
+    checkpoint_probe: Some(&[
+        120000, 13251, 120001, 120039, 59785, 287, 62, 4138, 506, 25, 3202, 32980, 1121, 120025,
+        120000, 3717, 120001, 3462, 341, 269, 8778, 299, 12749, 30, 6144, 297, 936, 4962, 13,
+        120025, 120000, 611, 10372, 120001, 120029, 120030, 65431, 13, 120025,
+    ]),
+    // The gate scores every position of three requests (checkpoint/requests/): the chat probe
+    // (prefill 36, 3 decode calls), and one 2,112-token request past the indexer budget
+    // (`index_topk` 2048) twice: prefilled past the budget (`long`: the indexer runs in the
+    // prefill, 8 decode calls) and prefilled under it (`long-split`: dense prefill of 2,040, the
+    // indexer switches on in the decode, 72 decode calls).
+    checkpoint_requests: &[
+        CheckpointRequestPin {
+            name: "chat",
+            tokens_sha256: "d3928a89546e86ef7fd27f1f0b2c2a7b9633fa2c7413d5ab687440d72cc8d3c0",
+            positions: 39,
+            decode_from: 36,
+        },
+        CheckpointRequestPin {
+            name: "long",
+            tokens_sha256: "4d577797fbb408dce99a463dee06464e2dee4f603aab857a4f985ba3680c4939",
+            positions: 2112,
+            decode_from: 2104,
+        },
+        CheckpointRequestPin {
+            name: "long-split",
+            tokens_sha256: "4d577797fbb408dce99a463dee06464e2dee4f603aab857a4f985ba3680c4939",
+            positions: 2112,
+            decode_from: 2040,
+        },
+    ],
     matches_config: |config| matches!(config.arch, Arch::HyV4Flash) && config.hy_v4_flash.is_some(),
     plan_builder,
     tensor_schema,

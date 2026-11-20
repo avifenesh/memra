@@ -26,6 +26,7 @@ pub static PACK: ModelPack = ModelPack {
     checkpoint_parity: None,
     checkpoint_parity_classes: &[],
     checkpoint_probe: None,
+    checkpoint_requests: &[],
     matches_config: |config| config.step35.is_some(),
     plan_builder,
     tensor_schema,

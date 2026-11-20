@@ -635,6 +635,10 @@ fn main() {
             // tree (third_party/cutlass). Built on the 120a family (120a, 121a); every other family
             // gets cu/dsv41_cutlass_stub.cu, whose launchers refuse.
             "cu/dsv41_cutlass.cu",
+            // Hy4-flash checkpoint runner (`hy4f-run`): stored-format weight GEMM (BF16, F32, FP8
+            // 128x128 blocks, NVFP4) and the sink attention core, portable CUDA C in f32, no arch
+            // stub; -fmad=false below keeps its products and sums separate.
+            "cu/hy4f_gpu.cu",
             // Pinned MiMo source QKV shard outputs gathered on-device.
             "cu/mimo_qkv_gather.cu",
             // Bounded f32 MiMo attention reference component with learned sink.
@@ -795,6 +799,9 @@ fn main() {
                 } else {
                     args.push("-fmad=false".into());
                 }
+            }
+            if mmq_src.ends_with("hy4f_gpu.cu") {
+                args.push("-fmad=false".into());
             }
             if mmq_src.ends_with("dsv41_gpu.cu") {
                 // The V4.1 kernels mirror the reference's separate fp32 products and sums.

@@ -68,6 +68,7 @@ replaces three of them on some targets.
 | DeepSeek-V4 | `cu/dsv4_gpu.cu` (includes `cu/dsv4_dense_tile.cuh`, `cu/dsv4_dense_census.cuh`, `cu/dsv4_dense_m1_exact_tail.cuh`, `cu/moe_kq_prims.cuh`), `cu/dsv4_sampler.cu` |
 | MiMo V2.6 components | the 15 `mimo_*` TUs listed in [their section](#mimo-v26-native-components) |
 | DeepSeek-V4.1 | `cu/dsv41_gpu.cu`, `cu/dsv41_cutlass.cu` (its FP8/FP4 GEMMs on the vendored CUTLASS, the `120a` family; the stub elsewhere) |
+| Hy4-flash checkpoint runner | `cu/hy4f_gpu.cu` |
 | Tensor-parallel collectives | `cu/tp_ar.cu` |
 
 ### Optional CUTLASS archives
@@ -422,6 +423,15 @@ The DeepSeek-V4.1 route's own TU, `memra_v41_*` host launchers bound in `src/dsv
 | `memra_v41_peak` (`dsv41-bench ceil`); kernels `v41_peak_kernel<KIND>` | Measurement only: per-warp instruction ceilings on register operands (e4m3 and bf16 MMA throughput, the per-32-block from-zero MMA plus scale epilogue in its 3-op and fma forms, fp32 fma chains) | none (synthetic) | sm_89+ (`mma.sync` e4m3) | bench-only | `src/dsv41_gpu.rs` (`ffi`, through `Ops`) | `dsv41-bench` (`src/bin/dsv41_bench.rs`) |
 | `memra_v41_sleep` (`SIDE_DELAY_NS`); kernels `v41_sleep_kernel` | Fault injection of a gate: one thread holds its stream for a number of nanoseconds of the global timer. `dsv41-gate decode` sets it on every branch of the card's second stream (with `POISON_FREE`, which fills a main-stream buffer with 0xFF as it drops) so a main-stream write that is not ordered after a branch lands before the branch reads, deterministically; `dsv41-gate tp --side-delay NS [--poison-free]` arms both for a whole run (the race harness's ordering arms) | none | sm_70+ (`__nanosleep`) | gate-only | `src/dsv41_gpu.rs` (`Side::fork`) | `dsv41-gate decode`, `dsv41-gate tp` (`src/bin/dsv41_gate.rs`) |
 | `memra_v41_sf_off`, `memra_v41_sf_bytes` (`cu/dsv41_cutlass.cu`; the stub keeps both) | Host-side arithmetic of CUTLASS's block-scale layout: the byte offset of a row's K-block scale, and the bytes of the layout of a call's rows | integers | any (host) | default | `src/dsv41_gpu.rs` (`ffi`), the activation quantizer's scale placement | `dsv41-gate kernels` |
+
+### cu/hy4f_gpu.cu
+
+The Hy4-flash checkpoint runner's TU (`hy4f-run`, `src/hy4f_gpu.rs`): portable CUDA C in f32, no tensor-core intrinsics and no arch stub, compiled with `-fmad=false` (build.rs) so products and sums stay separate. Correctness first: the tuned GPU route is a later step. Launchers return 0, 10000 + `cudaError_t`, or 44001..44101 for a refused contract. Gate: `memra model verify checkpoint --against hy_v4_flash` (the tape set against the pinned transformers program in f64), receipts in `research/modelplan-onboarding-hy4flash-20261119/checkpoint/`.
+
+| Symbol | Computes | Types | Arch | Selected by | Caller | Gate |
+| --- | --- | --- | --- | --- | --- | --- |
+| `memra_hy4f_gemm`; kernel `hy4f_gemm_kernel` | `y[m, n] = sum_k x[m, k] * w[n, k]`, the weight in its stored format: BF16, F32, FP8 E4M3 with a 128x128 F32 block grid, or NVFP4 (e2m1 pairs, low nibble first, an e4m3 scale per 16 inputs, one F32 `weight_scale_2`). Codes multiply the inputs, the block or group scale multiplies each partial sum and `weight_scale_2` the finished sum, so no dequantized weight is formed; a 64x64 tile a block, one thread's sequential sum per output. `round_bf16` (the gate's red arm) multiplies by bf16 of the dequantized weight instead | f32 in and out | any | none | `src/hy4f_gpu.rs` (`Gpu::gemm`) | `verify checkpoint --against hy_v4_flash` |
+| `memra_hy4f_attn`; kernel `hy4f_attn_kernel` | gated-MLA attention core over an explicit key-slot list per query (window, causal prefix or the indexer's recalled tokens), the learned sink in the softmax denominator, f32 throughout; one block a (query, head), at most 4096 keys a row | f32 | any | none | `src/hy4f_gpu.rs` (`Gpu::attn`) | `verify checkpoint --against hy_v4_flash` |
 
 ### cu/tp_ar.cu
 

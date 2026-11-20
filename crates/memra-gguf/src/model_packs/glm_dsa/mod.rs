@@ -36,6 +36,7 @@ pub static PACK: ModelPack = ModelPack {
     // MLA metadata comes from the GGUF keys only (`from_hf` leaves `mla` None until the
     // HF/safetensors import lands), so an HF glm_moe_dsa config refuses here instead of
     // compiling a full-attention plan.
+    checkpoint_requests: &[],
     matches_config: |config| matches!(config.arch, Arch::GlmDsa) && config.mla.is_some(),
     plan_builder: canonical_plan,
     tensor_schema: canonical_tensor_schema,

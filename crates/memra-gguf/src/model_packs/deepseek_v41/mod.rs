@@ -99,6 +99,7 @@ pub static PACK: ModelPack = ModelPack {
     checkpoint_probe: Some(&[
         0, 128803, 3085, 344, 270, 6102, 294, 8760, 33, 9361, 295, 834, 2004, 16, 128804, 128822,
     ]),
+    checkpoint_requests: &[],
     matches_config: |config| matches!(config.arch, Arch::DeepSeekV41) && config.dsv41.is_some(),
     plan_builder,
     tensor_schema,

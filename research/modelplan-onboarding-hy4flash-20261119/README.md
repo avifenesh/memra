@@ -739,3 +739,185 @@ to be set from the source program's spread between two backends when that runner
   rows) is exact in float64 there too; the reference's f32 storage is exact only because the
   fixture picks power-of-two scales, so the native runner's dequant must not round through f32
   where the artifact's scales are not powers of two.
+
+# Step 7: the native checkpoint runner, CheckpointParity (2026-11-20)
+
+Verdict: memra's first native runner of the artifact, `hy4f-run` (memra-engine `hy4f_gpu`), runs
+the whole text program on one GB10 over the artifact's own shards and matches the pinned
+transformers program on CPU in f64 with exact dequantization on three requests, 4,263 scored
+positions: every indexer selection (25,344 + 768 queries) and every Engram row (344 calls) equal,
+every router pick (174,783 queries over 41 MoE layers) equal, the argmax equal at every position, and
+the largest logit difference 0.0097 against a class band of 0.12 set from the transformers
+program's own spread between its f64 and f32 backends.
+`memra model verify checkpoint --against hy_v4_flash` passes (`verified=Checkpoint`), and three
+wrong programs fail it. The router turned out to be a second discrete surface: at one near tie
+the pinned program's own f32 backend picks another expert and lands 16 logits from its f64 run,
+so the gate compares router picks before logits too. Correctness first: the runner is slow by design (about 5 minutes for the
+39-token chat turn, 8 for 2,112 tokens); the GPU route is the next step.
+
+## The runner
+
+`crates/memra-engine/src/hy4f_gpu.rs`, `src/bin/hy4f_run.rs`, kernels `cu/hy4f_gpu.cu`:
+
+- the program of the typed plan, numeric class `hy-v4-flash-source-program`: the transformers
+  program computed in f32;
+- the weights stay in their stored formats and are never formed as rounded dequantized values:
+  the GEMM kernel multiplies the e2m1 or e4m3 codes into the inputs, the FP8 128x128 block scale
+  (`weight_scale_inv`) or the NVFP4 group scale multiplies each partial sum, and the expert's
+  `weight_scale_2` the finished sum. BF16 and F32 weights are read as stored;
+- the GEMMs and the attention core (sink in the denominator, an explicit key list per query) run
+  on the GPU in f32; norms, RoPE, hyper-connections, router, indexer pooling and scoring and the
+  Engram gather and gates run on the host in f64 over f32 activations;
+- one layer at a time, its weights read from the shards and dropped after it (no resident
+  model, about 20 GB of host memory at most); the Engram tables stay on disk and each row is read
+  with `pread`;
+- a request is scored teacher-forced in one layer-by-layer pass: the prefill call
+  `tokens[..decode_from]`, then one decode call per later token. Every operation acts per token
+  except attention, and each kernel computes a row on its own, so the pass gives each query the
+  keys its call holds: a prefill query the causal prefix of the prefill, a decode query at `t`
+  the `t + 1` cached keys. An indexed layer runs its indexer for a query whose call holds more
+  than `index_topk` (2,048) keys, over that call's closed groups; a sliding layer reads its last
+  512 keys. The cache layout the reference keeps (576 latent and rope values a token a layer,
+  128 indexer key values on the 12 indexed layers) is what the next step carries;
+- the router picks from its F32 selection scores (sigmoid plus the correction bias, rounded to
+  f32 as the program computes them), under the CUDA tie order;
+- it writes a `memra-checkpoint-tape-v2` directory: every position's f32 logits, every indexer
+  call's recalled groups and group logits, every MoE layer's experts and selection scores per
+  call, every Engram call's table rows as an FNV-1a 64 digest.
+
+## The oracle
+
+`checkpoint/make_checkpoint_oracle.py` runs `HYV4FlashTextModel` from transformers PR #50903 at
+b865850d0532 (the five source files blob-checked, no line edited) on the artifact's shards on
+CPU, as the tiny oracle of step 6 does: exact f64 dequantization, the pinned `conversion_mapping`
+renames, gate and up concatenated in that order, float32 islands mapped to float64, the CUDA
+top-k tie rule, the Engram norms at 2^-23 and the F32 constants at their f32 values. A
+dequantized model would be about 334 GB, so the trunk is built on the meta device and assigned
+(about 53 GB in f64), each routed expert is dequantized when the eager experts loop reads it, and
+the Engram rows are gathered from the memory-mapped shards. The rows are read as stored,
+`f32(e4m3 * row scale)`; the pinned `_fp8_round_trip` runs on them in F32 and is the identity,
+which the run asserts. The requests run as `generate` runs them: one prefill, one
+`DynamicCache`, one step per later token with `build_engram_inputs` over the history (pad, image
+120120 and video 120124 masked). The router is recorded through a copy of the pinned
+`HYV4FlashTopkRouter.forward` (one group, so the group mask keeps every expert) that also writes
+its picks and scores. `--dtype f32` runs the same program in f32, and `--force-selections TAPE`
+takes every router and indexer pick from the f64 tape while recording its own: the second
+backend the band is set from. The f64 tapes are deterministic: rerun after adding the router
+records, the logits of all three requests are byte-identical to the first runs. The review's
+last rounds added checks to the forcing path after the forced runs (the forcing tape's request
+and hashes, exact query geometry, each record consumed where it is applied); they assert and
+change no computed value.
+
+## Requests
+
+`checkpoint/gen_probes.py` encodes them with the artifact's template (`reasoning_effort`
+"no_think") and tokenizer (`checkpoint/requests/`); the pack pins each by its token ids' sha256,
+length and prefill end, and its first request is the pack's declared probe:
+
+| request | positions | prefill | decode calls | what it crosses |
+|---|---:|---:|---:|---|
+| `chat` | 39 | 36 | 3 | "What is the capital of France? Answer in one word." answered "Paris." |
+| `long` | 2,112 | 2,104 | 8 | the indexer budget in the prefill (every prefill query runs the indexer) |
+| `long-split` | 2,112 | 2,040 | 72 | a dense prefill; the indexer switches on in the decode at 2,049 keys |
+
+`long` asks for a one-sentence summary of the first 7,884 characters of memra's
+`docs/ONBOARDING.md` (`checkpoint/probe-doc.txt`) and forces the answer. Both programs are
+split-invariant across the budget: the native `long` and `long-split` logits are equal bit for
+bit at all 2,112 positions, and the oracle's at 2,038 (the other 74 within 2.4e-7).
+
+## Results
+
+`checkpoint/receipts/`: the gate's own run (`verify/final`: `run.log`, `checkpoint-parity.tsv`,
+`gates.txt`, `artifact.lock`) and the three red arms (`verify/red-*`), the comparator's report per
+pair (`native-vs-oracle-*.json`, `band-*.json`, `red-*.json`), every tape's `tape.json` (gzipped, `tapes/`) and the
+sha256 of its arrays (`arrays.sha256`), the binaries' sha256 (`bins.sha256`) and the layer
+diagnosis of the band (`layer-divergence-long-head.txt`). The arrays are full logits (up to 1 GB a
+tape) and stay off the repository. `band-*-free.json` compare tapes from before the router was
+recorded and so report failed on missing router records; their logit numbers are the ones below.
+
+| request | indexer calls / queries | router calls / queries | picks differ | Engram calls | argmax equal | max abs diff (prefill / decode) | max KL |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `chat` | 0 / 0 | 164 / 1,599 | 0 | 16 | 39 / 39 | 3.4e-5 / 2.5e-5 | 2.3e-11 |
+| `long` | 108 / 25,344 | 369 / 86,592 | 0 | 36 | 2,112 / 2,112 | 0.0097 / 3.7e-5 | 5.5e-7 |
+| `long-split` | 768 / 768 | 2,993 / 86,592 | 0 | 292 | 2,112 / 2,112 | 0.0097 / 5.8e-4 | 5.5e-7 |
+
+No pick differs, so no near-tie flip needed attributing. Against the f64 oracle the native
+router scores move by at most 8.6e-4 and the group logits by 2.3e-3. (The first native runs,
+which picked experts from f64 router scores, gave 0.0151 on `long`; the program's scores are
+F32, and reading them so moved the native logits closer.)
+
+## Band
+
+The class band is set from the pinned program alone, never from the runner: its f32 backend
+against its f64 backend on the same requests (`checkpoint/receipts/band-*.json`).
+
+| backend pair | request | picks differ | argmax equal | max abs | per-position max, p50 / p99 |
+|---|---|---:|---:|---:|---:|
+| f32 vs f64, free selections | `chat` | 0 | 39 / 39 | 2.9e-4 | |
+| f32 vs f64, free selections | `long` | 59 indexer queries (router picks not recorded in that run) | 2,062 / 2,112 | 16.0 | |
+| f32 vs f64, selections forced to f64's | `chat` | (forced) | 39 / 39 | 1.6e-4 | |
+| f32 vs f64, selections forced to f64's | `long` | (forced) | 2,112 / 2,112 | 0.0567 | 1.5e-4 / 3.1e-3 |
+
+The free f32 run diverges from position 163 on. Rerun on the request's first 200 tokens with
+every layer's output and router recorded (`--dump-layers`), the f32 layers stay within 7.9e-4 of
+f64 through layer 39 at every position and pick the same experts, until MoE layer 40, where position 163's 16th and 17th expert scores differ by
+5.4e-7 and f32 takes the other expert; that position's layer output then moves by 1.04 and the
+divergence spreads through attention to every later position. A band wide enough for that
+would admit any program. Forced to the f64 run's picks, the f32 backend measures what the band
+is for, the continuous numeric spread along the same selections: 0.0567. The band is twice
+that, 0.12 absolute (the factor the deepseek_v41 class uses), 12 times the native runner's
+0.0097 and 20 times under the smallest wrong program refused on logits (2.49).
+
+The selections get their own near-tie bands, from the same forced run: the f32 backend's router
+selection scores (|s| <= 1.01) sit within 4.43e-3 of f64's and its group logits (median 2.36)
+within 1.18e-2, so a pick that differs from the oracle's passes only when every moved entry
+scores within 0.009 (router) or 0.024 (indexer) of the oracle's last kept one. Left free, the
+f32 backend's own router picks differ from f64's on 11 of 86,592 queries of `long`, all at gaps
+inside 0.009 (the largest 7.9e-4). The band does not cover what follows a flip: a correct
+backend that flips at a near tie can still leave the logit band, and then the gate fails it.
+
+## Red arms
+
+Each wrong program runs through the same gate (`checkpoint/red-runner.sh` adds `--red ARM`) and
+fails it; a red-arm tape never passes even when its numbers would. With router picks gated, the
+first two now stop at a selection, before any logit is read; the logit moves are from the arms' first
+runs, before the router was recorded and while the runner still picked experts from f64
+scores, so its green runs then sat at 0.0151 on `long` (`checkpoint/compare_tapes.py`,
+`receipts/red-*.json`; those tapes carry no router records, so the comparator also reports them
+as missing):
+
+| wrong program | request | where the gate stops | max logit move | argmax differs |
+|---|---|---|---:|---:|
+| Engram off | `chat` | router picks, MoE layer 1, position 0, not a near tie | 17.6 | 12 of 39 |
+| quantized weights multiplied as bf16 of their dequantized value | `chat` | router picks, MoE layer 28, position 18, not a near tie | 2.49 | 2 of 39 |
+| indexer ties in descending index | `long` | indexer picks: not the native logits' own top-k under the plan's tie order (24,528 of 25,344 queries differ from the oracle's) | 0.0151 | 0 |
+
+The tie order moves no logit on these requests: the queries it changes take groups whose logit
+is `-inf` (not yet closed), which attend nothing. Only the selection gate sees it, which is why
+selections are compared before logits. Forming the f32 dequantized weight (`f32(code * scale *
+scale_2)`) instead of the code-times-input order would move a weight by at most 2^-24 relative,
+below this class's own spread, so no gate can or needs to tell it apart in f32; what the gate
+refuses is a lower-precision weight.
+
+## What the gate covers
+
+- `memra model verify checkpoint <artifact dir> --against hy_v4_flash --oracle <tape set>
+  --native-runner hy4f-run`: the tape set of `crates/memra-cli/src/checkpoint_tape.rs`. Both
+  tapes are checked against the compiled plan first (vocabulary, layers, every call's indexer
+  records with their query, group and pick counts, one Engram record per Engram layer, array
+  sha256), then selections (the native pick must be its own logits' top-k under the plan's tie
+  order; a pick that differs from the oracle's passes only as a near tie of the oracle's
+  logits), Engram rows exactly, then argmax and band at every position. The artifact lock and the
+  receipt carry the request set's digest. A forced or red-arm tape never passes.
+- memra-cli unit tests of the gate (`checkpoint_tape::tests`, 9), the pack tests that bind the
+  pins to the declared probe and the budget.
+
+## For the GPU route (step 8)
+
+- Carry the cache instead of rescoring the request: the latent and rope key per token, the
+  indexer token keys on the indexed layers; close a pooled group when its fourth key arrives.
+- Keep the weights resident (experts and Engram as planned in step 0) and move the host
+  operations to the device; BF16 activations and tensor-core GEMMs are a new numeric class with
+  its own band from the same oracle.
+- The f64 oracle tapes of these three requests are the fixed reference: rerun only the native
+  side.

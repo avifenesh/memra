@@ -43,6 +43,7 @@ pub static PACK: ModelPack = ModelPack {
     // The support record was measured on E4B only, so the match is pinned to its geometry: 42
     // trunk layers, the last 18 KV-shared, per-layer inputs 256 wide. Another checkpoint with
     // per-layer inputs and KV sharing gets no pack until it is qualified and recorded.
+    checkpoint_requests: &[],
     matches_config: |config| {
         matches!(config.arch, Arch::Gemma4)
             && !config.moe.as_ref().is_some_and(|moe| moe.expert_count > 0)
