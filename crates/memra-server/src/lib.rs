@@ -8425,6 +8425,10 @@ fn openrouter_supported_parameters(
         "repetition_penalty",
         "stop",
     ] {
+        // the hy_v4_flash route's sampler refuses min_p by name
+        if name == "min_p" && caps.is_some_and(|c| c.hy4) {
+            continue;
+        }
         parameters.insert(name.into(), json!({ "type": "unknown" }));
     }
     parameters.insert("top_k".into(), json!({ "type": "integer", "min": 0 }));
@@ -8495,6 +8499,14 @@ fn openrouter_supported_parameters(
         parameters.insert(
             "reasoning_effort".into(),
             json!({ "type": "enum", "values": ["low", "high", "max"] }),
+        );
+    }
+    // Hy4-flash's template defines no_think, high and max (low and medium are accepted and
+    // render high): its native rungs, as for glm5.
+    if is_chat && caps.is_some_and(|c| c.hy4) {
+        parameters.insert(
+            "reasoning_effort".into(),
+            json!({ "type": "enum", "values": ["no_think", "high", "max"] }),
         );
     }
     // Qwen3.8 carries its own ladder too (`ModelCaps::qwen_effort`): xhigh is
@@ -15165,6 +15177,41 @@ mod tests {
             .unwrap(),
             chat::apply_chat_template_str(Some(&tmpl), &plain_msgs, true)
         );
+    }
+
+    /// The hy_v4_flash route serves no constrained decoding, no prefix cache and no min_p: its
+    /// model row and its OpenRouter parameters claim none of them, and publish its rungs.
+    #[test]
+    fn hy4_catalogs_claim_only_what_its_route_serves() {
+        let caps = hy4_tool_caps();
+        let row = model_entry_v1("tencent/hy4-flash", Some(&caps), None);
+        assert_eq!(row["capabilities"]["structured_output"], json!(false));
+        assert_eq!(row["capabilities"]["prompt_caching"], json!(false));
+        assert_eq!(row["capabilities"]["tools"], json!(true));
+        assert_eq!(row["capabilities"]["reasoning"], json!(true));
+        let params = openrouter_supported_parameters(Some(&caps), None, true);
+        for absent in ["structured_outputs", "json_mode", "min_p"] {
+            assert!(params.get(absent).is_none(), "{absent}: {params}");
+        }
+        assert_eq!(
+            params.get("reasoning_effort"),
+            Some(&json!({ "type": "enum", "values": ["no_think", "high", "max"] }))
+        );
+        assert!(params.get("reasoning").is_some(), "{params}");
+        let (tx, _rx) = worker::event_channel();
+        assert!(
+            build_chat_request(
+                weather_request(json!({"response_format": {"type": "json_object"}})),
+                Some(&caps),
+                tx,
+                lanes::Lane::Interactive,
+                None,
+            )
+            .is_err()
+        );
+        // a model without the cap keeps min_p
+        let plain = openrouter_supported_parameters(Some(&tool_caps()), None, true);
+        assert!(plain.get("min_p").is_some());
     }
 
     /// `/v1/models` must not advertise a capability the server refuses by name. A template
