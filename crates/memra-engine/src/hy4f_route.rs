@@ -1124,6 +1124,8 @@ pub struct Route<'a> {
     sc: Scratch,
     /// the current call records its selections (a device sync per layer)
     recording: bool,
+    /// the DFly2 drafter, when loaded (`dfly::Route::load_drafter`)
+    dfly: Option<dfly::Drafter>,
 }
 
 /// One request's carried state: its cache rows and its token history. The weights and the
@@ -1434,6 +1436,7 @@ impl<'a> Route<'a> {
             bases,
             sc: Scratch::default(),
             recording: false,
+            dfly: None,
         })
     }
 
@@ -1745,6 +1748,7 @@ impl<'a> Route<'a> {
         for il in 0..self.layers.len() {
             let mut lr = LayerRec::default();
             self.layer(il, p0, t, s, &mut lr, forced)?;
+            self.dfly_after_layer(il, p0, t)?;
             if let Some(r) = rec.as_deref_mut() {
                 r.push((il, lr));
             }
@@ -2834,3 +2838,6 @@ mod tests {
         }
     }
 }
+
+mod dfly;
+pub use dfly::{DraftOut, DraftRed, Drafter, ExternalTarget, MAX_DRAFTS, RingBackup};
