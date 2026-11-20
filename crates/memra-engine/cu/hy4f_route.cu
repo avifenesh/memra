@@ -858,9 +858,55 @@ static void r_gemv_f32_go(const float* x, long ldx, const void* w, float* y, lon
       x, ldx, (const uint16_t*)w, y, ldy, m, n, k);
 }
 
+// A narrow output (the router: 512 of 3072): the same chains split at their natural seams. A
+// thread computes one 16-input partial sum (from zero, separately rounded products, in input
+// order) of one (row, output, step); then one thread an output adds its partials in step order.
+// The bits equal one lane's whole chain.
+#define GS_OB 4
+#define GS_T 256
+__global__ void __launch_bounds__(GS_T) r_gemv_f32_split_kernel(const float* __restrict__ x, long ldx,
+                                                                const uint16_t* __restrict__ w, float* __restrict__ y,
+                                                                long ldy, int m, int n, int k) {
+  r_pdl_trigger();
+  extern __shared__ float part[];  // [m][GS_OB][k / 16]
+  const int o0 = blockIdx.x * GS_OB;
+  const int steps = k / 16;
+  r_pdl_wait();
+  for (int u = threadIdx.x; u < GS_OB * steps; u += GS_T) {
+    const int o = u / steps, c = u - o * steps;
+    if (o0 + o >= n) continue;
+    const uint4* wp = (const uint4*)(w + (long)(o0 + o) * k + c * 16);
+    const uint4 u0 = __ldg(wp), u1 = __ldg(wp + 1);
+    const uint32_t wv[8] = {u0.x, u0.y, u0.z, u0.w, u1.x, u1.y, u1.z, u1.w};
+    for (int i = 0; i < m; i++) {
+      const float4* xp = (const float4*)(x + (long)i * ldx + c * 16);
+      const float4 xa = __ldg(xp), xb = __ldg(xp + 1), xc = __ldg(xp + 2), xd = __ldg(xp + 3);
+      const float xv[16] = {xa.x, xa.y, xa.z, xa.w, xb.x, xb.y, xb.z, xb.w,
+                            xc.x, xc.y, xc.z, xc.w, xd.x, xd.y, xd.z, xd.w};
+      float p = 0.0f;
+#pragma unroll
+      for (int e = 0; e < 16; e++) {
+        const uint32_t h = (e & 1) ? (wv[e >> 1] >> 16) : (wv[e >> 1] & 0xffffu);
+        p = __fadd_rn(p, __fmul_rn(xv[e], __uint_as_float(h << 16)));
+      }
+      part[(i * GS_OB + o) * steps + c] = p;
+    }
+  }
+  __syncthreads();
+  if (threadIdx.x < m * GS_OB) {
+    const int i = threadIdx.x / GS_OB, o = threadIdx.x % GS_OB;
+    if (o0 + o < n) {
+      const float* pp = part + (i * GS_OB + o) * steps;
+      float acc = 0.0f;
+      for (int c = 0; c < steps; c++) acc = __fadd_rn(acc, pp[c]);
+      y[(long)i * ldy + o0 + o] = acc;
+    }
+  }
+}
+
 // 45006: more rows than the small kernel takes (the caller runs the tiled F32 GEMM). A narrow
-// output (the router) runs one warp a block with a deep ring, so its few warps keep enough
-// bytes in flight; a wide one (the head) four warps a block.
+// output (the router), or one row of the head, runs the split kernel (244 GB/s on the head at
+// one row); more head rows four warps a block, a lane a weight row.
 extern "C" int memra_hy4r_gemm_f32(const float* x, long ldx, const void* w, float* y, long ldy, int m, int n, int k,
                                    void* stream) {
   if (m == 0) return 0;
@@ -868,9 +914,11 @@ extern "C" int memra_hy4r_gemm_f32(const float* x, long ldx, const void* w, floa
   if (m > GF_MAXM) return 45006;
   if ((ldx % 4) != 0 || (((uintptr_t)x) % 16) != 0 || (((uintptr_t)w) % 16) != 0) return 45005;
   cudaStream_t st = (cudaStream_t)stream;
-  if (n <= 4096)
-    r_gemv_f32_go<1, 8, 256>(x, ldx, w, y, ldy, m, n, k, st);
-  else
+  if (k <= 4096 && (n <= 4096 || m == 1)) {
+    const int smem = m * GS_OB * (k / 16) * 4;
+    r_launch(r_gemv_f32_split_kernel, dim3((n + GS_OB - 1) / GS_OB), dim3(GS_T), smem, st, x, ldx,
+             (const uint16_t*)w, y, ldy, m, n, k);
+  } else
     r_gemv_f32_go<4, 4, 128>(x, ldx, w, y, ldy, m, n, k, st);
   return r_rc();
 }

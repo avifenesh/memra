@@ -51,6 +51,7 @@ L2.
 | 2: programmatic dependent launch | 12.37 [12.36-12.37] | 80.9 | 10.16 [10.15-10.18] | 98.3 | 93.1 | 221.3 |
 | 3: Engram reads on a resident thread pool, beside the first layers | 12.56 [12.56-12.57] | 79.6 | 10.23 [10.22-10.24] | 97.5 | 92.8 | 220.9 |
 | 4: attention key tiles, indexer logits and recall in parallel | 12.90 [12.76-13.01] | 76.9 | 11.98 [11.98-12.00] | 83.2 | 93.7 | 280.8 |
+| 5: F32 islands split at their 16-input seams (router, head) | 13.36 [13.36-13.36] | 74.9 | 12.29 [12.28-12.30] | 81.1 | 94.8 | 280.1 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -123,3 +124,16 @@ logits and 1.2 ms of recall.
 
 Decode step 79.6 -> 76.9 ms on `chat`, 97.5 -> 83.2 ms on `long`; `long`'s prefill 221 -> 281
 tokens/s (the same attention kernel). 3 of 3 tapes bit-equal.
+
+### 5. Router and head split at their seams (`receipts/s5-f32-split/`)
+
+The F32 islands' chain for an output is a sum of 16-input partial sums, each from zero. A thread
+now computes one partial (one row, output and step) and one thread an output adds them in step
+order: the same bits with 192 times the parallelism. The router (512 outputs) went 53 -> 19 us a
+layer and the head at one row 3.90 -> 3.05 ms (243 GB/s; four rows keep the lane kernel).
+Decode step 76.9 -> 74.9 ms on `chat`, 83.2 -> 81.1 ms on `long`.
+
+Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
+GEMM that walks its items as one stream of stages, with the A operands laid out for direct
+loads and one-warp blocks for narrow outputs (+2.9 ms a step on `chat`); the routed experts'
+NVFP4 codes decoded with byte permutes instead of a table (no gain, `kbench` 125 -> 131 us).
