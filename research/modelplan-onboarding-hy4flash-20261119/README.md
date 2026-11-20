@@ -600,3 +600,139 @@ step 0 reading would have moved each per-head norm by about 0.5%.
 - vLLM, the second reading, loads FP8 tables with a BF16 row scale (`weight_scale_inv`) and runs
   no round trip on a BF16 table, and zeroes a token whose hash ids are all negative where
   transformers masks the pad id and the image and video placeholders. Neither is the oracle.
+
+# Step 6: the whole trunk, TinyParity (2026-11-20)
+
+Verdict: memra-reference runs the whole Hy4-flash text program, token ids to logits, as a
+prefill chunk and then teacher-forced decode steps over per-layer caches. On the tiny fixture it
+matches the pinned transformers code to the bit: the main request (prefill past the 512-token
+window and the indexer budget) and two variants split below each limit, 43,328 logits, and every
+indexer selection and Engram row of all 71 forward calls. `memra model verify tiny --against
+hy_v4_flash` passes, the pack is `NativeReference` (record `hy_v4_flash-reference`), and seven
+wrong programs fail the gate. No GPU was used; CheckpointParity on the artifact is the next step.
+
+## The program
+
+`crates/memra-reference/src/hy_v4_flash_trunk.rs`, from the typed plan: the embedding copied to
+the 4 streams, each decoder layer (`decoder_layer_cached`: Engram first where the plan puts it,
+then the attention and MLP sublayers through their hyper-connections), `hc_head`, `model.norm`,
+the head in f64, logits rounded once to f32. The attention of steps 3 and 4 now runs over an
+`MlaCache` (normalized latent, rotated rope key, the latent expanded by `kv_b_proj`, the indexer
+token keys, the positions), so one program serves the prefill and each decode step: a decode
+query attends the cached keys; an indexed layer pools the cached token keys and runs its
+indexer once the cache holds more than `index_topk` keys, as transformers' cached forward does
+(`kv_length <= index_topk` attends densely); a sliding layer reads the last `sliding_window`
+keys. The Engram n-grams of a step reach back into the token history
+(`prepare_inputs_for_generation`). The step 3 to 5 module gates run unchanged on the refactor.
+
+## Fixture
+
+`crates/memra-gguf/src/model_packs/hy_v4_flash/fixtures/tiny-config.json` (the pack's
+`TINY_CONFIG`) is the artifact's `config.json` at hidden 64 with its own switches and constants:
+window 512, `rope_theta` 1e7 and 1e4, `routed_scaling_factor` 3.998, `rms_norm_eps` 1e-5,
+`hc_eps` 1e-6. Six layers in the artifact's order (indexed 0, 1 and 5, sliding 2 to 4, dense
+layer 0), 2 indexed and 4 sliding heads with value widths 16 and 40, an indexer of 2 heads of 16
+with a budget of 256 (64 groups of 4), 8 experts top-3 in a latent of 32 with the SwiGLU limit at
+2 (the artifact's 10 would never clamp at this width), Engram at the config ids 2 and 4 (decoder
+layers 1 and 3) with 4 heads of 8 over a 28-entry lookup table onto 20 ids, on a 32-token
+vocabulary whose ids 28-31 lie past the table. Its `quantization_config` is the artifact's
+ModelOpt map at that width: FP8 128x128 blocks on `q_b_proj`, `o_proj` and `linear_gate` of
+layers 1-5, NVFP4 routed experts, layer 0 and everything else BF16 or F32. A pack test pins
+that the tiny config keeps the artifact's switches, constants, layer order and formats.
+
+The fixture's tensors are the pack's census of the text program (the tower and the drafter
+dropped), seeded and stored in the artifact's classes: BF16, F32, the I32 lookup tables, FP8
+blocks with an F32 `weight_scale_inv`, NVFP4 (U8 e2m1 pairs, low nibble first, an e4m3 scale per
+16 inputs, an F32 `weight_scale_2` per expert), and the Engram tables' FP8 rows with the
+producer's F32 row scale (`f32(amax) / 448`, step 5). The fixture picks power-of-two FP8 block
+scales and `weight_scale_2`, so the dequantized weights are exact in the reference's f32
+storage. The tokens are a seeded walk over the vocabulary with the pad id and the image and
+video placeholders as real tokens, ids past the table and a repeated 16-token span.
+
+| run | tokens | prefill | decode steps | what the split exercises | oracle sha256 |
+|---|---:|---:|---:|---|---|
+| main | 544 | 536 | 8 | prefill past the window (512) and the budget (256) | `bcb7ce13` |
+| `split250` | 280 | 250 | 30 | dense prefill; the indexer starts in decode at 257 cached keys | `0f52565e` |
+| `split500` | 530 | 500 | 30 | prefill past the budget; the window starts dropping keys in decode at slot 512 | `0184aa1c` |
+
+## Oracle
+
+`tiny/make_tiny_oracle.py` runs `HYV4FlashTextModel` from the pinned code (modeling,
+configuration, conversion mapping, cache and masking files blob-checked) in float64 over the
+checkpoint image `verify tiny` writes (`tiny-checkpoint*/`: `model.safetensors`, `config.json`,
+`fixture.json`). It dequantizes every tensor exactly in float64, renames it by the pinned
+`conversion_mapping` rules for `hy_v4_flash` and concatenates the gate and up banks into
+`gate_up_proj`; it redraws the Engram multipliers from the loaded table as `_init_weights` does.
+The request runs as `generate` runs it: one prefill, one `DynamicCache`, then one step per token
+with `ngram_tokens` and `engram_mask` from the pinned `build_engram_inputs` over the whole
+history. Substitutions, as in steps 3 to 5: float32 islands mapped to float64, top-k under the
+CUDA tie rule, the Engram norms at `eps = 2^-23`, and the constants the program computes with in
+F32 (`rms_norm_eps`, `hc_eps`, `routed_scaling_factor`, `swiglu_limit`, `hc_magnitude`) fed as
+their f32 values. The pinned `_fp8_round_trip` stays on; on the stored rows it is the identity,
+which the run asserts. The TSVs reproduce bit for bit at 1 and at 8 BLAS threads
+(`tiny/generator-run*.json`, `tiny/hashes.tsv`; the image `verify tiny` writes and the one the
+oracle read hash the same).
+
+Beside each TSV, `tiny/trace-<run>.json` records per forward call the recalled groups of every
+indexed layer (the top-k indices plus the query's own group) and the table rows of every Engram
+layer, as FNV-1a 64 digests. `crates/memra-reference/tests/hy_v4_flash_tiny.rs` compares them
+first, before any logit: all 192 indexed-layer calls and 142 Engram-layer calls are equal.
+
+## Tolerance
+
+The pack's `checkpoint_parity` band is 1e-5 absolute plus 1e-5 relative, argmax required. It is
+set from what two correct f64 runs of this program may differ by, measured in this lane:
+
+- the f32 constants read as decimal literals: `tiny/raw-constants.log` runs the oracle with
+  `--raw-constants` and moves 3,906 of 17,408 logits by one f32 ulp, at most 2.4e-7 (the
+  1e-8-relative move of steps 3 to 5, rounded to f32);
+- the RoPE phase formula (transformers `1 / base^(2i/d)`, memra `base^(-2i/d)`):
+  `tiny/rope-phase.log` gives 5.7e-14 rad below 544 positions and 1.2e-10 rad at 1M on the
+  artifact's 64 rotary dims; on the fixture's 8 dims the two are identical;
+- summation order: about 1e-15 relative; the oracle at 8 threads equals the one at 1.
+
+The band is at least 40 times the largest of these (154 times at the fixture's largest logits,
+|logit| 2.7) and four orders under the smallest wrong program below. Selections are not inside any band: they
+are compared exactly, first. The native runner's CheckpointParity band is its own numeric class,
+to be set from the source program's spread between two backends when that runner lands.
+
+## What the gate covers
+
+- `memra model verify tiny --against hy_v4_flash --out OUT` (and `ci:verify-tiny`): the main
+  fixture and both variants, each run twice (bit-deterministic) and compared to its pinned
+  oracle (`crates/memra-cli/tests/fixtures/tiny-oracle/hy_v4_flash*.tsv`); receipts
+  `tiny/tiny-gate.tsv` and `tiny/gates.txt`.
+- memra-cli `hy_v4_flash_tiny_gate_matches_the_transformers_oracle_and_refuses_wrong_programs`:
+  the reference's main run equals the pinned oracle byte for byte, and each wrong program fails
+  the gate (largest logit move, `tiny/redarms.log`):
+
+| wrong program | max move |
+|---|---:|
+| sliding window off | 0.72 |
+| attention sink off | 0.77 |
+| indexer budget 128 | 2.11 |
+| indexer budget 2048 (dense here) | 2.20 |
+| Engram seeded with the 0-based layer index | 2.08 |
+| Engram placed one layer late (at the config id) | 2.43 |
+| router correction bias ignored | 1.80 |
+
+- memra-reference `hy_v4_flash_tiny`: the selections and Engram rows above, and a budget one
+  group short changes the selection digests on every indexed layer.
+- the memra and transformers programs are both split-invariant here: each variant's logits on
+  the shared positions equal the main run's bit for bit, in memra and in the oracle.
+
+## For the native runner (step 7)
+
+- The cache layout the reference keeps per layer is the one to port: the normalized latent and
+  the rotated rope key per token (576 values on the artifact), the indexer token keys on indexed
+  layers (128); a sliding layer attends its last 512 keys, the current one included, so it needs
+  the 511 before. The pooled group keys are recomputed from
+  the token keys each step, as transformers does; a runner that caches them must close a group
+  exactly when its fourth key arrives.
+- The indexer switches on per request when the cache passes `index_topk`; prefill and decode
+  then agree (the variants prove it on both sides of the switch).
+- CheckpointParity runs this oracle's loader on the artifact's own shards: the dequantization
+  here (FP8 blocks with `weight_scale_inv`, NVFP4 with `weight_scale_2` per expert, FP8 Engram
+  rows) is exact in float64 there too; the reference's f32 storage is exact only because the
+  fixture picks power-of-two scales, so the native runner's dequant must not round through f32
+  where the artifact's scales are not powers of two.

@@ -15,6 +15,8 @@
 //! Activations are row-major `[tokens, width]` (`[tokens, streams, width]` for the streams).
 //! Weights are `[out, in]`. Gated by research/modelplan-onboarding-hy4flash-20261119/modules/
 //! indexpool/ and engram/ (float64 runs of the pinned transformers code, compared to 1e-12).
+//! The attention runs over an [`MlaCache`], so one program serves a prefill and the decode steps
+//! after it; the whole trunk (embedding to logits) is `crate::hy_v4_flash_trunk`.
 
 use memra_gguf::dsv41_forward::e4m3;
 use memra_gguf::model_plan::{
@@ -178,14 +180,30 @@ pub fn index_pool_logits(
     hidden: usize,
     q_lora: usize,
 ) -> Vec<f64> {
-    let tokens = positions.len();
-    let heads = plan.heads as usize;
+    let token_keys = index_token_keys(plan, norm, w, x, hidden);
+    let keys = index_group_keys(plan, rope_base, norm, w, &token_keys, positions);
+    let slots: Vec<usize> = (0..positions.len()).collect();
+    index_query_logits(
+        plan, rope_base, w, &keys, x, q_resid, positions, &slots, hidden, q_lora,
+    )
+}
+
+/// The pooled group keys of `token_keys` (`[slots, head_dim]`, the cache's token keys), each
+/// rotated at the position of its first slot (`positions[g * pool]`). Returns `[groups,
+/// head_dim]`.
+pub fn index_group_keys(
+    plan: &IndexPoolPlan,
+    rope_base: f64,
+    norm: NormPlan,
+    w: &IndexerWeights,
+    token_keys: &[f64],
+    positions: &[u32],
+) -> Vec<f64> {
     let dim = plan.head_dim as usize;
     let rope = plan.rope_head_dim as usize;
     let pool = plan.pool as usize;
     assert!(rope <= dim, "indexer rope dims {rope} of {dim}");
-    let token_keys = index_token_keys(plan, norm, w, x, hidden);
-    let mut keys = index_pool_groups(plan, norm, w, &token_keys);
+    let mut keys = index_pool_groups(plan, norm, w, token_keys);
     let groups = keys.len() / dim;
     for g in 0..groups {
         rope_in_place(
@@ -194,6 +212,32 @@ pub fn index_pool_logits(
             rope_base,
         );
     }
+    keys
+}
+
+/// The group logits of the queries `x` / `q_resid` (one row each, at `positions`, sitting in the
+/// cache slots `slots`) against the rotated group keys `keys`: `[queries, groups]`, `-inf` where
+/// the group has not closed before the query's slot.
+#[allow(clippy::too_many_arguments)]
+pub fn index_query_logits(
+    plan: &IndexPoolPlan,
+    rope_base: f64,
+    w: &IndexerWeights,
+    keys: &[f64],
+    x: &[f64],
+    q_resid: &[f64],
+    positions: &[u32],
+    slots: &[usize],
+    hidden: usize,
+    q_lora: usize,
+) -> Vec<f64> {
+    let queries = positions.len();
+    assert_eq!(slots.len(), queries, "one slot per query");
+    let heads = plan.heads as usize;
+    let dim = plan.head_dim as usize;
+    let rope = plan.rope_head_dim as usize;
+    let pool = plan.pool as usize;
+    let groups = keys.len() / dim;
     let mut query = linear(q_resid, w.query, q_lora, heads * dim);
     for (t, &position) in positions.iter().enumerate() {
         for h in 0..heads {
@@ -203,9 +247,9 @@ pub fn index_pool_logits(
     }
     let scale = (heads as f64).powf(-0.5) * (dim as f64).powf(-0.5);
     let head_weights = linear(x, w.head_weight, hidden, heads);
-    let mut logits = vec![f64::NEG_INFINITY; tokens * groups];
-    for t in 0..tokens {
-        for g in 0..groups.min(t / pool) {
+    let mut logits = vec![f64::NEG_INFINITY; queries * groups];
+    for (t, &slot) in slots.iter().enumerate() {
+        for g in 0..groups.min(slot / pool) {
             let key = &keys[g * dim..(g + 1) * dim];
             logits[t * groups + g] = (0..heads)
                 .map(|h| {
@@ -244,6 +288,33 @@ pub fn index_pool_recall(plan: &IndexPoolPlan, logits: &[f64], tokens: usize) ->
     if tokens <= plan.top_k as usize {
         return None;
     }
+    assert_eq!(logits.len() % tokens, 0, "logits [tokens, groups]");
+    let groups = logits.len() / tokens;
+    let mut visible = vec![false; tokens * tokens];
+    for t in 0..tokens {
+        index_recall_row(
+            plan,
+            &logits[t * groups..(t + 1) * groups],
+            t,
+            tokens,
+            &mut visible[t * tokens..(t + 1) * tokens],
+        );
+    }
+    Some(visible)
+}
+
+/// One query's recall (`HYV4FlashCompressedIndexer.forward` past the budget): the query in cache
+/// slot `slot` keeps the `top_k / pool - 1` best of its group logits `row` (all `kv_len / pool`
+/// groups of the cache, `-inf` ones included, under the plan's tie order) plus its own group,
+/// expanded to token slots clamped to `kv_len - 1` and causal at `slot`; `visible` is the
+/// query's `[kv_len]` row. Returns the recalled groups (top-k order, then the own group).
+pub fn index_recall_row(
+    plan: &IndexPoolPlan,
+    row: &[f64],
+    slot: usize,
+    kv_len: usize,
+    visible: &mut [bool],
+) -> Vec<usize> {
     let pool = plan.pool as usize;
     assert_eq!(
         plan.top_k % plan.pool,
@@ -251,29 +322,41 @@ pub fn index_pool_recall(plan: &IndexPoolPlan, logits: &[f64], tokens: usize) ->
         "top_k {} is whole groups",
         plan.top_k
     );
-    assert_eq!(logits.len() % tokens, 0, "logits [tokens, groups]");
-    let groups = logits.len() / tokens;
+    assert_eq!(visible.len(), kv_len, "one visibility per cached key");
     let keep = ((plan.top_k / plan.pool) as usize)
         .checked_sub(1)
         .expect("top_k holds at least the query's own group");
-    let mut visible = vec![false; tokens * tokens];
-    for t in 0..tokens {
-        let mut recalled = group_top_k(
-            &logits[t * groups..(t + 1) * groups],
-            keep.min(groups),
-            plan.ties,
-        );
-        recalled.push(t / pool);
-        for g in recalled {
-            for slot in g * pool..(g + 1) * pool {
-                let s = slot.min(tokens - 1);
-                if s <= t {
-                    visible[t * tokens + s] = true;
-                }
+    let mut recalled = group_top_k(row, keep.min(row.len()), plan.ties);
+    recalled.push(slot / pool);
+    for &g in &recalled {
+        for s in g * pool..(g + 1) * pool {
+            let s = s.min(kv_len - 1);
+            if s <= slot {
+                visible[s] = true;
             }
         }
     }
-    Some(visible)
+    recalled
+}
+
+/// What a gated MLA layer keeps per token, in cache slot order: the normalized latent
+/// (`kv_a_layernorm`, `[slots, kv_lora_rank]`), the rotated shared rope key (`[slots, rope]`),
+/// the indexer token keys on indexed layers (`[slots, index_head_dim]`) and the positions. `kv`
+/// is the latent expanded by `kv_b_proj` (`[slots, heads * (nope + value)]`), derived from
+/// `latent` once per token.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MlaCache {
+    pub latent: Vec<f64>,
+    pub k_rope: Vec<f64>,
+    pub kv: Vec<f64>,
+    pub index_keys: Vec<f64>,
+    pub positions: Vec<u32>,
+}
+
+impl MlaCache {
+    pub fn slots(&self) -> usize {
+        self.positions.len()
+    }
 }
 
 /// `HYV4FlashAttention.forward` on `x` (the layer input after `input_layernorm`): causal for an
@@ -302,8 +385,33 @@ pub fn gated_mla_attention_recalled(
     hidden: usize,
     recalled: Option<&[bool]>,
 ) -> Vec<f64> {
+    let mut cache = MlaCache::default();
+    gated_mla_attention_cached(plan, norm, w, x, positions, hidden, &mut cache, recalled).0
+}
+
+/// [`gated_mla_attention`] for new tokens `x` (at `positions`) after the tokens already in
+/// `cache`: the new tokens' latents, rope keys and index keys are appended to the cache first,
+/// then each new query attends the cached keys as the vendor's cached forward does. With an
+/// empty cache this is the prefill; one token is a decode step. An indexed layer runs its
+/// indexer when the cache then holds more than `top_k` keys, and attends causally otherwise;
+/// a sliding layer reads the last `window` keys. `recalled` overrides the indexed layer's
+/// visible keys for a prefill (`[tokens, tokens]`). Returns the output and, when the indexer
+/// ran, each new query's recalled groups ([`index_recall_row`]).
+#[allow(clippy::too_many_arguments)]
+pub fn gated_mla_attention_cached(
+    plan: &HyV4AttentionPlan,
+    norm: NormPlan,
+    w: &AttentionWeights,
+    x: &[f64],
+    positions: &[u32],
+    hidden: usize,
+    cache: &mut MlaCache,
+    recalled: Option<&[bool]>,
+) -> (Vec<f64>, Option<Vec<Vec<usize>>>) {
     let tokens = positions.len();
     assert_eq!(x.len(), tokens * hidden);
+    let past = cache.slots();
+    let kv_len = past + tokens;
     let heads = plan.query_heads as usize;
     let nope = plan.qk_nope_head_dim as usize;
     let rope = plan.qk_rope_head_dim as usize;
@@ -328,51 +436,6 @@ pub fn gated_mla_attention_recalled(
     let base = plan.rope.base as f64;
 
     let q_resid = rms_norm(&linear(x, w.q_a, hidden, q_lora), w.q_a_norm, norm);
-    let computed;
-    let recalled: Option<&[bool]> = match (plan.kind, &w.indexer) {
-        (HyV4AttentionKind::Indexed(index), Some(indexer)) => {
-            assert_eq!(
-                index.rope_head_dim, plan.qk_rope_head_dim,
-                "indexer rope dims"
-            );
-            match recalled {
-                Some(given) => {
-                    assert!(
-                        tokens > index.top_k as usize,
-                        "recalled keys below the budget"
-                    );
-                    Some(given)
-                }
-                None => {
-                    computed = if tokens > index.top_k as usize {
-                        let logits = index_pool_logits(
-                            &index, base, norm, indexer, x, &q_resid, positions, hidden, q_lora,
-                        );
-                        index_pool_recall(&index, &logits, tokens)
-                    } else {
-                        None
-                    };
-                    computed.as_deref()
-                }
-            }
-        }
-        (HyV4AttentionKind::Sliding { .. }, None) => {
-            assert!(recalled.is_none(), "a sliding layer recalls no keys");
-            None
-        }
-        (kind, indexer) => panic!(
-            "attention kind {kind:?} with indexer weights present: {}",
-            indexer.is_some()
-        ),
-    };
-    if let Some(visible) = recalled {
-        assert_eq!(
-            visible.len(),
-            tokens * tokens,
-            "recalled keys [tokens, tokens]"
-        );
-    }
-    let mut q = linear(&q_resid, w.q_b, q_lora, heads * qk);
     let kv_a = linear(x, w.kv_a, hidden, kv_lora + rope);
     let mut latent = Vec::with_capacity(tokens * kv_lora);
     let mut k_rope = Vec::with_capacity(tokens * rope);
@@ -384,26 +447,106 @@ pub fn gated_mla_attention_recalled(
     let latent = rms_norm(&latent, w.kv_a_norm, norm);
     for t in 0..tokens {
         rope_in_place(&mut k_rope[t * rope..(t + 1) * rope], positions[t], base);
+    }
+    cache
+        .kv
+        .extend(linear(&latent, w.kv_b, kv_lora, heads * (nope + vdim)));
+    cache.latent.extend(latent);
+    cache.k_rope.extend(k_rope);
+    cache.positions.extend_from_slice(positions);
+
+    let mut groups_recalled = None;
+    let visible: Option<Vec<bool>> = match (plan.kind, &w.indexer) {
+        (HyV4AttentionKind::Indexed(index), Some(indexer)) => {
+            assert_eq!(
+                index.rope_head_dim, plan.qk_rope_head_dim,
+                "indexer rope dims"
+            );
+            cache
+                .index_keys
+                .extend(index_token_keys(&index, norm, indexer, x, hidden));
+            match recalled {
+                Some(given) => {
+                    assert!(
+                        past == 0 && tokens > index.top_k as usize,
+                        "recalled keys of a prefill past the budget"
+                    );
+                    Some(given.to_vec())
+                }
+                None if kv_len > index.top_k as usize => {
+                    let keys = index_group_keys(
+                        &index,
+                        base,
+                        norm,
+                        indexer,
+                        &cache.index_keys,
+                        &cache.positions,
+                    );
+                    let slots: Vec<usize> = (past..kv_len).collect();
+                    let logits = index_query_logits(
+                        &index, base, indexer, &keys, x, &q_resid, positions, &slots, hidden,
+                        q_lora,
+                    );
+                    let groups = keys.len() / index.head_dim as usize;
+                    let mut visible = vec![false; tokens * kv_len];
+                    let mut lists = Vec::with_capacity(tokens);
+                    for (t, &slot) in slots.iter().enumerate() {
+                        lists.push(index_recall_row(
+                            &index,
+                            &logits[t * groups..(t + 1) * groups],
+                            slot,
+                            kv_len,
+                            &mut visible[t * kv_len..(t + 1) * kv_len],
+                        ));
+                    }
+                    groups_recalled = Some(lists);
+                    Some(visible)
+                }
+                None => None,
+            }
+        }
+        (HyV4AttentionKind::Sliding { .. }, None) => {
+            assert!(recalled.is_none(), "a sliding layer recalls no keys");
+            None
+        }
+        (kind, indexer) => panic!(
+            "attention kind {kind:?} with indexer weights present: {}",
+            indexer.is_some()
+        ),
+    };
+    if let Some(visible) = &visible {
+        assert_eq!(
+            visible.len(),
+            tokens * kv_len,
+            "recalled keys [tokens, kv_len]"
+        );
+    }
+    let mut q = linear(&q_resid, w.q_b, q_lora, heads * qk);
+    for (t, &position) in positions.iter().enumerate() {
         for h in 0..heads {
             let at = t * heads * qk + h * qk + nope;
-            rope_in_place(&mut q[at..at + rope], positions[t], base);
+            rope_in_place(&mut q[at..at + rope], position, base);
         }
     }
-    let kv = linear(&latent, w.kv_b, kv_lora, heads * (nope + vdim));
+    let kv = &cache.kv;
+    let k_rope = &cache.k_rope;
     let gate = linear(x, w.gate, hidden, heads * vdim);
     let scale = (qk as f64).powf(-0.5);
     let mut attended = vec![0.0; tokens * heads * vdim];
     for h in 0..heads {
         for t in 0..tokens {
+            let slot = past + t;
             let visible = |s: usize| {
-                s <= t
+                s <= slot
                     && match plan.kind {
-                        HyV4AttentionKind::Sliding { window } => t - s < window as usize,
-                        HyV4AttentionKind::Indexed(_) => recalled.is_none_or(|v| v[t * tokens + s]),
+                        HyV4AttentionKind::Sliding { window } => slot - s < window as usize,
+                        HyV4AttentionKind::Indexed(_) => {
+                            visible.as_ref().is_none_or(|v| v[t * kv_len + s])
+                        }
                     }
             };
             let qrow = &q[t * heads * qk + h * qk..t * heads * qk + (h + 1) * qk];
-            let mut logits: Vec<(usize, f64)> = (0..tokens)
+            let mut logits: Vec<(usize, f64)> = (0..kv_len)
                 .filter(|s| visible(*s))
                 .map(|s| {
                     let kvrow = &kv[s * heads * (nope + vdim) + h * (nope + vdim)..];
@@ -431,7 +574,10 @@ pub fn gated_mla_attention_recalled(
         *a *= sigmoid(*g);
     }
     let out = linear(&attended, w.o, heads * vdim, hidden);
-    rms_norm(&out, w.post_norm, plan.post_projection_norm)
+    (
+        rms_norm(&out, w.post_norm, plan.post_projection_norm),
+        groups_recalled,
+    )
 }
 
 /// An Engram layer's table as the artifact stores it: e4m3 codes `[rows, head_dim]` and one
@@ -907,6 +1053,30 @@ pub fn decoder_layer(
     hidden: usize,
     engram_inputs: Option<&EngramInputs>,
 ) -> Vec<f64> {
+    let mut cache = MlaCache::default();
+    decoder_layer_cached(
+        layer,
+        w,
+        streams,
+        positions,
+        hidden,
+        engram_inputs,
+        &mut cache,
+    )
+    .0
+}
+
+/// [`decoder_layer`] for new tokens after the ones in the layer's `cache`
+/// ([`gated_mla_attention_cached`]); also returns the indexer's recalled groups when it ran.
+pub fn decoder_layer_cached(
+    layer: &memra_gguf::model_plan::LayerPlan,
+    w: &LayerWeights,
+    streams: &[f64],
+    positions: &[u32],
+    hidden: usize,
+    engram_inputs: Option<&EngramInputs>,
+    cache: &mut MlaCache,
+) -> (Vec<f64>, Option<Vec<Vec<usize>>>) {
     let memra_gguf::model_plan::AttentionPlan::HyV4(attention) = &layer.attention else {
         panic!("layer {} is not a Hy4-flash layer", layer.index);
     };
@@ -933,13 +1103,15 @@ pub fn decoder_layer(
     };
     let (post, read) = hyper_connection(residual, &w.attention_hc, streams, hidden);
     let x = rms_norm(&read, w.input_norm, layer.pre_attention_norm);
-    let attn = gated_mla_attention(
+    let (attn, recalled) = gated_mla_attention_cached(
         attention,
         layer.pre_attention_norm,
         &w.attention,
         &x,
         positions,
         hidden,
+        cache,
+        None,
     );
     let streams = write_back(streams, &post, &attn, n, hidden);
     let (post, read) = hyper_connection(residual, &w.mlp_hc, &streams, hidden);
@@ -975,5 +1147,5 @@ pub fn decoder_layer(
         }
         _ => panic!("layer {}: MLP plan and weights disagree", layer.index),
     };
-    write_back(&streams, &post, &mlp, n, hidden)
+    (write_back(&streams, &post, &mlp, n, hidden), recalled)
 }

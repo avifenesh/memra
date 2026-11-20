@@ -933,3 +933,57 @@ fn a_null_low_rank_is_read_as_absent_only_here() {
     let error = HfConfig::try_parse(&v41.to_string()).unwrap_err();
     assert!(error.contains("o_lora_rank must be a non-null"), "{error}");
 }
+
+/// The tiny-gate config is the artifact's program at small width: the same switches and
+/// constants, the window of 512, the artifact's layer order and quant classes, Engram at the
+/// 1-based ids 2 and 4. Its fixture crosses the window and the budget only because these hold.
+#[test]
+fn tiny_config_is_the_artifact_program_at_small_width() {
+    let real = config();
+    let real = real.hy_v4_flash.as_ref().unwrap();
+    let tiny = tiny_config().unwrap();
+    assert_eq!(tiny.sliding_window, real.sliding_window);
+    assert_eq!(
+        (tiny.rms_norm_eps, tiny.hc_eps, tiny.routed_scaling_factor),
+        (real.rms_norm_eps, real.hc_eps, real.routed_scaling_factor)
+    );
+    assert_eq!(
+        (tiny.indexed.rope_theta, tiny.sliding.rope_theta),
+        (real.indexed.rope_theta, real.sliding.rope_theta)
+    );
+    assert_eq!(tiny.layer_kinds[..], real.layer_kinds[..6]);
+    assert_eq!(tiny.dense_layers[..], real.dense_layers[..6]);
+    assert_eq!((tiny.index_topk, tiny.index_pool), (256, 4));
+    assert_eq!(tiny.engram_layer_ids, [2, 4]);
+    assert!(tiny.engram_lookup_table_size < tiny.vocab_size);
+    let plan = PACK.compile_tiny_plan().unwrap();
+    assert_eq!(plan.layers.len(), 6);
+    for layer in &plan.layers {
+        let AttentionPlan::HyV4(a) = &layer.attention else {
+            panic!("hy4 attention")
+        };
+        let ResidualTopology::HyV4(r) = &layer.residual else {
+            panic!("hy4 residual")
+        };
+        assert_eq!(
+            r.engram.map(|e| e.layer_id),
+            match layer.index {
+                1 => Some(2),
+                3 => Some(4),
+                _ => None,
+            }
+        );
+        let want = if layer.index == 0 {
+            HyV4WeightFormat::Bf16
+        } else {
+            HyV4WeightFormat::Fp8Block { block: 128 }
+        };
+        assert_eq!(a.projection_weights, want, "layer {}", layer.index);
+        if let MlpPlan::LatentMoe(moe) = &layer.mlp {
+            assert_eq!(
+                moe.expert_weights,
+                HyV4WeightFormat::Nvfp4W4A16 { group: 16 }
+            );
+        }
+    }
+}
