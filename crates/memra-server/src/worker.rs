@@ -2828,6 +2828,14 @@ pub struct ModelCaps {
     /// before this cap existed: every glm5 marker is ALSO a qwen marker, so the ChatML arm
     /// answered for it (research/glm53-flash-bringup-20260827/SURFACE-AUDIT).
     pub glm5: bool,
+    /// Tencent Hy4-flash (`chat::template_is_hy4`, served by `hy4f_serve`): set with `hy3`, which
+    /// carries what the two Tencent dialects share (the suffixed `</think:opensource>` seam, the
+    /// `<tool_calls:opensource>` framing and its stop, no constrained tool calls). This one selects
+    /// Hy4's half: the call body parser (`ToolStreamParser::hy4`), armed on every chat request
+    /// with the think open unless reasoning is off (the template's default effort, `high`, opens
+    /// it), the `max` rung above `high`, the native `no_think` spelling, and `low`/`medium`
+    /// translated to `high` (reasoning on at the template's lowest reasoning rung).
+    pub hy4: bool,
     /// Model-provider sampling defaults for OMITTED chat fields. `None` keeps the generic
     /// OpenAI-compatible defaults in the HTTP layer. Step35 uses StepFun's published API
     /// defaults (temperature 0.5, top_p 0.9); explicit client values always win.
@@ -21138,6 +21146,9 @@ pub fn run(
     // deepseek-v4.1 checkpoints serve on their own thread too (`dsv41_serve`); their senders
     // share `dsv4_routes` (the dedicated-thread dispatch map) and their contracts are their own.
     let mut dsv41_sessions: HashMap<String, usize> = HashMap::new();
+    // hy_v4_flash checkpoints serve on their own thread as well (`hy4f_serve`), through the
+    // same dispatch map
+    let mut hy4f_sessions: HashMap<String, usize> = HashMap::new();
     // REMOVED-DOORS REFUSAL (2026-08-29). Env-only, so it runs BEFORE any model load: the
     // old step37-scoped refusal needed the loaded model's class and therefore paid a full
     // multi-minute checkpoint load before refusing; this one needs nothing but the
@@ -21163,6 +21174,11 @@ pub fn run(
             let p = std::path::Path::new(path);
             if p.is_dir() && crate::dsv41_serve::is_dsv41_dir(p) {
                 planned.register(crate::dsv41_serve::contract(
+                    name,
+                    crate::route_contract::hybrid_interactive_cap().max(1),
+                ));
+            } else if p.is_dir() && crate::hy4f_serve::is_hy4f_dir(p) {
+                planned.register(crate::hy4f_serve::contract(
                     name,
                     crate::route_contract::hybrid_interactive_cap().max(1),
                 ));
@@ -21220,6 +21236,43 @@ pub fn run(
             dsv4_routes.insert(
                 name.clone(),
                 crate::dsv41_serve::spawn(dm, route_health, load),
+            );
+            order.push(name.clone());
+            continue;
+        }
+        if from_dir && crate::hy4f_serve::is_hy4f_dir(std::path::Path::new(path)) {
+            if draft.is_some() {
+                let _ = ready_tx.send(Err(format!(
+                    "model {name:?}: '+draft' is a GGUF-family attach; the hy_v4_flash route \
+                     serves the trunk only"
+                )));
+                return;
+            }
+            let dir = std::path::Path::new(path);
+            let tok = match tokenizer_snapshots.load(name, path, || Tokenizer::from_hf_dir(dir)) {
+                Ok(t) => t,
+                Err(err) => {
+                    let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
+                    return;
+                }
+            };
+            let hm = match crate::hy4f_serve::load(name, dir, tok) {
+                Ok(m) => m,
+                Err(err) => {
+                    let _ = ready_tx.send(Err(format!("load {name}: {err}")));
+                    return;
+                }
+            };
+            dsv4_caps.insert(name.clone(), crate::hy4f_serve::caps(&hm));
+            hy4f_sessions.insert(name.clone(), hm.sessions);
+            let cap = crate::hy4f_serve::contract(name, hm.sessions)
+                .capacity
+                .concurrency();
+            let load = crate::route_telemetry::register(name, cap);
+            let route_health = health.register_route(name, load.clone());
+            dsv4_routes.insert(
+                name.clone(),
+                crate::hy4f_serve::spawn(hm, route_health, load),
             );
             order.push(name.clone());
             continue;
@@ -21614,6 +21667,8 @@ pub fn run(
                 // V4.1 checkpoints serve on their own route (`dsv41_serve::caps`); this loader
                 // runs no V4.1 program, so no model it loads speaks V4.1's dialect.
                 dsv41: false,
+                // Hy4-flash checkpoints serve on their own route (`hy4f_serve::caps`).
+                hy4: false,
                 // GLM-5.3-Flash: `[gMASK]<sop>` + `<|observation|>`. Template-keyed like every
                 // other cap — a glm5 checkpoint that shipped without its template would fall
                 // back to ChatML rendering, where arming this dialect would be guessing.
@@ -21666,6 +21721,8 @@ pub fn run(
     for name in &order {
         if let Some(&sessions) = dsv41_sessions.get(name) {
             route_registry.register(crate::dsv41_serve::contract(name, sessions));
+        } else if let Some(&sessions) = hy4f_sessions.get(name) {
+            route_registry.register(crate::hy4f_serve::contract(name, sessions));
         } else if dsv4_routes.contains_key(name) {
             route_registry.register(crate::dsv4_serve::contract(
                 name,

@@ -469,7 +469,6 @@ impl ToolStreamParser {
 
     /// Tencent Hy4-flash parser: the HY3 seam (`</think:opensource>`) and call block, with the
     /// Hy4 call body (name, then `<arg_key>`/`<arg_value>` pairs, no separator token).
-    #[allow(dead_code)] // allow: the Hy4-flash serve route, a later step of its lane, is the first non-test caller
     pub fn hy4(schemas: HashMap<String, HashMap<String, String>>, skip_think: bool) -> Self {
         let mut p = Self::hy3(schemas, skip_think);
         p.hy4 = true;

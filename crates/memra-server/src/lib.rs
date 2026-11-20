@@ -115,6 +115,7 @@ mod embed_api;
 mod handoff_io;
 mod histogram;
 mod http_metrics;
+mod hy4f_serve;
 mod hybrid_telemetry;
 mod image_fetch;
 mod job_publication;
@@ -7094,6 +7095,12 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
             "[server] {live} deepseek-v4.1 serving thread(s) still in a step; exiting anyway"
         );
     }
+    let live = crate::hy4f_serve::join_threads(
+        deadline.saturating_duration_since(std::time::Instant::now()),
+    );
+    if live > 0 {
+        eprintln!("[server] {live} hy_v4_flash serving thread(s) still in a step; exiting anyway");
+    }
     Ok(())
 }
 
@@ -9766,16 +9773,24 @@ fn build_chat_request_with_trace(
         ));
     }
     let vllm_switch = resolve_vllm_think_switch(req.enable_thinking, &req.chat_template_kwargs)?;
+    // Hy4-flash (`ModelCaps::hy4`): its template spells reasoning off `no_think`, the table's
+    // `none`; the vendor's clients send that spelling.
+    let is_hy4 = caps.is_some_and(|c| c.hy4);
+    let effort_in = match req.reasoning_effort.as_deref() {
+        Some("no_think") if is_hy4 => Some("none".to_string()),
+        _ => req.reasoning_effort.clone(),
+    };
     let (mut think, effort_level, think_client_explicit) = parse_think(
-        &req.reasoning_effort,
+        &effort_in,
         &req.reasoning,
         vllm_switch,
         req.include_reasoning,
         default_effort,
-        // Templates with a real rung ABOVE `high`: deepseek-v4's BEYOND_MAX prefix and
-        // GLM-5.3-Flash's `Reasoning Effort: Max` (its own default). Clamping xhigh/max/ultra
-        // into `high` on these silently drops the tier the client asked for.
-        caps.is_some_and(|c| c.dsv4 || c.glm5),
+        // Templates with a real rung ABOVE `high`: deepseek-v4's BEYOND_MAX prefix,
+        // GLM-5.3-Flash's `Reasoning Effort: Max` (its own default) and Hy4-flash's `max`.
+        // Clamping xhigh/max/ultra into `high` on these silently drops the tier the client
+        // asked for.
+        caps.is_some_and(|c| c.dsv4 || c.glm5 || c.hy4),
         // deepseek-v4.1 reads a numeric budget (1..=100) as well as the levels.
         caps.is_some_and(|c| c.dsv41),
     )?;
@@ -9852,6 +9867,13 @@ fn build_chat_request_with_trace(
     // as the default level under both, the never-corrupt clamp). Gate on the capability so
     // every other model's prompt stays byte-identical.
     let reasoning_effort = if level_template { effort_level } else { None };
+    // Hy4-flash's ladder is no_think / high / max (its template raises on any other level):
+    // `low` and `medium` ask for reasoning, so they translate to the lowest reasoning rung,
+    // `high` (a thinking-off request still renders `no_think`: `chat::hy4_reasoning_effort`).
+    let reasoning_effort = match reasoning_effort.as_deref() {
+        Some("low" | "medium") if is_hy4 => Some("high".to_string()),
+        _ => reasoning_effort,
+    };
     // response_format -> grammar spec (constrained decoding). None/text = unconstrained,
     // the exact legacy path; unknown/malformed forms are loud 400s.
     let response_grammar = constrained::parse_response_format(req.response_format.as_ref())?;
@@ -10042,6 +10064,10 @@ fn build_chat_request_with_trace(
     };
     let parser = if glm5 {
         Some(ToolStreamParser::glm5(think_open, schemas))
+    } else if is_hy4 {
+        // Hy4-flash: armed on every chat request like dsv4; the generation prompt leaves the
+        // think open unless reasoning is off (the template's default effort is `high`)
+        Some(ToolStreamParser::hy4(schemas, think != ThinkMode::NoThink))
     } else if is_hy3 && (hy3_tools || hy3_think_open) {
         Some(ToolStreamParser::hy3(schemas, hy3_think_open))
     } else if is_dsv4 && (dsv4_tools || dsv4_think_open) {
@@ -14384,6 +14410,28 @@ mod tests {
         }
     }
 
+    /// The caps `hy4f_serve::caps` gives a Hy4-flash checkpoint.
+    fn hy4_tool_caps() -> ModelCaps {
+        ModelCaps {
+            tools_branch: true,
+            hy3: true,
+            hy4: true,
+            chat_ok: true,
+            effort_levels: true,
+            instruct_type: Some("hy4".into()),
+            ..Default::default()
+        }
+    }
+
+    /// The pinned Hy4-flash `chat_template.jinja` (the onboarding's step 2 fixtures).
+    fn hy4_template() -> String {
+        let path = format!(
+            "{}/../../research/modelplan-onboarding-hy4flash-20261119/chat/artifact/chat_template.jinja",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+    }
+
     fn gemma_template(kind: &str) -> String {
         let file = match kind {
             "qat" => "qat-trunk-template.jinja",
@@ -16543,6 +16591,119 @@ mod tests {
             if call.name == "get_weather" && call.arguments == r#"{"city":"Paris"}"#)));
     }
 
+    /// Hy4-flash through the real chat plan and the pinned template: the ladder is
+    /// no_think / high / max (the template raises on anything else), `max` and its aliases keep
+    /// their rung, the native `no_think` spelling turns reasoning off, `low`/`medium` ask for
+    /// reasoning and render `high`; every chat request arms the Hy4 parser (the default effort
+    /// opens the think), and a tools request stops on the calls' close.
+    #[test]
+    fn hy4_efforts_tools_and_reasoning_flow_through_the_real_chat_plan() {
+        let template = hy4_template();
+        let plan_for = |extra: serde_json::Value| {
+            let (tx, _rx) = worker::event_channel();
+            build_chat_request(
+                weather_request(extra),
+                Some(&hy4_tool_caps()),
+                tx,
+                lanes::Lane::Interactive,
+                None,
+            )
+            .unwrap()
+        };
+        let render = |plan: &ChatPlan| {
+            chat::apply_chat_template_tools_ex(
+                Some(&template),
+                &plan.request.chat_turns,
+                true,
+                &plan.request.tools_json,
+                &plan.request.tools_struct,
+                plan.request.think,
+                plan.request.reasoning_effort.as_deref(),
+                None,
+            )
+            .unwrap()
+        };
+        let open = "<\u{ff5c}hy_start:opensource\u{ff5c}>assistant<\u{ff5c}hy_middle:opensource\u{ff5c}><think:opensource>";
+        let closed = format!("{open}</think:opensource>");
+        for (effort, level, think_open) in [
+            (None, "high", true),
+            (Some("high"), "high", true),
+            (Some("max"), "max", true),
+            (Some("xhigh"), "max", true),
+            (Some("low"), "high", true),
+            (Some("medium"), "high", true),
+            (Some("no_think"), "no_think", false),
+            (Some("none"), "no_think", false),
+        ] {
+            let extra = match effort {
+                Some(e) => json!({"reasoning_effort": e}),
+                None => json!({}),
+            };
+            let plan = plan_for(extra);
+            let rendered = render(&plan);
+            assert!(
+                rendered.contains(&format!("reasoning_effort:{level}")),
+                "{effort:?}: {rendered}"
+            );
+            if think_open {
+                assert!(rendered.ends_with(open), "{effort:?}");
+            } else {
+                assert!(rendered.ends_with(&closed), "{effort:?}");
+            }
+            assert!(
+                plan.request
+                    .stop_strings
+                    .iter()
+                    .any(|stop| stop == "</tool_calls:opensource>"),
+                "{effort:?}"
+            );
+            let mut parser = plan.parser.expect("every Hy4 chat request arms its parser");
+            let think = if think_open {
+                "Need weather.</think:opensource>"
+            } else {
+                ""
+            };
+            let pieces = parser.push(&format!(
+                "{think}<tool_calls:opensource><tool_call:opensource>get_weather\
+                 <arg_key:opensource>city</arg_key:opensource>\
+                 <arg_value:opensource>Paris</arg_value:opensource>\
+                 </tool_call:opensource></tool_calls:opensource>"
+            ));
+            if think_open {
+                assert!(pieces.contains(&Piece::Reasoning("Need weather.".into())));
+            }
+            assert!(
+                pieces.iter().any(|piece| matches!(piece, Piece::Call(call)
+                    if call.name == "get_weather" && call.arguments == r#"{"city":"Paris"}"#)),
+                "{effort:?}: {pieces:?}"
+            );
+        }
+        // the template's own refusals stay refusals: a level outside the table is a 400
+        let (tx, _rx) = worker::event_channel();
+        assert!(
+            build_chat_request(
+                weather_request(json!({"reasoning_effort": "turbo"})),
+                Some(&hy4_tool_caps()),
+                tx,
+                lanes::Lane::Interactive,
+                None,
+            )
+            .is_err()
+        );
+        // constrained tool calls are not served in this dialect
+        let (tx, _rx) = worker::event_channel();
+        assert!(
+            build_chat_request(
+                weather_request(json!({"tool_choice": "required"})),
+                Some(&hy4_tool_caps()),
+                tx,
+                lanes::Lane::Interactive,
+                None,
+            )
+            .is_err()
+        );
+    }
+
     #[test]
     fn tool_choice_none_strips_tools_and_parser() {
         let (tx, _rx) = worker::event_channel();
@@ -16700,6 +16861,7 @@ mod tests {
             },
             ModelCaps {
                 glm5: true,
+                hy4: false,
                 ..tool_caps()
             },
         ] {
@@ -31755,6 +31917,7 @@ temperature = 0.6
             dsv4: false,
             dsv41: false,
             glm5: false,
+            hy4: false,
             chat_temperature_default: None,
             chat_top_p_default: None,
             n_vocab: 151_936,

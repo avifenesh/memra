@@ -380,6 +380,46 @@ impl RouteContract {
     }
 }
 
+impl RouteContract {
+    /// The hy_v4_flash serving thread (`hy4f_serve.rs`): `sessions` requests at once, each with
+    /// its own carried cache; a step runs the oldest prefilling request's next prefill chunk and
+    /// one decode call per generating request, each a call of its own. Declared here for the same
+    /// wiring-test reason as the DSv4 thread.
+    pub fn hy4f_thread(model: impl Into<String>, sessions: usize) -> Self {
+        Self::new(
+            model,
+            "hy4f-thread",
+            "hy4f_serve.rs",
+            RouteCapacity::Sessions(sessions),
+        )
+        .implemented(
+            PolicySurface::Capacity,
+            "std::sync::mpsc::channel::<Box<Request>>()",
+        )
+        .implemented(PolicySurface::Occupancy, "load.begin()")
+        // every prefill chunk stamps its rows through the thread's own sink
+        .implemented(
+            PolicySurface::Progress,
+            "memra_engine::progress::ProgressSinkScope::install(",
+        )
+        .implemented(PolicySurface::FaultOwnership, "std::panic::catch_unwind(")
+        // a closed queue drains the running and waiting requests, then the thread leaves
+        .implemented(PolicySurface::ShutdownOwnership, "closing = true;")
+        // the route's own book (each session's cache at its capacity and the context-sized
+        // scratch against the ceiling beside the resident weights), then the live check
+        .implemented(PolicySurface::MemoryCost, "admit_session(")
+        // the bundle must name this checkpoint and plan; the route runs the plan's own program
+        .implemented(
+            PolicySurface::RewriteQualification,
+            "install_hy4f_rewrite_bundle(",
+        )
+        // a prompt's prefill yields between chunks: each step runs one chunk, then every
+        // generating request's decode call
+        .implemented(PolicySurface::PrimeFairness, "Work::Prefill { i, s0, s1 }")
+        .implemented(PolicySurface::ServiceMetrics, "run.finish(stats)")
+    }
+}
+
 /// The interactive session cap of the central worker, as ONE pure derivation: `max_sessions`
 /// (`MEMRA_MAX_SESSIONS`), default 64. The worker's admission gate, `lib.rs::lane_cap` and the
 /// registry all read it through `hybrid_interactive_cap`, so the number the gate enforces, the
@@ -652,6 +692,27 @@ mod tests {
         assert!(route.describe().contains("route=dsv41-thread"));
     }
 
+    /// The hy_v4_flash route consumes the bundle (`hy4f_serve::install_hy4f_rewrite_bundle`
+    /// checks it names this checkpoint and plan) and declares every surface implemented.
+    #[test]
+    fn a_hy4f_route_honors_an_armed_rewrite_bundle_and_declares_every_surface() {
+        let env = |var: &str| (var == "MEMRA_REWRITE_BUNDLE").then(|| "/tmp/bundle".to_string());
+        let mut only = RouteRegistry::default();
+        only.register(RouteContract::hy4f_thread("hy4f", 8));
+        only.check(&no_env).unwrap();
+        only.check(&env).unwrap();
+        let route = only.contract_for("hy4f").unwrap();
+        assert_eq!(route.capacity, RouteCapacity::Sessions(8));
+        for surface in PolicySurface::ALL {
+            assert!(
+                matches!(route.decl(surface), Some(PolicyDecl::Implemented { .. })),
+                "{}",
+                surface.name()
+            );
+        }
+        assert!(route.describe().contains("route=hy4f-thread"));
+    }
+
     #[test]
     fn capacity_is_readable_per_model() {
         let mut reg = RouteRegistry::default();
@@ -675,6 +736,7 @@ mod tests {
             ("worker.rs", include_str!("worker.rs")),
             ("dsv4_serve.rs", include_str!("dsv4_serve.rs")),
             ("dsv41_serve.rs", include_str!("dsv41_serve.rs")),
+            ("hy4f_serve.rs", include_str!("hy4f_serve.rs")),
         ];
         // The declarations live in THIS file, never in a route's source, so a grep of the route's
         // file cannot be satisfied by the declaration text (revuto round 1 on the dsv4 contract).
@@ -682,6 +744,7 @@ mod tests {
             RouteContract::hybrid_worker("gate", 4),
             RouteContract::dsv4_thread("ds"),
             RouteContract::dsv41_thread("ds41", 4),
+            RouteContract::hy4f_thread("hy4f", 4),
         ] {
             assert!(
                 !sources.iter().any(|(name, _)| *name == "route_contract.rs"),
@@ -693,6 +756,7 @@ mod tests {
         reg.register(RouteContract::hybrid_worker("gate", 4));
         reg.register(RouteContract::dsv4_thread("ds"));
         reg.register(RouteContract::dsv41_thread("ds41", 4));
+        reg.register(RouteContract::hy4f_thread("hy4f", 4));
         for route in reg.routes() {
             let (_, src) = sources
                 .iter()

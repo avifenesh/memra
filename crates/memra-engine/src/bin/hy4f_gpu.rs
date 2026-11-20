@@ -4,7 +4,7 @@
 //! greedy runner with a throughput reading.
 //!
 //! usage: hy4f-gpu CKPT_DIR --request FILE [--tape DIR] [--force-selections TAPE_DIR]
-//!                 [--red ARM]... [--bench N] [--gen N] [--device D]
+//!                 [--red ARM]... [--bench N] [--gen N] [--prefill-chunk N] [--device D]
 //!        hy4f-gpu --numeric-class   print the class (the checkpoint gate asks)
 //!   --request FILE           `{"name", "token_ids", "decode_from"}`: the prefill call
 //!                            `token_ids[..decode_from]`, then one teacher-forced decode call per
@@ -22,6 +22,8 @@
 //!                            the argmax; print the ids
 //!   --bench N                the throughput reading: one warm-up, then N runs of a prefill of
 //!                            `token_ids[..decode_from]` and 64 greedy decode calls, timed
+//!   --prefill-chunk N        split the prefill into calls of at most N tokens (the serve
+//!                            route's chunked prefill); the tape then records one call a chunk
 
 use memra_engine::hy4f_route::{
     Ckpt, Dev, Forced, LayerRec, NUMERIC_CLASS, RedArms, Route, indexed_layers, mem_available,
@@ -51,6 +53,8 @@ struct Args {
     gen_tokens: usize,
     bench: usize,
     device: usize,
+    /// prefill calls of at most this many tokens (0: one call)
+    chunk: usize,
 }
 
 fn parse() -> Result<Args, String> {
@@ -71,6 +75,7 @@ fn parse() -> Result<Args, String> {
         gen_tokens: 0,
         bench: 0,
         device: 0,
+        chunk: 0,
     };
     let mut request = None;
     while let Some(arg) = it.next() {
@@ -82,6 +87,14 @@ fn parse() -> Result<Args, String> {
             "--gen" => a.gen_tokens = val()?.parse().map_err(|e| format!("--gen: {e}"))?,
             "--bench" => a.bench = val()?.parse().map_err(|e| format!("--bench: {e}"))?,
             "--device" => a.device = val()?.parse().map_err(|e| format!("--device: {e}"))?,
+            "--prefill-chunk" => {
+                a.chunk = val()?
+                    .parse()
+                    .map_err(|e| format!("--prefill-chunk: {e}"))?;
+                if a.chunk == 0 {
+                    return Err("--prefill-chunk takes a positive token count".into());
+                }
+            }
             "--red" => {
                 let v = val()?;
                 match v.as_str() {
@@ -285,6 +298,11 @@ fn run() -> Result<(), String> {
         Some(dir) => Some(read_forcing(dir, &a)?),
         None => None,
     };
+    if forcing.is_some() && a.chunk > 0 {
+        return Err(
+            "--force-selections applies a tape's calls; a chunked prefill has others".into(),
+        );
+    }
     let dev = Dev::new(a.device)?;
     let cap = a.tokens.len() + a.gen_tokens.max(if a.bench > 0 { 64 } else { 0 }) + 8;
     let t_load = Instant::now();
@@ -303,7 +321,10 @@ fn run() -> Result<(), String> {
     }
     if a.gen_tokens > 0 {
         let prompt = &a.tokens[..a.decode_from];
-        let logits = route.call(prompt, false, None, None)?;
+        let mut logits = Vec::new();
+        for (s0, s1) in prefill_calls(a.decode_from, a.chunk) {
+            logits = route.call(&prompt[s0..s1], false, None, None)?;
+        }
         let mut next = argmax(&logits) as u32;
         let mut ids = vec![next];
         for _ in 1..a.gen_tokens {
@@ -319,7 +340,7 @@ fn run() -> Result<(), String> {
     }
 
     let t = a.tokens.len();
-    let mut calls = vec![(0usize, a.decode_from)];
+    let mut calls = prefill_calls(a.decode_from, a.chunk);
     calls.extend((a.decode_from..t).map(|q| (q, q + 1)));
     let mut logits = Vec::with_capacity(t * vocab);
     let mut records: Vec<Vec<(usize, LayerRec)>> = Vec::new();
@@ -348,6 +369,17 @@ fn run() -> Result<(), String> {
         )?;
     }
     Ok(())
+}
+
+/// The prefill's calls: `[0, n)` whole, or in consecutive chunks of at most `chunk` tokens.
+fn prefill_calls(n: usize, chunk: usize) -> Vec<(usize, usize)> {
+    if chunk == 0 {
+        return vec![(0, n)];
+    }
+    (0..n)
+        .step_by(chunk)
+        .map(|s| (s, (s + chunk).min(n)))
+        .collect()
 }
 
 fn bench(route: &mut Route, a: &Args, vocab: usize, load_s: f64) -> Result<(), String> {
@@ -495,6 +527,7 @@ fn write_tape(
                    "score_sha256": rsc_sha, "records": ridx},
         "engram": engram,
         "forced_selections": forcing.is_some(),
+        "prefill_chunk": a.chunk,
         "forcing_tape_sha256": forcing.as_ref().map(|f| f.1.clone()),
         "load_seconds": (load_s * 10.0).round() / 10.0,
         "call_seconds": call_s.iter().map(|s| (s * 1000.0).round() / 1000.0).collect::<Vec<_>>(),
