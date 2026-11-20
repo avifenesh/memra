@@ -29,6 +29,8 @@
 #include <math.h>
 #include <stdint.h>
 
+#include <utility>
+
 #define R_BF16 0
 #define R_FP8 2
 #define R_NVFP4 3
@@ -61,6 +63,54 @@ static __device__ __forceinline__ uint32_t r_pack(float lo, float hi) {
 static int r_rc() {
   cudaError_t e = cudaGetLastError();
   return e == cudaSuccess ? 0 : 10000 + (int)e;
+}
+
+// ---- programmatic dependent launch ------------------------------------------------------------
+//
+// Every kernel of the route is launched with programmatic stream serialization (compute
+// capability 9.0 and up): a kernel may start while its predecessor finishes, and waits for it
+// (`griddepcontrol.wait`: the predecessor complete and its writes visible) before it reads
+// anything a predecessor wrote or writes any global memory. Before the wait a kernel only reads
+// the resident weights into shared memory (the small-row GEMMs prefetch their first stages
+// there), so the overlap changes no value. A kernel lets its dependent launch
+// (`launch_dependents`) once its own blocks are running; the dependent then waits as above.
+
+static __device__ __forceinline__ void r_pdl_wait() {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+  asm volatile("griddepcontrol.wait;\n" ::: "memory");
+#endif
+}
+
+static __device__ __forceinline__ void r_pdl_trigger() {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+  asm volatile("griddepcontrol.launch_dependents;\n" ::: "memory");
+#endif
+}
+
+static bool r_pdl_supported() {
+  static int cc = -1;
+  if (cc < 0) {
+    int dev = 0, major = 0;
+    cudaGetDevice(&dev);
+    cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
+    cc = major;
+  }
+  return cc >= 9;
+}
+
+template <typename... KArgs, typename... Args>
+static void r_launch(void (*kernel)(KArgs...), dim3 grid, dim3 block, size_t smem, cudaStream_t st, Args&&... args) {
+  cudaLaunchConfig_t cfg = {};
+  cfg.gridDim = grid;
+  cfg.blockDim = block;
+  cfg.dynamicSmemBytes = smem;
+  cfg.stream = st;
+  cudaLaunchAttribute at[1];
+  at[0].id = cudaLaunchAttributeProgrammaticStreamSerialization;
+  at[0].val.programmaticStreamSerializationAllowed = 1;
+  cfg.attrs = at;
+  cfg.numAttrs = r_pdl_supported() ? 1 : 0;
+  cudaLaunchKernelEx(&cfg, kernel, std::forward<Args>(args)...);
 }
 
 // ---- the weight GEMM ------------------------------------------------------------------------
@@ -98,6 +148,8 @@ static __device__ __forceinline__ void r_mma(float* c, const uint32_t* a, const 
 // accumulator, the FP8 block scale folded in every 128 inputs.
 template <int BM, int FMT>
 __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
+  r_pdl_wait();
+  r_pdl_trigger();
   constexpr int WR = BM == 64 ? 32 : 16;
   constexpr int WC = BM == 64 ? 32 : 16;
   constexpr int MT = WR / 16;
@@ -364,7 +416,10 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
   float* y = g.y;
   float s2 = 1.0f;
   int m = g.m, m0 = 0;
+  r_pdl_trigger();
   if (g.tiles) {
+    // the tile table is a predecessor's output: wait before reading it
+    r_pdl_wait();
     const int e = g.tiles[blockIdx.y * 3], r0 = g.tiles[blockIdx.y * 3 + 1], rows = g.tiles[blockIdx.y * 3 + 2];
     if (rows <= 0) return;
     x += (long)r0 * g.ldx;
@@ -407,7 +462,9 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
     wsrc[i] = w + (long)min(gn, n - 1) * wrow + (c & 7) * 16;
   }
 
-  auto issue = [&](int st) {
+  // a stage's weight side (resident weights and scales) and its activation side (a
+  // predecessor's output)
+  auto issue_w = [&](int st) {
     if (st < nst) {
       unsigned char* buf = gsm + (st % STAGES) * SBYTES;
       const long kb0 = (long)st * GV_ROWB;
@@ -437,6 +494,12 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
         // the block scale of these 32 rows (one 128-row block) for this stage's 128 inputs
         if (tid == 0) r_cp4(buf + G::WB, (const float*)sc + (long)(nb0 / 128) * g.grid_cols + k0 / 128);
       }
+    }
+  };
+  auto issue_x = [&](int st) {
+    if (st < nst) {
+      unsigned char* buf = gsm + (st % STAGES) * SBYTES;
+      const int k0 = st * G::KPS;
       // activation rows: the stage's inputs of each of the block's rows
       constexpr int CX = G::KPS / 4;  // 16-byte chunks a row
       unsigned char* xs = buf + G::WB + G::SB;
@@ -445,11 +508,26 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
         r_cp16(xs + r * G::XLD + q * 16, xb + (long)r * g.ldx + k0 + q * 4, k0 + q * 4 < k);
       }
     }
+  };
+  auto issue = [&](int st) {
+    issue_w(st);
+    issue_x(st);
     r_cp_commit();
   };
 
+  // the first stages' weights stream in before the wait, their activations after it; groups
+  // W0..W(S-2), X0..X(S-2): the loop's wait at stage s still covers W(s) and X(s)
 #pragma unroll
-  for (int s = 0; s < STAGES - 1; s++) issue(s);
+  for (int s = 0; s < STAGES - 1; s++) {
+    issue_w(s);
+    r_cp_commit();
+  }
+  if (!g.tiles) r_pdl_wait();
+#pragma unroll
+  for (int s = 0; s < STAGES - 1; s++) {
+    issue_x(s);
+    r_cp_commit();
+  }
 
   const int r = lane >> 2, j = lane & 3;
   const int n0 = nb0 + warp * 8;
@@ -589,7 +667,7 @@ static int r_gemv_go(const RGemm& g, dim3 grid, cudaStream_t st) {
                          GV_SMEM_MAX);
     attr = true;
   }
-  r_gemv_kernel<FMT, STAGES, MR, RED><<<grid, GV_WARPS * 32, smem, st>>>(g);
+  r_launch(r_gemv_kernel<FMT, STAGES, MR, RED>, grid, GV_WARPS * 32, smem, st, g);
   return r_rc();
 }
 
@@ -629,11 +707,11 @@ static int r_gemm_launch(const RGemm& g, int fmt, int batch, int tiles, cudaStre
   if (grid.y == 0) return 0;
   if (grid.y > 65535 || grid.z > 65535) return 45004;
   if (fmt == R_BF16)
-    r_gemm_kernel<BM, R_BF16><<<grid, 128, 0, st>>>(g);
+    r_launch(r_gemm_kernel<BM, R_BF16>, grid, 128, 0, st, g);
   else if (fmt == R_FP8)
-    r_gemm_kernel<BM, R_FP8><<<grid, 128, 0, st>>>(g);
+    r_launch(r_gemm_kernel<BM, R_FP8>, grid, 128, 0, st, g);
   else
-    r_gemm_kernel<BM, R_NVFP4><<<grid, 128, 0, st>>>(g);
+    r_launch(r_gemm_kernel<BM, R_NVFP4>, grid, 128, 0, st, g);
   return r_rc();
 }
 
@@ -674,11 +752,12 @@ __global__ void __launch_bounds__(WARPS * 32) r_gemv_f32_kernel(const float* __r
   const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
   const int STAGEB = 32 * LDS + m * XB;
   const int o0 = (blockIdx.x * WARPS + warp) * 32;
+  r_pdl_trigger();
   if (o0 >= n) return;
   unsigned char* ring = fsm + warp * (STAGES * STAGEB);
   const long wrow = (long)k * 2;
   const int nst = (int)((wrow + ROWB - 1) / ROWB);
-  auto issue = [&](int st) {
+  auto issue_w = [&](int st) {
     if (st < nst) {
       unsigned char* buf = ring + (st % STAGES) * STAGEB;
       const long kb0 = (long)st * ROWB;
@@ -688,6 +767,13 @@ __global__ void __launch_bounds__(WARPS * 32) r_gemv_f32_kernel(const float* __r
         const int o = o0 + r;
         r_cp16(buf + r * LDS + q * 16, (const unsigned char*)w + (long)min(o, n - 1) * wrow + kb0 + q * 16, o < n);
       }
+    }
+  };
+  auto issue_x = [&](int st) {
+    if (st < nst) {
+      unsigned char* buf = ring + (st % STAGES) * STAGEB;
+      const long kb0 = (long)st * ROWB;
+      const int cpr = (int)min((long)ROWB, wrow - kb0) >> 4;
       // the activation rows' inputs of this stage
       const int cx = cpr * 2;  // 16-byte chunks of F32 a row
       for (int c = lane; c < m * cx; c += 32) {
@@ -695,10 +781,24 @@ __global__ void __launch_bounds__(WARPS * 32) r_gemv_f32_kernel(const float* __r
         r_cp16(buf + 32 * LDS + i * XB + q * 16, x + (long)i * ldx + kb0 / 2 + q * 4, true);
       }
     }
+  };
+  auto issue = [&](int st) {
+    issue_w(st);
+    issue_x(st);
     r_cp_commit();
   };
+  // weights of the first stages before the wait (see r_gemv_kernel)
 #pragma unroll
-  for (int s = 0; s < STAGES - 1; s++) issue(s);
+  for (int s = 0; s < STAGES - 1; s++) {
+    issue_w(s);
+    r_cp_commit();
+  }
+  r_pdl_wait();
+#pragma unroll
+  for (int s = 0; s < STAGES - 1; s++) {
+    issue_x(s);
+    r_cp_commit();
+  }
   float acc[GF_MAXM];
 #pragma unroll
   for (int i = 0; i < GF_MAXM; i++) acc[i] = 0.0f;
@@ -754,7 +854,8 @@ static void r_gemv_f32_go(const float* x, long ldx, const void* w, float* y, lon
     attr = true;
   }
   const int rows = WARPS * 32;
-  r_gemv_f32_kernel<WARPS, STAGES, ROWB><<<(n + rows - 1) / rows, WARPS * 32, smem, st>>>(x, ldx, (const uint16_t*)w, y, ldy, m, n, k);
+  r_launch(r_gemv_f32_kernel<WARPS, STAGES, ROWB>, (n + rows - 1) / rows, WARPS * 32, smem, st, 
+      x, ldx, (const uint16_t*)w, y, ldy, m, n, k);
 }
 
 // 45006: more rows than the small kernel takes (the caller runs the tiled F32 GEMM). A narrow
@@ -804,6 +905,8 @@ static __device__ float r_block_sum(float v, float* red) {
 
 // y = w * (x * rsqrt(mean(x^2) + eps)), one block (256) per row
 __global__ void r_rms_kernel(const float* x, long ldx, const float* w, float* y, long ldy, int d, float eps) {
+  r_pdl_wait();
+  r_pdl_trigger();
   __shared__ float red[32];
   const float* xr = x + (long)blockIdx.x * ldx;
   float* yr = y + (long)blockIdx.x * ldy;
@@ -817,7 +920,7 @@ __global__ void r_rms_kernel(const float* x, long ldx, const float* w, float* y,
 extern "C" int memra_hy4r_rms(const float* x, long ldx, const float* w, float* y, long ldy, int rows, int d, float eps,
                               void* stream) {
   if (rows == 0) return 0;
-  r_rms_kernel<<<rows, 256, 0, (cudaStream_t)stream>>>(x, ldx, w, y, ldy, d, eps);
+  r_launch(r_rms_kernel, rows, 256, 0, (cudaStream_t)stream, x, ldx, w, y, ldy, d, eps);
   return r_rc();
 }
 
@@ -825,6 +928,8 @@ extern "C" int memra_hy4r_rms(const float* x, long ldx, const float* w, float* y
 // (2i, 2i+1) of the last rope dims; cos/sin from the call's table [rows of positions, dim/2]
 __global__ void r_rope_kernel(float* x, long ldrow, long ldhead, int heads, int off, int half, const float2* cs,
                               const int* posrow) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const int r = blockIdx.x;
   const float2* c = cs + (long)posrow[r] * half;
   for (int e = threadIdx.x; e < heads * half; e += blockDim.x) {
@@ -840,12 +945,14 @@ __global__ void r_rope_kernel(float* x, long ldrow, long ldhead, int heads, int 
 extern "C" int memra_hy4r_rope(float* x, long ldrow, long ldhead, int rows, int heads, int off, int half,
                                const void* cs, const int* posrow, void* stream) {
   if (rows == 0) return 0;
-  r_rope_kernel<<<rows, 128, 0, (cudaStream_t)stream>>>(x, ldrow, ldhead, heads, off, half, (const float2*)cs, posrow);
+  r_launch(r_rope_kernel, rows, 128, 0, (cudaStream_t)stream, x, ldrow, ldhead, heads, off, half, (const float2*)cs, posrow);
   return r_rc();
 }
 
 // the call's cos/sin table: row r is position pos0 + r, inv_freq in f64
 __global__ void r_rope_table_kernel(float2* out, int pos0, int rows, int half, const double* inv) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const int e = blockIdx.x * blockDim.x + threadIdx.x;
   if (e >= rows * half) return;
   const int r = e / half, i = e % half;
@@ -857,7 +964,7 @@ __global__ void r_rope_table_kernel(float2* out, int pos0, int rows, int half, c
 extern "C" int memra_hy4r_rope_table(void* out, int pos0, int rows, int half, const double* inv, void* stream) {
   if (rows == 0) return 0;
   const int n = rows * half;
-  r_rope_table_kernel<<<(n + 255) / 256, 256, 0, (cudaStream_t)stream>>>((float2*)out, pos0, rows, half, inv);
+  r_launch(r_rope_table_kernel, (n + 255) / 256, 256, 0, (cudaStream_t)stream, (float2*)out, pos0, rows, half, inv);
   return r_rc();
 }
 
@@ -869,6 +976,8 @@ extern "C" int memra_hy4r_rope_table(void* out, int pos0, int rows, int half, co
 // Two kernels: the 1 + fns reductions of a row run as separate blocks (each the same strided
 // per-thread sums and block tree a single block ran in turn), then one block a row mixes.
 __global__ void r_hc_dots_kernel(const float* s, const float* fn, int width, int fns, float* dots) {
+  r_pdl_wait();
+  r_pdl_trigger();
   __shared__ float red[32];
   const int r = blockIdx.x, j = blockIdx.y;
   const float* flat = s + (long)r * width;
@@ -885,6 +994,8 @@ __global__ void r_hc_dots_kernel(const float* s, const float* fn, int width, int
 
 __global__ void r_hc_mix_kernel(const float* s, const float* dots, const float* base, const float* scale, int nstream,
                                 int h, int fns, float mix_eps, float eps, float mag, float* post, float* x) {
+  r_pdl_wait();
+  r_pdl_trigger();
   __shared__ float mix[16];
   __shared__ float pre[8];
   const int r = blockIdx.x;
@@ -914,13 +1025,15 @@ extern "C" int memra_hy4r_hc(const float* s, const float* fn, const float* base,
   if (rows == 0) return 0;
   if (nstream > 8 || fns > 16) return 45101;
   cudaStream_t st = (cudaStream_t)stream;
-  r_hc_dots_kernel<<<dim3(rows, fns + 1), 256, 0, st>>>(s, fn, nstream * h, fns, dots);
-  r_hc_mix_kernel<<<rows, 256, 0, st>>>(s, dots, base, scale, nstream, h, fns, mix_eps, eps, mag, post, x);
+  r_launch(r_hc_dots_kernel, dim3(rows, fns + 1), 256, 0, st, s, fn, nstream * h, fns, dots);
+  r_launch(r_hc_mix_kernel, rows, 256, 0, st, s, dots, base, scale, nstream, h, fns, mix_eps, eps, mag, post, x);
   return r_rc();
 }
 
 // s[r, j, :] = post[r, j] * a[r, :] + s[r, j, :]
 __global__ void r_write_back_kernel(float* s, const float* post, const float* a, int nstream, int h, long total) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const long e = (long)blockIdx.x * blockDim.x + threadIdx.x;
   if (e >= total) return;
   const long r = e / ((long)nstream * h);
@@ -933,13 +1046,15 @@ extern "C" int memra_hy4r_write_back(float* s, const float* post, const float* a
                                      void* stream) {
   const long total = (long)rows * nstream * h;
   if (total == 0) return 0;
-  r_write_back_kernel<<<(unsigned)((total + 255) / 256), 256, 0, (cudaStream_t)stream>>>(s, post, a, nstream, h, total);
+  r_launch(r_write_back_kernel, (unsigned)((total + 255) / 256), 256, 0, (cudaStream_t)stream, s, post, a, nstream, h, total);
   return r_rc();
 }
 
 // out = silu(min(g, lim)) * clamp(u, -lim, lim) (lim < 0: no clamp); `gate_rows` scales: the
 // attention output gate, out = o * sigmoid(g) when mode == 1
 __global__ void r_act_kernel(const float* g, const float* u, float* out, long n, float lim, int mode) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const long e = (long)blockIdx.x * blockDim.x + threadIdx.x;
   if (e >= n) return;
   if (mode == 1) {
@@ -956,12 +1071,14 @@ __global__ void r_act_kernel(const float* g, const float* u, float* out, long n,
 
 extern "C" int memra_hy4r_act(const float* g, const float* u, float* out, long n, float lim, int mode, void* stream) {
   if (n == 0) return 0;
-  r_act_kernel<<<(unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream>>>(g, u, out, n, lim, mode);
+  r_launch(r_act_kernel, (unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream, g, u, out, n, lim, mode);
   return r_rc();
 }
 
 // y[r, :] = a[r, :] + b[r, :] (+ bias)
 __global__ void r_add_kernel(float* y, const float* a, const float* b, const float* bias, long n, int d) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const long e = (long)blockIdx.x * blockDim.x + threadIdx.x;
   if (e >= n) return;
   float v = a[e];
@@ -972,12 +1089,14 @@ __global__ void r_add_kernel(float* y, const float* a, const float* b, const flo
 
 extern "C" int memra_hy4r_add(float* y, const float* a, const float* b, const float* bias, long n, int d, void* stream) {
   if (n == 0) return 0;
-  r_add_kernel<<<(unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream>>>(y, a, b, bias, n, d);
+  r_launch(r_add_kernel, (unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream, y, a, b, bias, n, d);
   return r_rc();
 }
 
 // strided copy of `cols` f32 values a row, optionally into BF16 (`to_bf16`)
 __global__ void r_copy_kernel(const float* src, long lds, void* dst, long ldd, int cols, int to_bf16, const int* dstrow) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const int r = blockIdx.x;
   const long dr = dstrow ? dstrow[r] : r;
   for (int c = threadIdx.x; c < cols; c += blockDim.x) {
@@ -992,12 +1111,14 @@ __global__ void r_copy_kernel(const float* src, long lds, void* dst, long ldd, i
 extern "C" int memra_hy4r_copy(const float* src, long lds, void* dst, long ldd, int rows, int cols, int to_bf16,
                                const int* dstrow, void* stream) {
   if (rows == 0) return 0;
-  r_copy_kernel<<<rows, 128, 0, (cudaStream_t)stream>>>(src, lds, dst, ldd, cols, to_bf16, dstrow);
+  r_launch(r_copy_kernel, rows, 128, 0, (cudaStream_t)stream, src, lds, dst, ldd, cols, to_bf16, dstrow);
   return r_rc();
 }
 
 // BF16 rows gathered into another BF16 buffer: dst[i] = src[rows[i]] (`words` u32 a row)
 __global__ void r_gather_bf_kernel(const uint32_t* src, long lds, const int* rows, uint32_t* dst, long ldd, int words) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const int i = blockIdx.x;
   const long sr = rows[i];
   for (int c = threadIdx.x; c < words; c += blockDim.x) dst[(long)i * ldd + c] = src[sr * lds + c];
@@ -1006,12 +1127,14 @@ __global__ void r_gather_bf_kernel(const uint32_t* src, long lds, const int* row
 extern "C" int memra_hy4r_gather_bf(const void* src, long lds, const int* rows, void* dst, long ldd, int n, int words,
                                     void* stream) {
   if (n == 0) return 0;
-  r_gather_bf_kernel<<<n, 128, 0, (cudaStream_t)stream>>>((const uint32_t*)src, lds, rows, (uint32_t*)dst, ldd, words);
+  r_launch(r_gather_bf_kernel, n, 128, 0, (cudaStream_t)stream, (const uint32_t*)src, lds, rows, (uint32_t*)dst, ldd, words);
   return r_rc();
 }
 
 // embedding rows on every stream: s[r, j, :] = embed[tok[r]]
 __global__ void r_embed_kernel(const uint16_t* table, const int* tok, float* s, int nstream, int h) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const int r = blockIdx.x;
   const uint16_t* row = table + (long)tok[r] * h;
   for (int d = threadIdx.x; d < h; d += blockDim.x) {
@@ -1022,7 +1145,7 @@ __global__ void r_embed_kernel(const uint16_t* table, const int* tok, float* s, 
 
 extern "C" int memra_hy4r_embed(const void* table, const int* tok, float* s, int rows, int nstream, int h, void* stream) {
   if (rows == 0) return 0;
-  r_embed_kernel<<<rows, 256, 0, (cudaStream_t)stream>>>((const uint16_t*)table, tok, s, nstream, h);
+  r_launch(r_embed_kernel, rows, 256, 0, (cudaStream_t)stream, (const uint16_t*)table, tok, s, nstream, h);
   return r_rc();
 }
 
@@ -1039,6 +1162,8 @@ static __device__ __forceinline__ uint32_t r_key(float v) {
 // select finds the k-th key; one ordered pass emits.
 __global__ void __launch_bounds__(256) r_topk_kernel(const float* vals, long ldv, int n, int k, int reverse_ties,
                                                      int* out, long ldo) {
+  r_pdl_wait();
+  r_pdl_trigger();
   __shared__ int hist[256];
   __shared__ int sh[4];
   __shared__ int wsum[8];
@@ -1125,7 +1250,7 @@ __global__ void __launch_bounds__(256) r_topk_kernel(const float* vals, long ldv
 extern "C" int memra_hy4r_topk(const float* vals, long ldv, int rows, int n, int k, int reverse_ties, int* out, long ldo,
                                void* stream) {
   if (rows == 0) return 0;
-  r_topk_kernel<<<rows, 256, 0, (cudaStream_t)stream>>>(vals, ldv, n, k, reverse_ties, out, ldo);
+  r_launch(r_topk_kernel, rows, 256, 0, (cudaStream_t)stream, vals, ldv, n, k, reverse_ties, out, ldo);
   return r_rc();
 }
 
@@ -1134,6 +1259,8 @@ extern "C" int memra_hy4r_topk(const float* vals, long ldv, int rows, int n, int
 // scores = sigmoid(logits), choice = scores + bias (both F32, as the program computes them)
 __global__ void r_router_scores_kernel(const float* logits, const float* bias, float* scores, float* choice, long n,
                                        int e) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= n) return;
   const float s = 1.0f / (1.0f + expf(-logits[i]));
@@ -1145,13 +1272,15 @@ extern "C" int memra_hy4r_router_scores(const float* logits, const float* bias, 
                                         int e, void* stream) {
   const long n = (long)rows * e;
   if (n == 0) return 0;
-  r_router_scores_kernel<<<(unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream>>>(logits, bias, scores, choice, n, e);
+  r_launch(r_router_scores_kernel, (unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream, logits, bias, scores, choice, n, e);
   return r_rc();
 }
 
 // weights of the applied picks: w = scores[pick] (normalized when the plan says so) * scaling
 __global__ void r_router_w_kernel(const float* scores, int e, const int* picks, int k, int normalize, float scaling,
                                   float* w, int rows) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const int r = blockIdx.x * blockDim.x + threadIdx.x;
   if (r >= rows) return;
   float z = 0.0f;
@@ -1166,7 +1295,7 @@ __global__ void r_router_w_kernel(const float* scores, int e, const int* picks, 
 extern "C" int memra_hy4r_router_weights(const float* scores, int rows, int e, const int* picks, int k, int normalize,
                                          float scaling, float* w, void* stream) {
   if (rows == 0) return 0;
-  r_router_w_kernel<<<(rows + 127) / 128, 128, 0, (cudaStream_t)stream>>>(scores, e, picks, k, normalize, scaling, w,
+  r_launch(r_router_w_kernel, (rows + 127) / 128, 128, 0, (cudaStream_t)stream, scores, e, picks, k, normalize, scaling, w,
                                                                           rows);
   return r_rc();
 }
@@ -1176,6 +1305,8 @@ extern "C" int memra_hy4r_router_weights(const float* scores, int rows, int e, c
 // counts[e] over the picks; then one block: offsets, tiles (expert, row0, rows) of `bm` rows,
 // every unused tile zeroed; cursor = offsets
 __global__ void r_moe_count_kernel(const int* picks, int n, int* counts) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < n) atomicAdd(&counts[picks[i]], 1);
 }
@@ -1185,6 +1316,8 @@ __global__ void r_moe_count_kernel(const int* picks, int n, int* counts) {
 #define RM_THREADS 512
 __global__ void __launch_bounds__(RM_THREADS) r_moe_plan_kernel(const int* counts, int ne, int bm, int max_tiles,
                                                                 int* cursor, int* tiles) {
+  r_pdl_wait();
+  r_pdl_trigger();
   __shared__ int sc[2][RM_THREADS];
   __shared__ int carry[2];
   const int tid = threadIdx.x;
@@ -1235,11 +1368,15 @@ __global__ void __launch_bounds__(RM_THREADS) r_moe_plan_kernel(const int* count
 // each (token, slot) takes a row of its expert's group (the row order inside a group does not
 // change any row's result); xg[row] = x[token]
 __global__ void r_moe_place_kernel(const int* picks, int n, int k, int* cursor, int* rowmap) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < n) rowmap[i] = atomicAdd(&cursor[picks[i]], 1);
 }
 
 __global__ void r_moe_gather_kernel(const float* x, int d, const int* rowmap, int k, float* xg) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const int i = blockIdx.x;  // token * k + slot
   const float* src = x + (long)(i / k) * d;
   float* dst = xg + (long)rowmap[i] * d;
@@ -1252,15 +1389,17 @@ extern "C" int memra_hy4r_moe_group(const int* picks, int rows, int k, int ne, i
   const int n = rows * k;
   if (n == 0) return 0;
   cudaMemsetAsync(counts, 0, sizeof(int) * ne, st);
-  r_moe_count_kernel<<<(n + 255) / 256, 256, 0, st>>>(picks, n, counts);
-  r_moe_plan_kernel<<<1, RM_THREADS, 0, st>>>(counts, ne, bm, max_tiles, cursor, tiles);
-  r_moe_place_kernel<<<(n + 255) / 256, 256, 0, st>>>(picks, n, k, cursor, rowmap);
-  r_moe_gather_kernel<<<n, 256, 0, st>>>(x, d, rowmap, k, xg);
+  r_launch(r_moe_count_kernel, (n + 255) / 256, 256, 0, st, picks, n, counts);
+  r_launch(r_moe_plan_kernel, 1, RM_THREADS, 0, st, counts, ne, bm, max_tiles, cursor, tiles);
+  r_launch(r_moe_place_kernel, (n + 255) / 256, 256, 0, st, picks, n, k, cursor, rowmap);
+  r_launch(r_moe_gather_kernel, n, 256, 0, st, x, d, rowmap, k, xg);
   return r_rc();
 }
 
 // out[t, :] = sum over slots in order (ascending expert) of w[t, slot] * y[rowmap[t, slot], :]
 __global__ void r_moe_combine_kernel(const float* y, int d, const int* rowmap, const float* w, int k, float* out) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const int t = blockIdx.x;
   for (int c = threadIdx.x; c < d; c += blockDim.x) {
     float acc = 0.0f;
@@ -1272,7 +1411,7 @@ __global__ void r_moe_combine_kernel(const float* y, int d, const int* rowmap, c
 extern "C" int memra_hy4r_moe_combine(const float* y, int d, const int* rowmap, const float* w, int rows, int k,
                                       float* out, void* stream) {
   if (rows == 0) return 0;
-  r_moe_combine_kernel<<<rows, 256, 0, (cudaStream_t)stream>>>(y, d, rowmap, w, k, out);
+  r_launch(r_moe_combine_kernel, rows, 256, 0, (cudaStream_t)stream, y, d, rowmap, w, k, out);
   return r_rc();
 }
 
@@ -1305,6 +1444,8 @@ static __device__ __forceinline__ int r_key_row(const RAttn& a, int q, int j, in
 }
 
 __global__ void __launch_bounds__(256) r_attn_kernel(RAttn a) {
+  r_pdl_wait();
+  r_pdl_trigger();
   extern __shared__ __align__(16) unsigned char smem[];
   float* qs = (float*)smem;                 // [8][576]
   float* ks = qs + AT_HG * AT_DK;           // [32][577]
@@ -1376,6 +1517,8 @@ __global__ void __launch_bounds__(256) r_attn_kernel(RAttn a) {
 
 // out[q, h, :] = merge of the chunks in order, the sink in the max and the denominator
 __global__ void r_attn_merge_kernel(const float* po, const float* pml, const float* sinks, int H, int C, float* out) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const int qi = blockIdx.x, h = blockIdx.y;
   const long b = ((long)qi * H + h) * C;
   float M = sinks[h];
@@ -1408,10 +1551,10 @@ extern "C" int memra_hy4r_attn(const float* q, const void* kv, const int* list, 
   }
   RAttn a{q, (const float*)kv, list, ldl, lens, qpos, mode, window, ring, base, H, C, scale, po, pml};
   dim3 grid(rows, H / AT_HG, C);
-  r_attn_kernel<<<grid, 256, smem, (cudaStream_t)stream>>>(a);
+  r_launch(r_attn_kernel, grid, 256, smem, (cudaStream_t)stream, a);
   int rc = r_rc();
   if (rc) return rc;
-  r_attn_merge_kernel<<<dim3(rows, H), 128, 0, (cudaStream_t)stream>>>(po, pml, sinks, H, C, out);
+  r_launch(r_attn_merge_kernel, dim3(rows, H), 128, 0, (cudaStream_t)stream, po, pml, sinks, H, C, out);
   return r_rc();
 }
 
@@ -1423,6 +1566,8 @@ extern "C" int memra_hy4r_attn(const float* q, const void* kv, const int* list, 
 __global__ void r_pool_kernel(const float* tk, int dim, int pool, const float* kvp, const float* kgp,
                               const float* ape, const float* key_norm, float eps, int rd, const float2* cs, int cs_pos0,
                               int g0, float* out) {
+  r_pdl_wait();
+  r_pdl_trigger();
   __shared__ float keys[8][128];
   __shared__ float pooled[128];
   __shared__ float red[32];
@@ -1468,7 +1613,7 @@ extern "C" int memra_hy4r_pool(const void* tk, int dim, int pool, const float* k
                                float* out, void* stream) {
   if (n <= 0) return 0;
   if (dim != 128 || pool > 8) return 45301;
-  r_pool_kernel<<<n, dim, 0, (cudaStream_t)stream>>>((const float*)tk, dim, pool, kvp, kgp, ape, key_norm, eps, rd,
+  r_launch(r_pool_kernel, n, dim, 0, (cudaStream_t)stream, (const float*)tk, dim, pool, kvp, kgp, ape, key_norm, eps, rd,
                                                      (const float2*)cs, cs_pos0, g0, out);
   return r_rc();
 }
@@ -1477,6 +1622,8 @@ extern "C" int memra_hy4r_pool(const void* tk, int dim, int pool, const float* k
 // -inf for the other groups of the call's `ng`
 __global__ void r_index_logits_kernel(const float* qi, const float* hw, const float* gk, const int* qpos, int heads,
                                       int dim, int pool, int ng, float hscale, float* out) {
+  r_pdl_wait();
+  r_pdl_trigger();
   __shared__ float qs[16 * 128];
   __shared__ float ws[16];
   const int r = blockIdx.x;
@@ -1503,7 +1650,7 @@ extern "C" int memra_hy4r_index_logits(const float* qi, const float* hw, const f
                                        int heads, int dim, int pool, int ng, float hscale, float* out, void* stream) {
   if (rows == 0) return 0;
   if (heads > 16 || dim > 128) return 45302;
-  r_index_logits_kernel<<<rows, 128, 0, (cudaStream_t)stream>>>(qi, hw, gk, qpos, heads, dim, pool, ng, hscale, out);
+  r_launch(r_index_logits_kernel, rows, 128, 0, (cudaStream_t)stream, qi, hw, gk, qpos, heads, dim, pool, ng, hscale, out);
   return r_rc();
 }
 
@@ -1511,6 +1658,8 @@ extern "C" int memra_hy4r_index_logits(const float* qi, const float* hw, const f
 // also a pick) and the key rows they hold up to the query, ascending
 __global__ void r_recall_kernel(const int* picks, int kp, const int* qpos, int pool, int* sel, int* list, int ldl,
                                 int* lens) {
+  r_pdl_wait();
+  r_pdl_trigger();
   __shared__ int s[1024];
   const int r = blockIdx.x;
   const int own = qpos[r] / pool;
@@ -1549,12 +1698,14 @@ extern "C" int memra_hy4r_recall(const int* picks, int kp, const int* qpos, int 
                                  int ldl, int* lens, void* stream) {
   if (rows == 0) return 0;
   if (kp + 1 > 1024 || (kp + 1) * pool > ldl) return 45303;
-  r_recall_kernel<<<rows, 32, 0, (cudaStream_t)stream>>>(picks, kp, qpos, pool, sel, list, ldl, lens);
+  r_launch(r_recall_kernel, rows, 32, 0, (cudaStream_t)stream, picks, kp, qpos, pool, sel, list, ldl, lens);
   return r_rc();
 }
 
 // forced recall (the oracle's sel, own included): only the key rows
 __global__ void r_recall_forced_kernel(const int* sel, int ks, const int* qpos, int pool, int* list, int ldl, int* lens) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const int r = blockIdx.x;
   if (threadIdx.x != 0) return;
   const int p = qpos[r];
@@ -1575,7 +1726,7 @@ extern "C" int memra_hy4r_recall_forced(const int* sel, int ks, const int* qpos,
                                         int* lens, void* stream) {
   if (rows == 0) return 0;
   if (ks * pool > ldl) return 45304;
-  r_recall_forced_kernel<<<rows, 32, 0, (cudaStream_t)stream>>>(sel, ks, qpos, pool, list, ldl, lens);
+  r_launch(r_recall_forced_kernel, rows, 32, 0, (cudaStream_t)stream, sel, ks, qpos, pool, list, ldl, lens);
   return r_rc();
 }
 
@@ -1584,6 +1735,8 @@ extern "C" int memra_hy4r_recall_forced(const int* sel, int ks, const int* qpos,
 // emb[t, head*dim + d] = rms(e4m3(code) * row scale, head_norm[head]) per (token, head)
 __global__ void r_engram_rows_kernel(const uint8_t* codes, const float* scales, const float* norms, int heads, int dim,
                                      float eps, float* emb) {
+  r_pdl_wait();
+  r_pdl_trigger();
   const int t = blockIdx.x, hd = threadIdx.y;
   const int lane = threadIdx.x;
   const uint8_t* c = codes + ((long)t * heads + hd) * dim;
@@ -1607,7 +1760,7 @@ extern "C" int memra_hy4r_engram_rows(const void* codes, const float* scales, co
                                       int dim, float eps, float* emb, void* stream) {
   if (rows == 0) return 0;
   if (dim > 128 || heads > 32) return 45401;
-  r_engram_rows_kernel<<<rows, dim3(32, heads), 0, (cudaStream_t)stream>>>((const uint8_t*)codes, scales, norms, heads,
+  r_launch(r_engram_rows_kernel, rows, dim3(32, heads), 0, (cudaStream_t)stream, (const uint8_t*)codes, scales, norms, heads,
                                                                           dim, eps, emb);
   return r_rc();
 }
@@ -1618,6 +1771,8 @@ extern "C" int memra_hy4r_engram_rows(const void* codes, const float* scales, co
 __global__ void r_engram_mix_kernel(float* s, const float* keyraw, const float* main, const float* norm_key,
                                     const float* norm_query, const float* scales, const uint8_t* mask, int nstream, int h,
                                     float eps) {
+  r_pdl_wait();
+  r_pdl_trigger();
   __shared__ float red[32];
   const int t = blockIdx.x, j = blockIdx.y;
   float* sr = s + ((long)t * nstream + j) * h;
@@ -1650,7 +1805,7 @@ extern "C" int memra_hy4r_engram_mix(float* s, const float* keyraw, const float*
                                      const float* norm_query, const float* scales, const void* mask, int rows,
                                      int nstream, int h, float eps, void* stream) {
   if (rows == 0) return 0;
-  r_engram_mix_kernel<<<dim3(rows, nstream), 256, 0, (cudaStream_t)stream>>>(s, keyraw, main, norm_key, norm_query,
+  r_launch(r_engram_mix_kernel, dim3(rows, nstream), 256, 0, (cudaStream_t)stream, s, keyraw, main, norm_key, norm_query,
                                                                             scales, (const uint8_t*)mask, nstream, h, eps);
   return r_rc();
 }

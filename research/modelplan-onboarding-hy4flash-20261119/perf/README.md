@@ -48,6 +48,7 @@ L2.
 |---|---:|---:|---:|---:|---:|---:|
 | step 8 (base) | 6.04 [6.03-6.04] | 165.7 | 5.40 [5.25-5.40] | 185.3 | 84.2 | 225.0 |
 | 1: small-row GEMMs, F32 islands GEMV, split HC, one table upload a call | 11.60 [11.57-11.61] | 86.2 | 9.57 [9.55-9.58] | 104.2 | 93.9 | 222.0 |
+| 2: programmatic dependent launch | 12.37 [12.36-12.37] | 80.9 | 10.16 [10.15-10.18] | 98.3 | 93.1 | 221.3 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -78,3 +79,17 @@ Dense FP8 GEMVs reach 210 to 249 GB/s alone, the routed experts 169, the router 
 (`receipts/s1-gemv/kbench.txt`). Decode step 165.7 -> 86.2 ms on `chat`, 185.3 -> 104.2 ms on
 `long`. What the profile shows next (`profile-chat-gaps.txt`): one 5.3 ms GPU idle a step while
 the host reads the first Engram layer's rows, and about 2,000 inter-kernel gaps of 1 to 5 us.
+
+### 2. Programmatic dependent launch (`receipts/s2-pdl/`)
+
+About 2,000 kernels a step, each a few microseconds behind the previous one and each with its own
+ramp. Every route kernel now launches with programmatic stream serialization (`r_launch`), lets
+its dependent launch as soon as its own blocks run, and waits (`griddepcontrol.wait`) before it
+reads a predecessor's output or writes memory. The small-row GEMMs stream their first weight
+stages (weights are resident and read-only) before the wait, so the next GEMM's weights load
+while the previous one finishes. No value changes: 3 of 3 tapes bit-equal. Decode step 86.2 ->
+80.9 ms on `chat`, 104.2 -> 98.3 ms on `long`.
+
+Tried with it and dropped: reading the Engram rows for all four layers on a thread spawned each
+call (32 reader threads) beside the first layers: 0.9 ms a step slower, the spawn cost more than
+the reads (128 page-cached `pread`s of about 2 us each spread over 8 ms).
