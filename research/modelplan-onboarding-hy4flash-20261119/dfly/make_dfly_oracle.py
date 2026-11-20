@@ -96,7 +96,7 @@ PINS = {
 }
 
 RED_ARMS = {
-    "layers": "every draft layer reads the indexed target layer before its own (21, 25, 29, 33, 37)",
+    "layers": "every draft layer reads the next draft layer's target layer (29, 33, 37, 41, 25)",
     "width": "the MLP at half its width (the first 4,608 channels of gate, up and down)",
     "no-correction": "hidden correction off: the head reads hidden[s + 1] itself",
     "topk": "dfly_target_index_topk 1024: the history keeps the first 1,024 slots of the target's row",
@@ -246,9 +246,8 @@ NOPE, ROPE, VDIM = text["qk_nope_head_dim"], text["qk_rope_head_dim"], text["v_h
 QL, KVL = text["q_lora_rank"], text["kv_lora_rank"]
 EPS = float(np.float32(text["rms_norm_eps"])) if F64 else text["rms_norm_eps"]
 if a.red == "layers":
-    indexed = [i for i, t in enumerate(text["layer_types"]) if t == "deepseek_sparse_attention"]
-    index_layers = [indexed[max(0, indexed.index(layer) - 1)] for layer in index_layers]
-    kv_layers = [indexed[max(0, indexed.index(layer) - 1)] for layer in kv_layers]
+    index_layers = index_layers[1:] + index_layers[:1]
+    kv_layers = kv_layers[1:] + kv_layers[:1]
 if a.red == "topk":
     target_topk = 1024
 
