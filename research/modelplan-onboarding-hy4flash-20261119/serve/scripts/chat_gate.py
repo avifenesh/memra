@@ -283,10 +283,14 @@ with concurrent.futures.ThreadPoolExecutor(4) as ex:
     futs = [ex.submit(complete, case_ids["poem"], **sb)] + \
         [ex.submit(complete, case_ids[c], MAXT) for c in ("capital", "json", "hebrew")]
     s3 = futs[0].result()
-    [f.result() for f in futs[1:]]
+    peers = [f.result() for f in futs[1:]]
+s_ok_peers = all(p.get("status") == 200 and p.get("tokens") for p in peers)
 report["sampled"] = {"solo1": s1, "solo2": s2, "beside": s3}
-verdict("sampled", s1.get("tokens") == s2.get("tokens") == s3.get("tokens") and s1.get("tokens") != solo["poem"].get("tokens"),
+s_ok = all(x.get("status") == 200 and x.get("tokens") for x in (s1, s2, s3))
+verdict("sampled", s_ok and s1["tokens"] == s2["tokens"] == s3["tokens"] and s1["tokens"] != solo["poem"].get("tokens"),
         "seed 1017, T 0.8, top_p 0.95, top_k 40: twice solo and once beside three others, unlike greedy")
+if not s_ok_peers:
+    verdict("sampled-peers", False, "a request beside the sampled one failed")
 
 # ---- stops ----
 nt = detok(solo["json"]["tokens"])
@@ -324,19 +328,34 @@ conn.request("POST", "/v1/completions", body=json.dumps(
     {"model": model, "prompt_ids": case_ids["poem"], "max_tokens": 400, "temperature": 0,
      "ignore_eos": True, "stream": True}),
     headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
-resp = conn.getresponse()
-seen = 0
-while seen < 3:
-    line = resp.fp.readline().decode().strip()
-    if line.startswith("data: ") and '"text"' in line:
-        seen += 1
-conn.close()
+seen, cancel_err = 0, None
+try:
+    resp = conn.getresponse()
+    if resp.status != 200:
+        cancel_err = f"HTTP {resp.status}"
+    deadline = time.time() + 300
+    while cancel_err is None and seen < 3:
+        if time.time() > deadline:
+            cancel_err = "no three tokens within 300 s"
+            break
+        raw_line = resp.fp.readline()
+        if not raw_line:
+            cancel_err = "the stream ended before three tokens"
+            break
+        line = raw_line.decode().strip()
+        if line.startswith("data: ") and '"error"' in line:
+            cancel_err = line
+        elif line.startswith("data: ") and '"text"' in line:
+            seen += 1
+finally:
+    conn.close()
 time.sleep(5)
 after = complete(case_ids["capital"], MAXT)
 steps = [l for l in open(server_log, errors="replace") if "[hy4f-step]" in l]
 last = steps[-1] if steps else ""
-report["cancel"] = {"seen": seen, "after": after, "last_step": last.strip()}
-verdict("cancel", after.get("tokens") == solo["capital"].get("tokens") and "running=1 " in last,
+report["cancel"] = {"seen": seen, "error": cancel_err, "after": after, "last_step": last.strip()}
+verdict("cancel", cancel_err is None and seen == 3 and after.get("status") == 200
+        and after.get("tokens") == solo["capital"].get("tokens") and "running=1 " in last,
         "a client that left after 3 of 400 tokens: the route ran on, the next request alone on it")
 
 # ---- admission: sessions that do not fit together wait ----
@@ -345,16 +364,23 @@ with urllib.request.urlopen(mreq, timeout=60) as r:
     models = json.loads(r.read().decode())
 ctx = next(m for m in models["data"] if m["id"] == model).get("context_length") or 0
 big = int(ctx * 0.45)
+# the poem's answer runs to its end-of-sentence id (longer than the gates' 48-token budget), so
+# the requests overlap; its greedy answer is known
+full_poem = complete(case_ids["poem"], 400)
 mark = sum(1 for l in open(server_log, errors="replace") if "[admit-mem]" in l)
 with concurrent.futures.ThreadPoolExecutor(3) as ex:
-    outs = [f.result() for f in [ex.submit(complete, case_ids["capital"], big) for _ in range(3)]]
-admits = [l.strip() for l in open(server_log, errors="replace") if "[admit-mem]" in l][mark:]
-running_at = [int(l.split("running=")[1].split()[0]) for l in admits if "running=" in l]
-report["admission"] = {"context": ctx, "max_tokens": big, "outs": outs, "admits": admits}
-verdict("admission", ctx > 0 and all(o.get("tokens") == solo["capital"].get("tokens")[: len(o.get("tokens") or [])]
-                                     and o.get("status") == 200 for o in outs)
-        and len(running_at) == 3 and max(running_at) <= 1,
-        f"3 x {big}-token budgets on a {ctx}-position context: admitted with {running_at} running")
+    outs = [f.result() for f in [ex.submit(complete, case_ids["poem"], big) for _ in range(3)]]
+lines = [l.strip() for l in open(server_log, errors="replace") if "[admit-mem]" in l][mark:]
+admits = [l for l in lines if "verdict=admit" in l]
+waits = [l for l in lines if "verdict=wait" in l]
+running_at = [int(l.split("running=")[1].split()[0]) for l in admits]
+want = full_poem.get("tokens")
+report["admission"] = {"context": ctx, "max_tokens": big, "want": full_poem, "outs": outs,
+                       "admits": admits, "waits": waits}
+verdict("admission", ctx > 0 and full_poem.get("stop") == "Eos" and bool(want)
+        and all(o.get("status") == 200 and o.get("tokens") == want and o.get("stop") == "Eos" for o in outs)
+        and sorted(running_at) == [0, 1, 1] and len(waits) == 1,
+        f"3 x {big}-token budgets on a {ctx}-position context: admitted with {running_at} running, {len(waits)} deferred, each the full greedy answer")
 
 # ---- long: a needle past the indexer budget ----
 if not QUICK:

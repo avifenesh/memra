@@ -1498,6 +1498,13 @@ impl<'a> Route<'a> {
             .unwrap_or(0)
     }
 
+    /// Bytes the indexer's group-logit scratch holds now (it grows with the longest context a
+    /// call has scored and is kept): what a session's [`Self::index_scratch_bytes`] need not
+    /// allocate again.
+    pub fn index_scratch_held(&self) -> usize {
+        self.sc.ilog.0.as_ref().map_or(0, |b| b.bytes)
+    }
+
     /// Score `tokens` on `sess` (another request's session): [`Self::call`] with that session's
     /// cache and history swapped in for the call and back out after it.
     pub fn call_in(
