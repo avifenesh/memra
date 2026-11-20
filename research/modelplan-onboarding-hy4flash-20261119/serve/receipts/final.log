@@ -1,0 +1,49 @@
+FINAL START 2026-11-20 20:11:14 65d5e8d00f020778626a5de9eacbf745fd2dd31b
+BUILD_EXIT=0
+family=hy_v4_flash verified=Serve
+SERVE rc=0 2026-11-20 20:21:05
+Config=passed
+TokenizerTemplate=passed
+TensorCensus=passed
+TinyParity=pending
+CheckpointParity=passed
+RewriteParity=pending
+Serve=passed
+SHA long-whole 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 0 calls 9
+SHA long-c500 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 500 calls 13
+SHA long-c1000 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 1000 calls 11
+SHA long-c2048 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 2048 calls 10
+SHA long-c511 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 511 calls 13
+SHA long-split-c512 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 512 calls 76
+SHA long-split-c7 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 7 calls 364
+SHA chat-forced 78376ab86fd667594370c1a10bb8326e28b1c348a33b98066f47a6a0c9f47972 chunk 0 calls 4
+SHA chat-c5 78376ab86fd667594370c1a10bb8326e28b1c348a33b98066f47a6a0c9f47972 chunk 5 calls 11
+ARGMAX free-vs-forced long differ at 43 positions [818, 865, 886, 912, 982, 1032, 1098, 1107, 1123, 1135]
+ARGMAX free-vs-forced long-split differ at 43 positions [818, 865, 886, 912, 982, 1032, 1098, 1107, 1123, 1135]
+GEN {'chat': [65431, 120025, 120025, 120025, 120025, 120029, 120030, 65431, 120025, 120025, 120025, 120029], 'long': [4438, 474, 28940, 341, 51773, 284, 1228, 9982, 1040, 433, 259, 12761], 'long-split': [3115, 11, 10244, 2046, 11, 1050, 6990, 11, 1050, 6990, 11, 1050]}
+FINAL START 2026-11-20 20:58:37 2e915e65a93861bfab5c1822e74adbb4cdab1aea
+BUILD_EXIT=0
+family=hy_v4_flash verified=Serve
+SERVE rc=0 2026-11-20 21:08:43
+Config=passed
+TokenizerTemplate=passed
+TensorCensus=passed
+TinyParity=pending
+CheckpointParity=passed
+RewriteParity=pending
+Serve=passed
+SHA long-whole 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 0 calls 9
+SHA long-c500 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 500 calls 13
+SHA long-c1000 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 1000 calls 11
+SHA long-c2048 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 2048 calls 10
+SHA long-c511 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 511 calls 13
+SHA long-split-c512 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 512 calls 76
+SHA long-split-c7 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 7 calls 364
+SHA chat-forced 78376ab86fd667594370c1a10bb8326e28b1c348a33b98066f47a6a0c9f47972 chunk 0 calls 4
+SHA chat-c5 78376ab86fd667594370c1a10bb8326e28b1c348a33b98066f47a6a0c9f47972 chunk 5 calls 11
+ARGMAX free-vs-forced long differ at 43 positions [818, 865, 886, 912, 982, 1032, 1098, 1107, 1123, 1135]
+ARGMAX free-vs-forced long-split differ at 43 positions [818, 865, 886, 912, 982, 1032, 1098, 1107, 1123, 1135]
+GEN {'chat': [65431, 120025, 120025, 120025, 120025, 120029, 120030, 65431, 120025, 120025, 120025, 120029], 'long': [4438, 474, 28940, 341, 51773, 284, 1228, 9982, 1040, 433, 259, 12761], 'long-split': [3115, 11, 10244, 2046, 11, 1050, 6990, 11, 1050, 6990, 11, 1050]}
+SERVE-GATE final rc=0
+SERVE-GATE chunk500 rc=0
+FINAL_DONE 2026-11-20 22:12:46

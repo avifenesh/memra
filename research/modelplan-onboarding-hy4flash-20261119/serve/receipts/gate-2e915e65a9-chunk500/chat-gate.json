@@ -1,0 +1,1939 @@
+{
+ "gates": {
+  "render": {
+   "pass": true,
+   "detail": "the chat and long probes through /v1/tokenize (reasoning off) equal the request ids up to the generation prompt"
+  },
+  "route": {
+   "pass": true,
+   "detail": "served greedy ids equal hy4f-gpu --gen on chat, long, long-split; the first equals the verified tape's argmax"
+  },
+  "forced": {
+   "pass": true,
+   "detail": "23 teacher-forced positions served as prompts equal the verified tapes' argmax"
+  },
+  "concurrent": {
+   "pass": true,
+   "detail": "c = [2, 3, 4, 6] at once (a 2,104-token prefill among them): ids equal solo"
+  },
+  "stream": {
+   "pass": true,
+   "detail": "37 deltas of poem equal the blocking answer"
+  },
+  "efforts": {
+   "pass": true,
+   "detail": "no_think/none without reasoning; high, max with; low/medium = high; xhigh = max; turbo a 400"
+  },
+  "tools": {
+   "pass": true,
+   "detail": "the call parses (get_weather, JSON arguments) with reasoning off and on; the follow-up with the tool's answer is served"
+  },
+  "sampled": {
+   "pass": true,
+   "detail": "seed 1017, T 0.8, top_p 0.95, top_k 40: twice solo and once beside three others, unlike greedy"
+  },
+  "stops": {
+   "pass": true,
+   "detail": "stop ': \"' cuts json before its first occurrence; max_tokens 5 cuts at the budget"
+  },
+  "penalties": {
+   "pass": true,
+   "detail": "frequency 0.5, presence 0.3 greedy: served, identical twice"
+  },
+  "refusals": {
+   "pass": true,
+   "detail": "image part -> 400, response_format -> 400"
+  },
+  "cancel": {
+   "pass": true,
+   "detail": "a client that left after 3 of 400 tokens: the route ran on, the next request alone on it"
+  },
+  "admission": {
+   "pass": true,
+   "detail": "3 x 250131-token budgets on a 625328-position context: admitted with [0, 1, 1] running, 1 deferred, each the full greedy answer"
+  },
+  "long": {
+   "pass": true,
+   "detail": "30934-token prompt, answer '4817' in 222s"
+  }
+ },
+ "cases": {
+  "chat": {
+   "render": {
+    "n": 36,
+    "equal": true,
+    "rendered": 36,
+    "answer_tail": 0
+   },
+   "route": {
+    "status": 200,
+    "tokens": [
+     65431
+    ],
+    "text": "Paris",
+    "stop": "Eos",
+    "n_tokens": 1,
+    "wall_s": 0.592,
+    "want": [
+     65431
+    ],
+    "equal_route": true,
+    "first_equals_tape": true
+   },
+   "forced": [
+    {
+     "prompt": 37,
+     "got": 120025,
+     "want": 120025,
+     "wall_s": 0.435
+    },
+    {
+     "prompt": 38,
+     "got": 120025,
+     "want": 120025,
+     "wall_s": 0.44
+    },
+    {
+     "prompt": 39,
+     "got": 120025,
+     "want": 120025,
+     "wall_s": 0.439
+    }
+   ]
+  },
+  "long": {
+   "render": {
+    "n": 2104,
+    "equal": true,
+    "rendered": 2098,
+    "answer_tail": 6
+   },
+   "route": {
+    "status": 200,
+    "tokens": [
+     4438,
+     474,
+     28940,
+     341,
+     51773,
+     284,
+     1228,
+     9982,
+     1040,
+     433,
+     259,
+     12761,
+     8755,
+     27900,
+     76412,
+     3378,
+     11,
+     430,
+     13781,
+     57721,
+     8971,
+     11,
+     16795,
+     38691,
+     11,
+     83312,
+     11,
+     303,
+     2200,
+     12,
+     21964,
+     7640,
+     13
+    ],
+    "text": " family or artifact is onboarded into Memra as a native ModelPlan/model pack, with strict checkpoint binding, validation gates, receipts, and support-record requirements.",
+    "stop": "Eos",
+    "n_tokens": 33,
+    "wall_s": 18.151,
+    "want": [
+     4438,
+     474,
+     28940,
+     341,
+     51773,
+     284,
+     1228,
+     9982,
+     1040,
+     433,
+     259,
+     12761,
+     8755,
+     27900,
+     76412,
+     3378,
+     11,
+     430,
+     13781,
+     57721,
+     8971,
+     11,
+     16795,
+     38691,
+     11,
+     83312,
+     11,
+     303,
+     2200,
+     12,
+     21964,
+     7640,
+     13
+    ],
+    "equal_route": true,
+    "first_equals_tape": true
+   },
+   "forced": [
+    {
+     "prompt": 2105,
+     "got": 51773,
+     "want": 51773,
+     "wall_s": 12.105
+    },
+    {
+     "prompt": 2106,
+     "got": 284,
+     "want": 284,
+     "wall_s": 12.112
+    },
+    {
+     "prompt": 2107,
+     "got": 1228,
+     "want": 1228,
+     "wall_s": 12.128
+    },
+    {
+     "prompt": 2108,
+     "got": 9982,
+     "want": 9982,
+     "wall_s": 12.129
+    },
+    {
+     "prompt": 2109,
+     "got": 1040,
+     "want": 1040,
+     "wall_s": 12.149
+    },
+    {
+     "prompt": 2110,
+     "got": 533,
+     "want": 533,
+     "wall_s": 12.158
+    },
+    {
+     "prompt": 2111,
+     "got": 120025,
+     "want": 120025,
+     "wall_s": 12.165
+    },
+    {
+     "prompt": 2112,
+     "got": 120025,
+     "want": 120025,
+     "wall_s": 12.175
+    }
+   ]
+  },
+  "long-split": {
+   "route": {
+    "status": 200,
+    "tokens": [
+     3115,
+     11,
+     10244,
+     2046,
+     11,
+     1050,
+     6990,
+     11,
+     1050,
+     6990,
+     11,
+     1050,
+     6990,
+     11,
+     1050,
+     6990,
+     11,
+     2200,
+     3625,
+     11,
+     2200,
+     2677,
+     3625,
+     11,
+     2200,
+     2677,
+     3625,
+     11,
+     2200,
+     2677,
+     1387,
+     11,
+     2200,
+     2677,
+     1387,
+     11,
+     353,
+     1160,
+     10230,
+     11,
+     353,
+     5555,
+     11,
+     353,
+     5555,
+     11,
+     353,
+     5555,
+     11,
+     353,
+     5555,
+     11,
+     11446,
+     2746,
+     28940,
+     9411,
+     25,
+     11446,
+     2746,
+     28940,
+     9411,
+     25,
+     11446,
+     6373,
+     6133,
+     297,
+     269,
+     59527,
+     4854,
+     25,
+     11446,
+     6373
+    ],
+    "text": " path, branch name, work involved, work involved, work involved, work involved, support target, support state target, support state target, support state only, support state only, gating profile, g reference, g reference, g reference, g reference, Freeze artifact identity: Freeze artifact identity: Free front matter in the corrupted section: Free front",
+    "stop": "MaxNew",
+    "n_tokens": 72,
+    "wall_s": 24.966,
+    "want": [
+     3115,
+     11,
+     10244,
+     2046,
+     11,
+     1050,
+     6990,
+     11,
+     1050,
+     6990,
+     11,
+     1050,
+     6990,
+     11,
+     1050,
+     6990,
+     11,
+     2200,
+     3625,
+     11,
+     2200,
+     2677,
+     3625,
+     11,
+     2200,
+     2677,
+     3625,
+     11,
+     2200,
+     2677,
+     1387,
+     11,
+     2200,
+     2677,
+     1387,
+     11,
+     353,
+     1160,
+     10230,
+     11,
+     353,
+     5555,
+     11,
+     353,
+     5555,
+     11,
+     353,
+     5555,
+     11,
+     353,
+     5555,
+     11,
+     11446,
+     2746,
+     28940,
+     9411,
+     25,
+     11446,
+     2746,
+     28940,
+     9411,
+     25,
+     11446,
+     6373,
+     6133,
+     297,
+     269,
+     59527,
+     4854,
+     25,
+     11446,
+     6373
+    ],
+    "equal_route": true,
+    "first_equals_tape": true
+   },
+   "forced": [
+    {
+     "prompt": 2047,
+     "got": 303,
+     "want": 303,
+     "wall_s": 11.754
+    },
+    {
+     "prompt": 2048,
+     "got": 18481,
+     "want": 18481,
+     "wall_s": 11.772
+    },
+    {
+     "prompt": 2049,
+     "got": 3711,
+     "want": 3711,
+     "wall_s": 11.75
+    },
+    {
+     "prompt": 2050,
+     "got": 2547,
+     "want": 2547,
+     "wall_s": 11.772
+    },
+    {
+     "prompt": 2056,
+     "got": 15268,
+     "want": 15268,
+     "wall_s": 11.803
+    },
+    {
+     "prompt": 2064,
+     "got": 27,
+     "want": 27,
+     "wall_s": 11.847
+    },
+    {
+     "prompt": 2072,
+     "got": 3711,
+     "want": 3711,
+     "wall_s": 11.915
+    },
+    {
+     "prompt": 2080,
+     "got": 474,
+     "want": 474,
+     "wall_s": 11.95
+    },
+    {
+     "prompt": 2088,
+     "got": 1155,
+     "want": 1155,
+     "wall_s": 12.0
+    },
+    {
+     "prompt": 2096,
+     "got": 120029,
+     "want": 120029,
+     "wall_s": 12.063
+    },
+    {
+     "prompt": 2104,
+     "got": 4438,
+     "want": 4438,
+     "wall_s": 12.115
+    },
+    {
+     "prompt": 2112,
+     "got": 120025,
+     "want": 120025,
+     "wall_s": 12.164
+    }
+   ]
+  }
+ },
+ "solo": {
+  "longdoc": {
+   "status": 200,
+   "tokens": [
+    4438,
+    474,
+    28940,
+    341,
+    51773,
+    284,
+    1228,
+    9982,
+    1040,
+    433,
+    259,
+    12761,
+    8755,
+    27900,
+    76412,
+    3378,
+    11,
+    430,
+    13781,
+    57721,
+    8971,
+    11,
+    16795,
+    38691,
+    11,
+    83312,
+    11,
+    303,
+    2200,
+    12,
+    21964,
+    7640,
+    13
+   ],
+   "text": " family or artifact is onboarded into Memra as a native ModelPlan/model pack, with strict checkpoint binding, validation gates, receipts, and support-record requirements.",
+   "stop": "Eos",
+   "n_tokens": 33,
+   "wall_s": 18.215
+  },
+  "capital": {
+   "status": 200,
+   "tokens": [
+    65431
+   ],
+   "text": "Paris",
+   "stop": "Eos",
+   "n_tokens": 1,
+   "wall_s": 0.597
+  },
+  "math": {
+   "status": 200,
+   "tokens": [
+    3061,
+    1265,
+    3145,
+    4209,
+    21929,
+    13,
+    20821,
+    14553,
+    220,
+    1162,
+    9,
+    1498,
+    416,
+    220,
+    1162,
+    9,
+    405,
+    803,
+    1162,
+    9,
+    18,
+    28,
+    18064,
+    10,
+    4507,
+    28,
+    29206,
+    13,
+    20821,
+    3982,
+    1557,
+    1649,
+    13,
+    120030,
+    29206
+   ],
+   "text": "We need answer simple multiplication. Need compute 17*23 = 17*20 +17*3=340+51=391. Need final just number.</think:opensource>391",
+   "stop": "Eos",
+   "n_tokens": 35,
+   "wall_s": 6.448
+  },
+  "poem": {
+   "status": 200,
+   "tokens": [
+    802,
+    12042,
+    341,
+    259,
+    15640,
+    303,
+    39587,
+    9629,
+    866,
+    5387,
+    14992,
+    415,
+    23794,
+    303,
+    14992,
+    415,
+    731,
+    198,
+    35,
+    779,
+    297,
+    269,
+    36096,
+    11,
+    24728,
+    3424,
+    14371,
+    866,
+    32,
+    3834,
+    57814,
+    299,
+    6127,
+    11,
+    10599,
+    27848,
+    13
+   ],
+   "text": "The sea is a vast and endless blue,\nWith waves that crash and waves that do\nDance in the sunlight, sparkling bright,\nA symphony of nature, pure delight.",
+   "stop": "Eos",
+   "n_tokens": 37,
+   "wall_s": 6.532
+  },
+  "json": {
+   "status": 200,
+   "tokens": [
+    2022,
+    220,
+    549,
+    49927,
+    2486,
+    549,
+    8161,
+    1453,
+    198,
+    220,
+    549,
+    73460,
+    2486,
+    549,
+    53479,
+    3127,
+    220,
+    549,
+    32375,
+    448,
+    2486,
+    549,
+    17049,
+    1756,
+    92
+   ],
+   "text": "{\n  \"iron\": \"Fe\",\n  \"gold\": \"Au\",\n  \"silver\": \"Ag\"\n}",
+   "stop": "Eos",
+   "n_tokens": 25,
+   "wall_s": 4.788
+  },
+  "hebrew": {
+   "status": 200,
+   "tokens": [
+    6652,
+    17769,
+    5510,
+    38707,
+    4119,
+    82731,
+    75275,
+    78023,
+    67641,
+    13
+   ],
+   "text": "בירת צרפת היא פריז.",
+   "stop": "Eos",
+   "n_tokens": 10,
+   "wall_s": 2.148
+  }
+ },
+ "concurrent": {
+  "2": {
+   "cases": [
+    "longdoc",
+    "capital"
+   ],
+   "equal_solo": true,
+   "outs": [
+    {
+     "status": 200,
+     "tokens": [
+      4438,
+      474,
+      28940,
+      341,
+      51773,
+      284,
+      1228,
+      9982,
+      1040,
+      433,
+      259,
+      12761,
+      8755,
+      27900,
+      76412,
+      3378,
+      11,
+      430,
+      13781,
+      57721,
+      8971,
+      11,
+      16795,
+      38691,
+      11,
+      83312,
+      11,
+      303,
+      2200,
+      12,
+      21964,
+      7640,
+      13
+     ],
+     "text": " family or artifact is onboarded into Memra as a native ModelPlan/model pack, with strict checkpoint binding, validation gates, receipts, and support-record requirements.",
+     "stop": "Eos",
+     "n_tokens": 33,
+     "wall_s": 18.806
+    },
+    {
+     "status": 200,
+     "tokens": [
+      65431
+     ],
+     "text": "Paris",
+     "stop": "Eos",
+     "n_tokens": 1,
+     "wall_s": 2.677
+    }
+   ]
+  },
+  "3": {
+   "cases": [
+    "longdoc",
+    "capital",
+    "math"
+   ],
+   "equal_solo": true,
+   "outs": [
+    {
+     "status": 200,
+     "tokens": [
+      4438,
+      474,
+      28940,
+      341,
+      51773,
+      284,
+      1228,
+      9982,
+      1040,
+      433,
+      259,
+      12761,
+      8755,
+      27900,
+      76412,
+      3378,
+      11,
+      430,
+      13781,
+      57721,
+      8971,
+      11,
+      16795,
+      38691,
+      11,
+      83312,
+      11,
+      303,
+      2200,
+      12,
+      21964,
+      7640,
+      13
+     ],
+     "text": " family or artifact is onboarded into Memra as a native ModelPlan/model pack, with strict checkpoint binding, validation gates, receipts, and support-record requirements.",
+     "stop": "Eos",
+     "n_tokens": 33,
+     "wall_s": 24.996
+    },
+    {
+     "status": 200,
+     "tokens": [
+      65431
+     ],
+     "text": "Paris",
+     "stop": "Eos",
+     "n_tokens": 1,
+     "wall_s": 1.026
+    },
+    {
+     "status": 200,
+     "tokens": [
+      3061,
+      1265,
+      3145,
+      4209,
+      21929,
+      13,
+      20821,
+      14553,
+      220,
+      1162,
+      9,
+      1498,
+      416,
+      220,
+      1162,
+      9,
+      405,
+      803,
+      1162,
+      9,
+      18,
+      28,
+      18064,
+      10,
+      4507,
+      28,
+      29206,
+      13,
+      20821,
+      3982,
+      1557,
+      1649,
+      13,
+      120030,
+      29206
+     ],
+     "text": "We need answer simple multiplication. Need compute 17*23 = 17*20 +17*3=340+51=391. Need final just number.</think:opensource>391",
+     "stop": "Eos",
+     "n_tokens": 35,
+     "wall_s": 24.445
+    }
+   ]
+  },
+  "4": {
+   "cases": [
+    "longdoc",
+    "capital",
+    "math",
+    "poem"
+   ],
+   "equal_solo": true,
+   "outs": [
+    {
+     "status": 200,
+     "tokens": [
+      4438,
+      474,
+      28940,
+      341,
+      51773,
+      284,
+      1228,
+      9982,
+      1040,
+      433,
+      259,
+      12761,
+      8755,
+      27900,
+      76412,
+      3378,
+      11,
+      430,
+      13781,
+      57721,
+      8971,
+      11,
+      16795,
+      38691,
+      11,
+      83312,
+      11,
+      303,
+      2200,
+      12,
+      21964,
+      7640,
+      13
+     ],
+     "text": " family or artifact is onboarded into Memra as a native ModelPlan/model pack, with strict checkpoint binding, validation gates, receipts, and support-record requirements.",
+     "stop": "Eos",
+     "n_tokens": 33,
+     "wall_s": 29.858
+    },
+    {
+     "status": 200,
+     "tokens": [
+      65431
+     ],
+     "text": "Paris",
+     "stop": "Eos",
+     "n_tokens": 1,
+     "wall_s": 14.442
+    },
+    {
+     "status": 200,
+     "tokens": [
+      3061,
+      1265,
+      3145,
+      4209,
+      21929,
+      13,
+      20821,
+      14553,
+      220,
+      1162,
+      9,
+      1498,
+      416,
+      220,
+      1162,
+      9,
+      405,
+      803,
+      1162,
+      9,
+      18,
+      28,
+      18064,
+      10,
+      4507,
+      28,
+      29206,
+      13,
+      20821,
+      3982,
+      1557,
+      1649,
+      13,
+      120030,
+      29206
+     ],
+     "text": "We need answer simple multiplication. Need compute 17*23 = 17*20 +17*3=340+51=391. Need final just number.</think:opensource>391",
+     "stop": "Eos",
+     "n_tokens": 35,
+     "wall_s": 30.845
+    },
+    {
+     "status": 200,
+     "tokens": [
+      802,
+      12042,
+      341,
+      259,
+      15640,
+      303,
+      39587,
+      9629,
+      866,
+      5387,
+      14992,
+      415,
+      23794,
+      303,
+      14992,
+      415,
+      731,
+      198,
+      35,
+      779,
+      297,
+      269,
+      36096,
+      11,
+      24728,
+      3424,
+      14371,
+      866,
+      32,
+      3834,
+      57814,
+      299,
+      6127,
+      11,
+      10599,
+      27848,
+      13
+     ],
+     "text": "The sea is a vast and endless blue,\nWith waves that crash and waves that do\nDance in the sunlight, sparkling bright,\nA symphony of nature, pure delight.",
+     "stop": "Eos",
+     "n_tokens": 37,
+     "wall_s": 31.507
+    }
+   ]
+  },
+  "6": {
+   "cases": [
+    "longdoc",
+    "capital",
+    "math",
+    "poem",
+    "json",
+    "hebrew"
+   ],
+   "equal_solo": true,
+   "outs": [
+    {
+     "status": 200,
+     "tokens": [
+      4438,
+      474,
+      28940,
+      341,
+      51773,
+      284,
+      1228,
+      9982,
+      1040,
+      433,
+      259,
+      12761,
+      8755,
+      27900,
+      76412,
+      3378,
+      11,
+      430,
+      13781,
+      57721,
+      8971,
+      11,
+      16795,
+      38691,
+      11,
+      83312,
+      11,
+      303,
+      2200,
+      12,
+      21964,
+      7640,
+      13
+     ],
+     "text": " family or artifact is onboarded into Memra as a native ModelPlan/model pack, with strict checkpoint binding, validation gates, receipts, and support-record requirements.",
+     "stop": "Eos",
+     "n_tokens": 33,
+     "wall_s": 36.522
+    },
+    {
+     "status": 200,
+     "tokens": [
+      65431
+     ],
+     "text": "Paris",
+     "stop": "Eos",
+     "n_tokens": 1,
+     "wall_s": 14.45
+    },
+    {
+     "status": 200,
+     "tokens": [
+      3061,
+      1265,
+      3145,
+      4209,
+      21929,
+      13,
+      20821,
+      14553,
+      220,
+      1162,
+      9,
+      1498,
+      416,
+      220,
+      1162,
+      9,
+      405,
+      803,
+      1162,
+      9,
+      18,
+      28,
+      18064,
+      10,
+      4507,
+      28,
+      29206,
+      13,
+      20821,
+      3982,
+      1557,
+      1649,
+      13,
+      120030,
+      29206
+     ],
+     "text": "We need answer simple multiplication. Need compute 17*23 = 17*20 +17*3=340+51=391. Need final just number.</think:opensource>391",
+     "stop": "Eos",
+     "n_tokens": 35,
+     "wall_s": 37.508
+    },
+    {
+     "status": 200,
+     "tokens": [
+      802,
+      12042,
+      341,
+      259,
+      15640,
+      303,
+      39587,
+      9629,
+      866,
+      5387,
+      14992,
+      415,
+      23794,
+      303,
+      14992,
+      415,
+      731,
+      198,
+      35,
+      779,
+      297,
+      269,
+      36096,
+      11,
+      24728,
+      3424,
+      14371,
+      866,
+      32,
+      3834,
+      57814,
+      299,
+      6127,
+      11,
+      10599,
+      27848,
+      13
+     ],
+     "text": "The sea is a vast and endless blue,\nWith waves that crash and waves that do\nDance in the sunlight, sparkling bright,\nA symphony of nature, pure delight.",
+     "stop": "Eos",
+     "n_tokens": 37,
+     "wall_s": 38.171
+    },
+    {
+     "status": 200,
+     "tokens": [
+      2022,
+      220,
+      549,
+      49927,
+      2486,
+      549,
+      8161,
+      1453,
+      198,
+      220,
+      549,
+      73460,
+      2486,
+      549,
+      53479,
+      3127,
+      220,
+      549,
+      32375,
+      448,
+      2486,
+      549,
+      17049,
+      1756,
+      92
+     ],
+     "text": "{\n  \"iron\": \"Fe\",\n  \"gold\": \"Au\",\n  \"silver\": \"Ag\"\n}",
+     "stop": "Eos",
+     "n_tokens": 25,
+     "wall_s": 34.453
+    },
+    {
+     "status": 200,
+     "tokens": [
+      6652,
+      17769,
+      5510,
+      38707,
+      4119,
+      82731,
+      75275,
+      78023,
+      67641,
+      13
+     ],
+     "text": "בירת צרפת היא פריז.",
+     "stop": "Eos",
+     "n_tokens": 10,
+     "wall_s": 24.951
+    }
+   ]
+  }
+ },
+ "stream": {
+  "content": "The sea is a vast and endless blue,\nWith waves that crash and waves that do\nDance in the sunlight, sparkling bright,\nA symphony of nature, pure delight.",
+  "chunks": 37,
+  "finish": "stop",
+  "done": true,
+  "error": null,
+  "blocking": {
+   "status": 200,
+   "content": "The sea is a vast and endless blue,\nWith waves that crash and waves that do\nDance in the sunlight, sparkling bright,\nA symphony of nature, pure delight.",
+   "reasoning": null,
+   "tool_calls": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 33,
+    "completion_tokens": 37,
+    "total_tokens": 70,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 6.52188343
+   },
+   "wall_s": 6.524
+  }
+ },
+ "efforts": {
+  "no_think": {
+   "status": 200,
+   "content": "391",
+   "reasoning": null,
+   "tool_calls": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 37,
+    "completion_tokens": 1,
+    "total_tokens": 38,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 0.610638449
+   },
+   "wall_s": 0.613
+  },
+  "none": {
+   "status": 200,
+   "content": "391",
+   "reasoning": null,
+   "tool_calls": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 37,
+    "completion_tokens": 1,
+    "total_tokens": 38,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 0.601098346
+   },
+   "wall_s": 0.604
+  },
+  "high": {
+   "status": 200,
+   "content": "391",
+   "reasoning": "We need answer simple multiplication. Need compute 17*23 = 17*20 +17*3=340+51=391. Need final just number.",
+   "tool_calls": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 34,
+    "completion_tokens": 35,
+    "total_tokens": 69,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 6.19910255
+   },
+   "wall_s": 6.202
+  },
+  "max": {
+   "status": 200,
+   "content": "391",
+   "reasoning": "We need answer simple multiplication. Need compute 17*23 = 17*20 +17*3=340+51=391. Need final just number.",
+   "tool_calls": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 34,
+    "completion_tokens": 35,
+    "total_tokens": 69,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 6.206758769
+   },
+   "wall_s": 6.209
+  },
+  "xhigh": {
+   "status": 200,
+   "content": "391",
+   "reasoning": "We need answer simple multiplication. Need compute 17*23 = 17*20 +17*3=340+51=391. Need final just number.",
+   "tool_calls": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 34,
+    "completion_tokens": 35,
+    "total_tokens": 69,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 6.20246635
+   },
+   "wall_s": 6.205
+  },
+  "low": {
+   "status": 200,
+   "content": "391",
+   "reasoning": "We need answer simple multiplication. Need compute 17*23 = 17*20 +17*3=340+51=391. Need final just number.",
+   "tool_calls": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 34,
+    "completion_tokens": 35,
+    "total_tokens": 69,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 6.204504875
+   },
+   "wall_s": 6.207
+  },
+  "medium": {
+   "status": 200,
+   "content": "391",
+   "reasoning": "We need answer simple multiplication. Need compute 17*23 = 17*20 +17*3=340+51=391. Need final just number.",
+   "tool_calls": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 34,
+    "completion_tokens": 35,
+    "total_tokens": 69,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 6.190849346
+   },
+   "wall_s": 6.194
+  },
+  "turbo": {
+   "status": 400,
+   "error": "{\"error\":{\"message\":\"bad reasoning_effort \\\"turbo\\\" (none|minimal|low|medium|high; xhigh/max/ultra clamp to the highest level this model's template distinguishes)\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":null}}",
+   "wall_s": 0.001
+  }
+ },
+ "tools": {
+  "call": {
+   "status": 200,
+   "content": null,
+   "reasoning": null,
+   "tool_calls": [
+    {
+     "id": "call_0acaa39fa4e08df2",
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "arguments": "{\"city\":\"Paris\"}"
+     }
+    }
+   ],
+   "finish": "tool_calls",
+   "usage": {
+    "prompt_tokens": 200,
+    "completion_tokens": 13,
+    "total_tokens": 213,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 3.247771964
+   },
+   "wall_s": 3.251
+  },
+  "follow_up": {
+   "status": 200,
+   "content": "Right now in Paris it's **18°C** with **clear skies**.",
+   "reasoning": null,
+   "tool_calls": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 239,
+    "completion_tokens": 16,
+    "total_tokens": 255,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 4.107179468
+   },
+   "wall_s": 4.11
+  },
+  "with_reasoning": {
+   "status": 200,
+   "content": null,
+   "reasoning": "The user wants to know the current weather in Paris and explicitly asks to use the tool. I have a function `get_weather` with parameter `city`. I should call it with city \"Paris\".",
+   "tool_calls": [
+    {
+     "id": "call_0acaa39fa4e08df2",
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "arguments": "{\"city\":\"Paris\"}"
+     }
+    }
+   ],
+   "finish": "tool_calls",
+   "usage": {
+    "prompt_tokens": 197,
+    "completion_tokens": 55,
+    "total_tokens": 252,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 10.771267273
+   },
+   "wall_s": 10.775
+  }
+ },
+ "sampled": {
+  "solo1": {
+   "status": 200,
+   "tokens": [
+    802,
+    61011,
+    36752,
+    15124,
+    4021,
+    269,
+    42024,
+    11,
+    647,
+    85601,
+    10777,
+    531,
+    14880,
+    273,
+    1454,
+    6867,
+    2417,
+    13,
+    647,
+    38,
+    1396,
+    82,
+    95442,
+    269,
+    118521,
+    430,
+    112792,
+    102253,
+    1193,
+    647,
+    802,
+    12042,
+    19187,
+    765,
+    442,
+    4193,
+    6395,
+    13
+   ],
+   "text": "The tide draws breath against the shore,  \nSalt wind unwrites what came before.  \nGulls stitch the dusk with restless cries—  \nThe sea keeps all it never says.",
+   "stop": "Eos",
+   "n_tokens": 38,
+   "wall_s": 7.003
+  },
+  "solo2": {
+   "status": 200,
+   "tokens": [
+    802,
+    61011,
+    36752,
+    15124,
+    4021,
+    269,
+    42024,
+    11,
+    647,
+    85601,
+    10777,
+    531,
+    14880,
+    273,
+    1454,
+    6867,
+    2417,
+    13,
+    647,
+    38,
+    1396,
+    82,
+    95442,
+    269,
+    118521,
+    430,
+    112792,
+    102253,
+    1193,
+    647,
+    802,
+    12042,
+    19187,
+    765,
+    442,
+    4193,
+    6395,
+    13
+   ],
+   "text": "The tide draws breath against the shore,  \nSalt wind unwrites what came before.  \nGulls stitch the dusk with restless cries—  \nThe sea keeps all it never says.",
+   "stop": "Eos",
+   "n_tokens": 38,
+   "wall_s": 6.726
+  },
+  "beside": {
+   "status": 200,
+   "tokens": [
+    802,
+    61011,
+    36752,
+    15124,
+    4021,
+    269,
+    42024,
+    11,
+    647,
+    85601,
+    10777,
+    531,
+    14880,
+    273,
+    1454,
+    6867,
+    2417,
+    13,
+    647,
+    38,
+    1396,
+    82,
+    95442,
+    269,
+    118521,
+    430,
+    112792,
+    102253,
+    1193,
+    647,
+    802,
+    12042,
+    19187,
+    765,
+    442,
+    4193,
+    6395,
+    13
+   ],
+   "text": "The tide draws breath against the shore,  \nSalt wind unwrites what came before.  \nGulls stitch the dusk with restless cries—  \nThe sea keeps all it never says.",
+   "stop": "Eos",
+   "n_tokens": 38,
+   "wall_s": 14.019
+  }
+ },
+ "stops": {
+  "stop_string": ": \"",
+  "want": "{\n  \"iron\"",
+  "got": {
+   "status": 200,
+   "content": "{\n  \"iron\"",
+   "reasoning": null,
+   "tool_calls": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 39,
+    "completion_tokens": 6,
+    "total_tokens": 45,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 1.284751283
+   },
+   "wall_s": 1.287
+  },
+  "max_tokens_5": {
+   "status": 200,
+   "tokens": [
+    2022,
+    220,
+    549,
+    49927,
+    2486
+   ],
+   "text": "{\n  \"iron\":",
+   "stop": "MaxNew",
+   "n_tokens": 5,
+   "wall_s": 1.117
+  }
+ },
+ "penalties": {
+  "run1": {
+   "status": 200,
+   "tokens": [
+    802,
+    61011,
+    33537,
+    1949,
+    6604,
+    4021,
+    269,
+    42024,
+    11,
+    198,
+    85601,
+    10777,
+    531,
+    18236,
+    82,
+    269,
+    3141,
+    5147,
+    984,
+    491,
+    38,
+    1396,
+    82,
+    95442,
+    269,
+    26332,
+    430,
+    15774,
+    6973,
+    866,
+    802,
+    6895,
+    19187,
+    28472,
+    9228,
+    1525,
+    21442,
+    13
+   ],
+   "text": "The tide breathes slow against the shore,\nSalt wind unwinds the day once more.\nGulls stitch the gray with sudden white,\nThe deep keeps dreams beyond our sight.",
+   "stop": "Eos",
+   "n_tokens": 38,
+   "wall_s": 6.885
+  },
+  "run2": {
+   "status": 200,
+   "tokens": [
+    802,
+    61011,
+    33537,
+    1949,
+    6604,
+    4021,
+    269,
+    42024,
+    11,
+    198,
+    85601,
+    10777,
+    531,
+    18236,
+    82,
+    269,
+    3141,
+    5147,
+    984,
+    491,
+    38,
+    1396,
+    82,
+    95442,
+    269,
+    26332,
+    430,
+    15774,
+    6973,
+    866,
+    802,
+    6895,
+    19187,
+    28472,
+    9228,
+    1525,
+    21442,
+    13
+   ],
+   "text": "The tide breathes slow against the shore,\nSalt wind unwinds the day once more.\nGulls stitch the gray with sudden white,\nThe deep keeps dreams beyond our sight.",
+   "stop": "Eos",
+   "n_tokens": 38,
+   "wall_s": 6.696
+  }
+ },
+ "refusals": {
+  "image": {
+   "status": 400,
+   "error": "{\"error\":{\"message\":\"user message: image input is not enabled on this deployment\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":null}}",
+   "wall_s": 0.001
+  },
+  "response_format": {
+   "status": 400,
+   "error": "{\"error\":{\"message\":\"response_format is not available on the hy_v4_flash route (no constrained decoding in this dialect yet)\",\"type\":\"invalid_request_error\",\"param\":\"response_format\",\"code\":null}}",
+   "wall_s": 0.0
+  }
+ },
+ "cancel": {
+  "seen": 3,
+  "error": null,
+  "after": {
+   "status": 200,
+   "tokens": [
+    65431
+   ],
+   "text": "Paris",
+   "stop": "Eos",
+   "n_tokens": 1,
+   "wall_s": 0.596
+  },
+  "last_step": "[hy4f-step] step=1098 prefill_rows=0 decode_rows=1 step_s=0.166 running=1 device_live=94842647852"
+ },
+ "admission": {
+  "context": 625328,
+  "max_tokens": 250131,
+  "want": {
+   "status": 200,
+   "tokens": [
+    802,
+    12042,
+    341,
+    259,
+    15640,
+    303,
+    39587,
+    9629,
+    866,
+    5387,
+    14992,
+    415,
+    23794,
+    303,
+    14992,
+    415,
+    731,
+    198,
+    35,
+    779,
+    297,
+    269,
+    36096,
+    11,
+    24728,
+    3424,
+    14371,
+    866,
+    32,
+    3834,
+    57814,
+    299,
+    6127,
+    11,
+    10599,
+    27848,
+    13
+   ],
+   "text": "The sea is a vast and endless blue,\nWith waves that crash and waves that do\nDance in the sunlight, sparkling bright,\nA symphony of nature, pure delight.",
+   "stop": "Eos",
+   "n_tokens": 37,
+   "wall_s": 6.53
+  },
+  "outs": [
+   {
+    "status": 200,
+    "tokens": [
+     802,
+     12042,
+     341,
+     259,
+     15640,
+     303,
+     39587,
+     9629,
+     866,
+     5387,
+     14992,
+     415,
+     23794,
+     303,
+     14992,
+     415,
+     731,
+     198,
+     35,
+     779,
+     297,
+     269,
+     36096,
+     11,
+     24728,
+     3424,
+     14371,
+     866,
+     32,
+     3834,
+     57814,
+     299,
+     6127,
+     11,
+     10599,
+     27848,
+     13
+    ],
+    "text": "The sea is a vast and endless blue,\nWith waves that crash and waves that do\nDance in the sunlight, sparkling bright,\nA symphony of nature, pure delight.",
+    "stop": "Eos",
+    "n_tokens": 37,
+    "wall_s": 13.647
+   },
+   {
+    "status": 200,
+    "tokens": [
+     802,
+     12042,
+     341,
+     259,
+     15640,
+     303,
+     39587,
+     9629,
+     866,
+     5387,
+     14992,
+     415,
+     23794,
+     303,
+     14992,
+     415,
+     731,
+     198,
+     35,
+     779,
+     297,
+     269,
+     36096,
+     11,
+     24728,
+     3424,
+     14371,
+     866,
+     32,
+     3834,
+     57814,
+     299,
+     6127,
+     11,
+     10599,
+     27848,
+     13
+    ],
+    "text": "The sea is a vast and endless blue,\nWith waves that crash and waves that do\nDance in the sunlight, sparkling bright,\nA symphony of nature, pure delight.",
+    "stop": "Eos",
+    "n_tokens": 37,
+    "wall_s": 14.655
+   },
+   {
+    "status": 200,
+    "tokens": [
+     802,
+     12042,
+     341,
+     259,
+     15640,
+     303,
+     39587,
+     9629,
+     866,
+     5387,
+     14992,
+     415,
+     23794,
+     303,
+     14992,
+     415,
+     731,
+     198,
+     35,
+     779,
+     297,
+     269,
+     36096,
+     11,
+     24728,
+     3424,
+     14371,
+     866,
+     32,
+     3834,
+     57814,
+     299,
+     6127,
+     11,
+     10599,
+     27848,
+     13
+    ],
+    "text": "The sea is a vast and endless blue,\nWith waves that crash and waves that do\nDance in the sunlight, sparkling bright,\nA symphony of nature, pure delight.",
+    "stop": "Eos",
+    "n_tokens": 37,
+    "wall_s": 20.851
+   }
+  ],
+  "admits": [
+   "[admit-mem] route=hy4f-thread model=\"hy4\" request_id=\"cmpl-f81432e6b5c8c75da989808505c88d61\" capacity=250164 booked=10072048992 running=0 verdict=admit",
+   "[admit-mem] route=hy4f-thread model=\"hy4\" request_id=\"cmpl-18de3f944f1cfef84804695d1f67d071\" capacity=250164 booked=18945272160 running=1 verdict=admit",
+   "[admit-mem] route=hy4f-thread model=\"hy4\" request_id=\"cmpl-7e5b00b98e2144396370b29f58cf41f5\" capacity=250164 booked=18945272160 running=1 verdict=admit"
+  ],
+  "waits": [
+   "[admit-mem] route=hy4f-thread model=\"hy4\" request_id=\"cmpl-7e5b00b98e2144396370b29f58cf41f5\" capacity=250164 booked=27818495328 running=2 verdict=wait"
+  ]
+ },
+ "long": {
+  "prompt_tokens": 30934,
+  "answer": {
+   "status": 200,
+   "tokens": [
+    30345,
+    22
+   ],
+   "text": "4817",
+   "stop": "Eos",
+   "n_tokens": 2,
+   "wall_s": 222.079
+  },
+  "text": "4817",
+  "wall_s": 222.08063077926636
+ },
+ "pass": true
+}

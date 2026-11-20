@@ -1,0 +1,15 @@
+render: PASS the chat and long probes through /v1/tokenize (reasoning off) equal the request ids up to the generation prompt
+route: PASS served greedy ids equal hy4f-gpu --gen on chat, long, long-split; the first equals the verified tape's argmax
+forced: PASS 23 teacher-forced positions served as prompts equal the verified tapes' argmax
+concurrent: PASS c = [2, 3, 4, 6] at once (a 2,104-token prefill among them): ids equal solo
+stream: PASS 37 deltas of poem equal the blocking answer
+efforts: PASS no_think/none without reasoning; high, max with; low/medium = high; xhigh = max; turbo a 400
+tools: PASS the call parses (get_weather, JSON arguments) with reasoning off and on; the follow-up with the tool's answer is served
+sampled: PASS seed 1017, T 0.8, top_p 0.95, top_k 40: twice solo and once beside three others, unlike greedy
+stops: PASS stop ': "' cuts json before its first occurrence; max_tokens 5 cuts at the budget
+penalties: PASS frequency 0.5, presence 0.3 greedy: served, identical twice
+refusals: PASS image part -> 400, response_format -> 400
+cancel: PASS a client that left after 3 of 400 tokens: the route ran on, the next request alone on it
+admission: PASS 3 x 250131-token budgets on a 625328-position context: admitted with [0, 1, 1] running, 1 deferred, each the full greedy answer
+long: PASS 30934-token prompt, answer '4817' in 222s
+CHAT-GATE PASS

@@ -1,0 +1,897 @@
+tokens=[10, 30, 27, 15, 14, 3, 24, 25, 2, 26, 31, 30, 30, 6, 30, 22, 16, 22, 2, 12, 26, 18, 25, 11, 7, 27, 9, 19, 25, 30, 2, 4, 9, 1, 3, 28, 23, 24, 0, 10, 28, 31, 12, 12, 10, 19, 30, 27, 24, 14, 17, 27, 7, 4, 18, 0, 25, 22, 7, 15, 12, 10, 29, 12, 13, 10, 29, 15, 17, 12, 20, 9, 15, 0, 23, 7, 17, 25, 16, 24, 19, 29, 10, 8, 12, 1, 19, 18, 15, 16, 31, 5, 12, 31, 23, 24, 18, 15, 3, 29, 3, 22, 15, 22, 0, 31, 17, 28, 11, 6, 19, 3, 2, 26, 27, 4, 9, 0, 10, 14, 25, 22, 27, 17, 5, 17, 18, 9, 13, 5, 3, 4, 27, 9, 26, 25, 23, 24, 18, 9, 22, 15, 4, 17, 14, 7, 12, 26, 31, 12, 26, 5, 22, 0, 2, 19, 15, 29, 13, 6, 15, 20, 8, 5, 5, 24, 2, 12, 6, 1, 30, 9, 31, 14, 26, 6, 12, 25, 9, 30, 7, 31, 25, 13, 17, 24, 23, 9, 30, 1, 26, 4, 0, 27, 8, 21, 23, 18, 19, 1, 13, 29, 13, 16, 26, 29, 25, 16, 31, 7, 9, 3, 28, 0, 7, 7, 8, 10, 11, 4, 17, 28, 23, 8, 10, 4, 6, 20, 5, 5, 15, 11, 30, 4, 25, 0, 19, 23, 14, 18, 18, 24, 24, 17, 15, 31, 5, 8, 9, 16, 1, 24, 8, 8, 8, 11, 16, 13, 3, 1, 21, 19, 7, 0, 28, 21, 2, 23, 24, 14, 9, 9, 3, 13, 2, 30, 26, 19, 21, 22, 21, 0, 24, 22, 16, 27, 14, 3, 20, 24, 30, 16, 6, 22, 24, 26, 29, 31, 25, 13, 3, 22, 15, 22, 0, 31, 17, 28, 11, 6, 19, 3, 2, 26, 27, 4, 26, 0, 4, 6, 27, 21, 4, 29, 14, 24, 29, 6, 9, 17, 9, 1, 18, 30, 18, 23, 20, 9, 28, 8, 2, 2, 7, 7, 12, 7, 15, 25, 2, 22, 20, 14, 5, 17, 24, 6, 0, 20, 13, 30, 30, 5, 31, 22, 3, 14, 10, 12, 26, 21, 9, 28, 12, 17, 22, 19, 27, 6, 13, 5, 13, 15, 17, 31, 22, 1, 23, 25, 3, 15, 20, 23, 15, 12, 23, 31, 24, 1, 16, 27, 9, 9, 29, 0, 10, 20, 1, 10, 29, 22, 26, 17, 13, 8, 17, 11, 22, 20, 9, 13, 1, 25, 9, 30, 8, 1, 31, 28, 4, 10, 21, 2, 17, 23, 31, 21, 23, 24, 11, 12, 28, 25, 12, 19, 29, 9, 8, 26, 12, 24, 1, 25, 26, 6, 10, 6, 7, 13, 2, 12, 4, 31, 1, 25, 21, 26, 13, 1, 25, 25, 12, 10, 27, 22, 10, 22, 11, 4, 26, 10, 7, 15, 14, 3, 17, 16, 19, 4, 9, 28, 22, 31, 19, 2, 14, 18, 14, 2, 0, 10, 21, 10, 2, 17, 18, 15, 22, 22, 11, 15, 27, 26, 26, 23, 0, 26, 1, 13, 24, 26, 0, 4, 28, 15, 27, 20, 1, 30, 10, 6]
+plan=ModelPlan {
+    arch: HyV4Flash,
+    hidden_size: 64,
+    vocab_size: 32,
+    context_length: 1024,
+    embedding_scale: 1.0,
+    vision: None,
+    multimodal: None,
+    layers: [
+        LayerPlan {
+            index: 0,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            attention: HyV4(
+                HyV4AttentionPlan {
+                    kind: Indexed(
+                        IndexPoolPlan {
+                            heads: 2,
+                            head_dim: 16,
+                            rope_head_dim: 8,
+                            pool: 4,
+                            top_k: 256,
+                            ties: LowerIndexFirst,
+                        },
+                    ),
+                    query_heads: 2,
+                    q_lora_rank: 32,
+                    kv_lora_rank: 16,
+                    qk_nope_head_dim: 16,
+                    qk_rope_head_dim: 8,
+                    value_head_dim: 16,
+                    rope: RopePlan {
+                        dimensions: 8,
+                        base: 10000000.0,
+                        factors: None,
+                    },
+                    sink: Required,
+                    post_projection_norm: NormPlan {
+                        kind: Rms,
+                        epsilon: 1e-5,
+                        weight_transform: Identity,
+                    },
+                    projection_weights: Bf16,
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            mlp: Dense(
+                DenseMlpPlan {
+                    intermediate_size: 48,
+                    activation: Silu,
+                },
+            ),
+            residual: HyV4(
+                HyV4ResidualPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    post_magnitude: 2.0,
+                    mix_norm_epsilon: 1e-5,
+                    mlp_output_norm: NormPlan {
+                        kind: Rms,
+                        epsilon: 1e-5,
+                        weight_transform: Identity,
+                    },
+                    engram: None,
+                },
+            ),
+            state: HyV4(
+                HyV4StatePlan {
+                    latent_width: 16,
+                    rope_width: 8,
+                    window: None,
+                    index_key_width: Some(
+                        16,
+                    ),
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 1,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            attention: HyV4(
+                HyV4AttentionPlan {
+                    kind: Indexed(
+                        IndexPoolPlan {
+                            heads: 2,
+                            head_dim: 16,
+                            rope_head_dim: 8,
+                            pool: 4,
+                            top_k: 256,
+                            ties: LowerIndexFirst,
+                        },
+                    ),
+                    query_heads: 2,
+                    q_lora_rank: 32,
+                    kv_lora_rank: 16,
+                    qk_nope_head_dim: 16,
+                    qk_rope_head_dim: 8,
+                    value_head_dim: 16,
+                    rope: RopePlan {
+                        dimensions: 8,
+                        base: 10000000.0,
+                        factors: None,
+                    },
+                    sink: Required,
+                    post_projection_norm: NormPlan {
+                        kind: Rms,
+                        epsilon: 1e-5,
+                        weight_transform: Identity,
+                    },
+                    projection_weights: Fp8Block {
+                        block: 128,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            mlp: LatentMoe(
+                LatentMoePlan {
+                    latent_size: 32,
+                    moe: MoeMlpPlan {
+                        expert_count: 8,
+                        experts_per_token: 3,
+                        expert_intermediate_size: 16,
+                        router: Sigmoid {
+                            normalize_selected: true,
+                            scaling_factor: 3.998,
+                            selection_bias: true,
+                        },
+                        shared: Some(
+                            SharedMlpPlan {
+                                intermediate_size: 16,
+                                gated: false,
+                            },
+                        ),
+                        activation: SwiGluPreClamped {
+                            limit: 2.0,
+                        },
+                    },
+                    shared_activation: Silu,
+                    expert_weights: Nvfp4W4A16 {
+                        group: 16,
+                    },
+                },
+            ),
+            residual: HyV4(
+                HyV4ResidualPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    post_magnitude: 2.0,
+                    mix_norm_epsilon: 1e-5,
+                    mlp_output_norm: NormPlan {
+                        kind: Rms,
+                        epsilon: 1e-5,
+                        weight_transform: Identity,
+                    },
+                    engram: Some(
+                        HyV4EngramPlan {
+                            layer_id: 2,
+                            hash_seed: 20014,
+                            max_ngram: 3,
+                            heads: 4,
+                            head_dim: 8,
+                            table_rows: 138,
+                            lookup_table_size: 28,
+                            multiplier_bound: LookupTableMaxPlusOne,
+                            norm_epsilon: OpMathF32,
+                            pad_token_id: 3,
+                            masked_token_ids: [
+                                3,
+                                24,
+                                25,
+                            ],
+                            table_fp8_per_row: true,
+                        },
+                    ),
+                },
+            ),
+            state: HyV4(
+                HyV4StatePlan {
+                    latent_width: 16,
+                    rope_width: 8,
+                    window: None,
+                    index_key_width: Some(
+                        16,
+                    ),
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 2,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            attention: HyV4(
+                HyV4AttentionPlan {
+                    kind: Sliding {
+                        window: 512,
+                    },
+                    query_heads: 4,
+                    q_lora_rank: 32,
+                    kv_lora_rank: 16,
+                    qk_nope_head_dim: 16,
+                    qk_rope_head_dim: 8,
+                    value_head_dim: 40,
+                    rope: RopePlan {
+                        dimensions: 8,
+                        base: 10000.0,
+                        factors: None,
+                    },
+                    sink: Required,
+                    post_projection_norm: NormPlan {
+                        kind: Rms,
+                        epsilon: 1e-5,
+                        weight_transform: Identity,
+                    },
+                    projection_weights: Fp8Block {
+                        block: 128,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            mlp: LatentMoe(
+                LatentMoePlan {
+                    latent_size: 32,
+                    moe: MoeMlpPlan {
+                        expert_count: 8,
+                        experts_per_token: 3,
+                        expert_intermediate_size: 16,
+                        router: Sigmoid {
+                            normalize_selected: true,
+                            scaling_factor: 3.998,
+                            selection_bias: true,
+                        },
+                        shared: Some(
+                            SharedMlpPlan {
+                                intermediate_size: 16,
+                                gated: false,
+                            },
+                        ),
+                        activation: SwiGluPreClamped {
+                            limit: 2.0,
+                        },
+                    },
+                    shared_activation: Silu,
+                    expert_weights: Nvfp4W4A16 {
+                        group: 16,
+                    },
+                },
+            ),
+            residual: HyV4(
+                HyV4ResidualPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    post_magnitude: 2.0,
+                    mix_norm_epsilon: 1e-5,
+                    mlp_output_norm: NormPlan {
+                        kind: Rms,
+                        epsilon: 1e-5,
+                        weight_transform: Identity,
+                    },
+                    engram: None,
+                },
+            ),
+            state: HyV4(
+                HyV4StatePlan {
+                    latent_width: 16,
+                    rope_width: 8,
+                    window: Some(
+                        512,
+                    ),
+                    index_key_width: None,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 3,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            attention: HyV4(
+                HyV4AttentionPlan {
+                    kind: Sliding {
+                        window: 512,
+                    },
+                    query_heads: 4,
+                    q_lora_rank: 32,
+                    kv_lora_rank: 16,
+                    qk_nope_head_dim: 16,
+                    qk_rope_head_dim: 8,
+                    value_head_dim: 40,
+                    rope: RopePlan {
+                        dimensions: 8,
+                        base: 10000.0,
+                        factors: None,
+                    },
+                    sink: Required,
+                    post_projection_norm: NormPlan {
+                        kind: Rms,
+                        epsilon: 1e-5,
+                        weight_transform: Identity,
+                    },
+                    projection_weights: Fp8Block {
+                        block: 128,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            mlp: LatentMoe(
+                LatentMoePlan {
+                    latent_size: 32,
+                    moe: MoeMlpPlan {
+                        expert_count: 8,
+                        experts_per_token: 3,
+                        expert_intermediate_size: 16,
+                        router: Sigmoid {
+                            normalize_selected: true,
+                            scaling_factor: 3.998,
+                            selection_bias: true,
+                        },
+                        shared: Some(
+                            SharedMlpPlan {
+                                intermediate_size: 16,
+                                gated: false,
+                            },
+                        ),
+                        activation: SwiGluPreClamped {
+                            limit: 2.0,
+                        },
+                    },
+                    shared_activation: Silu,
+                    expert_weights: Nvfp4W4A16 {
+                        group: 16,
+                    },
+                },
+            ),
+            residual: HyV4(
+                HyV4ResidualPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    post_magnitude: 2.0,
+                    mix_norm_epsilon: 1e-5,
+                    mlp_output_norm: NormPlan {
+                        kind: Rms,
+                        epsilon: 1e-5,
+                        weight_transform: Identity,
+                    },
+                    engram: Some(
+                        HyV4EngramPlan {
+                            layer_id: 4,
+                            hash_seed: 40028,
+                            max_ngram: 3,
+                            heads: 4,
+                            head_dim: 8,
+                            table_rows: 202,
+                            lookup_table_size: 28,
+                            multiplier_bound: LookupTableMaxPlusOne,
+                            norm_epsilon: OpMathF32,
+                            pad_token_id: 3,
+                            masked_token_ids: [
+                                3,
+                                24,
+                                25,
+                            ],
+                            table_fp8_per_row: true,
+                        },
+                    ),
+                },
+            ),
+            state: HyV4(
+                HyV4StatePlan {
+                    latent_width: 16,
+                    rope_width: 8,
+                    window: Some(
+                        512,
+                    ),
+                    index_key_width: None,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 4,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            attention: HyV4(
+                HyV4AttentionPlan {
+                    kind: Sliding {
+                        window: 512,
+                    },
+                    query_heads: 4,
+                    q_lora_rank: 32,
+                    kv_lora_rank: 16,
+                    qk_nope_head_dim: 16,
+                    qk_rope_head_dim: 8,
+                    value_head_dim: 40,
+                    rope: RopePlan {
+                        dimensions: 8,
+                        base: 10000.0,
+                        factors: None,
+                    },
+                    sink: Required,
+                    post_projection_norm: NormPlan {
+                        kind: Rms,
+                        epsilon: 1e-5,
+                        weight_transform: Identity,
+                    },
+                    projection_weights: Fp8Block {
+                        block: 128,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            mlp: LatentMoe(
+                LatentMoePlan {
+                    latent_size: 32,
+                    moe: MoeMlpPlan {
+                        expert_count: 8,
+                        experts_per_token: 3,
+                        expert_intermediate_size: 16,
+                        router: Sigmoid {
+                            normalize_selected: true,
+                            scaling_factor: 3.998,
+                            selection_bias: true,
+                        },
+                        shared: Some(
+                            SharedMlpPlan {
+                                intermediate_size: 16,
+                                gated: false,
+                            },
+                        ),
+                        activation: SwiGluPreClamped {
+                            limit: 2.0,
+                        },
+                    },
+                    shared_activation: Silu,
+                    expert_weights: Nvfp4W4A16 {
+                        group: 16,
+                    },
+                },
+            ),
+            residual: HyV4(
+                HyV4ResidualPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    post_magnitude: 2.0,
+                    mix_norm_epsilon: 1e-5,
+                    mlp_output_norm: NormPlan {
+                        kind: Rms,
+                        epsilon: 1e-5,
+                        weight_transform: Identity,
+                    },
+                    engram: None,
+                },
+            ),
+            state: HyV4(
+                HyV4StatePlan {
+                    latent_width: 16,
+                    rope_width: 8,
+                    window: Some(
+                        512,
+                    ),
+                    index_key_width: None,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 5,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            attention: HyV4(
+                HyV4AttentionPlan {
+                    kind: Indexed(
+                        IndexPoolPlan {
+                            heads: 2,
+                            head_dim: 16,
+                            rope_head_dim: 8,
+                            pool: 4,
+                            top_k: 256,
+                            ties: LowerIndexFirst,
+                        },
+                    ),
+                    query_heads: 2,
+                    q_lora_rank: 32,
+                    kv_lora_rank: 16,
+                    qk_nope_head_dim: 16,
+                    qk_rope_head_dim: 8,
+                    value_head_dim: 16,
+                    rope: RopePlan {
+                        dimensions: 8,
+                        base: 10000000.0,
+                        factors: None,
+                    },
+                    sink: Required,
+                    post_projection_norm: NormPlan {
+                        kind: Rms,
+                        epsilon: 1e-5,
+                        weight_transform: Identity,
+                    },
+                    projection_weights: Fp8Block {
+                        block: 128,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            mlp: LatentMoe(
+                LatentMoePlan {
+                    latent_size: 32,
+                    moe: MoeMlpPlan {
+                        expert_count: 8,
+                        experts_per_token: 3,
+                        expert_intermediate_size: 16,
+                        router: Sigmoid {
+                            normalize_selected: true,
+                            scaling_factor: 3.998,
+                            selection_bias: true,
+                        },
+                        shared: Some(
+                            SharedMlpPlan {
+                                intermediate_size: 16,
+                                gated: false,
+                            },
+                        ),
+                        activation: SwiGluPreClamped {
+                            limit: 2.0,
+                        },
+                    },
+                    shared_activation: Silu,
+                    expert_weights: Nvfp4W4A16 {
+                        group: 16,
+                    },
+                },
+            ),
+            residual: HyV4(
+                HyV4ResidualPlan {
+                    streams: 4,
+                    epsilon: 1e-6,
+                    post_magnitude: 2.0,
+                    mix_norm_epsilon: 1e-5,
+                    mlp_output_norm: NormPlan {
+                        kind: Rms,
+                        epsilon: 1e-5,
+                        weight_transform: Identity,
+                    },
+                    engram: None,
+                },
+            ),
+            state: HyV4(
+                HyV4StatePlan {
+                    latent_width: 16,
+                    rope_width: 8,
+                    window: None,
+                    index_key_width: Some(
+                        16,
+                    ),
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+    ],
+    output_norm: NormPlan {
+        kind: Rms,
+        epsilon: 1e-5,
+        weight_transform: Identity,
+    },
+    exit_mixer: None,
+    logits: [],
+    mtp_blocks: [],
+    drafter: None,
+    draft_source: None,
+    sampling_defaults: None,
+    partition_boundaries: [
+        1,
+        2,
+        3,
+        4,
+        5,
+    ],
+    hy_v4_flash: HyV4FlashNumerics {
+        streams: 4,
+        exit_epsilon: 1e-6,
+        output_projection_f32: true,
+    },
+}
+tensor=TokenEmbedding	shape=[32, 64]	sha256=797e5642ba4a5cb4fd0e83706e9b0cfb3099aab48bb0e7d5f19e930f72a32f33
+tensor=HyperHeadBase	shape=[4]	sha256=0494b53162f20e7fa4919d7dd6c7a534741e1ce1f4c8fce8f70a3a3fb6a02f7a
+tensor=HyperHeadFunction	shape=[4, 256]	sha256=281b96f041db861fb382585070b3ab584d5c05d510c99fe0f48ad956b82f0563
+tensor=HyperHeadScale	shape=[1]	sha256=49417e03f4e9f6032ab2b8390f3374350b85f5520cbe11e8cd878588a4f68a1f
+tensor=OutputNorm	shape=[64]	sha256=74bc8bad333e9834eb85f42a30cf94989122ffc5b4f57c501108060be69f6b32
+tensor=OutputProjection	shape=[32, 64]	sha256=24ebf5ab7ea60fa8d1d530435c92d18116b9aa2199028b10c48428ca677392c0
+tensor=Layer { index: 0, tensor: PreAttentionNorm }	shape=[64]	sha256=b990cb775fc20fd256cc70b4841073a3e2155d7092ccad3eb2e104c07b6da1f6
+tensor=Layer { index: 0, tensor: HyperAttentionBase }	shape=[8]	sha256=4bfb0923707fe53646e6251c33c9b8a6a3cabb0ea96f85f076f8d3083c022958
+tensor=Layer { index: 0, tensor: HyperAttentionFunction }	shape=[8, 256]	sha256=4ae8774ec8d0ba5c1f30566da46b2f33281befc6ccf82aae050cd740ea524628
+tensor=Layer { index: 0, tensor: HyperAttentionScale }	shape=[2]	sha256=015e33203a50fb65d8f89af4925958e2fa53ea85376a5377071fbafa6ba2b69f
+tensor=Layer { index: 0, tensor: MlaQueryDown }	shape=[32, 64]	sha256=7c039ac3a6cbc7f01faf4b39d9306d4a1bc6492ca4d9e9d349c4b41b67d27073
+tensor=Layer { index: 0, tensor: MlaQueryDownNorm }	shape=[32]	sha256=c2efb5bd364f93a80bfd24c8f2d5181989dac7de46b6fc7646440e7e1df337a0
+tensor=Layer { index: 0, tensor: MlaQueryUp }	shape=[48, 32]	sha256=4c2e92e5f1251548e563b1294a599e21313f84f348065b74cf8db986554523a9
+tensor=Layer { index: 0, tensor: MlaKvDown }	shape=[24, 64]	sha256=bcef748981ec29ccc6caa991b687f78c6706ce552f2f18845b93b06cc2a57110
+tensor=Layer { index: 0, tensor: MlaKvDownNorm }	shape=[16]	sha256=2f87106939a8a6ab6daea9d726082f4b58c8d7cf9e8631fb116c2289e2c06e9e
+tensor=Layer { index: 0, tensor: MlaOutput }	shape=[64, 32]	sha256=84df3ad72a7cd2492f0c3d1949268c4c84a18a46aea0693f64e215f8aef81a4a
+tensor=Layer { index: 0, tensor: AttentionSink }	shape=[2]	sha256=70f48d1f542bb7a47e72799716b25b1cd5b63050d886457a970f2d692ce834e7
+tensor=Layer { index: 0, tensor: PreMlpNorm }	shape=[64]	sha256=748bed1247212b299cfc59abcd3cf69761f4fdbfc75bcca828c422d133f6942a
+tensor=Layer { index: 0, tensor: HyperMlpBase }	shape=[8]	sha256=0fcd9f201f49ade43c827c055596d70121cfe5c4b65c7ed99db604583fb1191b
+tensor=Layer { index: 0, tensor: HyperMlpFunction }	shape=[8, 256]	sha256=e07bccd77516388017fee41a05c63a8383f727f8db6d0aea97f610b21b9e03be
+tensor=Layer { index: 0, tensor: HyperMlpScale }	shape=[2]	sha256=be6f524a287736baee849f912dc85af469f7f1a05e6ab7b985f894af472cd06a
+tensor=Layer { index: 0, tensor: PostMlpNorm }	shape=[64]	sha256=e43c0c7b82cd0b93771ed1a4ba8c8d1d4cf54f42c2f0837f9701c47545acf5d8
+tensor=Layer { index: 0, tensor: MlpGate }	shape=[48, 64]	sha256=ac856c02553aa41b56170d264eeb6b0dd9515330c5a28f4afc61540e22591826
+tensor=Layer { index: 0, tensor: MlpUp }	shape=[48, 64]	sha256=1340ea1ba722082c150153f3fab8431e410f723940e4f3aa7ad630a717236c7e
+tensor=Layer { index: 0, tensor: MlpDown }	shape=[64, 48]	sha256=ac0f25b8e4c169a8e262becadaa26039c47394ad66b16ea02900da3808e523b2
+tensor=Layer { index: 1, tensor: PreAttentionNorm }	shape=[64]	sha256=ece6ece584e3d3f251080cca1e1e4e42554165fe03613ff41839a152fa99717b
+tensor=Layer { index: 1, tensor: HyperAttentionBase }	shape=[8]	sha256=a514613456635fe368b6c50b0e05e0496e87a4bd0b6fad51cfff9b8cd1900a75
+tensor=Layer { index: 1, tensor: HyperAttentionFunction }	shape=[8, 256]	sha256=1125879d7e892440d6b09b7b557fb1e8bd5384a92e7ba98012f170057ce37a7b
+tensor=Layer { index: 1, tensor: HyperAttentionScale }	shape=[2]	sha256=4aec3b42769adf8ba3847e3574aa4c476272ff28dddc57e28cbc35ab919fa3b3
+tensor=Layer { index: 1, tensor: MlaQueryDown }	shape=[32, 64]	sha256=febb0140baa94a1c20a09eaf00f86aa0eed8b9a8b1fecc66cbb26e0d503cc250
+tensor=Layer { index: 1, tensor: MlaQueryDownNorm }	shape=[32]	sha256=2a3f46804f8fe990b25a9b52a728822cb27a5b75e0a8ac744ceff6230560fe28
+tensor=Layer { index: 1, tensor: MlaQueryUp }	shape=[48, 32]	sha256=14c9f6edbab927ef2e8ce5bbfb9375a05fdb4ee862f59da45c2c5ebc45be4aa6
+tensor=Layer { index: 1, tensor: MlaKvDown }	shape=[24, 64]	sha256=04519df7673f133e5d8d698d8e875351cbb8ed3ffc45b1fd3df5bd08b5df932a
+tensor=Layer { index: 1, tensor: MlaKvDownNorm }	shape=[16]	sha256=04d3faa69e754c953c50ece17d98249e32122a80e1f5ccf8c7e4c578c91d3267
+tensor=Layer { index: 1, tensor: MlaOutput }	shape=[64, 32]	sha256=86d6c08c74ad62bba79a31d03af260e728543facbb02bfaad8210d3cb8672f65
+tensor=Layer { index: 1, tensor: AttentionSink }	shape=[2]	sha256=9ebe393cd2c22f6385c762048c82c5a55acdaaf10c3bd1dddd106aba776e71a5
+tensor=Layer { index: 1, tensor: PreMlpNorm }	shape=[64]	sha256=a17ef7fccf3174c60b668e665a56d20aca8a42200fad81f6e4c6b95769da02b5
+tensor=Layer { index: 1, tensor: HyperMlpBase }	shape=[8]	sha256=1ed69559aded54d9a6103092d1e744613f99f0231b9660394c7d9774e2c32b83
+tensor=Layer { index: 1, tensor: HyperMlpFunction }	shape=[8, 256]	sha256=67cd28dc2ff2ce42db1a38f984fbe11598340113a261a974e66302c5d9a237ef
+tensor=Layer { index: 1, tensor: HyperMlpScale }	shape=[2]	sha256=7ed8561fa4ffed8a5750fd4345316d58d4df4a22972c6061aeb67bfc9547a4a2
+tensor=Layer { index: 1, tensor: PostMlpNorm }	shape=[64]	sha256=941e0e06b3ef03973bee071c755fc19b9d75ac33f35f4665c2e2d74112890448
+tensor=Layer { index: 1, tensor: MoeRouter }	shape=[8, 64]	sha256=a4b3f24d1cdee6686225a5fb4094b515ed70a277fc83bd9e3c9d5ed0d43db533
+tensor=Layer { index: 1, tensor: MoeRouterBias }	shape=[8]	sha256=75cbe5ab234738333a8b84c301cb64ac686862fbb74d8b89513f39ec93656a06
+tensor=Layer { index: 1, tensor: MoeExpertGateBank }	shape=[8, 16, 32]	sha256=261246d69c6bfe70a92ef4c88ad40a547b2363707937644cf45107a396f94b9a
+tensor=Layer { index: 1, tensor: MoeExpertUpBank }	shape=[8, 16, 32]	sha256=523a1e17b99df55a4180eb1f7aee59095aae9a629599e966fee8ad3532d6b079
+tensor=Layer { index: 1, tensor: MoeExpertDownBank }	shape=[8, 32, 16]	sha256=cdb65e4146124899f850caf24cbad676a485518e812ff93490cada3d9ab33f41
+tensor=Layer { index: 1, tensor: SharedMlpGate }	shape=[16, 64]	sha256=568c99f02055ab7facafe59cab8167c3522b3b0ab4590263bc17b7e8d3cec0af
+tensor=Layer { index: 1, tensor: SharedMlpUp }	shape=[16, 64]	sha256=0c651bde3c3a21e95c2b424cc11896cfa1fda1d74dbb0088af4f7a94965a45a7
+tensor=Layer { index: 1, tensor: SharedMlpDown }	shape=[64, 16]	sha256=a8f3f286be6ad742db3452a57850c32c6a95ecb25a871b7302a4d04489afd48d
+tensor=Layer { index: 2, tensor: PreAttentionNorm }	shape=[64]	sha256=fbc45dc0f23a4b1aea7efe5d7562615ce36fa2b98c215f50fec9a1fcd70ce8fa
+tensor=Layer { index: 2, tensor: HyperAttentionBase }	shape=[8]	sha256=00dc1711b99dfc317fbcf38b31e959da3073c252e35a5fa17ee965015c396b49
+tensor=Layer { index: 2, tensor: HyperAttentionFunction }	shape=[8, 256]	sha256=72a9d247376669a3e39821c482a0d11bf1cf9ebdfe4baf350b40f1d2d4fe7590
+tensor=Layer { index: 2, tensor: HyperAttentionScale }	shape=[2]	sha256=ef48fb28c8004403b6467aee9c2d754d2a095fbd40ff4fd52b38217daf87cba6
+tensor=Layer { index: 2, tensor: MlaQueryDown }	shape=[32, 64]	sha256=49e0ecaf12612d6d915738aaf94ec905c1cfc1f6287fab84fc61be836a45ac46
+tensor=Layer { index: 2, tensor: MlaQueryDownNorm }	shape=[32]	sha256=583fb8e4b416d0235b8ff3f5f3d650b440af50c9074f3a84e142d6a30e33ed26
+tensor=Layer { index: 2, tensor: MlaQueryUp }	shape=[96, 32]	sha256=0b19483af77f0a2b6ce596b876d5875b2c86cc051166182816e832b6e76cbe19
+tensor=Layer { index: 2, tensor: MlaKvDown }	shape=[24, 64]	sha256=68bee93111898a13e0fc8ff2f958e4396c58a4559df2cc0da00389d67ac1b9ff
+tensor=Layer { index: 2, tensor: MlaKvDownNorm }	shape=[16]	sha256=2fa5423207f6b50cad68ea41ccbd00a720ce883586bf191d8bb687e143fa9424
+tensor=Layer { index: 2, tensor: MlaOutput }	shape=[64, 160]	sha256=4a82271682fd1fb10e7c26971c811c492d153772842ae281712b12ffa878e35a
+tensor=Layer { index: 2, tensor: AttentionSink }	shape=[4]	sha256=b605ad60c64f107b92aae24fd4de3041f799ec9f102d4f3b301e56fc37491da7
+tensor=Layer { index: 2, tensor: PreMlpNorm }	shape=[64]	sha256=a2ff2c3a7784d7dfb1b5b13faabb4586eca17222913c32cd219ba69a2792014b
+tensor=Layer { index: 2, tensor: HyperMlpBase }	shape=[8]	sha256=5e38239b8497a9373273a3626e70fa83bfa379337b6814a061d5e3a95dc7e1fd
+tensor=Layer { index: 2, tensor: HyperMlpFunction }	shape=[8, 256]	sha256=081a628937b1d02df3df9b8e7f84f766b38a665ba4956fad9285d82b0cd82d50
+tensor=Layer { index: 2, tensor: HyperMlpScale }	shape=[2]	sha256=486abc1b1436fe4ffb94446e94f91975d43f6bbab1f4d861b87d088e20bdd6e5
+tensor=Layer { index: 2, tensor: PostMlpNorm }	shape=[64]	sha256=070fc9ea145e0ead614fabee7cdca7eb0e12ed604e0997d7783a79b0d1b6d09b
+tensor=Layer { index: 2, tensor: MoeRouter }	shape=[8, 64]	sha256=1e9b32039815bb574fc1e2c261c69cf25bbe761fceae78cf30a35dab84ec23c4
+tensor=Layer { index: 2, tensor: MoeRouterBias }	shape=[8]	sha256=6a34f0a00bee7c2400260972eaa9464064c1575f4d3f04cebb90049110eee68f
+tensor=Layer { index: 2, tensor: MoeExpertGateBank }	shape=[8, 16, 32]	sha256=ceb3865544982f12e0e939af1ff1a9a3cdd88096635b187f7b7e6c3afbb161f4
+tensor=Layer { index: 2, tensor: MoeExpertUpBank }	shape=[8, 16, 32]	sha256=722dade527b37cca517c90b5bec697690bdf36482b080a3208eb2f01921b75fa
+tensor=Layer { index: 2, tensor: MoeExpertDownBank }	shape=[8, 32, 16]	sha256=9ec2b7b54f05bbe8822d3bf8d2a26a11c0604b0c65d84926abf83e80b75d6e5d
+tensor=Layer { index: 2, tensor: SharedMlpGate }	shape=[16, 64]	sha256=29bd5a3a4979132c46b972165a94bd8dc8906ec8a495774c6fdb897125657d4e
+tensor=Layer { index: 2, tensor: SharedMlpUp }	shape=[16, 64]	sha256=b116f65e5f51ea852d62e7d5dae52727e04f873c18fa1a5425c482192228986b
+tensor=Layer { index: 2, tensor: SharedMlpDown }	shape=[64, 16]	sha256=b919fd762f99ddf4d77d31d0f8267ba2729348ac3a09819b34f5ac230df51fe6
+tensor=Layer { index: 3, tensor: PreAttentionNorm }	shape=[64]	sha256=ba315ba7d99bb3c616b6eb9897105cc3db341d44f237123733fb9e993ab7f6da
+tensor=Layer { index: 3, tensor: HyperAttentionBase }	shape=[8]	sha256=f73fd0a83dc3bbf85acf712040a26b12346a3ac83eb8e053bbd13bd20797bf2b
+tensor=Layer { index: 3, tensor: HyperAttentionFunction }	shape=[8, 256]	sha256=63bfb47475e83fbbbb9105d13847ecccef2e0f6dcaabdeb7af9e6e17c7238b17
+tensor=Layer { index: 3, tensor: HyperAttentionScale }	shape=[2]	sha256=5dacb4ebf3d0997bc91118b14f1254e84e9f7f3ce3216183446dd4b70c684d4f
+tensor=Layer { index: 3, tensor: MlaQueryDown }	shape=[32, 64]	sha256=5bc25b3719e8560296cb9d8478e9e2ed12a379532d4a1abec1b396829cd86f76
+tensor=Layer { index: 3, tensor: MlaQueryDownNorm }	shape=[32]	sha256=334a4accec2b2768817c0409985412496a91ca81f19e831ff1b72e2ba38de155
+tensor=Layer { index: 3, tensor: MlaQueryUp }	shape=[96, 32]	sha256=5425815c7db3aa0f1d81d29e5b55fa8060676a86b0b61046ce73f2f72b1a87cc
+tensor=Layer { index: 3, tensor: MlaKvDown }	shape=[24, 64]	sha256=b928b92c18712549baff971c6ee716e917644470e4f49e85c82aa6934ff8dbc1
+tensor=Layer { index: 3, tensor: MlaKvDownNorm }	shape=[16]	sha256=d27b1a1bf653e54cb0906af716fd38da0855d4a0e58fd42eee66afdf49edb39d
+tensor=Layer { index: 3, tensor: MlaOutput }	shape=[64, 160]	sha256=ae7ac567a437a90ea87dea1f2013702225460eef0e7e68bace507f8cc4dcf212
+tensor=Layer { index: 3, tensor: AttentionSink }	shape=[4]	sha256=c1aa11308c490548d8bfe57ecb7f56448d0d48fd033548437f046b0d62345645
+tensor=Layer { index: 3, tensor: PreMlpNorm }	shape=[64]	sha256=9867226c4ee51c9648b256c7ef9d8730290a60ec6850cd1789f42f4d4e0b1cb4
+tensor=Layer { index: 3, tensor: HyperMlpBase }	shape=[8]	sha256=99cbfa0cd4a311c280bca757287a66b27eeabd3459053e3816edb821f6720460
+tensor=Layer { index: 3, tensor: HyperMlpFunction }	shape=[8, 256]	sha256=4c47e38897975f60c25a215100d7a5a04b13e47b4f8e658e2d02629910ffa55d
+tensor=Layer { index: 3, tensor: HyperMlpScale }	shape=[2]	sha256=5c393856cada6620af37258c77ff149d2e809141575589f38801d2f07223b1fc
+tensor=Layer { index: 3, tensor: PostMlpNorm }	shape=[64]	sha256=06480e602b000cf6022669a7d548b3199a7ea4a5de02ad12a32b0f94085f916d
+tensor=Layer { index: 3, tensor: MoeRouter }	shape=[8, 64]	sha256=8d4412f9d7206cdeb31fb701a16bd11d46ba9e63dbce915fe0d789ecdbb1801e
+tensor=Layer { index: 3, tensor: MoeRouterBias }	shape=[8]	sha256=405e6e1f340aae42307d9138c19afb4306ca699a51de2b0e613c826112074651
+tensor=Layer { index: 3, tensor: MoeExpertGateBank }	shape=[8, 16, 32]	sha256=3e4488524b5c75e073136a61308c51cae8777ce3122b5c22229c70e401eeb45b
+tensor=Layer { index: 3, tensor: MoeExpertUpBank }	shape=[8, 16, 32]	sha256=e20dd8f590badca9e73489ff9f792a7f1a926cd28ff8468437fec5f5d2ee753c
+tensor=Layer { index: 3, tensor: MoeExpertDownBank }	shape=[8, 32, 16]	sha256=4a3ca188c01d65a9212663439887aba1edf009451873bce70ceea90020bacc48
+tensor=Layer { index: 3, tensor: SharedMlpGate }	shape=[16, 64]	sha256=6a4add3c15a05a5c3dd33eef233dcebc4c6c3e6be81be02562f88accb7cd5ff4
+tensor=Layer { index: 3, tensor: SharedMlpUp }	shape=[16, 64]	sha256=8b1aece492e053eb96d7e934491818d6fe364a6502a2bce0ec096f18f2137cdc
+tensor=Layer { index: 3, tensor: SharedMlpDown }	shape=[64, 16]	sha256=6bd2334635e6c36048f0b3f2cb767988af38f9e92e6dd1216dfcdd23f3911445
+tensor=Layer { index: 4, tensor: PreAttentionNorm }	shape=[64]	sha256=6ce7efa8cf87abdfdbea41af64ecfa3919004d277ff49c6dc621fdffc5042314
+tensor=Layer { index: 4, tensor: HyperAttentionBase }	shape=[8]	sha256=9a1f0b2ad6f6c7b59c9c6f558e3a0e0052ec805e7704081e9e8d6b0230749dce
+tensor=Layer { index: 4, tensor: HyperAttentionFunction }	shape=[8, 256]	sha256=e4cd55f60f8821539015fe63fa32ab7c846a81cccfaa50590be39ee0460fa6b9
+tensor=Layer { index: 4, tensor: HyperAttentionScale }	shape=[2]	sha256=17aae67f6a3c821258d85399d8360dc971651ad1a206afcf852d42eea30170af
+tensor=Layer { index: 4, tensor: MlaQueryDown }	shape=[32, 64]	sha256=f49e85d37c694714f56d03e7d1850b8411d52292db5924e62a15770ef19e7444
+tensor=Layer { index: 4, tensor: MlaQueryDownNorm }	shape=[32]	sha256=2052a8602dafe7dabd64e65cdf4d4944a895acff9861b5d606aa462a50c1997a
+tensor=Layer { index: 4, tensor: MlaQueryUp }	shape=[96, 32]	sha256=d6306c020145067b308bca9afb1afc3f03d0b72f24ffc1f2c6ec237f0e87cb35
+tensor=Layer { index: 4, tensor: MlaKvDown }	shape=[24, 64]	sha256=ab3c0ce1533b25c628f74d47b74ce49bf274bb602d6ef79011148e579d9cd2ba
+tensor=Layer { index: 4, tensor: MlaKvDownNorm }	shape=[16]	sha256=7cfe082fcf8b3f57363faebe3b0126e10c8fbba38731a97890b66ff3cad5b24d
+tensor=Layer { index: 4, tensor: MlaOutput }	shape=[64, 160]	sha256=e44ee352fa40dfee776a8a7ef24e1747a9e2e970ef369c5951aead27bae57fd7
+tensor=Layer { index: 4, tensor: AttentionSink }	shape=[4]	sha256=46354de5f8c45a3f14787dbf094f615df611e5a423d58062a0c15080e299390a
+tensor=Layer { index: 4, tensor: PreMlpNorm }	shape=[64]	sha256=3cc546037426132d7e155e5ae075af08bd1603ef917c9c6b5463d0866b582a2e
+tensor=Layer { index: 4, tensor: HyperMlpBase }	shape=[8]	sha256=13a5997680493907a26fac8f01999623b28da77896e84c9363b51826f5e43b8e
+tensor=Layer { index: 4, tensor: HyperMlpFunction }	shape=[8, 256]	sha256=3bbb69cb6b83f11fa8e0ccbd1e5f7ae75b663531b9a5c58fa7859d2af5bf1608
+tensor=Layer { index: 4, tensor: HyperMlpScale }	shape=[2]	sha256=ee24c3da71166cafe3ac589e5a96c89029b9ec689a6679629764f7498f0c1303
+tensor=Layer { index: 4, tensor: PostMlpNorm }	shape=[64]	sha256=bae5ca0b68eb1c6c2888f15815c686ed5dc0709df678c658aa1b3f6a820a7a39
+tensor=Layer { index: 4, tensor: MoeRouter }	shape=[8, 64]	sha256=1af7753c00d095f0404f13a25657a0ed563e78c9dcbf761e4947ebb854199056
+tensor=Layer { index: 4, tensor: MoeRouterBias }	shape=[8]	sha256=1a3126da7a5f0bcc55c955ad4927fdce977c7c978d383778119b5eb6f574f1f9
+tensor=Layer { index: 4, tensor: MoeExpertGateBank }	shape=[8, 16, 32]	sha256=290cf0c89c940b1ee6ac0fba97af03e1ce972875d98a6d2c069c94d6a0115f6d
+tensor=Layer { index: 4, tensor: MoeExpertUpBank }	shape=[8, 16, 32]	sha256=a3c5e7f76aa9565a5f8427f43dac9466493c13fa686ee331ebaec8c27764fb6e
+tensor=Layer { index: 4, tensor: MoeExpertDownBank }	shape=[8, 32, 16]	sha256=6a16789e842f8c731586a37846e0d262dfaacca87018549d370d37b508ce0508
+tensor=Layer { index: 4, tensor: SharedMlpGate }	shape=[16, 64]	sha256=aca2082bb43cb5a6445df39a54abc3919101048a44c4c4cabc6ec5a706b5f728
+tensor=Layer { index: 4, tensor: SharedMlpUp }	shape=[16, 64]	sha256=de6759544c7e355a1287714efe1fecfc81cefe78a09e456ea568d3664c654b33
+tensor=Layer { index: 4, tensor: SharedMlpDown }	shape=[64, 16]	sha256=27ce03a63bd53deb7c6559101253534aa29134e1f80fdb5e01817d00f98feb09
+tensor=Layer { index: 5, tensor: PreAttentionNorm }	shape=[64]	sha256=fd31660a5613faada81a6dfba7e649b3b1c54af37258a583ba6621f89bebf8a4
+tensor=Layer { index: 5, tensor: HyperAttentionBase }	shape=[8]	sha256=f14d37c50510f6e9b0553e2f3f1c28c7d52fec750d0628a37fa11bb231884f4c
+tensor=Layer { index: 5, tensor: HyperAttentionFunction }	shape=[8, 256]	sha256=2769b1fb028dca9656d47fdb6ec85ed209efabb7f836829e65470a5f30090a2a
+tensor=Layer { index: 5, tensor: HyperAttentionScale }	shape=[2]	sha256=be080153cef1f221c9a9558243ddcfe7032c481b71815e8963f9d88a07994215
+tensor=Layer { index: 5, tensor: MlaQueryDown }	shape=[32, 64]	sha256=8d4529a24d2b0fb0bd24359095e8a54568b2c85a2f5b338cd17355f185b113ac
+tensor=Layer { index: 5, tensor: MlaQueryDownNorm }	shape=[32]	sha256=0adad73b6a3c567f869ef45e16c14445e4d72b52196ea6e39d36f59d444eec01
+tensor=Layer { index: 5, tensor: MlaQueryUp }	shape=[48, 32]	sha256=d9df03b406aa25cb1ddb78508690eb7be63147747c4c9e917e10ddef9030f986
+tensor=Layer { index: 5, tensor: MlaKvDown }	shape=[24, 64]	sha256=1fd09aaa6ae481060df4743b0417f0645c7e04a97dd91b492e45085212448ff1
+tensor=Layer { index: 5, tensor: MlaKvDownNorm }	shape=[16]	sha256=e789094db2bb79ab4024e1be62c3bfaa8ad524c9bc18b21f9077da4e3275b4b5
+tensor=Layer { index: 5, tensor: MlaOutput }	shape=[64, 32]	sha256=3f2b787e3fa97593dfa3f1c9ce9ac925ab67f5266fa8d8dabe564d816c97707f
+tensor=Layer { index: 5, tensor: AttentionSink }	shape=[2]	sha256=74dce20411bfb87f66a6cfbf49b30b266267ef8c39fb8cfd2cea2078cc875021
+tensor=Layer { index: 5, tensor: PreMlpNorm }	shape=[64]	sha256=a7d118b642ba770e9081a8edc4fc12d49caef772c2ac43c30fe6eabf2cc162ae
+tensor=Layer { index: 5, tensor: HyperMlpBase }	shape=[8]	sha256=eb0f562b0ee37428d79a30bda3742e6e00c835cf5fbbd69ef54077defaf862a0
+tensor=Layer { index: 5, tensor: HyperMlpFunction }	shape=[8, 256]	sha256=1aa44134d77fd174cb346aa2eac43feb1965d46a51ab0d4ab728fd2e02979593
+tensor=Layer { index: 5, tensor: HyperMlpScale }	shape=[2]	sha256=1626384e70b7d18030a09aed3f8c1226315a286d83176e3afef53b3594e8e28b
+tensor=Layer { index: 5, tensor: PostMlpNorm }	shape=[64]	sha256=b08886ff95214ee14bc604c0e3d148c7bb137cc7ba10ebebb6bb5c0b65c3807b
+tensor=Layer { index: 5, tensor: MoeRouter }	shape=[8, 64]	sha256=6657c1df796c6053a5e48ec75c44d3f6e169de68946958f4bbc58ded63f3590c
+tensor=Layer { index: 5, tensor: MoeRouterBias }	shape=[8]	sha256=85c394563f09bfb7d977ff0f5b6ba88497635256ef9a81545e5c82367f56ff4f
+tensor=Layer { index: 5, tensor: MoeExpertGateBank }	shape=[8, 16, 32]	sha256=8daead337e3e2814b0877572dcb34aa45bde7554d2f796bfdd5b6d6546207243
+tensor=Layer { index: 5, tensor: MoeExpertUpBank }	shape=[8, 16, 32]	sha256=357df07078a4bd6798579f02647c7e327ffa8112cc3c2ea09ecef080b120924a
+tensor=Layer { index: 5, tensor: MoeExpertDownBank }	shape=[8, 32, 16]	sha256=195b46bb9b3ca055b9abb35ae12591cea6ae0ded33d7c2a128463d3fb6d12efb
+tensor=Layer { index: 5, tensor: SharedMlpGate }	shape=[16, 64]	sha256=176fdb7a4d4378d971858d7c9b5723dcc777c74dfdc4e49700a3c7fc88622bf4
+tensor=Layer { index: 5, tensor: SharedMlpUp }	shape=[16, 64]	sha256=07a72c99e4c570e288c8838255a574d7258e7a907a04167e19b18ef5ea8d7adc
+tensor=Layer { index: 5, tensor: SharedMlpDown }	shape=[64, 16]	sha256=aeda4822597252dadd83b182de983bf72a5cd3a419745eb1667471c71cf280c2
+tensor=Family { family: "hy_v4_flash", key: "layers.0.self_attn.compressed_indexer.head_weight_projection.weight" }	shape=[2, 64]	sha256=f124c2b7919ff0d3783a91724f86f87736b6cd181b47f19cd7a4945c7041baea
+tensor=Family { family: "hy_v4_flash", key: "layers.0.self_attn.compressed_indexer.intra_group_ape" }	shape=[4, 16]	sha256=36d76e94b9ac44c8606f5ba3be28db295f1d30a755e3470e75b657c960898453
+tensor=Family { family: "hy_v4_flash", key: "layers.0.self_attn.compressed_indexer.key_gate_projection.weight" }	shape=[16, 16]	sha256=bf6a1479de8c36459c03e642f123c7a05d221ceb1da1d697eb1a50f96d58d5f1
+tensor=Family { family: "hy_v4_flash", key: "layers.0.self_attn.compressed_indexer.key_norm.weight" }	shape=[16]	sha256=f634f464c95b96006495eee3bc419baa4fd02469c56e8fd0a76e1f36b34b9725
+tensor=Family { family: "hy_v4_flash", key: "layers.0.self_attn.compressed_indexer.key_value_projection.weight" }	shape=[16, 16]	sha256=9e6927f485bedfe8f0820b63d8c8001dca992d820ff6bbcd0bb1bf81e6bd3d47
+tensor=Family { family: "hy_v4_flash", key: "layers.0.self_attn.compressed_indexer.query_projection.weight" }	shape=[32, 32]	sha256=7da8e45d8fbcab6a38c89ebcdc3af1eccd84b397c18b2cad9b12ee8f96d3ab4b
+tensor=Family { family: "hy_v4_flash", key: "layers.0.self_attn.compressed_indexer.token_key_norm.weight" }	shape=[16]	sha256=86bdc83aa6f979a403fe3c644e8bd3018fda176b7cfea2be109cada157e15f6f
+tensor=Family { family: "hy_v4_flash", key: "layers.0.self_attn.compressed_indexer.token_key_projection.weight" }	shape=[16, 64]	sha256=43e350d9c25ef36a795c52772c571706632f184143138cb790810a3b7f020b11
+tensor=Family { family: "hy_v4_flash", key: "layers.0.self_attn.kv_b_proj.weight" }	shape=[64, 16]	sha256=1534805cd246d9d1f0562b5417acdf1aafa0667d491b1fcbf7236e11049b8d9a
+tensor=Family { family: "hy_v4_flash", key: "layers.0.self_attn.linear_gate.weight" }	shape=[32, 64]	sha256=ae48922eb6e4ef3ac2c720e2636751033fc82690ec73c8ddda19a54213e5eb68
+tensor=Family { family: "hy_v4_flash", key: "layers.0.self_attn.post_proj_norm.weight" }	shape=[64]	sha256=f17c16525c433eed1978d2c729bdfa2cc4b73a6881c3fabf404a6f8730403e9a
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.head_vocab_sizes" }	shape=[4]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.key_projs.0.bias" }	shape=[64]	sha256=283a8f851392bbb31cddd392c4c7a2f312c7f7c56860a48f27069aa24e9778f0
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.key_projs.0.weight" }	shape=[64, 32]	sha256=241a29508e810ec05fc6e35eb61b68e486e781778a9114ee0b1703f0a2723167
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.key_projs.1.bias" }	shape=[64]	sha256=dc70f2d15ebf8d9cec8848a0fdf0f5815ba84f85986ddc197d10552b8febbf19
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.key_projs.1.weight" }	shape=[64, 32]	sha256=eca68c892cc8a87c1d8fc620d7a8dafe55af448a6a66a0bc6f6a12007600f062
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.key_projs.2.bias" }	shape=[64]	sha256=3d4011a960750924473bad3c63226d5c6d978687db5d8344f357661136d167ef
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.key_projs.2.weight" }	shape=[64, 32]	sha256=8fce4c8a528702059e13d8e6e728651d3ddbaa76eb0315dd12d5afc99b7f29bc
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.key_projs.3.bias" }	shape=[64]	sha256=3def0ac93d0ef89eafcfe4a1163ea684f3c68807f4665874ef5a03243ea0416c
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.key_projs.3.weight" }	shape=[64, 32]	sha256=239753e9fc33c411228e064c30b1be8ab2f812e0f8299bf15f47cf7308bfbc06
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.lookup_per_head_norms.0.weight" }	shape=[8]	sha256=b988a8a9478dd84212548e7d5f05a331d6c998bc214eb8a582b15966a388d633
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.lookup_per_head_norms.1.weight" }	shape=[8]	sha256=e379e71fad2bb12c8d356304957fa76c5c2cda262317e690c9b011896b546640
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.lookup_per_head_norms.2.weight" }	shape=[8]	sha256=5b94bf73b7d20ff573e9b5d2b6da1e046e63882ad9565529dc0f3d510d049cd4
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.lookup_per_head_norms.3.weight" }	shape=[8]	sha256=800528a04197aed3d0bc6c7b82c99eb050cf0df6d810f67dad04eff6520033eb
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.lookup_table" }	shape=[28]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.multi_head_embedding.embedding.weight" }	shape=[138, 8]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.multi_head_embedding.embedding.weight_scale" }	shape=[138]	sha256=5a1d61fc7c9b3ac67adcae4faeefb5d65fe8334e6a66884b437a6088d1f913b8
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.norm_key.0.weight" }	shape=[64]	sha256=93681801bdf2e8bced18033b377686ed4bd0cff175ef9e7a4ac625ffb99f2a6d
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.norm_key.1.weight" }	shape=[64]	sha256=72e92c0cefc9ada935059647fb7131b89004039ee08d376ef8f91dfb7f5b75d1
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.norm_key.2.weight" }	shape=[64]	sha256=b96dfaa962098a3faeebf37d6e34a4e437e9425a51d5a4c331ffd92a815f8aa8
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.norm_key.3.weight" }	shape=[64]	sha256=15d2c9f1ae9cf5d444fd000c6f9507f4f8f285b3d15e6fd39a1617527b8320c6
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.norm_query.0.weight" }	shape=[64]	sha256=4f447021baa2be0502f0b62e7b5f9c4416da218fc68e6ad657e743987c927cd1
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.norm_query.1.weight" }	shape=[64]	sha256=51af16820581a6e557da8e8b6a7843ebbbc4d53d890283e544bab4570bfb65b4
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.norm_query.2.weight" }	shape=[64]	sha256=88c284cadebc009007337d663dd9512d815caaf964242763bc2b59379b8e3958
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.norm_query.3.weight" }	shape=[64]	sha256=020953fba0bbc5faa2c8c5f0c25e62310c2685c0d2563cd5c2424e6916afd9a1
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.unified_per_hc_scales.0" }	shape=[64]	sha256=78a33d7b259de6e81fdcc5634fdb4addec80e95bcce4784427cf8d2ef278d8c1
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.unified_per_hc_scales.1" }	shape=[64]	sha256=462b8b2633da36339b54cc013519f20882d85e4a339d194bdda77704795c277d
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.unified_per_hc_scales.2" }	shape=[64]	sha256=b44371dab5cf698cd5d690dc2b86a3f0812c092247dc5eef4da79b1166937880
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.unified_per_hc_scales.3" }	shape=[64]	sha256=71fb4c5b530e7f694a363d286c85ed16f15c8cfc89abefd56b79f415fa2df948
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.unified_pre_gamma" }	shape=[64]	sha256=0a9addfaa5b51e2ea2defa2d6efc9013842b1683e42012d2ba100a973413e9ba
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.value_proj.bias" }	shape=[64]	sha256=7f63784522a9ff2473d3aa17d5021bb5bafb695d1db39cc17150507c783eb15c
+tensor=Family { family: "hy_v4_flash", key: "layers.1.engram_layer.value_proj.weight" }	shape=[64, 32]	sha256=49d8d253402dd6f76ea00e601d0f54f197606be336150ec6d7f449252289a1d1
+tensor=Family { family: "hy_v4_flash", key: "layers.1.mlp.routed_expert_down_proj.weight" }	shape=[32, 64]	sha256=f903e14f7fe00a1be9619f72f78c2a811aee8b9778e6181f66fca110c6ac0715
+tensor=Family { family: "hy_v4_flash", key: "layers.1.mlp.routed_expert_up_proj.weight" }	shape=[64, 32]	sha256=be552351ad232ede8ebd9109a586632f0f20e34fb61039212fc07a58fd2bfd55
+tensor=Family { family: "hy_v4_flash", key: "layers.1.self_attn.compressed_indexer.head_weight_projection.weight" }	shape=[2, 64]	sha256=1c1b3f5c73e65e53ffce7013a92f602c2e120552cf0c721383d313dec41cd686
+tensor=Family { family: "hy_v4_flash", key: "layers.1.self_attn.compressed_indexer.intra_group_ape" }	shape=[4, 16]	sha256=9fabd2a1b7d97df3baae2b36b232cce0649ef63fd8d861fa9f935a2e6b4bcea1
+tensor=Family { family: "hy_v4_flash", key: "layers.1.self_attn.compressed_indexer.key_gate_projection.weight" }	shape=[16, 16]	sha256=bffde57f8bfa291cf747642ba9efd7c7d2d087b3780078235c4003e41ec70687
+tensor=Family { family: "hy_v4_flash", key: "layers.1.self_attn.compressed_indexer.key_norm.weight" }	shape=[16]	sha256=b3436b056ba91fb9faee4d7c3fabff3a24cc45f0062aa7a1a1885ff5ba72db74
+tensor=Family { family: "hy_v4_flash", key: "layers.1.self_attn.compressed_indexer.key_value_projection.weight" }	shape=[16, 16]	sha256=f5b6b86256531dad46476d6d2a52740159a4b99c1fd336119ab572166e94c106
+tensor=Family { family: "hy_v4_flash", key: "layers.1.self_attn.compressed_indexer.query_projection.weight" }	shape=[32, 32]	sha256=75f4420e5b4c2d4837c5137c4ae37c4c8ed598d2c5c0876567410e59298f51b4
+tensor=Family { family: "hy_v4_flash", key: "layers.1.self_attn.compressed_indexer.token_key_norm.weight" }	shape=[16]	sha256=b97bb12654c979b277401c1deb0e68df10b39b002575c44348366eb7ad566c23
+tensor=Family { family: "hy_v4_flash", key: "layers.1.self_attn.compressed_indexer.token_key_projection.weight" }	shape=[16, 64]	sha256=7d5f12fe2f46590123b9ca93bb472999533d7602e0b365dfed8f5f0d8f2cbb4a
+tensor=Family { family: "hy_v4_flash", key: "layers.1.self_attn.kv_b_proj.weight" }	shape=[64, 16]	sha256=7936f91d798c706d153755411141c25892d57968ca8eee78d270cef0c2770a2f
+tensor=Family { family: "hy_v4_flash", key: "layers.1.self_attn.linear_gate.weight" }	shape=[32, 64]	sha256=a98449189073a23d3f72d8bcf30908d1cfcb533423b16808ca1c476ba5342292
+tensor=Family { family: "hy_v4_flash", key: "layers.1.self_attn.post_proj_norm.weight" }	shape=[64]	sha256=db4c243fc2e823c21d22a36f016bebf5acdfcae9d2a1d644a0999b0f74881c1e
+tensor=Family { family: "hy_v4_flash", key: "layers.2.mlp.routed_expert_down_proj.weight" }	shape=[32, 64]	sha256=d13264d3c40a64ef6cc05571dadc9b6f97783a1e5a1ef11fedac29c87900918a
+tensor=Family { family: "hy_v4_flash", key: "layers.2.mlp.routed_expert_up_proj.weight" }	shape=[64, 32]	sha256=25ddb4ede73f0df602ba0e384c6a50502be2ab1573c69de6a8061404b9d8db7f
+tensor=Family { family: "hy_v4_flash", key: "layers.2.self_attn.kv_b_proj.weight" }	shape=[224, 16]	sha256=bbacc61b78499ca0a144c7c2f56ac07414da532e7ad2425095103bb62a8eda3c
+tensor=Family { family: "hy_v4_flash", key: "layers.2.self_attn.linear_gate.weight" }	shape=[160, 64]	sha256=8bc9da22208d14653393f98a605e654ee9fc76da1a762e2819bbda13941863dc
+tensor=Family { family: "hy_v4_flash", key: "layers.2.self_attn.post_proj_norm.weight" }	shape=[64]	sha256=5409e785fc3734b14d9704b2d3bb09161f55966dda746fa3e3f9f77ce297949d
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.head_vocab_sizes" }	shape=[4]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.key_projs.0.bias" }	shape=[64]	sha256=45c64ee23593ffbd5358557338ce3834bd183a24313897db8b209f5a97f96cf7
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.key_projs.0.weight" }	shape=[64, 32]	sha256=7eae3d4828a3547c6c99feb9dc575687e5906d328c13bf2064a6780e873e1baa
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.key_projs.1.bias" }	shape=[64]	sha256=7c718b5fc31935f3000fb45ad5c7cc0f73ee32da4d00dc020f9cc934b0e59047
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.key_projs.1.weight" }	shape=[64, 32]	sha256=1c732a6d6e22c90159b06221eff764e4af60364fdf38a8ba78ba482a2e46a7c2
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.key_projs.2.bias" }	shape=[64]	sha256=cb318d01f6dd1c075cdf378651987c6e2b8634f99445a201e628e43baaa92069
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.key_projs.2.weight" }	shape=[64, 32]	sha256=4c9de43d5bfde869890f7a51e05179d98a07993a3885389b6c3091f1fc3e9be1
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.key_projs.3.bias" }	shape=[64]	sha256=92b4d796bb1672ee7694b6a50bcb0813ee774837138b67b4e2da29c21d933bf6
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.key_projs.3.weight" }	shape=[64, 32]	sha256=08a1c656c10795f8fb6829c4b2858c0ad2fb826333022e0dd24fab02b7095fa1
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.lookup_per_head_norms.0.weight" }	shape=[8]	sha256=98b5e66f29b6d029f24fae4b6504d84c9e70775e2c5bbb413979bafcafd19575
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.lookup_per_head_norms.1.weight" }	shape=[8]	sha256=42d69e7f9518005bec5be08b3bda6decbefe44665eca3acbda993404c4824111
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.lookup_per_head_norms.2.weight" }	shape=[8]	sha256=18aa369f1e168cbae3c6c8975fc44888ddff770477077977cb758d7058ed327b
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.lookup_per_head_norms.3.weight" }	shape=[8]	sha256=37aec35cacc0b242984f518f81e0d05e9758b3bfdfac9b8ef00b444e5fea487b
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.lookup_table" }	shape=[28]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.multi_head_embedding.embedding.weight" }	shape=[202, 8]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.multi_head_embedding.embedding.weight_scale" }	shape=[202]	sha256=8cb16df2815750ead36c867cf41688cfdcaa252497210df04ed60d4490d1bce0
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.norm_key.0.weight" }	shape=[64]	sha256=aa5913d57e2e2813a6dbd822f31133c0af49595f5ad9572e91dc33e3abe1cbe0
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.norm_key.1.weight" }	shape=[64]	sha256=fd6f0e77cfcccd8438df2ba262e7ce516b70f7649c9bca6bf61f6bdd2dcf5f2a
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.norm_key.2.weight" }	shape=[64]	sha256=81df3638ccfea60eb515cf693b4c91094b718b4fa21c44b69a73edb2e0111a81
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.norm_key.3.weight" }	shape=[64]	sha256=f3819be1d0236b019e8b1037a6ab8f4f3a211b6f40c075ac6fb8c0b21de46c75
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.norm_query.0.weight" }	shape=[64]	sha256=a22c3b301ea4236f7d199c7ad2c7c66dcd31d8b803d57986e14a909ef83a135f
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.norm_query.1.weight" }	shape=[64]	sha256=aa05261556a806c94e7661e11b431cb63a64b6e798ffb2c35d9f6d86ffa4e82a
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.norm_query.2.weight" }	shape=[64]	sha256=6a8290c54364f7d3592ebbfac01ede32284712e1bf37e3eb84e385fb69f8ab64
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.norm_query.3.weight" }	shape=[64]	sha256=d9e22df9051fbe5e1c745739af605eb252ff0edba59a63d372f2bc4c7d05efaf
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.unified_per_hc_scales.0" }	shape=[64]	sha256=595797d19ab8d752bcec8ed6a7b5dc8c3efdeb1d82aae5adf804edb7510016d2
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.unified_per_hc_scales.1" }	shape=[64]	sha256=38136c121019dcfec0f3d5188e4e36df267d979b7e570be2b6b594b63915f236
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.unified_per_hc_scales.2" }	shape=[64]	sha256=0e67badefe164dc1a1347ea402caffc1fc962f5e3f4b03cb781050d45b795c2b
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.unified_per_hc_scales.3" }	shape=[64]	sha256=a049480edd9dfb3bc46a4a6f10795060b444e94bb65b45b5b60a33aca2880aa4
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.unified_pre_gamma" }	shape=[64]	sha256=bb02d4f2d8c3196996eef4808b29e31776042eb637a97dfd32a3bc8deda9de5f
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.value_proj.bias" }	shape=[64]	sha256=96a229e5ef782905adf942efd2c0b3b9b7d7194995c3e1ae3a08fd8c0beeb396
+tensor=Family { family: "hy_v4_flash", key: "layers.3.engram_layer.value_proj.weight" }	shape=[64, 32]	sha256=b6dd180048f974fd774b2c8f8c5c44b97a09424d6ce57dea9ffa311356159a0a
+tensor=Family { family: "hy_v4_flash", key: "layers.3.mlp.routed_expert_down_proj.weight" }	shape=[32, 64]	sha256=fc934838118045ab3d1f1aafb0a4c69f2d0b51e90976a7465cf0b34ee1ff18fc
+tensor=Family { family: "hy_v4_flash", key: "layers.3.mlp.routed_expert_up_proj.weight" }	shape=[64, 32]	sha256=5f0c7aa4a8daf94d79ee3872ffa19fd3f40a76626021f821c1ace543e10ee9cf
+tensor=Family { family: "hy_v4_flash", key: "layers.3.self_attn.kv_b_proj.weight" }	shape=[224, 16]	sha256=52bd236d2887bc732e4a2117c1f206804b20c60340d5b03ef2a5087922bd589f
+tensor=Family { family: "hy_v4_flash", key: "layers.3.self_attn.linear_gate.weight" }	shape=[160, 64]	sha256=67e81cc89d2277cd746fd6be95ecca2ec5b05b07ace17910b2dc5f71ffdfdcf9
+tensor=Family { family: "hy_v4_flash", key: "layers.3.self_attn.post_proj_norm.weight" }	shape=[64]	sha256=953f38736453a344e423d6e9a82da7de343da25698f420bbe6e74c830778e1dd
+tensor=Family { family: "hy_v4_flash", key: "layers.4.mlp.routed_expert_down_proj.weight" }	shape=[32, 64]	sha256=fb6af0b4e060fae1ae189bfa185fa5b43fe596d8f34ae91642d64f0b39144ad4
+tensor=Family { family: "hy_v4_flash", key: "layers.4.mlp.routed_expert_up_proj.weight" }	shape=[64, 32]	sha256=1f95dfc38b7a4c454c0de92d50dd064b0d20cfcaf9b351599cb5dfa7311ef2a6
+tensor=Family { family: "hy_v4_flash", key: "layers.4.self_attn.kv_b_proj.weight" }	shape=[224, 16]	sha256=76589c2e60747d25d604a85050e6b067f89ce64453b90543985f126115e36b2c
+tensor=Family { family: "hy_v4_flash", key: "layers.4.self_attn.linear_gate.weight" }	shape=[160, 64]	sha256=37a32a9bd52405bc18a07c8f27fb41beb09292b315c717d6d418ea64c4fe0a42
+tensor=Family { family: "hy_v4_flash", key: "layers.4.self_attn.post_proj_norm.weight" }	shape=[64]	sha256=8127cf8e0a1e44138ef7642bed614c5c5f6832b44ca4f75c7dbf0baaa96f8a1a
+tensor=Family { family: "hy_v4_flash", key: "layers.5.mlp.routed_expert_down_proj.weight" }	shape=[32, 64]	sha256=0c6d5a900081166337bace1c9773df4ad2b5e46ca19bc79b424d087836b9f746
+tensor=Family { family: "hy_v4_flash", key: "layers.5.mlp.routed_expert_up_proj.weight" }	shape=[64, 32]	sha256=23d03981df712cffc11276e5041a0f1c3d5113c8229155e8835e35d97a11f9c8
+tensor=Family { family: "hy_v4_flash", key: "layers.5.self_attn.compressed_indexer.head_weight_projection.weight" }	shape=[2, 64]	sha256=b59d9cda17f2070595bc985b200454a3dd095ea9695552f484c3711a256f9d98
+tensor=Family { family: "hy_v4_flash", key: "layers.5.self_attn.compressed_indexer.intra_group_ape" }	shape=[4, 16]	sha256=194582522d41fc22608365262d1a86c35c2d55f7140c448248e132dad59b6ee0
+tensor=Family { family: "hy_v4_flash", key: "layers.5.self_attn.compressed_indexer.key_gate_projection.weight" }	shape=[16, 16]	sha256=9162dcfae1faa1c596e2e5dfd13c1792ecf31834ff62c9d60eb3d353f5c261fe
+tensor=Family { family: "hy_v4_flash", key: "layers.5.self_attn.compressed_indexer.key_norm.weight" }	shape=[16]	sha256=a8ad2c37bbb2fb4890508947abeb3b1aa661820cb562ed91011b2262da7ba357
+tensor=Family { family: "hy_v4_flash", key: "layers.5.self_attn.compressed_indexer.key_value_projection.weight" }	shape=[16, 16]	sha256=6b280565430e76778bc8ce40fc82f5429658f12bac9d2d5ddecdb515e15d80ee
+tensor=Family { family: "hy_v4_flash", key: "layers.5.self_attn.compressed_indexer.query_projection.weight" }	shape=[32, 32]	sha256=34c79f91a2ce80a5f5187727056489188774567f774f0a0670816bcb8add62b1
+tensor=Family { family: "hy_v4_flash", key: "layers.5.self_attn.compressed_indexer.token_key_norm.weight" }	shape=[16]	sha256=01c68b172e8697ee2a6709d28b0baf14a34eec220cfd1ef4b627dd0568bba1bd
+tensor=Family { family: "hy_v4_flash", key: "layers.5.self_attn.compressed_indexer.token_key_projection.weight" }	shape=[16, 64]	sha256=ebd3f4cd2419f6dec6f61baee7f4b95fc2b864c4fe173fb3f03d6d4f53e923cc
+tensor=Family { family: "hy_v4_flash", key: "layers.5.self_attn.kv_b_proj.weight" }	shape=[64, 16]	sha256=56d9026bd7dabb8a8f8cf7bb85b7a3ca9be9be8ca164e885c11d79a305faab96
+tensor=Family { family: "hy_v4_flash", key: "layers.5.self_attn.linear_gate.weight" }	shape=[32, 64]	sha256=177b7b53db52bd576355b11a4738f3e9b51f2af0f51c41811976c8a821a7c5d4
+tensor=Family { family: "hy_v4_flash", key: "layers.5.self_attn.post_proj_norm.weight" }	shape=[64]	sha256=54bbec2cbf1ed374130dfba18e6644b2b03caa433a20c90c36852074d0fb5568
+decode_from=500
+checkpoint_file=model.safetensors	sha256=0c6ac319805a3547cc015b1569e6b04d33c6c2587e874e412c7576c49bc432fd
+checkpoint_file=config.json	sha256=bf277ff527149660cbec244b826705be42a55864c839d8ab8ce8aa11468c0e5f
+checkpoint_file=fixture.json	sha256=a7e9e4980e6a2fd2c6e7876799db23fac6d993221f512421b9541354b87cce46

@@ -1,0 +1,28 @@
+RUN long-whole long  2026-11-20 21:08:44
+EXIT long-whole rc=0 2026-11-20 21:10:32
+SHA long-whole 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 0 calls 9
+RUN long-c500 long --prefill-chunk 500 2026-11-20 21:10:32
+EXIT long-c500 rc=0 2026-11-20 21:12:25
+SHA long-c500 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 500 calls 13
+RUN long-c1000 long --prefill-chunk 1000 2026-11-20 21:12:25
+EXIT long-c1000 rc=0 2026-11-20 21:14:13
+SHA long-c1000 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 1000 calls 11
+RUN long-c2048 long --prefill-chunk 2048 2026-11-20 21:14:13
+EXIT long-c2048 rc=0 2026-11-20 21:15:55
+SHA long-c2048 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 2048 calls 10
+RUN long-c511 long --prefill-chunk 511 2026-11-20 21:15:55
+EXIT long-c511 rc=0 2026-11-20 21:17:48
+SHA long-c511 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 511 calls 13
+RUN long-split-c512 long-split --prefill-chunk 512 2026-11-20 21:17:48
+EXIT long-split-c512 rc=0 2026-11-20 21:19:49
+SHA long-split-c512 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 512 calls 76
+RUN long-split-c7 long-split --prefill-chunk 7 2026-11-20 21:19:49
+EXIT long-split-c7 rc=0 2026-11-20 21:22:59
+SHA long-split-c7 36feabb75c39233b6b432444a06f203767c7dfaaa76519f08089099da9e49b54 chunk 7 calls 364
+RUN chat-forced chat --force-selections /home/avifenesh/hy4flash/pr7/tapes/chat-f64 2026-11-20 21:22:59
+EXIT chat-forced rc=0 2026-11-20 21:24:23
+SHA chat-forced 78376ab86fd667594370c1a10bb8326e28b1c348a33b98066f47a6a0c9f47972 chunk 0 calls 4
+RUN chat-c5 chat --prefill-chunk 5 2026-11-20 21:24:23
+EXIT chat-c5 rc=0 2026-11-20 21:25:51
+SHA chat-c5 78376ab86fd667594370c1a10bb8326e28b1c348a33b98066f47a6a0c9f47972 chunk 5 calls 11
+ROUTE_CHECK_DONE 2026-11-20 21:25:51
