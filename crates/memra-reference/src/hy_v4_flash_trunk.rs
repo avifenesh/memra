@@ -82,12 +82,23 @@ fn id(name: &str) -> TensorId {
 /// Every tensor of the text program in the pack's census (`expected_census`), with its storage.
 /// The tower (`vit.*`) and the DFly2 drafter (`model.dfly_layers.*`) are not read.
 pub fn checkpoint_tensors(hy: &HyV4FlashConfig) -> Result<Vec<CheckpointTensor>, ReferenceError> {
+    census_tensors(hy, |name| {
+        !name.starts_with("vit.") && !name.starts_with("model.dfly_layers.")
+    })
+}
+
+/// Every DFly2 drafter tensor in the pack's census (`model.dfly_layers.*`), with its storage.
+pub fn dfly_tensors(hy: &HyV4FlashConfig) -> Result<Vec<CheckpointTensor>, ReferenceError> {
+    census_tensors(hy, |name| name.starts_with("model.dfly_layers."))
+}
+
+fn census_tensors(
+    hy: &HyV4FlashConfig,
+    keep: impl Fn(&str) -> bool,
+) -> Result<Vec<CheckpointTensor>, ReferenceError> {
     let census = pack::expected_census(hy)
         .map_err(|_| invalid(None, "the hy_v4_flash census derives from the config"))?;
-    let text: BTreeMap<&String, _> = census
-        .iter()
-        .filter(|(name, _)| !name.starts_with("vit.") && !name.starts_with("model.dfly_layers."))
-        .collect();
+    let text: BTreeMap<&String, _> = census.iter().filter(|(name, _)| keep(name)).collect();
     let mut consumed = BTreeSet::new();
     let mut out = Vec::new();
     for (name, spec) in &text {
@@ -534,6 +545,34 @@ pub fn fixture_split(
     })
 }
 
+/// The tiny DFly2 drafter fixture: the drafter tensors of [`pack::TINY_DFLY_CONFIG`]'s census,
+/// seeded and stored in the artifact's classes (`dfly.safetensors`), and the values the reference
+/// reads back. The trunk is [`fixture`]'s: the drafter's config differs from the tiny config only
+/// in its `dfly_*` keys, its `speculative_config` and the drafter's entries of the ModelOpt map.
+pub struct DflyFixture {
+    pub hy: HyV4FlashConfig,
+    pub weights: ReferenceWeights,
+    pub safetensors: Vec<u8>,
+}
+
+pub fn dfly_fixture() -> Result<DflyFixture, ReferenceError> {
+    let hy = pack::tiny_dfly_config()
+        .map_err(|_| invalid(None, "the hy_v4_flash tiny drafter config compiles"))?;
+    let mut weights = ReferenceWeights::new();
+    let mut entries = Vec::new();
+    for tensor in dfly_tensors(&hy)? {
+        let values = fixture_values(&tensor)?;
+        let (stored, read) = encode(&tensor, &values)?;
+        entries.extend(stored);
+        weights.extend(read);
+    }
+    Ok(DflyFixture {
+        hy,
+        weights,
+        safetensors: safetensors_bytes(&entries),
+    })
+}
+
 /// The tiny gate's variants beside [`fixture`], each pinned to its own oracle: the request split
 /// below one limit, so its decode steps cross it.
 ///
@@ -928,12 +967,52 @@ pub struct TraceCall {
     pub engram_rows: Vec<(u32, Vec<u64>)>,
 }
 
+/// What the DFly2 drafter reads of a request's target state (`crate::hy_v4_flash_dfly`): every
+/// position's final normed hidden row (`[tokens, hidden]`, f64), and per requested layer its
+/// cache rows (`[tokens, kv_lora + rope]`: normalized latent, rotated rope key) and, per
+/// position, the slots its attention read (ascending).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DraftInputs {
+    pub hidden: Vec<f64>,
+    pub kv: Vec<(u32, Vec<f64>)>,
+    pub history: Vec<(u32, Vec<Vec<usize>>)>,
+}
+
+/// [`execute_traced`] that also returns the drafter's inputs on `layers` (indexed layers).
+pub fn execute_for_draft(
+    plan: &ModelPlan,
+    weights: &ReferenceWeights,
+    token_ids: &[u32],
+    decode_from: Option<usize>,
+    layers: &[u32],
+) -> Result<(ReferenceOutput, Vec<TraceCall>, DraftInputs), ReferenceError> {
+    let mut capture = DraftInputs::default();
+    let (out, trace) = run(
+        plan,
+        weights,
+        token_ids,
+        decode_from,
+        Some((layers, &mut capture)),
+    )?;
+    Ok((out, trace, capture))
+}
+
 /// [`execute`] and every call's selections, for the gate that compares selections before logits.
 pub fn execute_traced(
     plan: &ModelPlan,
     weights: &ReferenceWeights,
     token_ids: &[u32],
     decode_from: Option<usize>,
+) -> Result<(ReferenceOutput, Vec<TraceCall>), ReferenceError> {
+    run(plan, weights, token_ids, decode_from, None)
+}
+
+fn run(
+    plan: &ModelPlan,
+    weights: &ReferenceWeights,
+    token_ids: &[u32],
+    decode_from: Option<usize>,
+    mut capture: Option<(&[u32], &mut DraftInputs)>,
 ) -> Result<(ReferenceOutput, Vec<TraceCall>), ReferenceError> {
     let numerics = plan
         .hy_v4_flash
@@ -1051,12 +1130,63 @@ pub fn execute_traced(
         let collapsed =
             ops::hyper_head(&numerics, plan.output_norm, &exit.view(), &streams, hidden);
         let normed = ops::rms_norm(&collapsed, &final_norm, plan.output_norm);
+        if let Some((want, cap)) = capture.as_mut() {
+            cap.hidden.extend_from_slice(&normed);
+            for &layer in want.iter() {
+                let AttentionPlan::HyV4(a) = &plan.layers[layer as usize].attention else {
+                    return Err(invalid(
+                        Some(layer),
+                        "a drafter target layer is a Hy4 attention",
+                    ));
+                };
+                let HyV4AttentionKind::Indexed(index) = a.kind else {
+                    return Err(invalid(Some(layer), "a drafter target layer is indexed"));
+                };
+                let lists = call
+                    .recalled
+                    .iter()
+                    .find(|(l, _)| *l == layer)
+                    .map(|(_, lists)| lists);
+                let slot = match cap.history.iter().position(|(l, _)| *l == layer) {
+                    Some(i) => i,
+                    None => {
+                        cap.history.push((layer, Vec::new()));
+                        cap.history.len() - 1
+                    }
+                };
+                for (q, s) in (start..end).enumerate() {
+                    let groups = lists.map(|l| l[q].as_slice());
+                    cap.history[slot]
+                        .1
+                        .push(crate::hy_v4_flash_dfly::attended_slots(
+                            groups,
+                            index.pool as usize,
+                            s,
+                        ));
+                }
+            }
+        }
         logits.extend(
             ops::linear(&normed, &head, hidden, vocab)
                 .into_iter()
                 .map(|v| v as f32),
         );
         trace.push(call);
+    }
+    if let Some((want, cap)) = capture.as_mut() {
+        for &layer in want.iter() {
+            let cache = &caches[layer as usize];
+            let AttentionPlan::HyV4(a) = &plan.layers[layer as usize].attention else {
+                unreachable!("checked per call")
+            };
+            let (kv_lora, rope) = (a.kv_lora_rank as usize, a.qk_rope_head_dim as usize);
+            let mut rows = Vec::with_capacity(cache.slots() * (kv_lora + rope));
+            for s in 0..cache.slots() {
+                rows.extend_from_slice(&cache.latent[s * kv_lora..(s + 1) * kv_lora]);
+                rows.extend_from_slice(&cache.k_rope[s * rope..(s + 1) * rope]);
+            }
+            cap.kv.push((layer, rows));
+        }
     }
     let state = ReferenceState {
         layers: caches

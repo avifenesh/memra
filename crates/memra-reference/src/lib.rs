@@ -6,6 +6,7 @@
 pub mod deepseek_v41;
 pub mod hidden_trace;
 pub mod hy_v4_flash;
+pub mod hy_v4_flash_dfly;
 pub mod hy_v4_flash_trunk;
 pub mod mimo_audio;
 pub mod mimo_audio_attn;

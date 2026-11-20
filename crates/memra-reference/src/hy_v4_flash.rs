@@ -99,7 +99,7 @@ pub struct IndexerWeights<'a> {
 /// Rotate the trailing `rope` dims of a row in place: adjacent pairs `(2i, 2i+1)` turn by
 /// `position * base^(-2i/rope)` (transformers `apply_rotary_pos_emb`; text positions on all three
 /// M-RoPE axes make the interleaved recomposition a no-op).
-fn rope_in_place(row: &mut [f64], position: u32, base: f64) {
+pub(crate) fn rope_in_place(row: &mut [f64], position: u32, base: f64) {
     let dims = row.len();
     for i in 0..dims / 2 {
         let freq = (position as f64) * base.powf(-((2 * i) as f64) / dims as f64);

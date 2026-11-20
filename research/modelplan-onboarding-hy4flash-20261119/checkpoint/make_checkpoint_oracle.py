@@ -110,6 +110,10 @@ ap.add_argument("out")
 ap.add_argument("--dtype", choices=["f64", "f32", "bf16", "bf16a", "bf16x2a"], default="f64")
 ap.add_argument("--dump-layers", default="")
 ap.add_argument("--layers", type=int, default=0, help="diagnostic: run only the first N decoder layers")
+ap.add_argument("--dump-dfly", default="",
+                help="step 10: write the DFly2 drafter's target inputs (final hidden rows, the cached latent "
+                     "and rope key of --dfly-layers) to this directory")
+ap.add_argument("--dfly-layers", default="25,29,33,37,41")
 ap.add_argument("--force-selections", default="",
                 help="band backend: take every router and indexer pick from this tape (the f64 oracle's)")
 a = ap.parse_args()
@@ -426,6 +430,10 @@ def recording_indexer(self, hidden_states, q_resid, attention_mask, position_ids
     try:
         out = indexer_forward(self, hidden_states, q_resid, attention_mask, position_ids, indexer_position_ids,
                               cache, kv_length)
+        if self.layer_idx in DFLY_LAYERS:
+            # the keys the layer's attention reads per query (the indexer's mask: causal, narrowed to
+            # the recalled groups past the budget), which the drafter's history is
+            DFLY_HISTORY[self.layer_idx].extend(attended_keys(out, hidden_states.shape[1]))
     finally:
         picks, RECORD["indexer"] = RECORD["indexer"], None
         RECORD["force_indexer"] = None
@@ -441,6 +449,18 @@ def recording_indexer(self, hidden_states, q_resid, attention_mask, position_ids
         CALL["recalled"].append((self.layer_idx, torch.sort(groups, dim=-1).values.to(torch.int32),
                                  logits[0].to(REAL_F32)))
     return out
+
+
+DFLY_LAYERS = [int(x) for x in a.dfly_layers.split(",")] if a.dump_dfly else []
+DFLY_HISTORY = {layer: [] for layer in DFLY_LAYERS}
+
+
+def attended_keys(mask, seq):
+    """Per query of the call, the key slots its attention reads under `mask` ([1, 1, q, kv])."""
+    m = mask[0, 0]
+    assert m.shape[0] == seq
+    keep = m if m.dtype == torch.bool else m > torch.finfo(m.dtype).min / 2
+    return [torch.nonzero(row).flatten().to(torch.int32) for row in keep]
 
 
 model_mod.HYV4FlashCompressedIndexer.forward = recording_indexer
@@ -566,6 +586,7 @@ logits_sha = hashlib.sha256()
 indexer_index, engram_index = [], []
 sel_off = lg_off = 0
 argmax = []
+DFLY_HIDDEN = []
 
 
 def fnv1a(text):
@@ -590,6 +611,8 @@ with torch.no_grad():
             ngram_tokens=ngram[:, start:end],
             engram_mask=emask[:, start:end],
         ).last_hidden_state
+        if a.dump_dfly:
+            DFLY_HIDDEN.append(hidden[0].to(torch.float64).clone())
         # the head in F32 (`enable_lm_head_fp32`), float64 in the oracle; logits rounded once to f32
         rows = (hidden[0].to(lm_head.dtype) @ lm_head.T).to(REAL_F32).contiguous()
         data = rows.numpy().astype("<f4").tobytes()
@@ -621,6 +644,42 @@ if FORCED is not None:
     want = {("indexer",) + k for k in FORCED["indexer"]} | {("router",) + k for k in FORCED["router"]}
     assert FORCED["used"] == want, f"{len(want - FORCED['used'])} forced records were never consumed"
 lf.close()
+if a.dump_dfly:
+    # The drafter reads, per target layer, what the attention cached: the normalized latent
+    # (`k_pass`, the cache's keys) and the rotated rope key (`k_rot`, its values), and the final
+    # normed hidden row (the head's input) of the source position. Written in the backend's
+    # values widened to float64, row-major, little-endian.
+    os.makedirs(a.dump_dfly, exist_ok=True)
+    rows = torch.cat(DFLY_HIDDEN, dim=0)
+    assert rows.shape == (ids.shape[1], cfg.hidden_size)
+    rows.numpy().astype("<f8").tofile(os.path.join(a.dump_dfly, "hidden.f64"))
+    dump = {"format": "memra-hy4f-dfly-target-v1", "request": req["name"], "positions": int(ids.shape[1]),
+            "hidden": {"file": "hidden.f64", "shape": list(rows.shape),
+                       "sha256": hashlib.sha256(rows.numpy().astype("<f8").tobytes()).hexdigest()},
+            "layers": []}
+    for layer in [int(x) for x in a.dfly_layers.split(",")]:
+        k_pass, k_rot = cache.layers[layer].keys[0, 0], cache.layers[layer].values[0, 0]
+        assert k_pass.shape == (ids.shape[1], cfg.kv_lora_rank), (layer, k_pass.shape)
+        assert k_rot.shape == (ids.shape[1], cfg.qk_rope_head_dim), (layer, k_rot.shape)
+        kv = torch.cat([k_pass, k_rot], dim=-1).to(torch.float64).contiguous().numpy().astype("<f8")
+        name = f"kv-{layer:02d}.f64"
+        kv.tofile(os.path.join(a.dump_dfly, name))
+        hist = DFLY_HISTORY[layer]
+        assert len(hist) == ids.shape[1], (layer, len(hist))
+        for p, keys in enumerate(hist):
+            assert keys.numel() and int(keys[-1]) == p and bool((keys[1:] > keys[:-1]).all()), (layer, p)
+        offsets = np.cumsum([0] + [k.numel() for k in hist]).astype("<i8")
+        flat = torch.cat(hist).numpy().astype("<i4")
+        hname = f"history-{layer:02d}.i32"
+        flat.tofile(os.path.join(a.dump_dfly, hname))
+        offsets.tofile(os.path.join(a.dump_dfly, f"history-{layer:02d}.offsets.i64"))
+        dump["layers"].append({"layer": layer, "file": name, "shape": list(kv.shape),
+                               "sha256": hashlib.sha256(kv.tobytes()).hexdigest(),
+                               "history_file": hname, "history_offsets_file": f"history-{layer:02d}.offsets.i64",
+                               "history_sha256": hashlib.sha256(flat.tobytes()).hexdigest(),
+                               "history_dense_positions": sum(int(k.numel() == p + 1) for p, k in enumerate(hist))})
+    json.dump(dump, open(os.path.join(a.dump_dfly, "target.json"), "w"), indent=1)
+    log(f"dfly target inputs written to {a.dump_dfly}")
 sel_f.close()
 lg_f.close()
 rs_f.close()

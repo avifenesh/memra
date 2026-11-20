@@ -13,6 +13,9 @@ edition = "2024"
 memra-gguf = { workspace = true }
 memra-tokenizer = { workspace = true }
 libloading = "0.9"
+# the DFly2 runner's tapes (src/bin/hy4f_dfly.rs); both already in the workspace lockfile
+serde_json = "1"
+sha2 = "0.10"
 
 [dev-dependencies]
 serde_json = "1"
