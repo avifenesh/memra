@@ -502,11 +502,11 @@ impl HyV4FlashConfig {
         let index_head_dim = u("index_head_dim")?;
         let index_topk = u("index_topk")?;
         let index_pool = u("compressed_indexer_compress_ratio")?;
-        if index_pool == 0 || index_topk % index_pool != 0 {
+        if index_pool == 0 || index_topk % index_pool != 0 || index_topk < index_pool {
             return Err(refuse(
                 "compressed_indexer_compress_ratio",
                 &index_pool,
-                "index_topk must be a whole number of pools",
+                "index_topk must be a whole, non-zero number of pools",
             ));
         }
         for (key, want) in [

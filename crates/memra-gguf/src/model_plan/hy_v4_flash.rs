@@ -71,8 +71,8 @@ pub enum GroupTieOrder {
     /// CUDA `torch.topk` (PyTorch v2.15.0 `aten/src/ATen/native/cuda/TensorTopK.cu`, both
     /// `sbtopk::gatherTopK` and `mbtopk::gatherTopK`): every value strictly above the k-th, then
     /// the values equal to it in ascending index order until k. Values compare by their radix
-    /// key, so `-0.0` sorts below `0.0`. The vendor program runs there; CPU `topk` leaves the
-    /// order of ties unspecified.
+    /// key (`TopKTypeConfig<float>::convert` in `SortingRadixSelect.cuh`), so `-0.0` sorts below
+    /// `0.0`. The vendor program runs there; CPU `topk` leaves the order of ties unspecified.
     LowerIndexFirst,
 }
 

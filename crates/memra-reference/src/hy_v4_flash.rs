@@ -13,7 +13,7 @@
 //!
 //! Activations are row-major `[tokens, width]` (`[tokens, streams, width]` for the streams).
 //! Weights are `[out, in]`. Gated by research/modelplan-onboarding-hy4flash-20261119/modules/
-//! (a float64 run of the pinned transformers code, compared to 1e-12).
+//! and indexpool/ (float64 runs of the pinned transformers code, compared to 1e-12).
 
 use memra_gguf::model_plan::{
     ActivationPlan, GroupTieOrder, HyV4AttentionKind, HyV4AttentionPlan, HyV4FlashNumerics,
@@ -161,7 +161,9 @@ pub fn index_pool_groups(
 /// and `hw = head_weight_projection(x) * heads^-0.5 * head_dim^-0.5`. A group that has not closed
 /// before the query (`g >= t / pool`, its own group included) reads `-inf`. Queries and keys are
 /// the same `tokens` (a prefill); `x` is the attention input, `q_resid` the normalized
-/// `q_a_proj` output.
+/// `q_a_proj` output. Queries and group starts read one position grid: text positions, where
+/// transformers' `indexer_position_ids` equal `position_ids` (they part only on vision spans,
+/// which this program refuses).
 #[allow(clippy::too_many_arguments)]
 pub fn index_pool_logits(
     plan: &IndexPoolPlan,
@@ -220,8 +222,10 @@ pub fn index_pool_logits(
 pub fn group_top_k(row: &[f64], k: usize, ties: GroupTieOrder) -> Vec<usize> {
     let mut order: Vec<usize> = (0..row.len()).collect();
     match ties {
-        // A stable sort on the value keeps ascending index among equal values; `total_cmp`
-        // orders `-0.0` below `0.0`, as the CUDA radix key does.
+        // A stable sort on the value keeps ascending index among equal values. On finite and
+        // infinite values `total_cmp` orders as the CUDA radix key does (`-0.0` below `0.0`,
+        // `TopKTypeConfig<float>::convert`); the radix key puts every NaN on top, which a
+        // logit never is.
         GroupTieOrder::LowerIndexFirst => order.sort_by(|a, b| row[*b].total_cmp(&row[*a])),
     }
     order.truncate(k);
@@ -245,8 +249,11 @@ pub fn index_pool_recall(plan: &IndexPoolPlan, logits: &[f64], tokens: usize) ->
         "top_k {} is whole groups",
         plan.top_k
     );
+    assert_eq!(logits.len() % tokens, 0, "logits [tokens, groups]");
     let groups = logits.len() / tokens;
-    let keep = (plan.top_k / plan.pool) as usize - 1;
+    let keep = ((plan.top_k / plan.pool) as usize)
+        .checked_sub(1)
+        .expect("top_k holds at least the query's own group");
     let mut visible = vec![false; tokens * tokens];
     for t in 0..tokens {
         let mut recalled = group_top_k(
