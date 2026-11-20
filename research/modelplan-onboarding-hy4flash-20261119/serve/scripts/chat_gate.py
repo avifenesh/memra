@@ -218,21 +218,32 @@ sreq = urllib.request.Request(
                      "reasoning_effort": "none", "stream": True}).encode(),
     headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
 )
-deltas = []
+deltas, finish, done_seen, s_err = [], None, False, None
 with urllib.request.urlopen(sreq, timeout=3600) as r:
+    if r.status != 200:
+        s_err = f"HTTP {r.status}"
     for line in r:
         line = line.decode().strip()
-        if not line.startswith("data: ") or line == "data: [DONE]":
+        if line == "data: [DONE]":
+            done_seen = True
+            continue
+        if not line.startswith("data: "):
             continue
         j = json.loads(line[6:])
+        if "error" in j:
+            s_err = json.dumps(j["error"])
         for ch in j.get("choices", []):
             d = (ch.get("delta") or {}).get("content")
             if d:
                 deltas.append(d)
+            if ch.get("finish_reason"):
+                finish = ch["finish_reason"]
 blocking = chat(msgs, max_tokens=MAXT, reasoning_effort="none")
 streamed = "".join(deltas)
-report["stream"] = {"content": streamed, "chunks": len(deltas), "blocking": blocking}
-verdict("stream", streamed == blocking.get("content") and streamed != "",
+report["stream"] = {"content": streamed, "chunks": len(deltas), "finish": finish,
+                    "done": done_seen, "error": s_err, "blocking": blocking}
+verdict("stream", s_err is None and done_seen and finish == blocking.get("finish")
+        and blocking.get("status") == 200 and streamed == blocking.get("content") and streamed != "",
         f"{len(deltas)} deltas of {cid} equal the blocking answer")
 
 # ---- efforts ----
@@ -323,7 +334,9 @@ verdict("refusals", img["status"] == 400 and rf["status"] == 400,
 
 # ---- cancel: the client leaves mid-stream ----
 import http.client
-conn = http.client.HTTPConnection(addr.split(":")[0], int(addr.split(":")[1]), timeout=600)
+cancel_deadline = time.time() + 300
+# every socket read is bounded by the time left to the one deadline
+conn = http.client.HTTPConnection(addr.split(":")[0], int(addr.split(":")[1]), timeout=300)
 conn.request("POST", "/v1/completions", body=json.dumps(
     {"model": model, "prompt_ids": case_ids["poem"], "max_tokens": 400, "temperature": 0,
      "ignore_eos": True, "stream": True}),
@@ -333,12 +346,17 @@ try:
     resp = conn.getresponse()
     if resp.status != 200:
         cancel_err = f"HTTP {resp.status}"
-    deadline = time.time() + 300
     while cancel_err is None and seen < 3:
-        if time.time() > deadline:
+        left = cancel_deadline - time.time()
+        if left <= 0:
             cancel_err = "no three tokens within 300 s"
             break
-        raw_line = resp.fp.readline()
+        conn.sock.settimeout(left)
+        try:
+            raw_line = resp.fp.readline()
+        except (TimeoutError, OSError) as e:
+            cancel_err = f"read: {e}"
+            break
         if not raw_line:
             cancel_err = "the stream ended before three tokens"
             break
@@ -349,6 +367,8 @@ try:
             seen += 1
 finally:
     conn.close()
+if cancel_err is None and time.time() > cancel_deadline:
+    cancel_err = "the third token came after the 300 s deadline"
 time.sleep(5)
 after = complete(case_ids["capital"], MAXT)
 steps = [l for l in open(server_log, errors="replace") if "[hy4f-step]" in l]
