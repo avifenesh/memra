@@ -10,7 +10,7 @@ layers), 4-stream hyper-connections, a latent MoE of 512 experts and the Engram 
 | **Pack** | `hy_v4_flash` (aliases `hy-v4-flash`, `hy4-flash`), **NativeQualified** on that route (record `hy_v4_flash-gpu-1x-gb10`) and **NativeReference** on CPU (record `hy_v4_flash-reference`) <!-- support: hy_v4_flash-gpu-1x-gb10,hy_v4_flash-reference --> |
 | **Artifact** | `Avifenesh/Hy4-flash-NVFP4@f9eac06cf022cfd3dc2e8ed423922466b2adcd87`, from `tencent/Hy4-flash@d88c9dfd96ba4f2e6b92adba0b8e8f1c8696f959`: NVFP4 routed experts, FP8 128x128 attention projections, FP8 Engram rows, BF16 and F32 elsewhere; 2,429 tensors, 161.08 GB |
 | **Hardware** | one GB10 with 128 GB of unified memory: 87.5 GiB of weights resident, about 21 GB left for sessions; CPU for the reference gates |
-| **Drafters** | the checkpoint's DFly2 drafter is contract-owned and not run |
+| **Drafters** | the checkpoint's DFly2 drafter (5 blocks over the target's layers 25 to 41, MLP 9,216) drafts 5 tokens a round on the serve route; the served tokens are the undrafted route's (`MEMRA_HY4F_DRAFT`, `0` turns it off) |
 | **Input** | text; the artifact's chat template, efforts and tool-call format; image and video parts are refused |
 
 ## Serve it
@@ -28,6 +28,10 @@ MEMRA_MODELS=hy4=/path/Hy4-flash-NVFP4 memra-server
   `xhigh`); `low` and `medium` render `high`. Tool calls parse from the Hy4 call format.
 - Greedy, temperature, top-p, top-k, seeds, penalties, stop strings and `ignore_eos` are served;
   `min_p`, `response_format` and image parts are not.
+- DFly2 drafts are on by default: after every call the drafter proposes the artifact's 5 tokens,
+  the next call verifies them in one call, and the route keeps the drafts that equal its own
+  choices, so every answer is the undrafted route's token for token, greedy or sampled.
+  `MEMRA_HY4F_DRAFT=N` sets the drafts a round, `0` serves without the drafter.
 
 ## Gates
 
@@ -48,7 +52,7 @@ MEMRA_MODELS=hy4=/path/Hy4-flash-NVFP4 memra-server
 
 - Untuned: about 6 tok/s decode and 205 tok/s prefill on a 2,104-token prompt for one request;
   requests run one call at a time, so throughput does not grow with concurrency.
-- No DFly2 drafts, prefix reuse, constrained decoding or vision.
+- No prefix reuse, constrained decoding or vision; drafts are greedy for sampled requests too.
 - One GB10 only; the record covers no other device.
 
 ## Deeper sources
@@ -60,4 +64,5 @@ MEMRA_MODELS=hy4=/path/Hy4-flash-NVFP4 memra-server
   `crates/memra-engine/src/hy4f_gpu.rs`, `src/bin/hy4f_run.rs`, `cu/hy4f_gpu.cu`; GPU route:
   `src/hy4f_route.rs`, `src/bin/hy4f_gpu.rs`, `cu/hy4f_route.cu`
   ([activation format](../decisions/HY4F-GPU-ACTIVATION-FORMAT.md)); serve route:
-  `crates/memra-server/src/hy4f_serve.rs`.
+  `crates/memra-server/src/hy4f_serve.rs`; the DFly2 drafter: `crates/memra-reference/src/hy_v4_flash_dfly.rs`,
+  `crates/memra-engine/src/hy4f_route/dfly.rs`, `src/bin/hy4f_spec.rs` (step 10 of the lane).
