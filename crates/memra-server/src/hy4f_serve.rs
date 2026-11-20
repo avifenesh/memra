@@ -520,6 +520,8 @@ struct Active {
 struct Prepared {
     req: Box<Request>,
     run: RouteRun,
+    /// the memory door deferred it once (logged the first time)
+    deferred: bool,
     prompt: Vec<u32>,
     budget: usize,
     sample: Option<Dsv4SampleCfg>,
@@ -703,9 +705,13 @@ impl Book {
     /// The call scratch a session of `cap` positions may grow beyond the warm-up's, plus the
     /// margin.
     fn transient(&self, cap: usize) -> usize {
+        self.index_scratch(cap) + MARGIN_BYTES
+    }
+
+    /// The indexer's group-logit scratch a prefill chunk of a `cap`-position session holds.
+    fn index_scratch(&self, cap: usize) -> usize {
         self.chunk
             * (self.state.index_fixed_per_row + self.state.index_per_row_pos * cap.div_ceil(4) * 4)
-            + MARGIN_BYTES
     }
 
     /// Everything the running sessions and a new one book: every cache, and the largest
@@ -753,9 +759,14 @@ fn admit_session(
     if book.total(running, Some(cap)) > book.ceiling {
         return Ok(None);
     }
-    // the live check: a co-tenant may hold memory the book's ceiling assumed free
+    // the live check: a co-tenant may hold memory the book's ceiling assumed free. The scratch
+    // an earlier long request grew stays allocated (MemAvailable no longer counts it), so only
+    // the growth this session would add is needed free.
     let live = mem_available().unwrap_or(0);
-    let need = book.state(cap) + book.transient(cap) + HEADROOM_BYTES;
+    let growth = book
+        .index_scratch(cap)
+        .saturating_sub(route.index_scratch_held());
+    let need = book.state(cap) + growth + MARGIN_BYTES + HEADROOM_BYTES;
     if live < need {
         if running.is_empty() {
             return Err(Door::Engine(format!(
@@ -1074,7 +1085,22 @@ fn serve_loop(
                         fault: false,
                     });
                 }
-                Ok(None) => break,
+                Ok(None) => {
+                    if let Some(head) = pending.front_mut()
+                        && !head.deferred
+                    {
+                        head.deferred = true;
+                        eprintln!(
+                            "[admit-mem] route=hy4f-thread model={:?} request_id={:?} capacity={cap} \
+                             booked={} running={} verdict=wait",
+                            head.req.model,
+                            head.req.request_id,
+                            up.book.total(&running, Some(cap)),
+                            running.len()
+                        );
+                    }
+                    break;
+                }
                 Err(Door::Dead(why)) => {
                     eprintln!("[hy4f-serve] {why}");
                     fail_all(&mut act, health, &why);
@@ -1295,6 +1321,7 @@ fn intake(
         }) => Some(Prepared {
             req,
             run,
+            deferred: false,
             prompt,
             budget,
             sample,

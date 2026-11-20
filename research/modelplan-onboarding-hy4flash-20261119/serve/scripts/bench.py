@@ -45,16 +45,26 @@ def one(ids, n):
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
     t0 = time.time()
     stamps = []
+    done = None
     with urllib.request.urlopen(req, timeout=7200) as r:
+        if r.status != 200:
+            raise RuntimeError(f"HTTP {r.status}")
         for line in r:
             line = line.decode().strip()
             if not line.startswith("data: ") or line == "data: [DONE]":
                 continue
             j = json.loads(line[6:])
-            if "text" in j and "stop_reason" not in j and "n_tokens" not in j:
+            if "error" in j:
+                raise RuntimeError(f"in-band error: {j['error']}")
+            if "stop_reason" in j or "n_tokens" in j:
+                done = j
+            elif "text" in j:
                 stamps.append(time.time())
     t1 = time.time()
     n_out = len(stamps)
+    # a sample counts only when the stream ended with its terminal event at the full budget
+    if done is None or done.get("n_tokens") != n or n_out != n or done.get("stop_reason") != "MaxNew":
+        raise RuntimeError(f"stream ended at {n_out} of {n} tokens, terminal event {done}")
     ttft = stamps[0] - t0 if stamps else None
     dec = (n_out - 1) / (stamps[-1] - stamps[0]) if n_out > 1 and stamps[-1] > stamps[0] else None
     return {"prompt_tokens": len(ids), "tokens": n_out, "ttft_s": ttft,
