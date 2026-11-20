@@ -306,11 +306,12 @@ fn sigmoid(x: f64) -> f64 {
     1.0 / (1.0 + (-x).exp())
 }
 
-/// The first of equal maxima (`greedy_argmax`, the tapes' rule).
+/// The first of equal maxima (`greedy_argmax`, `torch.argmax`: numeric order, so `-0.0` and
+/// `0.0` are equal).
 pub fn argmax(row: &[f32]) -> u32 {
     let mut best = 0;
     for (i, v) in row.iter().enumerate() {
-        if v.total_cmp(&row[best]).is_gt() {
+        if *v > row[best] {
             best = i;
         }
     }
@@ -342,6 +343,12 @@ pub fn draft_round(
         return Err("one target layer per draft layer".into());
     }
     w.check(g)?;
+    if !(1..=16).contains(&k) {
+        return Err(format!("{k} drafts a round; DFly drafts 1 to 16"));
+    }
+    if forced.is_some_and(|f| f.len() < k) {
+        return Err("fewer forced tokens than drafts".into());
+    }
     // the query block and slot 0's fusion with the target's hidden row
     let mut x = Vec::with_capacity(rows * h);
     x.extend(embed(anchor));
@@ -529,6 +536,9 @@ pub fn draft_round(
             hrow.iter().zip(&delta).map(|(a, b)| a + b).collect()
         };
         let row: Vec<f32> = head(&corrected).into_iter().map(|v| v as f32).collect();
+        if row.iter().any(|v| !v.is_finite()) {
+            return Err(format!("draft step {s}: non-finite logits"));
+        }
         let top = argmax(&row);
         drafts.push(top);
         logits.extend(row);

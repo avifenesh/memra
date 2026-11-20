@@ -424,6 +424,7 @@ fn generate(args: &[String]) -> Result<(), String> {
             "plain_decode_tok_s": (n - 1) as f64 / plain_s, "spec_decode_tok_s": (n - 1) as f64 / spec_s,
         })
     );
+    let mut exact = plain == spec && rows_equal;
     for run in 0..bench {
         for (arm, kk) in [("plain", 0), ("spec", k)] {
             let (ids, _, acc, prefill_s, dec_s) = greedy(
@@ -442,7 +443,11 @@ fn generate(args: &[String]) -> Result<(), String> {
                        "rounds": acc.len(), "accepted": acc.iter().sum::<usize>(),
                        "ids_equal_plain": ids == plain})
             );
+            exact &= ids == plain;
         }
+    }
+    if !exact {
+        return Err("drafted greedy differs from plain greedy".into());
     }
     Ok(())
 }
