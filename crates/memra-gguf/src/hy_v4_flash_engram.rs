@@ -32,11 +32,12 @@ pub fn ngram_tokens(plan: &HyV4EngramPlan, ids: &[u32], positions: &[u32]) -> Ve
     out
 }
 
-/// `HYV4FlashModel.build_engram_inputs`' mask on text: a position owns an n-gram unless its
-/// token is the pad id. (Image and video placeholder ids are excluded too in transformers; this
-/// program refuses image parts.)
+/// `HYV4FlashModel.build_engram_inputs`' mask: a position owns an n-gram unless its token is
+/// the pad id, the image placeholder or the video placeholder (`plan.masked_token_ids`).
 pub fn engram_mask(plan: &HyV4EngramPlan, ids: &[u32]) -> Vec<bool> {
-    ids.iter().map(|id| *id != plan.pad_token_id).collect()
+    ids.iter()
+        .map(|id| !plan.masked_token_ids.contains(id))
+        .collect()
 }
 
 /// The size the multipliers are bounded by, per the plan: `max(lookup_table) + 1`.
@@ -106,10 +107,19 @@ pub fn hash_ids(
             moduli.len()
         ));
     }
-    if moduli.iter().sum::<u64>() != plan.table_rows {
+    if let Some(m) = moduli
+        .iter()
+        .find(|m| **m == 0 || i64::try_from(**m).is_err())
+    {
+        return Err(format!("engram modulus {m} is not a positive int64"));
+    }
+    let rows = moduli
+        .iter()
+        .try_fold(0u64, |acc, m| acc.checked_add(*m))
+        .ok_or("engram moduli overflow u64")?;
+    if rows != plan.table_rows {
         return Err(format!(
-            "engram moduli sum to {}, the table has {} rows",
-            moduli.iter().sum::<u64>(),
+            "engram moduli sum to {rows}, the table has {} rows",
             plan.table_rows
         ));
     }

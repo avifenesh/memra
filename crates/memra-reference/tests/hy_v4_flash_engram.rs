@@ -6,13 +6,14 @@
 //! - `artifact_hash`: the integer program on the artifact's own `config.json` and lookup table.
 //!   The pack compiles the four Engram plans from the same config; memra_gguf's hashing must give
 //!   the pinned NumPy multipliers and the pinned hash ids bit for bit, with the table entries the
-//!   tokens read (the 14 placeholders past the table, the pad id and a packed second document
-//!   included).
+//!   tokens read (the 14 placeholders past the table, the pad id, the image and video
+//!   placeholders and a packed second document included). The mask is the pinned
+//!   `build_engram_inputs` mask.
 //! - `tiny`: the step 4 tiny model with one Engram layer, float64. The reference must give the
 //!   module's output, every decoder layer and the last hidden state to 1e-12.
 //!
 //! The red arms show that a 0-based seed, a multiplier bound from the table length, placeholders
-//! read as themselves (vLLM), swapped order moduli, the 2^-7 epsilon, one key projection for every
+//! read as themselves (vLLM), swapped order moduli, a pad-only mask, the 2^-7 epsilon, one key projection for every
 //! stream, the per-stream scales dropped and the mask ignored each fail.
 
 mod hy_v4_flash_common;
@@ -109,6 +110,10 @@ fn artifact_hash_ids_match_the_pinned_numpy_draw() {
         positions.iter().filter(|p| **p == 0).count() == 2,
         "two documents"
     );
+    assert!(
+        ids.contains(&hy.image_token_id) && ids.contains(&hy.video_token_id),
+        "the image and video placeholders"
+    );
 
     let mut checked = 0;
     for il in 0..hy.num_hidden_layers {
@@ -138,6 +143,16 @@ fn artifact_hash_ids_match_the_pinned_numpy_draw() {
         assert_eq!(ngrams, u32s(&rec["ngram_tokens"]), "n-gram tokens");
         let mask: Vec<i64> = engram_mask(&plan, &ids).iter().map(|m| *m as i64).collect();
         assert_eq!(mask, ints(&rec["mask"]), "mask");
+        // Red arm: a mask that excludes only the pad id keeps the placeholders.
+        let pad_only = HyV4EngramPlan {
+            masked_token_ids: [plan.pad_token_id; 3],
+            ..plan
+        };
+        let pad_only: Vec<i64> = engram_mask(&pad_only, &ids)
+            .iter()
+            .map(|m| *m as i64)
+            .collect();
+        assert_ne!(pad_only, ints(&rec["mask"]), "a pad-only mask matches");
         let got = hash_ids(&plan, &table, &multipliers, moduli, &ngrams).unwrap();
         assert_eq!(got, u64s(&want["hash_ids"]), "layer {il} hash ids");
 
@@ -184,6 +199,14 @@ fn artifact_hash_ids_match_the_pinned_numpy_draw() {
         wrong(
             "order moduli swapped",
             hash_ids(&plan, &table, &multipliers, &swapped, &ngrams).unwrap(),
+        );
+        // A zero modulus with the same total is refused, not a panic in the remainder.
+        let mut zeroed = moduli.clone();
+        zeroed[1] += zeroed[0];
+        zeroed[0] = 0;
+        assert!(
+            hash_ids(&plan, &table, &multipliers, &zeroed, &ngrams).is_err(),
+            "a zero modulus"
         );
         checked += 1;
     }
@@ -436,4 +459,34 @@ fn wrong_engram_programs_fail() {
     );
     let all = vec![true; inputs.mask.len()];
     red(&run(&engram_weights(&o, &table), &all, eps), "mask ignored");
+}
+
+#[test]
+#[should_panic(expected = "not finite")]
+fn a_nan_output_fails_the_comparison() {
+    let want = [1.0, 2.0, 3.0];
+    close(&[1.0, f64::NAN, 3.0], &want, "NaN");
+}
+
+#[test]
+#[should_panic(expected = "per-stream Engram vector")]
+fn a_short_engram_weight_is_refused() {
+    let o = tiny();
+    let plan = engram_plan(&tiny_plan(1));
+    let inputs = tiny_inputs(&o, &plan);
+    let table = tiny_table(&o);
+    let (input, _) = o.module("layers.1.engram_layer");
+    let mut w = engram_weights(&o, &table);
+    w.norm_query[2] = &[];
+    engram(
+        &plan,
+        &w,
+        &EngramInputs {
+            rows: &inputs.rows,
+            mask: &inputs.mask,
+        },
+        &input[0],
+        STREAMS,
+        HIDDEN,
+    );
 }
