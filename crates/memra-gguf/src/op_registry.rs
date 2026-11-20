@@ -451,7 +451,8 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
         | OperationKind::Csa2State
         | OperationKind::SinglePassHyperConnections
         | OperationKind::EngramLookup
-        // Hy4-flash: typed plan rows; no reference executor or tuned surface implements them.
+        // Hy4-flash: the reference executor (memra-reference `hy_v4_flash_trunk`) runs these;
+        // no tuned surface implements them.
         | OperationKind::HyV4GatedMlaAttention
         | OperationKind::IndexPool
         | OperationKind::HyV4State

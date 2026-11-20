@@ -7,10 +7,10 @@
 //! cached token keys four at a time through an F32 softmax gate; the residual is a 4-stream
 //! hyper-connection without Sinkhorn whose write-back magnitude is a config value; the routed
 //! experts run in a latent width; the Engram memory hashes a normalized vocabulary through a
-//! checkpoint lookup table. memra-reference (`hy_v4_flash`) implements the attention with its
-//! pooled indexer, the residual and the MoE operations module by module, gated against the
-//! pinned transformers code; no executor runs a whole plan yet and no tuned surface implements
-//! them, so every operation they emit is a registry row with no surface.
+//! checkpoint lookup table. memra-reference implements every operation (`hy_v4_flash`, module by
+//! module) and runs the whole text plan, prefill and decode (`hy_v4_flash_trunk`), gated against
+//! the pinned transformers code; no tuned surface implements them, so every operation they emit
+//! is a registry row with no surface.
 
 use super::{ActivationPlan, MoeMlpPlan, NormPlan, RopePlan, TensorPresence};
 

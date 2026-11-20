@@ -2714,6 +2714,11 @@ fn pinned_tiny_oracle(family: &str) -> Option<&'static str> {
         "deepseek_v41" => Some(include_str!(
             "../tests/fixtures/tiny-oracle/deepseek_v41.tsv"
         )),
+        // Produced by the pinned transformers code over the fixture's checkpoint image, not by
+        // memra: research/modelplan-onboarding-hy4flash-20261119/tiny/make_tiny_oracle.py.
+        "hy_v4_flash" => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/hy_v4_flash.tsv"
+        )),
         _ => None,
     }
 }
@@ -2734,6 +2739,14 @@ fn pinned_tiny_variant_oracle(family: &str, variant: &str) -> Option<&'static st
         )),
         ("deepseek_v41", "window128") => Some(include_str!(
             "../tests/fixtures/tiny-oracle/deepseek_v41-window128.tsv"
+        )),
+        // The pinned transformers code on each variant's checkpoint image, through
+        // research/modelplan-onboarding-hy4flash-20261119/tiny/make_tiny_oracle.py.
+        ("hy_v4_flash", "split250") => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/hy_v4_flash-split250.tsv"
+        )),
+        ("hy_v4_flash", "split500") => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/hy_v4_flash-split500.tsv"
         )),
         _ => None,
     }
@@ -3759,6 +3772,160 @@ mod tests {
             .is_err(),
             "pinned-oracle comparison must catch what self-comparison missed"
         );
+    }
+
+    /// hy_v4_flash: the reference's whole trunk (prefill past the 512-token window and the
+    /// indexer budget, then decode steps) matches the oracle the pinned transformers code wrote,
+    /// and the gate refuses the wrong programs a native port would most likely run: the window
+    /// off, the sink off, another indexer budget, Engram read with the 0-based layer index
+    /// (seeded with it, or placed one layer late), the router's correction bias ignored.
+    #[test]
+    fn hy_v4_flash_tiny_gate_matches_the_transformers_oracle_and_refuses_wrong_programs() {
+        use memra_gguf::model_plan::{
+            AttentionPlan, HyV4AttentionKind, MlpPlan, ResidualTopology, RouterPlan,
+        };
+        use memra_gguf::tensor_contract::TensorId;
+        let pack = model_packs::by_alias("hy_v4_flash").unwrap();
+        let plan = pack.compile_tiny_plan().unwrap();
+        let fixture = deterministic_fixture(&plan).unwrap();
+        let gate = pack.checkpoint_parity.unwrap();
+        let pinned = pinned_tiny_oracle("hy_v4_flash").unwrap();
+        let run = |plan: &memra_gguf::model_plan::ModelPlan,
+                   weights: &memra_reference::ReferenceWeights| {
+            format_reference_oracle(
+                &execute_tokens(plan, weights, &fixture.token_ids, fixture.decode_from).unwrap(),
+            )
+        };
+        let good = run(&plan, &fixture.weights);
+        assert_eq!(
+            good, pinned,
+            "the reference matches the transformers oracle to the bit"
+        );
+        oracle_matches_within_tolerance(pinned, &good, &gate).unwrap();
+        let max_abs = |text: &str| {
+            parse_oracle_rows(pinned)
+                .unwrap()
+                .iter()
+                .zip(parse_oracle_rows(text).unwrap())
+                .map(|((_, a), (_, b))| (a - b).abs())
+                .fold(0f32, f32::max)
+        };
+
+        let mut arms: Vec<(
+            &str,
+            memra_gguf::model_plan::ModelPlan,
+            memra_reference::ReferenceWeights,
+        )> = Vec::new();
+        let edit = |f: &dyn Fn(&mut memra_gguf::model_plan::LayerPlan)| {
+            let mut plan = plan.clone();
+            plan.layers.iter_mut().for_each(f);
+            plan
+        };
+        let window_off = edit(&|layer| {
+            if let AttentionPlan::HyV4(a) = &mut layer.attention
+                && let HyV4AttentionKind::Sliding { window } = &mut a.kind
+            {
+                *window = u32::MAX;
+            }
+        });
+        arms.push(("window off", window_off, fixture.weights.clone()));
+        let mut no_sink = fixture.weights.clone();
+        for (id, tensor) in no_sink.iter_mut() {
+            if matches!(
+                id,
+                TensorId::Layer {
+                    tensor: memra_gguf::tensor_contract::LayerTensor::AttentionSink,
+                    ..
+                }
+            ) {
+                tensor.data.iter_mut().for_each(|v| *v = f32::NEG_INFINITY);
+            }
+        }
+        arms.push(("sink off", plan.clone(), no_sink));
+        for budget in [128, 2048] {
+            let other = edit(&|layer| {
+                if let AttentionPlan::HyV4(a) = &mut layer.attention
+                    && let HyV4AttentionKind::Indexed(index) = &mut a.kind
+                {
+                    index.top_k = budget;
+                }
+            });
+            let name = if budget == 128 {
+                "indexer budget 128"
+            } else {
+                "indexer budget 2048"
+            };
+            arms.push((name, other, fixture.weights.clone()));
+        }
+        let zero_based_seed = edit(&|layer| {
+            if let ResidualTopology::HyV4(r) = &mut layer.residual
+                && let Some(e) = &mut r.engram
+            {
+                e.hash_seed -= 10007;
+            }
+        });
+        arms.push((
+            "engram seeded 0-based",
+            zero_based_seed,
+            fixture.weights.clone(),
+        ));
+        let mut late = plan.clone();
+        let mut late_weights = fixture.weights.clone();
+        for il in (0..late.layers.len() - 1).rev() {
+            let ResidualTopology::HyV4(r) = &mut late.layers[il].residual else {
+                unreachable!()
+            };
+            let Some(engram) = r.engram.take() else {
+                continue;
+            };
+            let ResidualTopology::HyV4(next) = &mut late.layers[il + 1].residual else {
+                unreachable!()
+            };
+            next.engram = Some(engram);
+            let from = format!("layers.{il}.engram_layer.");
+            let to = format!("layers.{}.engram_layer.", il + 1);
+            let moved: Vec<TensorId> = late_weights
+                .keys()
+                .filter(|id| matches!(id, TensorId::Family { key, .. } if key.starts_with(&from)))
+                .cloned()
+                .collect();
+            for id in moved {
+                let tensor = late_weights.remove(&id).unwrap();
+                let TensorId::Family { family, key } = id else {
+                    unreachable!()
+                };
+                late_weights.insert(
+                    TensorId::Family {
+                        family,
+                        key: key.replacen(&from, &to, 1),
+                    },
+                    tensor,
+                );
+            }
+        }
+        arms.push(("engram one layer late", late, late_weights));
+        let no_bias = edit(&|layer| {
+            if let MlpPlan::LatentMoe(moe) = &mut layer.mlp
+                && let RouterPlan::Sigmoid { selection_bias, .. } = &mut moe.moe.router
+            {
+                *selection_bias = false;
+            }
+        });
+        arms.push(("router bias off", no_bias, fixture.weights.clone()));
+
+        for (name, plan, weights) in &arms {
+            let bad = run(plan, weights);
+            let moved = max_abs(&bad);
+            eprintln!("hy_v4_flash red arm {name}: max |logit - oracle| = {moved}");
+            assert!(
+                oracle_matches_within_tolerance(pinned, &bad, &gate).is_err(),
+                "{name} passed the tiny gate"
+            );
+            assert!(
+                moved > 100.0 * gate.max_abs,
+                "{name} moves the logits by {moved}, within two orders of the band"
+            );
+        }
     }
 
     /// The same red arm as above, for the vision stream (revuto flagged that PR #897's first
