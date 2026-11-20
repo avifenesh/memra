@@ -123,6 +123,8 @@ pub struct Drafter {
     target_index: Vec<usize>,
     target_kv: Vec<usize>,
     topk: usize,
+    /// `dfly_context_local_window`
+    window: usize,
     final_norm: DBuf,
     eh: W,
     enorm: DBuf,
@@ -333,6 +335,7 @@ impl<'a> Route<'a> {
             target_index: d.target_index_layers.iter().map(|l| *l as usize).collect(),
             target_kv: d.target_kv_layers.iter().map(|l| *l as usize).collect(),
             topk: d.target_index_topk as usize,
+            window: d.context_local_window as usize,
             final_norm: ck.vec(dev, &format!("{gl}final_norm.weight"), &[h])?,
             eh: ck.dfly_weight(dev, &format!("{gl}mtp_fusion.eh_proj.weight"), h, 2 * h)?,
             enorm: ck.vec(dev, &format!("{gl}mtp_fusion.enorm.weight"), &[h])?,
@@ -465,6 +468,9 @@ impl<'a> Route<'a> {
             .as_ref()
             .is_some_and(|(l, _, w)| *w == ldl && l.bytes >= SNAP_ROWS * ldl * 4);
         if !reuse {
+            // the old lists go first; the new ones are admitted against MemAvailable
+            snap.lists = None;
+            admit(SNAP_ROWS * (ldl + 1) * 4, "the drafter's recall lists")?;
             snap.lists = Some((
                 dev.alloc(SNAP_ROWS * ldl * 4)?,
                 dev.alloc(SNAP_ROWS * 4)?,
@@ -532,6 +538,7 @@ impl<'a> Route<'a> {
             let slots: Vec<i32> = (from..from + count).map(|p| (p % c.ring) as i32).collect();
             let rb = self.sc.ring_rows.get(dev, slots.len() * 4)?.i();
             dev.put(rb as *mut _, &slots)?;
+            admit(count * 576 * 4, "a verify call's ring backup")?;
             let b = dev.alloc(count * 576 * 4)?;
             cu!(memra_hy4r_gather_bf(
                 c.kv.v(),
@@ -708,6 +715,7 @@ impl<'a> Route<'a> {
                     p + 1
                 ));
             }
+            admit((p + 2 + k) * 576 * 4, "the gate's target rows")?;
             let b = dev.alloc((p + 2 + k) * 576 * 4)?;
             dev.put(b.v(), &rows[..(p + 1) * 576])?;
             kvp.push(b.p);
@@ -746,6 +754,9 @@ impl<'a> Route<'a> {
         if k == 0 || k > MAX_DRAFTS {
             return Err(format!("{k} drafts a round; DFly drafts 1 to {MAX_DRAFTS}"));
         }
+        if forced.is_some_and(|f| f.len() < k) {
+            return Err("fewer forced tokens than drafts".into());
+        }
         let h = self.plan.hidden_size as usize;
         let v = self.plan.vocab_size as usize;
         let dev = &self.dev;
@@ -758,6 +769,7 @@ impl<'a> Route<'a> {
         let sp = dev.sp;
         let rows = k + 1;
         let topk_cap = dr.topk;
+        let window = dr.window;
         let g = self.hy.indexed;
         let heads = g.heads as usize;
         let (ql, kvl) = (self.hy.q_lora_rank as usize, self.hy.kv_lora_rank as usize);
@@ -1002,7 +1014,12 @@ impl<'a> Route<'a> {
             } else {
                 topk_cap
             };
+            // `_reference_reuse_indices`: the row's first `target_index_topk` slots, those before
+            // `anchor - window`, then the window's slots, then the block
             history.truncate(limit.min(history.len()));
+            let start = (p + 1).saturating_sub(window);
+            history.retain(|s| (*s as usize) < start);
+            history.extend((start..p + 1).map(|s| s as i32));
             let ldl = history.len() + rows;
             let mut list = vec![-1i32; rows * ldl];
             let mut lens = vec![0i32; rows];
@@ -1213,9 +1230,13 @@ impl<'a> Route<'a> {
             }
             .gemm_f32_raw(corrected, lm_head, v, h, lg, 1)?;
             let row = dev.down::<f32>(lg as *const _, v)?;
+            if row.iter().any(|x| !x.is_finite()) {
+                return Err(format!("draft step {s}: non-finite logits"));
+            }
+            // `greedy_argmax`: the first of equal maxima
             let mut best = 0usize;
             for (i, x) in row.iter().enumerate() {
-                if x.total_cmp(&row[best]).is_gt() {
+                if *x > row[best] {
                     best = i;
                 }
             }
