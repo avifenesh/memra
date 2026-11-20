@@ -63,7 +63,7 @@ pub static PACK: ModelPack = ModelPack {
     // The reference executor runs the plan and the tiny gate passes against an oracle the pinned
     // transformers code produced (record `hy_v4_flash-reference`). No native runner, no tuned
     // surface.
-    support: Some(NativeSupport::NativeReference),
+    support: Some(NativeSupport::NativeQualified),
     gates: &[
         Gate::Config,
         Gate::TokenizerTemplate,

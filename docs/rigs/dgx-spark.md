@@ -10,7 +10,7 @@ measured.
 | **Prebuilt** | no |
 | **Push gate** | yes: a push that reaches `sm_121a` needs a passing GB10 cell record (`tools/change-impact.toml`); CI compiles the `121a` cell of the arch matrix |
 | **Maintained** | yes: push-gated, with its own tuning lanes |
-| **Pack records** | none: no record in `docs/support-records.toml` names a GB10 topology |
+| **Pack records** | `hy_v4_flash-gpu-1x-gb10`: [Hy4-flash](../models/hy4-flash.md) through its own route on one GB10 (NativeQualified <!-- support: hy_v4_flash-gpu-1x-gb10 -->); no other record names a GB10 topology |
 
 GB10 builds the same sources, kernels and arch-keyed defaults as the RTX 5090 and RTX PRO 6000,
 compiled to its own SASS, because `sm_120a` SASS does not load on 12.1 (and `121a` does not load on
@@ -55,6 +55,7 @@ tried again ([serving](../SERVING.md#unified-memory-devices-gb10-dgx-spark)).
 |---|---|---|---|
 | [Qwen3.8-27B](../models/qwen38-27b.md) | NVFP4+Q5_K MTP GGUF; NVIDIA NVFP4 safetensors | 2026-11-10 | [decode](../../research/gb10-decode-20261110/README.md) |
 | [Qwen3.6-35B-A3B](../models/qwen36-35b-a3b.md) | UD-IQ4_XS GGUF | 2026-11-10 | [device penalty](../../research/devpenalty-gb10-20261110/README.md) |
+| [Hy4-flash](../models/hy4-flash.md) | NVFP4 safetensors, its own route | 2026-11-20 | [serve route](../../research/modelplan-onboarding-hy4flash-20261119/README.md) |
 
 Qwen3.8-27B, GGUF with the masked MTP draft, 262,144 context, one cold request at a time
 (2026-11-10, main `fcd66f8963` plus the verify-rows walk that landed after it, single runs):
