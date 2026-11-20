@@ -44,10 +44,22 @@ use crate::tensor_contract::{
 
 const FAMILY: &str = "hy_v4_flash";
 
-/// Width of the DFly2 dense MLPs. The config does not declare it (`dfly_intermediate_size` is
-/// absent); the vendor runtime takes it from the checkpoint (vLLM `hy_v4/nvidia/dfly.py`
-/// `materialize_ffn`). The census gate pins it against the artifact's headers.
+/// Width of the DFly2 dense MLPs in the pinned artifact. The config does not declare it
+/// (`dfly_intermediate_size` is absent). The vendor program takes the width from the checkpoint:
+/// vLLM `HYV4DFlyModel.materialize_ffn` builds the MLPs from the gate/up/down shapes it streams,
+/// refuses a declared `dfly_intermediate_size` that disagrees and widths that differ between
+/// layers; the derived config's `intermediate_size` default (the trunk's 13,824) is read only for
+/// dummy weights (`load_format=dummy`). The checkpoint's tensors are 9,216 wide on every layer, in
+/// the NVFP4 artifact and in its BF16 source (research/modelplan-onboarding-hy4flash-20261119,
+/// step 10). memra pins that width for an undeclared config and the census binds every drafter
+/// MLP tensor to it, so a checkpoint of another width is refused rather than read.
 pub const DFLY_FFN_WIDTH: u64 = 9216;
+
+/// The DFly2 MLP width a config compiles to: its declared `dfly_intermediate_size`, else the
+/// pinned artifact's [`DFLY_FFN_WIDTH`].
+pub fn dfly_ffn_width(hy: &HyV4FlashConfig) -> u64 {
+    hy.dfly.intermediate_size.map_or(DFLY_FFN_WIDTH, u64::from)
+}
 
 pub static PACK: ModelPack = ModelPack {
     family: "hy_v4_flash",
@@ -190,6 +202,20 @@ pub static PACK: ModelPack = ModelPack {
 /// `linear_gate`, NVFP4 routed experts, layer 0 BF16. The fixture's prefill crosses the window
 /// and the budget; its variants split the request below each.
 pub const TINY_CONFIG: &str = include_str!("fixtures/tiny-config.json");
+
+/// The DFly2 drafter's tiny config: [`TINY_CONFIG`] with a two-block drafter on the indexed layers
+/// 1 and 5, a declared MLP width of 32 (not the trunk's `intermediate_size` 48), hidden
+/// correction on, the mask token 31, three drafts a round (`speculative_config`), and the
+/// drafter's modules in the ModelOpt map as the artifact quantizes them: NVFP4 MLPs and hidden
+/// correction, FP8 128x128 blocks on `q_b_proj`, `o_proj` and `linear_gate`, the fusion and the
+/// confidence head unquantized. The text program is [`TINY_CONFIG`]'s.
+pub const TINY_DFLY_CONFIG: &str = include_str!("fixtures/tiny-dfly-config.json");
+
+/// [`TINY_DFLY_CONFIG`] as the pack's config type.
+pub fn tiny_dfly_config() -> Result<HyV4FlashConfig, PlanCompileError> {
+    let config = ModelConfig::from_hf(&crate::config::HfConfig::parse(TINY_DFLY_CONFIG));
+    hy4(&config).cloned()
+}
 
 /// [`TINY_CONFIG`] as the pack's config type.
 pub fn tiny_config() -> Result<HyV4FlashConfig, PlanCompileError> {
@@ -598,6 +624,7 @@ pub fn expected_census(hy: &HyV4FlashConfig) -> Result<BTreeMap<String, TensorSp
     let value = u64::from(g.v_head_dim);
     let rope = u64::from(g.qk_rope_head_dim);
     let nope = u64::from(g.qk_nope_head_dim);
+    let ffn = dfly_ffn_width(hy);
     for block in 0..hy.dfly.num_hidden_layers {
         let p = format!("model.dfly_layers.{block}.");
         census.put(&format!("{p}input_layernorm.weight"), "BF16", vec![h]);
@@ -617,9 +644,9 @@ pub fn expected_census(hy: &HyV4FlashConfig) -> Result<BTreeMap<String, TensorSp
         census.linear(&format!("{a}o_proj"), h, heads * value)?;
         census.put(&format!("{a}post_proj_norm.weight"), "BF16", vec![h]);
         census.put(&format!("{a}learnable_sink_param"), "BF16", vec![heads]);
-        census.linear(&format!("{p}mlp.gate_proj"), DFLY_FFN_WIDTH, h)?;
-        census.linear(&format!("{p}mlp.up_proj"), DFLY_FFN_WIDTH, h)?;
-        census.linear(&format!("{p}mlp.down_proj"), h, DFLY_FFN_WIDTH)?;
+        census.linear(&format!("{p}mlp.gate_proj"), ffn, h)?;
+        census.linear(&format!("{p}mlp.up_proj"), ffn, h)?;
+        census.linear(&format!("{p}mlp.down_proj"), h, ffn)?;
     }
     let d = "model.dfly_layers.";
     census.put(&format!("{d}final_norm.weight"), "BF16", vec![h]);
@@ -635,9 +662,10 @@ pub fn expected_census(hy: &HyV4FlashConfig) -> Result<BTreeMap<String, TensorSp
     census.put(&format!("{d}mtp_fusion.gate"), "BF16", vec![h]);
     if hy.dfly.hidden_correction {
         let c = format!("{d}hidden_correction.");
-        census.linear(&format!("{c}gate_proj"), h, 2 * h)?;
-        census.linear(&format!("{c}up_proj"), h, 2 * h)?;
-        census.linear(&format!("{c}down_proj"), h, h)?;
+        let ci = u64::from(hy.dfly.hidden_correction_intermediate_size);
+        census.linear(&format!("{c}gate_proj"), ci, 2 * h)?;
+        census.linear(&format!("{c}up_proj"), ci, 2 * h)?;
+        census.linear(&format!("{c}down_proj"), h, ci)?;
         census.put(&format!("{c}embed_norm.weight"), "BF16", vec![h]);
         census.put(&format!("{c}hidden_norm.weight"), "BF16", vec![h]);
     }

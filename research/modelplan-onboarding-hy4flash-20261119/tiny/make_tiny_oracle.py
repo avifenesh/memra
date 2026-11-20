@@ -91,6 +91,10 @@ ap.add_argument("checkpoint")
 ap.add_argument("out")
 ap.add_argument("--trace", default="")
 ap.add_argument("--raw-constants", action="store_true")
+ap.add_argument("--dump-dfly", default="",
+                help="step 10: write the DFly2 drafter's target inputs (final hidden rows, the cached latent "
+                     "and rope key and the attended keys of --dfly-layers) to this directory")
+ap.add_argument("--dfly-layers", default="1,5")
 a = ap.parse_args()
 
 
@@ -216,6 +220,8 @@ def recording_indexer(self, hidden_states, q_resid, attention_mask, position_ids
     try:
         out = indexer_forward(self, hidden_states, q_resid, attention_mask, position_ids, indexer_position_ids,
                               cache, kv_length)
+        if self.layer_idx in DFLY_LAYERS:
+            DFLY_HISTORY[self.layer_idx].extend(attended_keys(out, hidden_states.shape[1]))
     finally:
         picks, RECORD["indexer"] = RECORD["indexer"], None
     if picks:
@@ -226,6 +232,18 @@ def recording_indexer(self, hidden_states, q_resid, attention_mask, position_ids
         groups = torch.cat([picks[0], own], dim=-1)[0]
         CALL["recalled"].append((self.layer_idx, [sorted(g.tolist()) for g in groups]))
     return out
+
+
+DFLY_LAYERS = [int(x) for x in a.dfly_layers.split(",")] if a.dump_dfly else []
+DFLY_HISTORY = {layer: [] for layer in DFLY_LAYERS}
+
+
+def attended_keys(mask, seq):
+    """Per query of the call, the key slots its attention reads under `mask` ([1, 1, q, kv])."""
+    m = mask[0, 0]
+    assert m.shape[0] == seq
+    keep = m if m.dtype == torch.bool else m > torch.finfo(m.dtype).min / 2
+    return [torch.nonzero(row).flatten().to(torch.int32) for row in keep]
 
 
 model_mod.HYV4FlashCompressedIndexer.forward = recording_indexer
@@ -261,6 +279,7 @@ mask_stub = types.SimpleNamespace(
 )
 cache = cache_mod.DynamicCache(config=cfg)
 rows, trace = [], []
+DFLY_HIDDEN = []
 with torch.no_grad():
     for start, end in [(0, prefill)] + [(t, t + 1) for t in range(prefill, ids.shape[1])]:
         CALL.clear()
@@ -277,7 +296,38 @@ with torch.no_grad():
         ).last_hidden_state
         rows.append(hidden[0] @ lm_head.T)
         trace.append(dict(CALL))
+        if a.dump_dfly:
+            DFLY_HIDDEN.append(hidden[0].to(torch.float64).clone())
 logits = torch.cat(rows).to(torch.float32)
+if a.dump_dfly:
+    # as `../checkpoint/make_checkpoint_oracle.py --dump-dfly` writes them
+    os.makedirs(a.dump_dfly, exist_ok=True)
+    hid = torch.cat(DFLY_HIDDEN).numpy().astype("<f8")
+    hid.tofile(os.path.join(a.dump_dfly, "hidden.f64"))
+    dump = {"format": "memra-hy4f-dfly-target-v1", "request": fixture.get("name", "main"),
+            "positions": int(ids.shape[1]),
+            "hidden": {"file": "hidden.f64", "shape": list(hid.shape), "sha256": hashlib.sha256(hid.tobytes()).hexdigest()},
+            "layers": []}
+    for layer in DFLY_LAYERS:
+        kv = torch.cat([cache.layers[layer].keys[0, 0], cache.layers[layer].values[0, 0]], -1)
+        kv = kv.to(torch.float64).contiguous().numpy().astype("<f8")
+        assert kv.shape == (ids.shape[1], cfg.kv_lora_rank + cfg.qk_rope_head_dim)
+        hist = DFLY_HISTORY[layer]
+        assert len(hist) == ids.shape[1]
+        for pos, keys in enumerate(hist):
+            assert keys.numel() and int(keys[-1]) == pos and bool((keys[1:] > keys[:-1]).all())
+        flat = torch.cat(hist).numpy().astype("<i4")
+        offsets = np.cumsum([0] + [k.numel() for k in hist]).astype("<i8")
+        kv.tofile(os.path.join(a.dump_dfly, f"kv-{layer:02d}.f64"))
+        flat.tofile(os.path.join(a.dump_dfly, f"history-{layer:02d}.i32"))
+        offsets.tofile(os.path.join(a.dump_dfly, f"history-{layer:02d}.offsets.i64"))
+        dump["layers"].append({"layer": layer, "file": f"kv-{layer:02d}.f64", "shape": list(kv.shape),
+                               "sha256": hashlib.sha256(kv.tobytes()).hexdigest(),
+                               "history_file": f"history-{layer:02d}.i32",
+                               "history_offsets_file": f"history-{layer:02d}.offsets.i64",
+                               "history_sha256": hashlib.sha256(flat.tobytes()).hexdigest(),
+                               "history_dense_positions": sum(int(k.numel() == q + 1) for q, k in enumerate(hist))})
+    json.dump(dump, open(os.path.join(a.dump_dfly, "target.json"), "w"), indent=1)
 
 
 def fnv1a(text):

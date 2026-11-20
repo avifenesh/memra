@@ -45,8 +45,9 @@ pub struct HyV4VisionConfig {
     pub out_hidden_size: u32,
 }
 
-/// DFly2 drafter geometry (top-level `dfly_*`). The text plan carries no drafter yet; the
-/// tensor contract owns its tensors from this geometry.
+/// DFly2 drafter geometry (top-level `dfly_*`, vLLM `_derive_dfly_config`). The text plan does
+/// not run the drafter; the tensor contract owns its tensors from this geometry, and the drafter
+/// program (`memra_reference::hy_v4_flash_dfly`, the GPU route's draft call) reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HyV4DflyConfig {
     pub num_hidden_layers: u32,
@@ -55,6 +56,20 @@ pub struct HyV4DflyConfig {
     pub target_kv_layers: Vec<u32>,
     pub target_index_layers: Vec<u32>,
     pub hidden_correction: bool,
+    /// `dfly_intermediate_size` when declared. The vendor program takes the MLP width from the
+    /// checkpoint's shapes and refuses a declared width that disagrees; the pack pins the
+    /// artifact's width when the config declares none (`model_packs::hy_v4_flash::dfly_ffn_width`).
+    pub intermediate_size: Option<u32>,
+    /// `dfly_hidden_correction_intermediate_size` (vendor default: the hidden size).
+    pub hidden_correction_intermediate_size: u32,
+    /// `dfly_target_index_topk` (vendor default: the target's `index_topk`, which it must equal):
+    /// how many slots of the target index layer's top-k row the drafter's history reads.
+    pub target_index_topk: u32,
+    /// `dfly_context_local_window` (null: 0): local-window slots before the query block.
+    pub context_local_window: u32,
+    /// `speculative_config.num_speculative_tokens` when the artifact declares it: the drafts a
+    /// round (the query block is that plus the anchor).
+    pub num_speculative_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -652,6 +667,30 @@ impl HyV4FlashConfig {
             }
             Ok(list)
         };
+        let index_topk_value = u("index_topk")?;
+        let optional_u = |key: &str| -> Result<Option<u32>, String> {
+            if top.is_null(key) {
+                Ok(None)
+            } else {
+                top.u32(key)
+            }
+        };
+        let speculative = top.object("speculative_config")?;
+        let num_speculative_tokens = match &speculative {
+            Some(spec) => {
+                if let Some(method) = spec.string("method")?
+                    && method != "dfly"
+                {
+                    return Err(refuse(
+                        "speculative_config.method",
+                        &method,
+                        "the artifact's drafter is DFly",
+                    ));
+                }
+                spec.u32("num_speculative_tokens")?
+            }
+            None => None,
+        };
         let dfly = HyV4DflyConfig {
             num_hidden_layers: tu("dfly_num_hidden_layers")?,
             mask_token_id: tu("dfly_mask_token_id")?,
@@ -660,7 +699,87 @@ impl HyV4FlashConfig {
             hidden_correction: top
                 .boolean("dfly_enable_hidden_correction")?
                 .ok_or_else(|| missing("dfly_enable_hidden_correction"))?,
+            intermediate_size: optional_u("dfly_intermediate_size")?,
+            hidden_correction_intermediate_size: optional_u(
+                "dfly_hidden_correction_intermediate_size",
+            )?
+            .unwrap_or(hidden),
+            target_index_topk: optional_u("dfly_target_index_topk")?.unwrap_or(index_topk_value),
+            context_local_window: optional_u("dfly_context_local_window")?.unwrap_or(0),
+            num_speculative_tokens,
         };
+        if dfly.num_hidden_layers > 0 {
+            // `_derive_dfly_config`: the switches that select another drafter program
+            for (key, want) in [("dfly_mtp_fusion", "slot0"), ("dfly_mlp_type", "dense")] {
+                if let Some(got) = top.string(key)?
+                    && got != want
+                {
+                    return Err(refuse(
+                        key,
+                        &got,
+                        "DFly requires slot0 fusion and dense FFNs",
+                    ));
+                }
+            }
+            for (key, want) in [("dfly_enable_ihc", false), ("dfly_attn_causal", true)] {
+                if let Some(got) = top.boolean(key)?
+                    && got != want
+                {
+                    return Err(refuse(key, &got, "DFly requires causal MLA without iHC"));
+                }
+            }
+            if !dfly.hidden_correction {
+                return Err(refuse(
+                    "dfly_enable_hidden_correction",
+                    &false,
+                    "DFly requires slot0 fusion and hidden correction",
+                ));
+            }
+            if dfly.mask_token_id >= u("vocab_size")? {
+                return Err(refuse(
+                    "dfly_mask_token_id",
+                    &dfly.mask_token_id,
+                    "the mask token is a vocabulary id",
+                ));
+            }
+            if dfly.target_index_topk != index_topk_value {
+                return Err(refuse(
+                    "dfly_target_index_topk",
+                    &dfly.target_index_topk,
+                    "the drafter reads the target index layer's whole top-k row",
+                ));
+            }
+            if dfly.intermediate_size == Some(0) || dfly.hidden_correction_intermediate_size == 0 {
+                return Err(refuse(
+                    "dfly_intermediate_size",
+                    &dfly.intermediate_size,
+                    "DFly FFN widths are positive",
+                ));
+            }
+            if let Some(n) = dfly.num_speculative_tokens
+                && !(1..=16).contains(&n)
+            {
+                return Err(refuse(
+                    "speculative_config.num_speculative_tokens",
+                    &n,
+                    "DFly drafts 1 to 16 tokens a round",
+                ));
+            }
+            if dfly.target_kv_layers.contains(&0)
+                || dfly
+                    .target_kv_layers
+                    .iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    != dfly.target_kv_layers.len()
+            {
+                return Err(refuse(
+                    "dfly_target_kv_layers",
+                    &dfly.target_kv_layers,
+                    "distinct target layers from 1 on",
+                ));
+            }
+        }
         if dfly.target_kv_layers.len() != dfly.num_hidden_layers as usize
             || dfly.target_index_layers != dfly.target_kv_layers
         {
