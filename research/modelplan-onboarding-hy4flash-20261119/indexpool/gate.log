@@ -1,0 +1,32 @@
+running 5 tests
+test attention_matches_above_the_budget ... layer 0 attention: max_abs 2.8657631823136853e-15 (scale 2.999)
+layer 1 attention: max_abs 1.3322676295501878e-15 (scale 2.815)
+layer 2 attention: max_abs 1.7763568394002505e-15 (scale 2.909)
+layer 3 attention: max_abs 1.3322676295501878e-15 (scale 3.515)
+ok
+test decoder_layers_and_the_stack_match_above_the_budget ... layer 0: max_abs 9.769962616701378e-15 (scale 4.931)
+layer 1: max_abs 5.329070518200751e-15 (scale 7.484)
+layer 2: max_abs 4.107825191113079e-15 (scale 11.185)
+layer 3: max_abs 3.774758283725532e-15 (scale 11.075)
+last hidden state: max_abs 8.43769498715119e-15 (scale 3.366)
+ok
+test recall_matches_with_the_cuda_tie_order ... layer 0: 381 of 861 causal keys kept, 6 queries tie at the cut
+layer 1: 381 of 861 causal keys kept, 4 queries tie at the cut
+ok
+test token_keys_pooled_keys_and_logits_match ... layer 0 token keys: max_abs 8.881784197001252e-16 (scale 3.416)
+layer 0 group keys: max_abs 8.881784197001252e-16 (scale 2.753)
+layer 0 group logits: max_abs 1.7763568394002505e-15 (scale 5.674)
+layer 1 token keys: max_abs 6.661338147750939e-16 (scale 2.538)
+layer 1 group keys: max_abs 1.1102230246251565e-15 (scale 2.877)
+layer 1 group logits: max_abs 1.0547118733938987e-15 (scale 3.198)
+ok
+test wrong_indexer_programs_fail ... layer 0 pool size 2: max_abs 3.821287952716437e0
+layer 0 ape omitted: max_abs 2.753046232777111e0
+layer 0 tie order flipped: max_abs 1.488709656585594e0
+layer 0 dense past the budget: max_abs 3.8636864290282986e0
+layer 1 pool size 2: max_abs 2.2237564274513764e0
+layer 1 ape omitted: max_abs 1.1995839391594472e0
+layer 1 tie order flipped: max_abs 2.029883857341682e0
+layer 1 dense past the budget: max_abs 2.1246674375895314e0
+ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s

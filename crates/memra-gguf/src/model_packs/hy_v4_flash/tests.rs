@@ -185,7 +185,8 @@ fn plan_is_typed_gated_mla_with_pooled_index_latent_moe_and_engram() {
                         head_dim: 128,
                         rope_head_dim: 64,
                         pool: 4,
-                        top_k: 2048
+                        top_k: 2048,
+                        ties: GroupTieOrder::LowerIndexFirst,
                     }
                 );
                 assert_eq!(attention.rope.base, 1e7);

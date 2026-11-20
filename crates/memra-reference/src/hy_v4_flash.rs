@@ -7,16 +7,17 @@
 //! ([`hyper_connection`], `HYV4FlashHyperConnection`) and its write-back, the dense SwiGLU MLP
 //! (`HYV4FlashMLP`), the latent MoE ([`latent_moe`], `HYV4FlashMoE` with its router and experts),
 //! the exit collapse ([`hyper_head`], `HYV4FlashHyperHead`) and the decoder layer that composes
-//! them ([`decoder_layer`]). The pooled indexer and Engram are later steps; an indexed layer here
-//! runs with at most `top_k` keys, where the vendor program attends densely.
+//! them ([`decoder_layer`]). Indexed layers past the indexer budget attend to the groups the
+//! pooled indexer recalls ([`index_pool_recall`], `HYV4FlashCompressedIndexer`). Engram is a
+//! later step.
 //!
 //! Activations are row-major `[tokens, width]` (`[tokens, streams, width]` for the streams).
 //! Weights are `[out, in]`. Gated by research/modelplan-onboarding-hy4flash-20261119/modules/
 //! (a float64 run of the pinned transformers code, compared to 1e-12).
 
 use memra_gguf::model_plan::{
-    ActivationPlan, HyV4AttentionKind, HyV4AttentionPlan, HyV4FlashNumerics, HyV4ResidualPlan,
-    LatentMoePlan, NormPlan, RouterPlan,
+    ActivationPlan, GroupTieOrder, HyV4AttentionKind, HyV4AttentionPlan, HyV4FlashNumerics,
+    HyV4ResidualPlan, IndexPoolPlan, LatentMoePlan, NormPlan, RouterPlan,
 };
 
 /// `y[t, o] = sum_i x[t, i] * w[o, i]`.
@@ -69,6 +70,26 @@ pub struct AttentionWeights<'a> {
     pub post_norm: &'a [f64],
     /// `learnable_sink_param` (transformers `sinks`): one logit per head.
     pub sinks: &'a [f64],
+    /// `compressed_indexer.*`: present on indexed layers, absent on sliding ones.
+    pub indexer: Option<IndexerWeights<'a>>,
+}
+
+/// The pooled indexer's weights (`self_attn.compressed_indexer.*`), `[out, in]`.
+pub struct IndexerWeights<'a> {
+    /// `query_projection`: `[heads * head_dim, q_lora_rank]`, read from `q_resid`.
+    pub query: &'a [f64],
+    /// `head_weight_projection`: `[heads, hidden]`.
+    pub head_weight: &'a [f64],
+    /// `token_key_projection`: `[head_dim, hidden]`.
+    pub token_key: &'a [f64],
+    pub token_key_norm: &'a [f64],
+    /// `key_value_projection` and `key_gate_projection`: `[head_dim, head_dim]`, F32 in the
+    /// checkpoint.
+    pub key_value: &'a [f64],
+    pub key_gate: &'a [f64],
+    /// `intra_group_ape`: `[pool, head_dim]`, added to the gate logits of each slot.
+    pub ape: &'a [f64],
+    pub key_norm: &'a [f64],
 }
 
 /// Rotate the trailing `rope` dims of a row in place: adjacent pairs `(2i, 2i+1)` turn by
@@ -85,9 +106,171 @@ fn rope_in_place(row: &mut [f64], position: u32, base: f64) {
     }
 }
 
-/// `HYV4FlashAttention.forward` on `x` (the layer input after `input_layernorm`), every key
-/// visible to the indexer: causal for an indexed layer, the last `window` keys for a sliding one.
-/// Returns `post_proj_norm(o_proj(attention * sigmoid(gate(x))))`.
+/// `HYV4FlashCompressedIndexer` token keys: `token_key_norm(token_key_projection(x))`,
+/// `[tokens, head_dim]`. These are what the cache keeps per token.
+pub fn index_token_keys(
+    plan: &IndexPoolPlan,
+    norm: NormPlan,
+    w: &IndexerWeights,
+    x: &[f64],
+    hidden: usize,
+) -> Vec<f64> {
+    let dim = plan.head_dim as usize;
+    rms_norm(&linear(x, w.token_key, hidden, dim), w.token_key_norm, norm)
+}
+
+/// `HYV4FlashCompressedIndexer.pool_groups`: every complete group of `pool` token keys becomes
+/// `key_norm(sum_slot value(k_slot) * softmax_slot(gate(k_slot) + ape_slot))`, elementwise over
+/// the head dims (the softmax runs over the slots). A trailing partial group is not pooled.
+/// Returns `[groups, head_dim]`.
+pub fn index_pool_groups(
+    plan: &IndexPoolPlan,
+    norm: NormPlan,
+    w: &IndexerWeights,
+    token_keys: &[f64],
+) -> Vec<f64> {
+    let dim = plan.head_dim as usize;
+    let pool = plan.pool as usize;
+    assert_eq!(w.ape.len(), pool * dim, "intra_group_ape [{pool}, {dim}]");
+    let groups = token_keys.len() / dim / pool;
+    let grouped = &token_keys[..groups * pool * dim];
+    let values = linear(grouped, w.key_value, dim, dim);
+    let mut gates = linear(grouped, w.key_gate, dim, dim);
+    for (i, g) in gates.iter_mut().enumerate() {
+        *g += w.ape[i % (pool * dim)];
+    }
+    let mut pooled = vec![0.0; groups * dim];
+    for g in 0..groups {
+        for d in 0..dim {
+            let at = |slot: usize| (g * pool + slot) * dim + d;
+            let max = (0..pool)
+                .map(|s| gates[at(s)])
+                .fold(f64::NEG_INFINITY, f64::max);
+            let denom: f64 = (0..pool).map(|s| (gates[at(s)] - max).exp()).sum();
+            pooled[g * dim + d] = (0..pool)
+                .map(|s| values[at(s)] * (gates[at(s)] - max).exp() / denom)
+                .sum();
+        }
+    }
+    rms_norm(&pooled, w.key_norm, norm)
+}
+
+/// The indexer's group logits, `[tokens, groups]`: `sum_h hw[t, h] * relu(q[t, h] . k[g])` with
+/// `q = query_projection(q_resid)` and the pooled keys `k`, both rotated on their trailing
+/// `rope_head_dim` dims (queries at their position, a group at its first token's) at `rope_base`,
+/// and `hw = head_weight_projection(x) * heads^-0.5 * head_dim^-0.5`. A group that has not closed
+/// before the query (`g >= t / pool`, its own group included) reads `-inf`. Queries and keys are
+/// the same `tokens` (a prefill); `x` is the attention input, `q_resid` the normalized
+/// `q_a_proj` output.
+#[allow(clippy::too_many_arguments)]
+pub fn index_pool_logits(
+    plan: &IndexPoolPlan,
+    rope_base: f64,
+    norm: NormPlan,
+    w: &IndexerWeights,
+    x: &[f64],
+    q_resid: &[f64],
+    positions: &[u32],
+    hidden: usize,
+    q_lora: usize,
+) -> Vec<f64> {
+    let tokens = positions.len();
+    let heads = plan.heads as usize;
+    let dim = plan.head_dim as usize;
+    let rope = plan.rope_head_dim as usize;
+    let pool = plan.pool as usize;
+    assert!(rope <= dim, "indexer rope dims {rope} of {dim}");
+    let token_keys = index_token_keys(plan, norm, w, x, hidden);
+    let mut keys = index_pool_groups(plan, norm, w, &token_keys);
+    let groups = keys.len() / dim;
+    for g in 0..groups {
+        rope_in_place(
+            &mut keys[g * dim + dim - rope..(g + 1) * dim],
+            positions[g * pool],
+            rope_base,
+        );
+    }
+    let mut query = linear(q_resid, w.query, q_lora, heads * dim);
+    for (t, &position) in positions.iter().enumerate() {
+        for h in 0..heads {
+            let row = (t * heads + h) * dim;
+            rope_in_place(&mut query[row + dim - rope..row + dim], position, rope_base);
+        }
+    }
+    let scale = (heads as f64).powf(-0.5) * (dim as f64).powf(-0.5);
+    let head_weights = linear(x, w.head_weight, hidden, heads);
+    let mut logits = vec![f64::NEG_INFINITY; tokens * groups];
+    for t in 0..tokens {
+        for g in 0..groups.min(t / pool) {
+            let key = &keys[g * dim..(g + 1) * dim];
+            logits[t * groups + g] = (0..heads)
+                .map(|h| {
+                    let q = &query[(t * heads + h) * dim..(t * heads + h + 1) * dim];
+                    let dot: f64 = q.iter().zip(key).map(|(a, b)| a * b).sum();
+                    head_weights[t * heads + h] * scale * dot.max(0.0)
+                })
+                .reduce(|a, b| a + b)
+                .expect("at least one head");
+        }
+    }
+    logits
+}
+
+/// The `k` largest of `row` under the plan's tie order, as indices (unordered set semantics).
+pub fn group_top_k(row: &[f64], k: usize, ties: GroupTieOrder) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..row.len()).collect();
+    match ties {
+        // A stable sort on the value keeps ascending index among equal values; `total_cmp`
+        // orders `-0.0` below `0.0`, as the CUDA radix key does.
+        GroupTieOrder::LowerIndexFirst => order.sort_by(|a, b| row[*b].total_cmp(&row[*a])),
+    }
+    order.truncate(k);
+    order
+}
+
+/// The keys each query of a prefill may attend on an indexed layer, `[tokens, tokens]` row-major:
+/// the `top_k / pool - 1` best groups by [`index_pool_logits`] (taken among all groups, so a
+/// query with too few closed groups also takes `-inf` ones, which are never causal-visible) plus
+/// its own group, expanded to their token slots (clamped to the last token), intersected with
+/// the causal mask. `None` at or below the budget (`tokens <= top_k`), where the layer attends
+/// densely and the indexer is skipped.
+pub fn index_pool_recall(plan: &IndexPoolPlan, logits: &[f64], tokens: usize) -> Option<Vec<bool>> {
+    if tokens <= plan.top_k as usize {
+        return None;
+    }
+    let pool = plan.pool as usize;
+    assert_eq!(
+        plan.top_k % plan.pool,
+        0,
+        "top_k {} is whole groups",
+        plan.top_k
+    );
+    let groups = logits.len() / tokens;
+    let keep = (plan.top_k / plan.pool) as usize - 1;
+    let mut visible = vec![false; tokens * tokens];
+    for t in 0..tokens {
+        let mut recalled = group_top_k(
+            &logits[t * groups..(t + 1) * groups],
+            keep.min(groups),
+            plan.ties,
+        );
+        recalled.push(t / pool);
+        for g in recalled {
+            for slot in g * pool..(g + 1) * pool {
+                let s = slot.min(tokens - 1);
+                if s <= t {
+                    visible[t * tokens + s] = true;
+                }
+            }
+        }
+    }
+    Some(visible)
+}
+
+/// `HYV4FlashAttention.forward` on `x` (the layer input after `input_layernorm`): causal for an
+/// indexed layer, narrowed past the indexer budget to the keys [`index_pool_recall`] returns;
+/// the last `window` keys for a sliding one. Returns
+/// `post_proj_norm(o_proj(attention * sigmoid(gate(x))))`.
 pub fn gated_mla_attention(
     plan: &HyV4AttentionPlan,
     norm: NormPlan,
@@ -95,6 +278,20 @@ pub fn gated_mla_attention(
     x: &[f64],
     positions: &[u32],
     hidden: usize,
+) -> Vec<f64> {
+    gated_mla_attention_recalled(plan, norm, w, x, positions, hidden, None)
+}
+
+/// [`gated_mla_attention`] with the indexed layer's visible keys given (`[tokens, tokens]`)
+/// instead of computed; `None` computes them from the plan.
+pub fn gated_mla_attention_recalled(
+    plan: &HyV4AttentionPlan,
+    norm: NormPlan,
+    w: &AttentionWeights,
+    x: &[f64],
+    positions: &[u32],
+    hidden: usize,
+    recalled: Option<&[bool]>,
 ) -> Vec<f64> {
     let tokens = positions.len();
     assert_eq!(x.len(), tokens * hidden);
@@ -105,13 +302,6 @@ pub fn gated_mla_attention(
     let qk = nope + rope;
     let q_lora = plan.q_lora_rank as usize;
     let kv_lora = plan.kv_lora_rank as usize;
-    if let HyV4AttentionKind::Indexed(index) = plan.kind {
-        assert!(
-            tokens <= index.top_k as usize,
-            "the pooled indexer runs past {} keys; this reference attends densely only",
-            index.top_k
-        );
-    }
     assert_eq!(
         plan.sink,
         memra_gguf::model_plan::TensorPresence::Required,
@@ -129,6 +319,50 @@ pub fn gated_mla_attention(
     let base = plan.rope.base as f64;
 
     let q_resid = rms_norm(&linear(x, w.q_a, hidden, q_lora), w.q_a_norm, norm);
+    let computed;
+    let recalled: Option<&[bool]> = match (plan.kind, &w.indexer) {
+        (HyV4AttentionKind::Indexed(index), Some(indexer)) => {
+            assert_eq!(
+                index.rope_head_dim, plan.qk_rope_head_dim,
+                "indexer rope dims"
+            );
+            match recalled {
+                Some(given) => {
+                    assert!(
+                        tokens > index.top_k as usize,
+                        "recalled keys below the budget"
+                    );
+                    Some(given)
+                }
+                None => {
+                    computed = if tokens > index.top_k as usize {
+                        let logits = index_pool_logits(
+                            &index, base, norm, indexer, x, &q_resid, positions, hidden, q_lora,
+                        );
+                        index_pool_recall(&index, &logits, tokens)
+                    } else {
+                        None
+                    };
+                    computed.as_deref()
+                }
+            }
+        }
+        (HyV4AttentionKind::Sliding { .. }, None) => {
+            assert!(recalled.is_none(), "a sliding layer recalls no keys");
+            None
+        }
+        (kind, indexer) => panic!(
+            "attention kind {kind:?} with indexer weights present: {}",
+            indexer.is_some()
+        ),
+    };
+    if let Some(visible) = recalled {
+        assert_eq!(
+            visible.len(),
+            tokens * tokens,
+            "recalled keys [tokens, tokens]"
+        );
+    }
     let mut q = linear(&q_resid, w.q_b, q_lora, heads * qk);
     let kv_a = linear(x, w.kv_a, hidden, kv_lora + rope);
     let mut latent = Vec::with_capacity(tokens * kv_lora);
@@ -156,7 +390,7 @@ pub fn gated_mla_attention(
                 s <= t
                     && match plan.kind {
                         HyV4AttentionKind::Sliding { window } => t - s < window as usize,
-                        HyV4AttentionKind::Indexed(_) => true,
+                        HyV4AttentionKind::Indexed(_) => recalled.is_none_or(|v| v[t * tokens + s]),
                     }
             };
             let qrow = &q[t * heads * qk + h * qk..t * heads * qk + (h + 1) * qk];
