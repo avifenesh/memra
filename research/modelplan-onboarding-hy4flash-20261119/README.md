@@ -182,7 +182,8 @@ memra model inspect Avifenesh/Hy4-flash-NVFP4@f9eac06cf022cfd3dc2e8ed423922466b2
 
 `inspect/artifact.lock`: `config_sha256=c88f950d8050...` (the `config.json` bytes, also the pack
 fixture), `census_sha256=406b097584513b88...` (`inspect/tensor-census.tsv.gz` unpacks to the
-hashed text), `plan_sha256=a5c4fdf4264eb087...`, `binding=passed`, `tokenizer=passed`
+hashed text), `plan_sha256=a5c4fdf4264eb087...` (step 4 adds the indexer's tie order to the plan
+and refreshes `inspect/`: now `a4a43c267029e5b9...`), `binding=passed`, `tokenizer=passed`
 (`dialect=artifact`: the template hash only; the hy_v4 dialect and its parity are the next step).
 
 The census has 2,005 rows: each quantized weight row carries its scale planes (424 of the 2,429
@@ -375,3 +376,91 @@ norms by 1.3e-12. Both were measurement artefacts of the oracle, not program dif
 - each decoder layer, and the whole stack to the last hidden state;
 - red arms: the sink dropped, a sliding layer read as full attention, the write-back magnitude
   set to 1, gate and up swapped, the router's correction bias ignored.
+
+# Step 4: the pooled indexer (2026-11-20)
+
+Verdict: memra-reference implements `HYV4FlashCompressedIndexer` in f64 from the typed
+`IndexPoolPlan`: token keys, the gated F32 pooling, the RoPE'd group logits, the group top-k and
+the recalled-key mask, wired into the attention of the indexed layers. Past the budget, on a tiny
+config with 41 tokens, the reference selects exactly the oracle's groups and keys for every query
+of both indexed layers, ties included, and matches the pinned transformers code in float64 to at
+most 9.8e-15 on every module and the 4-layer stack (`indexpool/gate.log`). Four red arms move the
+attention output by 1.2 to 3.9. No GPU was used.
+
+## The program
+
+Per indexed layer, with `x` the attention input and `q_resid = q_a_layernorm(q_a_proj(x))`:
+
+- token keys `token_key_norm(token_key_projection(x))` (`[tokens, 128]` on the artifact), the
+  part the cache keeps per token;
+- each complete group of 4 keys pools to `key_norm(sum_slot value(k) * softmax_slot(gate(k) +
+  intra_group_ape))`: `key_value_projection` and `key_gate_projection` are F32 `[128, 128]`,
+  `intra_group_ape` F32 `[4, 128]`, the softmax runs over the 4 slots per dim; a trailing partial
+  group is not pooled;
+- queries `query_projection(q_resid)` (16 heads of 128) and the pooled keys rotate their trailing
+  64 dims (the indexed layers' RoPE, theta 1e7), queries at their position, a group at its first
+  token's;
+- the group logit is `sum_h hw_h * relu(q_h . k)` with `hw = head_weight_projection(x) * 16^-0.5 *
+  128^-0.5`; a group that has not closed before the query is `-inf`;
+- a query keeps the `2048 / 4 - 1 = 511` best groups plus its own and attends to their tokens
+  under the causal mask. No fine (per-token) selection follows (`skip_fine_select`, refused by
+  the config). At or below 2,048 keys the layer attends densely and the indexer is skipped.
+
+## Tie order
+
+The ReLU makes exact ties common: a closed group no head scores above zero has logit 0 (52 and
+31 such query-group pairs on the two tiny layers). Which tied groups the top-k keeps changes the
+attended keys, so the order is part of the program and the plan carries it
+(`IndexPoolPlan::ties`, `GroupTieOrder::LowerIndexFirst`; the plan hash moves, `inspect/` is
+refreshed, nothing else in it changes).
+
+The rule is CUDA `torch.topk`'s, where the vendor program runs. PyTorch v2.15.0
+(`31a77fc9c0a7`), `aten/src/ATen/native/cuda/TensorTopK.cu`: both the single-block
+(`sbtopk::gatherTopK`) and the multi-block (`mbtopk::gatherTopK`) kernel first write every value
+strictly above the k-th value, then the values equal to it in ascending input index until k are
+written (a prefix count per warp or per block keeps that order). `TensorTopK.cpp` sorts the
+result afterwards when `sorted=True`, which reorders but does not change the set. Values compare
+by their radix key, so `-0.0` ranks below `0.0`; within one query all zero logits carry the same
+sign (the head weights are per query), which the oracle asserts. The full-sort and warp
+merge-sort paths are ROCm-only (`should_use_sort` returns false on CUDA). CPU `topk` leaves ties
+unspecified.
+
+## Oracle
+
+`indexpool/gen_indexpool.py` runs the pinned code (blobs checked) on the step 3 tiny config with
+`index_head_dim` 12 (8 rope dims), `index_topk` 12 and 41 tokens: past the budget, 10 closed
+groups, 2 kept plus the query's own. It maps float32 to float64 as in step 3 and replaces
+`topk` in the process by a stable descending sort, which selects the CUDA set. It records the
+token keys, group keys, group logits, selected groups and the visible-key mask of each indexed
+layer, every module's inputs and outputs, and the last hidden state (`indexpool/indexpool.json`,
+sha256 `3805658873f1eacb...`, reproduced bit for bit by a second run; `indexpool/gen.log`). Under
+the flipped tie order 5 and 4 of the 41 queries select different closed groups; under the CPU
+kernel 3 and 3.
+
+## What the gate covers
+
+`crates/memra-reference/tests/hy_v4_flash_indexpool.rs` (the step 3 helpers moved to
+`tests/hy_v4_flash_common/`):
+
+- token keys, pooled group keys and the finite group logits to 1e-12, the `-inf` pattern exact;
+- the selected groups per query and the visible-key mask exact; 381 of 861 causal keys stay
+  visible, and 6 and 4 queries tie at their last kept group;
+- attention on all four layers, each decoder layer, and the stack through `hc_head` and the
+  final norm;
+- red arms, each moving the indexed attention by more than 1e-6: pool size 2 (2.2, 3.8), the
+  `intra_group_ape` omitted (1.2, 2.8), the flipped tie order (2.0, 1.5) and dense causal
+  attention past the budget (2.1, 3.9). The last is step 3's program, which refused to run past
+  the budget.
+
+The step 3 gate runs unchanged in substance: its indexed layers stay below the budget, and an
+indexed layer now carries its indexer weights.
+
+## For the whole-trunk and checkpoint steps
+
+- The selection is discrete. In f64 against f64 it is exact; the vendor program computes the
+  pooling in F32 and the scores from BF16 projections, so near-tied non-zero logits can flip
+  between a BF16 run and memra's, and a flipped group moves the attention by O(1) on that query.
+  Compare selections first and attribute output differences to selection flips before reading
+  any band.
+- Exact zero ties do not depend on precision: they follow the tie order, which every memra
+  surface must implement as the plan states.

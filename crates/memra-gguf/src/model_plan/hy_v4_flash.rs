@@ -7,10 +7,10 @@
 //! cached token keys four at a time through an F32 softmax gate; the residual is a 4-stream
 //! hyper-connection without Sinkhorn whose write-back magnitude is a config value; the routed
 //! experts run in a latent width; the Engram memory hashes a normalized vocabulary through a
-//! checkpoint lookup table. memra-reference (`hy_v4_flash`) implements the attention, residual
-//! and MoE operations module by module, gated against the pinned transformers code; no executor
-//! runs a whole plan yet and no tuned surface implements them, so every operation they emit is
-//! a registry row with no surface.
+//! checkpoint lookup table. memra-reference (`hy_v4_flash`) implements the attention with its
+//! pooled indexer, the residual and the MoE operations module by module, gated against the
+//! pinned transformers code; no executor runs a whole plan yet and no tuned surface implements
+//! them, so every operation they emit is a registry row with no surface.
 
 use super::{ActivationPlan, MoeMlpPlan, NormPlan, RopePlan, TensorPresence};
 
@@ -50,7 +50,8 @@ pub enum HyV4AttentionKind {
 /// `sum_h head_weight_h * relu(q_h . k)` with head weights `head_weight_projection(x)` scaled by
 /// `heads^-0.5 * head_dim^-0.5`. A query keeps the `top_k / pool - 1` best groups that closed
 /// before it plus its own group, expanded back to tokens. With at most `top_k` keys the layer
-/// attends densely and no pooling happens.
+/// attends densely and no pooling happens. There is no fine (per-token) selection after the
+/// group pick (`compressed_indexer_skip_fine_select`); the config refuses one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IndexPoolPlan {
     pub heads: u32,
@@ -58,6 +59,21 @@ pub struct IndexPoolPlan {
     pub rope_head_dim: u32,
     pub pool: u32,
     pub top_k: u32,
+    /// Which of several equal group logits the pick keeps. ReLU scores make exact ties common
+    /// (a closed group no head scores above zero has logit 0), so the order is part of the
+    /// program.
+    pub ties: GroupTieOrder,
+}
+
+/// The tie order of the indexer's group top-k.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupTieOrder {
+    /// CUDA `torch.topk` (PyTorch v2.15.0 `aten/src/ATen/native/cuda/TensorTopK.cu`, both
+    /// `sbtopk::gatherTopK` and `mbtopk::gatherTopK`): every value strictly above the k-th, then
+    /// the values equal to it in ascending index order until k. Values compare by their radix
+    /// key, so `-0.0` sorts below `0.0`. The vendor program runs there; CPU `topk` leaves the
+    /// order of ties unspecified.
+    LowerIndexFirst,
 }
 
 /// transformers `HYV4FlashAttention`: gated MLA. `q = q_b(q_a_norm(q_a(x)))`, `kv_a(x)` splits

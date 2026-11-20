@@ -30,7 +30,7 @@ use super::*;
 use crate::config::{HyV4FlashConfig, HyV4LayerKind};
 use crate::dsv4::TensorSpec;
 use crate::model_plan::{
-    ActivationPlan, AttentionPlan, DenseMlpPlan, DraftSourcePlan, HyV4AttentionKind,
+    ActivationPlan, AttentionPlan, DenseMlpPlan, DraftSourcePlan, GroupTieOrder, HyV4AttentionKind,
     HyV4AttentionPlan, HyV4EngramMultiplierBound, HyV4EngramNormEpsilon, HyV4EngramPlan,
     HyV4FlashNumerics, HyV4ResidualPlan, HyV4StatePlan, HyV4WeightFormat, IndexPoolPlan,
     LatentMoePlan, LayerPlan, MlpPlan, MoeMlpPlan, NormKind, NormPlan, ResidualTopology,
@@ -195,6 +195,7 @@ pub fn layer_plan(
                 rope_head_dim: geometry.qk_rope_head_dim,
                 pool: hy.index_pool,
                 top_k: hy.index_topk,
+                ties: GroupTieOrder::LowerIndexFirst,
             }),
             HyV4LayerKind::Sliding => HyV4AttentionKind::Sliding {
                 window: hy.sliding_window,
