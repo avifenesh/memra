@@ -1,0 +1,16 @@
+void r_gemm_kernel< 48x1x1                                     31.166 ms  145x     214.9 us each
+hy4f_gemm_kernel 8x1x1                                         26.425 ms   41x     644.5 us each
+void r_gemm_kernel< 24x17x1                                    22.273 ms  123x     181.1 us each
+void r_gemm_kernel< 256x1x1                                    17.967 ms   60x     299.5 us each
+hy4f_gemm_kernel 1888x1x1                                      10.584 ms    1x   10584.4 us each
+void r_gemm_kernel< 24x1x1                                     10.222 ms  123x      83.1 us each
+void r_gemm_kernel< 128x1x1                                     3.487 ms   24x     145.3 us each
+void r_gemm_kernel< 16x1x1                                      3.050 ms   42x      72.6 us each
+void r_gemm_kernel< 9x1x1                                       2.820 ms   42x      67.1 us each
+void r_gemm_kernel< 4x1x64                                      2.560 ms   30x      85.3 us each
+void r_gemm_kernel< 8x1x64                                      1.747 ms   30x      58.2 us each
+void r_gemm_kernel< 216x1x1                                     0.909 ms    2x     454.5 us each
+void r_gemm_kernel< 2x1x1                                       0.755 ms   12x      62.9 us each
+void r_gemm_kernel< 4x1x32                                      0.494 ms   12x      41.2 us each
+void r_gemm_kernel< 8x1x32                                      0.377 ms   12x      31.4 us each
+134.836256

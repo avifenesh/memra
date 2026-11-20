@@ -1,0 +1,150 @@
+# Hy4-flash GPU route: decode tuning on one GB10 (2026-11-20)
+
+The route of step 8 (`hy4f-gpu`, numeric class `hy-v4-flash-bf16x2-activations`), tuned for
+decode. Every change keeps the class: the same products and the same summation order for every
+output, so each step's tapes equal step 8's bit for bit (`receipts/*/check3.log`: `chat` forced,
+`long` and `long-split` free, every logit, router and indexer array), and the checkpoint gate
+passes with the same numbers.
+
+## Roofline
+
+Bytes one c=1 decode token reads (`tools/roofline_bytes.py` over the artifact's headers):
+
+| what | GB |
+|---|---:|
+| attention projections (FP8 128x128 blocks and BF16) | 6.174 |
+| shared experts | 1.161 |
+| latent projections (`routed_expert_down/up_proj`) | 0.774 |
+| dense first layer MLP | 0.494 |
+| Engram projections | 0.191 |
+| router (F32 islands read BF16) | 0.129 |
+| indexer projections | 0.063 |
+| norms, HC functions, sinks | 0.060 |
+| head (BF16, F32 GEMM) | 0.742 |
+| routed experts, 16 of 512 a layer, NVFP4 codes + group scales | 2.612 |
+| **a token** | **12.40** |
+
+The KV cache adds about 3.5 MB at 36 positions and 95 MB at 2.1k (F32 latent rows, 512-row rings
+on the sliding layers, the indexer's recall of at most 2,048 keys); Engram rows are 64 x 1 KB.
+
+GB10 streams 229 to 242 GB/s (`receipts/base/bw-roofline.txt`: `bw-roofline` contiguous 128-bit
+loads; 656 scattered 4 MiB slabs, a token's expert pattern, 239 to 242). At 240 GB/s a token
+costs 51.7 ms: **the c=1 decode roofline is 19.4 tokens/s** (19.2 at 2.1k context).
+
+## Method
+
+One GB10 (`sm_121a`), the same build flags for every arm, the GPU otherwise idle (`memwait.sh`:
+no other compute process, 108 GiB free). `hy4f-gpu --bench 3`: a warm-up, then three timed runs of
+the request's prefill and 63 greedy decode calls; medians with the range of the three. Profiles:
+`nsys` over `--gen 24` (`chat`), the decode calls after the first two summarized by
+`tools/trace_steps.py` (per kernel ms a step), `tools/gemm_grid.py` (per GEMM shape) and
+`tools/gaps.py` (GPU idle between kernels). `kbench/` builds the route's `.cu` alone and checks
+every small-row kernel bit for bit against the tiled kernel it replaces, then times it with a cold
+L2.
+
+## Steps
+
+| step | chat decode tok/s | step p50 ms | long (2.1k) decode tok/s | step p50 ms | chat prefill tok/s | long prefill tok/s |
+|---|---:|---:|---:|---:|---:|---:|
+| step 8 (base) | 6.04 [6.03-6.04] | 165.7 | 5.40 [5.25-5.40] | 185.3 | 84.2 | 225.0 |
+| 1: small-row GEMMs, F32 islands GEMV, split HC, one table upload a call | 11.60 [11.57-11.61] | 86.2 | 9.57 [9.55-9.58] | 104.2 | 93.9 | 222.0 |
+| 2: programmatic dependent launch | 12.37 [12.36-12.37] | 80.9 | 10.16 [10.15-10.18] | 98.3 | 93.1 | 221.3 |
+| 3: Engram reads on a resident thread pool, beside the first layers | 12.56 [12.56-12.57] | 79.6 | 10.23 [10.22-10.24] | 97.5 | 92.8 | 220.9 |
+| 4: attention key tiles, indexer logits and recall in parallel | 12.90 [12.76-13.01] | 76.9 | 11.98 [11.98-12.00] | 83.2 | 93.7 | 280.8 |
+| 5: F32 islands split at their 16-input seams (router, head) | 13.36 [13.36-13.36] | 74.9 | 12.29 [12.28-12.30] | 81.1 | 94.8 | 280.1 |
+| 6: one launch for the GEMMs that share an input | 13.52 [13.52-13.53] | 73.9 | 12.40 [12.40-12.42] | 80.4 | 100.2 | 283.4 |
+
+Greedy ids equal in every run of every arm (`ids_fnv1a`).
+
+### 1. Small-row GEMMs (`receipts/s1-gemv/`)
+
+Base profile (`receipts/base/profile-chat-*.txt`): a step was 171.5 ms of wall, 162.3 ms of GPU
+time over 2,079 operations. The weight GEMMs took 98.2 ms at 117 to 180 GB/s, because a decode
+call ran the 16-row tile of the prefill GEMM (four warps, a block barrier every 32 inputs, one
+weight load in flight); the F32 islands' GEMM (router 26.4 ms at 5 GB/s, head 10.6 ms) a 64x64
+SIMT tile; the hyper-connection pre mix (16.0 ms) one block a row looping over 17 reductions;
+the expert planner (1.6 ms) one thread; and every row-index upload from pageable memory waited for
+the stream.
+
+- `r_gemv_kernel`: up to 16 rows. A warp owns an n8 column tile over the whole K; weights, scales
+  and activations stream through a 4-stage cp.async ring; with up to 4 rows the activations are
+  split into their hi/lo BF16 pairs once a stage. Each output gets the tiled kernel's mma
+  sequence (hi then lo every 16 inputs, the FP8 block scale folded every 128, `weight_scale_2` at
+  the end), so the bits are the same (`kbench`).
+- `r_gemv_f32_kernel`: router and head for up to 4 rows, one lane a weight row, each output the
+  same chain of separately rounded products and 16-input partial sums as `hy4f_gemm_kernel`.
+- `r_hc_dots_kernel` + `r_hc_mix_kernel`: the 17 reductions of a row as 17 blocks, each the same
+  strided sums and fixed tree.
+- `r_moe_plan_kernel`: one block's scans instead of one thread's walk; the same tile table.
+- the call's index tables (token ids, positions, cache rows, ring slots) in one upload at the
+  call's start; the Engram codes through page-locked staging.
+
+Dense FP8 GEMVs reach 210 to 249 GB/s alone, the routed experts 169, the router 59, the head 190
+(`receipts/s1-gemv/kbench.txt`). Decode step 165.7 -> 86.2 ms on `chat`, 185.3 -> 104.2 ms on
+`long`. What the profile shows next (`profile-chat-gaps.txt`): one 5.3 ms GPU idle a step while
+the host reads the first Engram layer's rows, and about 2,000 inter-kernel gaps of 1 to 5 us.
+
+### 2. Programmatic dependent launch (`receipts/s2-pdl/`)
+
+About 2,000 kernels a step, each a few microseconds behind the previous one and each with its own
+ramp. Every route kernel now launches with programmatic stream serialization (`r_launch`), lets
+its dependent launch as soon as its own blocks run, and waits (`griddepcontrol.wait`) before it
+reads a predecessor's output or writes memory. The small-row GEMMs stream their first weight
+stages (weights are resident and read-only) before the wait, so the next GEMM's weights load
+while the previous one finishes. No value changes: 3 of 3 tapes bit-equal. Decode step 86.2 ->
+80.9 ms on `chat`, 104.2 -> 98.3 ms on `long`.
+
+Tried with it and dropped: reading the Engram rows for all four layers on a thread spawned each
+call (32 reader threads) beside the first layers: 0.9 ms a step slower, the spawn cost more than
+the reads (128 page-cached `pread`s of about 2 us each spread over 8 ms).
+
+### 3. Engram reads on resident threads (`receipts/s3-engram-pool/`)
+
+The Engram rows of a call depend only on its token ids. The call now hashes all four Engram
+layers at its start and hands the reads (four rows a task) to 16 threads started with the route;
+the first Engram layer (layer 2) collects them, by which time the GPU has two layers queued. The
+first layer's GPU idle (5.3 ms a step under the profiler) is gone; decode step 80.9 -> 79.6 ms on
+`chat`, 98.3 -> 97.5 ms on `long`. The bench rows now carry every step's time (`steps_ms`).
+
+### 4. Attention key tiles, indexer logits, recall (`receipts/s4-attn-indexer/`)
+
+A profile with programmatic launch off (`receipts/s3-engram-pool/profile-long-decode-pdl-off.txt`,
+a diagnostic build: kernels then run back to back, so each kernel's time is its own) put `long`'s
+decode step at 63.0 ms of GEMMs, 14.0 ms of attention (333 us a layer), 6.5 ms of indexer group
+logits and 1.2 ms of recall.
+
+- Attention: each of a key tile's 18,432 values was a load whose address came from another load
+  (the key's row in the recall list), one after the other per thread. The tile's 32 rows are now
+  read once into shared memory, then its values as independent 16-byte loads. The values, and
+  every score, sum and output, are the same.
+- Indexer group logits: one block a query looped over its 526 groups. Now one thread a (query,
+  group), 64 groups a block with their keys in shared memory; each logit is the same chain.
+- Recall: one thread a query walked up to 512 groups. Now a thread an entry: own's place among
+  the picks, each distinct group's keys at its prefix offset; the same list.
+- Pooling: the 2 x 4 dot chains of a key run side by side, each in input order.
+
+Decode step 79.6 -> 76.9 ms on `chat`, 97.5 -> 83.2 ms on `long`; `long`'s prefill 221 -> 281
+tokens/s (the same attention kernel). 3 of 3 tapes bit-equal.
+
+### 5. Router and head split at their seams (`receipts/s5-f32-split/`)
+
+The F32 islands' chain for an output is a sum of 16-input partial sums, each from zero. A thread
+now computes one partial (one row, output and step) and one thread an output adds them in step
+order: the same bits with 192 times the parallelism. The router (512 outputs) went 53 -> 19 us a
+layer and the head at one row 3.90 -> 3.05 ms (243 GB/s; four rows keep the lane kernel).
+Decode step 76.9 -> 74.9 ms on `chat`, 83.2 -> 81.1 ms on `long`.
+
+### 6. One launch for the GEMMs that share an input (`receipts/s6-multi/`)
+
+`memra_hy4r_gemm_multi` runs up to six small-row GEMMs of one format and K as one grid, each
+output's blocks as its own launch had them: `q_a`, `kv_a`, the indexer's key and head weights
+(BF16, one launch; the FP8 output gate its own), the latent down projection with the shared
+expert's gate and up, the routed experts' gate and up, the latent up projection with the shared
+expert's down projection, and an Engram layer's value and four key projections. About 240 fewer
+launches a step and small outputs running beside large ones: 74.9 -> 73.9 ms on `chat`, 81.1 ->
+80.4 ms on `long`.
+
+Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
+GEMM that walks its items as one stream of stages, with the A operands laid out for direct
+loads and one-warp blocks for narrow outputs (+2.9 ms a step on `chat`); the routed experts'
+NVFP4 codes decoded with byte permutes instead of a table (no gain, `kbench` 125 -> 131 us).

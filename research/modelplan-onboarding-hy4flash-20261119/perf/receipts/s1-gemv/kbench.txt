@@ -1,0 +1,18 @@
+# kbench (perf/kbench, built against this commit's cu/hy4f_route.cu), one GB10, 3 warm-up + 20 timed
+# launches each after a 256 MiB L2-flushing read; GB/s = weight bytes / time. Every small-row result
+# compared bit for bit with the tiled kernel (FP8 also with its red arm) or memra_hy4f_gemm (F32).
+o_proj fp8 3072x16384 m1                         202.4 us    248.7 GB/s
+o_proj fp8 3072x8192 m1                          105.9 us    237.6 GB/s
+gate fp8 16384x3072 m1                           219.3 us    229.6 GB/s
+qb fp8 16384x1024 m1                              80.1 us    209.4 GB/s
+rdown bf16 1536x3072 m1                           47.4 us    198.9 GB/s
+rup bf16 3072x1536 m1                             45.7 us    206.3 GB/s
+qa bf16 1024x3072 m1                              32.7 us    192.4 GB/s
+kva bf16 576x3072 m1                              24.4 us    145.0 GB/s
+kb_t bf16 64x(512x192) m1                         60.1 us    209.3 GB/s
+kvb_v bf16 64x(256x512) m1                        75.8 us    221.2 GB/s
+experts nvfp4 16x(1536x1536) t1                  125.4 us    169.4 GB/s
+experts nvfp4 16x(1536x1536) t4                  236.3 us     89.9 GB/s
+router f32 512x3072 m1                            53.3 us     59.0 GB/s
+head f32 120832x3072 m1                         3898.8 us    190.4 GB/s
+KBENCH ALL EQUAL

@@ -388,6 +388,7 @@ fn bench(route: &mut Route, a: &Args, vocab: usize, load_s: f64) -> Result<(), S
             "decode_step_p99_ms": sorted[(sorted.len() * 99 / 100).min(sorted.len() - 1)] * 1e3,
             "ids_fnv1a": fnv1a(&ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")),
             "first_ids": ids.iter().take(16).collect::<Vec<_>>(),
+            "steps_ms": steps.iter().map(|s| (s * 1e5).round() / 100.0).collect::<Vec<_>>(),
         });
         println!("{row}");
         rows.push(row);

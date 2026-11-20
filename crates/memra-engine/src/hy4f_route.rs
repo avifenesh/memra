@@ -48,7 +48,40 @@ pub const NUMERIC_CLASS: &str = "hy-v4-flash-bf16x2-activations";
 mod ffi {
     use std::os::raw::c_void;
     // Return codes: 0 ok, 10000 + cudaError_t, 45xxx for a refused contract (cu/hy4f_route.cu).
+    /// One output of `memra_hy4r_gemm_multi` (`RSeg` in the kernel).
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct RSeg {
+        pub x: *const f32,
+        pub ldx: i64,
+        pub w: *const c_void,
+        pub sc: *const c_void,
+        pub s2: *const f32,
+        pub y: *mut f32,
+        pub ldy: i64,
+        pub n: i32,
+        pub grid_cols: i32,
+        pub gx0: i32,
+    }
+
     unsafe extern "C" {
+        pub fn memra_hy4r_gemm_multi(
+            segs: *const RSeg,
+            nseg: i32,
+            fmt: i32,
+            xbs: i64,
+            wbs: i64,
+            scbs: i64,
+            ybs: i64,
+            m: i32,
+            k: i32,
+            batch: i32,
+            tiles: *const i32,
+            ntiles: i32,
+            red_dq: i32,
+            tile_rows: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_hy4r_gemm(
             x: *const f32,
             ldx: i64,
@@ -71,6 +104,7 @@ mod ffi {
             ntiles: i32,
             red_dq: i32,
             small: i32,
+            tile_rows: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_hy4r_rms(
@@ -118,6 +152,18 @@ mod ffi {
             mag: f32,
             post: *mut f32,
             x: *mut f32,
+            dots: *mut f32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_hy4r_gemm_f32(
+            x: *const f32,
+            ldx: i64,
+            w: *const c_void,
+            y: *mut f32,
+            ldy: i64,
+            m: i32,
+            n: i32,
+            k: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_hy4r_write_back(
@@ -353,6 +399,8 @@ mod ffi {
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_hy4r_sync(stream: *mut c_void) -> i32;
+        pub fn memra_hy4r_pinned(p: *mut *mut c_void, bytes: usize) -> i32;
+        pub fn memra_hy4r_pinned_free(p: *mut c_void) -> i32;
     }
 }
 
@@ -367,6 +415,8 @@ const ATTN_SLAB: usize = 256;
 const ATTN_CHUNK: usize = 256;
 /// Rows of the head GEMM per launch.
 const HEAD_ROWS: usize = 256;
+/// Outputs one small-row launch takes (`R_MAXSEG`).
+const MULTI_MAX: usize = 6;
 
 fn ck(name: &str, rc: i32) -> Result<(), String> {
     match rc {
@@ -503,6 +553,44 @@ impl Dev {
 
     pub fn sync(&self) -> Result<(), String> {
         cu!(memra_hy4r_sync(self.sp))
+    }
+}
+
+/// Page-locked host staging, grown on demand: an upload from it runs in stream order without
+/// waiting for the stream. Growth first waits for the stream (an earlier upload may still read
+/// the old buffer).
+#[derive(Default)]
+struct Pinned {
+    p: Option<std::ptr::NonNull<u8>>,
+    bytes: usize,
+}
+
+impl Pinned {
+    fn get(&mut self, dev: &Dev, bytes: usize) -> Result<&mut [u8], String> {
+        if self.bytes < bytes {
+            dev.sync()?;
+            self.free();
+            admit(bytes, "a pinned staging buffer")?;
+            let mut p: *mut std::os::raw::c_void = std::ptr::null_mut();
+            cu!(memra_hy4r_pinned(&mut p, bytes))?;
+            self.p = std::ptr::NonNull::new(p as *mut u8);
+            self.bytes = bytes;
+        }
+        let p = self.p.ok_or("pinned staging: no buffer")?;
+        Ok(unsafe { std::slice::from_raw_parts_mut(p.as_ptr(), bytes) })
+    }
+
+    fn free(&mut self) {
+        if let Some(p) = self.p.take() {
+            unsafe { ffi::memra_hy4r_pinned_free(p.as_ptr() as *mut _) };
+        }
+        self.bytes = 0;
+    }
+}
+
+impl Drop for Pinned {
+    fn drop(&mut self) {
+        self.free();
     }
 }
 
@@ -846,6 +934,9 @@ enum Mlp {
 
 struct Engram {
     plan: HyV4EngramPlan,
+    /// staging for this layer's uploads (its own, so a later layer's host writes never race an
+    /// earlier layer's pending copy)
+    stage: Pinned,
     lookup: Vec<i32>,
     multipliers: Vec<i64>,
     moduli: Vec<u64>,
@@ -905,9 +996,8 @@ pub struct Forced {
 
 #[derive(Default)]
 struct Scratch {
-    tok: Grow,
-    qpos: Grow,
-    posrow: Grow,
+    /// the call's index tables (`CallIdx`)
+    idx: Grow,
     cs: [Grow; 2],
     s: Grow,
     post: Grow,
@@ -926,8 +1016,6 @@ struct Scratch {
     ao: Grow,
     a: Grow,
     lin: Grow,
-    lin_rows: Grow,
-    ring_rows: Grow,
     po: Grow,
     pml: Grow,
     tkv: Grow,
@@ -964,9 +1052,8 @@ struct Scratch {
     dg: Grow,
     du: Grow,
     da: Grow,
+    /// an Engram layer's codes, row scales and mask (one upload)
     ecodes: Grow,
-    escales: Grow,
-    emask: Grow,
     emb: Grow,
     evalue: Grow,
     ekeys: Grow,
@@ -974,6 +1061,99 @@ struct Scratch {
     hx: Grow,
     hn: Grow,
     logits: Grow,
+    /// the hyper-connection reductions of a call's rows
+    hcd: Grow,
+}
+
+/// A call's index tables in one device buffer (`CallIdx::build` lays them out on the host, the
+/// call uploads them once): device pointers into it, each `[t]` i32 unless noted.
+#[derive(Default, Clone)]
+struct CallIdx {
+    tok: u64,
+    qpos: u64,
+    /// position - cos/sin table origin
+    posrow: u64,
+    /// linear cache rows the call writes (`p + late`)
+    kv_rows: u64,
+    rings: Vec<RingIdx>,
+}
+
+#[derive(Default, Clone, Copy)]
+struct RingIdx {
+    w: usize,
+    /// decode: the ring slot of the position (`(p0 + late) % w`), one value
+    slot: u64,
+    /// prefill: ring slots of the earlier positions in the window `[p0 - b0]`
+    lin: u64,
+    /// prefill: ring slots of the call's last `min(t, w)` positions
+    keep: u64,
+}
+
+impl CallIdx {
+    /// The host table and the offsets (in i32 elements, the device base still to add).
+    fn build(
+        tokens: &[u32],
+        p0: usize,
+        cs_pos0: usize,
+        late: usize,
+        rings: &[usize],
+    ) -> (Vec<i32>, Self) {
+        let t = tokens.len();
+        let mut v: Vec<i32> = Vec::new();
+        let at = |v: &mut Vec<i32>, it: &mut dyn Iterator<Item = i32>| -> u64 {
+            let o = v.len() as u64;
+            v.extend(it);
+            o
+        };
+        let tok = at(&mut v, &mut tokens.iter().map(|x| *x as i32));
+        let qpos = at(&mut v, &mut (p0..p0 + t).map(|p| p as i32));
+        let posrow = at(&mut v, &mut (p0..p0 + t).map(|p| (p - cs_pos0) as i32));
+        let kv_rows = at(&mut v, &mut (p0..p0 + t).map(|p| (p + late) as i32));
+        let mut out = Vec::new();
+        for &w in rings {
+            let slot = at(&mut v, &mut std::iter::once(((p0 + late) % w) as i32));
+            let b0 = p0.saturating_sub(w - 1);
+            let lin = at(&mut v, &mut (b0..p0).map(|p| (p % w) as i32));
+            let keep = t.min(w);
+            let kp = at(&mut v, &mut (p0 + t - keep..p0 + t).map(|p| (p % w) as i32));
+            out.push(RingIdx {
+                w,
+                slot,
+                lin,
+                keep: kp,
+            });
+        }
+        let ci = Self {
+            tok,
+            qpos,
+            posrow,
+            kv_rows,
+            rings: out,
+        };
+        (v, ci)
+    }
+
+    fn at(mut self, base: u64) -> Self {
+        let f = |o: u64| base + o * 4;
+        self.tok = f(self.tok);
+        self.qpos = f(self.qpos);
+        self.posrow = f(self.posrow);
+        self.kv_rows = f(self.kv_rows);
+        for r in &mut self.rings {
+            r.slot = f(r.slot);
+            r.lin = f(r.lin);
+            r.keep = f(r.keep);
+        }
+        self
+    }
+
+    fn ring(&self, w: usize) -> Result<RingIdx, String> {
+        self.rings
+            .iter()
+            .find(|r| r.w == w)
+            .copied()
+            .ok_or_else(|| format!("no index table for a ring of {w}"))
+    }
 }
 
 /// The GEMM launchers, borrowing only the device and the red arms.
@@ -1017,6 +1197,58 @@ impl Gm<'_> {
             0,
             red,
             i32::from(m <= 16),
+            0,
+            self.dev.sp
+        ))
+    }
+
+    /// Several plain GEMMs of one format and K over `m` rows: `(x, ldx, weight, y, ldy)`. A
+    /// decode call (`m <= 16`) runs them as one launch (`memra_hy4r_gemm_multi`), each output's
+    /// bits those of its own launch; a prefill call runs them one by one.
+    fn gemm_multi(
+        &self,
+        outs: &[(*const f32, usize, &W, *mut f32, usize)],
+        m: usize,
+    ) -> Result<(), String> {
+        let (fmt, k) = (outs[0].2.fmt, outs[0].2.k);
+        let uniform = outs.iter().all(|o| o.2.fmt == fmt && o.2.k == k);
+        if m > 16 || outs.len() == 1 || outs.len() > MULTI_MAX || !uniform {
+            for &(x, ldx, w, y, ldy) in outs {
+                self.gemm(x, ldx, w, y, ldy, m)?;
+            }
+            return Ok(());
+        }
+        let segs: Vec<ffi::RSeg> = outs
+            .iter()
+            .map(|&(x, ldx, w, y, ldy)| ffi::RSeg {
+                x,
+                ldx: ldx as i64,
+                w: w.data.v(),
+                sc: w.scales.as_ref().map_or(std::ptr::null_mut(), |s| s.v()),
+                s2: std::ptr::null(),
+                y,
+                ldy: ldy as i64,
+                n: w.n as i32,
+                grid_cols: w.grid_cols,
+                gx0: 0,
+            })
+            .collect();
+        let red = i32::from(self.red.dequant_bf16 && fmt != FMT_BF16);
+        cu!(memra_hy4r_gemm_multi(
+            segs.as_ptr(),
+            segs.len() as i32,
+            fmt,
+            0,
+            0,
+            0,
+            0,
+            m as i32,
+            k as i32,
+            1,
+            std::ptr::null(),
+            0,
+            red,
+            0,
             self.dev.sp
         ))
     }
@@ -1038,6 +1270,19 @@ impl Gm<'_> {
         y: *mut f32,
         m: usize,
     ) -> Result<(), String> {
+        if m <= 4 {
+            return cu!(memra_hy4r_gemm_f32(
+                x,
+                k as i64,
+                wp as *const _,
+                y,
+                n as i64,
+                m as i32,
+                n as i32,
+                k as i32,
+                self.dev.sp
+            ));
+        }
         let rc = unsafe {
             memra_hy4f_gemm(
                 x as *const _,
@@ -1082,6 +1327,10 @@ pub struct Route<'a> {
     broken: bool,
     /// the current call records its selections (a device sync per layer)
     recording: bool,
+    /// the current call's index tables
+    ci: CallIdx,
+    /// the Engram table readers
+    reader: ReadPool,
 }
 
 fn attention_plan(layer: &memra_gguf::model_plan::LayerPlan) -> Result<&HyV4AttentionPlan, String> {
@@ -1382,6 +1631,8 @@ impl<'a> Route<'a> {
             history: Vec::new(),
             broken: false,
             recording: false,
+            ci: CallIdx::default(),
+            reader: ReadPool::new(16),
         })
     }
 
@@ -1435,6 +1686,7 @@ impl<'a> Route<'a> {
         }
         Ok(Engram {
             plan: *ep,
+            stage: Pinned::default(),
             lookup,
             multipliers,
             moduli,
@@ -1550,18 +1802,24 @@ impl<'a> Route<'a> {
         let n = self.hy.hc_mult as usize;
         let dev = &self.dev;
         let sc = &mut self.sc;
-        // per-call tables
-        let tok: Vec<i32> = tokens.iter().map(|v| *v as i32).collect();
-        let tokb = sc.tok.get(dev, t * 4)?.p;
-        dev.put(tokb as *mut _, &tok)?;
-        let qpos: Vec<i32> = (p0..p0 + t).map(|p| p as i32).collect();
-        let qposb = sc.qpos.get(dev, t * 4)?.p;
-        dev.put(qposb as *mut _, &qpos)?;
+        // the call's index tables, one upload while the stream is idle (the previous call ended
+        // on its logits copy), so no copy inside the call waits for the stream
         let cs_pos0 = p0.saturating_sub(3);
         let cs_rows = p0 + t - cs_pos0;
-        let posrow: Vec<i32> = (p0..p0 + t).map(|p| (p - cs_pos0) as i32).collect();
-        let posrowb = sc.posrow.get(dev, t * 4)?.p;
-        dev.put(posrowb as *mut _, &posrow)?;
+        let late = usize::from(self.red.kv_off_by_one && t == 1);
+        let mut rings: Vec<usize> = self
+            .caches
+            .iter()
+            .map(|c| c.ring)
+            .filter(|r| *r > 0)
+            .collect();
+        rings.sort_unstable();
+        rings.dedup();
+        let (table, ci) = CallIdx::build(tokens, p0, cs_pos0, late, &rings);
+        let idxb = sc.idx.get(dev, table.len() * 4)?.p;
+        dev.put(idxb as *mut _, &table)?;
+        self.ci = ci.at(idxb);
+        let tokb = self.ci.tok;
         for (bi, (_, inv)) in self.bases.iter().enumerate() {
             let b = sc.cs[bi].get(dev, cs_rows * 32 * 8)?;
             cu!(memra_hy4r_rope_table(
@@ -1583,9 +1841,28 @@ impl<'a> Route<'a> {
             h as i32,
             dev.sp
         ))?;
+        // the Engram layers' table reads run on host threads beside the first layers
+        let jobs = (0..self.layers.len())
+            .filter(|il| self.layers[*il].engram.is_some())
+            .map(|il| self.engram_job(il, p0, t))
+            .collect::<Result<Vec<_>, String>>()?;
+        let mut fetch = if jobs.is_empty() {
+            None
+        } else {
+            Some(engram_fetch(&self.reader, jobs)?)
+        };
+        let mut fetched: HashMap<usize, EngramData> = HashMap::new();
         for il in 0..self.layers.len() {
             let mut lr = LayerRec::default();
-            self.layer(il, p0, t, s, &mut lr, forced)?;
+            let ed = if self.layers[il].engram.is_some() {
+                if let Some(f) = fetch.take() {
+                    fetched.extend(f.wait()?);
+                }
+                fetched.remove(&il)
+            } else {
+                None
+            };
+            self.layer(il, p0, t, s, &mut lr, forced, ed)?;
             if let Some(r) = rec.as_deref_mut() {
                 r.push((il, lr));
             }
@@ -1594,6 +1871,7 @@ impl<'a> Route<'a> {
         let dev = &self.dev;
         let sc = &mut self.sc;
         let hx = sc.hx.get(dev, t * h * 4)?.f();
+        let hcd = sc.hcd.get(dev, t * 17 * 4)?.f();
         let numerics = self.plan.hy_v4_flash.unwrap();
         cu!(memra_hy4r_hc(
             s,
@@ -1609,6 +1887,7 @@ impl<'a> Route<'a> {
             0.0,
             std::ptr::null_mut(),
             hx,
+            hcd,
             dev.sp
         ))?;
         let hn = sc.hn.get(dev, t * h * 4)?.f();
@@ -1642,6 +1921,7 @@ impl<'a> Route<'a> {
         Ok(out)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn layer(
         &mut self,
         il: usize,
@@ -1650,18 +1930,21 @@ impl<'a> Route<'a> {
         s: *mut f32,
         rec: &mut LayerRec,
         forced: Option<&Forced>,
+        engram: Option<EngramData>,
     ) -> Result<(), String> {
         let h = self.plan.hidden_size as usize;
         let n = self.hy.hc_mult as usize;
         let res = self.layers[il].res;
         if self.layers[il].engram.is_some() {
-            self.engram(il, p0, t, s, rec)?;
+            let data = engram.ok_or(format!("layer {il}: no Engram reads"))?;
+            self.engram(il, t, s, rec, data)?;
         }
         let dev = &self.dev;
         let l = &self.layers[il];
         let post = self.sc.post.get(dev, t * n * 4)?.f();
         let x = self.sc.x.get(dev, t * h * 4)?.f();
         let xn = self.sc.xn.get(dev, t * h * 4)?.f();
+        let hcd = self.sc.hcd.get(dev, t * 17 * 4)?.f();
         cu!(memra_hy4r_hc(
             s,
             l.hc_attn.fun.f(),
@@ -1676,6 +1959,7 @@ impl<'a> Route<'a> {
             res.post_magnitude,
             post,
             x,
+            hcd,
             dev.sp
         ))?;
         cu!(memra_hy4r_rms(
@@ -1709,6 +1993,7 @@ impl<'a> Route<'a> {
             res.post_magnitude,
             post,
             x,
+            hcd,
             dev.sp
         ))?;
         cu!(memra_hy4r_rms(
@@ -1756,8 +2041,8 @@ impl<'a> Route<'a> {
         let (ql, kvl) = (a.plan.q_lora_rank as usize, a.plan.kv_lora_rank as usize);
         let hd = 256usize;
         let cs = sc.cs[bi].get(dev, 0)?.p as *const std::os::raw::c_void;
-        let posrow = sc.posrow.get(dev, 0)?.i();
-        let qpos = sc.qpos.get(dev, 0)?.i();
+        let posrow = self.ci.posrow as *mut i32;
+        let qpos = self.ci.qpos as *mut i32;
         let gate = sc.gate.get(dev, t * heads * hd * 4)?.f();
         let qa = sc.qa.get(dev, t * ql * 4)?.f();
         let qr = sc.qr.get(dev, t * ql * 4)?.f();
@@ -1775,8 +2060,39 @@ impl<'a> Route<'a> {
             dev: &self.dev,
             red: self.red,
         };
-        route.gemm(xn, h, &a.gate, gate, heads * hd, t)?;
-        route.gemm(xn, h, &a.qa, qa, ql, t)?;
+        // the projections of xn: one launch for those of one format (a decode call)
+        let (tkv, hwb) = match &a.indexer {
+            Some(ix) => {
+                let (ih, id) = (ix.plan.heads as usize, ix.plan.head_dim as usize);
+                (
+                    sc.tkv.get(dev, t * id * 4)?.f(),
+                    sc.hw.get(dev, t * ih * 4)?.f(),
+                )
+            }
+            None => (std::ptr::null_mut(), std::ptr::null_mut()),
+        };
+        {
+            let mut outs: Vec<(*const f32, usize, &W, *mut f32, usize)> = vec![
+                (xn, h, &a.gate, gate, heads * hd),
+                (xn, h, &a.qa, qa, ql),
+                (xn, h, &a.kva, ckv, 576),
+            ];
+            if let Some(ix) = &a.indexer {
+                let (ih, id) = (ix.plan.heads as usize, ix.plan.head_dim as usize);
+                outs.push((xn, h, &ix.tk, tkv, id));
+                if kv_len_of(p0, t) > ix.plan.top_k as usize {
+                    outs.push((xn, h, &ix.hw, hwb, ih));
+                }
+            }
+            let (same, other): (Vec<_>, Vec<_>) =
+                outs.into_iter().partition(|o| o.2.fmt == FMT_BF16);
+            if !same.is_empty() {
+                route.gemm_multi(&same, t)?;
+            }
+            if !other.is_empty() {
+                route.gemm_multi(&other, t)?;
+            }
+        }
         cu!(memra_hy4r_rms(
             qa,
             ql as i64,
@@ -1801,7 +2117,6 @@ impl<'a> Route<'a> {
             posrow,
             sp
         ))?;
-        route.gemm(xn, h, &a.kva, ckv, 576, t)?;
         cu!(memra_hy4r_rms(
             ckv,
             576,
@@ -1850,6 +2165,7 @@ impl<'a> Route<'a> {
             0,
             0,
             i32::from(t <= 16),
+            0,
             sp
         ))?;
         cu!(memra_hy4r_copy(
@@ -1865,7 +2181,6 @@ impl<'a> Route<'a> {
         ))?;
         // the cache rows of this call
         let cache = &self.caches[il];
-        let late = usize::from(self.red.kv_off_by_one && t == 1);
         let kv_len = p0 + t;
         let scale = (256f64).powf(-0.5) as f32;
         let sinks = a.sinks.f();
@@ -1880,10 +2195,9 @@ impl<'a> Route<'a> {
             if win as usize != w {
                 return Err("ring and window differ".into());
             }
+            let ri = self.ci.ring(w)?;
             if t == 1 {
-                let slot = [((p0 + late) % w) as i32];
-                let sb = sc.ring_rows.get(dev, 4)?.i();
-                dev.put(sb as *mut _, &slot)?;
+                let sb = ri.slot as *const i32;
                 cu!(memra_hy4r_copy(
                     lat,
                     576,
@@ -1904,16 +2218,14 @@ impl<'a> Route<'a> {
                 let b0 = p0.saturating_sub(w - 1);
                 let lin = sc.lin.get(dev, (p0 - b0 + t) * 576 * 4)?;
                 if p0 > b0 {
-                    let rows: Vec<i32> = (b0..p0).map(|p| (p % w) as i32).collect();
-                    let rb = sc.lin_rows.get(dev, rows.len() * 4)?.i();
-                    dev.put(rb as *mut _, &rows)?;
+                    let rb = ri.lin as *const i32;
                     cu!(memra_hy4r_gather_bf(
                         cache.kv.v(),
                         576,
                         rb,
                         lin.v(),
                         576,
-                        rows.len() as i32,
+                        (p0 - b0) as i32,
                         576,
                         sp
                     ))?;
@@ -1931,9 +2243,7 @@ impl<'a> Route<'a> {
                 ))?;
                 // the ring keeps the last `w` positions of the call
                 let keep = t.min(w);
-                let rows: Vec<i32> = (p0 + t - keep..p0 + t).map(|p| (p % w) as i32).collect();
-                let rb = sc.ring_rows.get(dev, rows.len() * 4)?.i();
-                dev.put(rb as *mut _, &rows)?;
+                let rb = ri.keep as *const i32;
                 cu!(memra_hy4r_copy(
                     lat.wrapping_add((t - keep) * 576),
                     576,
@@ -1951,9 +2261,7 @@ impl<'a> Route<'a> {
                 base = b0;
             }
         } else {
-            let rows: Vec<i32> = (p0..p0 + t).map(|p| (p + late) as i32).collect();
-            let rb = sc.ring_rows.get(dev, rows.len() * 4)?.i();
-            dev.put(rb as *mut _, &rows)?;
+            let rb = self.ci.kv_rows as *const i32;
             cu!(memra_hy4r_copy(
                 lat,
                 576,
@@ -1977,8 +2285,6 @@ impl<'a> Route<'a> {
         if let Some(ix) = &a.indexer {
             let ip = ix.plan;
             let (ih, id, pool) = (ip.heads as usize, ip.head_dim as usize, ip.pool as usize);
-            let tkv = sc.tkv.get(dev, t * id * 4)?.f();
-            route.gemm(xn, h, &ix.tk, tkv, id, t)?;
             cu!(memra_hy4r_rms(
                 tkv,
                 id as i64,
@@ -1990,9 +2296,7 @@ impl<'a> Route<'a> {
                 eps,
                 sp
             ))?;
-            let rows: Vec<i32> = (p0..p0 + t).map(|p| p as i32).collect();
-            let rb = sc.ring_rows.get(dev, rows.len() * 4)?.i();
-            dev.put(rb as *mut _, &rows)?;
+            let rb = self.ci.qpos as *const i32;
             let tkc = cache.tk.as_ref().unwrap();
             let gkc = cache.gk.as_ref().unwrap();
             cu!(memra_hy4r_copy(
@@ -2048,8 +2352,7 @@ impl<'a> Route<'a> {
                     posrow,
                     sp
                 ))?;
-                let hw = sc.hw.get(dev, t * ih * 4)?.f();
-                route.gemm(xn, h, &ix.hw, hw, ih, t)?;
+                let hw = hwb;
                 let ng = kv_len / pool;
                 let ilog = sc.ilog.get(dev, t * ng * 4)?.f();
                 let hscale = ((ih as f64).powf(-0.5) * (id as f64).powf(-0.5)) as f32;
@@ -2208,6 +2511,7 @@ impl<'a> Route<'a> {
             0,
             0,
             i32::from(t <= 16),
+            0,
             sp
         ))?;
         cu!(memra_hy4r_act(
@@ -2358,7 +2662,19 @@ impl<'a> Route<'a> {
                     sp
                 ))?;
                 let rin = sc.rin.get(dev, t * lat * 4)?.f();
-                route.gemm(xn, h, rdown, rin, lat, t)?;
+                let sg = sc.sg.get(dev, t * sh * 4)?.f();
+                let su = sc.su.get(dev, t * sh * 4)?.f();
+                let sa = sc.sa.get(dev, t * sh * 4)?.f();
+                // the latent down projection and the shared expert's gate and up read xn
+                route.gemm_multi(
+                    &[
+                        (xn, h, rdown, rin, lat),
+                        (xn, h, sgate, sg, sh),
+                        (xn, h, sup, su, sh),
+                    ],
+                    t,
+                )?;
+                cu!(memra_hy4r_act(sg, su, sa, (t * sh) as i64, -1.0, 0, sp))?;
                 let rows = t * k;
                 let small = rows <= 16;
                 let bm = if small { 16 } else { 64 };
@@ -2412,11 +2728,46 @@ impl<'a> Route<'a> {
                         max_tiles as i32,
                         red,
                         i32::from(small),
+                        t.min(bm) as i32,
                         sp
                     ))
                 };
-                grouped(xg, gate, mg)?;
-                grouped(xg, up, mu)?;
+                if small && gate.wbs == up.wbs && gate.scbs == up.scbs && gate.n == up.n {
+                    // a decode call: the experts' gate and up in one launch
+                    let seg = |w: &W, y: *mut f32| ffi::RSeg {
+                        x: xg,
+                        ldx: w.k as i64,
+                        w: w.data.v(),
+                        sc: w.scales.as_ref().unwrap().v(),
+                        s2: w.scale2.as_ref().unwrap().f(),
+                        y,
+                        ldy: w.n as i64,
+                        n: w.n as i32,
+                        grid_cols: 0,
+                        gx0: 0,
+                    };
+                    let segs = [seg(gate, mg), seg(up, mu)];
+                    cu!(memra_hy4r_gemm_multi(
+                        segs.as_ptr(),
+                        2,
+                        gate.fmt,
+                        0,
+                        gate.wbs as i64,
+                        gate.scbs as i64,
+                        0,
+                        rows as i32,
+                        gate.k as i32,
+                        1,
+                        tiles,
+                        max_tiles as i32,
+                        i32::from(route.red.dequant_bf16),
+                        t.min(bm) as i32,
+                        sp
+                    ))?;
+                } else {
+                    grouped(xg, gate, mg)?;
+                    grouped(xg, up, mu)?;
+                }
                 cu!(memra_hy4r_act(
                     mg,
                     mu,
@@ -2432,15 +2783,9 @@ impl<'a> Route<'a> {
                     my, lat as i32, rowmap, rw, t as i32, k as i32, macc, sp
                 ))?;
                 let routed = sc.routed.get(dev, t * h * 4)?.f();
-                route.gemm(macc, lat, rup, routed, h, t)?;
-                let sg = sc.sg.get(dev, t * sh * 4)?.f();
-                let su = sc.su.get(dev, t * sh * 4)?.f();
-                let sa = sc.sa.get(dev, t * sh * 4)?.f();
                 let sd = sc.sd.get(dev, t * h * 4)?.f();
-                route.gemm(xn, h, sgate, sg, sh, t)?;
-                route.gemm(xn, h, sup, su, sh, t)?;
-                cu!(memra_hy4r_act(sg, su, sa, (t * sh) as i64, -1.0, 0, sp))?;
-                route.gemm(sa, sh, sdown, sd, h, t)?;
+                // the latent up projection and the shared expert's down projection
+                route.gemm_multi(&[(macc, lat, rup, routed, h), (sa, sh, sdown, sd, h)], t)?;
                 let sum = sc.sum.get(dev, t * h * 4)?.f();
                 cu!(memra_hy4r_add(
                     sum,
@@ -2467,22 +2812,12 @@ impl<'a> Route<'a> {
         Ok(out)
     }
 
-    /// `HYV4FlashEngramLayer` on the call's rows: the n-gram hashes and the table reads on the
-    /// host, the rest on the device; adds into the streams.
-    fn engram(
-        &mut self,
-        il: usize,
-        p0: usize,
-        t: usize,
-        s: *mut f32,
-        rec: &mut LayerRec,
-    ) -> Result<(), String> {
-        let h = self.plan.hidden_size as usize;
-        let n = self.hy.hc_mult as usize;
+    /// An Engram layer's reads for the call's rows: the n-gram hashes (on the host, the step 5
+    /// code) and the table rows they name, checked against the table.
+    fn engram_job(&self, il: usize, p0: usize, t: usize) -> Result<EngramJob, String> {
         let eg = self.layers[il].engram.as_ref().unwrap();
         let ep = &eg.plan;
-        let (heads, dim) = (ep.heads as usize, ep.head_dim as usize);
-        let width = heads * dim;
+        let heads = ep.heads as usize;
         // n-grams over the history: a window that starts `max_ngram - 1` tokens back
         let back = (ep.max_ngram as usize).saturating_sub(1);
         let w0 = p0.saturating_sub(back);
@@ -2501,54 +2836,47 @@ impl<'a> Route<'a> {
             .map(u8::from)
             .collect();
         let total = ep.table_rows as usize;
-        let mut codes = vec![0u8; t * width];
-        let mut scales = vec![0f32; t * heads];
-        {
-            let (tf, ts) = (&eg.table.0, eg.table.1);
-            let (sf, ss) = (&eg.scales.0, eg.scales.1);
-            let flat: Vec<(usize, u64)> = rows
-                .iter()
-                .flat_map(|r| r.iter().copied())
-                .enumerate()
-                .collect();
-            for (_, ri) in &flat {
-                if *ri as usize >= total {
-                    return Err(format!(
-                        "layer {il}: Engram row {ri} past the table's {total}"
-                    ));
-                }
-            }
-            let threads = 16usize.min(flat.len()).max(1);
-            let per = flat.len().div_ceil(threads);
-            #[allow(clippy::type_complexity)]
-            let results: Vec<Result<Vec<(usize, Vec<u8>, f32)>, String>> =
-                std::thread::scope(|sc| {
-                    let hs: Vec<_> = flat
-                        .chunks(per)
-                        .map(|chunk| {
-                            sc.spawn(move || {
-                                let mut out = Vec::with_capacity(chunk.len());
-                                let mut sb = [0u8; 4];
-                                for &(i, ri) in chunk {
-                                    let mut c = vec![0u8; dim];
-                                    tf.read_exact_at(&mut c, (ts + ri as usize * dim) as u64)
-                                        .map_err(|e| format!("Engram pread: {e}"))?;
-                                    sf.read_exact_at(&mut sb, (ss + ri as usize * 4) as u64)
-                                        .map_err(|e| format!("Engram pread: {e}"))?;
-                                    out.push((i, c, f32::from_le_bytes(sb)));
-                                }
-                                Ok(out)
-                            })
-                        })
-                        .collect();
-                    hs.into_iter().map(|h| h.join().unwrap()).collect()
-                });
-            for r in results {
-                for (i, c, sv) in r? {
-                    codes[i * dim..(i + 1) * dim].copy_from_slice(&c);
-                    scales[i] = sv;
-                }
-            }
+        if let Some(ri) = rows.iter().flatten().find(|ri| **ri as usize >= total) {
+            return Err(format!(
+                "layer {il}: Engram row {ri} past the table's {total}"
+            ));
+        }
+        Ok(EngramJob {
+            il,
+            rows,
+            mask,
+            table: eg.table.clone(),
+            scales: eg.scales.clone(),
+            dim: ep.head_dim as usize,
+        })
+    }
+
+    /// `HYV4FlashEngramLayer` on the call's rows, the table rows already read (`engram_fetch`);
+    /// adds into the streams.
+    fn engram(
+        &mut self,
+        il: usize,
+        t: usize,
+        s: *mut f32,
+        rec: &mut LayerRec,
+        data: EngramData,
+    ) -> Result<(), String> {
+        let h = self.plan.hidden_size as usize;
+        let n = self.hy.hc_mult as usize;
+        let eg = self.layers[il].engram.as_ref().unwrap();
+        let ep = &eg.plan;
+        let (heads, dim) = (ep.heads as usize, ep.head_dim as usize);
+        let width = heads * dim;
+        let EngramData {
+            rows,
+            codes,
+            scales,
+            mask,
+        } = data;
+        if codes.len() != t * width || scales.len() != t * heads || mask.len() != t {
+            return Err(format!(
+                "layer {il}: the Engram reads are not the call's rows"
+            ));
         }
         rec.engram_rows = Some(rows);
         if self.red.engram_off {
@@ -2558,12 +2886,32 @@ impl<'a> Route<'a> {
         let sc = &mut self.sc;
         let sp = dev.sp;
         let eps = ep.norm_epsilon.value();
-        let cb = sc.ecodes.get(dev, t * width)?.v();
-        dev.put(cb, &codes)?;
-        let sb = sc.escales.get(dev, t * heads * 4)?.f();
-        dev.put(sb as *mut _, &scales)?;
-        let mb = sc.emask.get(dev, t)?.v();
-        dev.put(mb, &mask)?;
+        // one upload of codes | scales | mask through the layer's pinned staging
+        let (oc, os, om) = (0, (t * width).div_ceil(16) * 16, 0);
+        let om = om + os + (t * heads * 4).div_ceil(16) * 16;
+        let total = om + t;
+        let stage = self.layers[il]
+            .engram
+            .as_mut()
+            .unwrap()
+            .stage
+            .get(dev, total)?;
+        stage[oc..oc + t * width].copy_from_slice(&codes);
+        for (i, v) in scales.iter().enumerate() {
+            stage[os + 4 * i..os + 4 * i + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        stage[om..om + t].copy_from_slice(&mask);
+        let eb = sc.ecodes.get(dev, total)?;
+        cu!(memra_hy4r_h2d(
+            eb.v(),
+            stage.as_ptr() as *const _,
+            total,
+            sp
+        ))?;
+        let cb = eb.at(oc);
+        let sb = eb.at(os) as *mut f32;
+        let mb = eb.at(om);
+        let eg = self.layers[il].engram.as_ref().unwrap();
         let emb = sc.emb.get(dev, t * width * 4)?.f();
         cu!(memra_hy4r_engram_rows(
             cb,
@@ -2581,7 +2929,16 @@ impl<'a> Route<'a> {
             dev: &self.dev,
             red: self.red,
         };
-        route.gemm(emb, width, &eg.value, value, h, t)?;
+        let keys = sc.ekeys.get(dev, n * t * h * 4)?.f();
+        {
+            // the value and the stream keys read the same rows: one launch (a decode call)
+            let mut outs: Vec<(*const f32, usize, &W, *mut f32, usize)> =
+                vec![(emb, width, &eg.value, value, h)];
+            for (j, (kw, _)) in eg.keys.iter().enumerate() {
+                outs.push((emb, width, kw, keys.wrapping_add(j * t * h), h));
+            }
+            route.gemm_multi(&outs, t)?;
+        }
         cu!(memra_hy4r_add(
             value,
             value,
@@ -2605,10 +2962,8 @@ impl<'a> Route<'a> {
             eps,
             sp
         ))?;
-        let keys = sc.ekeys.get(dev, n * t * h * 4)?.f();
-        for (j, (kw, kb)) in eg.keys.iter().enumerate() {
+        for (j, (_, kb)) in eg.keys.iter().enumerate() {
             let kj = keys.wrapping_add(j * t * h);
-            route.gemm(emb, width, kw, kj, h, t)?;
             cu!(memra_hy4r_add(
                 kj,
                 kj,
@@ -2635,6 +2990,172 @@ impl<'a> Route<'a> {
         ))?;
         Ok(())
     }
+}
+
+/// One Engram layer's table reads for a call (`Route::engram_job`).
+struct EngramJob {
+    il: usize,
+    rows: Vec<Vec<u64>>,
+    mask: Vec<u8>,
+    table: (Arc<std::fs::File>, usize),
+    scales: (Arc<std::fs::File>, usize),
+    dim: usize,
+}
+
+/// What `engram_fetch` read for a layer: the rows' FP8 codes `[t, heads, dim]` and scales.
+struct EngramData {
+    rows: Vec<Vec<u64>>,
+    codes: Vec<u8>,
+    scales: Vec<f32>,
+    mask: Vec<u8>,
+}
+
+/// Host threads for the Engram table reads, started with the route: a call's reads go out as
+/// tasks (a few rows each) and its results come back on the call's channel. Spawning the threads
+/// per call cost more than the reads (about 8 ms a decode call for 128 page-cached `pread`s).
+struct ReadPool {
+    tx: Option<std::sync::mpsc::Sender<Box<dyn FnOnce() + Send>>>,
+    workers: Vec<std::thread::JoinHandle<()>>,
+}
+
+impl ReadPool {
+    fn new(threads: usize) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel::<Box<dyn FnOnce() + Send>>();
+        let rx = Arc::new(std::sync::Mutex::new(rx));
+        let workers = (0..threads)
+            .map(|_| {
+                let rx = rx.clone();
+                std::thread::spawn(move || {
+                    loop {
+                        let task = match rx.lock() {
+                            Ok(r) => r.recv(),
+                            Err(_) => return,
+                        };
+                        match task {
+                            Ok(f) => f(),
+                            Err(_) => return,
+                        }
+                    }
+                })
+            })
+            .collect();
+        Self {
+            tx: Some(tx),
+            workers,
+        }
+    }
+
+    fn submit(&self, f: Box<dyn FnOnce() + Send>) -> Result<(), String> {
+        self.tx
+            .as_ref()
+            .ok_or("the Engram reader is stopped")?
+            .send(f)
+            .map_err(|_| "the Engram reader is gone".to_string())
+    }
+}
+
+impl Drop for ReadPool {
+    fn drop(&mut self) {
+        self.tx = None;
+        for w in self.workers.drain(..) {
+            let _ = w.join();
+        }
+    }
+}
+
+/// Rows a read task takes.
+const ENGRAM_TASK_ROWS: usize = 4;
+
+type EngramRead = Result<Vec<(usize, usize, Vec<u8>, f32)>, String>;
+
+/// Every Engram layer's table rows of a call, read with `pread` on the pool's threads; returns
+/// at once, the reads running beside the GPU's first layers (the hashes need only the token
+/// ids). `EngramFetch::wait` collects them.
+fn engram_fetch(pool: &ReadPool, jobs: Vec<EngramJob>) -> Result<EngramFetch, String> {
+    let (tx, rx) = std::sync::mpsc::channel::<EngramRead>();
+    let mut tasks = 0usize;
+    for (j, job) in jobs.iter().enumerate() {
+        let flat: Vec<(usize, u64)> = job.rows.iter().flatten().copied().enumerate().collect();
+        for chunk in flat.chunks(ENGRAM_TASK_ROWS) {
+            let chunk = chunk.to_vec();
+            let (table, scales, dim) = (job.table.clone(), job.scales.clone(), job.dim);
+            let tx = tx.clone();
+            pool.submit(Box::new(move || {
+                let read = || -> EngramRead {
+                    let mut res = Vec::with_capacity(chunk.len());
+                    let mut sb = [0u8; 4];
+                    for (i, ri) in chunk {
+                        let mut c = vec![0u8; dim];
+                        table
+                            .0
+                            .read_exact_at(&mut c, (table.1 + ri as usize * dim) as u64)
+                            .map_err(|e| format!("Engram pread: {e}"))?;
+                        scales
+                            .0
+                            .read_exact_at(&mut sb, (scales.1 + ri as usize * 4) as u64)
+                            .map_err(|e| format!("Engram pread: {e}"))?;
+                        res.push((j, i, c, f32::from_le_bytes(sb)));
+                    }
+                    Ok(res)
+                };
+                let _ = tx.send(read());
+            }))?;
+            tasks += 1;
+        }
+    }
+    Ok(EngramFetch { jobs, rx, tasks })
+}
+
+/// A call's Engram reads in flight.
+struct EngramFetch {
+    jobs: Vec<EngramJob>,
+    rx: std::sync::mpsc::Receiver<EngramRead>,
+    tasks: usize,
+}
+
+impl EngramFetch {
+    fn wait(self) -> Result<Vec<(usize, EngramData)>, String> {
+        let mut out: Vec<(Vec<u8>, Vec<f32>)> = self
+            .jobs
+            .iter()
+            .map(|j| {
+                let rows: usize = j.rows.iter().map(Vec::len).sum();
+                (vec![0u8; rows * j.dim], vec![0f32; rows])
+            })
+            .collect();
+        for _ in 0..self.tasks {
+            let got = self
+                .rx
+                .recv()
+                .map_err(|_| "an Engram read task was dropped".to_string())??;
+            for (j, i, c, sv) in got {
+                let dim = self.jobs[j].dim;
+                out[j].0[i * dim..(i + 1) * dim].copy_from_slice(&c);
+                out[j].1[i] = sv;
+            }
+        }
+        Ok(self
+            .jobs
+            .into_iter()
+            .zip(out)
+            .map(|(job, (codes, scales))| {
+                (
+                    job.il,
+                    EngramData {
+                        rows: job.rows,
+                        codes,
+                        scales,
+                        mask: job.mask,
+                    },
+                )
+            })
+            .collect())
+    }
+}
+
+/// The keys a call's last query sees: everything before it and the call's rows.
+fn kv_len_of(p0: usize, t: usize) -> usize {
+    p0 + t
 }
 
 fn cs_pos0_of(p0: usize) -> usize {
