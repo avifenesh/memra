@@ -7,8 +7,9 @@ layers), 4-stream hyper-connections, a latent MoE of 512 experts and the Engram 
 Support state: **NativeReference**. The reference executor runs the whole text program, <!-- support: hy_v4_flash-reference -->
 prefill and decode, and matches the pinned transformers code to the bit on the tiny fixture. The
 native checkpoint runner `hy4f-run` runs the artifact on one GB10 and passes CheckpointParity
-against the pinned transformers program in f64. RewriteParity and Serve are pending and nothing
-serves the pack. NativeQualified needs those gates on a pinned topology first. <!-- support: none; not NativeQualified -->
+against the pinned transformers program in f64, and so does the GPU route `hy4f-gpu` (weights
+resident, a carried cache, tensor-core GEMMs on two BF16 input terms) in its own numeric class.
+RewriteParity and Serve are pending and nothing serves the pack. NativeQualified needs those gates on a pinned topology first. <!-- support: none; not NativeQualified -->
 
 | | |
 |---|---|
@@ -16,7 +17,7 @@ serves the pack. NativeQualified needs those gates on a pinned topology first. <
 | **Pack** | `hy_v4_flash` (aliases `hy-v4-flash`, `hy4-flash`) |
 | **Artifact** | `Avifenesh/Hy4-flash-NVFP4@f9eac06cf022cfd3dc2e8ed423922466b2adcd87`, from `tencent/Hy4-flash@d88c9dfd96ba4f2e6b92adba0b8e8f1c8696f959`: NVFP4 routed experts, FP8 128x128 attention projections, FP8 Engram rows, BF16 and F32 elsewhere; 2,429 tensors, 161.08 GB |
 | **Drafters** | the checkpoint's DFly2 drafter is contract-owned and not run |
-| **Hardware** | CPU for the reference gates; one GB10 (DGX Spark, sm_121a) for the checkpoint runner |
+| **Hardware** | CPU for the reference gates; one GB10 (DGX Spark, sm_121a) for the checkpoint runner and the GPU route (87.4 GiB of weights resident, the Engram tables read from disk) |
 | **Input** | text; the artifact's chat template and tool-call format; image parts are out of scope |
 
 ## Gates
@@ -28,12 +29,16 @@ serves the pack. NativeQualified needs those gates on a pinned topology first. <
 - CheckpointParity: `memra model verify checkpoint <artifact> --against hy_v4_flash --oracle
   <tapes> --native-runner hy4f-run` scores a chat turn and a 2,112-token request (prefilled on
   each side of the indexer budget) at every position: indexer and router picks and Engram rows
-  first, then argmax and the class band.
+  first, then argmax and the class band. `--native-runner hy4f-gpu` scores the GPU route
+  (class `hy-v4-flash-bf16x2-activations`) on the same f64 tapes with the oracle's picks applied,
+  its own picks and selection scores checked within their bands.
 
 ## Limits
 
 - The checkpoint runner is a correctness route: one layer at a time from disk, f32, minutes per
   request. No serving route.
+- The GPU route is untuned: a first reading of 225 tokens/s prefill on a 2,104-token prompt and
+  5.4 tokens/s decode at c=1 on one GB10.
 - Vision is out of scope; the tower's tensors are owned by the contract and not run.
 - The context the pack would serve is not measured.
 
@@ -43,4 +48,6 @@ serves the pack. NativeQualified needs those gates on a pinned topology first. <
   (pins, semantics, each step's oracle and gate).
 - Pack: `crates/memra-gguf/src/model_packs/hy_v4_flash/`; reference:
   `crates/memra-reference/src/hy_v4_flash.rs` and `hy_v4_flash_trunk.rs`; checkpoint runner:
-  `crates/memra-engine/src/hy4f_gpu.rs`, `src/bin/hy4f_run.rs`, `cu/hy4f_gpu.cu`.
+  `crates/memra-engine/src/hy4f_gpu.rs`, `src/bin/hy4f_run.rs`, `cu/hy4f_gpu.cu`; GPU route:
+  `src/hy4f_route.rs`, `src/bin/hy4f_gpu.rs`, `cu/hy4f_route.cu`
+  ([activation format](../decisions/HY4F-GPU-ACTIVATION-FORMAT.md)).

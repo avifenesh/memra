@@ -19,7 +19,16 @@ Three backends of the same program (`--dtype`):
   activations;
 - `bf16`, a diagnostic: the program at the dtype `from_pretrained` gives it, BF16 parameters and
   activations, the `_keep_in_fp32_modules_strict` modules and the head in F32, the exactly
-  dequantized weights rounded once to BF16.
+  dequantized weights rounded once to BF16;
+- `bf16a`, the backend the GPU route's class (`hy-v4-flash-bf16-activations`, step 8) is banded
+  from: the `f32` backend with the input of every linear layer the program runs at its
+  activation dtype rounded to BF16, as a W4A16 or BF16 kernel takes it (every `nn.Linear` outside
+  `_keep_in_fp32_modules_strict` and the routed experts' two `F.linear`s); the weights stay the
+  exactly dequantized values in F32, and the program's F32 islands (router, hyper-connections,
+  indexer pooling, head) stay F32;
+- `bf16x2a`: as `bf16a`, the input carried as two BF16 terms instead (`hi = bf16(x)`,
+  `lo = bf16(x - hi)`, the GEMM reads `hi + lo`: 16 significant bits), the representation the GPU
+  route's GEMMs take.
 
 Both read the Engram tables as stored: a row is `f32(e4m3 * row scale)`, the pinned
 `_fp8_round_trip` runs on it in F32 (where it is the identity, asserted) and the row then meets
@@ -67,6 +76,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+F_REAL = F
+
 import transformers
 import transformers.cache_utils as cache_mod
 import transformers.conversion_mapping as conv_mod
@@ -96,14 +107,16 @@ ap = argparse.ArgumentParser()
 ap.add_argument("checkpoint")
 ap.add_argument("request")
 ap.add_argument("out")
-ap.add_argument("--dtype", choices=["f64", "f32", "bf16"], default="f64")
+ap.add_argument("--dtype", choices=["f64", "f32", "bf16", "bf16a", "bf16x2a"], default="f64")
 ap.add_argument("--dump-layers", default="")
 ap.add_argument("--layers", type=int, default=0, help="diagnostic: run only the first N decoder layers")
 ap.add_argument("--force-selections", default="",
                 help="band backend: take every router and indexer pick from this tape (the f64 oracle's)")
 a = ap.parse_args()
 F64 = a.dtype == "f64"
-ACT = {"f64": torch.float64, "f32": torch.float32, "bf16": torch.bfloat16}[a.dtype]
+ACT = {"f64": torch.float64, "f32": torch.float32, "bf16": torch.bfloat16, "bf16a": torch.float32,
+       "bf16x2a": torch.float32}[a.dtype]
+A16 = a.dtype in ("bf16a", "bf16x2a")
 T0 = time.time()
 
 
@@ -232,7 +245,7 @@ def program_dtype(module_name, value):
         return value
     if F64:
         return value.to(torch.float64)
-    if a.dtype == "f32" or any(k in module_name for k in KEEP_F32):
+    if a.dtype in ("f32", "bf16a", "bf16x2a") or any(k in module_name for k in KEEP_F32):
         return value.to(REAL_F32)
     return value.to(torch.bfloat16)
 
@@ -268,8 +281,10 @@ class LazyBank:
 
     def __getitem__(self, expert):
         e = int(expert)
-        w = torch.cat([nvfp4(s, e) for s in self.stems], dim=-2)
-        return w.to(self.dtype)
+        w = torch.cat([nvfp4(s, e) for s in self.stems], dim=-2).to(self.dtype)
+        # `bf16a`: the experts' `F.linear` rounds its input (the program's activation dtype)
+        w._a16 = A16
+        return w
 
 
 class LazyRows(torch.nn.Module):
@@ -355,6 +370,33 @@ with torch.no_grad():
 for n, t in list(model.named_parameters()) + list(model.named_buffers()):
     assert not t.is_meta, f"{n} is still on the meta device"
 assert sorted(il + 1 for il in engrams) == sorted(cfg.engram_layer_ids), "Engram sits at id - 1"
+A16_COUNT = {"modules": 0, "expert_calls": 0}
+if A16:
+    def a16(x):
+        hi = x.to(torch.bfloat16).to(REAL_F32)
+        if a.dtype == "bf16a":
+            return hi
+        return hi + (x - hi).to(torch.bfloat16).to(REAL_F32)
+
+    def round_input(module, args):
+        return (a16(args[0]),) + tuple(args[1:])
+
+    for name, module in model.named_modules():
+        if isinstance(module, torch.nn.Linear) and not any(k in name for k in KEEP_F32):
+            module.register_forward_pre_hook(round_input)
+            A16_COUNT["modules"] += 1
+    functional = types.ModuleType("functional_program")
+    functional.__dict__.update({k: getattr(F_REAL, k) for k in dir(F_REAL) if not k.startswith("__")})
+
+    def a16_linear(x, w, b=None):
+        if getattr(w, "_a16", False):
+            A16_COUNT["expert_calls"] += 1
+            x = a16(x)
+        return F_REAL.linear(x, w, b)
+
+    functional.linear = a16_linear
+    model_mod.F = functional
+    log(f"{a.dtype}: {A16_COUNT['modules']} linear layers round their input")
 log(f"model ready ({a.dtype}), {n_layers} layers, Engram at decoder layers {sorted(engrams)}")
 
 # ---- recording -------------------------------------------------------------------------------------
@@ -593,6 +635,7 @@ def sha(path):
     return h.hexdigest()
 
 
+assert not A16 or (A16_COUNT["modules"] > 0 and A16_COUNT["expert_calls"] > 0), "bf16a rounded nothing"
 tape = {
     "format": "memra-checkpoint-tape-v2",
     "engine": f"transformers-pr50903@b865850d0532-cpu-{a.dtype}",
@@ -614,6 +657,7 @@ tape = {
                "records": router_index},
     "engram": engram_index,
     "forced_selections": bool(a.force_selections),
+    "a16": A16_COUNT if A16 else None,
     "forcing_tape_sha256": FORCING_DIGEST,
     "torch": torch.__version__,
     "transformers": transformers.__version__,

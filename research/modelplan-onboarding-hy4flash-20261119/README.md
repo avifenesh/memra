@@ -921,3 +921,179 @@ refuses is a lower-precision weight.
   its own band from the same oracle.
 - The f64 oracle tapes of these three requests are the fixed reference: rerun only the native
   side.
+
+# Step 8: the GPU route on one GB10, CheckpointParity of its numeric class (2026-11-20)
+
+Verdict: `hy4f-gpu` (memra-engine `hy4f_route`) runs the artifact on one GB10 with the weights
+resident in their stored formats, a carried cache and every operation on the GPU, and passes
+`memra model verify checkpoint --against hy_v4_flash` against the same f64 oracle tapes as
+step 7: 4,263 positions of the three requests, every own indexer and router pick its own scores'
+top-k under the plan's tie order, every selection score within its band of the oracle's, 38
+router picks that differ from the oracle's all near ties, every Engram row equal, the argmax
+equal at every position and the largest logit difference 0.054 against a class band of 0.111.
+Five wrong programs fail the same command. The class is not plain BF16 activations: one position
+of `long` amplifies input perturbations about a thousandfold, and every program that rounds its
+linear inputs to BF16 once (this route, the pinned program's own BF16 backend, and a backend
+that rounds only the linear inputs) lands 13 to 22 logits from f64 there and moves 16 to 51
+argmaxes. The route carries each GEMM input as two BF16 terms instead. The first throughput
+reading: 225 tokens/s prefill on a 2,104-token prompt and 5.4 tokens/s decode at c=1; nothing
+is tuned.
+
+## The route
+
+`crates/memra-engine/src/hy4f_route.rs`, `src/bin/hy4f_gpu.rs`, kernels `cu/hy4f_route.cu`:
+
+- numeric class `hy-v4-flash-bf16x2-activations`. Every weight GEMM takes its input as two BF16
+  terms, `hi = bf16(x)` and `lo = bf16(x - hi)` (16 significant bits), and multiplies both on the
+  tensor cores (`mma.sync` m16n8k16, F32 accumulation, hi then lo at each 16-wide K step) by the
+  weight as stored: BF16 as read; FP8 E4M3 codes, exact in BF16, with the 128x128 F32 block
+  scale on each 128-input partial sum; NVFP4 e2m1 codes times their E4M3 group scale (at most six
+  significant bits, exact in BF16) with the expert's `weight_scale_2` on the finished sum. No
+  rounded dequantized weight exists. The program's F32 islands stay F32: router logits and the
+  head are F32 GEMMs over F32 inputs (step 7's kernel), and the hyper-connection streams, norms,
+  RoPE (angles in f64), softmax, router scores, indexer pooling and group logits and the Engram
+  gates are F32 kernels;
+- the weights are uploaded once, 87.4 GiB of device memory (93.4 GB read with `pread`, the page
+  cache of each tensor dropped after it), in about 50 to 85 s; the runner refuses unless
+  MemAvailable covers them with 16 GiB to spare, and the runs here ran under a 114 GB
+  `MemoryMax` scope. The Engram tables (66 GB) stay on disk: each call hashes its n-grams on the
+  host with step 5's code and reads each row and its scale with `pread`; the GPU decodes,
+  normalizes and gates them;
+- the carried cache: per layer the normalized latent and the rotated rope key (576 F32 values a
+  token; a 512-row ring on sliding layers, so a query reads its 511 previous keys and its own),
+  and on the 12 indexed layers the indexer's token key (128 F32) and every closed group's pooled
+  key (128 F32), pooled when the group's fourth key arrives. MLA runs absorbed over the latent:
+  `q_lat = kv_b_nope^T q_nope` per head, score `q_lat . latent + q_rope . k_rope`, the sink in the
+  max and the denominator, output `kv_b_value (sum p * latent)`;
+- the indexer, router and Engram run on the GPU: group logits of the groups closed before the
+  query (`-inf` for the rest of the call's groups), a radix-select top-k under the CUDA tie order
+  (lower index first), the recall with the own group and its key rows; sigmoid scores plus the
+  correction bias, top-16, weights normalized and scaled; a grouped expert GEMM over a device
+  tile table, combined in ascending expert order;
+- a call scores tokens `p0..p0 + t` against the cache: the prefill call, then one decode call per
+  later token, teacher-forced for the gate. Every kernel computes a row on its own in an order
+  that does not depend on the other rows or on the tile shape (no split K; the 16-row decode tile
+  runs the same per-element sequence as the 64-row prefill tile; attention walks a query's keys in
+  fixed 256-key chunks merged in order). Measured: `long` (2,104-token prefill, 8 decode calls) and
+  `long-split` (2,040-token prefill, 72 decode calls) give the same logits bit for bit at all
+  2,112 positions, free and forced;
+- `--force-selections TAPE` applies the oracle tape's router and indexer picks (the router's
+  weights follow the forced experts from the route's own scores) while the route records its own
+  picks and scores. Free and forced runs of `long` are equal bit for bit at every position before
+  the route's first own pick that differs from the oracle's (position 426), and diverge there
+  (`gpu/free_vs_forced.py`).
+
+## Why two BF16 terms
+
+The class was first built with single BF16 inputs and a BF16 cache, then measured against the
+f64 tapes with selections forced to the oracle's (`gpu/receipts/spreads.jsonl`):
+
+| program, selections forced to f64's | request | max abs | argmax equal | router score spread |
+|---|---|---:|---:|---:|
+| the route, single BF16 inputs, BF16 cache | `chat` | 0.248 | 39 / 39 | 0.0135 |
+| the route, single BF16 inputs, BF16 cache | `long` | 13.3 (pos 756) | 2,096 / 2,112 | 0.864 |
+| pinned program, `bf16` backend (BF16 weights, activations and streams) | `long` | 18.9 (pos 756) | 2,061 / 2,112 | 0.888 |
+| pinned program, `bf16a` backend (only the linear inputs at BF16) | `long` | 21.6 (pos 756) | 2,092 / 2,112 | 0.513 |
+| pinned program, `bf16x2a` backend (linear inputs as two BF16 terms) | `long` | 0.0555 (pos 1083) | 2,112 / 2,112 | 0.0029 |
+| pinned program, `f32` backend (step 7) | `long` | 0.0567 (pos 1083) | 2,112 / 2,112 | 0.0044 |
+
+At position 756 the router's selection scores move by 2e-6 at layer 1 in the f32 backend and by
+2e-3 at layer 39; the BF16 backends start at about 1e-3 and reach 0.5 to 0.9
+(`gpu/receipts/position-756.txt`). The amplification belongs to the program at that position, so
+no single-BF16-input program can hold the argmax at every position against f64, and a band wide
+enough to admit one (2 x 21.6) would admit any wrong program. With two BF16 terms the backend sits
+where the f32 backend does. Forced, the single-BF16 route's own router picks differ from the
+oracle's on 6,172 of 86,592 queries of `long`; the two-term route's on 19, all near ties. The decision record is
+`docs/decisions/HY4F-GPU-ACTIVATION-FORMAT.md`.
+
+## Band
+
+From the pinned program's `bf16x2a` backend, never from the route: the step 7 `f32` backend with
+the input of every linear layer the program runs at its activation dtype (every `nn.Linear`
+outside `_keep_in_fp32_modules_strict`, 516 modules, and the routed experts' two `F.linear`s)
+carried as `hi + lo` BF16, the weights the exact dequantized values in F32, its picks forced to
+the f64 tapes' (`checkpoint/make_checkpoint_oracle.py --dtype bf16x2a`). Against f64 it differs
+by at most 0.0555 on `long` and 3.1e-4 on `chat`, argmax equal everywhere; its router selection
+scores sit within 2.89e-3 and its group logits within 1.12e-2. Each band is twice that: logits
+0.111 absolute, router 0.0058, indexer 0.0224. The route runs forced, as that backend ran
+(`TapeClassGate::forced_selections`): its own picks are still checked (own top-k, scores within
+the band, a differing pick only at a near tie), and the logit band then measures the class's
+numeric spread along the same selections. Left free, a near-tie flip moves later positions by up
+to 16.7 logits, as it does for the f32 backend free (step 7).
+
+## Results
+
+`memra model verify checkpoint <artifact> --against hy_v4_flash --oracle <step 7 f64 tapes>
+--native-runner hy4f-gpu` (`gpu/receipts/verify/final`):
+
+| request | indexer calls / queries | router calls / queries | picks differ (all near ties) | Engram calls | argmax equal | max abs (prefill / decode) | router score / group logit spread |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `chat` | 0 / 0 | 164 / 1,599 | 0 | 16 | 39 / 39 | 1.2e-3 / 3.9e-4 | 4.7e-5 / - |
+| `long` | 108 / 25,344 | 369 / 86,592 | 19 router | 36 | 2,112 / 2,112 | 0.054 / 5.1e-4 | 1.6e-3 / 7.1e-3 |
+| `long-split` | 768 / 768 | 2,993 / 86,592 | 19 router | 292 | 2,112 / 2,112 | 0.054 / 4.1e-3 | 1.6e-3 / 1.9e-3 |
+
+## Red arms
+
+Each through the same command (`checkpoint/red-runner.sh` adds `--red ARM`); each fails before
+any logit is read (`gpu/receipts/verify/red-*`):
+
+| wrong program | where the gate stops |
+|---|---|
+| Engram off | `chat`, router score, layer 1, position 0: 0.018 from the oracle's, band 0.0058 |
+| quantized weights multiplied as bf16 of their dequantized value | `chat`, router score, layer 34, position 32: 0.0060, band 0.0058 |
+| indexer ties in descending index | `long`, layer 0, position 0: the recall is not its own logits' top-k under the plan's tie order |
+| a decode call writes its cache row one row late | `chat`, decode position 36, router score, layer 1: 0.0097 |
+| a group pooled at its third key | `long`, decode position 2108, layer 0, group 526: group logit 0.894 from the oracle's, band 0.0224 |
+
+The dequantized-weight arm is the narrowest: on `chat` it leaves the logits within the band
+(0.107) and only the router score band refuses it: the first score past the band is 0.0060, the
+largest 0.0083. On `long`, run forced
+outside the gate, it moves the logits by 9.2 at position 756 (6 argmaxes of 2,112) and the router
+scores by up to 0.37, 64 times the band (`gpu/receipts/spreads.jsonl`). Run forced outside the
+gate on `long-split`, the late cache row moves its decode logits by 17.7 (10 argmaxes), while the
+early-pooled group leaves the logits where the green run has them (0.054): the forced picks never
+read that group, and only its group logits (4.5 from the oracle's) and 11 own recalls show it,
+which is why the gate reads the selection scores. The
+selection-score bands are what keep the narrow wrong programs out; they were added to the gate in
+this step and hold step 7's class too (its runner's spreads, 8.6e-4 and 2.3e-3, sit inside its
+bands of 0.009 and 0.024).
+
+## The gate
+
+- The pack names each native class's terms (`ClassParityGate::tape`, `TapeClassGate`): the
+  oracle class it is scored against, its router and indexer selection bands, and whether it runs
+  forced. `hy-v4-flash-source-program` (step 7) runs free against itself;
+  `hy-v4-flash-bf16x2-activations` runs forced against the source program's f64 tapes. The
+  artifact lock carries the terms.
+- The runner names its class (`RUNNER --numeric-class`); a runner that names none is scored as
+  its oracle's class. The gate passes a forced class `--force-selections <oracle tape>`, and the
+  native tape must name that tape's sha256. An oracle tape is never forced.
+- New in this step for every class: each native router selection score and each finite group
+  logit must sit within the class's band of the oracle's, before the near-tie attribution.
+- Step 7's class through the new gate: `hy4f-run` passes it free (`gpu/receipts/verify/pr7-class`), its numbers unchanged from step 7: max abs 0.0097, router scores within 8.6e-4 and group logits within 2.3e-3 of the oracle's.
+
+## Throughput, a first reading
+
+One GB10, c=1, greedy, one warm-up then three timed runs of a prefill and 63 decode calls
+(`hy4f-gpu --bench 3`, `gpu/receipts/bench-*.jsonl`), GPU at 56 to 60 C after the runs, SM
+clock read 2,184 MHz (maximum 3,003):
+
+| prompt | prefill | prefill tokens/s | decode tokens/s | decode step p50 / p99 |
+|---|---:|---:|---:|---:|
+| `chat`, 36 tokens | 0.43 s | 84 | 5.9 to 6.0 | 166 / 168 to 210 ms |
+| `long`, 2,104 tokens | 9.30 to 9.34 s | 225 to 226 | 5.4 | 185 / 187 to 216 ms |
+
+A measurement only, N = 3 a cell. Nothing is tuned: single-stage GEMM tiles, SIMT attention, one
+launch per operation, the Engram rows read synchronously each call. The weight read alone bounds
+decode near 24 tokens/s on this box (step 0).
+
+## For the serve route (step 9)
+
+- The serve route runs free (its own picks); the gate's forced run covers the apply path only up
+  to the first flip, which the free-vs-forced check pins bit for bit.
+- The cache is F32: 33.8 KB a token on the indexed layers (8.9 GB at 256k) plus the sliding
+  rings (35 MB); a prefill call holds its whole prompt's scratch, so long prompts need chunking.
+  Each scratch growth and each call's host output is admitted against MemAvailable with 4 GiB to
+  spare and refused otherwise; a call that fails leaves the route refusing until `reset` starts a
+  new request (a failed call may have rewritten a ring row an earlier position owns).
+- The NativeQualified record, the model card's serving row and the serve gates are step 9's.

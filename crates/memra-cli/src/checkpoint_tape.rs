@@ -16,15 +16,25 @@
 //! 1. the request: token ids, prefill end, vocabulary, numeric class;
 //! 2. every indexer call's recalled groups. The native selection must be its own logits' top-k
 //!    under the plan's tie order (an exact tie decided the other way is a wrong program, never a
-//!    precision difference). A query whose groups differ from the oracle's is a precision flip
-//!    only when every group that entered or left sits within the tie band of the oracle's last
-//!    kept group; any other difference fails. The router's expert picks are held to the same two
-//!    rules (no own group);
+//!    precision difference), and every finite group logit must sit within the class's selection
+//!    band of the oracle's. A query whose groups differ from the oracle's is a precision flip
+//!    only when every group that entered or left sits within that band of the oracle's last kept
+//!    group; any other difference fails. The router's expert picks and selection scores are held
+//!    to the same rules (no own group);
 //! 3. every Engram call's table rows (integer, exact);
 //! 4. the logits of every position: argmax equal at each position, and every logit within the
 //!    class band `max_abs + max_rel * |oracle|`.
+//!
+//! The pack names each native class's terms ([`TapeClassGate`]): the oracle class it is scored
+//! against, its two selection bands, and whether the native runs with the oracle's selections
+//! applied (`forced_selections`, the gate passes the runner `--force-selections ORACLE_TAPE`),
+//! as the class's band backend ran. A forced native tape must name the oracle tape it was
+//! forced by. The runner names its class (`RUNNER --numeric-class`); a runner that does not is
+//! scored as the oracle's class.
 
-use memra_gguf::model_packs::{CheckpointParityGate, CheckpointRequestPin, ModelPack};
+use memra_gguf::model_packs::{
+    CheckpointParityGate, CheckpointRequestPin, ModelPack, TapeClassGate,
+};
 use memra_gguf::model_plan::{
     AttentionPlan, HyV4AttentionKind, MlpPlan, ModelPlan, ResidualTopology,
 };
@@ -34,16 +44,6 @@ use std::path::Path;
 type Error = Box<dyn std::error::Error>;
 
 pub const TAPE_FORMAT: &str = "memra-checkpoint-tape-v2";
-
-/// Near-tie bands of the two selections: a pick that differs from the oracle's is a precision
-/// flip only when every entry that entered or left scores within this distance of the oracle's
-/// last kept entry (absolute, on the oracle's own scores). Set, like the logit band, at twice
-/// the spread of the pinned program's own f32 backend against its f64 one under the same
-/// selections on the `long` request: router selection scores (sigmoid plus bias, |s| <= 1.01)
-/// 4.43e-3, indexer group logits (median |l| 2.36) 1.18e-2
-/// (research/modelplan-onboarding-hy4flash-20261119/checkpoint/).
-pub const ROUTER_TIE_BAND: f64 = 0.009;
-pub const INDEXER_TIE_BAND: f64 = 0.024;
 
 /// What the plan says a tape of a request must hold.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,8 +122,9 @@ impl Geometry {
         calls
     }
 
-    /// The tape holds exactly what the plan runs on its request.
-    pub fn check(&self, tape: &Tape, side: &str) -> Result<(), Error> {
+    /// The tape holds exactly what the plan runs on its request. `forced` admits a tape whose
+    /// selections were applied from another tape (a forced class's native run).
+    pub fn check(&self, tape: &Tape, side: &str, forced: bool) -> Result<(), Error> {
         let bad =
             |what: String| -> Error { format!("{side} tape {}: {what}", tape.request).into() };
         if tape.vocab != self.vocab {
@@ -262,7 +263,7 @@ impl Geometry {
                 )));
             }
         }
-        if tape.forced_selections {
+        if tape.forced_selections && !forced {
             return Err(bad(
                 "its selections were forced (a band measurement, not a run of the program)".into(),
             ));
@@ -320,8 +321,11 @@ pub struct Tape {
     pub records: Vec<IndexerRecord>,
     pub engram: BTreeMap<(usize, usize), String>,
     pub router: Routes,
-    /// a band backend's tape: its picks were taken from another tape (never qualifies)
+    /// its picks were taken from another tape: a band backend's tape (never an oracle), or a
+    /// forced class's native run
     pub forced_selections: bool,
+    /// sha256 of the forcing tape's `tape.json`
+    pub forcing_tape_sha256: Option<String>,
     /// the wrong programs a runner ran on purpose (a gate's red arm); a tape with any never
     /// passes
     pub red_arms: Vec<String>,
@@ -546,6 +550,14 @@ pub fn read_tape(dir: &Path) -> Result<Tape, Error> {
             None => false,
             Some(f) => f.as_bool().ok_or("tape forced_selections is not a bool")?,
         },
+        forcing_tape_sha256: match v.get("forcing_tape_sha256") {
+            None | Some(serde_json::Value::Null) => None,
+            Some(f) => Some(
+                f.as_str()
+                    .ok_or("tape forcing_tape_sha256 is not a string")?
+                    .to_string(),
+            ),
+        },
         red_arms,
         tape_sha256: crate::hex_sha256(&raw),
         arrays_sha256: [logits_sha, sel_sha, lg_sha],
@@ -653,6 +665,10 @@ pub struct Comparison {
     pub router_calls: usize,
     pub router_queries: usize,
     pub router_flips: usize,
+    /// largest native-vs-oracle distance of a router selection score and of a finite group
+    /// logit
+    pub router_score_max_abs: f64,
+    pub indexer_logit_max_abs: f64,
     pub engram_calls: usize,
     pub positions: usize,
     pub argmax_equal: usize,
@@ -677,13 +693,45 @@ fn stable_argmax(row: &[f32]) -> usize {
 pub fn compare(
     oracle: &Tape,
     native: &Tape,
+    native_class: &str,
     gate: CheckpointParityGate,
+    terms: &TapeClassGate,
     geometry: &Geometry,
 ) -> Result<Comparison, Error> {
-    if oracle.numeric_class != native.numeric_class {
+    if native.numeric_class != native_class {
         return Err(format!(
-            "oracle numeric class mismatch: expected={} native={}",
-            oracle.numeric_class, native.numeric_class
+            "native numeric class mismatch: the runner named {native_class}, its tape {}",
+            native.numeric_class
+        )
+        .into());
+    }
+    if oracle.numeric_class != terms.oracle_class {
+        return Err(format!(
+            "oracle numeric class mismatch: class {native_class} is scored against {}, the oracle tape is {}",
+            terms.oracle_class, oracle.numeric_class
+        )
+        .into());
+    }
+    if oracle.forced_selections {
+        return Err(format!(
+            "oracle tape {}: its selections were forced (a band measurement, not an oracle)",
+            oracle.request
+        )
+        .into());
+    }
+    if native.forced_selections != terms.forced_selections {
+        return Err(format!(
+            "request {}: class {native_class} runs with forced selections {}, the native tape {}",
+            oracle.request, terms.forced_selections, native.forced_selections
+        )
+        .into());
+    }
+    if native.forced_selections
+        && native.forcing_tape_sha256.as_deref() != Some(oracle.tape_sha256.as_str())
+    {
+        return Err(format!(
+            "request {}: the native tape was forced by another tape than its oracle",
+            oracle.request
         )
         .into());
     }
@@ -697,8 +745,8 @@ pub fn compare(
         )
         .into());
     }
-    geometry.check(oracle, "oracle")?;
-    geometry.check(native, "native")?;
+    geometry.check(oracle, "oracle", false)?;
+    geometry.check(native, "native", terms.forced_selections)?;
     let calls = Geometry::calls(oracle);
     let mut out = Comparison::default();
     // 2. selections (the geometry check made both record sets the plan's, key for key)
@@ -729,13 +777,30 @@ pub fn compare(
                 )
                 .into());
             }
+            for (g, (a, b)) in ol.iter().zip(nl).enumerate() {
+                if a.is_finite() {
+                    let d = (*a as f64 - *b as f64).abs();
+                    out.indexer_logit_max_abs = out.indexer_logit_max_abs.max(d);
+                    if d.is_nan() || d > terms.indexer_band {
+                        return Err(format!(
+                            "request {} call {} layer {} query {} group {g}: the native group logit {b} is {d} from the oracle's {a}, past the selection band {}",
+                            oracle.request,
+                            r.call,
+                            r.layer,
+                            start + q,
+                            terms.indexer_band
+                        )
+                        .into());
+                    }
+                }
+            }
             if os == ns {
                 continue;
             }
             let (Some(op), Some(np)) = (picks_of(os, own), picks_of(ns, own)) else {
                 unreachable!("the geometry check found the own group in both")
             };
-            if !near_tie(&op, &np, ol, INDEXER_TIE_BAND) {
+            if !near_tie(&op, &np, ol, terms.indexer_band) {
                 return Err(format!(
                     "request {} call {} layer {} query {}: the native indexer recalled other groups than the oracle (not a near tie)",
                     oracle.request,
@@ -779,10 +844,25 @@ pub fn compare(
                 )
                 .into());
             }
+            for (e, (a, b)) in oc.iter().zip(nc).enumerate() {
+                let d = (*a as f64 - *b as f64).abs();
+                out.router_score_max_abs = out.router_score_max_abs.max(d);
+                if d.is_nan() || d > terms.router_band {
+                    return Err(format!(
+                        "request {} call {} layer {} query {} expert {e}: the native selection score {b} is {d} from the oracle's {a}, past the selection band {}",
+                        oracle.request,
+                        r.call,
+                        r.layer,
+                        start + q,
+                        terms.router_band
+                    )
+                    .into());
+                }
+            }
             if os == ns {
                 continue;
             }
-            if !near_tie(os, ns, oc, ROUTER_TIE_BAND) {
+            if !near_tie(os, ns, oc, terms.router_band) {
                 return Err(format!(
                     "request {} call {} layer {} query {}: the native router picked other experts than the oracle (not a near tie)",
                     oracle.request,
@@ -868,22 +948,27 @@ pub fn verify_tape_set(
 ) -> Result<String, Error> {
     let mut rows = String::new();
     let mut red = None;
+    let runner_class = runner_numeric_class(runner);
     for pin in pack.checkpoint_requests {
-        let oracle = read_tape(&oracle_dir.join(pin.name))?;
+        let oracle_tape = oracle_dir.join(pin.name);
+        let oracle = read_tape(&oracle_tape)?;
         check_pin(&oracle, pin)?;
         if !oracle.red_arms.is_empty() {
             return Err(
                 format!("the oracle tape {} was written by a red-arm run", pin.name).into(),
             );
         }
-        let gate = pack
-            .checkpoint_parity_for(&oracle.numeric_class)
-            .ok_or_else(|| {
-                format!(
-                    "model pack {} has no checkpoint parity threshold for numeric class {}; no fallback is allowed",
-                    pack.family, oracle.numeric_class
-                )
-            })?;
+        // the oracle is checked against the plan before any of its picks reach a runner
+        geometry.check(&oracle, "oracle", false)?;
+        let native_class = runner_class
+            .clone()
+            .unwrap_or_else(|| oracle.numeric_class.clone());
+        let (gate, terms) = pack.checkpoint_tape_class(&native_class).ok_or_else(|| {
+            format!(
+                "model pack {} has no tape-set checkpoint terms for numeric class {native_class}; no fallback is allowed",
+                pack.family
+            )
+        })?;
         std::fs::create_dir_all(out_dir.join("requests"))?;
         let req_path = out_dir.join("requests").join(format!("{}.json", pin.name));
         crate::write_atomic(&req_path, request_json(&oracle).as_bytes())?;
@@ -892,14 +977,18 @@ pub fn verify_tape_set(
         if native_dir.exists() {
             std::fs::remove_dir_all(&native_dir)?;
         }
-        let result = std::process::Command::new(runner)
+        let mut command = std::process::Command::new(runner);
+        command
             .arg(source)
             .arg("--request")
             .arg(&req_path)
             .arg("--tape")
             .arg(&native_dir)
-            .env("MEMRA_FULL_PREC", "1")
-            .output()?;
+            .env("MEMRA_FULL_PREC", "1");
+        if terms.forced_selections {
+            command.arg("--force-selections").arg(&oracle_tape);
+        }
+        let result = command.output()?;
         if !result.status.success() {
             return Err(format!(
                 "native checkpoint runner failed on {} ({}): stderr={}",
@@ -910,7 +999,8 @@ pub fn verify_tape_set(
             .into());
         }
         let native = read_tape(&native_dir)?;
-        let c = compare(&oracle, &native, gate, geometry).map_err(|e| format!("{e}"))?;
+        let c = compare(&oracle, &native, &native_class, gate, &terms, geometry)
+            .map_err(|e| format!("{e}"))?;
         if !native.red_arms.is_empty() {
             // a red-arm tape never passes; the next requests still run, so an arm that only a
             // later request can expose is refused by its comparison, not by the flag alone
@@ -918,8 +1008,10 @@ pub fn verify_tape_set(
             continue;
         }
         rows.push_str(&format!(
-            "request\t{}\toracle={}\tnative={}\toracle_tape_sha256={}\tnative_tape_sha256={}\toracle_logits_sha256={}\tnative_logits_sha256={}\toracle_selections_sha256={}\tnative_selections_sha256={}\tpositions={}\targmax_equal={}\tindexer_calls={}\tindexer_queries={}\tprecision_flips={}\trouter_calls={}\trouter_queries={}\trouter_flips={}\toracle_routes_sha256={}\tnative_routes_sha256={}\tengram_calls={}\tmax_abs={}\tmax_rel={}\tworst={}:{}\n",
+            "request\t{}\tclass={}\tforced_selections={}\toracle={}\tnative={}\toracle_tape_sha256={}\tnative_tape_sha256={}\toracle_logits_sha256={}\tnative_logits_sha256={}\toracle_selections_sha256={}\tnative_selections_sha256={}\tpositions={}\targmax_equal={}\tindexer_calls={}\tindexer_queries={}\tprecision_flips={}\trouter_calls={}\trouter_queries={}\trouter_flips={}\trouter_score_max_abs={}\tindexer_logit_max_abs={}\toracle_routes_sha256={}\tnative_routes_sha256={}\tengram_calls={}\tmax_abs={}\tmax_rel={}\tworst={}:{}\n",
             pin.name,
+            native_class,
+            terms.forced_selections,
             oracle.engine,
             native.engine,
             oracle.tape_sha256,
@@ -936,6 +1028,8 @@ pub fn verify_tape_set(
             c.router_calls,
             c.router_queries,
             c.router_flips,
+            c.router_score_max_abs,
+            c.indexer_logit_max_abs,
             oracle.router.sha256[0],
             native.router.sha256[0],
             c.engram_calls,
@@ -954,6 +1048,24 @@ pub fn verify_tape_set(
     Ok(rows)
 }
 
+/// The class a runner names (`RUNNER --numeric-class` exits 0 and prints it); `None` for a runner
+/// that names none, which is then scored as its oracle's class.
+pub fn runner_numeric_class(runner: &Path) -> Option<String> {
+    let out = std::process::Command::new(runner)
+        .arg("--numeric-class")
+        .env_remove("MEMRA_FULL_PREC")
+        .output()
+        .ok()?;
+    let text = String::from_utf8(out.stdout).ok()?;
+    let class = text.trim();
+    (out.status.success()
+        && !class.is_empty()
+        && class
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'))
+    .then(|| class.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -963,6 +1075,17 @@ mod tests {
         max_rel: 0.0,
         require_argmax: true,
     };
+    const CLASS: &str = "hy-v4-flash-source-program";
+    const TERMS: TapeClassGate = TapeClassGate {
+        oracle_class: CLASS,
+        router_band: 0.009,
+        indexer_band: 0.024,
+        forced_selections: false,
+    };
+
+    fn cmp(o: &Tape, n: &Tape, g: &Geometry) -> Result<Comparison, Error> {
+        compare(o, n, CLASS, GATE, &TERMS, g)
+    }
 
     /// Two layers: layer 0 indexed (budget 11, groups of 2), layer 1 with an Engram memory.
     fn geometry() -> Geometry {
@@ -1040,6 +1163,7 @@ mod tests {
             engram: (0..2).map(|c| ((c, 1), format!("{c:016x}"))).collect(),
             router: routes(),
             forced_selections: false,
+            forcing_tape_sha256: None,
             red_arms: Vec::new(),
             tape_sha256: String::new(),
             arrays_sha256: Default::default(),
@@ -1048,7 +1172,7 @@ mod tests {
 
     #[test]
     fn equal_tapes_pass_and_count_every_check() {
-        let c = compare(&tape(), &tape(), GATE, &geometry()).unwrap();
+        let c = cmp(&tape(), &tape(), &geometry()).unwrap();
         assert_eq!((c.positions, c.argmax_equal), (12, 12));
         assert_eq!(
             (c.indexer_calls, c.indexer_queries, c.precision_flips),
@@ -1068,9 +1192,7 @@ mod tests {
         let last = 11 * 4;
         let mut n = tape();
         n.router.scores[last + 3] = 0.2;
-        let e = compare(&tape(), &n, GATE, &geometry())
-            .unwrap_err()
-            .to_string();
+        let e = cmp(&tape(), &n, &geometry()).unwrap_err().to_string();
         assert!(e.contains("tie order"), "{e}");
         // a near tie of the oracle's scores at the boundary: attributed
         let mut o = tape();
@@ -1080,23 +1202,28 @@ mod tests {
         n.router.scores[last + 3] = 0.599_999;
         let lo = n.router.sel.len() - 2;
         n.router.sel[lo..].copy_from_slice(&[1, 2]);
-        let c = compare(&o, &n, GATE, &geometry()).unwrap();
+        let c = cmp(&o, &n, &geometry()).unwrap();
         assert_eq!(c.router_flips, 1);
-        // far from it: a wrong program
-        let mut n = tape();
-        n.router.scores[last + 2] = 0.9;
+        // every score within the band, but expert 2 entered from 0.0135 under the boundary: a
+        // wrong program
+        let mut o = tape();
+        o.router.scores[last + 2] = 0.5865;
+        let mut n = o.clone();
+        n.router.scores[last + 2] = 0.5950;
+        n.router.scores[last + 3] = 0.5915;
         let lo = n.router.sel.len() - 2;
         n.router.sel[lo..].copy_from_slice(&[1, 2]);
-        let e = compare(&tape(), &n, GATE, &geometry())
-            .unwrap_err()
-            .to_string();
+        let e = cmp(&o, &n, &geometry()).unwrap_err().to_string();
         assert!(e.contains("not a near tie"), "{e}");
+        // a score past the band fails even where the picks agree
+        let mut n = tape();
+        n.router.scores[last] = 0.12;
+        let e = cmp(&tape(), &n, &geometry()).unwrap_err().to_string();
+        assert!(e.contains("selection band"), "{e}");
         // a call's router record missing on both sides
         let mut o = tape();
         o.router.records.pop();
-        let e = compare(&o, &o.clone(), GATE, &geometry())
-            .unwrap_err()
-            .to_string();
+        let e = cmp(&o, &o.clone(), &geometry()).unwrap_err().to_string();
         assert!(e.contains("router records"), "{e}");
     }
 
@@ -1104,11 +1231,11 @@ mod tests {
     fn a_logit_past_the_band_or_a_moved_argmax_fails() {
         let mut n = tape();
         n.logits[5] += 2e-3;
-        let e = compare(&tape(), &n, GATE, &geometry()).unwrap_err();
+        let e = cmp(&tape(), &n, &geometry()).unwrap_err();
         assert!(e.to_string().contains("exceeds"), "{e}");
         let mut n = tape();
         n.logits[4 * 3] = 9.0;
-        let e = compare(&tape(), &n, GATE, &geometry()).unwrap_err();
+        let e = cmp(&tape(), &n, &geometry()).unwrap_err();
         assert!(e.to_string().contains("argmax"), "{e}");
     }
 
@@ -1116,7 +1243,7 @@ mod tests {
     fn engram_rows_are_exact() {
         let mut n = tape();
         n.engram.insert((1, 1), "ffff".into());
-        let e = compare(&tape(), &n, GATE, &geometry()).unwrap_err();
+        let e = cmp(&tape(), &n, &geometry()).unwrap_err();
         assert!(e.to_string().contains("Engram"), "{e}");
     }
 
@@ -1125,10 +1252,10 @@ mod tests {
         // groups 1 and 3 tie at 0.0: the plan keeps the lower index
         let mut o = tape();
         o.group_logits = vec![0.3, 0.0, 0.9, 0.0, 0.5, f32::NEG_INFINITY];
-        assert!(compare(&o, &o.clone(), GATE, &geometry()).is_ok());
+        assert!(cmp(&o, &o.clone(), &geometry()).is_ok());
         let mut n = o.clone();
         n.sel = vec![0, 2, 3, 4, 5];
-        let e = compare(&o, &n, GATE, &geometry()).unwrap_err().to_string();
+        let e = cmp(&o, &n, &geometry()).unwrap_err().to_string();
         assert!(e.contains("tie order"), "{e}");
     }
 
@@ -1141,16 +1268,23 @@ mod tests {
         n.group_logits[1] = 0.199_999;
         n.group_logits[3] = 0.200_001;
         n.sel = vec![0, 2, 3, 4, 5];
-        let c = compare(&o, &n, GATE, &geometry()).unwrap();
+        let c = cmp(&o, &n, &geometry()).unwrap();
         assert_eq!(c.precision_flips, 1);
-        // far from the boundary: a wrong program
-        let mut n = tape();
-        n.group_logits[3] = 0.7;
+        // every logit within the band, but group 3 entered from 0.03 under the boundary: a wrong
+        // program
+        let mut o = tape();
+        o.group_logits[3] = 0.17;
+        let mut n = o.clone();
+        n.group_logits[1] = 0.18;
+        n.group_logits[3] = 0.19;
         n.sel = vec![0, 2, 3, 4, 5];
-        let e = compare(&tape(), &n, GATE, &geometry())
-            .unwrap_err()
-            .to_string();
+        let e = cmp(&o, &n, &geometry()).unwrap_err().to_string();
         assert!(e.contains("not a near tie"), "{e}");
+        // a group logit past the band fails even where the recall agrees
+        let mut n = tape();
+        n.group_logits[0] = 0.35;
+        let e = cmp(&tape(), &n, &geometry()).unwrap_err().to_string();
+        assert!(e.contains("selection band"), "{e}");
     }
 
     #[test]
@@ -1158,57 +1292,119 @@ mod tests {
         // both omit the indexer call: the oracle alone cannot vouch for it
         let mut o = tape();
         o.records.clear();
-        let e = compare(&o, &o.clone(), GATE, &geometry())
-            .unwrap_err()
-            .to_string();
+        let e = cmp(&o, &o.clone(), &geometry()).unwrap_err().to_string();
         assert!(e.contains("not the plan's"), "{e}");
         // a diagnostic run of fewer layers
         let mut o = tape();
         o.layers = 1;
-        assert!(compare(&o, &o.clone(), GATE, &geometry()).is_err());
+        assert!(cmp(&o, &o.clone(), &geometry()).is_err());
         // an Engram record missing on both sides
         let mut o = tape();
         o.engram.remove(&(0, 1));
-        assert!(compare(&o, &o.clone(), GATE, &geometry()).is_err());
+        assert!(cmp(&o, &o.clone(), &geometry()).is_err());
         // a recalled group past the call's groups, or a duplicate that is not the own group
         let mut o = tape();
         o.sel = vec![0, 1, 2, 5, 6];
-        assert!(compare(&o, &o.clone(), GATE, &geometry()).is_err());
+        assert!(cmp(&o, &o.clone(), &geometry()).is_err());
         let mut o = tape();
         o.sel = vec![0, 1, 1, 2, 5];
-        assert!(compare(&o, &o.clone(), GATE, &geometry()).is_err());
+        assert!(cmp(&o, &o.clone(), &geometry()).is_err());
         // the own group repeated past the one the recall appends
         let mut o = tape();
         o.sel = vec![0, 1, 5, 5, 5];
-        assert!(compare(&o, &o.clone(), GATE, &geometry()).is_err());
+        assert!(cmp(&o, &o.clone(), &geometry()).is_err());
         // a finite logit for a group not closed before the query, a non-finite router score
         let mut o = tape();
         o.group_logits[5] = 0.0;
-        assert!(compare(&o, &o.clone(), GATE, &geometry()).is_err());
+        assert!(cmp(&o, &o.clone(), &geometry()).is_err());
         let mut o = tape();
         o.router.scores[0] = f32::NAN;
-        assert!(compare(&o, &o.clone(), GATE, &geometry()).is_err());
+        assert!(cmp(&o, &o.clone(), &geometry()).is_err());
         // a band backend's forced tape
         let mut n = tape();
         n.forced_selections = true;
-        let e = compare(&tape(), &n, GATE, &geometry())
-            .unwrap_err()
-            .to_string();
+        let e = cmp(&tape(), &n, &geometry()).unwrap_err().to_string();
         assert!(e.contains("forced"), "{e}");
         // another vocabulary
         let mut g = geometry();
         g.vocab = 8;
-        assert!(compare(&tape(), &tape(), GATE, &g).is_err());
+        assert!(cmp(&tape(), &tape(), &g).is_err());
     }
 
     #[test]
     fn another_request_or_class_fails() {
         let mut n = tape();
         n.decode_from = 10;
-        assert!(compare(&tape(), &n, GATE, &geometry()).is_err());
+        assert!(cmp(&tape(), &n, &geometry()).is_err());
         let mut n = tape();
         n.numeric_class = "other".into();
-        assert!(compare(&tape(), &n, GATE, &geometry()).is_err());
+        assert!(cmp(&tape(), &n, &geometry()).is_err());
+    }
+
+    #[test]
+    fn a_forced_class_runs_on_its_own_oracle_and_others_stay_unforced() {
+        let forced = TapeClassGate {
+            forced_selections: true,
+            ..TERMS
+        };
+        let mut o = tape();
+        o.tape_sha256 = "aa".into();
+        let mut n = tape();
+        n.forced_selections = true;
+        n.forcing_tape_sha256 = Some("aa".into());
+        assert!(compare(&o, &n, CLASS, GATE, &forced, &geometry()).is_ok());
+        // forced by another tape
+        n.forcing_tape_sha256 = Some("bb".into());
+        let e = compare(&o, &n, CLASS, GATE, &forced, &geometry()).unwrap_err();
+        assert!(e.to_string().contains("another tape"), "{e}");
+        // a forced class run free, a free class run forced
+        let e = compare(&o, &tape(), CLASS, GATE, &forced, &geometry()).unwrap_err();
+        assert!(e.to_string().contains("forced selections"), "{e}");
+        n.forcing_tape_sha256 = Some("aa".into());
+        let e = compare(&o, &n, CLASS, GATE, &TERMS, &geometry()).unwrap_err();
+        assert!(e.to_string().contains("forced"), "{e}");
+        // an oracle that was itself forced
+        let mut fo = o.clone();
+        fo.forced_selections = true;
+        let e = compare(&fo, &n, CLASS, GATE, &forced, &geometry()).unwrap_err();
+        assert!(e.to_string().contains("not an oracle"), "{e}");
+    }
+
+    #[test]
+    fn a_native_class_is_scored_against_its_oracle_class() {
+        let terms = TapeClassGate {
+            oracle_class: "hy-v4-flash-source-program",
+            ..TERMS
+        };
+        let mut n = tape();
+        n.numeric_class = "hy-v4-flash-bf16-activations".into();
+        assert!(
+            compare(
+                &tape(),
+                &n,
+                "hy-v4-flash-bf16-activations",
+                GATE,
+                &terms,
+                &geometry()
+            )
+            .is_ok()
+        );
+        // the runner named another class than its tape
+        let e = compare(&tape(), &n, CLASS, GATE, &terms, &geometry()).unwrap_err();
+        assert!(e.to_string().contains("native numeric class"), "{e}");
+        // an oracle of another class
+        let mut o = tape();
+        o.numeric_class = "other".into();
+        let e = compare(
+            &o,
+            &n,
+            "hy-v4-flash-bf16-activations",
+            GATE,
+            &terms,
+            &geometry(),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("oracle numeric class"), "{e}");
     }
 
     #[test]

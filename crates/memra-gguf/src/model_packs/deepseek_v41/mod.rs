@@ -90,6 +90,7 @@ pub static PACK: ModelPack = ModelPack {
             max_rel: 0.0,
             require_argmax: true,
         },
+        tape: None,
     }],
     // The checkpoint probe is a real chat turn, not the default 1,2,3,4: on <eos> <pad> ! " the
     // vendor's own CPU and GPU runs of this program disagree by 13.3 logits (KL 0.49, top-5 overlap
