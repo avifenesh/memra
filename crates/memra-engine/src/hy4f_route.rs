@@ -48,7 +48,40 @@ pub const NUMERIC_CLASS: &str = "hy-v4-flash-bf16x2-activations";
 mod ffi {
     use std::os::raw::c_void;
     // Return codes: 0 ok, 10000 + cudaError_t, 45xxx for a refused contract (cu/hy4f_route.cu).
+    /// One output of `memra_hy4r_gemm_multi` (`RSeg` in the kernel).
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct RSeg {
+        pub x: *const f32,
+        pub ldx: i64,
+        pub w: *const c_void,
+        pub sc: *const c_void,
+        pub s2: *const f32,
+        pub y: *mut f32,
+        pub ldy: i64,
+        pub n: i32,
+        pub grid_cols: i32,
+        pub gx0: i32,
+    }
+
     unsafe extern "C" {
+        pub fn memra_hy4r_gemm_multi(
+            segs: *const RSeg,
+            nseg: i32,
+            fmt: i32,
+            xbs: i64,
+            wbs: i64,
+            scbs: i64,
+            ybs: i64,
+            m: i32,
+            k: i32,
+            batch: i32,
+            tiles: *const i32,
+            ntiles: i32,
+            red_dq: i32,
+            tile_rows: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_hy4r_gemm(
             x: *const f32,
             ldx: i64,
@@ -382,6 +415,8 @@ const ATTN_SLAB: usize = 256;
 const ATTN_CHUNK: usize = 256;
 /// Rows of the head GEMM per launch.
 const HEAD_ROWS: usize = 256;
+/// Outputs one small-row launch takes (`R_MAXSEG`).
+const MULTI_MAX: usize = 6;
 
 fn ck(name: &str, rc: i32) -> Result<(), String> {
     match rc {
@@ -1162,6 +1197,57 @@ impl Gm<'_> {
             0,
             red,
             i32::from(m <= 16),
+            0,
+            self.dev.sp
+        ))
+    }
+
+    /// Several plain GEMMs of one format and K over `m` rows: `(x, ldx, weight, y, ldy)`. A
+    /// decode call (`m <= 16`) runs them as one launch (`memra_hy4r_gemm_multi`), each output's
+    /// bits those of its own launch; a prefill call runs them one by one.
+    fn gemm_multi(
+        &self,
+        outs: &[(*const f32, usize, &W, *mut f32, usize)],
+        m: usize,
+    ) -> Result<(), String> {
+        let (fmt, k) = (outs[0].2.fmt, outs[0].2.k);
+        let uniform = outs.iter().all(|o| o.2.fmt == fmt && o.2.k == k);
+        if m > 16 || outs.len() == 1 || outs.len() > MULTI_MAX || !uniform {
+            for &(x, ldx, w, y, ldy) in outs {
+                self.gemm(x, ldx, w, y, ldy, m)?;
+            }
+            return Ok(());
+        }
+        let segs: Vec<ffi::RSeg> = outs
+            .iter()
+            .map(|&(x, ldx, w, y, ldy)| ffi::RSeg {
+                x,
+                ldx: ldx as i64,
+                w: w.data.v(),
+                sc: w.scales.as_ref().map_or(std::ptr::null_mut(), |s| s.v()),
+                s2: std::ptr::null(),
+                y,
+                ldy: ldy as i64,
+                n: w.n as i32,
+                grid_cols: w.grid_cols,
+                gx0: 0,
+            })
+            .collect();
+        let red = i32::from(self.red.dequant_bf16 && fmt != FMT_BF16);
+        cu!(memra_hy4r_gemm_multi(
+            segs.as_ptr(),
+            segs.len() as i32,
+            fmt,
+            0,
+            0,
+            0,
+            0,
+            m as i32,
+            k as i32,
+            1,
+            std::ptr::null(),
+            0,
+            red,
             0,
             self.dev.sp
         ))
@@ -1974,8 +2060,39 @@ impl<'a> Route<'a> {
             dev: &self.dev,
             red: self.red,
         };
-        route.gemm(xn, h, &a.gate, gate, heads * hd, t)?;
-        route.gemm(xn, h, &a.qa, qa, ql, t)?;
+        // the projections of xn: one launch for those of one format (a decode call)
+        let (tkv, hwb) = match &a.indexer {
+            Some(ix) => {
+                let (ih, id) = (ix.plan.heads as usize, ix.plan.head_dim as usize);
+                (
+                    sc.tkv.get(dev, t * id * 4)?.f(),
+                    sc.hw.get(dev, t * ih * 4)?.f(),
+                )
+            }
+            None => (std::ptr::null_mut(), std::ptr::null_mut()),
+        };
+        {
+            let mut outs: Vec<(*const f32, usize, &W, *mut f32, usize)> = vec![
+                (xn, h, &a.gate, gate, heads * hd),
+                (xn, h, &a.qa, qa, ql),
+                (xn, h, &a.kva, ckv, 576),
+            ];
+            if let Some(ix) = &a.indexer {
+                let (ih, id) = (ix.plan.heads as usize, ix.plan.head_dim as usize);
+                outs.push((xn, h, &ix.tk, tkv, id));
+                if kv_len_of(p0, t) > ix.plan.top_k as usize {
+                    outs.push((xn, h, &ix.hw, hwb, ih));
+                }
+            }
+            let (same, other): (Vec<_>, Vec<_>) =
+                outs.into_iter().partition(|o| o.2.fmt == FMT_BF16);
+            if !same.is_empty() {
+                route.gemm_multi(&same, t)?;
+            }
+            if !other.is_empty() {
+                route.gemm_multi(&other, t)?;
+            }
+        }
         cu!(memra_hy4r_rms(
             qa,
             ql as i64,
@@ -2000,7 +2117,6 @@ impl<'a> Route<'a> {
             posrow,
             sp
         ))?;
-        route.gemm(xn, h, &a.kva, ckv, 576, t)?;
         cu!(memra_hy4r_rms(
             ckv,
             576,
@@ -2169,8 +2285,6 @@ impl<'a> Route<'a> {
         if let Some(ix) = &a.indexer {
             let ip = ix.plan;
             let (ih, id, pool) = (ip.heads as usize, ip.head_dim as usize, ip.pool as usize);
-            let tkv = sc.tkv.get(dev, t * id * 4)?.f();
-            route.gemm(xn, h, &ix.tk, tkv, id, t)?;
             cu!(memra_hy4r_rms(
                 tkv,
                 id as i64,
@@ -2238,8 +2352,7 @@ impl<'a> Route<'a> {
                     posrow,
                     sp
                 ))?;
-                let hw = sc.hw.get(dev, t * ih * 4)?.f();
-                route.gemm(xn, h, &ix.hw, hw, ih, t)?;
+                let hw = hwb;
                 let ng = kv_len / pool;
                 let ilog = sc.ilog.get(dev, t * ng * 4)?.f();
                 let hscale = ((ih as f64).powf(-0.5) * (id as f64).powf(-0.5)) as f32;
@@ -2549,7 +2662,19 @@ impl<'a> Route<'a> {
                     sp
                 ))?;
                 let rin = sc.rin.get(dev, t * lat * 4)?.f();
-                route.gemm(xn, h, rdown, rin, lat, t)?;
+                let sg = sc.sg.get(dev, t * sh * 4)?.f();
+                let su = sc.su.get(dev, t * sh * 4)?.f();
+                let sa = sc.sa.get(dev, t * sh * 4)?.f();
+                // the latent down projection and the shared expert's gate and up read xn
+                route.gemm_multi(
+                    &[
+                        (xn, h, rdown, rin, lat),
+                        (xn, h, sgate, sg, sh),
+                        (xn, h, sup, su, sh),
+                    ],
+                    t,
+                )?;
+                cu!(memra_hy4r_act(sg, su, sa, (t * sh) as i64, -1.0, 0, sp))?;
                 let rows = t * k;
                 let small = rows <= 16;
                 let bm = if small { 16 } else { 64 };
@@ -2607,8 +2732,42 @@ impl<'a> Route<'a> {
                         sp
                     ))
                 };
-                grouped(xg, gate, mg)?;
-                grouped(xg, up, mu)?;
+                if small && gate.wbs == up.wbs && gate.scbs == up.scbs && gate.n == up.n {
+                    // a decode call: the experts' gate and up in one launch
+                    let seg = |w: &W, y: *mut f32| ffi::RSeg {
+                        x: xg,
+                        ldx: w.k as i64,
+                        w: w.data.v(),
+                        sc: w.scales.as_ref().unwrap().v(),
+                        s2: w.scale2.as_ref().unwrap().f(),
+                        y,
+                        ldy: w.n as i64,
+                        n: w.n as i32,
+                        grid_cols: 0,
+                        gx0: 0,
+                    };
+                    let segs = [seg(gate, mg), seg(up, mu)];
+                    cu!(memra_hy4r_gemm_multi(
+                        segs.as_ptr(),
+                        2,
+                        gate.fmt,
+                        0,
+                        gate.wbs as i64,
+                        gate.scbs as i64,
+                        0,
+                        rows as i32,
+                        gate.k as i32,
+                        1,
+                        tiles,
+                        max_tiles as i32,
+                        i32::from(route.red.dequant_bf16),
+                        t.min(bm) as i32,
+                        sp
+                    ))?;
+                } else {
+                    grouped(xg, gate, mg)?;
+                    grouped(xg, up, mu)?;
+                }
                 cu!(memra_hy4r_act(
                     mg,
                     mu,
@@ -2624,15 +2783,9 @@ impl<'a> Route<'a> {
                     my, lat as i32, rowmap, rw, t as i32, k as i32, macc, sp
                 ))?;
                 let routed = sc.routed.get(dev, t * h * 4)?.f();
-                route.gemm(macc, lat, rup, routed, h, t)?;
-                let sg = sc.sg.get(dev, t * sh * 4)?.f();
-                let su = sc.su.get(dev, t * sh * 4)?.f();
-                let sa = sc.sa.get(dev, t * sh * 4)?.f();
                 let sd = sc.sd.get(dev, t * h * 4)?.f();
-                route.gemm(xn, h, sgate, sg, sh, t)?;
-                route.gemm(xn, h, sup, su, sh, t)?;
-                cu!(memra_hy4r_act(sg, su, sa, (t * sh) as i64, -1.0, 0, sp))?;
-                route.gemm(sa, sh, sdown, sd, h, t)?;
+                // the latent up projection and the shared expert's down projection
+                route.gemm_multi(&[(macc, lat, rup, routed, h), (sa, sh, sdown, sd, h)], t)?;
                 let sum = sc.sum.get(dev, t * h * 4)?.f();
                 cu!(memra_hy4r_add(
                     sum,
@@ -2776,7 +2929,16 @@ impl<'a> Route<'a> {
             dev: &self.dev,
             red: self.red,
         };
-        route.gemm(emb, width, &eg.value, value, h, t)?;
+        let keys = sc.ekeys.get(dev, n * t * h * 4)?.f();
+        {
+            // the value and the stream keys read the same rows: one launch (a decode call)
+            let mut outs: Vec<(*const f32, usize, &W, *mut f32, usize)> =
+                vec![(emb, width, &eg.value, value, h)];
+            for (j, (kw, _)) in eg.keys.iter().enumerate() {
+                outs.push((emb, width, kw, keys.wrapping_add(j * t * h), h));
+            }
+            route.gemm_multi(&outs, t)?;
+        }
         cu!(memra_hy4r_add(
             value,
             value,
@@ -2800,10 +2962,8 @@ impl<'a> Route<'a> {
             eps,
             sp
         ))?;
-        let keys = sc.ekeys.get(dev, n * t * h * 4)?.f();
-        for (j, (kw, kb)) in eg.keys.iter().enumerate() {
+        for (j, (_, kb)) in eg.keys.iter().enumerate() {
             let kj = keys.wrapping_add(j * t * h);
-            route.gemm(emb, width, kw, kj, h, t)?;
             cu!(memra_hy4r_add(
                 kj,
                 kj,
@@ -2991,6 +3151,11 @@ impl EngramFetch {
             })
             .collect())
     }
+}
+
+/// The keys a call's last query sees: everything before it and the call's rows.
+fn kv_len_of(p0: usize, t: usize) -> usize {
+    p0 + t
 }
 
 fn cs_pos0_of(p0: usize) -> usize {

@@ -115,6 +115,21 @@ static void r_launch(void (*kernel)(KArgs...), dim3 grid, dim3 block, size_t sme
 
 // ---- the weight GEMM ------------------------------------------------------------------------
 
+// One output of a small-row launch that runs several GEMMs of the same K, format and rows at once
+// (`memra_hy4r_gemm_multi`): its input, weight, output and first column block.
+#define R_MAXSEG 6
+struct RSeg {
+  const float* x;
+  long ldx;
+  const uint8_t* w;
+  const uint8_t* sc;
+  const float* s2;
+  float* y;
+  long ldy;
+  int n, grid_cols;
+  int gx0;  // first blockIdx.x of this output
+};
+
 struct RGemm {
   const float* x;    // [m, k] f32, row stride ldx; batch stride xbs
   long ldx, xbs;
@@ -129,6 +144,8 @@ struct RGemm {
   const int* tiles;  // grouped mode: per blockIdx.y (expert, row0, rows); null otherwise
   int red_dq;
   int tile_rows;     // small-row kernel, grouped mode: the most rows a tile holds
+  int nseg;          // small-row kernel: outputs of the launch
+  RSeg seg[R_MAXSEG];
 };
 
 #define RG_BN 64
@@ -410,10 +427,17 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
   constexpr int NT = GV_WARPS * 32;
   extern __shared__ __align__(16) unsigned char gsm[];
   const int tid = threadIdx.x, lane = tid & 31, warp = tid >> 5;
-  const float* x = g.x;
-  const uint8_t* w = g.w;
-  const uint8_t* sc = g.sc;
-  float* y = g.y;
+  // this block's output: the last whose first column block is at or before blockIdx.x
+  int si = 0;
+#pragma unroll
+  for (int t = 1; t < R_MAXSEG; t++)
+    if (t < g.nseg && (int)blockIdx.x >= g.seg[t].gx0) si = t;
+  const RSeg& sg = g.seg[si];
+  const float* x = sg.x;
+  const uint8_t* w = sg.w;
+  const uint8_t* sc = sg.sc;
+  float* y = sg.y;
+  const long ldx = sg.ldx, ldy = sg.ldy;
   float s2 = 1.0f;
   int m = g.m, m0 = 0;
   r_pdl_trigger();
@@ -422,11 +446,11 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
     r_pdl_wait();
     const int e = g.tiles[blockIdx.y * 3], r0 = g.tiles[blockIdx.y * 3 + 1], rows = g.tiles[blockIdx.y * 3 + 2];
     if (rows <= 0) return;
-    x += (long)r0 * g.ldx;
-    y += (long)r0 * g.ldy;
+    x += (long)r0 * ldx;
+    y += (long)r0 * ldy;
     w += (long)e * g.wbs;
     if (sc) sc += (long)e * g.scbs;
-    if (g.s2) s2 = g.s2[e];
+    if (sg.s2) s2 = sg.s2[e];
     m = rows;
   } else {
     const int b = blockIdx.z;
@@ -435,12 +459,12 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
     y += (long)b * g.ybs;
     w += (long)b * g.wbs;
     if (sc) sc += (long)b * g.scbs;
-    if (g.s2) s2 = g.s2[b];
+    if (sg.s2) s2 = sg.s2[b];
   }
   const int mr = min(MR ? MR : 16, m - m0);  // rows of this block
   constexpr int MS = MR ? MR : 16;           // rows the smem holds
-  const int n = g.n, k = g.k;
-  const int nb0 = blockIdx.x * GV_COLS;
+  const int n = sg.n, k = g.k;
+  const int nb0 = (blockIdx.x - sg.gx0) * GV_COLS;
   constexpr int SBYTES = G::WB + G::SB + MS * G::XLD;
   unsigned char* fixed = gsm + STAGES * SBYTES;
   uint32_t* lut = (uint32_t*)fixed;
@@ -449,7 +473,7 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
   const int nst = (k + G::KPS - 1) / G::KPS;
   const int srow = k / 16;  // NVFP4 scale bytes a row
   const bool sc_async = FMT == R_NVFP4 && (srow % 16) == 0;
-  const float* xb = x + (long)m0 * g.ldx;
+  const float* xb = x + (long)m0 * ldx;
   if (FMT == R_NVFP4 && !RED)
     for (int c = tid; c < 256; c += NT) lut[c] = r_bf2_bits(__floats2bfloat162_rn(r_e2m1(c), r_e2m1(c >> 4)));
   // this thread's weight rows are fixed: chunk c = tid + i * NT -> row c / 8, piece c % 8
@@ -492,7 +516,7 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
         }
       } else if (FMT == R_FP8) {
         // the block scale of these 32 rows (one 128-row block) for this stage's 128 inputs
-        if (tid == 0) r_cp4(buf + G::WB, (const float*)sc + (long)(nb0 / 128) * g.grid_cols + k0 / 128);
+        if (tid == 0) r_cp4(buf + G::WB, (const float*)sc + (long)(nb0 / 128) * sg.grid_cols + k0 / 128);
       }
     }
   };
@@ -505,7 +529,7 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
       unsigned char* xs = buf + G::WB + G::SB;
       for (int c = tid; c < mr * CX; c += NT) {
         const int r = c / CX, q = c % CX;
-        r_cp16(xs + r * G::XLD + q * 16, xb + (long)r * g.ldx + k0 + q * 4, k0 + q * 4 < k);
+        r_cp16(xs + r * G::XLD + q * 16, xb + (long)r * ldx + k0 + q * 4, k0 + q * 4 < k);
       }
     }
   };
@@ -650,7 +674,7 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
     if (row < mr && col < n) {
       float v = acc[i];
       if (scale2) v = __fmul_rn(v, s2);
-      y[(long)(m0 + row) * g.ldy + col] = v;
+      y[(long)(m0 + row) * ldy + col] = v;
     }
   }
 }
@@ -687,10 +711,23 @@ static int r_gemv_fmt(const RGemm& g, dim3 grid, int mr, cudaStream_t st) {
   return g.red_dq ? r_gemv_rows<FMT, true>(g, grid, mr, st) : r_gemv_rows<FMT, false>(g, grid, mr, st);
 }
 
-static int r_gemv_launch(const RGemm& g, int fmt, int batch, int tiles, int tile_rows, cudaStream_t st) {
+static int r_gemv_launch(RGemm g, int fmt, int batch, int tiles, int tile_rows, cudaStream_t st) {
   if (!g.tiles && g.m > 16) return 45007;
-  if ((g.ldx % 4) != 0) return 45005;
-  dim3 grid((g.n + GV_COLS - 1) / GV_COLS, g.tiles ? tiles : (g.m + 15) / 16, g.tiles ? 1 : batch);
+  if (g.nseg == 0) {
+    // one output: the plain fields
+    g.nseg = 1;
+    g.seg[0] = RSeg{g.x, g.ldx, g.w, g.sc, g.s2, g.y, g.ldy, g.n, g.grid_cols, 0};
+  }
+  if (g.nseg > R_MAXSEG) return 45008;
+  int gx = 0;
+  for (int t = 0; t < g.nseg; t++) {
+    if ((g.seg[t].ldx % 4) != 0 || (((uintptr_t)g.seg[t].x) % 16) != 0) return 45005;
+    if (g.seg[t].n <= 0) return 45001;
+    if (fmt != R_BF16 && g.seg[t].sc == nullptr) return 45003;
+    g.seg[t].gx0 = gx;
+    gx += (g.seg[t].n + GV_COLS - 1) / GV_COLS;
+  }
+  dim3 grid(gx, g.tiles ? tiles : (g.m + 15) / 16, g.tiles ? 1 : batch);
   if (grid.y == 0) return 0;
   if (grid.y > 65535 || grid.z > 65535) return 45004;
   // grouped tiles hold up to `tile_rows` rows (a token has one row an expert)
@@ -727,9 +764,26 @@ extern "C" int memra_hy4r_gemm(const float* x, long ldx, long xbs, const void* w
   if ((ldx % 4) != 0 || (xbs % 4) != 0 || (((uintptr_t)x) % 16) != 0) return 45005;
   if (!tiles && m == 0) return 0;
   RGemm g{x, ldx, xbs, (const uint8_t*)w, wbs, (const uint8_t*)sc, scbs, s2, y, ldy, ybs, m, n, k, grid_cols, tiles, red_dq,
-          tile_rows};
+          tile_rows, 0, {}};
   cudaStream_t st = (cudaStream_t)stream;
   return small ? r_gemv_launch(g, fmt, batch, ntiles, tile_rows, st) : r_gemm_launch<64>(g, fmt, batch, ntiles, st);
+}
+
+// Up to R_MAXSEG small-row GEMMs of one format and K in one launch (decode: the projections that
+// read the same input, the routed experts' gate and up): each output's bits are those of its own
+// launch. `segs` holds per output (x, ldx, w, sc, s2, y, ldy, n, grid_cols); the batch strides,
+// tile table and rows are shared.
+extern "C" int memra_hy4r_gemm_multi(const RSeg* segs, int nseg, int fmt, long xbs, long wbs, long scbs, long ybs, int m,
+                                     int k, int batch, const int* tiles, int ntiles, int red_dq, int tile_rows,
+                                     void* stream) {
+  if (nseg <= 0 || nseg > R_MAXSEG) return 45008;
+  if (k <= 0 || (k % RG_BK) != 0 || m < 0) return 45001;
+  if (fmt != R_BF16 && fmt != R_FP8 && fmt != R_NVFP4) return 45002;
+  if (!tiles && m == 0) return 0;
+  RGemm g{segs[0].x, segs[0].ldx, xbs, segs[0].w, wbs, segs[0].sc, scbs, segs[0].s2, segs[0].y, segs[0].ldy, ybs, m,
+          segs[0].n, k, segs[0].grid_cols, tiles, red_dq, tile_rows, nseg, {}};
+  for (int t = 0; t < nseg; t++) g.seg[t] = segs[t];
+  return r_gemv_launch(g, fmt, batch, ntiles, tile_rows, (cudaStream_t)stream);
 }
 
 // ---- the F32 islands' small-row GEMM (router logits, head) ---------------------------------------
