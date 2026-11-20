@@ -210,6 +210,7 @@ fn dgemm(
         0,
         0,
         i32::from(m <= 16),
+        0,
         dev.sp
     ))
 }
@@ -978,6 +979,7 @@ impl<'a> Route<'a> {
                 0,
                 0,
                 i32::from(rows <= 16),
+                0,
                 sp
             ))?;
             cu!(memra_hy4r_copy(
@@ -1081,6 +1083,7 @@ impl<'a> Route<'a> {
                 0,
                 0,
                 i32::from(rows <= 16),
+                0,
                 sp
             ))?;
             cu!(memra_hy4r_act(

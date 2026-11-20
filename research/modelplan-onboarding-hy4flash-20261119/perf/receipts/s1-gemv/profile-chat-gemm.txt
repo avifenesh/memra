@@ -1,0 +1,16 @@
+void r_gemv_kernel< 96x1x1                                     17.123 ms  145x     118.1 us each
+void r_gemv_kernel< 48x17x1                                    16.102 ms  123x     130.9 us each
+void r_gemv_kernel< 512x1x1                                    11.139 ms   60x     185.6 us each
+void r_gemv_kernel< 48x1x1                                      6.982 ms  123x      56.8 us each
+void r_gemv_f32_kernel< 944x1x1                                 4.025 ms    1x    4024.6 us each
+void r_gemv_kernel< 8x1x64                                      2.673 ms   30x      89.1 us each
+void r_gemv_kernel< 256x1x1                                     2.505 ms   24x     104.4 us each
+void r_gemv_f32_kernel< 16x1x1                                  2.201 ms   41x      53.7 us each
+void r_gemv_kernel< 16x1x64                                     1.933 ms   30x      64.4 us each
+void r_gemv_kernel< 32x1x1                                      1.671 ms   42x      39.8 us each
+void r_gemv_kernel< 18x1x1                                      1.110 ms   42x      26.4 us each
+void r_gemv_kernel< 432x1x1                                     0.949 ms    2x     474.7 us each
+void r_gemv_kernel< 8x1x32                                      0.571 ms   12x      47.6 us each
+void r_gemv_kernel< 16x1x32                                     0.403 ms   12x      33.6 us each
+void r_gemv_kernel< 4x1x1                                       0.270 ms   12x      22.5 us each
+69.65672

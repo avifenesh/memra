@@ -1,0 +1,80 @@
+# Hy4-flash GPU route: decode tuning on one GB10 (2026-11-20)
+
+The route of step 8 (`hy4f-gpu`, numeric class `hy-v4-flash-bf16x2-activations`), tuned for
+decode. Every change keeps the class: the same products and the same summation order for every
+output, so each step's tapes equal step 8's bit for bit (`receipts/*/check3.log`: `chat` forced,
+`long` and `long-split` free, every logit, router and indexer array), and the checkpoint gate
+passes with the same numbers.
+
+## Roofline
+
+Bytes one c=1 decode token reads (`tools/roofline_bytes.py` over the artifact's headers):
+
+| what | GB |
+|---|---:|
+| attention projections (FP8 128x128 blocks and BF16) | 6.174 |
+| shared experts | 1.161 |
+| latent projections (`routed_expert_down/up_proj`) | 0.774 |
+| dense first layer MLP | 0.494 |
+| Engram projections | 0.191 |
+| router (F32 islands read BF16) | 0.129 |
+| indexer projections | 0.063 |
+| norms, HC functions, sinks | 0.060 |
+| head (BF16, F32 GEMM) | 0.742 |
+| routed experts, 16 of 512 a layer, NVFP4 codes + group scales | 2.612 |
+| **a token** | **12.40** |
+
+The KV cache adds about 3.5 MB at 36 positions and 95 MB at 2.1k (F32 latent rows, 512-row rings
+on the sliding layers, the indexer's recall of at most 2,048 keys); Engram rows are 64 x 1 KB.
+
+GB10 streams 229 to 242 GB/s (`receipts/base/bw-roofline.txt`: `bw-roofline` contiguous 128-bit
+loads; 656 scattered 4 MiB slabs, a token's expert pattern, 239 to 242). At 240 GB/s a token
+costs 51.7 ms: **the c=1 decode roofline is 19.4 tokens/s** (19.2 at 2.1k context).
+
+## Method
+
+One GB10 (`sm_121a`), the same build flags for every arm, the GPU otherwise idle (`memwait.sh`:
+no other compute process, 108 GiB free). `hy4f-gpu --bench 3`: a warm-up, then three timed runs of
+the request's prefill and 63 greedy decode calls; medians with the range of the three. Profiles:
+`nsys` over `--gen 24` (`chat`), the decode calls after the first two summarized by
+`tools/trace_steps.py` (per kernel ms a step), `tools/gemm_grid.py` (per GEMM shape) and
+`tools/gaps.py` (GPU idle between kernels). `kbench/` builds the route's `.cu` alone and checks
+every small-row kernel bit for bit against the tiled kernel it replaces, then times it with a cold
+L2.
+
+## Steps
+
+| step | chat decode tok/s | step p50 ms | long (2.1k) decode tok/s | step p50 ms | chat prefill tok/s | long prefill tok/s |
+|---|---:|---:|---:|---:|---:|---:|
+| step 8 (base) | 6.04 [6.03-6.04] | 165.7 | 5.40 [5.25-5.40] | 185.3 | 84.2 | 225.0 |
+| 1: small-row GEMMs, F32 islands GEMV, split HC, one table upload a call | 11.60 [11.57-11.61] | 86.2 | 9.57 [9.55-9.58] | 104.2 | 93.9 | 222.0 |
+
+Greedy ids equal in every run of every arm (`ids_fnv1a`).
+
+### 1. Small-row GEMMs (`receipts/s1-gemv/`)
+
+Base profile (`receipts/base/profile-chat-*.txt`): a step was 171.5 ms of wall, 162.3 ms of GPU
+time over 2,079 operations. The weight GEMMs took 98.2 ms at 117 to 180 GB/s, because a decode
+call ran the 16-row tile of the prefill GEMM (four warps, a block barrier every 32 inputs, one
+weight load in flight); the F32 islands' GEMM (router 26.4 ms at 5 GB/s, head 10.6 ms) a 64x64
+SIMT tile; the hyper-connection pre mix (16.0 ms) one block a row looping over 17 reductions;
+the expert planner (1.6 ms) one thread; and every row-index upload from pageable memory waited for
+the stream.
+
+- `r_gemv_kernel`: up to 16 rows. A warp owns an n8 column tile over the whole K; weights, scales
+  and activations stream through a 4-stage cp.async ring; with up to 4 rows the activations are
+  split into their hi/lo BF16 pairs once a stage. Each output gets the tiled kernel's mma
+  sequence (hi then lo every 16 inputs, the FP8 block scale folded every 128, `weight_scale_2` at
+  the end), so the bits are the same (`kbench`).
+- `r_gemv_f32_kernel`: router and head for up to 4 rows, one lane a weight row, each output the
+  same chain of separately rounded products and 16-input partial sums as `hy4f_gemm_kernel`.
+- `r_hc_dots_kernel` + `r_hc_mix_kernel`: the 17 reductions of a row as 17 blocks, each the same
+  strided sums and fixed tree.
+- `r_moe_plan_kernel`: one block's scans instead of one thread's walk; the same tile table.
+- the call's index tables (token ids, positions, cache rows, ring slots) in one upload at the
+  call's start; the Engram codes through page-locked staging.
+
+Dense FP8 GEMVs reach 210 to 249 GB/s alone, the routed experts 169, the router 59, the head 190
+(`receipts/s1-gemv/kbench.txt`). Decode step 165.7 -> 86.2 ms on `chat`, 185.3 -> 104.2 ms on
+`long`. What the profile shows next (`profile-chat-gaps.txt`): one 5.3 ms GPU idle a step while
+the host reads the first Engram layer's rows, and about 2,000 inter-kernel gaps of 1 to 5 us.
