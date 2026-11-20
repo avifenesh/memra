@@ -54,6 +54,7 @@ L2.
 | 5: F32 islands split at their 16-input seams (router, head) | 13.36 [13.36-13.36] | 74.9 | 12.29 [12.28-12.30] | 81.1 | 94.8 | 280.1 |
 | 6: one launch for the GEMMs that share an input | 13.52 [13.52-13.53] | 73.9 | 12.40 [12.40-12.42] | 80.4 | 100.2 | 283.4 |
 | 7: GEMM weights resident in 4 KiB tiles | 14.18 [14.18-14.18] | 70.5 | 13.00 [13.00-13.04] | 76.7 | 106.0 | 294.1 |
+| 8: hyper-connection reductions as partials, tree in the mix | 14.46 [14.44-14.46] | 69.2 | 13.23 [13.22-13.25] | 75.3 | 107.1 | 298.2 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -156,6 +157,13 @@ stage is one 4 KiB read; the prefill kernel addresses the same layout. Same byte
 spread 178 -> 200.5 GB/s, decode step 73.9 -> 70.5 ms on `chat`, 80.4 -> 76.7 ms on `long`, prefill
 100 -> 106 and 283 -> 294 tokens/s. Resident 87.0 GiB (the head and router stay row-major for the
 F32 kernels; `kv_b`'s nope rows are kept only transposed).
+
+### 8. Hyper-connection reductions (`receipts/s8-hc/`)
+
+Each of a row's 17 reductions (12,288 values) ran as one 256-thread block, 85 launches a step at
+24 us. The 256 strided per-thread partials now run as four 64-thread blocks a reduction, and the
+mix kernel's 256 threads take partial t each and run the same warp and block tree: 70.5 -> 69.2
+ms on `chat`, 76.7 -> 75.3 ms on `long`.
 
 Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct

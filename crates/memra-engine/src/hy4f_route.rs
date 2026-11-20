@@ -1229,7 +1229,7 @@ struct Scratch {
     hx: Grow,
     hn: Grow,
     logits: Grow,
-    /// the hyper-connection reductions of a call's rows
+    /// the hyper-connection reductions of a call's rows: 256 partials each
     hcd: Grow,
 }
 
@@ -2174,7 +2174,7 @@ impl<'a> Route<'a> {
         let dev = &self.dev;
         let sc = &mut self.sc;
         let hx = sc.hx.get(dev, t * h * 4)?.f();
-        let hcd = sc.hcd.get(dev, t * 17 * 4)?.f();
+        let hcd = sc.hcd.get(dev, t * 17 * 256 * 4)?.f();
         let numerics = self.plan.hy_v4_flash.unwrap();
         cu!(memra_hy4r_hc(
             s,
@@ -2247,7 +2247,7 @@ impl<'a> Route<'a> {
         let post = self.sc.post.get(dev, t * n * 4)?.f();
         let x = self.sc.x.get(dev, t * h * 4)?.f();
         let xn = self.sc.xn.get(dev, t * h * 4)?.f();
-        let hcd = self.sc.hcd.get(dev, t * 17 * 4)?.f();
+        let hcd = self.sc.hcd.get(dev, t * 17 * 256 * 4)?.f();
         cu!(memra_hy4r_hc(
             s,
             l.hc_attn.fun.f(),

@@ -1128,35 +1128,58 @@ extern "C" int memra_hy4r_rope_table(void* out, int pos0, int rows, int half, co
 //
 // Two kernels: the 1 + fns reductions of a row run as separate blocks (each the same strided
 // per-thread sums and block tree a single block ran in turn), then one block a row mixes.
-__global__ void r_hc_dots_kernel(const float* s, const float* fn, int width, int fns, float* dots) {
+// The 1 + fns reductions of a row, each over the 256 strided per-thread partials a single block
+// of 256 threads would hold, then that block's fixed tree. The partials run as 4 blocks of 64
+// threads a reduction (`r_hc_dots_kernel`); the mix kernel's 256 threads take partial t each and
+// run the tree, the same bits as one block per reduction.
+#define HC_T 256
+#define HC_SPLIT 4
+__global__ void __launch_bounds__(HC_T / HC_SPLIT) r_hc_dots_kernel(const float* s, const float* fn, int width,
+                                                                   int fns, float* parts) {
   r_pdl_wait();
   r_pdl_trigger();
-  __shared__ float red[32];
   const int r = blockIdx.x, j = blockIdx.y;
+  const int t = blockIdx.z * (HC_T / HC_SPLIT) + threadIdx.x;
   const float* flat = s + (long)r * width;
   float d = 0.0f;
   if (j == 0) {
-    for (int i = threadIdx.x; i < width; i += blockDim.x) d += flat[i] * flat[i];
+    for (int i = t; i < width; i += HC_T) d += flat[i] * flat[i];
   } else {
     const float* f = fn + (long)(j - 1) * width;
-    for (int i = threadIdx.x; i < width; i += blockDim.x) d += flat[i] * f[i];
+    for (int i = t; i < width; i += HC_T) d += flat[i] * f[i];
   }
-  d = r_block_sum(d, red);
-  if (threadIdx.x == 0) dots[(long)r * (fns + 1) + j] = d;
+  parts[((long)r * (fns + 1) + j) * HC_T + t] = d;
 }
 
-__global__ void r_hc_mix_kernel(const float* s, const float* dots, const float* base, const float* scale, int nstream,
-                                int h, int fns, float mix_eps, float eps, float mag, float* post, float* x) {
+__global__ void __launch_bounds__(HC_T) r_hc_mix_kernel(const float* s, const float* parts, const float* base,
+                                                        const float* scale, int nstream, int h, int fns, float mix_eps,
+                                                        float eps, float mag, float* post, float* x) {
   r_pdl_wait();
   r_pdl_trigger();
+  __shared__ float red[17][HC_T / 32];
+  __shared__ float dot[17];
   __shared__ float mix[16];
   __shared__ float pre[8];
   const int r = blockIdx.x;
+  const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
   const int width = nstream * h;
   const float* flat = s + (long)r * width;
-  const float* dr = dots + (long)r * (fns + 1);
-  const float inv = rsqrtf(dr[0] / width + mix_eps);
-  if (threadIdx.x < fns) mix[threadIdx.x] = dr[1 + threadIdx.x] * inv;
+  // r_block_sum's tree for every reduction at once
+  for (int j = 0; j <= fns; j++) {
+    const float v = r_warp_sum(parts[((long)r * (fns + 1) + j) * HC_T + threadIdx.x]);
+    if (lane == 0) red[j][warp] = v;
+  }
+  __syncthreads();
+  if (warp == 0) {
+    for (int j = 0; j <= fns; j++) {
+      float t = lane < HC_T / 32 ? red[j][lane] : 0.0f;
+      t = r_warp_sum(t);
+      if (lane == 0) dot[j] = t;
+    }
+  }
+  __syncthreads();
+  const float inv = rsqrtf(dot[0] / width + mix_eps);
+  if (threadIdx.x < fns) mix[threadIdx.x] = dot[1 + threadIdx.x] * inv;
   __syncthreads();
   if (threadIdx.x < nstream) {
     const int j = threadIdx.x;
@@ -1171,15 +1194,15 @@ __global__ void r_hc_mix_kernel(const float* s, const float* dots, const float* 
   }
 }
 
-// `dots` scratch: rows * (fns + 1) floats
+// `parts` scratch: rows * (fns + 1) * 256 floats
 extern "C" int memra_hy4r_hc(const float* s, const float* fn, const float* base, const float* scale, int rows,
                              int nstream, int h, int fns, float mix_eps, float eps, float mag, float* post, float* x,
-                             float* dots, void* stream) {
+                             float* parts, void* stream) {
   if (rows == 0) return 0;
   if (nstream > 8 || fns > 16) return 45101;
   cudaStream_t st = (cudaStream_t)stream;
-  r_launch(r_hc_dots_kernel, dim3(rows, fns + 1), 256, 0, st, s, fn, nstream * h, fns, dots);
-  r_launch(r_hc_mix_kernel, rows, 256, 0, st, s, dots, base, scale, nstream, h, fns, mix_eps, eps, mag, post, x);
+  r_launch(r_hc_dots_kernel, dim3(rows, fns + 1, HC_SPLIT), HC_T / HC_SPLIT, 0, st, s, fn, nstream * h, fns, parts);
+  r_launch(r_hc_mix_kernel, rows, HC_T, 0, st, s, parts, base, scale, nstream, h, fns, mix_eps, eps, mag, post, x);
   return r_rc();
 }
 
