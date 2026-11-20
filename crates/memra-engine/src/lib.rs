@@ -924,6 +924,7 @@ pub mod f16_ffi;
 pub mod fp8_ffi;
 pub mod glm5_tp_sampler;
 pub mod hy4f_gpu;
+pub mod hy4f_route;
 pub mod mmq_ffi;
 pub mod moe_cache;
 pub mod prime_graph;
