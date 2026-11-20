@@ -1,0 +1,6 @@
+# kbench, this commit's cu/hy4f_route.cu: the F32 islands' GEMM against memra_hy4f_gemm, bit for bit
+router f32 512x3072 m1                            18.7 us    168.5 GB/s   (was 53.3 us)
+router f32 512x3072 m4                            27.8 us    113.3 GB/s
+head f32 120832x3072 m1                         3053.2 us    243.2 GB/s   (was 3898.8 us)
+head f32 120832x3072 m4                         4078.7 us    182.0 GB/s   (lane kernel)
+KBENCH ALL EQUAL
