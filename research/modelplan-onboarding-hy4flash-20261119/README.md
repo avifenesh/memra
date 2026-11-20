@@ -262,7 +262,7 @@ by `census_classes.py` from `census/header-census.tsv`, which it must expand bac
 
 | question | owner step |
 |---|---|
-| DFly2 dense MLP width: 9,216 in the checkpoint, not in the config. The vLLM derivation defaults `dfly_intermediate_size` to `intermediate_size` (13,824) and then materializes the width from the checkpoint. Confirm against the DFly2 program before pinning it beyond the census. | PR 10 (DFly2) |
+| Resolved in step 10. DFly2 dense MLP width: 9,216 in the checkpoint, not in the config. Answer: the width is the checkpoint's. The pinned vLLM program builds the drafter's MLPs from the gate/up/down shapes it reads (`HYV4DFlyModel.materialize_ffn`), refuses a declared `dfly_intermediate_size` that disagrees and widths that differ between layers; the 13,824 default of `_derive_dfly_config` is read only for dummy weights. All five layers are 9,216 wide in the NVFP4 artifact and in its BF16 source. | was PR 10 (DFly2) |
 | Resolved in step 5. Whether transformers' per-row FP8 round trip of a BF16 Engram row equals this checkpoint's stored `q * weight_scale` bit for bit. Answer: yes in F32, on all 8,192 sampled rows, because the artifact was written by the same rule; no under BF16 activations, where transformers computes the scale in BF16 (`engram/`). memra reads `q * weight_scale` and runs no second round trip. | was CheckpointParity |
 | Resolved in step 5. The Engram norm epsilon. Answer: `nn.RMSNorm(eps=None)` adds ATen's op-math epsilon, `f32::EPSILON` (2^-23) on BF16 activations, not `finfo(bfloat16).eps`; vLLM's explicit F32 epsilon is the same value. The plan says `HyV4EngramNormEpsilon::OpMathF32`. | was CheckpointParity |
 

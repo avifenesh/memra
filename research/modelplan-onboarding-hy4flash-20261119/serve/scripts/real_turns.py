@@ -2,9 +2,10 @@
 
 usage: python3 real_turns.py ADDR KEY MODEL OUT_JSON
 
-Greedy, one request at a time. Each turn's answer and token ids are written with its wall time
-and, when the route drafts, its usage's `spec` (rounds, drafted, accepted); run it against a
-server with drafting on and one with it off and compare the ids (they must be equal).
+Greedy chat completions, one request at a time, each stopping at its own end. Each turn's answer
+is written with its wall time and, when the route drafts, its usage's `spec` (rounds, drafted,
+accepted); run it against a server with drafting on and one with it off and compare the answers
+(they must be equal).
 """
 
 import json
@@ -47,17 +48,17 @@ def post(path, body, timeout=3600):
 
 rows = []
 for name, messages, extra in TURNS:
-    st, raw, _ = post("/v1/tokenize", {"model": model, "messages": messages,
-                                       "chat_template_kwargs": {"reasoning_effort": extra["reasoning_effort"]}})
-    prompt = json.loads(raw)["tokens"] if st == 200 else None
-    body = {"model": model, "prompt_ids": prompt, "max_tokens": 256, "temperature": 0}
-    st, raw, dt = post("/v1/completions", body)
+    body = {"model": model, "messages": messages, "max_tokens": 256, "temperature": 0} | extra
+    st, raw, dt = post("/v1/chat/completions", body)
     j = json.loads(raw) if st == 200 else {"error": raw}
-    row = {"turn": name, "status": st, "prompt_tokens": len(prompt or []), "tokens": j.get("tokens"),
-           "n_tokens": j.get("n_tokens"), "stop": j.get("stop_reason"), "wall_s": round(dt, 3),
-           "usage": j.get("usage"), "text": j.get("text")}
+    ch = (j.get("choices") or [{}])[0]
+    msg = ch.get("message") or {}
+    usage = j.get("usage") or {}
+    row = {"turn": name, "status": st, "prompt_tokens": usage.get("prompt_tokens"),
+           "completion_tokens": usage.get("completion_tokens"), "finish": ch.get("finish_reason"),
+           "wall_s": round(dt, 3), "spec": usage.get("spec"), "content": msg.get("content"),
+           "reasoning": msg.get("reasoning"), "error": j.get("error")}
     rows.append(row)
-    sp = (j.get("usage") or {}).get("spec") or j.get("spec")
-    print(json.dumps({k: row[k] for k in ("turn", "status", "prompt_tokens", "n_tokens", "wall_s")} | {"spec": sp}),
-          flush=True)
+    print(json.dumps({k: row[k] for k in ("turn", "status", "prompt_tokens", "completion_tokens", "finish",
+                                          "wall_s", "spec")}), flush=True)
 json.dump(rows, open(out, "w"), indent=1)

@@ -40,9 +40,20 @@
 //! `ignore_eos`), the request's stop ids, stop strings over the detokenized stream (the Hy4 tool
 //! calls' close stays in the stream so the parser closes the block), and the token budget.
 //!
+//! DFly2 drafts (`MEMRA_HY4F_DRAFT`, default the artifact's `num_speculative_tokens`, 5). Right
+//! after a request's call the drafter (`hy4f_route::dfly`) proposes a round from the call's last
+//! kept row; the request's next call scores the anchor and the drafts in one call (each row the
+//! one-token decode row bit for bit, by the route's row-independence), the tokens are chosen row
+//! by row as a decode call chooses them (greedy, or the position-keyed draw with the penalty
+//! window grown token by token), and the drafts are kept while they equal those choices; the
+//! rest roll back (`Route::rollback_in` restores the sliding rings' rows). The tokens are the
+//! undrafted route's; drafts change only the number of calls. Each session books one round's cache
+//! positions beside its own (the per-session draft state); the drafter's weights and call scratch
+//! are the route's, resident and grown in the warm-up before the book's ceiling is read.
+//!
 //! Deliberate limits, stated: `response_format`/grammar refused by name; image and video parts
 //! refused (no Hy4 vision program); no prefix cache, no CUDA graphs, no batched decode across
-//! requests, no DFly2 drafts.
+//! requests.
 
 use crate::dsv4_admit::Admission;
 use crate::dsv4_serve::{admission_answer, fail_request, settle, snap};
