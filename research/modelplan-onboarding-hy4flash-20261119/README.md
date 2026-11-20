@@ -333,3 +333,45 @@ turn carries `tool_call_id` only), `tool_search_output` content parts, and numbe
 `json.dumps` would normalize (`1e-3` stays as written; this predates Hy4 and is shared with the
 GLM and Gemma arms). The render harness picks `reasoning` over `reasoning_content` as the
 template does; memra's request type carries `reasoning_content` only.
+
+# Step 3: reference attention, residual and MoE operations (2026-11-20)
+
+Verdict: memra-reference implements the Hy4-flash gated MLA attention, the independent
+hyper-connection and its write-back, the dense SwiGLU MLP, the latent MoE with its router, the
+exit hyper-head and the decoder layer that composes them, in f64, from the pack's typed layer
+plan. On a tiny 4-layer config every module matches the pinned transformers code run in float64
+to at most 3.8e-15, and the 4-layer stack through `hc_head` and the final norm matches the
+model's last hidden state to 6.8e-15 (`modules/gate.log`). Five red arms each move the output
+past 1e-6. The pooled indexer and Engram are not in this step; the indexed layers run below
+the indexer budget, where the vendor program attends densely. No GPU was used.
+
+## Oracle
+
+`modules/gen_modules.py` runs transformers PR #50903, installed
+from b865850d0532 (the modeling and configuration files checked against their git blobs) on a
+tiny config (hidden 16, 2 indexed layers with 2 heads and 2 sliding layers with 4 heads and a
+window of 3, q_lora 12, kv_lora 8, nope 6, rope 8, value 5, 6 experts top-2 in a latent of 8,
+4 streams; 7 tokens, under the indexer budget of 8) in float64 and records every module's
+inputs and outputs and all weights to `modules/modules.json`.
+
+The pinned code casts to float32 inside RMSNorm, RoPE, the router and the hyper-connections.
+The oracle process maps the modeling module's `torch.float32` and `torch.float` and
+`Tensor.float` to float64, so both sides run in float64 and the bound can be 1e-12 relative to
+each output's magnitude. Without the `torch.float` mapping, RoPE's inverse frequencies stayed in
+float32 and the attention differed by 1.6e-9. The epsilons are powers of two (2^-17, 2^-20)
+because the typed plan carries them as f32: with 1e-5 the f32-rounded plan epsilon moved the
+norms by 1.3e-12. Both were measurement artefacts of the oracle, not program differences.
+
+## What the gate covers
+
+`crates/memra-reference/tests/hy_v4_flash_modules.rs`, compiled from
+`model_packs::hy_v4_flash::layer_plan` on the tiny config:
+
+- attention on both layer types (sinks, elementwise gate, post-projection norm, interleaved
+  RoPE at each type's theta; text positions on all three M-RoPE axes reduce to plain RoPE);
+- both hyper-connections per layer (pre and post weights), both norms, `hc_head`;
+- the latent MoE on the three sparse layers, its banks split from the module's fused
+  `gate_up_proj` the way the artifact stores them;
+- each decoder layer, and the whole stack to the last hidden state;
+- red arms: the sink dropped, a sliding layer read as full attention, the write-back magnitude
+  set to 1, gate and up swapped, the router's correction bias ignored.
