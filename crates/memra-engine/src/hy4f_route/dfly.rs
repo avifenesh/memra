@@ -141,6 +141,9 @@ pub struct Drafter {
     /// drafts a round the artifact declares (`speculative_config.num_speculative_tokens`)
     pub k: Option<usize>,
     pub red: DraftRed,
+    /// the drafter gate's composite runs: every call row's history per target index layer,
+    /// `(layer, position) -> slots`, kept on the host when set
+    pub record: Option<HashMap<(usize, usize), Vec<i32>>>,
     snaps: HashMap<usize, Snap>,
     sc: DScratch,
     /// device bytes the drafter's weights hold
@@ -370,6 +373,7 @@ impl<'a> Route<'a> {
             base,
             k: d.num_speculative_tokens.map(|k| k as usize),
             red: DraftRed::None,
+            record: None,
             snaps: HashMap::new(),
             sc: DScratch::default(),
             weight_bytes: 0,
@@ -442,6 +446,11 @@ impl<'a> Route<'a> {
         snap.rows = rows;
         if kv_len <= top_k {
             snap.lists = None;
+            if let Some(rec) = dr.record.as_mut() {
+                for q in p0..p0 + t {
+                    rec.insert((il, q), (0..=q as i32).collect());
+                }
+            }
             return Ok(());
         }
         // the call's recall lists, as `attention` built them (`memra_hy4r_recall`)
@@ -461,6 +470,21 @@ impl<'a> Route<'a> {
                 dev.alloc(SNAP_ROWS * 4)?,
                 ldl,
             ));
+        }
+        if let Some(rec) = dr.record.as_mut() {
+            let lists = dev.down::<i32>(list_src as *const _, t * ldl)?;
+            let lens = dev.down::<i32>(lens_src as *const _, t)?;
+            for r in 0..t {
+                let q = p0 + r;
+                let mut v: Vec<i32> = lists[r * ldl..r * ldl + lens[r] as usize]
+                    .iter()
+                    .copied()
+                    .filter(|s| *s >= 0 && *s as usize <= q)
+                    .collect();
+                v.sort_unstable();
+                v.dedup();
+                rec.insert((il, q), v);
+            }
         }
         let (l, n, _) = snap.lists.as_ref().unwrap();
         let idx: Vec<i32> = (t - rows..t).map(|r| r as i32).collect();
@@ -623,6 +647,39 @@ impl<'a> Route<'a> {
         let hidden_p = self.sc.hn.get(&self.dev, 0)?.p + (row * h * 4) as u64;
         let kvp: Vec<u64> = dr.target_kv.iter().map(|l| sess.caches[*l].kv.p).collect();
         self.draft_core(hidden_p, &kvp, &hist, p, anchor, k, forced, all_logits)
+    }
+
+    /// The last call's final normed hidden rows (`[rows, hidden]`), the head's input.
+    pub fn last_hidden(&mut self, rows: usize) -> Result<Vec<f32>, String> {
+        let h = self.plan.hidden_size as usize;
+        let p = self.sc.hn.get(&self.dev, rows * h * 4)?.p;
+        self.dev.down::<f32>(p as *const _, rows * h)
+    }
+
+    /// A draft round from position `p` of `sess`'s cache with the hidden row and histories given
+    /// (the drafter gate's composite runs, after a teacher-forced pass: rounds run from the last
+    /// anchor down, so a round's block rows are never a later round's history).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draft_over_session(
+        &mut self,
+        sess: &Session,
+        hidden: &[f32],
+        hist: &HashMap<usize, Vec<i32>>,
+        p: usize,
+        anchor: u32,
+        k: usize,
+        forced: Option<&[u32]>,
+    ) -> Result<DraftOut, String> {
+        let dr = self.dfly.as_ref().ok_or("no drafter loaded")?;
+        if p + 2 + k > sess.cap + 1 {
+            return Err("the round passes the session's cache".into());
+        }
+        let kvp: Vec<u64> = dr.target_kv.iter().map(|l| sess.caches[*l].kv.p).collect();
+        let hb = self.dev.upload(hidden)?;
+        let out = self.draft_core(hb.p, &kvp, hist, p, anchor, k, forced, true);
+        self.dev.sync()?;
+        drop(hb);
+        out
     }
 
     /// A draft round over a target held outside a session (the drafter gate: the oracle's target

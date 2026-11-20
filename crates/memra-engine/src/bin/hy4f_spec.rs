@@ -9,6 +9,11 @@
 //!   oracle tape's anchors, along the oracle's drafts (forced), and writes the
 //!   `memra-hy4f-dfly-tape-v1` the lane's comparator reads (`dfly/compare_dfly.py`). Red arms:
 //!   `layers`, `width`, `no-correction`, `topk`.
+//! - `gate-route CKPT REQUEST FORCING_TAPE ORACLE_TAPE OUT [--red ARM]`: the composite gate. The
+//!   whole route runs the request teacher-forced with the f64 oracle's router and indexer picks
+//!   applied (the target class's gate run), keeps every row's final hidden row and every target
+//!   index layer's history, then drafts at the drafter oracle tape's anchors (last first) from
+//!   its own cache, along the oracle's drafts; the band is the composite bf16x2a backend's.
 //! - `gen`: greedy generation of N tokens after the request's prefill, twice in one process:
 //!   plain (one decode call a token) and speculative (a draft round of K after every call, then
 //!   one verify call scoring the anchor and the K drafts, the longest agreeing prefix kept and
@@ -77,6 +82,7 @@ fn run() -> Result<(), String> {
     match args.first().map(String::as_str) {
         Some("gate") => gate(&args[1..]),
         Some("gen") => generate(&args[1..]),
+        Some("gate-route") => gate_route(&args[1..]),
         _ => Err(
             "usage: hy4f-spec gate CKPT REQUEST TARGET ORACLE_TAPE OUT [--red ARM] | \
                   gen CKPT REQUEST N [--k K] [--prefill-chunk C] [--bench R]"
@@ -438,5 +444,197 @@ fn generate(args: &[String]) -> Result<(), String> {
             );
         }
     }
+    Ok(())
+}
+
+fn i32s(bytes: &[u8]) -> Vec<i32> {
+    bytes
+        .chunks_exact(4)
+        .map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
+}
+
+/// The f64 target oracle tape's router and indexer picks per call (as `hy4f-gpu
+/// --force-selections` reads them), checked against its own hashes and the request.
+fn read_forcing(
+    dir: &Path,
+    tokens: &[u32],
+    decode_from: usize,
+) -> Result<Vec<memra_engine::hy4f_route::Forced>, String> {
+    let v = read_json(&dir.join("tape.json"))?;
+    if v["format"] != "memra-checkpoint-tape-v2" || v["forced_selections"].as_bool() == Some(true) {
+        return Err("the forcing tape is not an unforced memra-checkpoint-tape-v2".into());
+    }
+    if u32s(&v["token_ids"]) != tokens || v["decode_from"].as_u64() != Some(decode_from as u64) {
+        return Err("the forcing tape scored another request".into());
+    }
+    let array = |sec: &str, file: &str, sha: &str| -> Result<Vec<i32>, String> {
+        let name = v[sec][file].as_str().ok_or(format!("no {sec}.{file}"))?;
+        let bytes = std::fs::read(dir.join(name)).map_err(|e| format!("{name}: {e}"))?;
+        if v[sec][sha].as_str() != Some(sha_hex(&bytes).as_str()) {
+            return Err(format!("{name} does not match its sha256"));
+        }
+        Ok(i32s(&bytes))
+    };
+    let isel = array("indexer", "sel_file", "sel_sha256")?;
+    let rsel = array("router", "sel_file", "sel_sha256")?;
+    let calls = 1 + tokens.len() - decode_from;
+    let mut out: Vec<memra_engine::hy4f_route::Forced> =
+        (0..calls).map(|_| Default::default()).collect();
+    for (sec, flat) in [("indexer", &isel), ("router", &rsel)] {
+        for r in v[sec]["records"].as_array().ok_or("no records")? {
+            let g = |k: &str| r[k].as_u64().unwrap_or(0) as usize;
+            let (c, l, q, k, o) = (g("call"), g("layer"), g("queries"), g("k"), g("sel_offset"));
+            let slice = flat
+                .get(o..o + q * k)
+                .ok_or("a record past its array")?
+                .to_vec();
+            let call = out.get_mut(c).ok_or("a call past the request")?;
+            if sec == "indexer" {
+                call.indexer.insert(l, slice);
+            } else {
+                call.router.insert(l, slice);
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn gate_route(args: &[String]) -> Result<(), String> {
+    let [ckpt, request, forcing, oracle, out, ..] = args else {
+        return Err("gate-route CKPT REQUEST FORCING_TAPE ORACLE_TAPE OUT".into());
+    };
+    let red_name = flag(args, "--red").unwrap_or("");
+    let red = DraftRed::parse(red_name).ok_or(format!("unknown red arm {red_name:?}"))?;
+    let (ckpt, oracle, out) = (Path::new(ckpt), Path::new(oracle), Path::new(out));
+    let (config, plan) = plan_of(ckpt)?;
+    let hy = config
+        .hy_v4_flash
+        .as_ref()
+        .ok_or("not a Hy4-flash config")?;
+    let req = read_json(Path::new(request))?;
+    let tokens = u32s(&req["token_ids"]);
+    let decode_from = req["decode_from"].as_u64().ok_or("decode_from")? as usize;
+    let forced = read_forcing(Path::new(forcing), &tokens, decode_from)?;
+    let ot = read_json(&oracle.join("tape.json"))?;
+    if u32s(&ot["token_ids"]) != tokens || ot["forced_drafts"] != json!(false) {
+        return Err("the oracle tape is not the f64 oracle's of this request".into());
+    }
+    let anchors: Vec<usize> = ot["anchors"]
+        .as_array()
+        .ok_or("anchors")?
+        .iter()
+        .map(|v| v.as_u64().unwrap() as usize)
+        .collect();
+    let k = ot["k"].as_u64().ok_or("k")? as usize;
+    let drafts: Vec<Vec<u32>> = ot["drafts"]
+        .as_array()
+        .ok_or("drafts")?
+        .iter()
+        .map(u32s)
+        .collect();
+    if mem_available().unwrap_or(0) < 95_000_000_000 + (16usize << 30) {
+        return Err(
+            "MemAvailable cannot hold the resident weights, the drafter and headroom".into(),
+        );
+    }
+    let ck = Ckpt::open(ckpt)?;
+    let dev = Dev::new(0)?;
+    let t0 = Instant::now();
+    let mut route = Route::load(dev, &ck, &plan, hy, 8, plan.layers.len())?;
+    route.load_drafter(&ck)?;
+    drop(ck);
+    {
+        let d = route.drafter_mut().unwrap();
+        d.red = red;
+        d.record = Some(HashMap::new());
+    }
+    eprintln!(
+        "hy4f-spec gate-route: resident in {:.1}s",
+        t0.elapsed().as_secs_f64()
+    );
+    let h = plan.hidden_size as usize;
+    let vocab = plan.vocab_size as usize;
+    let mut sess = route.new_session(tokens.len() + k + 2)?;
+    let mut calls = vec![(0, decode_from)];
+    calls.extend((decode_from..tokens.len()).map(|q| (q, q + 1)));
+    let mut hidden = Vec::with_capacity(tokens.len() * h);
+    for (ci, &(s0, s1)) in calls.iter().enumerate() {
+        route.call_in(&mut sess, &tokens[s0..s1], false, None, Some(&forced[ci]))?;
+        hidden.extend(route.last_hidden(s1 - s0)?);
+    }
+    let record = route.drafter_mut().unwrap().record.take().unwrap();
+    let mut rounds: Vec<(Vec<u32>, Vec<f32>)> = vec![Default::default(); anchors.len()];
+    let tr = Instant::now();
+    for n in (0..anchors.len()).rev() {
+        let p = anchors[n];
+        let hist: HashMap<usize, Vec<i32>> = hy
+            .dfly
+            .target_index_layers
+            .iter()
+            .map(|l| {
+                record
+                    .get(&(*l as usize, p))
+                    .cloned()
+                    .map(|v| (*l as usize, v))
+                    .ok_or(format!("no history of layer {l} at {p}"))
+            })
+            .collect::<Result<_, _>>()?;
+        let r = route.draft_over_session(
+            &sess,
+            &hidden[p * h..(p + 1) * h],
+            &hist,
+            p,
+            tokens[p + 1],
+            k,
+            Some(&drafts[n]),
+        )?;
+        rounds[n] = (r.ids, r.logits);
+    }
+    let mut logits: Vec<u8> = Vec::with_capacity(anchors.len() * k * vocab * 4);
+    for (_, l) in &rounds {
+        for v in l {
+            logits.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    let own: Vec<Vec<u32>> = rounds.into_iter().map(|(i, _)| i).collect();
+    let mut accepted = Vec::new();
+    for (n, &p) in anchors.iter().enumerate() {
+        let mut m = 0;
+        while m < k && p + 2 + m < tokens.len() && own[n][m] == tokens[p + 2 + m] {
+            m += 1;
+        }
+        accepted.push(m);
+    }
+    std::fs::create_dir_all(out).map_err(|e| e.to_string())?;
+    std::fs::write(out.join("logits.f32"), &logits).map_err(|e| e.to_string())?;
+    let tape = json!({
+        "format": "memra-hy4f-dfly-tape-v1",
+        "engine": "memra-engine-hy4f_route-dfly-gpu-composite",
+        "numeric_class": memra_engine::hy4f_route::NUMERIC_CLASS,
+        "backend_dtype": "bf16x2-route-composite-forced",
+        "red_arm": if red == DraftRed::None { Value::Null } else { json!(red_name) },
+        "request": req["name"],
+        "token_ids": tokens,
+        "k": k,
+        "vocab": vocab,
+        "anchors": anchors,
+        "drafts": own,
+        "accepted_teacher_forced": accepted,
+        "logits": {"file": "logits.f32", "sha256": sha_hex(&logits), "shape": [anchors.len(), k, vocab]},
+        "forced_drafts": true,
+        "forced_selections": true,
+        "seconds": tr.elapsed().as_secs_f64(),
+    });
+    std::fs::write(
+        out.join("tape.json"),
+        serde_json::to_string_pretty(&tape).unwrap(),
+    )
+    .map_err(|e| e.to_string())?;
+    println!(
+        "{}",
+        json!({"request": tape["request"], "anchors": anchors.len(), "k": k, "red": tape["red_arm"],
+               "logits_sha256": tape["logits"]["sha256"], "seconds": tape["seconds"]})
+    );
     Ok(())
 }
