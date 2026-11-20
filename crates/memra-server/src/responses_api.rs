@@ -450,6 +450,9 @@ pub(crate) fn translate(v: &Value) -> Result<Value, (String, Option<String>)> {
     }
     let reasoning_effort = match reasoning_obj.and_then(|r| r.get("effort")) {
         None | Some(Value::Null) => Value::Null,
+        // `no_think` is Hy4-flash's own spelling of reasoning off: passed through, the chat plan
+        // maps it on that model and refuses it on every other one, as on the chat surface
+        Some(Value::String(raw)) if raw == "no_think" => json!(raw),
         Some(Value::String(raw)) => match crate::canonical_effort(raw) {
             Some(_) => json!(raw),
             None => {
