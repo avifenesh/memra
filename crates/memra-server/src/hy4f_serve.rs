@@ -950,7 +950,7 @@ fn bring_up<'a>(
         return Err("the warm-up answered non-finite logits".into());
     }
     drop(warm);
-    route.dev.sync()?;
+    route.dev.trim_pool()?;
     let held = route.dev.live_bytes();
     let avail = mem_available().unwrap_or(0);
     let book = Book {
@@ -1007,6 +1007,7 @@ fn serve_loop(
         }
         // clients that left: their requests end at this step boundary (their sessions free)
         let mut i = 0;
+        let mut left = false;
         while i < act.len() {
             if act[i].req.tx.is_closed() {
                 let a = act.remove(i);
@@ -1014,9 +1015,18 @@ fn serve_loop(
                     run.cancel();
                 }
                 health.end_request();
+                left = true;
             } else {
                 i += 1;
             }
+        }
+        if left && let Err(e) = up.route.dev.trim_pool() {
+            let dead = format!("hy_v4_flash route stopped: {e}");
+            eprintln!("[hy4f-serve] {dead}");
+            fail_all(&mut act, health, &dead);
+            drain_into(rx, &mut pending);
+            fail_pending(&mut pending, health, &dead);
+            return Some(dead);
         }
         let mut k = 0;
         while k < pending.len() {
@@ -1271,9 +1281,20 @@ fn serve_loop(
         }
         done.sort_unstable();
         done.dedup();
+        let freed = !done.is_empty();
         for &i in done.iter().rev() {
             let a = act.remove(i);
             finish(a, health);
+        }
+        // the finished sessions' caches go back to the system, so MemAvailable (the live
+        // admission check, and every co-tenant) sees them
+        if freed && let Err(e) = up.route.dev.trim_pool() {
+            let dead = format!("hy_v4_flash route stopped: {e}");
+            eprintln!("[hy4f-serve] {dead}");
+            fail_all(&mut act, health, &dead);
+            drain_into(rx, &mut pending);
+            fail_pending(&mut pending, health, &dead);
+            return Some(dead);
         }
     }
 }
