@@ -1,0 +1,31 @@
+calls 24, decode calls analysed 20
+step wall p50 90.61 ms, GPU busy p50 80.69 ms, ops/step 2100.0
+kernel                                                        ms/step n/step  %busy
+r_gemv_kernel<                                                 63.391    657   78.6
+r_gemv_f32_kernel<                                              6.228     42    7.7
+r_attn_kernel                                                   3.489     42    4.3
+r_hc_dots_kernel                                                2.121     85    2.6
+r_rms_kernel                                                    1.812    269    2.2
+r_pool_kernel                                                   0.956     12    1.2
+r_topk_kernel                                                   0.614     41    0.8
+r_hc_mix_kernel                                                 0.477     85    0.6
+r_moe_combine_kernel                                            0.331     41    0.4
+r_rope_kernel                                                   0.264     84    0.3
+r_copy_kernel                                                   0.228    138    0.3
+r_act_kernel                                                    0.216    125    0.3
+r_write_back_kernel                                             0.161     84    0.2
+r_attn_merge_kernel                                             0.144     42    0.2
+r_router_w_kernel                                               0.110     41    0.1
+r_add_kernel                                                    0.095     61    0.1
+r_moe_plan_kernel                                               0.093     41    0.1
+r_moe_gather_kernel                                             0.091     41    0.1
+r_router_scores_kernel                                          0.075     41    0.1
+r_engram_mix_kernel                                             0.072      4    0.1
+r_moe_place_kernel                                              0.051     41    0.1
+r_moe_count_kernel                                              0.049     41    0.1
+[CUDA memset]                                                   0.025     41    0.0
+r_engram_rows_kernel                                            0.022      4    0.0
+[CUDA memcpy Host-to-Device]                                    0.019      5    0.0
+[CUDA memcpy Device-to-Host]                                    0.017      1    0.0
+r_embed_kernel                                                  0.010      1    0.0
+r_rope_table_kernel                                             0.009      2    0.0

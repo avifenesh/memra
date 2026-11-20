@@ -71,6 +71,7 @@ mod ffi {
             ntiles: i32,
             red_dq: i32,
             small: i32,
+            tile_rows: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_hy4r_rms(
@@ -118,6 +119,18 @@ mod ffi {
             mag: f32,
             post: *mut f32,
             x: *mut f32,
+            dots: *mut f32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_hy4r_gemm_f32(
+            x: *const f32,
+            ldx: i64,
+            w: *const c_void,
+            y: *mut f32,
+            ldy: i64,
+            m: i32,
+            n: i32,
+            k: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_hy4r_write_back(
@@ -353,6 +366,8 @@ mod ffi {
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_hy4r_sync(stream: *mut c_void) -> i32;
+        pub fn memra_hy4r_pinned(p: *mut *mut c_void, bytes: usize) -> i32;
+        pub fn memra_hy4r_pinned_free(p: *mut c_void) -> i32;
     }
 }
 
@@ -503,6 +518,44 @@ impl Dev {
 
     pub fn sync(&self) -> Result<(), String> {
         cu!(memra_hy4r_sync(self.sp))
+    }
+}
+
+/// Page-locked host staging, grown on demand: an upload from it runs in stream order without
+/// waiting for the stream. Growth first waits for the stream (an earlier upload may still read
+/// the old buffer).
+#[derive(Default)]
+struct Pinned {
+    p: Option<std::ptr::NonNull<u8>>,
+    bytes: usize,
+}
+
+impl Pinned {
+    fn get(&mut self, dev: &Dev, bytes: usize) -> Result<&mut [u8], String> {
+        if self.bytes < bytes {
+            dev.sync()?;
+            self.free();
+            admit(bytes, "a pinned staging buffer")?;
+            let mut p: *mut std::os::raw::c_void = std::ptr::null_mut();
+            cu!(memra_hy4r_pinned(&mut p, bytes))?;
+            self.p = std::ptr::NonNull::new(p as *mut u8);
+            self.bytes = bytes;
+        }
+        let p = self.p.ok_or("pinned staging: no buffer")?;
+        Ok(unsafe { std::slice::from_raw_parts_mut(p.as_ptr(), bytes) })
+    }
+
+    fn free(&mut self) {
+        if let Some(p) = self.p.take() {
+            unsafe { ffi::memra_hy4r_pinned_free(p.as_ptr() as *mut _) };
+        }
+        self.bytes = 0;
+    }
+}
+
+impl Drop for Pinned {
+    fn drop(&mut self) {
+        self.free();
     }
 }
 
@@ -846,6 +899,9 @@ enum Mlp {
 
 struct Engram {
     plan: HyV4EngramPlan,
+    /// staging for this layer's uploads (its own, so a later layer's host writes never race an
+    /// earlier layer's pending copy)
+    stage: Pinned,
     lookup: Vec<i32>,
     multipliers: Vec<i64>,
     moduli: Vec<u64>,
@@ -905,9 +961,8 @@ pub struct Forced {
 
 #[derive(Default)]
 struct Scratch {
-    tok: Grow,
-    qpos: Grow,
-    posrow: Grow,
+    /// the call's index tables (`CallIdx`)
+    idx: Grow,
     cs: [Grow; 2],
     s: Grow,
     post: Grow,
@@ -926,8 +981,6 @@ struct Scratch {
     ao: Grow,
     a: Grow,
     lin: Grow,
-    lin_rows: Grow,
-    ring_rows: Grow,
     po: Grow,
     pml: Grow,
     tkv: Grow,
@@ -964,9 +1017,8 @@ struct Scratch {
     dg: Grow,
     du: Grow,
     da: Grow,
+    /// an Engram layer's codes, row scales and mask (one upload)
     ecodes: Grow,
-    escales: Grow,
-    emask: Grow,
     emb: Grow,
     evalue: Grow,
     ekeys: Grow,
@@ -974,6 +1026,99 @@ struct Scratch {
     hx: Grow,
     hn: Grow,
     logits: Grow,
+    /// the hyper-connection reductions of a call's rows
+    hcd: Grow,
+}
+
+/// A call's index tables in one device buffer (`CallIdx::build` lays them out on the host, the
+/// call uploads them once): device pointers into it, each `[t]` i32 unless noted.
+#[derive(Default, Clone)]
+struct CallIdx {
+    tok: u64,
+    qpos: u64,
+    /// position - cos/sin table origin
+    posrow: u64,
+    /// linear cache rows the call writes (`p + late`)
+    kv_rows: u64,
+    rings: Vec<RingIdx>,
+}
+
+#[derive(Default, Clone, Copy)]
+struct RingIdx {
+    w: usize,
+    /// decode: the ring slot of the position (`(p0 + late) % w`), one value
+    slot: u64,
+    /// prefill: ring slots of the earlier positions in the window `[p0 - b0]`
+    lin: u64,
+    /// prefill: ring slots of the call's last `min(t, w)` positions
+    keep: u64,
+}
+
+impl CallIdx {
+    /// The host table and the offsets (in i32 elements, the device base still to add).
+    fn build(
+        tokens: &[u32],
+        p0: usize,
+        cs_pos0: usize,
+        late: usize,
+        rings: &[usize],
+    ) -> (Vec<i32>, Self) {
+        let t = tokens.len();
+        let mut v: Vec<i32> = Vec::new();
+        let at = |v: &mut Vec<i32>, it: &mut dyn Iterator<Item = i32>| -> u64 {
+            let o = v.len() as u64;
+            v.extend(it);
+            o
+        };
+        let tok = at(&mut v, &mut tokens.iter().map(|x| *x as i32));
+        let qpos = at(&mut v, &mut (p0..p0 + t).map(|p| p as i32));
+        let posrow = at(&mut v, &mut (p0..p0 + t).map(|p| (p - cs_pos0) as i32));
+        let kv_rows = at(&mut v, &mut (p0..p0 + t).map(|p| (p + late) as i32));
+        let mut out = Vec::new();
+        for &w in rings {
+            let slot = at(&mut v, &mut std::iter::once(((p0 + late) % w) as i32));
+            let b0 = p0.saturating_sub(w - 1);
+            let lin = at(&mut v, &mut (b0..p0).map(|p| (p % w) as i32));
+            let keep = t.min(w);
+            let kp = at(&mut v, &mut (p0 + t - keep..p0 + t).map(|p| (p % w) as i32));
+            out.push(RingIdx {
+                w,
+                slot,
+                lin,
+                keep: kp,
+            });
+        }
+        let ci = Self {
+            tok,
+            qpos,
+            posrow,
+            kv_rows,
+            rings: out,
+        };
+        (v, ci)
+    }
+
+    fn at(mut self, base: u64) -> Self {
+        let f = |o: u64| base + o * 4;
+        self.tok = f(self.tok);
+        self.qpos = f(self.qpos);
+        self.posrow = f(self.posrow);
+        self.kv_rows = f(self.kv_rows);
+        for r in &mut self.rings {
+            r.slot = f(r.slot);
+            r.lin = f(r.lin);
+            r.keep = f(r.keep);
+        }
+        self
+    }
+
+    fn ring(&self, w: usize) -> Result<RingIdx, String> {
+        self.rings
+            .iter()
+            .find(|r| r.w == w)
+            .copied()
+            .ok_or_else(|| format!("no index table for a ring of {w}"))
+    }
 }
 
 /// The GEMM launchers, borrowing only the device and the red arms.
@@ -1017,6 +1162,7 @@ impl Gm<'_> {
             0,
             red,
             i32::from(m <= 16),
+            0,
             self.dev.sp
         ))
     }
@@ -1038,6 +1184,19 @@ impl Gm<'_> {
         y: *mut f32,
         m: usize,
     ) -> Result<(), String> {
+        if m <= 4 {
+            return cu!(memra_hy4r_gemm_f32(
+                x,
+                k as i64,
+                wp as *const _,
+                y,
+                n as i64,
+                m as i32,
+                n as i32,
+                k as i32,
+                self.dev.sp
+            ));
+        }
         let rc = unsafe {
             memra_hy4f_gemm(
                 x as *const _,
@@ -1082,6 +1241,8 @@ pub struct Route<'a> {
     broken: bool,
     /// the current call records its selections (a device sync per layer)
     recording: bool,
+    /// the current call's index tables
+    ci: CallIdx,
 }
 
 fn attention_plan(layer: &memra_gguf::model_plan::LayerPlan) -> Result<&HyV4AttentionPlan, String> {
@@ -1382,6 +1543,7 @@ impl<'a> Route<'a> {
             history: Vec::new(),
             broken: false,
             recording: false,
+            ci: CallIdx::default(),
         })
     }
 
@@ -1435,6 +1597,7 @@ impl<'a> Route<'a> {
         }
         Ok(Engram {
             plan: *ep,
+            stage: Pinned::default(),
             lookup,
             multipliers,
             moduli,
@@ -1550,18 +1713,24 @@ impl<'a> Route<'a> {
         let n = self.hy.hc_mult as usize;
         let dev = &self.dev;
         let sc = &mut self.sc;
-        // per-call tables
-        let tok: Vec<i32> = tokens.iter().map(|v| *v as i32).collect();
-        let tokb = sc.tok.get(dev, t * 4)?.p;
-        dev.put(tokb as *mut _, &tok)?;
-        let qpos: Vec<i32> = (p0..p0 + t).map(|p| p as i32).collect();
-        let qposb = sc.qpos.get(dev, t * 4)?.p;
-        dev.put(qposb as *mut _, &qpos)?;
+        // the call's index tables, one upload while the stream is idle (the previous call ended
+        // on its logits copy), so no copy inside the call waits for the stream
         let cs_pos0 = p0.saturating_sub(3);
         let cs_rows = p0 + t - cs_pos0;
-        let posrow: Vec<i32> = (p0..p0 + t).map(|p| (p - cs_pos0) as i32).collect();
-        let posrowb = sc.posrow.get(dev, t * 4)?.p;
-        dev.put(posrowb as *mut _, &posrow)?;
+        let late = usize::from(self.red.kv_off_by_one && t == 1);
+        let mut rings: Vec<usize> = self
+            .caches
+            .iter()
+            .map(|c| c.ring)
+            .filter(|r| *r > 0)
+            .collect();
+        rings.sort_unstable();
+        rings.dedup();
+        let (table, ci) = CallIdx::build(tokens, p0, cs_pos0, late, &rings);
+        let idxb = sc.idx.get(dev, table.len() * 4)?.p;
+        dev.put(idxb as *mut _, &table)?;
+        self.ci = ci.at(idxb);
+        let tokb = self.ci.tok;
         for (bi, (_, inv)) in self.bases.iter().enumerate() {
             let b = sc.cs[bi].get(dev, cs_rows * 32 * 8)?;
             cu!(memra_hy4r_rope_table(
@@ -1594,6 +1763,7 @@ impl<'a> Route<'a> {
         let dev = &self.dev;
         let sc = &mut self.sc;
         let hx = sc.hx.get(dev, t * h * 4)?.f();
+        let hcd = sc.hcd.get(dev, t * 17 * 4)?.f();
         let numerics = self.plan.hy_v4_flash.unwrap();
         cu!(memra_hy4r_hc(
             s,
@@ -1609,6 +1779,7 @@ impl<'a> Route<'a> {
             0.0,
             std::ptr::null_mut(),
             hx,
+            hcd,
             dev.sp
         ))?;
         let hn = sc.hn.get(dev, t * h * 4)?.f();
@@ -1662,6 +1833,7 @@ impl<'a> Route<'a> {
         let post = self.sc.post.get(dev, t * n * 4)?.f();
         let x = self.sc.x.get(dev, t * h * 4)?.f();
         let xn = self.sc.xn.get(dev, t * h * 4)?.f();
+        let hcd = self.sc.hcd.get(dev, t * 17 * 4)?.f();
         cu!(memra_hy4r_hc(
             s,
             l.hc_attn.fun.f(),
@@ -1676,6 +1848,7 @@ impl<'a> Route<'a> {
             res.post_magnitude,
             post,
             x,
+            hcd,
             dev.sp
         ))?;
         cu!(memra_hy4r_rms(
@@ -1709,6 +1882,7 @@ impl<'a> Route<'a> {
             res.post_magnitude,
             post,
             x,
+            hcd,
             dev.sp
         ))?;
         cu!(memra_hy4r_rms(
@@ -1756,8 +1930,8 @@ impl<'a> Route<'a> {
         let (ql, kvl) = (a.plan.q_lora_rank as usize, a.plan.kv_lora_rank as usize);
         let hd = 256usize;
         let cs = sc.cs[bi].get(dev, 0)?.p as *const std::os::raw::c_void;
-        let posrow = sc.posrow.get(dev, 0)?.i();
-        let qpos = sc.qpos.get(dev, 0)?.i();
+        let posrow = self.ci.posrow as *mut i32;
+        let qpos = self.ci.qpos as *mut i32;
         let gate = sc.gate.get(dev, t * heads * hd * 4)?.f();
         let qa = sc.qa.get(dev, t * ql * 4)?.f();
         let qr = sc.qr.get(dev, t * ql * 4)?.f();
@@ -1850,6 +2024,7 @@ impl<'a> Route<'a> {
             0,
             0,
             i32::from(t <= 16),
+            0,
             sp
         ))?;
         cu!(memra_hy4r_copy(
@@ -1865,7 +2040,6 @@ impl<'a> Route<'a> {
         ))?;
         // the cache rows of this call
         let cache = &self.caches[il];
-        let late = usize::from(self.red.kv_off_by_one && t == 1);
         let kv_len = p0 + t;
         let scale = (256f64).powf(-0.5) as f32;
         let sinks = a.sinks.f();
@@ -1880,10 +2054,9 @@ impl<'a> Route<'a> {
             if win as usize != w {
                 return Err("ring and window differ".into());
             }
+            let ri = self.ci.ring(w)?;
             if t == 1 {
-                let slot = [((p0 + late) % w) as i32];
-                let sb = sc.ring_rows.get(dev, 4)?.i();
-                dev.put(sb as *mut _, &slot)?;
+                let sb = ri.slot as *const i32;
                 cu!(memra_hy4r_copy(
                     lat,
                     576,
@@ -1904,16 +2077,14 @@ impl<'a> Route<'a> {
                 let b0 = p0.saturating_sub(w - 1);
                 let lin = sc.lin.get(dev, (p0 - b0 + t) * 576 * 4)?;
                 if p0 > b0 {
-                    let rows: Vec<i32> = (b0..p0).map(|p| (p % w) as i32).collect();
-                    let rb = sc.lin_rows.get(dev, rows.len() * 4)?.i();
-                    dev.put(rb as *mut _, &rows)?;
+                    let rb = ri.lin as *const i32;
                     cu!(memra_hy4r_gather_bf(
                         cache.kv.v(),
                         576,
                         rb,
                         lin.v(),
                         576,
-                        rows.len() as i32,
+                        (p0 - b0) as i32,
                         576,
                         sp
                     ))?;
@@ -1931,9 +2102,7 @@ impl<'a> Route<'a> {
                 ))?;
                 // the ring keeps the last `w` positions of the call
                 let keep = t.min(w);
-                let rows: Vec<i32> = (p0 + t - keep..p0 + t).map(|p| (p % w) as i32).collect();
-                let rb = sc.ring_rows.get(dev, rows.len() * 4)?.i();
-                dev.put(rb as *mut _, &rows)?;
+                let rb = ri.keep as *const i32;
                 cu!(memra_hy4r_copy(
                     lat.wrapping_add((t - keep) * 576),
                     576,
@@ -1951,9 +2120,7 @@ impl<'a> Route<'a> {
                 base = b0;
             }
         } else {
-            let rows: Vec<i32> = (p0..p0 + t).map(|p| (p + late) as i32).collect();
-            let rb = sc.ring_rows.get(dev, rows.len() * 4)?.i();
-            dev.put(rb as *mut _, &rows)?;
+            let rb = self.ci.kv_rows as *const i32;
             cu!(memra_hy4r_copy(
                 lat,
                 576,
@@ -1990,9 +2157,7 @@ impl<'a> Route<'a> {
                 eps,
                 sp
             ))?;
-            let rows: Vec<i32> = (p0..p0 + t).map(|p| p as i32).collect();
-            let rb = sc.ring_rows.get(dev, rows.len() * 4)?.i();
-            dev.put(rb as *mut _, &rows)?;
+            let rb = self.ci.qpos as *const i32;
             let tkc = cache.tk.as_ref().unwrap();
             let gkc = cache.gk.as_ref().unwrap();
             cu!(memra_hy4r_copy(
@@ -2208,6 +2373,7 @@ impl<'a> Route<'a> {
             0,
             0,
             i32::from(t <= 16),
+            0,
             sp
         ))?;
         cu!(memra_hy4r_act(
@@ -2412,6 +2578,7 @@ impl<'a> Route<'a> {
                         max_tiles as i32,
                         red,
                         i32::from(small),
+                        t.min(bm) as i32,
                         sp
                     ))
                 };
@@ -2558,12 +2725,32 @@ impl<'a> Route<'a> {
         let sc = &mut self.sc;
         let sp = dev.sp;
         let eps = ep.norm_epsilon.value();
-        let cb = sc.ecodes.get(dev, t * width)?.v();
-        dev.put(cb, &codes)?;
-        let sb = sc.escales.get(dev, t * heads * 4)?.f();
-        dev.put(sb as *mut _, &scales)?;
-        let mb = sc.emask.get(dev, t)?.v();
-        dev.put(mb, &mask)?;
+        // one upload of codes | scales | mask through the layer's pinned staging
+        let (oc, os, om) = (0, (t * width).div_ceil(16) * 16, 0);
+        let om = om + os + (t * heads * 4).div_ceil(16) * 16;
+        let total = om + t;
+        let stage = self.layers[il]
+            .engram
+            .as_mut()
+            .unwrap()
+            .stage
+            .get(dev, total)?;
+        stage[oc..oc + t * width].copy_from_slice(&codes);
+        for (i, v) in scales.iter().enumerate() {
+            stage[os + 4 * i..os + 4 * i + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        stage[om..om + t].copy_from_slice(&mask);
+        let eb = sc.ecodes.get(dev, total)?;
+        cu!(memra_hy4r_h2d(
+            eb.v(),
+            stage.as_ptr() as *const _,
+            total,
+            sp
+        ))?;
+        let cb = eb.at(oc);
+        let sb = eb.at(os) as *mut f32;
+        let mb = eb.at(om);
+        let eg = self.layers[il].engram.as_ref().unwrap();
         let emb = sc.emb.get(dev, t * width * 4)?.f();
         cu!(memra_hy4r_engram_rows(
             cb,
