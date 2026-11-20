@@ -49,6 +49,7 @@ L2.
 | step 8 (base) | 6.04 [6.03-6.04] | 165.7 | 5.40 [5.25-5.40] | 185.3 | 84.2 | 225.0 |
 | 1: small-row GEMMs, F32 islands GEMV, split HC, one table upload a call | 11.60 [11.57-11.61] | 86.2 | 9.57 [9.55-9.58] | 104.2 | 93.9 | 222.0 |
 | 2: programmatic dependent launch | 12.37 [12.36-12.37] | 80.9 | 10.16 [10.15-10.18] | 98.3 | 93.1 | 221.3 |
+| 3: Engram reads on a resident thread pool, beside the first layers | 12.56 [12.56-12.57] | 79.6 | 10.23 [10.22-10.24] | 97.5 | 92.8 | 220.9 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -93,3 +94,11 @@ while the previous one finishes. No value changes: 3 of 3 tapes bit-equal. Decod
 Tried with it and dropped: reading the Engram rows for all four layers on a thread spawned each
 call (32 reader threads) beside the first layers: 0.9 ms a step slower, the spawn cost more than
 the reads (128 page-cached `pread`s of about 2 us each spread over 8 ms).
+
+### 3. Engram reads on resident threads (`receipts/s3-engram-pool/`)
+
+The Engram rows of a call depend only on its token ids. The call now hashes all four Engram
+layers at its start and hands the reads (four rows a task) to 16 threads started with the route;
+the first Engram layer (layer 2) collects them, by which time the GPU has two layers queued. The
+first layer's GPU idle (5.3 ms a step under the profiler) is gone; decode step 80.9 -> 79.6 ms on
+`chat`, 98.3 -> 97.5 ms on `long`. The bench rows now carry every step's time (`steps_ms`).

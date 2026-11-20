@@ -1243,6 +1243,8 @@ pub struct Route<'a> {
     recording: bool,
     /// the current call's index tables
     ci: CallIdx,
+    /// the Engram table readers
+    reader: ReadPool,
 }
 
 fn attention_plan(layer: &memra_gguf::model_plan::LayerPlan) -> Result<&HyV4AttentionPlan, String> {
@@ -1544,6 +1546,7 @@ impl<'a> Route<'a> {
             broken: false,
             recording: false,
             ci: CallIdx::default(),
+            reader: ReadPool::new(16),
         })
     }
 
@@ -1752,9 +1755,28 @@ impl<'a> Route<'a> {
             h as i32,
             dev.sp
         ))?;
+        // the Engram layers' table reads run on host threads beside the first layers
+        let jobs = (0..self.layers.len())
+            .filter(|il| self.layers[*il].engram.is_some())
+            .map(|il| self.engram_job(il, p0, t))
+            .collect::<Result<Vec<_>, String>>()?;
+        let mut fetch = if jobs.is_empty() {
+            None
+        } else {
+            Some(engram_fetch(&self.reader, jobs)?)
+        };
+        let mut fetched: HashMap<usize, EngramData> = HashMap::new();
         for il in 0..self.layers.len() {
             let mut lr = LayerRec::default();
-            self.layer(il, p0, t, s, &mut lr, forced)?;
+            let ed = if self.layers[il].engram.is_some() {
+                if let Some(f) = fetch.take() {
+                    fetched.extend(f.wait()?);
+                }
+                fetched.remove(&il)
+            } else {
+                None
+            };
+            self.layer(il, p0, t, s, &mut lr, forced, ed)?;
             if let Some(r) = rec.as_deref_mut() {
                 r.push((il, lr));
             }
@@ -1813,6 +1835,7 @@ impl<'a> Route<'a> {
         Ok(out)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn layer(
         &mut self,
         il: usize,
@@ -1821,12 +1844,14 @@ impl<'a> Route<'a> {
         s: *mut f32,
         rec: &mut LayerRec,
         forced: Option<&Forced>,
+        engram: Option<EngramData>,
     ) -> Result<(), String> {
         let h = self.plan.hidden_size as usize;
         let n = self.hy.hc_mult as usize;
         let res = self.layers[il].res;
         if self.layers[il].engram.is_some() {
-            self.engram(il, p0, t, s, rec)?;
+            let data = engram.ok_or(format!("layer {il}: no Engram reads"))?;
+            self.engram(il, t, s, rec, data)?;
         }
         let dev = &self.dev;
         let l = &self.layers[il];
@@ -2634,22 +2659,12 @@ impl<'a> Route<'a> {
         Ok(out)
     }
 
-    /// `HYV4FlashEngramLayer` on the call's rows: the n-gram hashes and the table reads on the
-    /// host, the rest on the device; adds into the streams.
-    fn engram(
-        &mut self,
-        il: usize,
-        p0: usize,
-        t: usize,
-        s: *mut f32,
-        rec: &mut LayerRec,
-    ) -> Result<(), String> {
-        let h = self.plan.hidden_size as usize;
-        let n = self.hy.hc_mult as usize;
+    /// An Engram layer's reads for the call's rows: the n-gram hashes (on the host, the step 5
+    /// code) and the table rows they name, checked against the table.
+    fn engram_job(&self, il: usize, p0: usize, t: usize) -> Result<EngramJob, String> {
         let eg = self.layers[il].engram.as_ref().unwrap();
         let ep = &eg.plan;
-        let (heads, dim) = (ep.heads as usize, ep.head_dim as usize);
-        let width = heads * dim;
+        let heads = ep.heads as usize;
         // n-grams over the history: a window that starts `max_ngram - 1` tokens back
         let back = (ep.max_ngram as usize).saturating_sub(1);
         let w0 = p0.saturating_sub(back);
@@ -2668,54 +2683,47 @@ impl<'a> Route<'a> {
             .map(u8::from)
             .collect();
         let total = ep.table_rows as usize;
-        let mut codes = vec![0u8; t * width];
-        let mut scales = vec![0f32; t * heads];
-        {
-            let (tf, ts) = (&eg.table.0, eg.table.1);
-            let (sf, ss) = (&eg.scales.0, eg.scales.1);
-            let flat: Vec<(usize, u64)> = rows
-                .iter()
-                .flat_map(|r| r.iter().copied())
-                .enumerate()
-                .collect();
-            for (_, ri) in &flat {
-                if *ri as usize >= total {
-                    return Err(format!(
-                        "layer {il}: Engram row {ri} past the table's {total}"
-                    ));
-                }
-            }
-            let threads = 16usize.min(flat.len()).max(1);
-            let per = flat.len().div_ceil(threads);
-            #[allow(clippy::type_complexity)]
-            let results: Vec<Result<Vec<(usize, Vec<u8>, f32)>, String>> =
-                std::thread::scope(|sc| {
-                    let hs: Vec<_> = flat
-                        .chunks(per)
-                        .map(|chunk| {
-                            sc.spawn(move || {
-                                let mut out = Vec::with_capacity(chunk.len());
-                                let mut sb = [0u8; 4];
-                                for &(i, ri) in chunk {
-                                    let mut c = vec![0u8; dim];
-                                    tf.read_exact_at(&mut c, (ts + ri as usize * dim) as u64)
-                                        .map_err(|e| format!("Engram pread: {e}"))?;
-                                    sf.read_exact_at(&mut sb, (ss + ri as usize * 4) as u64)
-                                        .map_err(|e| format!("Engram pread: {e}"))?;
-                                    out.push((i, c, f32::from_le_bytes(sb)));
-                                }
-                                Ok(out)
-                            })
-                        })
-                        .collect();
-                    hs.into_iter().map(|h| h.join().unwrap()).collect()
-                });
-            for r in results {
-                for (i, c, sv) in r? {
-                    codes[i * dim..(i + 1) * dim].copy_from_slice(&c);
-                    scales[i] = sv;
-                }
-            }
+        if let Some(ri) = rows.iter().flatten().find(|ri| **ri as usize >= total) {
+            return Err(format!(
+                "layer {il}: Engram row {ri} past the table's {total}"
+            ));
+        }
+        Ok(EngramJob {
+            il,
+            rows,
+            mask,
+            table: eg.table.clone(),
+            scales: eg.scales.clone(),
+            dim: ep.head_dim as usize,
+        })
+    }
+
+    /// `HYV4FlashEngramLayer` on the call's rows, the table rows already read (`engram_fetch`);
+    /// adds into the streams.
+    fn engram(
+        &mut self,
+        il: usize,
+        t: usize,
+        s: *mut f32,
+        rec: &mut LayerRec,
+        data: EngramData,
+    ) -> Result<(), String> {
+        let h = self.plan.hidden_size as usize;
+        let n = self.hy.hc_mult as usize;
+        let eg = self.layers[il].engram.as_ref().unwrap();
+        let ep = &eg.plan;
+        let (heads, dim) = (ep.heads as usize, ep.head_dim as usize);
+        let width = heads * dim;
+        let EngramData {
+            rows,
+            codes,
+            scales,
+            mask,
+        } = data;
+        if codes.len() != t * width || scales.len() != t * heads || mask.len() != t {
+            return Err(format!(
+                "layer {il}: the Engram reads are not the call's rows"
+            ));
         }
         rec.engram_rows = Some(rows);
         if self.red.engram_off {
@@ -2821,6 +2829,167 @@ impl<'a> Route<'a> {
             sp
         ))?;
         Ok(())
+    }
+}
+
+/// One Engram layer's table reads for a call (`Route::engram_job`).
+struct EngramJob {
+    il: usize,
+    rows: Vec<Vec<u64>>,
+    mask: Vec<u8>,
+    table: (Arc<std::fs::File>, usize),
+    scales: (Arc<std::fs::File>, usize),
+    dim: usize,
+}
+
+/// What `engram_fetch` read for a layer: the rows' FP8 codes `[t, heads, dim]` and scales.
+struct EngramData {
+    rows: Vec<Vec<u64>>,
+    codes: Vec<u8>,
+    scales: Vec<f32>,
+    mask: Vec<u8>,
+}
+
+/// Host threads for the Engram table reads, started with the route: a call's reads go out as
+/// tasks (a few rows each) and its results come back on the call's channel. Spawning the threads
+/// per call cost more than the reads (about 8 ms a decode call for 128 page-cached `pread`s).
+struct ReadPool {
+    tx: Option<std::sync::mpsc::Sender<Box<dyn FnOnce() + Send>>>,
+    workers: Vec<std::thread::JoinHandle<()>>,
+}
+
+impl ReadPool {
+    fn new(threads: usize) -> Self {
+        let (tx, rx) = std::sync::mpsc::channel::<Box<dyn FnOnce() + Send>>();
+        let rx = Arc::new(std::sync::Mutex::new(rx));
+        let workers = (0..threads)
+            .map(|_| {
+                let rx = rx.clone();
+                std::thread::spawn(move || {
+                    loop {
+                        let task = match rx.lock() {
+                            Ok(r) => r.recv(),
+                            Err(_) => return,
+                        };
+                        match task {
+                            Ok(f) => f(),
+                            Err(_) => return,
+                        }
+                    }
+                })
+            })
+            .collect();
+        Self {
+            tx: Some(tx),
+            workers,
+        }
+    }
+
+    fn submit(&self, f: Box<dyn FnOnce() + Send>) -> Result<(), String> {
+        self.tx
+            .as_ref()
+            .ok_or("the Engram reader is stopped")?
+            .send(f)
+            .map_err(|_| "the Engram reader is gone".to_string())
+    }
+}
+
+impl Drop for ReadPool {
+    fn drop(&mut self) {
+        self.tx = None;
+        for w in self.workers.drain(..) {
+            let _ = w.join();
+        }
+    }
+}
+
+/// Rows a read task takes.
+const ENGRAM_TASK_ROWS: usize = 4;
+
+type EngramRead = Result<Vec<(usize, usize, Vec<u8>, f32)>, String>;
+
+/// Every Engram layer's table rows of a call, read with `pread` on the pool's threads; returns
+/// at once, the reads running beside the GPU's first layers (the hashes need only the token
+/// ids). `EngramFetch::wait` collects them.
+fn engram_fetch(pool: &ReadPool, jobs: Vec<EngramJob>) -> Result<EngramFetch, String> {
+    let (tx, rx) = std::sync::mpsc::channel::<EngramRead>();
+    let mut tasks = 0usize;
+    for (j, job) in jobs.iter().enumerate() {
+        let flat: Vec<(usize, u64)> = job.rows.iter().flatten().copied().enumerate().collect();
+        for chunk in flat.chunks(ENGRAM_TASK_ROWS) {
+            let chunk = chunk.to_vec();
+            let (table, scales, dim) = (job.table.clone(), job.scales.clone(), job.dim);
+            let tx = tx.clone();
+            pool.submit(Box::new(move || {
+                let read = || -> EngramRead {
+                    let mut res = Vec::with_capacity(chunk.len());
+                    let mut sb = [0u8; 4];
+                    for (i, ri) in chunk {
+                        let mut c = vec![0u8; dim];
+                        table
+                            .0
+                            .read_exact_at(&mut c, (table.1 + ri as usize * dim) as u64)
+                            .map_err(|e| format!("Engram pread: {e}"))?;
+                        scales
+                            .0
+                            .read_exact_at(&mut sb, (scales.1 + ri as usize * 4) as u64)
+                            .map_err(|e| format!("Engram pread: {e}"))?;
+                        res.push((j, i, c, f32::from_le_bytes(sb)));
+                    }
+                    Ok(res)
+                };
+                let _ = tx.send(read());
+            }))?;
+            tasks += 1;
+        }
+    }
+    Ok(EngramFetch { jobs, rx, tasks })
+}
+
+/// A call's Engram reads in flight.
+struct EngramFetch {
+    jobs: Vec<EngramJob>,
+    rx: std::sync::mpsc::Receiver<EngramRead>,
+    tasks: usize,
+}
+
+impl EngramFetch {
+    fn wait(self) -> Result<Vec<(usize, EngramData)>, String> {
+        let mut out: Vec<(Vec<u8>, Vec<f32>)> = self
+            .jobs
+            .iter()
+            .map(|j| {
+                let rows: usize = j.rows.iter().map(Vec::len).sum();
+                (vec![0u8; rows * j.dim], vec![0f32; rows])
+            })
+            .collect();
+        for _ in 0..self.tasks {
+            let got = self
+                .rx
+                .recv()
+                .map_err(|_| "an Engram read task was dropped".to_string())??;
+            for (j, i, c, sv) in got {
+                let dim = self.jobs[j].dim;
+                out[j].0[i * dim..(i + 1) * dim].copy_from_slice(&c);
+                out[j].1[i] = sv;
+            }
+        }
+        Ok(self
+            .jobs
+            .into_iter()
+            .zip(out)
+            .map(|(job, (codes, scales))| {
+                (
+                    job.il,
+                    EngramData {
+                        rows: job.rows,
+                        codes,
+                        scales,
+                        mask: job.mask,
+                    },
+                )
+            })
+            .collect())
     }
 }
 
