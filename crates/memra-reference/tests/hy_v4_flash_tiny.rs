@@ -147,6 +147,28 @@ fn indexer_selections_and_engram_rows_equal_the_transformers_program_exactly() {
     assert_eq!(indexed_calls, 27 + 72 + 93);
 }
 
+/// A weight with the right element count in another shape (the embedding transposed) is
+/// refused, not read with the wrong geometry.
+#[test]
+fn a_transposed_weight_is_refused() {
+    let pack = memra_gguf::model_packs::by_alias("hy_v4_flash").unwrap();
+    let plan = pack.compile_tiny_plan().unwrap();
+    let mut fixture = memra_reference::deterministic_fixture(&plan).unwrap();
+    let embedding = fixture
+        .weights
+        .get_mut(&memra_gguf::tensor_contract::TensorId::TokenEmbedding)
+        .unwrap();
+    embedding.shape.reverse();
+    let result = hy_v4_flash_trunk::execute(&plan, &fixture.weights, &fixture.token_ids[..8], None);
+    assert!(
+        matches!(
+            result,
+            Err(memra_reference::ReferenceError::TensorShape { .. })
+        ),
+        "{result:?}"
+    );
+}
+
 /// The digests see a selection off by one group: a budget one group short (252 instead of 256)
 /// recalls other groups on every indexed layer of the prefill.
 #[test]
@@ -172,6 +194,12 @@ fn a_budget_one_group_short_changes_the_selection_digests() {
     )
     .unwrap();
     let (recalled, _) = digests(&trace[0]);
+    let layers: Vec<&str> = recalled.iter().map(|(layer, _)| layer.as_str()).collect();
+    assert_eq!(
+        layers,
+        ["0", "1", "5"],
+        "every indexed layer ran its indexer"
+    );
     for (layer, digest) in recalled {
         assert_ne!(
             prefill[&layer].as_str().unwrap(),

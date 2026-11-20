@@ -570,30 +570,32 @@ impl Reader<'_> {
             .ok_or(ReferenceError::MissingTensor(key))
     }
 
-    /// An f32 tensor of exactly `len` values, as f64.
-    fn f(&self, name: &str, len: usize) -> Result<Vec<f64>, ReferenceError> {
+    /// An f32 tensor of exactly `shape`, as f64. A tensor with the right element count in
+    /// another shape (a transposed matrix) is refused.
+    fn f(&self, name: &str, shape: &[usize]) -> Result<Vec<f64>, ReferenceError> {
         let t = self.tensor(name)?;
-        if t.ints.is_some() || t.data.len() != len {
+        let len: usize = shape.iter().product();
+        if t.ints.is_some() || t.shape != shape || t.data.len() != len {
             return Err(ReferenceError::TensorShape {
                 id: Some(id(name)),
-                expected: vec![len],
+                expected: shape.to_vec(),
                 actual_elements: t.data.len(),
             });
         }
         Ok(t.data.iter().map(|v| f64::from(*v)).collect())
     }
 
-    /// An integer tensor of exactly `len` values.
-    fn ints(&self, name: &str, len: usize) -> Result<&[i64], ReferenceError> {
+    /// An integer tensor of exactly `shape`.
+    fn ints(&self, name: &str, shape: &[usize]) -> Result<&[i64], ReferenceError> {
         let t = self.tensor(name)?;
         let ints = t
             .ints
             .as_deref()
             .ok_or_else(|| ReferenceError::IntegerTensorRequired(id(name)))?;
-        if ints.len() != len {
+        if t.shape != shape || ints.len() != shape.iter().product::<usize>() {
             return Err(ReferenceError::TensorShape {
                 id: Some(id(name)),
-                expected: vec![len],
+                expected: shape.to_vec(),
                 actual_elements: ints.len(),
             });
         }
@@ -768,39 +770,39 @@ fn load_layer(
     let (q_lora, kv_lora) = (a.q_lora_rank as usize, a.kv_lora_rank as usize);
     let at = |s: &str| format!("{p}self_attn.{s}");
     let attention = [
-        r.f(&at("q_a_proj.weight"), q_lora * h)?,
-        r.f(&at("q_a_layernorm.weight"), q_lora)?,
-        r.f(&at("q_b_proj.weight"), heads * (nope + rope) * q_lora)?,
-        r.f(&at("kv_a_proj_with_mqa.weight"), (kv_lora + rope) * h)?,
-        r.f(&at("kv_a_layernorm.weight"), kv_lora)?,
-        r.f(&at("kv_b_proj.weight"), heads * (nope + vdim) * kv_lora)?,
-        r.f(&at("linear_gate.weight"), heads * vdim * h)?,
-        r.f(&at("o_proj.weight"), h * heads * vdim)?,
-        r.f(&at("post_proj_norm.weight"), h)?,
-        r.f(&at("learnable_sink_param"), heads)?,
+        r.f(&at("q_a_proj.weight"), &[q_lora, h])?,
+        r.f(&at("q_a_layernorm.weight"), &[q_lora])?,
+        r.f(&at("q_b_proj.weight"), &[heads * (nope + rope), q_lora])?,
+        r.f(&at("kv_a_proj_with_mqa.weight"), &[kv_lora + rope, h])?,
+        r.f(&at("kv_a_layernorm.weight"), &[kv_lora])?,
+        r.f(&at("kv_b_proj.weight"), &[heads * (nope + vdim), kv_lora])?,
+        r.f(&at("linear_gate.weight"), &[heads * vdim, h])?,
+        r.f(&at("o_proj.weight"), &[h, heads * vdim])?,
+        r.f(&at("post_proj_norm.weight"), &[h])?,
+        r.f(&at("learnable_sink_param"), &[heads])?,
     ];
     let indexer = match a.kind {
         HyV4AttentionKind::Indexed(index) => {
             let (ih, id_) = (index.heads as usize, index.head_dim as usize);
             let i = |s: &str| format!("{p}self_attn.compressed_indexer.{s}");
             Some(OwnedIndexer {
-                query: r.f(&i("query_projection.weight"), ih * id_ * q_lora)?,
-                head_weight: r.f(&i("head_weight_projection.weight"), ih * h)?,
-                token_key: r.f(&i("token_key_projection.weight"), id_ * h)?,
-                token_key_norm: r.f(&i("token_key_norm.weight"), id_)?,
-                key_value: r.f(&i("key_value_projection.weight"), id_ * id_)?,
-                key_gate: r.f(&i("key_gate_projection.weight"), id_ * id_)?,
-                ape: r.f(&i("intra_group_ape"), index.pool as usize * id_)?,
-                key_norm: r.f(&i("key_norm.weight"), id_)?,
+                query: r.f(&i("query_projection.weight"), &[ih * id_, q_lora])?,
+                head_weight: r.f(&i("head_weight_projection.weight"), &[ih, h])?,
+                token_key: r.f(&i("token_key_projection.weight"), &[id_, h])?,
+                token_key_norm: r.f(&i("token_key_norm.weight"), &[id_])?,
+                key_value: r.f(&i("key_value_projection.weight"), &[id_, id_])?,
+                key_gate: r.f(&i("key_gate_projection.weight"), &[id_, id_])?,
+                ape: r.f(&i("intra_group_ape"), &[index.pool as usize, id_])?,
+                key_norm: r.f(&i("key_norm.weight"), &[id_])?,
             })
         }
         HyV4AttentionKind::Sliding { .. } => None,
     };
     let hc = |sub: &str| -> Result<OwnedHc, ReferenceError> {
         Ok(OwnedHc {
-            function: r.f(&format!("{p}{sub}.hc_pre.hc_fn"), 2 * n * n * h)?,
-            base: r.f(&format!("{p}{sub}.hc_pre.hc_base"), 2 * n)?,
-            scale: r.f(&format!("{p}{sub}.hc_pre.hc_scale"), 2)?,
+            function: r.f(&format!("{p}{sub}.hc_pre.hc_fn"), &[2 * n, n * h])?,
+            base: r.f(&format!("{p}{sub}.hc_pre.hc_base"), &[2 * n])?,
+            scale: r.f(&format!("{p}{sub}.hc_pre.hc_scale"), &[2])?,
         })
     };
     let m = |s: &str| format!("{p}mlp.{s}");
@@ -808,10 +810,10 @@ fn load_layer(
         MlpPlan::Dense(dense) => {
             let inter = dense.intermediate_size as usize;
             OwnedMlp::Dense {
-                gate: r.f(&m("gate_proj.weight"), inter * h)?,
-                up: r.f(&m("up_proj.weight"), inter * h)?,
-                down: r.f(&m("down_proj.weight"), h * inter)?,
-                output_norm: r.f(&m("post_fc2_norm.weight"), h)?,
+                gate: r.f(&m("gate_proj.weight"), &[inter, h])?,
+                up: r.f(&m("up_proj.weight"), &[inter, h])?,
+                down: r.f(&m("down_proj.weight"), &[h, inter])?,
+                output_norm: r.f(&m("post_fc2_norm.weight"), &[h])?,
                 intermediate: inter,
             }
         }
@@ -826,17 +828,17 @@ fn load_layer(
                 .ok_or(invalid(Some(il), "hy_v4_flash has a shared expert"))?
                 .intermediate_size as usize;
             OwnedMlp::Latent(Box::new([
-                r.f(&m("gate.weight"), e * h)?,
-                r.f(&m("gate.e_score_correction_bias"), e)?,
-                r.f(&m("routed_expert_down_proj.weight"), latent * h)?,
-                r.f(&m("routed_expert_up_proj.weight"), h * latent)?,
-                r.f(&m("experts.gate_proj.weight"), e * inter * latent)?,
-                r.f(&m("experts.up_proj.weight"), e * inter * latent)?,
-                r.f(&m("experts.down_proj.weight"), e * latent * inter)?,
-                r.f(&m("shared_experts.gate_proj.weight"), shared * h)?,
-                r.f(&m("shared_experts.up_proj.weight"), shared * h)?,
-                r.f(&m("shared_experts.down_proj.weight"), h * shared)?,
-                r.f(&m("combine_output_norm.weight"), h)?,
+                r.f(&m("gate.weight"), &[e, h])?,
+                r.f(&m("gate.e_score_correction_bias"), &[e])?,
+                r.f(&m("routed_expert_down_proj.weight"), &[latent, h])?,
+                r.f(&m("routed_expert_up_proj.weight"), &[h, latent])?,
+                r.f(&m("experts.gate_proj.weight"), &[e, inter, latent])?,
+                r.f(&m("experts.up_proj.weight"), &[e, inter, latent])?,
+                r.f(&m("experts.down_proj.weight"), &[e, latent, inter])?,
+                r.f(&m("shared_experts.gate_proj.weight"), &[shared, h])?,
+                r.f(&m("shared_experts.up_proj.weight"), &[shared, h])?,
+                r.f(&m("shared_experts.down_proj.weight"), &[h, shared])?,
+                r.f(&m("combine_output_norm.weight"), &[h])?,
             ]))
         }
         _ => {
@@ -855,19 +857,19 @@ fn load_layer(
             let width = heads * dim;
             let rows = ep.table_rows as usize;
             let codes = r
-                .ints(&e("multi_head_embedding.embedding.weight"), rows * dim)?
+                .ints(&e("multi_head_embedding.embedding.weight"), &[rows, dim])?
                 .iter()
                 .map(|c| u8::try_from(*c))
                 .collect::<Result<Vec<u8>, _>>()
                 .map_err(|_| invalid(Some(il), "Engram table codes are bytes"))?;
             let lookup = r
-                .ints(&e("lookup_table"), ep.lookup_table_size as usize)?
+                .ints(&e("lookup_table"), &[ep.lookup_table_size as usize])?
                 .iter()
                 .map(|v| i32::try_from(*v))
                 .collect::<Result<Vec<i32>, _>>()
                 .map_err(|_| invalid(Some(il), "the lookup table is I32"))?;
             let moduli = r
-                .ints(&engram_moduli_name(il), heads)?
+                .ints(&engram_moduli_name(il), &[heads])?
                 .iter()
                 .map(|v| u64::try_from(*v))
                 .collect::<Result<Vec<u64>, _>>()
@@ -876,26 +878,26 @@ fn load_layer(
                 .map_err(|_| invalid(Some(il), "the Engram lookup table fits its plan"))?;
             let multipliers = hashing::hash_multipliers(ep, vocab)
                 .map_err(|_| invalid(Some(il), "the Engram multipliers draw"))?;
-            let per_stream = |s: &str, len: usize| -> Result<Vec<Vec<f64>>, ReferenceError> {
+            let per_stream = |s: &str, shape: &[usize]| -> Result<Vec<Vec<f64>>, ReferenceError> {
                 (0..n)
-                    .map(|k| r.f(&e(&s.replace('#', &k.to_string())), len))
+                    .map(|k| r.f(&e(&s.replace('#', &k.to_string())), shape))
                     .collect()
             };
             Some(OwnedEngram {
                 plan: *ep,
                 codes,
-                scales: r.f(&e("multi_head_embedding.embedding.weight_scale"), rows)?,
+                scales: r.f(&e("multi_head_embedding.embedding.weight_scale"), &[rows])?,
                 head_norms: (0..heads)
-                    .map(|k| r.f(&e(&format!("lookup_per_head_norms.{k}.weight")), dim))
+                    .map(|k| r.f(&e(&format!("lookup_per_head_norms.{k}.weight")), &[dim]))
                     .collect::<Result<_, _>>()?,
-                value: r.f(&e("value_proj.weight"), h * width)?,
-                value_bias: r.f(&e("value_proj.bias"), h)?,
-                keys: per_stream("key_projs.#.weight", h * width)?,
-                key_biases: per_stream("key_projs.#.bias", h)?,
-                norm_key: per_stream("norm_key.#.weight", h)?,
-                norm_query: per_stream("norm_query.#.weight", h)?,
-                pre_gamma: r.f(&e("unified_pre_gamma"), h)?,
-                stream_scales: per_stream("unified_per_hc_scales.#", h)?,
+                value: r.f(&e("value_proj.weight"), &[h, width])?,
+                value_bias: r.f(&e("value_proj.bias"), &[h])?,
+                keys: per_stream("key_projs.#.weight", &[h, width])?,
+                key_biases: per_stream("key_projs.#.bias", &[h])?,
+                norm_key: per_stream("norm_key.#.weight", &[h])?,
+                norm_query: per_stream("norm_query.#.weight", &[h])?,
+                pre_gamma: r.f(&e("unified_pre_gamma"), &[h])?,
+                stream_scales: per_stream("unified_per_hc_scales.#", &[h])?,
                 offsets: hashing::head_offsets(&moduli),
                 lookup,
                 multipliers,
@@ -904,8 +906,8 @@ fn load_layer(
         }
     };
     Ok(OwnedLayer {
-        input_norm: r.f(&format!("{p}input_layernorm.weight"), h)?,
-        mlp_input_norm: r.f(&format!("{p}post_attention_layernorm.weight"), h)?,
+        input_norm: r.f(&format!("{p}input_layernorm.weight"), &[h])?,
+        mlp_input_norm: r.f(&format!("{p}post_attention_layernorm.weight"), &[h])?,
         attention,
         indexer,
         attention_hc: hc("hc_attn_layer")?,
@@ -972,13 +974,13 @@ pub fn execute_traced(
         .iter()
         .map(|layer| load_layer(plan, layer, &r))
         .collect::<Result<Vec<_>, _>>()?;
-    let embed = r.f("model.embed_tokens.weight", vocab * hidden)?;
-    let head = r.f("lm_head.weight", vocab * hidden)?;
-    let final_norm = r.f("model.norm.weight", hidden)?;
+    let embed = r.f("model.embed_tokens.weight", &[vocab, hidden])?;
+    let head = r.f("lm_head.weight", &[vocab, hidden])?;
+    let final_norm = r.f("model.norm.weight", &[hidden])?;
     let exit = OwnedHc {
-        function: r.f("model.hc_head.hc_head_fn", n * n * hidden)?,
-        base: r.f("model.hc_head.hc_head_base", n)?,
-        scale: r.f("model.hc_head.hc_head_scale", 1)?,
+        function: r.f("model.hc_head.hc_head_fn", &[n, n * hidden])?,
+        base: r.f("model.hc_head.hc_head_base", &[n])?,
+        scale: r.f("model.hc_head.hc_head_scale", &[1])?,
     };
 
     let mut caches: Vec<ops::MlaCache> = layers.iter().map(|_| ops::MlaCache::default()).collect();

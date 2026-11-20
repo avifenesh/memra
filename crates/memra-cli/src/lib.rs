@@ -3775,7 +3775,8 @@ mod tests {
     }
 
     /// hy_v4_flash: the reference's whole trunk (prefill past the 512-token window and the
-    /// indexer budget, then decode steps) matches the oracle the pinned transformers code wrote,
+    /// indexer budget, then decode steps) matches the oracle the pinned transformers code wrote
+    /// within the pack's band,
     /// and the gate refuses the wrong programs a native port would most likely run: the window
     /// off, the sink off, another indexer budget, Engram read with the 0-based layer index
     /// (seeded with it, or placed one layer late), the router's correction bias ignored.
@@ -3796,11 +3797,9 @@ mod tests {
                 &execute_tokens(plan, weights, &fixture.token_ids, fixture.decode_from).unwrap(),
             )
         };
+        // Bit for bit on the lane's machines (research/.../tiny/hashes.tsv); the gate holds
+        // the pack's band so a last-ulp libm difference elsewhere does not fail it.
         let good = run(&plan, &fixture.weights);
-        assert_eq!(
-            good, pinned,
-            "the reference matches the transformers oracle to the bit"
-        );
         oracle_matches_within_tolerance(pinned, &good, &gate).unwrap();
         let max_abs = |text: &str| {
             parse_oracle_rows(pinned)
