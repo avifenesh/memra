@@ -61,8 +61,9 @@ pub static PACK: ModelPack = ModelPack {
     // and memra-server parses its tool calls (`ToolStreamParser::hy4`, gated against vLLM's).
     template: TemplateContract::ArtifactRequired,
     // The reference executor runs the plan and the tiny gate passes against an oracle the pinned
-    // transformers code produced (record `hy_v4_flash-reference`). No native runner, no tuned
-    // surface.
+    // transformers code produced (record `hy_v4_flash-reference`); memra-server's hy_v4_flash
+    // route on one GB10 passes the checkpoint and serve gates (record
+    // `hy_v4_flash-gpu-1x-gb10`). No tuned surface.
     support: Some(NativeSupport::NativeQualified),
     gates: &[
         Gate::Config,
