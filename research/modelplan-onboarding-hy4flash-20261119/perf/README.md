@@ -52,6 +52,7 @@ L2.
 | 3: Engram reads on a resident thread pool, beside the first layers | 12.56 [12.56-12.57] | 79.6 | 10.23 [10.22-10.24] | 97.5 | 92.8 | 220.9 |
 | 4: attention key tiles, indexer logits and recall in parallel | 12.90 [12.76-13.01] | 76.9 | 11.98 [11.98-12.00] | 83.2 | 93.7 | 280.8 |
 | 5: F32 islands split at their 16-input seams (router, head) | 13.36 [13.36-13.36] | 74.9 | 12.29 [12.28-12.30] | 81.1 | 94.8 | 280.1 |
+| 6: one launch for the GEMMs that share an input | 13.52 [13.52-13.53] | 73.9 | 12.40 [12.40-12.42] | 80.4 | 100.2 | 283.4 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -132,6 +133,16 @@ now computes one partial (one row, output and step) and one thread an output add
 order: the same bits with 192 times the parallelism. The router (512 outputs) went 53 -> 19 us a
 layer and the head at one row 3.90 -> 3.05 ms (243 GB/s; four rows keep the lane kernel).
 Decode step 76.9 -> 74.9 ms on `chat`, 83.2 -> 81.1 ms on `long`.
+
+### 6. One launch for the GEMMs that share an input (`receipts/s6-multi/`)
+
+`memra_hy4r_gemm_multi` runs up to six small-row GEMMs of one format and K as one grid, each
+output's blocks as its own launch had them: `q_a`, `kv_a`, the indexer's key and head weights
+(BF16, one launch; the FP8 output gate its own), the latent down projection with the shared
+expert's gate and up, the routed experts' gate and up, the latent up projection with the shared
+expert's down projection, and an Engram layer's value and four key projections. About 240 fewer
+launches a step and small outputs running beside large ones: 74.9 -> 73.9 ms on `chat`, 81.1 ->
+80.4 ms on `long`.
 
 Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct
