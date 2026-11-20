@@ -6,6 +6,7 @@
 pub mod deepseek_v41;
 pub mod hidden_trace;
 pub mod hy_v4_flash;
+pub mod hy_v4_flash_trunk;
 pub mod mimo_audio;
 pub mod mimo_audio_attn;
 pub mod mimo_audio_codec_frontend;
@@ -299,21 +300,22 @@ fn refuse_deepseek_v41(plan: &ModelPlan, operation: &'static str) -> Result<(), 
     Ok(())
 }
 
-/// Hy4-flash plans have no reference program yet (gated MLA with sinks, the pooled indexer,
-/// independent hyper-connections, the latent MoE and Engram are registry rows with no surface):
-/// every entry point refuses them before reading a weight.
-fn refuse_hy_v4_flash(plan: &ModelPlan) -> Result<(), ReferenceError> {
+/// Hy4-flash plans run their text program in `hy_v4_flash_trunk` (prefill and decode); the
+/// multimodal and standalone-MTP entry points refuse them before reading a weight.
+fn refuse_hy_v4_flash(plan: &ModelPlan, operation: &'static str) -> Result<(), ReferenceError> {
     if plan.hy_v4_flash.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
             layer: None,
-            operation: "Hy4-flash reference execution",
+            operation,
         });
     }
     Ok(())
 }
 
 pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, ReferenceError> {
-    refuse_hy_v4_flash(plan)?;
+    if plan.hy_v4_flash.is_some() {
+        return hy_v4_flash_trunk::fixture(plan);
+    }
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::fixture(plan);
     }
@@ -2148,24 +2150,31 @@ pub struct TinyVariant {
 }
 
 /// The tiny-gate variants of `plan`'s family (DeepSeek-V4.1: below-window splits and a
-/// two-block window). Every other family has none.
+/// two-block window; Hy4-flash: splits below the indexer budget and the window). Every other family
+/// has none.
 pub fn tiny_variants(plan: &ModelPlan) -> Result<Vec<TinyVariant>, ReferenceError> {
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::tiny_variants(plan);
+    }
+    if plan.hy_v4_flash.is_some() {
+        return hy_v4_flash_trunk::tiny_variants(plan);
     }
     Ok(Vec::new())
 }
 
 /// Runs `token_ids` as one request: `token_ids[..decode_from]` prefilled as one chunk, then
 /// every later token decoded one step at a time (teacher-forced). `None` prefills every token,
-/// the same as [`execute`]. Only DeepSeek-V4.1 plans have a reference decode program.
+/// the same as [`execute`]. Only DeepSeek-V4.1 and Hy4-flash plans have a reference decode
+/// program.
 pub fn execute_tokens(
     plan: &ModelPlan,
     weights: &ReferenceWeights,
     token_ids: &[u32],
     decode_from: Option<usize>,
 ) -> Result<ReferenceOutput, ReferenceError> {
-    refuse_hy_v4_flash(plan)?;
+    if plan.hy_v4_flash.is_some() {
+        return hy_v4_flash_trunk::execute(plan, weights, token_ids, decode_from);
+    }
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::execute(plan, weights, token_ids, decode_from);
     }
@@ -2183,7 +2192,9 @@ pub fn execute(
     weights: &ReferenceWeights,
     token_ids: &[u32],
 ) -> Result<ReferenceOutput, ReferenceError> {
-    refuse_hy_v4_flash(plan)?;
+    if plan.hy_v4_flash.is_some() {
+        return hy_v4_flash_trunk::execute(plan, weights, token_ids, None);
+    }
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::execute(plan, weights, token_ids, None);
     }
@@ -2210,7 +2221,7 @@ pub fn execute_multimodal(
     vision_input: &ReferenceVisionInput,
 ) -> Result<ReferenceMultimodalOutput, ReferenceError> {
     refuse_deepseek_v41(plan, "DeepSeek-V4.1 multimodal reference execution")?;
-    refuse_hy_v4_flash(plan)?;
+    refuse_hy_v4_flash(plan, "Hy4-flash multimodal reference execution")?;
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
             layer: None,
@@ -6049,7 +6060,7 @@ pub fn execute_mtp_standalone(
     trunk_hidden: &[f32],
 ) -> Result<Vec<ReferenceMtpOutput>, ReferenceError> {
     refuse_deepseek_v41(plan, "DeepSeek-V4.1 standalone MTP reference execution")?;
-    refuse_hy_v4_flash(plan)?;
+    refuse_hy_v4_flash(plan, "Hy4-flash standalone MTP reference execution")?;
     let hidden = plan.hidden_size as usize;
     let vocab = plan.vocab_size as usize;
     let tokens = token_ids.len();

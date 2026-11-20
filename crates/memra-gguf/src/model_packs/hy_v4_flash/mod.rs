@@ -1,9 +1,9 @@
 //! Hy4-flash (`hy_v4_flash`) pack: config normalization, the typed plan and the config-derived
 //! tensor schema of the ModelOpt NVFP4 artifact (`Avifenesh/Hy4-flash-NVFP4@f9eac06cf022`,
-//! research/modelplan-onboarding-hy4flash-20261119/). No executor runs the whole plan yet:
-//! memra-reference implements the attention, residual and MoE operations module by module
-//! (`memra_reference::hy_v4_flash`), every Hy4-flash operation is a registry row with no surface,
-//! and `ModelPlan::compile` and the reference executor's entry points refuse the family.
+//! research/modelplan-onboarding-hy4flash-20261119/). The reference executor runs the whole text
+//! plan (`memra_reference::hy_v4_flash_trunk`: prefill and teacher-forced decode), gated against
+//! the pinned transformers code on the tiny config below. No tuned surface implements a Hy4-flash
+//! operation, and `ModelPlan::compile` refuses the family.
 //!
 //! Checkpoint namespaces (2,429 header tensors):
 //!   model.embed_tokens / lm_head / model.norm / model.hc_head   embedding, F32-computed head,
@@ -60,8 +60,10 @@ pub static PACK: ModelPack = ModelPack {
     // (`chat::apply_hy4_template`, gated in `tests/hy4_chat.rs` against transformers' own render)
     // and memra-server parses its tool calls (`ToolStreamParser::hy4`, gated against vLLM's).
     template: TemplateContract::ArtifactRequired,
-    // Nothing runs the whole plan yet (module-level reference operations only), no tuned surface.
-    support: None,
+    // The reference executor runs the plan and the tiny gate passes against an oracle the pinned
+    // transformers code produced (record `hy_v4_flash-reference`). No native runner, no tuned
+    // surface.
+    support: Some(NativeSupport::NativeReference),
     gates: &[
         Gate::Config,
         Gate::TokenizerTemplate,
@@ -71,14 +73,50 @@ pub static PACK: ModelPack = ModelPack {
         Gate::RewriteParity,
         Gate::Serve,
     ],
-    checkpoint_parity: None,
+    // The reference and the pinned transformers code, both in f64 (float32 islands mapped to
+    // float64, the CUDA top-k tie rule), agree on the tiny fixture to the bit
+    // (research/modelplan-onboarding-hy4flash-20261119/tiny/). What two correct f64 runs may
+    // still differ by, measured there: the f32 constants (3.998, 1e-5, 1e-6) read as decimal
+    // literals move logits by at most 2.4e-7, the RoPE phase formulas part by 5.7e-14 rad
+    // below 544 positions (1.2e-10 at 1M), summation order by 1e-15 relative. 1e-5 absolute plus
+    // 1e-5 relative is at least 40 times the largest and four orders under the smallest wrong
+    // program the gate refuses (0.72). Selections are compared exactly, not inside the band.
+    // The native runner's CheckpointParity band is its own class, set when that runner lands.
+    checkpoint_parity: Some(CheckpointParityGate {
+        max_abs: 1e-5,
+        max_rel: 1e-5,
+        require_argmax: true,
+    }),
     checkpoint_parity_classes: &[],
     checkpoint_probe: None,
     matches_config: |config| matches!(config.arch, Arch::HyV4Flash) && config.hy_v4_flash.is_some(),
     plan_builder,
     tensor_schema,
-    tiny_plan: None,
+    tiny_plan: Some(tiny_plan),
 };
+
+/// The tiny-gate config: the artifact's `config.json` at hidden 64 with the program's own
+/// constants (window 512, `rope_theta` 1e7 and 1e4, `routed_scaling_factor` 3.998, `rms_norm_eps`
+/// 1e-5, `hc_eps` 1e-6). Six layers in the artifact's order (indexed 0 and 1, sliding 2 to 4,
+/// indexed 5; dense layer 0), 2 indexed and 4 sliding heads with their own value widths, an
+/// indexer budget of 256 (64 groups of 4), 8 experts top-3 in a latent of 32, Engram at the
+/// config ids 2 and 4 (decoder layers 1 and 3) over a 28-entry lookup table on a 32-token
+/// vocabulary, and the artifact's ModelOpt map: FP8 128x128 blocks on `q_b_proj`, `o_proj` and
+/// `linear_gate`, NVFP4 routed experts, layer 0 BF16. The fixture's prefill crosses the window
+/// and the budget; its variants split the request below each.
+pub const TINY_CONFIG: &str = include_str!("fixtures/tiny-config.json");
+
+/// [`TINY_CONFIG`] as the pack's config type.
+pub fn tiny_config() -> Result<HyV4FlashConfig, PlanCompileError> {
+    let config = ModelConfig::from_hf(&crate::config::HfConfig::parse(TINY_CONFIG));
+    hy4(&config).cloned()
+}
+
+fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
+    plan_builder(&ModelConfig::from_hf(&crate::config::HfConfig::parse(
+        TINY_CONFIG,
+    )))
+}
 
 fn hy4(config: &ModelConfig) -> Result<&HyV4FlashConfig, PlanCompileError> {
     config

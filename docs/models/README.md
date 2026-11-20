@@ -30,6 +30,7 @@ Engine cells or reference executor only, no gated serving route:
 
 - [Gemma-4 E4B](gemma4-e4b.md): engine cells pass, `memra-server` serving is not gated
 - [Hy3](hy3.md): NativeReference for the canonical plan and the W4A16 profile; the 2026-08-30 four-card gates are reported, not tracked <!-- support: hy3-bf16-reference,hy3_nvfp4-modelopt-w4a16 -->
+- [Hy4-flash](hy4-flash.md): NativeReference on CPU, no native runner yet <!-- support: hy_v4_flash-reference -->
 - [Qwen3.8-Flash-Next](qwen38-flash-next.md): bring-up only
 
 A card is specific to its checkpoint, quantization, drafter and hardware. It promises nothing about
