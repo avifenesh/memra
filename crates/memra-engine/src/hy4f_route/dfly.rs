@@ -375,11 +375,12 @@ impl<'a> Route<'a> {
             weight_bytes: 0,
         };
         for &l in drafter.target_index.iter().chain(&drafter.target_kv) {
-            if self
-                .layers
-                .get(l)
-                .and_then(|x| x.attn.indexer.as_ref())
-                .is_none()
+            if !self.layers.is_empty()
+                && self
+                    .layers
+                    .get(l)
+                    .and_then(|x| x.attn.indexer.as_ref())
+                    .is_none()
             {
                 return Err(format!(
                     "drafter target layer {l} is not an indexed layer of the route"
@@ -391,6 +392,11 @@ impl<'a> Route<'a> {
         drafter.weight_bytes = dev.live_bytes().saturating_sub(before);
         self.dfly = Some(drafter);
         Ok(())
+    }
+
+    /// The vocabulary: a verify call's logits are `[rows, vocab]`.
+    pub fn vocab_size(&self) -> usize {
+        self.plan.vocab_size as usize
     }
 
     /// Whether a drafter is loaded.
