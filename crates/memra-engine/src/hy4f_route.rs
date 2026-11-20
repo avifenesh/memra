@@ -528,6 +528,26 @@ impl Dev {
     pub fn sync(&self) -> Result<(), String> {
         cu!(memra_hy4r_sync(self.sp))
     }
+
+    /// Hand the device pool's freed blocks back to the system (`cuMemPoolTrimTo(0)`): the server's
+    /// engine pins the pool's release threshold high, so a freed session's cache would otherwise
+    /// stay mapped and out of MemAvailable. Live allocations are untouched.
+    pub fn trim_pool(&self) -> Result<(), String> {
+        self.sync()?;
+        use cudarc::driver::sys;
+        unsafe {
+            let mut pool = std::ptr::null_mut();
+            let rc = sys::cuDeviceGetDefaultMemPool(&mut pool, self.st.context().cu_device());
+            if rc != sys::CUresult::CUDA_SUCCESS {
+                return Err(format!("the device's default memory pool: {rc:?}"));
+            }
+            let rc = sys::cuMemPoolTrimTo(pool, 0);
+            if rc != sys::CUresult::CUDA_SUCCESS {
+                return Err(format!("trim the device memory pool: {rc:?}"));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A grown-on-demand scratch buffer.

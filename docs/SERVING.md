@@ -243,8 +243,8 @@ and runs before the body is read. Connection limits, fixed in code:
   text exactly as non-stream responses do. Up to 16 `stop` strings (1 KiB each, 4 KiB in total)
   and 16 `stop_token_ids` are accepted. The model's end-of-generation tokens (`<|im_end|>`,
   `<end_of_turn>`, `<turn|>` and the rest of its set) stop generation and never reach the client
-  as text. One exception: on the deepseek-v4.1 route a request with `ignore_eos: true` treats the
-  end-of-sentence id as an ordinary token, so it does not stop generation and its text is in the
+  as text. One exception: on the deepseek-v4.1 and hy_v4_flash routes a request with `ignore_eos: true`
+  treats the end-of-sentence id as an ordinary token, so it does not stop generation and its text is in the
   stream ([`ignore_eos`](API-SURFACES.md#ignore_eos-deepseek-v41-and-hy_v4_flash-routes)).
 - **Disconnect abort.** A client that hangs up retires its session at the next tick on every serve
   path, and usage counts what was generated to that point (the `[abort]` line records prompt,
@@ -567,7 +567,11 @@ records as its appetite (a proven bound; an estimate there would stick as an ove
 DeepSeek-V4 route's memory door, which loads only on two discrete cards
 ([unified_memory.rs](../crates/memra-engine/src/unified_memory.rs)). The deepseek-v4.1 route reads
 raw free memory in its own code (`dsv41_gpu`: `device_memory`, `device_mem`); it loads on one
-device, and only its size keeps it off a GB10 today.
+device, and only its size keeps it off a GB10 today. The hy_v4_flash route (`hy4f_serve`) runs on
+a GB10: its memory book's ceiling is MemAvailable after the resident weights and the warm-up, less
+4 GiB, and every allocation checks live MemAvailable again where it happens; the Engram tables'
+page cache is reclaimable and counts as available. Its served context feeds the deadline
+derivation above like any loaded model's.
 The driver headroom's 2 GiB floor, the crash guards, the async pool's release threshold, the host KV tier (it
 adds copies, not capacity, on shared DRAM; armed, the derived device share subtracts it), the
 pinned spill budget and the MoE slot cache keep their discrete values. Rollback: an explicit
