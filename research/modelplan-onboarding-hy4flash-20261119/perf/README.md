@@ -55,6 +55,7 @@ L2.
 | 6: one launch for the GEMMs that share an input | 13.52 [13.52-13.53] | 73.9 | 12.40 [12.40-12.42] | 80.4 | 100.2 | 283.4 |
 | 7: GEMM weights resident in 4 KiB tiles | 14.18 [14.18-14.18] | 70.5 | 13.00 [13.00-13.04] | 76.7 | 106.0 | 294.1 |
 | 8: hyper-connection reductions as partials, tree in the mix | 14.46 [14.44-14.46] | 69.2 | 13.23 [13.22-13.25] | 75.3 | 107.1 | 298.2 |
+| 9: attention tiles prefetched, heads a block by SM count | 14.69 [14.69-14.71] | 67.9 | 13.81 [13.79-13.83] | 72.2 | 106.6 | 318.0 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -164,6 +165,17 @@ Each of a row's 17 reductions (12,288 values) ran as one 256-thread block, 85 la
 24 us. The 256 strided per-thread partials now run as four 64-thread blocks a reduction, and the
 mix kernel's 256 threads take partial t each and run the same warp and block tree: 70.5 -> 69.2
 ms on `chat`, 76.7 -> 75.3 ms on `long`.
+
+### 9. Attention: prefetched tiles, heads a block by SM count (`receipts/s9-attn-tiles/`)
+
+A decode call has few (head, chunk) units: 16 blocks of 8 heads on a sliding layer, one block an
+SM (a key tile is 74 KB of shared memory), each loading then scoring its tiles in turn. Now the
+call takes the most heads a block that keeps its blocks within one wave of the SMs (4 on a
+sliding layer: 32 blocks), all 8 warps load, the next tile's values are loaded into registers
+while one is scored, and the score reads the query as 16-byte broadcasts. Each score, sum and
+output is the same chain. `kbench attn`: 164 -> 79 us (sliding, 512 keys), 170 -> 119 us
+(indexed, 2,048 keys). Decode step 69.2 -> 67.9 ms on `chat`, 75.3 -> 72.2 ms on `long`;
+`long`'s prefill 298 -> 318 tokens/s.
 
 Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct

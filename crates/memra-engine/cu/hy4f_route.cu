@@ -1619,17 +1619,21 @@ static __device__ __forceinline__ int r_key_row(const RAttn& a, int q, int j, in
   return a.ring ? p % a.ring : p - a.base;
 }
 
+// HG heads a block (warps 0..HG-1, one a head); all 8 warps load the key tiles, so a decode call
+// can spread its few (head, chunk) units over more SMs with fewer heads a block.
+template <int HG>
 __global__ void __launch_bounds__(256) r_attn_kernel(RAttn a) {
   r_pdl_wait();
   r_pdl_trigger();
   extern __shared__ __align__(16) unsigned char smem[];
-  float* qs = (float*)smem;                 // [8][576]
-  float* ks = qs + AT_HG * AT_DK;           // [32][577]
-  float* ps = ks + AT_TILE * AT_KW;         // [8][32]
-  __shared__ long krow[AT_TILE];            // the tile's cache rows (element offsets)
+  float* qs = (float*)smem;                 // [HG][576]
+  float* ks = qs + HG * AT_DK;              // [32][577]
+  float* ps = ks + AT_TILE * AT_KW;         // [HG][32]
+  __shared__ long krow[2][AT_TILE];         // a tile's cache rows (element offsets), two tiles
   const int qi = blockIdx.x, hg = blockIdx.y, c = blockIdx.z;
   const int tid = threadIdx.x, lane = tid & 31, hl = tid >> 5;
-  const int h = hg * AT_HG + hl;
+  const bool head = hl < HG;
+  const int h = hg * HG + (head ? hl : 0);
   int len, lo = 0;
   if (a.mode == 1) {
     len = a.lens[qi];
@@ -1645,34 +1649,61 @@ __global__ void __launch_bounds__(256) r_attn_kernel(RAttn a) {
   for (int i = 0; i < 16; i++) o[i] = 0.0f;
   float m = -INFINITY, l = 0.0f;
   if (j0 < j1) {
-    for (int e = tid; e < AT_HG * AT_DK; e += 256)
-      qs[e] = a.q[((long)qi * a.H + hg * AT_HG) * AT_DK + e];
+    for (int e = tid; e < HG * AT_DK; e += 256)
+      qs[e] = a.q[((long)qi * a.H + hg * HG) * AT_DK + e];
+    // a tile's rows first, then its values as independent 16-byte loads into registers; the next
+    // tile's loads are in flight while this one is scored (the same values the element loop read)
+    constexpr int PER = AT_TILE * (AT_DK / 4) / 256;  // float4 a thread a tile
+    float4 pre[PER];
+    auto rows_of = [&](int t0, int buf) {
+      const int nt = min(AT_TILE, j1 - t0);
+      if (tid < AT_TILE) krow[buf][tid] = tid < nt ? (long)r_key_row(a, qi, t0 + tid, lo) * AT_DK : -1;
+    };
+    auto fetch = [&](int buf) {
+#pragma unroll
+      for (int u = 0; u < PER; u++) {
+        const int e = tid + u * 256;
+        const int r = e / (AT_DK / 4), d4 = e % (AT_DK / 4);
+        const long kr0 = krow[buf][r];
+        pre[u] = kr0 >= 0 ? *(const float4*)(a.kv + kr0 + 4 * d4) : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+      }
+    };
+    rows_of(j0, 0);
+    __syncthreads();
+    fetch(0);
+    int cur = 0;
     for (int t0 = j0; t0 < j1; t0 += AT_TILE) {
       const int nt = min(AT_TILE, j1 - t0);
-      __syncthreads();
-      // the tile's rows first, then its values as independent 16-byte loads (the same values
-      // the element loop read)
-      if (tid < AT_TILE) krow[tid] = tid < nt ? (long)r_key_row(a, qi, t0 + tid, lo) * AT_DK : -1;
-      __syncthreads();
-#pragma unroll 6
-      for (int e = tid; e < AT_TILE * (AT_DK / 4); e += 256) {
+      __syncthreads();  // the previous tile is scored: its slot is free
+#pragma unroll
+      for (int u = 0; u < PER; u++) {
+        const int e = tid + u * 256;
         const int r = e / (AT_DK / 4), d4 = e % (AT_DK / 4);
-        float4 v = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-        const long kr0 = krow[r];
-        if (kr0 >= 0) v = *(const float4*)(a.kv + kr0 + 4 * d4);
         float* dst = ks + r * AT_KW + 4 * d4;
-        dst[0] = v.x;
-        dst[1] = v.y;
-        dst[2] = v.z;
-        dst[3] = v.w;
+        dst[0] = pre[u].x;
+        dst[1] = pre[u].y;
+        dst[2] = pre[u].z;
+        dst[3] = pre[u].w;
       }
+      const bool more = t0 + AT_TILE < j1;
+      if (more) rows_of(t0 + AT_TILE, cur ^ 1);
       __syncthreads();
+      if (more) fetch(cur ^ 1);
+      cur ^= 1;
+      if (!head) continue;  // a loading warp: on to the next tile's barrier
       float sc = -INFINITY;
       if (lane < nt) {
-        const float* qh = qs + hl * AT_DK;
+        const float4* qh = (const float4*)(qs + hl * AT_DK);  // a broadcast 16-byte read a 4 inputs
         const float* kr = ks + lane * AT_KW;
         float dot = 0.0f;
-        for (int d = 0; d < AT_DK; d++) dot += qh[d] * kr[d];
+#pragma unroll 4
+        for (int d4 = 0; d4 < AT_DK / 4; d4++) {
+          const float4 qv = qh[d4];
+          dot += qv.x * kr[4 * d4];
+          dot += qv.y * kr[4 * d4 + 1];
+          dot += qv.z * kr[4 * d4 + 2];
+          dot += qv.w * kr[4 * d4 + 3];
+        }
         sc = dot * a.scale;
       }
       const float mt = r_warp_max(sc);
@@ -1694,6 +1725,7 @@ __global__ void __launch_bounds__(256) r_attn_kernel(RAttn a) {
       __syncwarp();
     }
   }
+  if (!head) return;
 #pragma unroll
   for (int i = 0; i < 16; i++) a.po[pidx * AT_DV + lane + 32 * i] = o[i];
   if (lane == 0) {
@@ -1730,15 +1762,33 @@ extern "C" int memra_hy4r_attn(const float* q, const void* kv, const int* list, 
                                const float* sinks, float* po, float* pml, float* out, void* stream) {
   if (rows == 0) return 0;
   if (H % AT_HG != 0 || C <= 0) return 45201;
-  const size_t smem = sizeof(float) * (AT_HG * AT_DK + AT_TILE * AT_KW + AT_HG * AT_TILE);
-  static bool attr = false;
-  if (!attr) {
-    cudaFuncSetAttribute(r_attn_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
-    attr = true;
-  }
   RAttn a{q, (const float*)kv, list, ldl, lens, qpos, mode, window, ring, base, H, C, scale, po, pml};
-  dim3 grid(rows, H / AT_HG, C);
-  r_launch(r_attn_kernel, grid, 256, smem, (cudaStream_t)stream, a);
+  // the most heads a block that keeps the call's blocks within one wave of the SMs (one block an
+  // SM: a key tile is 74 KB of shared memory)
+  static int sms = 0;
+  if (!sms) {
+    int dev = 0;
+    cudaGetDevice(&dev);
+    cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev);
+    const size_t m8 = sizeof(float) * (8 * AT_DK + AT_TILE * AT_KW + 8 * AT_TILE);
+    cudaFuncSetAttribute(r_attn_kernel<8>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)m8);
+    cudaFuncSetAttribute(r_attn_kernel<4>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)m8);
+    cudaFuncSetAttribute(r_attn_kernel<2>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)m8);
+    cudaFuncSetAttribute(r_attn_kernel<1>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)m8);
+  }
+  int hgs = 8;
+  while (hgs > 1 && (long)rows * (H / (hgs / 2)) * C <= sms) hgs /= 2;
+  const size_t smem = sizeof(float) * (hgs * AT_DK + AT_TILE * AT_KW + hgs * AT_TILE);
+  dim3 grid(rows, H / hgs, C);
+  cudaStream_t st = (cudaStream_t)stream;
+  if (hgs == 8)
+    r_launch(r_attn_kernel<8>, grid, 256, smem, st, a);
+  else if (hgs == 4)
+    r_launch(r_attn_kernel<4>, grid, 256, smem, st, a);
+  else if (hgs == 2)
+    r_launch(r_attn_kernel<2>, grid, 256, smem, st, a);
+  else
+    r_launch(r_attn_kernel<1>, grid, 256, smem, st, a);
   int rc = r_rc();
   if (rc) return rc;
   r_launch(r_attn_merge_kernel, dim3(rows, H), 128, 0, (cudaStream_t)stream, po, pml, sinks, H, C, out);
