@@ -1043,3 +1043,104 @@ fn the_checkpoint_gate_scores_a_chat_turn_and_both_sides_of_the_indexer_budget()
     );
     assert!(split.positions > budget + hy.index_pool as usize);
 }
+
+/// The DFly2 MLP width is the checkpoint's: the artifact's config declares none and the pack pins
+/// the artifact's 9,216, which the census binds to every drafter MLP tensor. A config that takes
+/// the vendor derivation's default when nothing is declared (`intermediate_size`, 13,824) or
+/// declares another width reads no drafter MLP: the real headers refuse it by shape.
+#[test]
+fn the_drafter_mlp_width_is_the_checkpoints() {
+    let config = config();
+    let hy = config.hy_v4_flash.as_ref().unwrap();
+    assert_eq!(hy.dfly.intermediate_size, None);
+    assert_eq!(dfly_ffn_width(hy), 9216);
+    assert_eq!(hy.dfly.num_speculative_tokens, Some(5));
+    assert_eq!(hy.dfly.target_index_topk, 2048);
+    assert_eq!(hy.dfly.context_local_window, 0);
+    assert_eq!(hy.dfly.hidden_correction_intermediate_size, 3072);
+    let census = expected_census(hy).unwrap();
+    for block in 0..5 {
+        let gate = &census[&format!("model.dfly_layers.{block}.mlp.gate_proj.weight")];
+        assert_eq!(gate.shape, vec![9216, 3072 / 2], "NVFP4 pairs");
+        let down = &census[&format!("model.dfly_layers.{block}.mlp.down_proj.weight")];
+        assert_eq!(down.shape, vec![3072, 9216 / 2]);
+    }
+    let (artifact, _, _) = pinned_census();
+    let headers = entries(&artifact);
+    contract_for(&config).bind(&headers).unwrap();
+    for width in [13824u32, 4608] {
+        let wrong = edited(|json| {
+            json.as_object_mut()
+                .unwrap()
+                .insert("dfly_intermediate_size".into(), serde_json::json!(width));
+        })
+        .unwrap();
+        assert_eq!(
+            dfly_ffn_width(wrong.hy_v4_flash.as_ref().unwrap()),
+            u64::from(width)
+        );
+        match contract_for(&wrong).bind(&headers) {
+            Err(TensorContractError::ShapeMismatch { name, .. }) => {
+                assert!(
+                    name.contains("model.dfly_layers.") && name.contains(".mlp."),
+                    "{name}"
+                )
+            }
+            other => panic!("width {width}: {other:?}"),
+        }
+    }
+}
+
+/// The drafter's program switches (vLLM `_derive_dfly_config`) refuse by name.
+#[test]
+fn drafter_switches_of_another_program_refuse_by_name() {
+    for (key, value) in [
+        ("dfly_mtp_fusion", serde_json::json!("all")),
+        ("dfly_mlp_type", serde_json::json!("moe")),
+        ("dfly_enable_ihc", serde_json::json!(true)),
+        ("dfly_attn_causal", serde_json::json!(false)),
+        ("dfly_enable_hidden_correction", serde_json::json!(false)),
+        ("dfly_target_index_topk", serde_json::json!(1024)),
+        ("dfly_mask_token_id", serde_json::json!(120832)),
+        (
+            "dfly_target_kv_layers",
+            serde_json::json!([25, 25, 33, 37, 41]),
+        ),
+    ] {
+        let error = edited(|json| {
+            let top = json.as_object_mut().unwrap();
+            top.insert(key.into(), value.clone());
+            if key == "dfly_target_kv_layers" {
+                top.insert("dfly_target_index_layer".into(), value.clone());
+            }
+        })
+        .unwrap_err();
+        assert!(error.contains(key), "{key}: {error}");
+    }
+    let error = edited(|json| {
+        json["speculative_config"]["num_speculative_tokens"] = serde_json::json!(17);
+    })
+    .unwrap_err();
+    assert!(error.contains("num_speculative_tokens"), "{error}");
+}
+
+/// The drafter's tiny config is the tiny config's text program with a two-block drafter.
+#[test]
+fn the_tiny_drafter_config_keeps_the_tiny_text_program() {
+    let hy = tiny_dfly_config().unwrap();
+    assert_eq!(hy.dfly.num_hidden_layers, 2);
+    assert_eq!(hy.dfly.target_kv_layers, vec![1, 5]);
+    assert_eq!(dfly_ffn_width(&hy), 32);
+    assert_eq!(hy.dfly.num_speculative_tokens, Some(3));
+    let plan = |text: &str| plan_builder(&ModelConfig::from_hf(&HfConfig::parse(text))).unwrap();
+    assert_eq!(plan(TINY_DFLY_CONFIG), plan(TINY_CONFIG));
+    let census = expected_census(&hy).unwrap();
+    assert_eq!(
+        census["model.dfly_layers.1.mlp.down_proj.weight"].shape,
+        vec![64, 16]
+    );
+    assert_eq!(
+        census["model.dfly_layers.0.self_attn.q_b_proj.weight"].dtype,
+        "F8_E4M3"
+    );
+}

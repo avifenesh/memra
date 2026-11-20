@@ -1650,7 +1650,33 @@ mod tests {
                 index_per_row_pos: 1,
                 index_fixed_per_row: 4,
             },
+            draft_rows: 0,
         }
+    }
+
+    /// A drafting route books every session's round of positions: the anchor and its drafts.
+    #[test]
+    fn a_drafting_route_books_one_rounds_positions_with_every_session() {
+        let plain = book(24 << 30);
+        let mut drafting = book(24 << 30);
+        drafting.draft_rows = 6;
+        assert_eq!(drafting.session_cap(1000), 1006);
+        assert_eq!(drafting.state(1000), plain.state(1006));
+        assert_eq!(
+            drafting.total(&[1000], Some(2000)),
+            plain.total(&[1006], Some(2006)) - plain.transient(2006) + drafting.transient(2000)
+        );
+        assert!(drafting.largest_fit() < plain.largest_fit());
+    }
+
+    #[test]
+    fn the_draft_count_is_the_artifacts_unless_set() {
+        assert_eq!(resolve_drafts(None, Some(5)).unwrap(), 5);
+        assert_eq!(resolve_drafts(None, None).unwrap(), 0);
+        assert_eq!(resolve_drafts(Some("0"), Some(5)).unwrap(), 0);
+        assert_eq!(resolve_drafts(Some("3"), Some(5)).unwrap(), 3);
+        assert!(resolve_drafts(Some("17"), Some(5)).is_err());
+        assert!(resolve_drafts(Some("x"), Some(5)).is_err());
     }
 
     #[test]
