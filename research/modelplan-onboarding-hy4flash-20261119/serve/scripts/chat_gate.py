@@ -30,7 +30,7 @@ Gates:
   refusals    an image part and a response_format are refused by name
   cancel      a streamed request whose client leaves after three tokens ends at the next step
               (its session freed: the server's step log shows it gone) and the route serves on
-  admission   three requests that each book 45% of the served context: the memory book admits
+  admission   three requests that each book 40% of the served context: the memory book admits
               two at a time and queues the third (no request fails, none runs out of memory)
   long        a needle in a long prompt (about 32k tokens, past the indexer budget sixteen times
               over) is found, greedy, reasoning off
@@ -363,7 +363,7 @@ mreq = urllib.request.Request(f"http://{addr}/v1/models", headers={"Authorizatio
 with urllib.request.urlopen(mreq, timeout=60) as r:
     models = json.loads(r.read().decode())
 ctx = next(m for m in models["data"] if m["id"] == model).get("context_length") or 0
-big = int(ctx * 0.45)
+big = int(ctx * 0.4)
 # the poem's answer runs to its end-of-sentence id (longer than the gates' 48-token budget), so
 # the requests overlap; its greedy answer is known
 full_poem = complete(case_ids["poem"], 400)

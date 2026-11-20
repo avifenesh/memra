@@ -22987,7 +22987,15 @@ pub fn run(
     // The device shape the HTTP layer's hardware-derived defaults read (the unified-memory
     // streaming TTFT deadline and its SSE prefill commit). Published before the ready verdict:
     // the listener binds only after it, so no request reads the discrete fallback by accident.
-    publish_serving_device(&engine, &loaded);
+    // The routes on their own threads (deepseek-v4/4.1, hy_v4_flash) state their served context
+    // in their caps; the hy_v4_flash route runs on the unified-memory device.
+    let routed_ctx = caps
+        .iter()
+        .filter(|(name, _)| !loaded.contains_key(*name))
+        .map(|(_, c)| c.context_length)
+        .max()
+        .unwrap_or(0);
+    publish_serving_device(&engine, &loaded, routed_ctx);
     // mem_get_info binds each queried CUDA context. Restore the worker's primary
     // before reporting readiness; a secondary device must not steer subsequent launches.
     if let Err(error) = engine.ctx().bind_to_thread() {
@@ -29843,7 +29851,11 @@ pub fn resolve_ctx(raw: Option<&str>, model_ctx: usize) -> Result<usize, String>
 
 /// Publish the serving device's shape for the HTTP layer (`crate::serving_device`) and state the
 /// streaming deadline pair it resolves to, so the boot log names the values a request gets.
-fn publish_serving_device(engine: &Engine, loaded: &HashMap<String, LoadedModel>) {
+fn publish_serving_device(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    routed_ctx: usize,
+) {
     use cudarc::driver::sys::CUdevice_attribute_enum as A;
     let unified_memory = memra_engine::unified_memory::is_unified(engine.ctx());
     let sm_count = engine
@@ -29856,7 +29868,8 @@ fn publish_serving_device(engine: &Engine, loaded: &HashMap<String, LoadedModel>
         .values()
         .filter_map(|lm| resolve_env_ctx(lm.model.cfg.context_length as usize).ok())
         .max()
-        .unwrap_or(0);
+        .unwrap_or(0)
+        .max(routed_ctx);
     crate::serving_device::publish(crate::serving_device::ServingDevice {
         unified_memory,
         sm_count,
