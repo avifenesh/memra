@@ -185,7 +185,8 @@ fn plan_is_typed_gated_mla_with_pooled_index_latent_moe_and_engram() {
                         head_dim: 128,
                         rope_head_dim: 64,
                         pool: 4,
-                        top_k: 2048
+                        top_k: 2048,
+                        ties: GroupTieOrder::LowerIndexFirst,
                     }
                 );
                 assert_eq!(attention.rope.base, 1e7);
@@ -804,6 +805,22 @@ fn switches_of_another_program_refuse_by_name() {
         .unwrap_err();
         assert!(error.contains(key), "{key}: {error}");
     }
+    // A zero budget passes `index_topk % pool == 0` and every alias, but holds no group: the
+    // indexer could not recall even the query's own (transformers' `topk(-1)` raises).
+    let error = edited(|json| {
+        for key in [
+            "index_topk",
+            "compressed_indexer_candidate_topk",
+            "compressed_indexer_group_topk",
+        ] {
+            text(json).insert(key.into(), serde_json::json!(0));
+        }
+    })
+    .unwrap_err();
+    assert!(
+        error.contains("compressed_indexer_compress_ratio"),
+        "{error}"
+    );
     let error = edited(|json| {
         text(json).remove("hc_magnitude");
     })

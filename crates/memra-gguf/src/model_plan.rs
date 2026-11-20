@@ -16,9 +16,9 @@ pub use deepseek_v41::{
     EngramPlan, SinglePassHcPlan,
 };
 pub use hy_v4_flash::{
-    HyV4AttentionKind, HyV4AttentionPlan, HyV4EngramMultiplierBound, HyV4EngramNormEpsilon,
-    HyV4EngramPlan, HyV4FlashNumerics, HyV4ResidualPlan, HyV4StatePlan, HyV4WeightFormat,
-    IndexPoolPlan, LatentMoePlan,
+    GroupTieOrder, HyV4AttentionKind, HyV4AttentionPlan, HyV4EngramMultiplierBound,
+    HyV4EngramNormEpsilon, HyV4EngramPlan, HyV4FlashNumerics, HyV4ResidualPlan, HyV4StatePlan,
+    HyV4WeightFormat, IndexPoolPlan, LatentMoePlan,
 };
 use speech::WhisperPlan;
 
