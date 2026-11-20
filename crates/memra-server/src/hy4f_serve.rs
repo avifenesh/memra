@@ -48,7 +48,7 @@ use crate::dsv4_admit::Admission;
 use crate::dsv4_serve::{admission_answer, fail_request, settle, snap};
 use crate::health::RouteHealth;
 use crate::route_telemetry::{RouteLoad, RouteRun, ServeStats};
-use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request};
+use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request, SpecUsage};
 use memra_engine::decode::StopReason;
 use memra_engine::dsv4_gpu::{Dsv4PenaltyCfg, Dsv4SampleCfg, dsv4_penalize_row, dsv4_sample_row};
 use memra_engine::hy4f_route::{Ckpt, Dev, Route, Session, mem_available};
@@ -200,6 +200,23 @@ struct EngineCfg {
     sessions: usize,
     eos: u32,
     chunk: usize,
+    /// DFly2 drafts a round (0: no drafter)
+    drafts: usize,
+}
+
+/// `MEMRA_HY4F_DRAFT`: the DFly2 drafts a round (1 to 16), `0` to serve without the drafter, or
+/// unset for the artifact's `speculative_config.num_speculative_tokens`.
+fn resolve_drafts(raw: Option<&str>, declared: Option<u32>) -> Result<usize, String> {
+    match raw.map(str::trim) {
+        None | Some("") => Ok(declared.map_or(0, |k| k as usize)),
+        Some(x) => match x.parse::<usize>() {
+            Ok(n) if n <= memra_engine::hy4f_route::MAX_DRAFTS => Ok(n),
+            _ => Err(format!(
+                "MEMRA_HY4F_DRAFT {x:?} is not a draft count from 0 to {}",
+                memra_engine::hy4f_route::MAX_DRAFTS
+            )),
+        },
+    }
 }
 
 /// `MEMRA_HY4F_PREFILL_CHUNK`: a positive token count, or unset for the default.
@@ -248,6 +265,16 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Hy4fModel, St
         );
     }
     let chunk = resolve_chunk(std::env::var("MEMRA_HY4F_PREFILL_CHUNK").ok().as_deref())?;
+    let declared_k = mc
+        .hy_v4_flash
+        .as_ref()
+        .filter(|hy| hy.dfly.num_hidden_layers > 0)
+        .and_then(|hy| hy.dfly.num_speculative_tokens);
+    let drafts = resolve_drafts(
+        std::env::var("MEMRA_HY4F_DRAFT").ok().as_deref(),
+        declared_k,
+    )
+    .map_err(|e| format!("hy_v4_flash model {name:?}: {e}"))?;
     let sessions = crate::route_contract::hybrid_interactive_cap();
     if sessions == 0 {
         return Err("MEMRA_MAX_SESSIONS=0 leaves the hy_v4_flash route no session".into());
@@ -261,6 +288,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Hy4fModel, St
         max_seq,
         sessions,
         chunk,
+        drafts,
     };
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<Ready, String>>();
     let (start_tx, start_rx) = std::sync::mpsc::channel::<Start>();
@@ -420,7 +448,7 @@ impl Stream {
         true
     }
 
-    fn finish(&self, n_prompt: usize, elapsed_s: f64) {
+    fn finish(&self, n_prompt: usize, elapsed_s: f64, spec: Option<SpecUsage>) {
         if self.client_gone {
             return;
         }
@@ -431,7 +459,7 @@ impl Stream {
             n_prompt,
             n_cached: 0,
             elapsed_s,
-            spec: None,
+            spec,
         });
     }
 }
@@ -514,6 +542,10 @@ struct Active {
     steps: usize,
     /// the route failed the request: booked as failed, not as a client that left
     fault: bool,
+    /// DFly2: the drafts the next verify call scores after `next` (empty: a plain decode call)
+    drafts: Vec<u32>,
+    /// DFly2 rounds, drafts and accepted drafts
+    spec: SpecUsage,
 }
 
 /// A request past rendering, waiting for its memory.
@@ -660,6 +692,11 @@ struct Book {
     chunk: usize,
     /// the cache bytes of a session per its capacity, from the route's shapes
     state: SessionShape,
+    /// the per-session draft state: the cache positions a verify call scores past the request's
+    /// own (the anchor and the drafts of one round), booked with every session of a drafting
+    /// route. The drafter's call scratch is the route's, grown in the warm-up and inside the
+    /// ceiling, like the call scratch.
+    draft_rows: usize,
 }
 
 /// The per-capacity cache and scratch arithmetic of the loaded route (`Route::session_bytes`,
@@ -697,9 +734,15 @@ impl SessionShape {
 }
 
 impl Book {
-    /// A session's cache at `cap` positions (rounded up to the pool's stride: never under).
+    /// A session's cache at `cap` positions (rounded up to the pool's stride: never under), its
+    /// draft state included.
     fn state(&self, cap: usize) -> usize {
-        self.state.fixed + self.state.per_pos * cap.div_ceil(4) * 4
+        self.state.fixed + self.state.per_pos * self.session_cap(cap).div_ceil(4) * 4
+    }
+
+    /// The cache positions a request of `cap` positions allocates: its own and one round's.
+    fn session_cap(&self, cap: usize) -> usize {
+        cap + self.draft_rows
     }
 
     /// The call scratch a session of `cap` positions may grow beyond the warm-up's, plus the
@@ -775,7 +818,7 @@ fn admit_session(
         }
         return Ok(None);
     }
-    match route.new_session(cap) {
+    match route.new_session(book.session_cap(cap)) {
         Ok(s) => Ok(Some(s)),
         // an allocation the device refused is memory pressure; a device that no longer
         // synchronizes is a fault the route cannot serve past
@@ -925,6 +968,15 @@ fn bring_up<'a>(
     let dev = Dev::new(0)?;
     let tl = Instant::now();
     let mut route = Route::load(dev, &ck, plan, hy, 1, plan.layers.len())?;
+    if cfg.drafts > 0 {
+        route.load_drafter(&ck)?;
+        eprintln!(
+            "[hy4f-serve] {}: DFly2 drafter resident, {:.2} GiB, {} drafts a round",
+            cfg.name,
+            route.drafter_mut().map_or(0, |d| d.weight_bytes) as f64 / (1u64 << 30) as f64,
+            cfg.drafts
+        );
+    }
     let weights = route.dev.live_bytes();
     eprintln!(
         "[hy4f-serve] {}: weights resident, {:.1} GiB in {:.1}s",
@@ -938,7 +990,7 @@ fn bring_up<'a>(
     // maximum and proves the route answers finite logits
     let tw = Instant::now();
     let n = 2 * cfg.chunk;
-    let mut warm = route.new_session(n + 1)?;
+    let mut warm = route.new_session(n + 1 + cfg.drafts + 1)?;
     let ids: Vec<u32> = (0..n).map(|i| 1000 + (i as u32 * 7919) % 60000).collect();
     let mut last = Vec::new();
     for c in ids.chunks(cfg.chunk) {
@@ -949,6 +1001,27 @@ fn bring_up<'a>(
     if last.iter().chain(&next).any(|x| !x.is_finite()) {
         return Err("the warm-up answered non-finite logits".into());
     }
+    if cfg.drafts > 0 {
+        // one round past the indexer budget grows the drafter's scratch to its maximum: a
+        // draft, the verify call of the anchor and the drafts, the rollback of all of them
+        let t2 = argmax(&next) as u32;
+        let d = route.draft_in(&mut warm, 0, t2, cfg.drafts, None, false)?;
+        let mut verify = vec![t2];
+        verify.extend(&d.ids);
+        let from = warm.positions();
+        let backup = route.ring_backup_in(&warm, from, verify.len())?;
+        let rows = route.call_in(&mut warm, &verify, true, None, None)?;
+        if rows.iter().any(|x| !x.is_finite()) {
+            return Err("the warm-up's verify call answered non-finite logits".into());
+        }
+        route.rollback_in(&mut warm, from + 1, &backup)?;
+        eprintln!(
+            "[hy4f-serve] {}: warm-up draft round {:?}; drafter scratch {:.1} MiB",
+            cfg.name,
+            d.ids,
+            route.drafter_scratch_bytes() as f64 / (1u64 << 20) as f64
+        );
+    }
     drop(warm);
     route.dev.trim_pool()?;
     let held = route.dev.live_bytes();
@@ -957,7 +1030,17 @@ fn bring_up<'a>(
         ceiling: avail.saturating_sub(HEADROOM_BYTES),
         chunk: cfg.chunk,
         state: SessionShape::of(&route),
+        draft_rows: if cfg.drafts > 0 { cfg.drafts + 1 } else { 0 },
     };
+    if book.draft_rows > 0 {
+        eprintln!(
+            "[admission] route=hy4f-thread per-session draft-state charge: {} positions, {} bytes; \
+             drafter scratch {} bytes held inside the ceiling",
+            book.draft_rows,
+            book.state.per_pos * book.draft_rows,
+            route.drafter_scratch_bytes()
+        );
+    }
     eprintln!(
         "[hy4f-serve] {}: warm-up {n} + 1 tokens in {:.1}s; scratch {:.2} GiB, MemAvailable {:.1} GiB",
         cfg.name,
@@ -1104,6 +1187,8 @@ fn serve_loop(
                         t0: Instant::now(),
                         steps: 0,
                         fault: false,
+                        drafts: Vec::new(),
+                        spec: SpecUsage::default(),
                     });
                 }
                 Ok(None) => {
@@ -1183,23 +1268,35 @@ fn serve_loop(
                     (i, act[i].prompt[s0..s1].to_vec(), Some((s1, end)))
                 }
                 Work::Decode { i, t } => {
-                    decode_rows += 1;
-                    (i, vec![t], None)
+                    // a verify call scores the anchor and the round's drafts in one call; every
+                    // row computes on its own, so each row is the decode call's row bit for bit
+                    let mut tokens = vec![t];
+                    tokens.extend(std::mem::take(&mut act[i].drafts));
+                    decode_rows += tokens.len();
+                    (i, tokens, None)
                 }
             };
             let route = &mut up.route;
             let a = &mut act[i];
+            let verify = is_prefill_end.is_none() && tokens.len() > 1;
+            let from = a.sess.positions();
             let called = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                route.call_in(&mut a.sess, &tokens, false, None, None)
+                let backup = if verify {
+                    Some(route.ring_backup_in(&a.sess, from, tokens.len())?)
+                } else {
+                    None
+                };
+                route
+                    .call_in(&mut a.sess, &tokens, verify, None, None)
+                    .map(|rows| (rows, backup))
             }));
-            let row = match called {
-                Ok(Ok(row)) => row,
+            let (rows, backup) = match called {
+                Ok(Ok(x)) => x,
                 Ok(Err(e)) => {
                     eprintln!(
-                        "[hy4f-serve] request_id={:?}: call of {} tokens at {}: {e}; failing it",
+                        "[hy4f-serve] request_id={:?}: call of {} tokens at {from}: {e}; failing it",
                         a.req.request_id,
                         tokens.len(),
-                        a.sess.positions().saturating_sub(tokens.len())
                     );
                     let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
                         "hy_v4_flash route: {e}"
@@ -1233,31 +1330,121 @@ fn serve_loop(
                 }
             }
             a.steps += 1;
-            let pos = a.prompt.len() + a.stream.ids.len();
-            match choose(row, pos, a.sample.as_ref(), a.pen.as_ref(), &a.window) {
-                Ok(t) => {
-                    if a.stream.push(t) {
-                        if a.pen.is_some() {
-                            a.window.push(t);
-                        }
-                        // the cache holds `cap` positions: the token after the last one has no row
-                        if a.sess.positions() + 1 > a.cap {
-                            a.stream.stop = Some(StopReason::ContextFull);
-                            done.push(i);
-                        } else {
-                            a.next = Some(t);
-                        }
-                    } else {
-                        done.push(i);
+            // the tokens of the call's rows: each row's choice, kept while the next row's input
+            // (the round's draft) is that choice; the first other choice ends the round
+            let v = up.route.vocab_size();
+            let nrows = if verify { tokens.len() } else { 1 };
+            let mut kept = 0usize;
+            let mut finished = false;
+            let mut failed = None;
+            let mut last = None;
+            for r in 0..nrows {
+                let row = if verify {
+                    rows[r * v..(r + 1) * v].to_vec()
+                } else {
+                    rows.clone()
+                };
+                let pos = a.prompt.len() + a.stream.ids.len();
+                let t = match choose(row, pos, a.sample.as_ref(), a.pen.as_ref(), &a.window) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        failed = Some(e);
+                        break;
                     }
+                };
+                kept = r + 1;
+                if !a.stream.push(t) {
+                    finished = true;
+                    break;
                 }
-                Err(e) => {
-                    let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
-                        "hy_v4_flash sampler: {e}"
-                    ))));
-                    a.stream.client_gone = true;
-                    a.fault = true;
-                    done.push(i);
+                if a.pen.is_some() {
+                    a.window.push(t);
+                }
+                last = Some(t);
+                if !(verify && r + 1 < tokens.len() && tokens[r + 1] == t) {
+                    break;
+                }
+            }
+            if verify {
+                let drafted = tokens.len() - 1;
+                a.spec.rounds += 1;
+                a.spec.drafted += drafted as u64;
+                a.spec.accepted += kept.saturating_sub(1) as u64;
+                // keep the anchor and the accepted drafts: the positions `from .. from + kept`
+                let keep = from + kept.max(1);
+                if let Some(b) = &backup
+                    && let Err(e) = up.route.rollback_in(&mut a.sess, keep, b)
+                {
+                    failed = Some(format!("rollback: {e}"));
+                }
+            }
+            if let Some(e) = failed {
+                let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
+                    "hy_v4_flash sampler: {e}"
+                ))));
+                a.stream.client_gone = true;
+                a.fault = true;
+                done.push(i);
+                continue;
+            }
+            if finished {
+                done.push(i);
+                continue;
+            }
+            let Some(t) = last else {
+                done.push(i);
+                continue;
+            };
+            // the cache holds `cap` positions: the token after the last one has no row
+            if a.sess.positions() + 1 > a.cap {
+                a.stream.stop = Some(StopReason::ContextFull);
+                done.push(i);
+                continue;
+            }
+            a.next = Some(t);
+            // the next round, right after the call that scored its source row
+            let room = (a.cap - a.sess.positions())
+                .min(a.stream.budget.saturating_sub(a.stream.ids.len()));
+            let k = cfg.drafts.min(room.saturating_sub(1));
+            if k > 0 {
+                let src = if verify {
+                    kept.max(1) - 1
+                } else {
+                    tokens.len() - 1
+                };
+                let route = &mut up.route;
+                let drafted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    route.draft_in(&mut a.sess, src, t, k, None, false)
+                }));
+                match drafted {
+                    Ok(Ok(d)) => a.drafts = d.ids,
+                    Ok(Err(e)) => {
+                        eprintln!(
+                            "[hy4f-serve] request_id={:?}: draft round at {}: {e}; failing it",
+                            a.req.request_id,
+                            a.sess.positions()
+                        );
+                        let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
+                            "hy_v4_flash drafter: {e}"
+                        ))));
+                        a.stream.client_gone = true;
+                        a.fault = true;
+                        done.push(i);
+                        if let Err(probe) = up.route.dev.sync() {
+                            device_fault = Some(format!(
+                                "hy_v4_flash route stopped: the device probe after a failed draft \
+                                 round failed: {probe} (the round: {e})"
+                            ));
+                            break;
+                        }
+                    }
+                    Err(payload) => {
+                        device_fault = Some(format!(
+                            "hy_v4_flash route stopped on a panic in a draft round: {}",
+                            panic_text(payload.as_ref())
+                        ));
+                        break;
+                    }
                 }
             }
         }
@@ -1369,7 +1556,18 @@ fn intake(
 
 fn finish(mut a: Active, health: &Arc<RouteHealth>) {
     let elapsed = a.t0.elapsed().as_secs_f64();
-    a.stream.finish(a.prompt.len(), elapsed);
+    let spec = (a.spec.rounds > 0).then_some(a.spec);
+    if let Some(u) = spec {
+        eprintln!(
+            "[hy4f-draft] request_id={:?} rounds={} drafted={} accepted={} tokens={}",
+            a.req.request_id,
+            u.rounds,
+            u.drafted,
+            u.accepted,
+            a.stream.ids.len()
+        );
+    }
+    a.stream.finish(a.prompt.len(), elapsed, spec);
     let stats = ServeStats {
         tokens_out: a.stream.ids.len(),
         n_prompt: a.prompt.len(),
