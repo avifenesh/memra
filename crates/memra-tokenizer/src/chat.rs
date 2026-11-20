@@ -245,6 +245,21 @@ pub fn apply_chat_template_str(
             .collect();
         return apply_mimo_v26_template(&turns, add_generation_prompt, ThinkMode::Default);
     }
+    // Tencent Hy4-flash (`hy_v4_flash`): its own dialect; the plain path renders the
+    // template's default effort (`high`). Must precede the qwen arm (its tools prompt carries
+    // `<tools>`).
+    if template.is_some_and(template_is_hy4) {
+        let turns: Vec<Turn> = messages
+            .iter()
+            .map(|(role, content)| Turn {
+                role: (*role).to_string(),
+                content: (*content).to_string(),
+                ..Default::default()
+            })
+            .collect();
+        return apply_hy4_template(&turns, add_generation_prompt, &[], "high")
+            .expect("text-only hy4 render at the default effort cannot fail");
+    }
     // Tencent Hy3 (`hy_v3`): a completely different special-token dialect (no ChatML).
     // Detected by its `hy_User` token literal; rendered by the dedicated arm below.
     // Legacy path = the template's own default ("no_think") — byte-identical to history.
@@ -587,6 +602,21 @@ pub fn apply_chat_template_tools_ex(
             reasoning_effort,
             dsv4_encoding,
         );
+    }
+    // Tencent Hy4-flash: its own dialect all the way through, tools included. Must precede the
+    // qwen/step arms, whose `<tools>` marker its tools prompt also carries. Tool DEFINITIONS come
+    // from `tools_struct` (the template renders the function object minus `defer_loading` /
+    // `strict`, skipping deferred tools), not from the qwen `tools_json` strings.
+    if template.is_some_and(template_is_hy4) {
+        if !tools_json.is_empty() && tools_struct.is_empty() {
+            return Err(
+                "hy4 tool definitions need the structured `tools_struct` (the tool or function \
+                 objects) — call apply_chat_template_tools_ex"
+                    .into(),
+            );
+        }
+        let effort = hy4_reasoning_effort(think, reasoning_effort)?;
+        return apply_hy4_template(turns, add_generation_prompt, tools_struct, effort);
     }
     // step35: its own dialect all the way through, tools included. Must precede the
     // qwen arm: the step35 template contains `<tools>`, `<think>` and `add_generation_prompt`,
@@ -1361,6 +1391,356 @@ fn apply_gemma4_template(
 // model's distribution end to end. It "worked" only because GLM follows the qwen tool-format
 // instruction it was handed in-context: the GGUF-template-mint failure mode exactly — fluent,
 // and invisible without a byte oracle.
+
+/// Tencent Hy4-flash (`hy_v4_flash`) `chat_template.jinja`: it spells every turn
+/// `<｜hy_start:opensource｜>{role}<｜hy_middle:opensource｜>…<｜hy_end:opensource｜>` and builds the
+/// tokens from a suffix variable, so the literal `<｜hy_start{}｜>` and `<｜reasoning_mode{}｜>`
+/// format strings identify it together. Hy3's template shares `<｜reasoning_mode{}｜>` but has no
+/// `<｜hy_start{}｜>` (its turns are `hy_User` / `hy_Assistant`), so the pair never matches it.
+pub fn template_is_hy4(t: &str) -> bool {
+    t.contains("<\u{ff5c}hy_start{}\u{ff5c}>") && t.contains("<\u{ff5c}reasoning_mode{}\u{ff5c}>")
+}
+
+/// The Hy4-flash reasoning ladder. An explicit `reasoning_effort` must be one the template
+/// accepts (`no_think` / `high` / `max`; it raises on anything else, `low` and `medium`
+/// included). A thinking-off request (`ThinkMode::NoThink`) renders `no_think` whatever effort
+/// it names, as the HY3 arm does; otherwise an explicit effort wins, and without one the
+/// template's own default, `high`, applies.
+pub fn hy4_reasoning_effort(
+    think: ThinkMode,
+    reasoning_effort: Option<&str>,
+) -> Result<&'static str, String> {
+    let explicit = match reasoning_effort {
+        None => None,
+        Some(level @ ("no_think" | "high" | "max")) => Some(level),
+        Some(other) => {
+            return Err(format!(
+                "reasoning_effort error : {other}, should be no_think/high/max"
+            ));
+        }
+    };
+    if think == ThinkMode::NoThink {
+        return Ok("no_think");
+    }
+    match explicit {
+        Some("no_think") => Ok("no_think"),
+        Some("high") => Ok("high"),
+        Some("max") => Ok("max"),
+        _ => Ok("high"),
+    }
+}
+
+/// One tool DECLARATION as the Hy4 template's `tool_to_json` macro writes it: the function
+/// object's keys in insertion order minus `defer_loading` and `strict`, each key written raw
+/// between quotes (`'"' ~ k ~ '": '`, no escaping) and each value through `tojson`
+/// (`json.dumps(ensure_ascii=False)`). The GLM macro escapes its keys; this one does not.
+fn hy4_tool_json(func: &Val) -> String {
+    let mut out = String::new();
+    let Some(obj) = as_obj(func) else {
+        py_json(func, &mut out);
+        return out;
+    };
+    out.push('{');
+    let mut first = true;
+    for (k, v) in obj {
+        if k == "defer_loading" || k == "strict" {
+            continue;
+        }
+        if !first {
+            out.push_str(", ");
+        }
+        first = false;
+        out.push('"');
+        out.push_str(k);
+        out.push_str("\": ");
+        py_json(v, &mut out);
+    }
+    out.push('}');
+    out
+}
+
+/// A turn's content as the template's `render_content` writes it: the string, or its text
+/// parts concatenated. Image and video parts are not part of this engine's Hy4-flash program.
+fn hy4_content(turn: &Turn) -> Result<String, String> {
+    match &turn.parts {
+        None => Ok(turn.content.clone()),
+        Some(parts) => parts
+            .iter()
+            .map(|part| match part {
+                ContentPart::Text(text) => Ok(text.as_str()),
+                ContentPart::Image(_) => {
+                    Err("hy_v4_flash: image parts are not served (no vision program)".to_string())
+                }
+            })
+            .collect(),
+    }
+}
+
+/// Exact reproduction of Hy4-flash's pinned `chat_template.jinja` (sha256 63ddd5de...;
+/// research/modelplan-onboarding-hy4flash-20261119/chat/, goldens rendered by transformers
+/// 5.23.0 `render_jinja_template`). `tools_struct` are the request's tool objects (the
+/// `function` object, or a tool wrapping one); `effort` comes from [`hy4_reasoning_effort`].
+///
+/// The program: a leading system turn (synthesized when the conversation has none) carries the
+/// tools prompt, the system text and `<｜reasoning_mode:opensource｜>reasoning_effort:{effort}`;
+/// consecutive tool turns merge into one `tool` turn whose responses follow the preceding
+/// assistant's call order when every call id matches exactly one response; an assistant turn
+/// writes `<think:opensource>{reasoning}</think:opensource>{content}` with its reasoning only
+/// when the effort is not `no_think` and either tools are present (preserved thinking) or it
+/// comes after the last user turn, then its `<tool_calls:opensource>` block; the generation
+/// prompt opens an assistant turn with an open think at high/max and a closed one at no_think.
+pub fn apply_hy4_template(
+    turns: &[Turn],
+    add_generation_prompt: bool,
+    tools_struct: &[Val],
+    effort: &str,
+) -> Result<String, String> {
+    const START: &str = "<\u{ff5c}hy_start:opensource\u{ff5c}>";
+    const MIDDLE: &str = "<\u{ff5c}hy_middle:opensource\u{ff5c}>";
+    const END: &str = "<\u{ff5c}hy_end:opensource\u{ff5c}>";
+    const REASONING: &str = "<\u{ff5c}reasoning_mode:opensource\u{ff5c}>";
+    const THINK_BEGIN: &str = "<think:opensource>";
+    const THINK_END: &str = "</think:opensource>";
+    const CALLS_BEGIN: &str = "<tool_calls:opensource>";
+    const CALLS_END: &str = "</tool_calls:opensource>";
+    const CALL_BEGIN: &str = "<tool_call:opensource>";
+    const CALL_END: &str = "</tool_call:opensource>";
+    const KEY_BEGIN: &str = "<arg_key:opensource>";
+    const KEY_END: &str = "</arg_key:opensource>";
+    const VALUE_BEGIN: &str = "<arg_value:opensource>";
+    const VALUE_END: &str = "</arg_value:opensource>";
+    const RESPONSE_BEGIN: &str = "<tool_response:opensource>";
+    const RESPONSE_END: &str = "</tool_response:opensource>";
+
+    if !matches!(effort, "no_think" | "high" | "max") {
+        return Err(format!(
+            "reasoning_effort error : {effort}, should be no_think/high/max"
+        ));
+    }
+    let has_tools = !tools_struct.is_empty();
+    // `preserved_thinking` is undefined on the serve surface: it defaults to "tools present".
+    let preserved_thinking = has_tools;
+    let tools_prompt = || {
+        let mut out = String::from(
+            "# Tools\n\nYou may call one or more functions to assist with the user query.\
+             \n\nYou are provided with function signatures within <tools></tools> XML tags:\
+             \n<tools>\n",
+        );
+        let mut first = true;
+        for tool in tools_struct {
+            let function = as_obj(tool)
+                .and_then(|obj| val_get(obj, "function"))
+                .unwrap_or(tool);
+            let deferred = as_obj(function)
+                .and_then(|obj| val_get(obj, "defer_loading"))
+                .is_some_and(truthy);
+            if deferred {
+                continue;
+            }
+            if !first {
+                out.push('\n');
+            }
+            first = false;
+            out.push_str(&hy4_tool_json(function));
+        }
+        out.push_str("\n</tools>\n\nFor function call returns, you should first print ");
+        out.push_str(CALLS_BEGIN);
+        out.push_str("\nFor each function call, you should return object like:\n");
+        out.push_str(CALL_BEGIN);
+        out.push_str("{function-name}");
+        for n in 1..=2 {
+            out.push_str(KEY_BEGIN);
+            out.push_str(&format!("{{arg-key-{n}}}"));
+            out.push_str(KEY_END);
+            out.push_str(VALUE_BEGIN);
+            out.push_str(&format!("{{arg-value-{n}}}"));
+            out.push_str(VALUE_END);
+        }
+        out.push_str("...");
+        out.push_str(CALL_END);
+        out.push_str("\nAt the end of function call returns, you should print ");
+        out.push_str(CALLS_END);
+        out
+    };
+
+    // merge_tool_responses: a run of tool turns becomes one entry.
+    enum Entry<'a> {
+        Turn(&'a Turn),
+        Tools(Vec<&'a Turn>),
+    }
+    let mut entries: Vec<Entry> = Vec::new();
+    for turn in turns {
+        if turn.role == "tool" {
+            if let Some(Entry::Tools(cluster)) = entries.last_mut() {
+                cluster.push(turn);
+            } else {
+                entries.push(Entry::Tools(vec![turn]));
+            }
+        } else {
+            entries.push(Entry::Turn(turn));
+        }
+    }
+    fn role_of<'a>(entry: &Entry<'a>) -> &'a str {
+        match entry {
+            Entry::Turn(turn) => turn.role.as_str(),
+            Entry::Tools(_) => "tool",
+        }
+    }
+    let leading_system = entries.first().is_some_and(|e| role_of(e) == "system");
+    let last_user = entries.iter().rposition(|e| role_of(e) == "user");
+
+    let mut out = String::new();
+    if !leading_system {
+        out.push_str(START);
+        out.push_str("system");
+        out.push_str(MIDDLE);
+        if has_tools {
+            out.push_str(&tools_prompt());
+        }
+        out.push_str(REASONING);
+        out.push_str("reasoning_effort:");
+        out.push_str(effort);
+        out.push_str(END);
+    }
+    let mut prev_call_ids: Vec<&str> = Vec::new();
+    let mut last_is_assistant = false;
+    for (index, entry) in entries.iter().enumerate() {
+        let mut keep_ids = false;
+        match entry {
+            Entry::Tools(cluster) => {
+                out.push_str(START);
+                out.push_str("tool");
+                out.push_str(MIDDLE);
+                let mut ordered: Vec<&Turn> = Vec::new();
+                let mut matched = !prev_call_ids.is_empty() && prev_call_ids.len() == cluster.len();
+                if matched {
+                    for id in &prev_call_ids {
+                        let hits: Vec<&&Turn> = cluster
+                            .iter()
+                            .filter(|t| t.tool_call_id.as_deref() == Some(*id))
+                            .collect();
+                        if hits.len() == 1 {
+                            ordered.push(hits[0]);
+                        } else {
+                            matched = false;
+                        }
+                    }
+                }
+                let responses: Vec<&Turn> = if matched { ordered } else { cluster.clone() };
+                for response in responses {
+                    out.push_str(RESPONSE_BEGIN);
+                    out.push_str(&hy4_content(response)?);
+                    out.push_str(RESPONSE_END);
+                }
+                out.push_str(END);
+            }
+            Entry::Turn(turn) => match turn.role.as_str() {
+                "system" => {
+                    out.push_str(START);
+                    out.push_str("system");
+                    out.push_str(MIDDLE);
+                    let content = hy4_content(turn)?;
+                    if index == 0 {
+                        if has_tools {
+                            out.push_str(&tools_prompt());
+                            if !content.is_empty() {
+                                out.push_str("\n\n");
+                            }
+                        }
+                        out.push_str(&content);
+                        out.push_str(REASONING);
+                        out.push_str("reasoning_effort:");
+                        out.push_str(effort);
+                    } else {
+                        out.push_str(&content);
+                    }
+                    out.push_str(END);
+                }
+                "assistant" => {
+                    let body = hy4_content(turn)?;
+                    let reasoning = turn.reasoning.as_deref().filter(|r| !r.is_empty());
+                    let show = effort != "no_think"
+                        && (preserved_thinking || last_user.is_none_or(|last| index > last));
+                    out.push_str(START);
+                    out.push_str("assistant");
+                    out.push_str(MIDDLE);
+                    out.push_str(THINK_BEGIN);
+                    if show && let Some(reasoning) = reasoning {
+                        out.push_str(reasoning);
+                    }
+                    out.push_str(THINK_END);
+                    out.push_str(&body);
+                    if !turn.tool_calls.is_empty() {
+                        let ids: Vec<&str> = turn
+                            .tool_calls
+                            .iter()
+                            .filter_map(|c| c.id.as_deref().filter(|id| !id.is_empty()))
+                            .collect();
+                        prev_call_ids = if ids.len() == turn.tool_calls.len() {
+                            ids
+                        } else {
+                            Vec::new()
+                        };
+                        keep_ids = true;
+                        out.push_str(CALLS_BEGIN);
+                        for call in &turn.tool_calls {
+                            out.push_str(CALL_BEGIN);
+                            out.push_str(&call.name);
+                            if call.args.is_empty() {
+                                for (key, value) in &call.params {
+                                    out.push_str(KEY_BEGIN);
+                                    out.push_str(key);
+                                    out.push_str(KEY_END);
+                                    out.push_str(VALUE_BEGIN);
+                                    out.push_str(value);
+                                    out.push_str(VALUE_END);
+                                }
+                            } else {
+                                for (key, value) in &call.args {
+                                    out.push_str(KEY_BEGIN);
+                                    out.push_str(key);
+                                    out.push_str(KEY_END);
+                                    out.push_str(VALUE_BEGIN);
+                                    match value {
+                                        Val::Str(text) => out.push_str(text),
+                                        other => py_json(other, &mut out),
+                                    }
+                                    out.push_str(VALUE_END);
+                                }
+                            }
+                            out.push_str(CALL_END);
+                        }
+                        out.push_str(CALLS_END);
+                    }
+                    out.push_str(END);
+                    if index + 1 == entries.len() {
+                        last_is_assistant = true;
+                    }
+                }
+                role => {
+                    out.push_str(START);
+                    out.push_str(role);
+                    out.push_str(MIDDLE);
+                    out.push_str(&hy4_content(turn)?);
+                    out.push_str(END);
+                }
+            },
+        }
+        if !keep_ids {
+            prev_call_ids = Vec::new();
+        }
+    }
+    if add_generation_prompt && !last_is_assistant {
+        out.push_str(START);
+        out.push_str("assistant");
+        out.push_str(MIDDLE);
+        out.push_str(THINK_BEGIN);
+        if effort == "no_think" {
+            out.push_str(THINK_END);
+        }
+    }
+    Ok(out)
+}
 
 /// GLM-5.3-Flash template detector: the `[gMASK]<sop>` sequence head AND the `<|observation|>`
 /// tool-result turn prefix. Both are unique to the GLM dialect among every committed template

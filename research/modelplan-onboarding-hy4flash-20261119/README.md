@@ -263,3 +263,73 @@ by `census_classes.py` from `census/header-census.tsv`, which it must expand bac
 | DFly2 dense MLP width: 9,216 in the checkpoint, not in the config. The vLLM derivation defaults `dfly_intermediate_size` to `intermediate_size` (13,824) and then materializes the width from the checkpoint. Confirm against the DFly2 program before pinning it beyond the census. | PR 10 (DFly2) |
 | Whether transformers' per-row FP8 round trip of a BF16 Engram row equals this checkpoint's stored `q * weight_scale` bit for bit. | CheckpointParity |
 | The Engram norm epsilon is `finfo(input dtype).eps` in transformers (2^-7 on BF16); vLLM uses the F32 epsilon. The oracle must run BF16 activations for the band to mean anything. | CheckpointParity |
+
+# Step 2: tokenizer, chat template and tool-call parser (2026-11-20)
+
+Verdict: memra renders the artifact's `chat_template.jinja` byte for byte as transformers 5.23.0
+does on all 22 render fixtures and refuses the two invalid efforts as the template does, its
+tokenizer gives the `tokenizers` library's ids on every render and on a 132-case raw corpus in
+both encode modes, and its Hy4 tool-call parser gives the vLLM parser's calls and typed
+arguments on 19 of 24 parse fixtures; the other 5 are recorded divergences, each checked as
+memra's own behavior with its reason. No GPU was used.
+
+## Oracles and fixtures
+
+`chat/gen_fixtures.py` (run under `uv` with transformers 5.23.0, tokenizers 0.23.3, jinja2 3.1.6)
+writes everything under `chat/`:
+
+- `artifact/`: `tokenizer.json`, `tokenizer_config.json` and `chat_template.jinja` of the pinned
+  revision (sha256 as in `sources.lock.json`; the script refuses other bytes).
+- `fixtures/renders.json`: 24 cases through `render_jinja_template`, the call
+  `apply_chat_template` makes: the three efforts (`no_think`, `high`, `max`) and the default
+  (`high`), system and no system, empty turns, reasoning history before and after the last user
+  turn, `reasoning` over `reasoning_content`, a later system turn, tools with and without a
+  system (the synthesized system turn), `defer_loading` and `strict`, tool calls with typed
+  arguments, tool responses reordered by call id and left in order when the ids do not match,
+  preserved thinking with tools, `no_think` with history reasoning, unicode and escapes, and the
+  two efforts the template raises on (`low`, `medium`). Each render carries its ids
+  (`add_special_tokens=False`).
+- `corpus.tsv` / `ref-ids.tsv`: the deepseek-v3 split's adversarial raw cases from
+  `research/step-sku-20260807/corpus.tsv`, seven Hy4 control-token cases and every render, ids in
+  both modes.
+- `fixtures/parses.json`: 24 completions through vLLM's `HYV4ToolExtractor.extract_tool_calls`
+  (strict, as `HYV4ToolParser` builds it; the source is fetched at the pinned PR head and its git
+  blob recorded, `295456c7699d...`), with its vLLM-only imports stubbed. Where memra differs, the
+  case carries a `memra` record: what memra returns and why.
+
+## What changed
+
+- `memra-tokenizer`: `chat::apply_hy4_template` reproduces the template; `template_is_hy4`
+  detects it by its `<｜hy_start{}｜>` and `<｜reasoning_mode{}｜>` format strings, and both
+  render entries dispatch to it before the qwen arm (the tools prompt carries `<tools>`).
+  `hy4_reasoning_effort` refuses what the template refuses; a thinking-off request renders
+  `no_think` whatever effort it names (as the HY3 arm does), an explicit effort wins otherwise,
+  and the default is the template's `high`. Tool-definition keys are written raw, as the
+  template's `tool_to_json` writes them. Image parts are refused: this engine runs no Hy4 vision
+  program.
+- `memra-server`: `ToolStreamParser::hy4`, the HY3 seam and call framing with the Hy4 call body
+  (name up to the first `<arg_key:opensource>`, no `<tool_sep:opensource>`), with vLLM's strict
+  rules: any whitespace between calls and between argument pairs, a key's close directly
+  followed by its value's open, a repeated key keeping its first position with the last value.
+  HY3 parsing is unchanged. Not wired to a serve route yet: Hy4-flash has none.
+- Tokenizer: no change. The pre-tokenizer is the deepseek-v3 split memra already implements, and
+  the parity gates pass on the existing code.
+
+Recorded differences from vLLM's parser, each checked by the parse gate:
+
+- text after the closing `</tool_calls:opensource>` stays content in memra (vLLM drops it);
+- a bare `<tool_call:opensource>` without the `<tool_calls:opensource>` wrapper is content in
+  memra (vLLM restores the wrapper);
+- memra parses every `<tool_calls:opensource>` block (vLLM the first);
+- a name that contains a tag (a HY3 `<tool_sep:opensource>` body) is refused by memra (vLLM
+  keeps it in the name);
+- argument coercion follows memra's request schema, which reads a plain-string `type`: list and
+  `anyOf` types coerce nothing, and a declared non-string value is parsed as JSON only (vLLM
+  also reads list and `anyOf` types and falls back to `ast.literal_eval`). The schema plumbing
+  belongs to the serve-route step.
+
+Not covered by the renderer: a tool message keyed by `id` rather than `tool_call_id` (memra's
+turn carries `tool_call_id` only), `tool_search_output` content parts, and numbers whose spelling
+`json.dumps` would normalize (`1e-3` stays as written; this predates Hy4 and is shared with the
+GLM and Gemma arms). The render harness picks `reasoning` over `reasoning_content` as the
+template does; memra's request type carries `reasoning_content` only.

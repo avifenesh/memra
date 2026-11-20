@@ -1,0 +1,1073 @@
+{
+ "parser_blob": "295456c7699d12c2702c8ab673e05bfe60bbb1e5",
+ "vllm_pr_head": "8cbb80efa3974d10bb09c87580627bd874a3606b",
+ "cases": [
+  {
+   "name": "no-call",
+   "output": "Plain answer.",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": false,
+   "content": "Plain answer.",
+   "tool_calls": []
+  },
+  {
+   "name": "one-call-typed",
+   "output": "Checking.<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Paris</arg_value:opensource><arg_key:opensource>days</arg_key:opensource><arg_value:opensource>3</arg_value:opensource><arg_key:opensource>metric</arg_key:opensource><arg_value:opensource>false</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": "Checking.",
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "Paris",
+      "days": 3,
+      "metric": false
+     }
+    }
+   ]
+  },
+  {
+   "name": "two-calls",
+   "output": "<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Rome</arg_value:opensource></tool_call:opensource><tool_call:opensource>search<arg_key:opensource>query</arg_key:opensource><arg_value:opensource>q</arg_value:opensource><arg_key:opensource>limit</arg_key:opensource><arg_value:opensource>2.5</arg_value:opensource><arg_key:opensource>tags</arg_key:opensource><arg_value:opensource>[\"a\", \"b\"]</arg_value:opensource><arg_key:opensource>filters</arg_key:opensource><arg_value:opensource>{\"x\": 1}</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "search",
+      "description": "Search the web: returns JSON — “quoted” 中文.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "query": {
+         "type": "string"
+        },
+        "filters": {
+         "type": "object"
+        },
+        "limit": {
+         "type": "number"
+        },
+        "tags": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "Rome"
+     }
+    },
+    {
+     "name": "search",
+     "arguments": {
+      "query": "q",
+      "limit": 2.5,
+      "tags": [
+       "a",
+       "b"
+      ],
+      "filters": {
+       "x": 1
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "bool-case-insensitive",
+   "output": "<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Oslo</arg_value:opensource><arg_key:opensource>metric</arg_key:opensource><arg_value:opensource>True</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "Oslo",
+      "metric": true
+     }
+    }
+   ]
+  },
+  {
+   "name": "int-not-parsed-stays-string",
+   "output": "<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Oslo</arg_value:opensource><arg_key:opensource>days</arg_key:opensource><arg_value:opensource>three</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "Oslo",
+      "days": "three"
+     }
+    }
+   ]
+  },
+  {
+   "name": "string-number-stays-string",
+   "output": "<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>123</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "123"
+     }
+    }
+   ]
+  },
+  {
+   "name": "unicode-value",
+   "output": "<tool_calls:opensource><tool_call:opensource>search<arg_key:opensource>query</arg_key:opensource><arg_value:opensource>中文 😀 \"q\"</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "search",
+      "description": "Search the web: returns JSON — “quoted” 中文.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "query": {
+         "type": "string"
+        },
+        "filters": {
+         "type": "object"
+        },
+        "limit": {
+         "type": "number"
+        },
+        "tags": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "search",
+     "arguments": {
+      "query": "中文 😀 \"q\""
+     }
+    }
+   ]
+  },
+  {
+   "name": "no-args",
+   "output": "<tool_calls:opensource><tool_call:opensource>search</tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "search",
+      "description": "Search the web: returns JSON — “quoted” 中文.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "query": {
+         "type": "string"
+        },
+        "filters": {
+         "type": "object"
+        },
+        "limit": {
+         "type": "number"
+        },
+        "tags": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "search",
+     "arguments": {}
+    }
+   ]
+  },
+  {
+   "name": "unknown-function-json-value",
+   "output": "<tool_calls:opensource><tool_call:opensource>other<arg_key:opensource>a</arg_key:opensource><arg_value:opensource>{\"k\": [1, 2]}</arg_value:opensource><arg_key:opensource>b</arg_key:opensource><arg_value:opensource>plain text</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "other",
+     "arguments": {
+      "a": "{\"k\": [1, 2]}",
+      "b": "plain text"
+     }
+    }
+   ]
+  },
+  {
+   "name": "whitespace-around-name",
+   "output": "<tool_calls:opensource><tool_call:opensource> get_weather\n<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Nice</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "Nice"
+     }
+    }
+   ]
+  },
+  {
+   "name": "content-after-calls",
+   "output": "<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Nice</arg_value:opensource></tool_call:opensource></tool_calls:opensource>trailing",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "Nice"
+     }
+    }
+   ]
+  },
+  {
+   "name": "unterminated-block",
+   "output": "<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Paris",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": false,
+   "content": "<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Paris",
+   "tool_calls": []
+  },
+  {
+   "name": "unbalanced-call-tags",
+   "output": "<tool_calls:opensource><tool_call:opensource>get_weather</tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": false,
+   "content": "<tool_calls:opensource><tool_call:opensource>get_weather</tool_calls:opensource>",
+   "tool_calls": []
+  },
+  {
+   "name": "payload-outside-args",
+   "output": "<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Paris</arg_value:opensource>junk</tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": false,
+   "content": "<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Paris</arg_value:opensource>junk</tool_call:opensource></tool_calls:opensource>",
+   "tool_calls": []
+  },
+  {
+   "name": "empty-name",
+   "output": "<tool_calls:opensource><tool_call:opensource><arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Paris</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": false,
+   "content": "<tool_calls:opensource><tool_call:opensource><arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Paris</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tool_calls": []
+  },
+  {
+   "name": "spaces-between-pairs",
+   "output": "<tool_calls:opensource><tool_call:opensource>get_weather <arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Oslo</arg_value:opensource>  \n <arg_key:opensource>days</arg_key:opensource><arg_value:opensource>2</arg_value:opensource> </tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "Oslo",
+      "days": 2
+     }
+    }
+   ]
+  },
+  {
+   "name": "spaces-between-calls",
+   "output": "<tool_calls:opensource> <tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>A</arg_value:opensource></tool_call:opensource> \t <tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>B</arg_value:opensource></tool_call:opensource>\n</tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "A"
+     }
+    },
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "B"
+     }
+    }
+   ]
+  },
+  {
+   "name": "newline-between-key-and-value",
+   "output": "<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource>\n<arg_value:opensource>Oslo</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": false,
+   "content": "<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource>\n<arg_value:opensource>Oslo</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tool_calls": []
+  },
+  {
+   "name": "duplicate-key-last-wins",
+   "output": "<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>First</arg_value:opensource><arg_key:opensource>days</arg_key:opensource><arg_value:opensource>1</arg_value:opensource><arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Last</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "Last",
+      "days": 1
+     }
+    }
+   ]
+  },
+  {
+   "name": "bare-call-no-wrapper",
+   "output": "<tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Oslo</arg_value:opensource></tool_call:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "Oslo"
+     }
+    }
+   ],
+   "memra": {
+    "tools_called": false,
+    "tool_calls": [],
+    "content": "<tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Oslo</arg_value:opensource></tool_call:opensource>",
+    "divergence": "memra requires the <tool_calls> wrapper the template prints and surfaces a bare call verbatim; vLLM restores the wrapper"
+   }
+  },
+  {
+   "name": "second-calls-block",
+   "output": "<tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>A</arg_value:opensource></tool_call:opensource></tool_calls:opensource><tool_calls:opensource><tool_call:opensource>get_weather<arg_key:opensource>city</arg_key:opensource><arg_value:opensource>B</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": "A"
+     }
+    }
+   ],
+   "memra": {
+    "tools_called": true,
+    "tool_calls": [
+     {
+      "name": "get_weather",
+      "arguments": {
+       "city": "A"
+      }
+     },
+     {
+      "name": "get_weather",
+      "arguments": {
+       "city": "B"
+      }
+     }
+    ],
+    "content": null,
+    "divergence": "memra parses every <tool_calls> block; vLLM parses the first and drops the rest"
+   }
+  },
+  {
+   "name": "hy3-style-separator",
+   "output": "<tool_calls:opensource><tool_call:opensource>get_weather<tool_sep:opensource><arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Oslo</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string",
+         "description": "City name"
+        },
+        "days": {
+         "type": "integer"
+        },
+        "metric": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      },
+      "strict": true
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "get_weather<tool_sep:opensource>",
+     "arguments": {
+      "city": "Oslo"
+     }
+    }
+   ],
+   "memra": {
+    "tools_called": false,
+    "tool_calls": [],
+    "content": "<tool_calls:opensource><tool_call:opensource>get_weather<tool_sep:opensource><arg_key:opensource>city</arg_key:opensource><arg_value:opensource>Oslo</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+    "divergence": "memra refuses a name containing a tag (the HY3 separator); vLLM accepts it as part of the name"
+   }
+  },
+  {
+   "name": "list-typed-parameter",
+   "output": "<tool_calls:opensource><tool_call:opensource>count<arg_key:opensource>n</arg_key:opensource><arg_value:opensource>3</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "count",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "n": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "opts": {
+         "type": "object"
+        }
+       }
+      }
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "count",
+     "arguments": {
+      "n": 3
+     }
+    }
+   ],
+   "memra": {
+    "tools_called": true,
+    "tool_calls": [
+     {
+      "name": "count",
+      "arguments": {
+       "n": "3"
+      }
+     }
+    ],
+    "content": null,
+    "divergence": "memra's request schema reads a plain-string `type` only, so a list type coerces nothing; vLLM reads list and anyOf types (serve-route step)"
+   }
+  },
+  {
+   "name": "python-literal-object",
+   "output": "<tool_calls:opensource><tool_call:opensource>count<arg_key:opensource>opts</arg_key:opensource><arg_value:opensource>{'a': 1}</arg_value:opensource></tool_call:opensource></tool_calls:opensource>",
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "count",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "n": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "opts": {
+         "type": "object"
+        }
+       }
+      }
+     }
+    }
+   ],
+   "tools_called": true,
+   "content": null,
+   "tool_calls": [
+    {
+     "name": "count",
+     "arguments": {
+      "opts": {
+       "a": 1
+      }
+     }
+    }
+   ],
+   "memra": {
+    "tools_called": true,
+    "tool_calls": [
+     {
+      "name": "count",
+      "arguments": {
+       "opts": "{'a': 1}"
+      }
+     }
+    ],
+    "content": null,
+    "divergence": "memra parses a declared non-string value as JSON only; vLLM falls back to ast.literal_eval"
+   }
+  }
+ ]
+}
