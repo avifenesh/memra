@@ -1450,6 +1450,7 @@ __global__ void __launch_bounds__(256) r_attn_kernel(RAttn a) {
   float* qs = (float*)smem;                 // [8][576]
   float* ks = qs + AT_HG * AT_DK;           // [32][577]
   float* ps = ks + AT_TILE * AT_KW;         // [8][32]
+  __shared__ long krow[AT_TILE];            // the tile's cache rows (element offsets)
   const int qi = blockIdx.x, hg = blockIdx.y, c = blockIdx.z;
   const int tid = threadIdx.x, lane = tid & 31, hl = tid >> 5;
   const int h = hg * AT_HG + hl;
@@ -1473,11 +1474,21 @@ __global__ void __launch_bounds__(256) r_attn_kernel(RAttn a) {
     for (int t0 = j0; t0 < j1; t0 += AT_TILE) {
       const int nt = min(AT_TILE, j1 - t0);
       __syncthreads();
-      for (int e = tid; e < AT_TILE * AT_DK; e += 256) {
-        const int r = e / AT_DK, d = e % AT_DK;
-        float v = 0.0f;
-        if (r < nt) v = a.kv[(long)r_key_row(a, qi, t0 + r, lo) * AT_DK + d];
-        ks[r * AT_KW + d] = v;
+      // the tile's rows first, then its values as independent 16-byte loads (the same values
+      // the element loop read)
+      if (tid < AT_TILE) krow[tid] = tid < nt ? (long)r_key_row(a, qi, t0 + tid, lo) * AT_DK : -1;
+      __syncthreads();
+#pragma unroll 6
+      for (int e = tid; e < AT_TILE * (AT_DK / 4); e += 256) {
+        const int r = e / (AT_DK / 4), d4 = e % (AT_DK / 4);
+        float4 v = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        const long kr0 = krow[r];
+        if (kr0 >= 0) v = *(const float4*)(a.kv + kr0 + 4 * d4);
+        float* dst = ks + r * AT_KW + 4 * d4;
+        dst[0] = v.x;
+        dst[1] = v.y;
+        dst[2] = v.z;
+        dst[3] = v.w;
       }
       __syncthreads();
       float sc = -INFINITY;
@@ -1576,14 +1587,23 @@ __global__ void r_pool_kernel(const float* tk, int dim, int pool, const float* k
   for (int s = 0; s < pool; s++) keys[s][d] = tk[((long)g * pool + s) * dim + d];
   __syncthreads();
   float gate[8], val[8], mx = -INFINITY;
-  for (int s = 0; s < pool; s++) {
-    float a = 0.0f, b = 0.0f;
-    for (int i = 0; i < dim; i++) {
-      a += kgp[(long)d * dim + i] * keys[s][i];
-      b += kvp[(long)d * dim + i] * keys[s][i];
+  // the 2 x pool dot chains run side by side, each in input order
+  float a[8], b[8];
+#pragma unroll
+  for (int s = 0; s < 8; s++) a[s] = b[s] = 0.0f;
+  for (int i = 0; i < dim; i++) {
+    const float kg = kgp[(long)d * dim + i], kv = kvp[(long)d * dim + i];
+#pragma unroll
+    for (int s = 0; s < 8; s++) {
+      if (s < pool) {
+        a[s] += kg * keys[s][i];
+        b[s] += kv * keys[s][i];
+      }
     }
-    gate[s] = a + ape[s * dim + d];
-    val[s] = b;
+  }
+  for (int s = 0; s < pool; s++) {
+    gate[s] = a[s] + ape[s * dim + d];
+    val[s] = b[s];
     mx = fmaxf(mx, gate[s]);
   }
   float z = 0.0f;
@@ -1619,86 +1639,123 @@ extern "C" int memra_hy4r_pool(const void* tk, int dim, int pool, const float* k
 }
 
 // group logits of each query: for g < own = pos / pool, sum_h hw[h] * hscale * relu(q_h . gk_g);
-// -inf for the other groups of the call's `ng`
-__global__ void r_index_logits_kernel(const float* qi, const float* hw, const float* gk, const int* qpos, int heads,
-                                      int dim, int pool, int ng, float hscale, float* out) {
+// -inf for the other groups of the call's `ng`. One thread a (query, group): a block takes 64
+// groups of a query, their keys staged in shared memory; each output is the same chain as
+// before (per head a dot in input order, then the heads in order).
+#define IL_G 64
+__global__ void __launch_bounds__(IL_G) r_index_logits_kernel(const float* qi, const float* hw, const float* gk,
+                                                              const int* qpos, int heads, int dim, int pool, int ng,
+                                                              float hscale, float* out) {
   r_pdl_wait();
   r_pdl_trigger();
   __shared__ float qs[16 * 128];
   __shared__ float ws[16];
-  const int r = blockIdx.x;
+  __shared__ float ks[IL_G * 129];
+  const int r = blockIdx.x, g0 = blockIdx.y * IL_G;
   for (int e = threadIdx.x; e < heads * dim; e += blockDim.x) qs[e] = qi[(long)r * heads * dim + e];
   if (threadIdx.x < heads) ws[threadIdx.x] = hw[(long)r * heads + threadIdx.x] * hscale;
-  __syncthreads();
   const int own = qpos[r] / pool;
-  for (int g = threadIdx.x; g < ng; g += blockDim.x) {
-    float v = -INFINITY;
-    if (g < own) {
-      v = 0.0f;
-      const float* k = gk + (long)g * dim;
-      for (int h = 0; h < heads; h++) {
-        float dot = 0.0f;
-        for (int i = 0; i < dim; i++) dot += qs[h * dim + i] * k[i];
-        v += ws[h] * fmaxf(dot, 0.0f);
-      }
-    }
-    out[(long)r * ng + g] = v;
+  const int gn = min(IL_G, min(own, ng) - g0);  // groups of this block that score
+  for (int e = threadIdx.x; e < max(gn, 0) * dim; e += blockDim.x) {
+    const int gi = e / dim, i = e % dim;
+    ks[gi * 129 + i] = gk[(long)(g0 + gi) * dim + i];
   }
+  __syncthreads();
+  const int g = g0 + threadIdx.x;
+  if (g >= ng) return;
+  float v = -INFINITY;
+  if (g < own) {
+    v = 0.0f;
+    const float* k = ks + threadIdx.x * 129;
+    for (int h = 0; h < heads; h++) {
+      float dot = 0.0f;
+      for (int i = 0; i < dim; i++) dot += qs[h * dim + i] * k[i];
+      v += ws[h] * fmaxf(dot, 0.0f);
+    }
+  }
+  out[(long)r * ng + g] = v;
 }
 
 extern "C" int memra_hy4r_index_logits(const float* qi, const float* hw, const float* gk, const int* qpos, int rows,
                                        int heads, int dim, int pool, int ng, float hscale, float* out, void* stream) {
-  if (rows == 0) return 0;
+  if (rows == 0 || ng <= 0) return 0;
   if (heads > 16 || dim > 128) return 45302;
-  r_launch(r_index_logits_kernel, rows, 128, 0, (cudaStream_t)stream, qi, hw, gk, qpos, heads, dim, pool, ng, hscale, out);
+  r_launch(r_index_logits_kernel, dim3(rows, (ng + IL_G - 1) / IL_G), IL_G, 0, (cudaStream_t)stream, qi, hw, gk, qpos,
+           heads, dim, pool, ng, hscale, out);
   return r_rc();
 }
 
 // the recalled groups (the picks plus the own group, sorted, the own group kept twice when it is
 // also a pick) and the key rows they hold up to the query, ascending
-__global__ void r_recall_kernel(const int* picks, int kp, const int* qpos, int pool, int* sel, int* list, int ldl,
-                                int* lens) {
+// One block of RC_T threads a query, a thread an entry of the recall (kp + 1 <= 1024): own's
+// place among the ascending picks (after its equals), then each distinct group's keys up to the
+// query at its exclusive prefix offset; the same `sel`, list and length as a serial walk.
+#define RC_T 1024
+__global__ void __launch_bounds__(RC_T) r_recall_kernel(const int* picks, int kp, const int* qpos, int pool, int* sel,
+                                                         int* list, int ldl, int* lens) {
   r_pdl_wait();
   r_pdl_trigger();
-  __shared__ int s[1024];
-  const int r = blockIdx.x;
-  const int own = qpos[r] / pool;
+  __shared__ int s[RC_T];
+  __shared__ int wsum[RC_T / 32];
+  __shared__ int tot[2];
+  const int r = blockIdx.x, i = threadIdx.x, lane = i & 31, warp = i >> 5;
+  const int p = qpos[r];
+  const int own = p / pool;
   const int ks = kp + 1;
-  if (threadIdx.x == 0) {
-    // insertion of `own` into the ascending picks (after its equals)
-    int j = 0, w = 0;
-    bool placed = false;
-    for (int i = 0; i < kp; i++) {
-      const int g = picks[(long)r * kp + i];
-      if (!placed && own < g) {
-        s[w++] = own;
-        placed = true;
-      }
-      s[w++] = g;
-      (void)j;
-    }
-    if (!placed) s[w++] = own;
-    for (int i = 0; i < ks; i++) sel[(long)r * ks + i] = s[i];
-    const int p = qpos[r];
-    int n = 0, prev = -1;
-    for (int i = 0; i < ks; i++) {
-      const int g = s[i];
-      if (g == prev) continue;
-      prev = g;
-      for (int o = 0; o < pool; o++) {
-        const int key = g * pool + o;
-        if (key <= p) list[(long)r * ldl + n++] = key;
-      }
-    }
-    lens[r] = n;
+  const int* pk = picks + (long)r * kp;
+  // own's place: the number of picks <= own
+  int le = (i < kp && pk[i] <= own) ? 1 : 0;
+  le = __reduce_add_sync(0xffffffffu, le);
+  if (lane == 0) wsum[warp] = le;
+  __syncthreads();
+  if (i == 0) {
+    int t = 0;
+    for (int w = 0; w < RC_T / 32; w++) t += wsum[w];
+    tot[0] = t;
   }
+  __syncthreads();
+  const int pos = tot[0];
+  int g = 0;
+  if (i < ks) {
+    g = i < pos ? pk[i] : (i == pos ? own : pk[i - 1]);
+    s[i] = g;
+    sel[(long)r * ks + i] = g;
+  }
+  __syncthreads();
+  // keys of this entry: none for a repeat, else those of g up to the query
+  int c = 0;
+  if (i < ks && (i == 0 || s[i - 1] != g)) c = min(max(p - g * pool + 1, 0), pool);
+  // exclusive scan of c over the block
+  int incl = c;
+#pragma unroll
+  for (int o = 1; o < 32; o <<= 1) {
+    const int v = __shfl_up_sync(0xffffffffu, incl, o);
+    if (lane >= o) incl += v;
+  }
+  __syncthreads();
+  if (lane == 31) wsum[warp] = incl;
+  __syncthreads();
+  if (warp == 0) {
+    int wv = wsum[lane];
+#pragma unroll
+    for (int o = 1; o < 32; o <<= 1) {
+      const int v = __shfl_up_sync(0xffffffffu, wv, o);
+      if (lane >= o) wv += v;
+    }
+    wsum[lane] = wv;  // inclusive over warps
+    if (lane == 31) tot[1] = wv;
+  }
+  __syncthreads();
+  const int off = (warp ? wsum[warp - 1] : 0) + incl - c;
+  for (int o = 0; o < c; o++) list[(long)r * ldl + off + o] = g * pool + o;
+  if (i == 0) lens[r] = tot[1];
 }
 
 extern "C" int memra_hy4r_recall(const int* picks, int kp, const int* qpos, int rows, int pool, int* sel, int* list,
                                  int ldl, int* lens, void* stream) {
   if (rows == 0) return 0;
   if (kp + 1 > 1024 || (kp + 1) * pool > ldl) return 45303;
-  r_launch(r_recall_kernel, rows, 32, 0, (cudaStream_t)stream, picks, kp, qpos, pool, sel, list, ldl, lens);
+  r_launch(r_recall_kernel, rows, RC_T, 0, (cudaStream_t)stream, picks, kp, qpos, pool, sel, list, ldl, lens);
   return r_rc();
 }
 
