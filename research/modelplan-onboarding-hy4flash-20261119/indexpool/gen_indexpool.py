@@ -19,9 +19,13 @@ Two process-level substitutions, no line of the pinned code edited:
   scores make exact ties common (a group no head scores above zero has logit 0), so the oracle
   selects with a stable descending sort: the same set, lower index first among equal values.
   The record counts how many queries select a different set under the CPU kernel and under the
-  flipped tie order (higher index first).
+  flipped tie order (higher index first). The replacement is process-wide, so the MoE router's
+  top-k sees it too; there it selects the same set (router scores do not tie).
 
-    venv/bin/python -I gen_indexpool.py OUT.json
+The fixture is bit-reproducible with one BLAS thread; other thread counts move a few values by
+an ulp through the summation order.
+
+    OMP_NUM_THREADS=1 venv/bin/python -I gen_indexpool.py OUT.json
 """
 
 import hashlib

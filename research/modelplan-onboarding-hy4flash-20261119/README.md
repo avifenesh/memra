@@ -418,7 +418,8 @@ The rule is CUDA `torch.topk`'s, where the vendor program runs. PyTorch v2.15.0
 (`31a77fc9c0a7`), `aten/src/ATen/native/cuda/TensorTopK.cu`: both the single-block
 (`sbtopk::gatherTopK`) and the multi-block (`mbtopk::gatherTopK`) kernel first write every value
 strictly above the k-th value, then the values equal to it in ascending input index until k are
-written (a prefix count per warp or per block keeps that order). `TensorTopK.cpp` sorts the
+written (a prefix count per warp or per block keeps that order). Values compare by
+`TopKTypeConfig<float>::convert` (`SortingRadixSelect.cuh`), an order-preserving integer key. `TensorTopK.cpp` sorts the
 result afterwards when `sorted=True`, which reorders but does not change the set. Values compare
 by their radix key, so `-0.0` ranks below `0.0`; within one query all zero logits carry the same
 sign (the head weights are per query), which the oracle asserts. The full-sort and warp
@@ -433,7 +434,11 @@ groups, 2 kept plus the query's own. It maps float32 to float64 as in step 3 and
 `topk` in the process by a stable descending sort, which selects the CUDA set. It records the
 token keys, group keys, group logits, selected groups and the visible-key mask of each indexed
 layer, every module's inputs and outputs, and the last hidden state (`indexpool/indexpool.json`,
-sha256 `3805658873f1eacb...`, reproduced bit for bit by a second run; `indexpool/gen.log`). Under
+sha256 `3805658873f1eacb...`, reproduced bit for bit with `OMP_NUM_THREADS=1`; `indexpool/gen.log`).
+Other thread counts change the summation order of a few BLAS reductions: at 24 threads 16
+values move by at most 2.2e-16, the selection does not. The `topk` replacement is process-wide,
+so the MoE router's top-k sees it too; it selects the same set there (no ties among router
+scores) and matches the lower-index rule `latent_moe` already follows. Under
 the flipped tie order 5 and 4 of the 41 queries select different closed groups; under the CPU
 kernel 3 and 3.
 
@@ -447,10 +452,12 @@ kernel 3 and 3.
   visible, and 6 and 4 queries tie at their last kept group;
 - attention on all four layers, each decoder layer, and the stack through `hc_head` and the
   final norm;
-- red arms, each moving the indexed attention by more than 1e-6: pool size 2 (2.2, 3.8), the
-  `intra_group_ape` omitted (1.2, 2.8), the flipped tie order (2.0, 1.5) and dense causal
-  attention past the budget (2.1, 3.9). The last is step 3's program, which refused to run past
-  the budget.
+- red arms, each moving the indexed attention by more than 1e-6 (layer 0, layer 1): pool size 2
+  (3.8, 2.2), the `intra_group_ape` omitted (2.8, 1.2), the flipped tie order (1.5, 2.0) and
+  dense causal attention past the budget (3.9, 2.1). The last is step 3's program, which refused
+  to run past the budget.
+- the config refuses a zero budget (`index_topk` 0 passes the divisibility and alias checks but
+  holds not even the query's own group).
 
 The step 3 gate runs unchanged in substance: its indexed layers stay below the budget, and an
 indexed layer now carries its indexer weights.
