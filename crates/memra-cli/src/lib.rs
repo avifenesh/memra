@@ -22,6 +22,8 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
+mod checkpoint_tape;
+
 const MAX_TEXT_BYTES: usize = 100_000_000;
 
 pub struct InspectRequest {
@@ -105,6 +107,16 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                 .native_runner
                 .or_else(|| std::env::var_os("MEMRA_NATIVE_CHECKPOINT_RUNNER").map(PathBuf::from))
                 .ok_or("checkpoint parity requires --native-runner or MEMRA_NATIVE_CHECKPOINT_RUNNER; no fallback is allowed")?;
+            if !pack.checkpoint_requests.is_empty() {
+                return verify_checkpoint_tape_set(
+                    pack,
+                    &request.source,
+                    &oracle_path,
+                    &runner,
+                    &out_dir,
+                    summary.family,
+                );
+            }
             let native_path = out_dir.join("native-oracle.tsv");
             run_native_checkpoint(&runner, &request.source, &native_path, probe)?;
             let runner_hash = hex_sha256(&std::fs::read(&runner)?);
@@ -1088,6 +1100,88 @@ with open(args.out, "w", encoding="utf-8") as f:
     );
     write_atomic(&out_dir.join("capture-hf-oracle.py"), script.as_bytes())?;
     Ok(())
+}
+
+/// The tape-set checkpoint gate ([`checkpoint_tape`]): every request the pack pins, scored at
+/// every position by the native runner and compared to its oracle tape.
+fn verify_checkpoint_tape_set(
+    pack: &'static ModelPack,
+    source: &str,
+    oracle_dir: &Path,
+    runner: &Path,
+    out_dir: &Path,
+    family: &'static str,
+) -> Result<VerifySummary, Box<dyn std::error::Error>> {
+    if !oracle_dir.is_dir() || !Path::new(source).is_dir() {
+        return Err(format!(
+            "model pack {} checks a tape set: --oracle names a directory of {} tapes and the source a local safetensors directory; no fallback is allowed",
+            pack.family,
+            checkpoint_tape::TAPE_FORMAT
+        )
+        .into());
+    }
+    let plan = pack.compile_plan(&load_config_only(source)?)?;
+    let geometry = checkpoint_tape::Geometry::from_plan(&plan)?;
+    let fail = |error: &dyn std::fmt::Display| -> Result<(), Box<dyn std::error::Error>> {
+        write_atomic(
+            &out_dir.join("checkpoint-parity.tsv"),
+            format!(
+                "status\tfailed\nerror\t{}\n",
+                lock_value(&error.to_string())
+            )
+            .as_bytes(),
+        )?;
+        write_atomic(
+            &out_dir.join("gates.txt"),
+            format_gate_results_with_receipts(
+                pack,
+                out_dir,
+                &[Gate::Config, Gate::TokenizerTemplate, Gate::TensorCensus],
+                &[Gate::CheckpointParity],
+            )
+            .as_bytes(),
+        )?;
+        Ok(())
+    };
+    let rows = match checkpoint_tape::verify_tape_set(
+        pack, &geometry, source, oracle_dir, runner, out_dir,
+    ) {
+        Ok(rows) => rows,
+        Err(error) => {
+            fail(&error)?;
+            return Err(error);
+        }
+    };
+    let artifact_lock = std::fs::read(out_dir.join("artifact.lock"))?;
+    let receipt = format!(
+        "status\tpassed\nformat\t{}\nfamily\t{}\n{rows}checkpoint_probe_sha256\t{}\ncheckpoint_requests_sha256\t{}\nartifact_lock_sha256\t{}\nnative_runner_sha256\t{}\n",
+        checkpoint_tape::TAPE_FORMAT,
+        pack.family,
+        probe_sha256(pack.checkpoint_probe_tokens()),
+        checkpoint_tape::requests_sha256(pack.checkpoint_requests),
+        hex_sha256(&artifact_lock),
+        hex_sha256(&std::fs::read(runner)?),
+    );
+    write_atomic(&out_dir.join("checkpoint-parity.tsv"), receipt.as_bytes())?;
+    write_atomic(
+        &out_dir.join("gates.txt"),
+        format_gate_results_with_receipts(
+            pack,
+            out_dir,
+            &[
+                Gate::Config,
+                Gate::TokenizerTemplate,
+                Gate::TensorCensus,
+                Gate::CheckpointParity,
+            ],
+            &[],
+        )
+        .as_bytes(),
+    )?;
+    Ok(VerifySummary {
+        family,
+        stage: VerifyStage::Checkpoint,
+    })
 }
 
 fn run_native_checkpoint(
@@ -2431,6 +2525,15 @@ fn format_lock(
     }
     if let Some(probe) = pack.checkpoint_probe {
         writeln!(output, "checkpoint_probe_sha256={}", probe_sha256(probe)).unwrap();
+    }
+    // a pinned tape set is part of the record: another request set is another lock
+    if !pack.checkpoint_requests.is_empty() {
+        writeln!(
+            output,
+            "checkpoint_requests_sha256={}",
+            checkpoint_tape::requests_sha256(pack.checkpoint_requests)
+        )
+        .unwrap();
     }
     writeln!(output, "config_sha256={config}").unwrap();
     writeln!(output, "census_sha256={census}").unwrap();

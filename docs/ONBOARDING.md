@@ -279,6 +279,18 @@ next to a hardware-primitive GPU route) gives each class its own band in
 `checkpoint_parity`. Set a class band from the source program's own spread between two backends on
 the probe, never from the native runner's result.
 
+A pack whose program selects (a sparse indexer, a router, a hashed memory) can pin a tape set
+instead of one last-token row: `checkpoint_requests` names requests the gate scores at every
+position, each a prefill and then one teacher-forced decode call per later token, bound to the
+oracle by its token ids' sha256. `--oracle` then names a directory of `memra-checkpoint-tape-v2`
+tapes, one per request, and the CLI runs the native runner as `RUNNER DIR --request FILE --tape
+OUT` (`crates/memra-cli/src/checkpoint_tape.rs`). The gate compares selections before logits:
+each indexer call's recalled groups (the native pick must be its own logits' top-k under the
+plan's tie order, and a group that differs from the oracle's passes only as a near tie of the
+oracle's own logits), each Engram call's table rows exactly, then every position's argmax and
+band. Hy4-flash pins a chat turn and one request past its indexer budget, prefilled on each side
+of the budget (`research/modelplan-onboarding-hy4flash-20261119/checkpoint/`).
+
 ## 4. Prove tokenizer, template, tools and thinking
 
 The pack declares where the tokenizer comes from (`tokenizer_sources`: `TokenizerJson`,

@@ -1,0 +1,101 @@
+# Model onboarding
+
+Onboarding takes a new model family, or a new artifact of a known family, from a pinned checkpoint
+to a support record. This procedure is for maintainers and agents. The owner rules behind it are in
+[AGENTS.md, Model onboarding](../AGENTS.md#model-onboarding-compile-a-native-plan-not-a-new-engine-path-owner-2026-08-22).
+
+Memra compiles each model into a native `ModelPlan`, binds the checkpoint's tensors to that plan,
+and validates every tuned program against the reference executor. A new model is a model pack, not
+a new engine path. The preferred semantic source is the official safetensors checkpoint with its
+config, tokenizer, template, quantization metadata and every indexed or auxiliary tensor file.
+GGUF stays a supported import format and passes the same gates. Neither format may redefine the
+checkpoint's compute program, and a missing, duplicate, substituted or unsupported surface fails
+closed.
+
+Related documents: [Testing](TESTING.md) (gate catalog), [Release qualification](RELEASE-QUALIFICATION.md)
+(per-cell push evidence, and [what a tag record covers](RELEASE-QUALIFICATION.md#what-a-record-covers)),
+[Releasing](RELEASING.md) (the release procedure), [Flags](FLAGS.md),
+[Serving](SERVING.md) (drafter attach syntax), [Draft regime](DRAFT-REGIME.md),
+[Tokenizer program](TOKENIZER-PROGRAM.md), [Execution surfaces](EXECUTION-SURFACES.md) and
+[`support-records.toml`](support-records.toml). A worked same-family example (Qwen 3.8 27B FP8
+safetensors, 2026-08) and the procedure this page replaced are in
+[history/ONBOARDING.md](history/ONBOARDING.md).
+
+## The pieces
+
+| Path | What it owns |
+|---|---|
+| `crates/memra-gguf/src/model_plan.rs` | `ModelPlan`, the typed program: norms, RoPE, attention and state mixers, gates, MLPs, residual topology, logits transforms, MTP blocks, multimodal operations. No kernel choice. |
+| `crates/memra-gguf/src/tensor_contract.rs` | Checkpoint names to semantic `TensorId`s with shape, owner, transform and quant layout, per dialect (GGUF or HF). |
+| `crates/memra-gguf/src/model_packs/<family>/` | The `ModelPack` (fields below). Statically linked Rust; no plugin ABI. |
+| `crates/memra-gguf/src/config.rs` | Parses an artifact into `ModelConfig` (`Arch`, sizes, per-layer arrays). `ArchGeometryTable` holds per-layer geometry for Qwen35, Qwen35Moe, Qwen4Exp, Step35 and MiMoV2; other architectures keep their own config paths. |
+| `crates/memra-gguf/src/checkpoint_binding.rs` | `bind_source`: the contract against the checkpoint's metadata census, before any upload. `audit_consumption`: bound tensors the loader never read. |
+| `crates/memra-gguf/src/execution_manifest.rs` | Which tuned rewrites a plan is eligible for, per `RewriteSurface` (`CarriedPrime`, `DecodeEager`, `DecodeBatch`, `DecodeGraph`, `MtpSpec`, `Glm5Spec`, `Pipeline`), and the receipts that admit them. Per-operation support comes from `op_registry.rs` ([Execution surfaces](EXECUTION-SURFACES.md)). |
+| `crates/memra-reference/` | The unfused CPU executor and semantic baseline. An unsupported operation is a named error, never a fallback. |
+| `crates/memra-cli/` | The `memra model` commands: `inspect`, `scaffold`, `verify`, `qualify`. |
+| `docs/support-records.toml` | One record per supported capability, with the receipts behind each passed gate. |
+
+`ModelPack` fields: `family`, `aliases`, `matches_config`, `config_layout`, `output_head`,
+`tensor_consumption`, `tokenizer_sources`, `template`, `support`, `gates`, `checkpoint_parity`,
+`plan_builder`, `tensor_schema` and `tiny_plan`. Load-time selection walks `PACKS` in order and
+takes the first pack whose `matches_config` accepts the config (`llama_dense` is last).
+`ONBOARDING_PROFILES` are artifact-storage profiles (`hy3_nvfp4`, `mimo_v2_mint`, `mimo_v2_source`)
+that `--against` can name but that never auto-select. `--against` takes a family name or any alias.
+
+## Support states and their gates
+
+A pack's `support` field is its ModelPlan state, not a claim about older handwritten paths.
+`tools/check-support-states.py` (CI gates job) requires it to equal the highest state its own
+records in `docs/support-records.toml` prove, and every passed gate in a record must cite a
+tracked `gates.txt` receipt for the same family (or `ci:verify-tiny`, the hosted tiny test, for
+Config and TinyParity). The full rules are at the top of that file.
+
+- `NativeReference` needs Config and TinyParity. <!-- support: none; not NativeReference -->
+- `NativeQualified` adds TokenizerTemplate, TensorCensus, CheckpointParity and Serve on a pinned, <!-- support: none; not NativeQualified -->
+  non-tiny artifact, with a memra commit, topology and route in the record.
+- `NativeTuned` adds RewriteParity. <!-- support: none; not NativeTuned -->
+
+A pack with `support: None` inspects but has no native execution, and `verify tiny` refuses it.
+A tiny fixture never promotes a pack. Every pack declares all seven gates.
+
+| Gate | Written by | Receipt in the bundle directory |
+|---|---|---|
+| Config | `inspect`, `verify tiny` (`verify config` checks it and writes nothing) | `gates.txt` |
+| TokenizerTemplate | `inspect` | `tokenizer-contract.tsv` (`tokenizer-error.txt` on failure) |
+| TensorCensus | `inspect` | `tensor-census.tsv`, `binding=` in `artifact.lock` (`contract-error.txt` on failure) |
+| TinyParity | `verify tiny` | `tiny-gate.tsv`, `reference-oracle.tsv` |
+| CheckpointParity | `verify checkpoint` | `checkpoint-parity.tsv` |
+| RewriteParity | `verify rewrite` | `rewrite-receipts.tsv`, `rewrite-receipts/<id>.tsv` |
+| Serve | `verify serve` | `serve-gate.tsv`, `serve.log`, `serve-response.json` |
+
+Each stage that writes a directory rewrites its `gates.txt` from the lock's verdicts and every
+receipt there that still binds to the lock and the family.
+
+## Ordered checklist
+
+Run from source with `cargo run -p memra-cli --bin memra -- model ...`, or a built `memra`. Any
+error prints `memra: <error>` and exits 2. `<bundle>` is one directory reused by inspect,
+checkpoint, rewrite and serve; each stage reads what the previous one wrote there.
+
+| Phase | Command or work | Exit condition |
+|---|---|---|
+| 0 | Branch, receipt namespace, pinned source | `hf-id@<40-char sha>` or a local artifact plus its byte manifest recorded |
+| 1 | `memra model inspect <source> --against <family> --out <bundle>` | Config, TokenizerTemplate and TensorCensus pass, or every difference is classified |
+| 2 | `memra model scaffold <family> --out <dir>`, then the Rust pack | `memra model verify config <source> --against <family>` passes |
+| 3 | Typed operation plus its reference implementation, only where the plan needs one | `memra model verify tiny --against <family> --out <dir>` matches the pinned oracle |
+| 4 | Tokenizer, template, tools, thinking | token-id parity and rendered-byte goldens pass |
+| 5 | Drafter attach | `run-spec` K=1..8 self-consistency and non-zero acceptance |
+| 6 | `tools/generate-arch-gates.py` | chunk, tick and B>1 scaffolds reviewed and merged by hand |
+| 7 | Rewrite receipts, then `memra model verify rewrite <receipt> --against <family> --out <bundle>` | every enabled rewrite has a bound receipt |
+| 8 | `verify checkpoint`, `verify serve`, the device battery | all green with raw logs |
+| 9 | Pack `support`, record, `memra model qualify`, model card, INDEX row | `python3 tools/check-support-states.py` passes |
+
+## 0. Freeze the lane and artifact
+
+Work on a dedicated branch or worktree. Put receipts under a dated
+`research/modelplan-onboarding-<topic>-<YYYYMMDD>/` directory (for example
+[`research/modelplan-onboarding-dsv41-20261109/`](../research/modelplan-onboarding-dsv41-20261109/)).
+Record the branch, the source commit, the worktree status and the GPU state at entry.
+
+The source is either a pinned Hugging Face revision, `owner/repo@<40-character commit sha>`, or a
+local path: a GGUF file (any shard of a split GGUF), an HF

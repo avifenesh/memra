@@ -987,3 +987,35 @@ fn tiny_config_is_the_artifact_program_at_small_width() {
         }
     }
 }
+
+#[test]
+fn the_checkpoint_gate_scores_a_chat_turn_and_both_sides_of_the_indexer_budget() {
+    let pack = by_alias("hy_v4_flash").unwrap();
+    let hy = config().hy_v4_flash.unwrap();
+    let budget = hy.index_topk as usize;
+    let gate = pack
+        .checkpoint_parity_for("hy-v4-flash-source-program")
+        .unwrap();
+    assert!(gate.require_argmax);
+    assert_ne!(
+        Some(gate),
+        pack.checkpoint_parity,
+        "the native class has its own band"
+    );
+    let probe = pack.checkpoint_probe.unwrap();
+    // a chat turn of the artifact's dialect: <hy_start> ... <hy_end>
+    assert_eq!((probe[0], *probe.last().unwrap()), (120000, 120025));
+    let [chat, long, split] = pack.checkpoint_requests else {
+        panic!("three pinned requests")
+    };
+    assert_eq!(chat.name, "chat");
+    assert!(chat.decode_from < chat.positions, "the chat turn decodes");
+    assert_eq!(long.tokens_sha256, split.tokens_sha256);
+    assert!(long.positions > budget, "past the indexer budget");
+    assert!(long.decode_from > budget, "the indexer runs in the prefill");
+    assert!(
+        split.decode_from <= budget,
+        "the indexer switches on in the decode"
+    );
+    assert!(split.positions > budget + hy.index_pool as usize);
+}

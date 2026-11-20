@@ -31,6 +31,7 @@ pub static PACK: ModelPack = ModelPack {
     checkpoint_parity: None,
     checkpoint_parity_classes: &[],
     checkpoint_probe: None,
+    checkpoint_requests: &[],
     matches_config: |config| {
         matches!(config.arch, Arch::DeepSeekV4)
             && config.dsv4.is_some()
@@ -66,6 +67,7 @@ pub static DSPARK_PACK: ModelPack = ModelPack {
     }),
     checkpoint_parity_classes: &[],
     checkpoint_probe: None,
+    checkpoint_requests: &[],
     matches_config: |config| {
         matches!(config.arch, Arch::DeepSeekV4)
             && config.dsv4.is_some()

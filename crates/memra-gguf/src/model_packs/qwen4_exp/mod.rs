@@ -53,6 +53,7 @@ pub static PACK: ModelPack = ModelPack {
     checkpoint_parity: None,
     checkpoint_parity_classes: &[],
     checkpoint_probe: None,
+    checkpoint_requests: &[],
     matches_config: |config| matches!(config.arch, Arch::Qwen4Exp) && config.qwen4exp.is_some(),
     plan_builder: canonical_plan,
     tensor_schema,
