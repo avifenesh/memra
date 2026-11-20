@@ -400,6 +400,18 @@ mod ffi {
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_hy4r_sync(stream: *mut c_void) -> i32;
+        pub fn memra_hy4r_tile_bytes(rows: i64, rb: i64) -> i64;
+        pub fn memra_hy4r_tile(
+            src: *const c_void,
+            rows: i64,
+            rb: i64,
+            src_ld: i64,
+            src_bs: i64,
+            dst: *mut c_void,
+            dst_bs: i64,
+            batch: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_hy4r_pinned(p: *mut *mut c_void, bytes: usize) -> i32;
         pub fn memra_hy4r_pinned_free(p: *mut c_void) -> i32;
     }
@@ -598,6 +610,41 @@ impl Dev {
         }
         Ok(())
     }
+
+    /// Free a staging buffer (stream-ordered) and take it off the resident count.
+    fn release(&self, b: DBuf) {
+        self.allocated
+            .set(self.allocated.get().saturating_sub(b.bytes));
+        drop(b);
+    }
+
+    /// `batch` entries of `rows` rows of `rb` bytes (`src_ld` apart, entries `src_bs` apart) in
+    /// the GEMM weights' tile layout (`r_toff` in the kernel): returns the buffer and an entry's
+    /// bytes.
+    fn tiled(
+        &self,
+        src: *const std::os::raw::c_void,
+        rows: usize,
+        rb: usize,
+        src_ld: usize,
+        src_bs: usize,
+        batch: usize,
+    ) -> Result<(DBuf, usize), String> {
+        let per = unsafe { ffi::memra_hy4r_tile_bytes(rows as i64, rb as i64) } as usize;
+        let b = self.alloc(per * batch)?;
+        cu!(memra_hy4r_tile(
+            src,
+            rows as i64,
+            rb as i64,
+            src_ld as i64,
+            src_bs as i64,
+            b.v(),
+            per as i64,
+            batch as i32,
+            self.sp
+        ))?;
+        Ok((b, per))
+    }
 }
 
 /// Page-locked host staging, grown on demand: an upload from it runs in stream order without
@@ -700,6 +747,8 @@ pub struct W {
 pub struct Ckpt {
     pub st: StModel,
     stage: std::cell::RefCell<Vec<u8>>,
+    /// device staging for a GEMM weight's stored rows before it is tiled, reused across tensors
+    dstage: std::cell::RefCell<Option<DBuf>>,
     pub bytes_read: std::cell::Cell<usize>,
 }
 
@@ -720,6 +769,7 @@ impl Ckpt {
         Ok(Self {
             st: StModel::open(dir).map_err(|e| format!("open {}: {e}", dir.display()))?,
             stage: std::cell::RefCell::new(vec![0u8; 64 << 20]),
+            dstage: std::cell::RefCell::new(None),
             bytes_read: std::cell::Cell::new(0),
         })
     }
@@ -794,6 +844,49 @@ impl Ckpt {
         Ok(out)
     }
 
+    /// A tensor's stored bytes into the device staging buffer (grown as needed); returns its
+    /// device pointer. Valid until the next staging upload (stream-ordered).
+    fn upload_staged(
+        &self,
+        dev: &Dev,
+        name: &str,
+        dtype: &str,
+        shape: &[usize],
+    ) -> Result<*mut std::os::raw::c_void, String> {
+        let len = self.check(name, dtype, shape)?;
+        let p = self.staging(dev, len)?;
+        self.stream(name, |off, c| {
+            dev.up_bytes((p as u64 + off as u64) as *mut _, c)
+        })?;
+        Ok(p)
+    }
+
+    /// The device staging buffer, at least `len` bytes.
+    fn staging(&self, dev: &Dev, len: usize) -> Result<*mut std::os::raw::c_void, String> {
+        let mut ds = self.dstage.borrow_mut();
+        if ds.as_ref().is_none_or(|b| b.bytes < len) {
+            if let Some(old) = ds.take() {
+                dev.release(old);
+            }
+            *ds = Some(dev.alloc(len)?);
+        }
+        Ok(ds.as_ref().unwrap().v())
+    }
+
+    /// Host bytes into the device staging buffer.
+    fn stage_host(&self, dev: &Dev, bytes: &[u8]) -> Result<*mut std::os::raw::c_void, String> {
+        let p = self.staging(dev, bytes.len())?;
+        dev.up_bytes(p, bytes)?;
+        Ok(p)
+    }
+
+    /// Free the device staging buffer (after the last weight).
+    pub fn release_staging(&self, dev: &Dev) {
+        if let Some(b) = self.dstage.borrow_mut().take() {
+            dev.release(b);
+        }
+    }
+
     fn upload(&self, dev: &Dev, name: &str, dtype: &str, shape: &[usize]) -> Result<DBuf, String> {
         let len = self.check(name, dtype, shape)?;
         let b = dev.alloc(len)?;
@@ -829,7 +922,8 @@ impl Ckpt {
             .collect())
     }
 
-    /// A linear weight `[n, k]` in the format the plan names for it.
+    /// A GEMM weight `[n, k]` in the format the plan names for it, resident in the tile layout
+    /// the route's GEMMs read (`Dev::tiled`).
     fn weight(
         &self,
         dev: &Dev,
@@ -838,10 +932,32 @@ impl Ckpt {
         k: usize,
         format: HyV4WeightFormat,
     ) -> Result<W, String> {
+        self.weight_rows(dev, name, n, k, format, true)
+    }
+
+    /// A linear weight `[n, k]` in the format the plan names for it: tiled for the route's
+    /// GEMMs, or with its rows as stored (the F32 islands' GEMM reads those).
+    fn weight_rows(
+        &self,
+        dev: &Dev,
+        name: &str,
+        n: usize,
+        k: usize,
+        format: HyV4WeightFormat,
+        tiled: bool,
+    ) -> Result<W, String> {
         let dtype = self.dtype(name)?;
+        let data = |dt: &str, rb: usize| -> Result<DBuf, String> {
+            if tiled {
+                let p = self.upload_staged(dev, name, dt, &[n, k])?;
+                Ok(dev.tiled(p, n, rb, rb, 0, 1)?.0)
+            } else {
+                self.upload(dev, name, dt, &[n, k])
+            }
+        };
         match (format, dtype.as_str()) {
             (HyV4WeightFormat::Bf16, "BF16") => Ok(W {
-                data: self.upload(dev, name, "BF16", &[n, k])?,
+                data: data("BF16", k * 2)?,
                 scales: None,
                 scale2: None,
                 fmt: FMT_BF16,
@@ -855,7 +971,7 @@ impl Ckpt {
                 let stem = name.strip_suffix(".weight").unwrap_or(name);
                 let grid = [n.div_ceil(128), k.div_ceil(128)];
                 Ok(W {
-                    data: self.upload(dev, name, "F8_E4M3", &[n, k])?,
+                    data: data("F8_E4M3", k)?,
                     scales: Some(self.upload(
                         dev,
                         &format!("{stem}.weight_scale_inv"),
@@ -890,8 +1006,11 @@ impl Ckpt {
         if group != 16 {
             return Err(format!("{stem}: NVFP4 group {group}, the kernel runs 16"));
         }
+        let rows =
+            self.upload_staged(dev, &format!("{stem}.weight"), "U8", &[experts, n, k / 2])?;
+        let (data, per) = dev.tiled(rows, n, k / 2, k / 2, n * k / 2, experts)?;
         Ok(W {
-            data: self.upload(dev, &format!("{stem}.weight"), "U8", &[experts, n, k / 2])?,
+            data,
             scales: Some(self.upload(
                 dev,
                 &format!("{stem}.weight_scale"),
@@ -903,7 +1022,7 @@ impl Ckpt {
             n,
             k,
             grid_cols: 0,
-            wbs: n * k / 2,
+            wbs: per,
             scbs: n * k / 16,
         })
     }
@@ -935,9 +1054,10 @@ struct Attn {
     qb: W,
     kva: W,
     kva_norm: DBuf,
-    /// `kv_b_proj`'s nope rows per head, transposed: `[heads, kv_lora, nope]` BF16 (exact)
+    /// `kv_b_proj`'s nope rows per head, transposed: `[heads, kv_lora, nope]` BF16 (exact),
+    /// tiled per head
     kb_t: DBuf,
-    /// `kv_b_proj` as stored, for its value rows
+    /// `kv_b_proj`'s value rows per head `[heads, 256, kv_lora]`, tiled per head
     kvb: DBuf,
     o: W,
     post_norm: DBuf,
@@ -1537,8 +1657,24 @@ impl<'a> Route<'a> {
                 qb: ck.weight(&dev, &at("q_b_proj.weight"), heads * (nope + rd), ql, pw)?,
                 kva: ck.weight(&dev, &at("kv_a_proj_with_mqa.weight"), kvl + rd, h, bf)?,
                 kva_norm: ck.vec(&dev, &at("kv_a_layernorm.weight"), &[kvl])?,
-                kb_t: dev.upload(&kb_t)?,
-                kvb: dev.upload(&kvb_host)?,
+                kb_t: {
+                    let rows = ck.stage_host(&dev, &kb_t)?;
+                    dev.tiled(rows, kvl, nope * 2, nope * 2, kvl * nope * 2, heads)?
+                        .0
+                },
+                kvb: {
+                    // the value rows of each head (192..448 of its 448), tiled per head
+                    let rows = ck.stage_host(&dev, &kvb_host)?;
+                    dev.tiled(
+                        (rows as u64 + (nope * kvl * 2) as u64) as *const _,
+                        vd,
+                        kvl * 2,
+                        kvl * 2,
+                        (nope + vd) * kvl * 2,
+                        heads,
+                    )?
+                    .0
+                },
                 o: ck.weight(&dev, &at("o_proj.weight"), h, heads * vd, pw)?,
                 post_norm: ck.vec(&dev, &at("post_proj_norm.weight"), &[h])?,
                 sinks,
@@ -1590,7 +1726,7 @@ impl<'a> Route<'a> {
                         .ok_or(format!("layer {il}: no shared expert"))?
                         .intermediate_size as usize;
                     Mlp::Moe {
-                        router: ck.weight(&dev, &m("gate.weight"), e, h, bf)?,
+                        router: ck.weight_rows(&dev, &m("gate.weight"), e, h, bf, false)?,
                         bias: if selection_bias {
                             Some(ck.vec(&dev, &m("gate.e_score_correction_bias"), &[e])?)
                         } else {
@@ -1670,6 +1806,7 @@ impl<'a> Route<'a> {
             scale: ck.vec(&dev, "model.hc_head.hc_head_scale", &[1])?,
         };
         let final_norm = ck.vec(&dev, "model.norm.weight", &[h])?;
+        ck.release_staging(&dev);
         let sess = Self::alloc_session(&dev, &out_layers, cap)?;
         dev.sync()?;
         Ok(Self {
@@ -2659,8 +2796,8 @@ impl<'a> Route<'a> {
             olat,
             (heads * 512) as i64,
             512,
-            a.kvb.at(192 * kvl * 2),
-            (448 * kvl * 2) as i64,
+            a.kvb.v(),
+            (256 * kvl * 2) as i64,
             std::ptr::null(),
             0,
             std::ptr::null(),

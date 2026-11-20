@@ -53,6 +53,7 @@ L2.
 | 4: attention key tiles, indexer logits and recall in parallel | 12.90 [12.76-13.01] | 76.9 | 11.98 [11.98-12.00] | 83.2 | 93.7 | 280.8 |
 | 5: F32 islands split at their 16-input seams (router, head) | 13.36 [13.36-13.36] | 74.9 | 12.29 [12.28-12.30] | 81.1 | 94.8 | 280.1 |
 | 6: one launch for the GEMMs that share an input | 13.52 [13.52-13.53] | 73.9 | 12.40 [12.40-12.42] | 80.4 | 100.2 | 283.4 |
+| 7: GEMM weights resident in 4 KiB tiles | 14.18 [14.18-14.18] | 70.5 | 13.00 [13.00-13.04] | 76.7 | 106.0 | 294.1 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -143,6 +144,18 @@ expert's gate and up, the routed experts' gate and up, the latent up projection 
 expert's down projection, and an Engram layer's value and four key projections. About 240 fewer
 launches a step and small outputs running beside large ones: 74.9 -> 73.9 ms on `chat`, 81.1 ->
 80.4 ms on `long`.
+
+### 7. GEMM weights resident in 4 KiB tiles (`receipts/s7-tiles/`)
+
+In the model the decode GEMMs ran at 160 to 185 GB/s, against 220 to 248 alone in `kbench`. Back
+to back over 600 copies of `o_proj` spread through 30 GB (`kbench spread`, the model's pattern) the
+same kernel held 178 GB/s: each stage of a block read 32 rows x 128 bytes, 32 places 16 KB apart.
+Every `memra_hy4r_gemm` weight is now resident in a tile layout (`memra_hy4r_tile` at load, through
+one reused staging buffer): 32 rows x 128 bytes contiguous, a 32-row block's tiles in K order, so a
+stage is one 4 KiB read; the prefill kernel addresses the same layout. Same bytes, same values:
+spread 178 -> 200.5 GB/s, decode step 73.9 -> 70.5 ms on `chat`, 80.4 -> 76.7 ms on `long`, prefill
+100 -> 106 and 283 -> 294 tokens/s. Resident 87.0 GiB (the head and router stay row-major for the
+F32 kernels; `kv_b`'s nope rows are kept only transposed).
 
 Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct

@@ -222,8 +222,10 @@ impl Ckpt {
         match self.dtype(name)?.as_str() {
             "U8" => {
                 let stem = name.strip_suffix(".weight").unwrap_or(name);
+                // the codes in the GEMMs' tile layout, as `Ckpt::weight` keeps every GEMM weight
+                let codes = self.upload_staged(dev, name, "U8", &[n, k / 2])?;
                 Ok(W {
-                    data: self.upload(dev, name, "U8", &[n, k / 2])?,
+                    data: dev.tiled(codes, n, k / 2, k / 2, 0, 1)?.0,
                     scales: Some(self.upload(
                         dev,
                         &format!("{stem}.weight_scale"),
@@ -306,8 +308,25 @@ impl<'a> Route<'a> {
                 qb: ck.dfly_weight(dev, &at("q_b_proj.weight"), heads * (nope + rd), ql)?,
                 kva: ck.dfly_weight(dev, &at("kv_a_proj_with_mqa.weight"), kvl + rd, h)?,
                 kva_norm: ck.vec(dev, &at("kv_a_layernorm.weight"), &[kvl])?,
-                kb_t: dev.upload(&kb_t)?,
-                kvb: dev.upload(&kvb_host)?,
+                // tiled per head as the target's (`Route::load`): the absorbed-query rows, and
+                // the value rows of each head (192..448 of its 448)
+                kb_t: {
+                    let rows = ck.stage_host(dev, &kb_t)?;
+                    dev.tiled(rows, kvl, nope * 2, nope * 2, kvl * nope * 2, heads)?
+                        .0
+                },
+                kvb: {
+                    let rows = ck.stage_host(dev, &kvb_host)?;
+                    dev.tiled(
+                        (rows as u64 + (nope * kvl * 2) as u64) as *const _,
+                        vd,
+                        kvl * 2,
+                        kvl * 2,
+                        (nope + vd) * kvl * 2,
+                        heads,
+                    )?
+                    .0
+                },
                 o: ck.dfly_weight(dev, &at("o_proj.weight"), h, heads * vd)?,
                 post_norm: ck.vec(dev, &at("post_proj_norm.weight"), &[h])?,
                 sinks: ck.vec(dev, &at("learnable_sink_param"), &[heads])?,
@@ -395,6 +414,8 @@ impl<'a> Route<'a> {
                 ));
             }
         }
+        // the tiling's staging buffer is not the drafter's
+        ck.release_staging(dev);
         dev.sync()?;
         let mut drafter = drafter;
         drafter.weight_bytes = dev.live_bytes().saturating_sub(before);
@@ -1065,8 +1086,8 @@ impl<'a> Route<'a> {
                 olat,
                 (heads * 512) as i64,
                 512,
-                l.kvb.at(192 * kvl * 2),
-                (448 * kvl * 2) as i64,
+                l.kvb.v(),
+                (256 * kvl * 2) as i64,
                 std::ptr::null(),
                 0,
                 std::ptr::null(),

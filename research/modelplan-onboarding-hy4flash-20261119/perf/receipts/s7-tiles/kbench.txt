@@ -1,0 +1,16 @@
+# kbench, this commit: every small-row GEMM on tiled weights equals the tiled kernel bit for bit
+o_proj fp8 3072x16384 m1                         202.4 us    248.7 GB/s
+o_proj fp8 3072x8192 m1                          105.7 us    238.0 GB/s
+gate fp8 16384x3072 m1                           222.9 us    225.8 GB/s
+qb fp8 16384x1024 m1                              74.9 us    224.0 GB/s
+rdown bf16 1536x3072 m1                           42.7 us    221.2 GB/s   (row-major 47.0)
+rup bf16 3072x1536 m1                             41.7 us    226.3 GB/s   (row-major 42.0)
+qa bf16 1024x3072 m1                              30.7 us    204.6 GB/s
+kva bf16 576x3072 m1                              24.6 us    143.9 GB/s
+kb_t bf16 64x(512x192) m1                         57.8 us    217.6 GB/s
+kvb_v bf16 64x(256x512) m1                        73.6 us    228.0 GB/s
+experts nvfp4 16x(1536x1536) t1                  123.8 us    171.5 GB/s
+experts nvfp4 16x(1536x1536) t4                  243.3 us     87.3 GB/s
+KBENCH ALL EQUAL
+# sustained: o_proj back to back over 600 copies spread through 30 GB (the model's pattern)
+spread malloc copies 600 pass 1: 251.0 us a GEMV, 200.5 GB/s   (row-major: 282.1 us, 178.4 GB/s)

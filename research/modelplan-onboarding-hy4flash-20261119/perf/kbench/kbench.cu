@@ -13,6 +13,12 @@ extern "C" int memra_hy4r_gemm(const float* x, long ldx, long xbs, const void* w
                                const float* s2, int fmt, int grid_cols, float* y, long ldy, long ybs, int m, int n,
                                int k, int batch, const int* tiles, int ntiles, int red_dq, int small, int tile_rows,
                                void* stream);
+extern "C" int memra_hy4r_tile(const void* src, long rows, long rb, long src_ld, long src_bs, void* dst, long dst_bs,
+                               int batch, void* stream);
+extern "C" long memra_hy4r_tile_bytes(long rows, long rb);
+extern "C" int memra_hy4r_attn(const float* q, const void* kv, const int* list, int ldl, const int* lens, const int* qpos,
+                               int mode, int window, int ring, int base, int rows, int H, int C, float scale,
+                               const float* sinks, float* po, float* pml, float* out, void* stream);
 extern "C" int memra_hy4r_gemm_f32(const float* x, long ldx, const void* w, float* y, long ldy, int m, int n, int k,
                                    void* stream);
 extern "C" int memra_hy4f_gemm(const void* x, int64_t ldx, const void* w, const void* scales, int grid_cols,
@@ -145,7 +151,13 @@ int main(int argc, char** argv) {
     if (*only && !strstr(c.name, only)) continue;
     for (int m : {1, 4}) {
       const size_t wb = c.fmt == 0 ? (size_t)c.n * c.k * 2 : (size_t)c.n * c.k;
-      void* w = dev_rand(wb * c.batch, c.fmt == 0 ? 1 : 0);
+      void* wr = dev_rand(wb * c.batch, c.fmt == 0 ? 1 : 0);
+      // the route's GEMMs read the tile layout
+      const long rb = c.fmt == 0 ? (long)c.k * 2 : (long)c.k;
+      void* w;
+      CK(cudaMalloc(&w, memra_hy4r_tile_bytes(c.n, rb) * c.batch));
+      if (memra_hy4r_tile(wr, c.n, rb, rb, (long)wb, w, memra_hy4r_tile_bytes(c.n, rb), c.batch, st)) fails++;
+      CK(cudaFree(wr));
       const int gc = (c.k + 127) / 128;
       void* sc = c.fmt == 2 ? dev_rand((size_t)((c.n + 127) / 128) * gc * 4, 3) : nullptr;
       float* x = dev_x(m * c.batch, c.k);
@@ -179,23 +191,88 @@ int main(int argc, char** argv) {
       CK(cudaFree(y1));
     }
   }
+  // decode attention: a sliding layer (64 heads, a 512-row ring at position 2104) and an indexed
+  // layer (32 heads, a recall of 2,048 keys of 2,112); times only (the values are checked by the
+  // route's tapes)
+  if (*only && strstr(only, "attn")) {
+    const int cap = 2112, p = 2104;
+    float* kv = dev_x(cap, 576);
+    float* q = dev_x(64, 576);
+    float* sinks = dev_x(1, 64);
+    std::vector<int> hl(2048);
+    for (int i = 0; i < 2048; i++) hl[i] = (i * 1031) % cap;
+    int *list, *lens, *qp;
+    CK(cudaMalloc(&list, 2048 * 4));
+    CK(cudaMemcpy(list, hl.data(), 2048 * 4, cudaMemcpyHostToDevice));
+    int len = 2048, qv = p;
+    CK(cudaMalloc(&lens, 4));
+    CK(cudaMemcpy(lens, &len, 4, cudaMemcpyHostToDevice));
+    CK(cudaMalloc(&qp, 4));
+    CK(cudaMemcpy(qp, &qv, 4, cudaMemcpyHostToDevice));
+    float *po, *pml, *out;
+    CK(cudaMalloc(&po, 64 * 9 * 512 * 4));
+    CK(cudaMalloc(&pml, 64 * 9 * 2 * 4));
+    CK(cudaMalloc(&out, 64 * 512 * 4));
+    timeit("attn sliding 64h 512 keys", 512.0 * 576 * 4, [&] {
+      memra_hy4r_attn(q, kv, nullptr, 0, nullptr, qp, 0, 512, 512, 0, 1, 64, 2, 0.0625f, sinks, po, pml, out, st);
+    });
+    timeit("attn indexed 32h 2048 keys", 2048.0 * 576 * 4, [&] {
+      memra_hy4r_attn(q, kv, list, 2048, lens, qp, 1, 0, 0, 0, 1, 32, 8, 0.0625f, sinks, po, pml, out, st);
+    });
+    return 0;
+  }
+  // address-spread check: the o_proj shape over many copies of its weight spread through a large
+  // pool (the model reads 12 GB of 87 GB a token), allocated with cudaMalloc or cudaMallocAsync
+  if (*only && strstr(only, "spread")) {
+    const int n = 3072, k = 16384;
+    const size_t wb = (size_t)n * k;
+    const int copies = getenv("KB_COPIES") ? atoi(getenv("KB_COPIES")) : 600;
+    const bool async = getenv("KB_ASYNC") != nullptr;
+    uint8_t* pool;
+    if (async) CK(cudaMallocAsync((void**)&pool, wb * copies, st)); else CK(cudaMalloc((void**)&pool, wb * copies));
+    CK(cudaMemsetAsync(pool, 0x11, wb * copies, st));
+    const int gc = (k + 127) / 128;
+    void* sc = dev_rand((size_t)((n + 127) / 128) * gc * 4, 3);
+    float* x = dev_x(1, k);
+    float* y;
+    CK(cudaMalloc(&y, (size_t)n * 4));
+    CK(cudaStreamSynchronize(st));
+    for (int pass = 0; pass < 2; pass++) {
+      CK(cudaEventRecord(e0, st));
+      for (int c = 0; c < copies; c++)
+        memra_hy4r_gemm(x, k, 0, pool + wb * (size_t)((c * 7919) % copies), 0, sc, 0, nullptr, 2, gc, y, n, 0, 1, n, k, 1,
+                        nullptr, 0, 0, 1, 0, st);
+      CK(cudaEventRecord(e1, st));
+      CK(cudaEventSynchronize(e1));
+      float ms;
+      CK(cudaEventElapsedTime(&ms, e0, e1));
+      printf("spread %s copies %d pass %d: %.1f us a GEMV, %.1f GB/s\n", async ? "async" : "malloc", copies, pass,
+             ms * 1e3 / copies, (double)wb * copies / (ms * 1e6));
+    }
+    return 0;
+  }
   // grouped NVFP4 experts: 512 experts [n, k], 16 picked, one row each (decode) or t=4 tokens
   if (!*only || strstr("experts", only)) {
     const int E = 512, n = 1536, k = 1536;
     const size_t wbs = (size_t)n * k / 2, scbs = (size_t)n * k / 16;
-    void* w = dev_rand(wbs * E, 0);
+    void* wr = dev_rand(wbs * E, 0);
+    void* w;
+    CK(cudaMalloc(&w, wbs * E));
+    if (memra_hy4r_tile(wr, n, k / 2, k / 2, (long)wbs, w, (long)wbs, E, st)) fails++;
+    CK(cudaFree(wr));
     void* sc = dev_rand(scbs * E, 2);
     float* s2 = (float*)dev_rand(E * 4, 3);
     for (int t : {1, 4}) {
       const int rows = 16 * t;
       // tiles: experts 7*i+3, each with t rows (every token picked all 16, so rows = t)
+      const int nexp = getenv("KB_NEXP") ? atoi(getenv("KB_NEXP")) : 16;
       std::vector<int> tl;
-      for (int i = 0; i < 16; i++) {
+      for (int i = 0; i < nexp; i++) {
         tl.push_back(7 * i + 3);
         tl.push_back(i * t);
         tl.push_back(t);
       }
-      const int ntiles = 17;
+      const int ntiles = nexp + 1;
       tl.push_back(0);
       tl.push_back(0);
       tl.push_back(0);
@@ -221,7 +298,7 @@ int main(int argc, char** argv) {
         }
         if (!same(y0, y1, (size_t)rows * n, nm)) fails++;
         if (!red)
-          timeit(nm, 16.0 * (wbs + scbs), [&] {
+          timeit(nm, (double)nexp * (wbs + scbs), [&] {
             memra_hy4r_gemm(x, k, 0, w, wbs, sc, scbs, s2, 3, 0, y1, n, 0, rows, n, k, 1, dt, ntiles, 0, 1, t, st);
           });
       }
