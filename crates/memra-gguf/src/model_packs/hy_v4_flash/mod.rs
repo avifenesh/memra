@@ -77,7 +77,7 @@ pub static PACK: ModelPack = ModelPack {
     // float64, the CUDA top-k tie rule), agree on the tiny fixture to the bit
     // (research/modelplan-onboarding-hy4flash-20261119/tiny/). What two correct f64 runs may
     // still differ by, measured there: the f32 constants (3.998, 1e-5, 1e-6) read as decimal
-    // literals move logits by one f32 ulp (2.4e-7), the RoPE phase formulas part by 5.7e-14 rad
+    // literals move logits by at most 2.4e-7, the RoPE phase formulas part by 5.7e-14 rad
     // below 544 positions (1.2e-10 at 1M), summation order by 1e-15 relative. 1e-5 absolute plus
     // 1e-5 relative is at least 40 times the largest and four orders under the smallest wrong
     // program the gate refuses (0.72). Selections are compared exactly, not inside the band.

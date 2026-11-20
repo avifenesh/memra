@@ -684,8 +684,9 @@ The pack's `checkpoint_parity` band is 1e-5 absolute plus 1e-5 relative, argmax 
 set from what two correct f64 runs of this program may differ by, measured in this lane:
 
 - the f32 constants read as decimal literals: `tiny/raw-constants.log` runs the oracle with
-  `--raw-constants` and moves 3,906 of 17,408 logits by one f32 ulp, at most 2.4e-7 (the
-  1e-8-relative move of steps 3 to 5, rounded to f32);
+  `--raw-constants`, which moves 3,906 of 17,408 logits by at most 2.4e-7 absolute (the
+  1e-8-relative move of steps 3 to 5 after the f32 rounding; 895 of them, near zero, move by
+  more than one ulp, the largest by 574 ulps of a small logit);
 - the RoPE phase formula (transformers `1 / base^(2i/d)`, memra `base^(-2i/d)`):
   `tiny/rope-phase.log` gives 5.7e-14 rad below 544 positions and 1.2e-10 rad at 1M on the
   artifact's 64 rotary dims; on the fixture's 8 dims the two are identical;
@@ -703,8 +704,9 @@ to be set from the source program's spread between two backends when that runner
   oracle (`crates/memra-cli/tests/fixtures/tiny-oracle/hy_v4_flash*.tsv`); receipts
   `tiny/tiny-gate.tsv` and `tiny/gates.txt`.
 - memra-cli `hy_v4_flash_tiny_gate_matches_the_transformers_oracle_and_refuses_wrong_programs`:
-  the reference's main run equals the pinned oracle byte for byte, and each wrong program fails
-  the gate (largest logit move, `tiny/redarms.log`):
+  the reference's main run matches the pinned oracle within the band (to the bit on the lane's
+  machines, `tiny/hashes.tsv`), and each wrong program fails the gate (largest logit move,
+  `tiny/redarms.log`):
 
 | wrong program | max move |
 |---|---:|
@@ -716,8 +718,9 @@ to be set from the source program's spread between two backends when that runner
 | Engram placed one layer late (at the config id) | 2.43 |
 | router correction bias ignored | 1.80 |
 
-- memra-reference `hy_v4_flash_tiny`: the selections and Engram rows above, and a budget one
-  group short changes the selection digests on every indexed layer.
+- memra-reference `hy_v4_flash_tiny`: the selections and Engram rows above, a budget one group
+  short changes the selection digests on every indexed layer, and a transposed weight with the
+  right element count is refused.
 - the memra and transformers programs are both split-invariant here: each variant's logits on
   the shared positions equal the main run's bit for bit, in memra and in the oracle.
 
