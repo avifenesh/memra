@@ -50,6 +50,7 @@ L2.
 | 1: small-row GEMMs, F32 islands GEMV, split HC, one table upload a call | 11.60 [11.57-11.61] | 86.2 | 9.57 [9.55-9.58] | 104.2 | 93.9 | 222.0 |
 | 2: programmatic dependent launch | 12.37 [12.36-12.37] | 80.9 | 10.16 [10.15-10.18] | 98.3 | 93.1 | 221.3 |
 | 3: Engram reads on a resident thread pool, beside the first layers | 12.56 [12.56-12.57] | 79.6 | 10.23 [10.22-10.24] | 97.5 | 92.8 | 220.9 |
+| 4: attention key tiles, indexer logits and recall in parallel | 12.90 [12.76-13.01] | 76.9 | 11.98 [11.98-12.00] | 83.2 | 93.7 | 280.8 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -102,3 +103,23 @@ layers at its start and hands the reads (four rows a task) to 16 threads started
 the first Engram layer (layer 2) collects them, by which time the GPU has two layers queued. The
 first layer's GPU idle (5.3 ms a step under the profiler) is gone; decode step 80.9 -> 79.6 ms on
 `chat`, 98.3 -> 97.5 ms on `long`. The bench rows now carry every step's time (`steps_ms`).
+
+### 4. Attention key tiles, indexer logits, recall (`receipts/s4-attn-indexer/`)
+
+A profile with programmatic launch off (`receipts/s3-engram-pool/profile-long-decode-pdl-off.txt`,
+a diagnostic build: kernels then run back to back, so each kernel's time is its own) put `long`'s
+decode step at 63.0 ms of GEMMs, 14.0 ms of attention (333 us a layer), 6.5 ms of indexer group
+logits and 1.2 ms of recall.
+
+- Attention: each of a key tile's 18,432 values was a load whose address came from another load
+  (the key's row in the recall list), one after the other per thread. The tile's 32 rows are now
+  read once into shared memory, then its values as independent 16-byte loads. The values, and
+  every score, sum and output, are the same.
+- Indexer group logits: one block a query looped over its 526 groups. Now one thread a (query,
+  group), 64 groups a block with their keys in shared memory; each logit is the same chain.
+- Recall: one thread a query walked up to 512 groups. Now a thread an entry: own's place among
+  the picks, each distinct group's keys at its prefix offset; the same list.
+- Pooling: the 2 x 4 dot chains of a key run side by side, each in input order.
+
+Decode step 79.6 -> 76.9 ms on `chat`, 97.5 -> 83.2 ms on `long`; `long`'s prefill 221 -> 281
+tokens/s (the same attention kernel). 3 of 3 tapes bit-equal.
