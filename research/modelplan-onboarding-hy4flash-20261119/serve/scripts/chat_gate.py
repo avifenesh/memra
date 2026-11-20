@@ -334,9 +334,23 @@ verdict("refusals", img["status"] == 400 and rf["status"] == 400,
 
 # ---- cancel: the client leaves mid-stream ----
 import http.client
-cancel_deadline = time.time() + 300
-# every socket read is bounded by the time left to the one deadline
+import socket
+import threading
+cancel_deadline = time.monotonic() + 300
 conn = http.client.HTTPConnection(addr.split(":")[0], int(addr.split(":")[1]), timeout=300)
+conn.connect()
+
+
+def _expire():
+    # one absolute deadline over headers and body: shut the socket, which ends any blocked read
+    try:
+        conn.sock.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+
+
+watchdog = threading.Timer(300, _expire)
+watchdog.start()
 conn.request("POST", "/v1/completions", body=json.dumps(
     {"model": model, "prompt_ids": case_ids["poem"], "max_tokens": 400, "temperature": 0,
      "ignore_eos": True, "stream": True}),
@@ -347,11 +361,6 @@ try:
     if resp.status != 200:
         cancel_err = f"HTTP {resp.status}"
     while cancel_err is None and seen < 3:
-        left = cancel_deadline - time.time()
-        if left <= 0:
-            cancel_err = "no three tokens within 300 s"
-            break
-        conn.sock.settimeout(left)
         try:
             raw_line = resp.fp.readline()
         except (TimeoutError, OSError) as e:
@@ -365,9 +374,12 @@ try:
             cancel_err = line
         elif line.startswith("data: ") and '"text"' in line:
             seen += 1
+except (TimeoutError, OSError, http.client.HTTPException) as e:
+    cancel_err = f"headers: {e}"
 finally:
+    watchdog.cancel()
     conn.close()
-if cancel_err is None and time.time() > cancel_deadline:
+if cancel_err is None and time.monotonic() > cancel_deadline:
     cancel_err = "the third token came after the 300 s deadline"
 time.sleep(5)
 after = complete(case_ids["capital"], MAXT)
