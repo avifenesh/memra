@@ -54,30 +54,39 @@ pub struct Oracle {
     pub weights: BTreeMap<String, Vec<f64>>,
 }
 
+/// A recorded tensor as f64 (a bool tensor, such as an Engram mask, as 0 and 1).
 pub fn floats(v: &Value) -> Vec<f64> {
     v.as_array()
         .unwrap()
         .iter()
-        .map(|x| x.as_f64().unwrap())
+        .map(|x| x.as_f64().or_else(|| x.as_bool().map(f64::from)).unwrap())
         .collect()
 }
 
 /// The oracle record at `fixture`, relative to research/modelplan-onboarding-hy4flash-20261119/.
 pub fn oracle(fixture: &str) -> Oracle {
+    oracle_part(fixture, None)
+}
+
+/// The record at `fixture`, or its `part` (a fixture holding several runs).
+pub fn oracle_part(fixture: &str, part: Option<&str>) -> Oracle {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../research/modelplan-onboarding-hy4flash-20261119")
         .join(fixture);
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
-    let record: Value = serde_json::from_str(&text).unwrap();
+    let mut record: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(
         record["transformers_modeling_blob"],
         "2d796211a4f867bd4c46d4a952cfee0375929f72"
     );
     assert_eq!(record["dtype"], "float64");
+    if let Some(part) = part {
+        record = record[part].take();
+    }
     let weights = record["weights"]
         .as_object()
-        .unwrap()
-        .iter()
+        .into_iter()
+        .flatten()
         .map(|(k, v)| (k.clone(), floats(&v["data"])))
         .collect();
     Oracle { record, weights }
@@ -327,5 +336,6 @@ pub fn layer_weights<'a>(o: &'a Oracle, il: u32, banks: Option<&'a Owned>) -> La
             },
             Some(banks) => MlpWeights::Latent(moe_weights(o, il, banks)),
         },
+        engram: None,
     }
 }

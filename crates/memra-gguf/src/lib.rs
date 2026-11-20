@@ -41,6 +41,7 @@ pub mod execution_manifest;
 pub mod expert_banks;
 pub mod hf;
 pub mod hf_mapping;
+pub mod hy_v4_flash_engram;
 pub mod micro_gguf;
 pub mod model_packs;
 pub mod model_plan;

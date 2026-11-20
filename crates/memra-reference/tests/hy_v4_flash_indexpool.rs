@@ -230,11 +230,11 @@ fn decoder_layers_and_the_stack_match_above_the_budget() {
         let w = layer_weights(&o, il, banks[il as usize].as_ref());
         let (input, output) = o.module(&format!("layers.{il}"));
         close(
-            &decoder_layer(&layer, &w, &input[0], &positions, HIDDEN),
+            &decoder_layer(&layer, &w, &input[0], &positions, HIDDEN, None),
             &output[0],
             &format!("layer {il}"),
         );
-        streams = decoder_layer(&layer, &w, &streams, &positions, HIDDEN);
+        streams = decoder_layer(&layer, &w, &streams, &positions, HIDDEN, None);
     }
     let norm = plan(0).pre_attention_norm;
     let collapsed = hyper_head(&numerics(), norm, &head_weights(&o), &streams, HIDDEN);

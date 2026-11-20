@@ -1,0 +1,4 @@
+torch.bfloat16  eps=None max|out - formula(finfo(input).eps=0.00781)|=2.1 max|out - formula(finfo(float32).eps)|=0
+torch.float16   eps=None max|out - formula(finfo(input).eps=0.000977)|=0.631 max|out - formula(finfo(float32).eps)|=0
+torch.float32   eps=None max|out - formula(finfo(input).eps=1.19e-07)|=4.77e-07 max|out - formula(finfo(float32).eps)|=4.77e-07
+torch.float64   eps=None max|out - formula(finfo(input).eps=2.22e-16)|=0 max|out - formula(finfo(float32).eps)|=0.000117
