@@ -241,6 +241,7 @@ fn with_activation(plan: &ModelPlan, activation: &ActivationPlan) -> ModelPlan {
         match &mut layer.mlp {
             MlpPlan::Dense(dense) => dense.activation = activation.clone(),
             MlpPlan::Moe(moe) => moe.activation = activation.clone(),
+            MlpPlan::LatentMoe(latent) => latent.moe.activation = activation.clone(),
         }
     }
     mutated

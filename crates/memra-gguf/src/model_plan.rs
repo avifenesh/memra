@@ -8,11 +8,17 @@ use crate::config::{Arch, AttentionGateKind, LayerKind, ModelConfig};
 use crate::model_packs::mimo_v2::audio::MiMoAudioPatchPlan;
 
 pub mod deepseek_v41;
+pub mod hy_v4_flash;
 pub mod speech;
 pub use deepseek_v41::{
     BlockElement, BlockQuant, BlockScale, Csa2AttentionPlan, Csa2Candidates, Csa2CompressedState,
     Csa2CompressorPlan, Csa2IndexerPlan, Csa2Mode, Csa2Pooling, Csa2StatePlan, DeepSeekV41Numerics,
     EngramPlan, SinglePassHcPlan,
+};
+pub use hy_v4_flash::{
+    HyV4AttentionKind, HyV4AttentionPlan, HyV4EngramMultiplierBound, HyV4EngramNormEpsilon,
+    HyV4EngramPlan, HyV4FlashNumerics, HyV4ResidualPlan, HyV4StatePlan, HyV4WeightFormat,
+    IndexPoolPlan, LatentMoePlan,
 };
 use speech::WhisperPlan;
 
@@ -53,6 +59,9 @@ pub struct ModelPlan {
     /// DeepSeek-V4.1 checkpoint numerics (32x32 FP8 dense blocks, per-32 activation
     /// quantization). `None` for every other family.
     pub deepseek_v41: Option<DeepSeekV41Numerics>,
+    /// Hy4-flash family numerics (stream copy at entry, hc_head exit, F32 head). `None` for
+    /// every other family.
+    pub hy_v4_flash: Option<HyV4FlashNumerics>,
 }
 
 // Plan hashes use Debug serialization. Keep the pre-speech representation unchanged
@@ -88,6 +97,9 @@ impl std::fmt::Debug for ModelPlan {
         // Omitted when absent so every other family's serialized plan is unchanged.
         if let Some(numerics) = &self.deepseek_v41 {
             d.field("deepseek_v41", numerics);
+        }
+        if let Some(numerics) = &self.hy_v4_flash {
+            d.field("hy_v4_flash", numerics);
         }
         d.finish()
     }
@@ -358,6 +370,9 @@ pub enum AttentionPlan {
     KimiDeltaNet(KimiDeltaNetPlan),
     /// DeepSeek-V4.1 compressed sparse attention 2 (Full / Reindex / Reuse / window-only).
     Csa2(Csa2AttentionPlan),
+    /// Hy4-flash gated MLA (indexed or sliding), sinks, elementwise sigmoid output gate,
+    /// post-projection norm.
+    HyV4(HyV4AttentionPlan),
 }
 
 #[derive(Clone, PartialEq)]
@@ -681,6 +696,9 @@ pub struct KimiDeltaNetPlan {
 pub enum MlpPlan {
     Dense(DenseMlpPlan),
     Moe(MoeMlpPlan),
+    /// Hy4-flash MoE whose routed experts run in a latent width (`routed_expert_down_proj` /
+    /// `routed_expert_up_proj`); router and shared expert read the full width.
+    LatentMoe(LatentMoePlan),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -783,6 +801,9 @@ pub enum ResidualTopology {
     /// mix, and the exit collapses with the last one. Not the per-sublayer `HyperConnections`
     /// program, which collapses each sublayer with its own mix.
     SinglePassHyperConnections(SinglePassHcPlan),
+    /// Hy4-flash independent hyper-connections: per-sublayer sigmoid pre/post mixes, no
+    /// Sinkhorn, identity residual, config write-back magnitude, Engram before attention.
+    HyV4(HyV4ResidualPlan),
 }
 
 /// qwen4_exp trunk/MTP exit downmix: `hyper_connection_mixer` (same tensor shapes as one
@@ -856,6 +877,8 @@ pub enum StatePlan {
     /// DeepSeek-V4.1 CSA2: a window ring per layer plus a compressed KV and index-key plane
     /// owned by the group's Full-mode layer.
     Csa2(Csa2StatePlan),
+    /// Hy4-flash latent + rope-key cache (windowed on sliding layers) plus indexer token keys.
+    HyV4(HyV4StatePlan),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1052,6 +1075,14 @@ impl ModelPlan {
         cfg.validate_plan_semantics()?;
         // The canonical compiler has no CSA2, single-pass mHC or Engram arm, so it would
         // compile a different program; only the deepseek_v41 pack compiles this family.
+        // Neither has it the Hy4-flash gated MLA, pooled indexer, independent hyper-connections
+        // or latent MoE.
+        if cfg.hy_v4_flash.is_some() {
+            return Err(PlanCompileError::UnsupportedSemantics {
+                field: "hy_v4_flash",
+                value: "compiled only by the hy_v4_flash model pack".into(),
+            });
+        }
         if cfg.dsv41.is_some() {
             return Err(PlanCompileError::UnsupportedSemantics {
                 field: "deepseek_v41",
@@ -1366,6 +1397,7 @@ impl ModelPlan {
             },
             sampling_defaults: None,
             deepseek_v41: None,
+            hy_v4_flash: None,
         })
     }
 
@@ -1510,6 +1542,10 @@ impl ModelPlan {
             if matches!(self.drafter.as_ref(), Some(DrafterPlan::MiMoMtp3(_))) {
                 operations.push(OperationKind::MiMoMtp3Draft);
             }
+        }
+        // Hy4-flash collapses its streams with hc_head before the final norm.
+        if self.hy_v4_flash.is_some() {
+            operations.push(OperationKind::HyV4StreamExit);
         }
         // qwen4_exp exits through the global mixer (grouped hc_norm inside); every other
         // arch keeps the final RmsNorm.
@@ -1843,6 +1879,10 @@ impl ModelConfig {
                         .dsv41
                         .as_ref()
                         .is_some_and(|d| d.sliding_window == window)
+                    || self
+                        .hy_v4_flash
+                        .as_ref()
+                        .is_some_and(|h| h.sliding_window == window)
                     || self.geometry.as_ref().is_some_and(|g| {
                         g.classes().iter().any(|layer| layer.window == Some(window))
                     });
@@ -1864,11 +1904,18 @@ impl ModelConfig {
             }
         }
         for (class, kind) in &self.layer_rope_scaling {
-            let represented = self.gemma4.is_some()
+            let represented = (self.gemma4.is_some()
                 && matches!(
                     (class.as_str(), kind.as_str()),
                     ("sliding_attention", "default") | ("full_attention", "proportional")
-                );
+                ))
+                // hy_v4_flash: both layer types rotate with plain RoPE at their own theta
+                // (`config::hy_v4_flash` refuses any other rope_type).
+                || (self.hy_v4_flash.is_some()
+                    && matches!(
+                        (class.as_str(), kind.as_str()),
+                        ("sliding_attention" | "deepseek_sparse_attention", "default")
+                    ));
             if !represented {
                 return Err(unsupported("rope_scaling", format!("{class}.{kind}")));
             }
@@ -1957,6 +2004,12 @@ impl LayerPlan {
         {
             operations.push(OperationKind::EngramLookup);
         }
+        if let ResidualTopology::HyV4(HyV4ResidualPlan {
+            engram: Some(_), ..
+        }) = self.residual
+        {
+            operations.push(OperationKind::HyV4Engram);
+        }
         operations.push(OperationKind::RmsNorm);
         if self.sparse_overlay.is_some() {
             operations.push(OperationKind::MicroBlockSparseIndex);
@@ -2017,6 +2070,13 @@ impl LayerPlan {
                     operations.push(OperationKind::Csa2CandidatePool);
                 }
             }
+            AttentionPlan::HyV4(attention) => {
+                operations.push(OperationKind::HyV4GatedMlaAttention);
+                if let HyV4AttentionKind::Indexed(_) = attention.kind {
+                    operations.push(OperationKind::IndexPool);
+                }
+                push_weight_format(attention.projection_weights, operations);
+            }
         }
         operations.push(match self.state {
             StatePlan::KvCache { .. } => OperationKind::KvState,
@@ -2026,6 +2086,7 @@ impl LayerPlan {
             StatePlan::CompressedAttention { .. } => OperationKind::CompressedAttentionState,
             StatePlan::SharedKvCache { .. } => OperationKind::SharedKvState,
             StatePlan::Csa2(_) => OperationKind::Csa2State,
+            StatePlan::HyV4(_) => OperationKind::HyV4State,
         });
         operations.push(OperationKind::RmsNorm);
         match &self.mlp {
@@ -2046,6 +2107,21 @@ impl LayerPlan {
                 }
                 push_activation(&moe.activation, operations);
             }
+            MlpPlan::LatentMoe(latent) => {
+                operations.push(OperationKind::LatentMoeMlp);
+                push_weight_format(latent.expert_weights, operations);
+                operations.push(match latent.moe.router {
+                    RouterPlan::Softmax => OperationKind::SoftmaxRouter,
+                    RouterPlan::Sigmoid { .. } => OperationKind::SigmoidRouter,
+                    RouterPlan::SqrtSoftplus { .. } => OperationKind::SqrtSoftplusRouter,
+                    RouterPlan::TokenIdHash { .. } => OperationKind::TokenHashRouter,
+                });
+                push_activation(&latent.moe.activation, operations);
+                if latent.moe.shared.is_some() {
+                    operations.push(OperationKind::SharedMlp);
+                    push_activation(&latent.shared_activation, operations);
+                }
+            }
         }
         operations.push(match self.residual {
             ResidualTopology::Serial => OperationKind::SerialResidual,
@@ -2061,7 +2137,18 @@ impl LayerPlan {
             ResidualTopology::SinglePassHyperConnections(_) => {
                 OperationKind::SinglePassHyperConnections
             }
+            ResidualTopology::HyV4(_) => OperationKind::IndependentHyperConnections,
         });
+    }
+}
+
+fn push_weight_format(format: HyV4WeightFormat, operations: &mut Vec<OperationKind>) {
+    match format {
+        HyV4WeightFormat::Bf16 => {}
+        HyV4WeightFormat::Fp8Block { .. } => {
+            operations.push(OperationKind::Fp8BlockWeightOnlyLinear)
+        }
+        HyV4WeightFormat::Nvfp4W4A16 { .. } => operations.push(OperationKind::Nvfp4W4A16Linear),
     }
 }
 
@@ -2997,6 +3084,28 @@ pub enum OperationKind {
     SinglePassHyperConnections,
     /// DeepSeek-V4.1 Engram n-gram hash memory gated into the residual streams.
     EngramLookup,
+    /// Hy4-flash gated MLA: learned sink, elementwise sigmoid output gate, post-o_proj norm,
+    /// full or sliding window. Not `LatentMlaAttention`.
+    HyV4GatedMlaAttention,
+    /// Hy4-flash compressed indexer: token keys pooled in groups by an F32 softmax gate,
+    /// ReLU-weighted group scores, own group always recalled. Not `SparseIndex`.
+    IndexPool,
+    /// Hy4-flash latent + rope-key cache, windowed on sliding layers, plus indexer token keys.
+    HyV4State,
+    /// Hy4-flash MoE with routed experts in a latent width.
+    LatentMoeMlp,
+    /// Hy4-flash independent hyper-connections (sigmoid pre/post, no Sinkhorn).
+    IndependentHyperConnections,
+    /// Hy4-flash Engram: lookup-table-normalized n-gram hash memory with per-row FP8 rows.
+    /// Not `EngramLookup`.
+    HyV4Engram,
+    /// Weight-only FP8 e4m3 linear with one F32 multiplier per square block (ModelOpt
+    /// `FP8_PB_WO`), BF16 activations.
+    Fp8BlockWeightOnlyLinear,
+    /// Weight-only NVFP4 linear (ModelOpt `W4A16_NVFP4`), BF16 activations.
+    Nvfp4W4A16Linear,
+    /// Hy4-flash exit: `hc_head` stream collapse before the final norm, F32 head.
+    HyV4StreamExit,
     Mtp,
     DraftPlan,
     MtpFusion,

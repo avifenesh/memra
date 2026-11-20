@@ -450,7 +450,17 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
         | OperationKind::Csa2IndexReuse
         | OperationKind::Csa2State
         | OperationKind::SinglePassHyperConnections
-        | OperationKind::EngramLookup => Surfaces::NONE,
+        | OperationKind::EngramLookup
+        // Hy4-flash: typed plan rows; no reference executor or tuned surface implements them.
+        | OperationKind::HyV4GatedMlaAttention
+        | OperationKind::IndexPool
+        | OperationKind::HyV4State
+        | OperationKind::LatentMoeMlp
+        | OperationKind::IndependentHyperConnections
+        | OperationKind::HyV4Engram
+        | OperationKind::Fp8BlockWeightOnlyLinear
+        | OperationKind::Nvfp4W4A16Linear
+        | OperationKind::HyV4StreamExit => Surfaces::NONE,
     }
 }
 
@@ -532,6 +542,15 @@ pub const ALL_OPERATIONS: &[OperationKind] = &[
     OperationKind::Csa2State,
     OperationKind::SinglePassHyperConnections,
     OperationKind::EngramLookup,
+    OperationKind::HyV4GatedMlaAttention,
+    OperationKind::IndexPool,
+    OperationKind::HyV4State,
+    OperationKind::LatentMoeMlp,
+    OperationKind::IndependentHyperConnections,
+    OperationKind::HyV4Engram,
+    OperationKind::Fp8BlockWeightOnlyLinear,
+    OperationKind::Nvfp4W4A16Linear,
+    OperationKind::HyV4StreamExit,
     OperationKind::Mtp,
     OperationKind::DraftPlan,
     OperationKind::MtpFusion,
@@ -590,7 +609,7 @@ mod tests {
         // follow. Bump it in the same commit as the variant.
         assert_eq!(
             ALL_OPERATIONS.len(),
-            84,
+            93,
             "OperationKind variant count moved; update ALL_OPERATIONS"
         );
     }

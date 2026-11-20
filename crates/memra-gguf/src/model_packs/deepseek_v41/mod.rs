@@ -206,6 +206,7 @@ fn plan_builder(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
             routed_weight_before_down: true,
             output_lora_a_dequantized_bf16: true,
         }),
+        hy_v4_flash: None,
     })
 }
 

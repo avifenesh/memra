@@ -285,6 +285,9 @@ fn layer_weight_shapes(plan: &ModelPlan, layer: &LayerPlan) -> Result<LayerWeigh
         ));
     }
     let banks = match &layer.mlp {
+        MlpPlan::LatentMoe(_) => {
+            return Err(format!("layer {index}: a latent MoE is not a MiMo-V2 MLP").into());
+        }
         MlpPlan::Dense(dense) => {
             let width = dense.intermediate_size as usize;
             tensors.push((LayerTensor::MlpGate, vec![width, hidden]));
