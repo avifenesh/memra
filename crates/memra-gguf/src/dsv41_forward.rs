@@ -897,13 +897,28 @@ impl Pcg64 {
 
 /// Vendor `compute_hash_multipliers` for one engram layer: `default_rng(10007 * layer)
 /// .integers(0, bound, size=max_ngram, dtype=int64) * 2 + 1` with
-/// `bound = max(1, (i64::MAX // compressed_vocab) // 2)`. Only the 64-bit Lemire path numpy
-/// takes for `bound - 1 > u32::MAX` is ported; smaller vocab-derived bounds are refused.
+/// `bound = max(1, (i64::MAX // compressed_vocab) // 2)` ([`numpy_odd_multipliers`]).
 pub fn engram_multipliers(
     layer: u32,
     max_ngram: usize,
     compressed_vocab: u64,
 ) -> Result<Vec<i64>, String> {
+    numpy_odd_multipliers(10007 * u64::from(layer), max_ngram, compressed_vocab)
+}
+
+/// The n-gram hash multipliers both Engram families draw: numpy
+/// `default_rng(seed).integers(0, bound, size=count, dtype=int64) * 2 + 1` with
+/// `bound = max(1, (i64::MAX // compressed_vocab) // 2)`, so a product with any compressed id
+/// stays within int64. Only the 64-bit Lemire path numpy takes for `bound - 1 > u32::MAX` is
+/// ported; smaller vocab-derived bounds are refused.
+pub fn numpy_odd_multipliers(
+    seed: u64,
+    count: usize,
+    compressed_vocab: u64,
+) -> Result<Vec<i64>, String> {
+    if compressed_vocab == 0 {
+        return Err("engram multipliers need a non-empty compressed vocabulary".into());
+    }
     let bound = ((i64::MAX as u64 / compressed_vocab) / 2).max(1);
     let range = bound - 1;
     if range <= u64::from(u32::MAX) {
@@ -911,8 +926,8 @@ pub fn engram_multipliers(
             "engram multiplier bound {bound} takes numpy's 32-bit draw path, which is not ported"
         ));
     }
-    let mut generator = Pcg64::seeded(10007 * u64::from(layer));
-    Ok((0..max_ngram)
+    let mut generator = Pcg64::seeded(seed);
+    Ok((0..count)
         .map(|_| generator.bounded(range) as i64 * 2 + 1)
         .collect())
 }

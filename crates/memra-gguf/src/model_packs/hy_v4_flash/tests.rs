@@ -248,7 +248,7 @@ fn plan_is_typed_gated_mla_with_pooled_index_latent_moe_and_engram() {
                 engram.multiplier_bound,
                 HyV4EngramMultiplierBound::LookupTableMaxPlusOne
             );
-            assert_eq!(engram.norm_epsilon, HyV4EngramNormEpsilon::InputDtype);
+            assert_eq!(engram.norm_epsilon, HyV4EngramNormEpsilon::OpMathF32);
             assert_eq!(
                 (engram.heads, engram.head_dim, engram.max_ngram),
                 (16, 96, 3)

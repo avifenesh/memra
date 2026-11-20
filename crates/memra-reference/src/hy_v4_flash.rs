@@ -3,21 +3,23 @@
 //! The semantic source is transformers `modeling_hy_v4_flash.py` (PR #50903 at b865850d0532).
 //! Each function is one module of that file and takes its program from the typed plan
 //! (`memra_gguf::model_plan::hy_v4_flash`): gated MLA attention ([`gated_mla_attention`],
-//! `HYV4FlashAttention` below the indexer budget), the independent hyper-connection
+//! `HYV4FlashAttention`), the independent hyper-connection
 //! ([`hyper_connection`], `HYV4FlashHyperConnection`) and its write-back, the dense SwiGLU MLP
 //! (`HYV4FlashMLP`), the latent MoE ([`latent_moe`], `HYV4FlashMoE` with its router and experts),
 //! the exit collapse ([`hyper_head`], `HYV4FlashHyperHead`) and the decoder layer that composes
 //! them ([`decoder_layer`]). Indexed layers past the indexer budget attend to the groups the
-//! pooled indexer recalls ([`index_pool_recall`], `HYV4FlashCompressedIndexer`). Engram is a
-//! later step.
+//! pooled indexer recalls ([`index_pool_recall`], `HYV4FlashCompressedIndexer`). The Engram
+//! memory ([`engram`], `HYV4FlashEngramLayer`) adds to the streams before an Engram layer's
+//! attention; its hashing is the integer program in `memra_gguf::hy_v4_flash_engram`.
 //!
 //! Activations are row-major `[tokens, width]` (`[tokens, streams, width]` for the streams).
 //! Weights are `[out, in]`. Gated by research/modelplan-onboarding-hy4flash-20261119/modules/
-//! and indexpool/ (float64 runs of the pinned transformers code, compared to 1e-12).
+//! indexpool/ and engram/ (float64 runs of the pinned transformers code, compared to 1e-12).
 
+use memra_gguf::dsv41_forward::e4m3;
 use memra_gguf::model_plan::{
-    ActivationPlan, GroupTieOrder, HyV4AttentionKind, HyV4AttentionPlan, HyV4FlashNumerics,
-    HyV4ResidualPlan, IndexPoolPlan, LatentMoePlan, NormPlan, RouterPlan,
+    ActivationPlan, GroupTieOrder, HyV4AttentionKind, HyV4AttentionPlan, HyV4EngramPlan,
+    HyV4FlashNumerics, HyV4ResidualPlan, IndexPoolPlan, LatentMoePlan, NormPlan, RouterPlan,
 };
 
 /// `y[t, o] = sum_i x[t, i] * w[o, i]`.
@@ -432,6 +434,184 @@ pub fn gated_mla_attention_recalled(
     rms_norm(&out, w.post_norm, plan.post_projection_norm)
 }
 
+/// An Engram layer's table as the artifact stores it: e4m3 codes `[rows, head_dim]` and one
+/// scale per row (F32 in the checkpoint). A row reads `code * scale`.
+pub struct EngramTable<'a> {
+    pub codes: &'a [u8],
+    pub scales: &'a [f64],
+}
+
+/// An Engram layer's dense weights (`engram_layer.*`), `[out, in]`, per stream where named so.
+pub struct EngramWeights<'a> {
+    pub table: EngramTable<'a>,
+    /// `lookup_per_head_norms.{h}.weight`, one per hash head.
+    pub head_norms: Vec<&'a [f64]>,
+    /// `value_proj`: `[hidden, heads * head_dim]` and its bias.
+    pub value: &'a [f64],
+    pub value_bias: &'a [f64],
+    /// `key_projs.{s}`: `[hidden, heads * head_dim]` and their biases, one per stream.
+    pub keys: Vec<&'a [f64]>,
+    pub key_biases: Vec<&'a [f64]>,
+    /// `norm_key.{s}.weight` and `norm_query.{s}.weight`, one per stream.
+    pub norm_key: Vec<&'a [f64]>,
+    pub norm_query: Vec<&'a [f64]>,
+    /// `unified_pre_gamma` and `unified_per_hc_scales.{s}`.
+    pub pre_gamma: &'a [f64],
+    pub stream_scales: Vec<&'a [f64]>,
+}
+
+/// What an Engram layer reads per token: the table row of each hash head (`hash + head offset`,
+/// `[tokens, heads]`, from `memra_gguf::hy_v4_flash_engram`) and whether the token owns an
+/// n-gram (`false` on the pad id).
+pub struct EngramInputs<'a> {
+    pub rows: &'a [u64],
+    pub mask: &'a [bool],
+}
+
+/// RMSNorm over each row of `x` with an optional elementwise weight.
+fn rms_rows(x: &[f64], width: usize, weight: Option<&[f64]>, epsilon: f64) -> Vec<f64> {
+    let mut y = Vec::with_capacity(x.len());
+    for row in x.chunks(width) {
+        let inv = 1.0 / (row.iter().map(|v| v * v).sum::<f64>() / width as f64 + epsilon).sqrt();
+        match weight {
+            Some(w) => y.extend(row.iter().zip(w).map(|(v, w)| w * (v * inv))),
+            None => y.extend(row.iter().map(|v| v * inv)),
+        }
+    }
+    y
+}
+
+fn linear_bias(x: &[f64], w: &[f64], bias: &[f64], input: usize, out: usize) -> Vec<f64> {
+    assert_eq!(bias.len(), out, "bias [{out}]");
+    let mut y = linear(x, w, input, out);
+    for row in y.chunks_mut(out) {
+        row.iter_mut().zip(bias).for_each(|(v, b)| *v += b);
+    }
+    y
+}
+
+/// torch `sign`: zero stays zero (Rust's `signum` gives 1.0 for `+0.0`).
+fn torch_sign(x: f64) -> f64 {
+    if x > 0.0 {
+        1.0
+    } else if x < 0.0 {
+        -1.0
+    } else {
+        0.0
+    }
+}
+
+/// `HYV4FlashEngramLayer.forward`: the residual to add to `[tokens, streams, hidden]` streams
+/// before the layer's attention hyper-connection. Each token gathers one row per hash head
+/// (`code * scale`), normalizes each row with its own head norm, and flattens them into the
+/// memory `e`. Per stream `s`: `key = norm_key_s(key_proj_s(e))`, `query = norm_query_s(stream_s)`,
+/// `g = (key . query) / sqrt(hidden)`, gate `sigmoid(sqrt(max(|g|, 1e-6)) * sign(g))`. The value
+/// `v = pre_gamma * rms(value_proj(e))` (a weightless norm) is written as `gate_s * v +
+/// scale_s * v`. Tokens outside the mask add nothing. Every norm takes the plan's epsilon.
+pub fn engram(
+    plan: &HyV4EngramPlan,
+    w: &EngramWeights,
+    inputs: &EngramInputs,
+    streams: &[f64],
+    stream_count: usize,
+    hidden: usize,
+) -> Vec<f64> {
+    let epsilon = plan.norm_epsilon.value() as f64;
+    engram_at_epsilon(plan, epsilon, w, inputs, streams, stream_count, hidden)
+}
+
+/// [`engram`] with its four norms at an explicit `epsilon` instead of the plan's (the gate's
+/// red arm for the other reading of `nn.RMSNorm(eps=None)`).
+pub fn engram_at_epsilon(
+    plan: &HyV4EngramPlan,
+    epsilon: f64,
+    w: &EngramWeights,
+    inputs: &EngramInputs,
+    streams: &[f64],
+    stream_count: usize,
+    hidden: usize,
+) -> Vec<f64> {
+    assert!(plan.table_fp8_per_row, "the Engram table is FP8 per row");
+    let heads = plan.heads as usize;
+    let dim = plan.head_dim as usize;
+    let width = heads * dim;
+    let tokens = inputs.mask.len();
+    assert_eq!(
+        inputs.rows.len(),
+        tokens * heads,
+        "table rows [tokens, heads]"
+    );
+    assert_eq!(
+        streams.len(),
+        tokens * stream_count * hidden,
+        "streams [tokens, streams, hidden]"
+    );
+    assert_eq!(
+        w.table.codes.len(),
+        w.table.scales.len() * dim,
+        "table [rows, head_dim]"
+    );
+    assert_eq!(w.table.scales.len() as u64, plan.table_rows, "table rows");
+    assert_eq!(w.head_norms.len(), heads, "one norm per hash head");
+    for per_stream in [
+        &w.keys,
+        &w.key_biases,
+        &w.norm_key,
+        &w.norm_query,
+        &w.stream_scales,
+    ] {
+        assert_eq!(per_stream.len(), stream_count, "one weight per stream");
+    }
+
+    let mut memory = Vec::with_capacity(tokens * width);
+    for rows in inputs.rows.chunks(heads) {
+        for (h, &row) in rows.iter().enumerate() {
+            let row = row as usize;
+            let scale = w.table.scales[row];
+            let values: Vec<f64> = w.table.codes[row * dim..(row + 1) * dim]
+                .iter()
+                .map(|c| e4m3(*c) as f64 * scale)
+                .collect();
+            memory.extend(rms_rows(&values, dim, Some(w.head_norms[h]), epsilon));
+        }
+    }
+    let value = linear_bias(&memory, w.value, w.value_bias, width, hidden);
+    let mut signal = rms_rows(&value, hidden, None, epsilon);
+    for row in signal.chunks_mut(hidden) {
+        row.iter_mut().zip(w.pre_gamma).for_each(|(v, g)| *v *= g);
+    }
+    let mut out = vec![0.0; streams.len()];
+    for s in 0..stream_count {
+        let key = rms_rows(
+            &linear_bias(&memory, w.keys[s], w.key_biases[s], width, hidden),
+            hidden,
+            Some(w.norm_key[s]),
+            epsilon,
+        );
+        for t in 0..tokens {
+            if !inputs.mask[t] {
+                continue;
+            }
+            let at = (t * stream_count + s) * hidden;
+            let query = rms_rows(
+                &streams[at..at + hidden],
+                hidden,
+                Some(w.norm_query[s]),
+                epsilon,
+            );
+            let k = &key[t * hidden..(t + 1) * hidden];
+            let g =
+                k.iter().zip(&query).map(|(a, b)| a * b).sum::<f64>() * (hidden as f64).powf(-0.5);
+            let gate = sigmoid(g.abs().max(1e-6).sqrt() * torch_sign(g));
+            let v = &signal[t * hidden..(t + 1) * hidden];
+            for d in 0..hidden {
+                out[at + d] = gate * v[d] + w.stream_scales[s][d] * v[d];
+            }
+        }
+    }
+    out
+}
+
 /// One independent hyper-connection's parameters (`hc_pre.hc_fn` / `hc_base` / `hc_scale`).
 pub struct HyperConnectionWeights<'a> {
     pub function: &'a [f64],
@@ -681,10 +861,14 @@ pub struct LayerWeights<'a> {
     pub attention_hc: HyperConnectionWeights<'a>,
     pub mlp_hc: HyperConnectionWeights<'a>,
     pub mlp: MlpWeights<'a>,
+    /// `engram_layer.*` on the layers the plan gives Engram.
+    pub engram: Option<EngramWeights<'a>>,
 }
 
 /// `HYV4FlashDecoderLayer.forward` on `[tokens, streams, hidden]` streams, from the typed layer
-/// plan: attention sublayer then MLP sublayer, each read through its hyper-connection and
+/// plan: on an Engram layer the memory is added to the streams first ([`engram`], which needs
+/// `engram_inputs`; other layers ignore them); then the attention sublayer and the MLP
+/// sublayer, each read through its hyper-connection and
 /// written back onto every stream beside the identity residual.
 pub fn decoder_layer(
     layer: &memra_gguf::model_plan::LayerPlan,
@@ -692,6 +876,7 @@ pub fn decoder_layer(
     streams: &[f64],
     positions: &[u32],
     hidden: usize,
+    engram_inputs: Option<&EngramInputs>,
 ) -> Vec<f64> {
     let memra_gguf::model_plan::AttentionPlan::HyV4(attention) = &layer.attention else {
         panic!("layer {} is not a Hy4-flash layer", layer.index);
@@ -699,8 +884,24 @@ pub fn decoder_layer(
     let memra_gguf::model_plan::ResidualTopology::HyV4(residual) = &layer.residual else {
         panic!("layer {} has no Hy4-flash residual", layer.index);
     };
-    assert!(residual.engram.is_none(), "Engram is a later step");
     let n = residual.streams as usize;
+    let with_memory: Vec<f64>;
+    let streams = match (&residual.engram, &w.engram) {
+        (Some(plan), Some(weights)) => {
+            let inputs = engram_inputs
+                .unwrap_or_else(|| panic!("layer {} reads Engram inputs", layer.index));
+            let memory = engram(plan, weights, inputs, streams, n, hidden);
+            with_memory = streams.iter().zip(&memory).map(|(a, b)| a + b).collect();
+            &with_memory[..]
+        }
+        (None, None) => streams,
+        (plan, weights) => panic!(
+            "layer {}: Engram plan {} with Engram weights {}",
+            layer.index,
+            plan.is_some(),
+            weights.is_some()
+        ),
+    };
     let (post, read) = hyper_connection(residual, &w.attention_hc, streams, hidden);
     let x = rms_norm(&read, w.input_norm, layer.pre_attention_norm);
     let attn = gated_mla_attention(

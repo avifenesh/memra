@@ -122,11 +122,11 @@ fn decoder_layers_and_the_stack_match() {
         let w = layer_weights(&o, il, banks[il as usize].as_ref());
         let (input, output) = o.module(&format!("layers.{il}"));
         close(
-            &decoder_layer(&layer, &w, &input[0], &positions, 16),
+            &decoder_layer(&layer, &w, &input[0], &positions, 16, None),
             &output[0],
             &format!("layer {il}"),
         );
-        streams = decoder_layer(&layer, &w, &streams, &positions, 16);
+        streams = decoder_layer(&layer, &w, &streams, &positions, 16, None);
     }
     let collapsed = hyper_head(
         &numerics(),

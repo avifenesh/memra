@@ -1,0 +1,17 @@
+running 4 tests
+test artifact_hash_ids_match_the_pinned_numpy_draw ... ok
+test decoder_layers_and_the_stack_match_with_engram ... layer 0: max_abs 7.216449660063518e-15 (scale 4.955)
+layer 1: max_abs 7.993605777301127e-15 (scale 7.644)
+layer 2: max_abs 3.774758283725532e-15 (scale 9.432)
+layer 3: max_abs 5.329070518200751e-15 (scale 10.597)
+last hidden state: max_abs 2.0095036745715333e-14 (scale 2.982)
+ok
+test engram_module_matches ... Engram residual: max_abs 3.3306690738754696e-16 (scale 1.440)
+ok
+test wrong_engram_programs_fail ... epsilon 2^-7: max_abs 1.6209732845464853e-1
+stream 0's key for every stream: max_abs 3.176348174868413e-1
+per-stream scales dropped: max_abs 4.613560410532154e-1
+head 0's norm for every head: max_abs 1.730735423948818e0
+mask ignored: max_abs 7.347887274625183e-1
+ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
