@@ -40,23 +40,18 @@ pub struct DflyGeometry {
     pub target_kv_layers: Vec<u32>,
     pub target_index_topk: usize,
     pub local_window: usize,
-    /// every indexed trunk layer, ascending (the wrong-layer red arm reads the previous one)
-    pub indexed_layers: Vec<u32>,
 }
 
 impl DflyGeometry {
-    /// The target layer a draft layer reads under `red`: its own, or for [`DflyRed::Layers`] the
-    /// indexed layer before it.
-    pub fn read_layer(&self, layer: u32, red: DflyRed) -> u32 {
-        if red != DflyRed::Layers {
-            return layer;
-        }
-        let at = self
-            .indexed_layers
-            .iter()
-            .position(|l| *l == layer)
-            .unwrap_or(0);
-        self.indexed_layers[at.saturating_sub(1)]
+    /// The target index and KV layers draft layer `i` reads under `red`: its own, or for
+    /// [`DflyRed::Layers`] the next draft layer's (rotated: the last reads the first's).
+    pub fn read_layers(&self, i: usize, red: DflyRed) -> (u32, u32) {
+        let at = if red == DflyRed::Layers {
+            (i + 1) % self.target_kv_layers.len()
+        } else {
+            i
+        };
+        (self.target_index_layers[at], self.target_kv_layers[at])
     }
 }
 
@@ -84,11 +79,6 @@ impl DflyGeometry {
             target_kv_layers: hy.dfly.target_kv_layers.clone(),
             target_index_topk: hy.dfly.target_index_topk as usize,
             local_window: hy.dfly.context_local_window as usize,
-            indexed_layers: (0..hy.num_hidden_layers)
-                .filter(|l| {
-                    hy.layer_kinds[*l as usize] == memra_gguf::config::HyV4LayerKind::Indexed
-                })
-                .collect(),
         }
     }
 }
@@ -259,7 +249,7 @@ impl DflyWeights {
 pub enum DflyRed {
     #[default]
     None,
-    /// every draft layer reads the indexed target layer before its own (21, 25, 29, 33, 37 on the
+    /// every draft layer reads the next draft layer's target layer (29, 33, 37, 41, 25 on the
     /// artifact)
     Layers,
     /// the MLP at half its width (the first half of gate, up and down's channels)
@@ -370,8 +360,7 @@ pub fn draft_round(
     let mut hidden = x;
     let mut residual: Option<Vec<f64>> = None;
     for (i, lw) in w.layers.iter().enumerate() {
-        let index_layer = g.read_layer(g.target_index_layers[i], red);
-        let kv_layer = g.read_layer(g.target_kv_layers[i], red);
+        let (index_layer, kv_layer) = g.read_layers(i, red);
         if let Some(r) = residual.take() {
             for (a, b) in hidden.iter_mut().zip(&r) {
                 *a += b;
@@ -592,7 +581,7 @@ pub fn tiny_rounds(
         .target_kv_layers
         .iter()
         .chain(&hy.dfly.target_index_layers)
-        .map(|l| g.read_layer(*l, red))
+        .copied()
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
