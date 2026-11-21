@@ -153,8 +153,13 @@ fn parse() -> Result<Args, String> {
             _ => return Err(format!("unknown argument {arg}")),
         }
     }
+    // `shipped` is the checkpoint's declared class under the name the serve route and the
+    // nvfp4-rig lane use
+    if a.class == "shipped" {
+        a.class = "declared".into();
+    }
     if a.class != "declared" && a.class != "float" {
-        return Err("--class is declared or float".into());
+        return Err("--class is shipped (declared) or float".into());
     }
     if a.red.commit_on_error && a.inject_failure.is_none() {
         return Err("--red commit-on-error is an arm of --inject-failure".into());
@@ -1014,9 +1019,10 @@ fn oracle_runner(out: PathBuf) -> Result<(), String> {
     if tokens.is_empty() {
         return Err("the oracle runner needs at least one token".into());
     }
+    // the checkpoint's shipped (declared) class, whatever the runner's default class is
     let a = Args {
         ckpt,
-        class: "declared".into(),
+        class: "shipped".into(),
         chunk: 512,
         ..Args::default()
     };

@@ -75,6 +75,9 @@ if [ -d "$MODEL" ]; then
   [ -n "$PACK_ENV" ] && export $PACK_ENV
 fi
 arm_on() { [ -z "$PACK_ARMS" ] || [[ "$PACK_ARMS" == *",$1,"* ]]; }
+skip_arm() {  # arm label reason: why the arm did not run
+  if arm_on "$1"; then echo "== serve-smoke: $2 SKIP ($3)"; else echo "== serve-smoke: $2 SKIP (pack $PACK runs no such arm)"; fi
+}
 
 # Build UNCONDITIONALLY (cargo is incremental — a no-op when fresh, cheap). The old
 # `[ -x BIN ] || cargo build` idiom silently ran a STALE binary whenever one merely
@@ -443,7 +446,7 @@ PY
   fi
   unset MEMRA_AFFINITY MEMRA_SPEC_GATE
 else
-  echo "== serve-smoke: spec arm SKIP (no draft at $DRAFT)"
+  skip_arm spec "spec arm" "no draft at $DRAFT"
 fi
 
 # 11. GEMMA4 ARM (lane/gemma4-serve-gaps, 2026-08-07). THE GAP THIS CLOSES: every check
@@ -553,7 +556,7 @@ assert c.strip(), "thinking-on: empty content"
     FAIL "gemma4 server did not start"
   fi
 else
-  echo "== serve-smoke: gemma4 arm SKIP (no model at $GEMMA_MODEL)"
+  skip_arm gemma4 "gemma4 arm" "no model at $GEMMA_MODEL"
 fi
 
 # 12. Q35 COLDHOL ARM (lane/cx-coldfix, 2026-08-12). A cached-only smoke cannot see
@@ -610,7 +613,7 @@ for line in lines or []:
   unset MEMRA_SERVE_SPEC MEMRA_CTX MEMRA_PREFIX_CACHE_MB \
     MEMRA_REUSE_POOL MEMRA_AFFINITY MEMRA_MAX_SESSIONS
 else
-  echo "== serve-smoke: Q35 coldhol arm SKIP (no model at $Q35_COLD_MODEL)"
+  skip_arm q35-cold "Q35 coldhol arm" "no model at $Q35_COLD_MODEL"
 fi
 
 # 13. MOE SPEC ARM (2026-11-06). Every arm above serves a MoE with spec off, so no gate booted a
@@ -653,7 +656,7 @@ assert cap == 8 and n == 8, f"plain_cap={cap}, {n} plain entries"
   fi
   unset MEMRA_CTX
 else
-  echo "== serve-smoke: MoE spec arm SKIP (no model at $Q35_COLD_MODEL or no draft at $Q35_SPEC_DRAFT)"
+  skip_arm moe-spec "MoE spec arm" "no model at $Q35_COLD_MODEL or no draft at $Q35_SPEC_DRAFT"
 fi
 
 SMOKE_DONE=1

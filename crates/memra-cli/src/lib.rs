@@ -3813,13 +3813,16 @@ mod tests {
     #[test]
     fn inkling2_tiny_gate_is_exact_for_float_runs_and_reads_no_checkpoint_band() {
         let pack = model_packs::by_alias("inkling2").unwrap();
-        // No band for any class: checkpoint parity refuses the pack before it reads an oracle,
-        // so a float-activation oracle cannot pass for the declared class.
+        // Only the declared class has a band, so a float-activation oracle cannot pass for the
+        // declared class.
         assert_eq!(pack.checkpoint_parity, None);
-        assert!(pack.checkpoint_parity_classes.is_empty());
         assert!(
             pack.checkpoint_parity_for("source-weights-float32-accumulation")
                 .is_none()
+        );
+        assert!(
+            pack.checkpoint_parity_for("inkling2-declared-activation-quant")
+                .is_some()
         );
         let pinned = pinned_tiny_oracle("inkling2").unwrap();
         // One logit moved by one ulp: inside any band, and not the pinned bytes.
