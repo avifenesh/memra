@@ -17,11 +17,12 @@ pub use deepseek_v41::{
 };
 pub use inkling2::{
     AttentionInputs, BeyondExtent, BlockAttentionPlan, ClipScale, DenseNumericsPlan,
-    DenseTensorClass, DrafterHead, DrafterTap, ExpertActivationMode, ExpertNumericsPlan,
-    ExpertWeightFormat, Inkling2DrafterPlan, Inkling2NumericClass, Inkling2Numerics, Inkling2Plan,
-    L2ClipPlan, LogPositionScalePlan, LoopMessageTarget, LoopPlan, LoopSlotPlan, OutputGatePlan,
-    QuerySinkPlan, RelativeBiasAttentionPlan, RelativeBiasPlan, RelativeBiasStatePlan,
-    ShortConvPlan, ShortConvTaps,
+    DenseTensorClass, DraftAttentionPlan, DraftBlockPlan, DraftFusePlan, DraftRnnHeadPlan,
+    DraftRopePlan, DraftRowInput, DrafterHead, DrafterTap, ExpertActivationMode,
+    ExpertNumericsPlan, ExpertWeightFormat, Inkling2DrafterPlan, Inkling2NumericClass,
+    Inkling2Numerics, Inkling2Plan, L2ClipPlan, LogPositionScalePlan, LoopMessageTarget, LoopPlan,
+    LoopSlotPlan, OutputGatePlan, QuerySinkPlan, RelativeBiasAttentionPlan, RelativeBiasPlan,
+    RelativeBiasStatePlan, RnnChunk, RnnInput, ShortConvPlan, ShortConvTaps,
 };
 use speech::WhisperPlan;
 
