@@ -58,6 +58,30 @@ pub fn tensor_id(name: &str) -> TensorId {
     pack::semantic_tensor_id(name)
 }
 
+/// SiTU's factor tables for the caps (built once per thread and caps: 2 x 65,536 f64).
+fn situ_tables(gate_cap: f32, up_cap: f32) -> std::rc::Rc<actquant::SituTables> {
+    thread_local! {
+        static TABLES: std::cell::RefCell<Option<std::rc::Rc<actquant::SituTables>>> =
+            const { std::cell::RefCell::new(None) };
+    }
+    TABLES.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        match slot.as_ref() {
+            Some(t)
+                if t.gate_cap.to_bits() == gate_cap.to_bits()
+                    && t.up_cap.to_bits() == up_cap.to_bits() =>
+            {
+                t.clone()
+            }
+            _ => {
+                let t = std::rc::Rc::new(actquant::situ_tables(gate_cap, up_cap));
+                *slot = Some(t.clone());
+                t
+            }
+        }
+    })
+}
+
 fn program(plan: &ModelPlan) -> Result<&Inkling2Plan, ReferenceError> {
     plan.inkling2
         .as_ref()
@@ -1015,6 +1039,7 @@ impl<'a> Session<'a> {
                     .map(|value| actquant::bf16(*value as f32))
                     .collect();
                 let gamma: Vec<f32> = weights.iter().map(|weight| *weight as f32).collect();
+                let situ = situ_tables(gate_cap, up_cap);
                 let out = match (gate_up, down) {
                     (
                         ExpertBank::Nvfp4 {
@@ -1053,7 +1078,8 @@ impl<'a> Session<'a> {
                             n: *down_rows,
                             k: *down_inputs,
                         },
-                        (gate_cap, up_cap),
+                        &situ,
+                        actquant::Accumulation::IndexOrder,
                     ),
                     (
                         ExpertBank::Mxfp8 {
@@ -1084,7 +1110,8 @@ impl<'a> Session<'a> {
                             n: *down_rows,
                             k: *down_inputs,
                         },
-                        (gate_cap, up_cap),
+                        &situ,
+                        actquant::Accumulation::IndexOrder,
                     ),
                     _ => {
                         return Err(invalid(

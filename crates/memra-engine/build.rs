@@ -665,6 +665,14 @@ fn main() {
             // Portable CUDA C; peer stores plus a bounded flag wait, no oracle to match, so it
             // takes the default flags rather than dsv4_gpu.cu's -fmad=false.
             "cu/tp_ar.cu",
+            // Inkling 2 Mini routed experts: the act-quant quantizers (portable) and the W4A4 /
+            // W8A8 block-scaled expert GEMMs (120a family; elsewhere the launcher refuses).
+            "cu/inkling2_actq.cu",
+            // Inkling 2 Mini native GPU route: tile GEMM and decode GEMV over the stored formats,
+            // relative-bias attention with the per-query sink, clip / tau / value-norm epilogues,
+            // short convolutions with carried state, depth mix, loop controller, router.
+            // Portable CUDA C.
+            "cu/inkling2_gpu.cu",
         ] {
             println!("cargo:rerun-if-changed={mmq_src}");
             let compile_src =
@@ -812,6 +820,11 @@ fn main() {
             if mmq_src.ends_with("mimo_audio_codec_rvq.cu") {
                 // Keep the source's separate F32 products and sums.
                 args.push("-fmad=false".into());
+            }
+            if mmq_src.ends_with("inkling2_actq.cu") && cuda_arch == "120a" {
+                // The block-scaled FP4 / FP8 MMA forms exist on the 120a family only. The host
+                // pass cannot see the device feature macros, so the gate is this define.
+                args.push("-DMEMRA_INK2_BLOCK_SCALED=1".into());
             }
             args.extend([
                 "-c".into(),

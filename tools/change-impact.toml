@@ -290,6 +290,18 @@ families = ["100a"]
 perf = true
 why = "sm_100a tcgen05 block-scale layout"
 
+# The Inkling 2 Mini GPU route and its act-quant expert kernels: only the ink2-* runners and
+# kernel-check's ink2g/ink2-actq cells call them, and no served path links them, so a change
+# reaches the inkling2 pack alone. The pack is UNCOVERED by the device battery; its own gates
+# (ink2-gpu-gate, ink2-actq-gate, the ink2-gpu checkpoint receipts) are the evidence. build.rs,
+# lib.rs and kernel_check.rs keep their own rules: editing them still reaches every target.
+[[rule]]
+pattern = '^crates/memra-engine/(cu/inkling2_(gpu|actq)\.cu|src/inkling2_(gpu|actq)\.rs)$'
+class = "numeric"
+pack = "inkling2"
+perf = false
+why = "inkling2 route: called only by the ink2 runners and kernel-check's inkling2 cells"
+
 [[rule]]
 pattern = '^crates/memra-engine/cu/'
 class = "kernel"

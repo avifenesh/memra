@@ -1,0 +1,96 @@
+#MARK 1795245142.026 quant-old start
+before NVFP4 rows=1 k=2304: 3.08 us/call
+before NVFP4 rows=8 k=2304: 3.07 us/call
+before NVFP4 + SiTU rows=8 k=1152: 3.78 us/call
+before NVFP4 + SiTU rows=64 k=1152: 4.08 us/call
+before NVFP4 + SiTU rows=2048 k=1152: 34.42 us/call
+before MXFP8 rows=1 k=2304: 2.91 us/call
+before MXFP8 rows=8 k=2304: 2.91 us/call
+before MXFP8 + SiTU rows=8 k=1152: 4.06 us/call
+before MXFP8 + SiTU rows=64 k=1152: 4.11 us/call
+before MXFP8 + SiTU rows=2048 k=1152: 27.86 us/call
+#MARK 1795245142.357 quant-old end
+#MARK 1795245142.361 quant-pad start
+after NVFP4 rows=1 k=2304: 3.46 us/call
+after NVFP4 rows=8 k=2304: 3.46 us/call
+after NVFP4 + SiTU rows=8 k=1152: 5.30 us/call
+after NVFP4 + SiTU rows=64 k=1152: 5.58 us/call
+after NVFP4 + SiTU rows=2048 k=1152: 52.32 us/call
+after MXFP8 rows=1 k=2304: 3.01 us/call
+after MXFP8 rows=8 k=2304: 3.01 us/call
+after MXFP8 + SiTU rows=8 k=1152: 4.36 us/call
+after MXFP8 + SiTU rows=64 k=1152: 4.55 us/call
+after MXFP8 + SiTU rows=2048 k=1152: 48.60 us/call
+#MARK 1795245142.714 quant-pad end
+#MARK 1795245142.717 quant-swz start
+after NVFP4 rows=1 k=2304: 3.47 us/call
+after NVFP4 rows=8 k=2304: 3.47 us/call
+after NVFP4 + SiTU rows=8 k=1152: 5.45 us/call
+after NVFP4 + SiTU rows=64 k=1152: 5.92 us/call
+after NVFP4 + SiTU rows=2048 k=1152: 58.24 us/call
+after MXFP8 rows=1 k=2304: 3.03 us/call
+after MXFP8 rows=8 k=2304: 3.03 us/call
+after MXFP8 + SiTU rows=8 k=1152: 4.47 us/call
+after MXFP8 + SiTU rows=64 k=1152: 4.64 us/call
+after MXFP8 + SiTU rows=2048 k=1152: 48.46 us/call
+#MARK 1795245143.063 quant-swz end
+#MARK 1795245143.066 quant-nosw start
+after NVFP4 rows=1 k=2304: 3.51 us/call
+after NVFP4 rows=8 k=2304: 3.52 us/call
+after NVFP4 + SiTU rows=8 k=1152: 5.47 us/call
+after NVFP4 + SiTU rows=64 k=1152: 5.96 us/call
+after NVFP4 + SiTU rows=2048 k=1152: 58.44 us/call
+after MXFP8 rows=1 k=2304: 3.15 us/call
+after MXFP8 rows=8 k=2304: 3.15 us/call
+after MXFP8 + SiTU rows=8 k=1152: 4.44 us/call
+after MXFP8 + SiTU rows=64 k=1152: 4.64 us/call
+after MXFP8 + SiTU rows=2048 k=1152: 48.82 us/call
+#MARK 1795245143.429 quant-nosw end
+#MARK 1795245143.432 quant-nosw start
+after NVFP4 rows=1 k=2304: 3.52 us/call
+after NVFP4 rows=8 k=2304: 3.52 us/call
+after NVFP4 + SiTU rows=8 k=1152: 5.47 us/call
+after NVFP4 + SiTU rows=64 k=1152: 5.97 us/call
+after NVFP4 + SiTU rows=2048 k=1152: 58.45 us/call
+after MXFP8 rows=1 k=2304: 3.15 us/call
+after MXFP8 rows=8 k=2304: 3.15 us/call
+after MXFP8 + SiTU rows=8 k=1152: 4.43 us/call
+after MXFP8 + SiTU rows=64 k=1152: 4.70 us/call
+after MXFP8 + SiTU rows=2048 k=1152: 48.82 us/call
+#MARK 1795245143.790 quant-nosw end
+#MARK 1795245143.792 quant-swz start
+after NVFP4 rows=1 k=2304: 3.48 us/call
+after NVFP4 rows=8 k=2304: 3.47 us/call
+after NVFP4 + SiTU rows=8 k=1152: 5.45 us/call
+after NVFP4 + SiTU rows=64 k=1152: 5.95 us/call
+after NVFP4 + SiTU rows=2048 k=1152: 58.42 us/call
+after MXFP8 rows=1 k=2304: 3.04 us/call
+after MXFP8 rows=8 k=2304: 3.02 us/call
+after MXFP8 + SiTU rows=8 k=1152: 4.46 us/call
+after MXFP8 + SiTU rows=64 k=1152: 4.65 us/call
+after MXFP8 + SiTU rows=2048 k=1152: 48.42 us/call
+#MARK 1795245144.336 quant-swz end
+#MARK 1795245144.340 quant-pad start
+after NVFP4 rows=1 k=2304: 3.46 us/call
+after NVFP4 rows=8 k=2304: 3.46 us/call
+after NVFP4 + SiTU rows=8 k=1152: 5.30 us/call
+after NVFP4 + SiTU rows=64 k=1152: 5.57 us/call
+after NVFP4 + SiTU rows=2048 k=1152: 52.32 us/call
+after MXFP8 rows=1 k=2304: 3.11 us/call
+after MXFP8 rows=8 k=2304: 3.11 us/call
+after MXFP8 + SiTU rows=8 k=1152: 4.42 us/call
+after MXFP8 + SiTU rows=64 k=1152: 4.61 us/call
+after MXFP8 + SiTU rows=2048 k=1152: 48.62 us/call
+#MARK 1795245144.905 quant-pad end
+#MARK 1795245144.909 quant-old start
+before NVFP4 rows=1 k=2304: 3.06 us/call
+before NVFP4 rows=8 k=2304: 3.06 us/call
+before NVFP4 + SiTU rows=8 k=1152: 3.76 us/call
+before NVFP4 + SiTU rows=64 k=1152: 4.07 us/call
+before NVFP4 + SiTU rows=2048 k=1152: 34.33 us/call
+before MXFP8 rows=1 k=2304: 2.87 us/call
+before MXFP8 rows=8 k=2304: 2.98 us/call
+before MXFP8 + SiTU rows=8 k=1152: 4.01 us/call
+before MXFP8 + SiTU rows=64 k=1152: 4.04 us/call
+before MXFP8 + SiTU rows=2048 k=1152: 27.24 us/call
+#MARK 1795245145.205 quant-old end

@@ -1,0 +1,52 @@
+ink2-actq-nvfp4 [13 golden records, 434 rows] value-bytes-bad=0 scale-bytes-bad=0 amax-bad=0 OK
+ink2-actq-mxfp8 [5 golden records, 50 rows] value-bytes-bad=0 scale-bytes-bad=0 amax-bad=0 OK
+ink2-cvt-hw cvt.rn.satfinite.e4m3x2.f32 vs RNE goldens bad=0/1027; cvt.rn.satfinite.e2m1x2.f32 vs goldens bad=0/110; NaN, -NaN: hw e4m3 0x7f 0x7f, hw e2m1 0x7 0x7 (the software rounding: 0x7f 0x7f, 0x7 0x7) OK
+ink2-situ-actq-nvfp4 every-bf16 [rows=64 k=1024] bf16 rows differ from the f64 reference=0/65536; quantization of the device rows bit-bad=0; outputs within 2^-40 of a bf16 midpoint=0 OK
+ink2-situ-actq-nvfp4 window-117..133 [rows=4352 k=4352] bf16 rows differ from the f64 reference=0/18939904; quantization of the device rows bit-bad=0; outputs within 2^-40 of a bf16 midpoint=0 OK
+ink2-situ-actq-nvfp4 gauss [rows=16 k=1152] bf16 rows differ from the f64 reference=0/18432; quantization of the device rows bit-bad=0; outputs within 2^-40 of a bf16 midpoint=0 OK
+ink2-situ-actq-mxfp8 every-bf16 [rows=64 k=1024] bf16 rows differ from the f64 reference=0/65536; quantization of the device rows bit-bad=0; outputs within 2^-40 of a bf16 midpoint=0 OK
+ink2-situ-actq-mxfp8 window-117..133 [rows=4352 k=4352] bf16 rows differ from the f64 reference=0/18939904; quantization of the device rows bit-bad=0; outputs within 2^-40 of a bf16 midpoint=0 OK
+ink2-situ-actq-mxfp8 gauss [rows=16 k=1152] bf16 rows differ from the f64 reference=0/18432; quantization of the device rows bit-bad=0; outputs within 2^-40 of a bf16 midpoint=0 OK
+ink2-w4a4-gemm golden w4a4/k1152 [n=16 k=1152 rows=8 nb=1] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=64; over-bound=0 max|err|/sum|p|=1.098e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/k1152 [n=16 k=1152 rows=8 nb=2] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=64; over-bound=0 max|err|/sum|p|=1.098e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/k1152 [n=16 k=1152 rows=8 nb=4] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=64; over-bound=0 max|err|/sum|p|=1.098e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/k2304 [n=16 k=2304 rows=8 nb=1] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=44; over-bound=0 max|err|/sum|p|=1.011e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/k2304 [n=16 k=2304 rows=8 nb=2] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=44; over-bound=0 max|err|/sum|p|=1.011e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/k2304 [n=16 k=2304 rows=8 nb=4] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=44; over-bound=0 max|err|/sum|p|=1.011e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/small [n=32 k=128 rows=12 nb=1] acc: chain-model bit-equal=384/384 (gated) index-order bit-equal=380; over-bound=0 max|err|/sum|p|=2.748e-8 (bound 1.514e-5); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/small [n=32 k=128 rows=12 nb=2] acc: chain-model bit-equal=384/384 (gated) index-order bit-equal=380; over-bound=0 max|err|/sum|p|=2.748e-8 (bound 1.514e-5); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/small [n=32 k=128 rows=12 nb=4] acc: chain-model bit-equal=384/384 (gated) index-order bit-equal=380; over-bound=0 max|err|/sum|p|=2.748e-8 (bound 1.514e-5); epilogue bit-bad=0 OK
+ink2-w4a4-gemm w13 decode M=1 [n=2304 k=2304 rows=8 nb=1] acc: chain-model bit-equal=18432/18432 (gated) index-order bit-equal=5850; over-bound=0 max|err|/sum|p|=1.351e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm w13 decode M=8 [n=2304 k=2304 rows=64 nb=1] acc: chain-model bit-equal=147456/147456 (gated) index-order bit-equal=47439; over-bound=0 max|err|/sum|p|=1.300e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm w13 prefill group [n=2304 k=2304 rows=40 nb=4] acc: chain-model bit-equal=92160/92160 (gated) index-order bit-equal=29245; over-bound=0 max|err|/sum|p|=1.597e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm w2 decode M=1 [n=2304 k=1152 rows=8 nb=1] acc: chain-model bit-equal=18432/18432 (gated) index-order bit-equal=10730; over-bound=0 max|err|/sum|p|=1.104e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm w2 decode M=8 [n=2304 k=1152 rows=64 nb=1] acc: chain-model bit-equal=147456/147456 (gated) index-order bit-equal=86710; over-bound=0 max|err|/sum|p|=1.621e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm w2 prefill group [n=2304 k=1152 rows=40 nb=4] acc: chain-model bit-equal=92160/92160 (gated) index-order bit-equal=54137; over-bound=0 max|err|/sum|p|=1.361e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/k1152 [n=16 k=1152 rows=8 nb=1] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=4; over-bound=0 max|err|/sum|p|=6.823e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/k1152 [n=16 k=1152 rows=8 nb=2] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=4; over-bound=0 max|err|/sum|p|=6.823e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/k2304 [n=16 k=2304 rows=8 nb=1] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=4; over-bound=0 max|err|/sum|p|=8.175e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/k2304 [n=16 k=2304 rows=8 nb=2] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=4; over-bound=0 max|err|/sum|p|=8.175e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/small [n=32 k=128 rows=12 nb=1] acc: chain-model bit-equal=384/384 (gated) index-order bit-equal=84; over-bound=0 max|err|/sum|p|=2.440e-7 (bound 1.514e-5); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/small [n=32 k=128 rows=12 nb=2] acc: chain-model bit-equal=384/384 (gated) index-order bit-equal=84; over-bound=0 max|err|/sum|p|=2.440e-7 (bound 1.514e-5); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/subnormal_all [n=32 k=1152 rows=16 nb=1] acc: chain-model bit-equal=512/512 (gated) index-order bit-equal=19; over-bound=0 max|err|/sum|p|=8.880e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/subnormal_all [n=32 k=1152 rows=16 nb=2] acc: chain-model bit-equal=512/512 (gated) index-order bit-equal=19; over-bound=0 max|err|/sum|p|=8.880e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/subnormal_w [n=32 k=1152 rows=16 nb=1] acc: chain-model bit-equal=512/512 (gated) index-order bit-equal=30; over-bound=0 max|err|/sum|p|=1.586e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/subnormal_w [n=32 k=1152 rows=16 nb=2] acc: chain-model bit-equal=512/512 (gated) index-order bit-equal=30; over-bound=0 max|err|/sum|p|=1.586e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w13 decode M=1 [n=2304 k=2304 rows=8 nb=1] acc: chain-model bit-equal=18432/18432 (gated) index-order bit-equal=284; over-bound=0 max|err|/sum|p|=1.127e-6 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w13 decode M=8 [n=2304 k=2304 rows=64 nb=1] acc: chain-model bit-equal=147456/147456 (gated) index-order bit-equal=2153; over-bound=0 max|err|/sum|p|=1.221e-6 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w13 prefill group [n=2304 k=2304 rows=40 nb=2] acc: chain-model bit-equal=92160/92160 (gated) index-order bit-equal=1379; over-bound=0 max|err|/sum|p|=1.283e-6 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w2 decode M=1 [n=2304 k=1152 rows=8 nb=1] acc: chain-model bit-equal=18432/18432 (gated) index-order bit-equal=631; over-bound=0 max|err|/sum|p|=9.198e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w2 decode M=8 [n=2304 k=1152 rows=64 nb=1] acc: chain-model bit-equal=147456/147456 (gated) index-order bit-equal=5390; over-bound=0 max|err|/sum|p|=1.017e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w2 prefill group [n=2304 k=1152 rows=40 nb=2] acc: chain-model bit-equal=92160/92160 (gated) index-order bit-equal=3373; over-bound=0 max|err|/sum|p|=1.147e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w13 decode M=1 subnormal-weights [n=2304 k=2304 rows=8 nb=1] acc: chain-model bit-equal=18432/18432 (gated) index-order bit-equal=402; over-bound=0 max|err|/sum|p|=3.640e-6 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w13 decode M=8 subnormal-weights [n=2304 k=2304 rows=64 nb=1] acc: chain-model bit-equal=147456/147456 (gated) index-order bit-equal=2891; over-bound=0 max|err|/sum|p|=3.832e-6 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w13 prefill group subnormal-weights [n=2304 k=2304 rows=40 nb=2] acc: chain-model bit-equal=92160/92160 (gated) index-order bit-equal=1811; over-bound=0 max|err|/sum|p|=3.712e-6 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w2 decode M=1 subnormal-weights [n=2304 k=1152 rows=8 nb=1] acc: chain-model bit-equal=18432/18432 (gated) index-order bit-equal=878; over-bound=0 max|err|/sum|p|=2.166e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w2 decode M=8 subnormal-weights [n=2304 k=1152 rows=64 nb=1] acc: chain-model bit-equal=147456/147456 (gated) index-order bit-equal=6993; over-bound=0 max|err|/sum|p|=2.431e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w2 prefill group subnormal-weights [n=2304 k=1152 rows=40 nb=2] acc: chain-model bit-equal=92160/92160 (gated) index-order bit-equal=4428; over-bound=0 max|err|/sum|p|=2.266e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-expert-block-nvfp4 [tokens=5 top-k=3 h=128 f=128] vs the reference block (sm_120a accumulators): gate_up bad=0 y bad=0 down bad=0 out bad=0 OK
+ink2-expert-block-mxfp8 [tokens=5 top-k=3 h=128 f=128] vs the reference block (sm_120a accumulators): gate_up bad=0 y bad=0 down bad=0 out bad=0 OK
+capture written to capture-r4.bin
+ink2-actq-gate: ALL OK (48 lines)
+gate-rc=0
+bench-script-rc=1
