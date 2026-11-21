@@ -206,6 +206,29 @@ impl PreSplit {
     }
 }
 
+impl PreSplit {
+    /// Whether a GGUF of this split looks a whole word up before it merges. GGUF metadata has
+    /// no key for it, so the value is the one the family's own `tokenizer.json` declares in
+    /// `model.ignore_merges`, and a GGUF load gives the checkpoint's ids:
+    ///
+    /// - `glm4`: true. zai-org/GLM-5.3-Flash @ 04c4e9e9 (and GLM-4.7-Flash, the same file)
+    ///   declares it, and 893 of its pieces, a space and a CJK word, encode as one id only
+    ///   through the lookup. llama.cpp sets it for `glm4` too (src/llama-vocab.cpp:2600-2604
+    ///   at 29b52d398b29).
+    /// - `qwen35`, `qwen2`, `deepseek-v3`: false, as the Qwen3.8, Hy3 and Step-3.7-Flash
+    ///   checkpoints declare.
+    ///
+    /// A new split must name its family's value here; the match has no default arm.
+    fn gguf_ignore_merges(self) -> bool {
+        match self {
+            PreSplit::Glm4 => true,
+            PreSplit::Qwen35 | PreSplit::Qwen2 | PreSplit::DeepseekV3 => false,
+            // SPM-style BPE has its own whole-word rule; the unknown fallback is inexact anyway
+            PreSplit::Spm | PreSplit::UnknownFallbackQwen35 => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TokAttr {
     Normal,
@@ -270,6 +293,11 @@ pub struct Tokenizer {
     chat_template: Option<String>,
     /// SPM-style BPE (gemma4): \u2581 whitespace escaping, raw-UTF-8 merges, <0xXX> byte fallback.
     spm_style: bool,
+    /// A pre-split word that is itself a vocabulary piece encodes as that one id and the merge
+    /// table is not consulted (the tokenizers library's BPE, tiktoken's whole-piece lookup).
+    /// From `tokenizer.json` `model.ignore_merges`; a GGUF has no key for it and takes its
+    /// family's value by `pre` id ([`PreSplit::gguf_ignore_merges`]).
+    ignore_merges: bool,
     /// DeepSeek encoding, detected from the checkpoint's config.json at `from_hf_dir`: the
     /// dspark_* key census for deepseek-v4 (see `chat::Dsv4Encoding` \u2014 the effort ladder
     /// differs between the preview and 0731 checkpoints while every tokenizer/template byte is
@@ -513,6 +541,7 @@ impl Tokenizer {
             split,
             chat_template,
             spm_style,
+            ignore_merges: split.gguf_ignore_merges(),
             // No dsv4 GGUF lineage exists (dsv4 serves from safetensors dirs); when a mint
             // lane defines one, it must carry the encoding revision in GGUF metadata —
             // unknown here means dsv4 "high"/"max" renders refuse rather than guess.
@@ -1008,6 +1037,10 @@ impl Tokenizer {
             split,
             chat_template,
             spm_style: false,
+            ignore_merges: model
+                .get("ignore_merges")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             dsv4_encoding,
         })
     }
@@ -1219,6 +1252,12 @@ impl Tokenizer {
 
         for word in &words {
             let word = unicode::byte_encode(word);
+            if self.ignore_merges
+                && let Some(tok) = self.text_to_token(&word)
+            {
+                output.push(tok);
+                continue;
+            }
             self.bpe_merge_word(&word, output);
         }
     }
