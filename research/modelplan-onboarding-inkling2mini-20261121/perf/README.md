@@ -29,6 +29,8 @@ void if any loaded sample (over 60 W) reads P2 or memory 11,001 MHz. Base and ne
 | base | #1397 at 0c88a56ca9 plus the digest runner | 5.38 | 185.9 | 1637 | 3.5% | `s1/summary.json` |
 | 1 | BF16 decode GEMV at the read bandwidth, projections batched; controller and depth mix split over blocks | 53.0 | 18.9 | 1381 | 34% | `s1/` |
 | 2 | expert GEMM reads input row pair / top_k: the MoE input is quantized once a token, not once a routed pair | 53.06 (vs 53.03, flat) | 18.85 | 1381 | 34% | `s2/` |
+| rebase | onto #1397's review fixes (atomic forward, three-pass attention): base 5.36, steps 1+2 | 51.21 | 19.55 | 1381 | 33% | `s3/` arm1 |
+| 3 | expert GEMM: ring issued before the activation stage, one warp a decode block | 51.79 | 19.33 | 1381 | 33% | `s3/` arm3 |
 
 ## Step 1: GEMV, controller and depth mix
 
@@ -54,6 +56,24 @@ and the logits for declared p1 one token a call, declared p2, float p1 one token
 
 Timed (`s1/summary.json`): base 5.378 / 5.379 / 5.379 tok/s, new 53.02 / 53.01 / 53.00 tok/s; no void take
 (no loaded sample at P2 or 11,001 MHz). Host load 12.9 at the start.
+
+## Rebase onto the #1397 review fixes (7a24a2a50f)
+
+Lane H's review fixes changed the base: the conv histories are double-buffered so a failed call commits
+nothing (atomic forward), and attention recomputes its f64 scores in three passes so its shared memory does not
+grow with the context. The new base (`base2`: 7a24a2a50f plus the digest runner) decodes at 5.363 tok/s and steps 1
+and 2 on it (`s2r`) at 51.21 tok/s, against 53.0 before the rebase: the three score passes cost about 0.7 ms a
+token at this context. Steps 1 and 2 re-verified on the new base: digests equal on all slots and the logits,
+both classes (`s3/id-*-base.json` against `s3/id-*-arm1.json`).
+
+## Step 3: expert GEMM issue order and one warp a decode block
+
+Two changes to the act-quant expert GEMM, neither touching an output's MMA sequence: (a) each warp issues its
+weight ring's first stages before the block stages the activations (the weight stream never waited on them);
+(b) a one-row decode group runs one warp a block (lane D measured 1 beating 2 on 15 of 16 decode rows).
+Digests equal at each arm, gate ALL OK (`s3/`). Timed at c=1 against step 2: (a) 51.21 -> 51.49 tok/s (+0.5%),
+(a)+(b) 51.79 tok/s (+1.1%). Small: the decode expert GEMM is already at 48-81% of the read roofline (lane D's
+full-clock measurement), and its cost is spread over 80 short kernels a token.
 
 ## Step 2: one quantized MoE input a token
 

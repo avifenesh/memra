@@ -346,6 +346,33 @@ __global__ void ink2_expert_gemm_kernel(const uint32_t* __restrict__ Act, const 
     const int tid = threadIdx.x, nthr = blockDim.x, lane = tid & 31, warp = tid >> 5;
     const uint32_t* grp = Groups + (long)blockIdx.x * (2 + COLS);
     const uint32_t expert = grp[0], count = grp[1];
+    const int n0 = (blockIdx.y * (nthr >> 5) + warp) * 16;
+    // The weights are the bytes of this kernel. Each warp keeps RING stages in flight in its own
+    // shared-memory ring: a stage is one K step of its 16 weight rows, 16 x 32 B of codes copied as 32
+    // 16-byte cp.async (lane 2r + h: row r, half h) plus the rows' scale words. ldmatrix.x4 reads a
+    // stage back as the A fragment: matrix 0 = rows 0..7 first half, 1 = rows 8..15 first half, 2 and 3
+    // the second halves, which is a0..a3.
+    // The ring's first stages are issued before the activation is staged: the weight stream does not
+    // wait on it, and the MMA sequence of every output is unchanged.
+    const int rowbytes = steps * 32;
+    const int scrow = FP4 ? 4 * steps : steps;
+    const int head = ((COLS * (stride + scw) * 4) + 15) & ~15;
+    uint8_t* ring = reinterpret_cast<uint8_t*>(ink2_sm) + head + warp * (RING * INK2_STAGE);
+    const uint8_t* wrow = reinterpret_cast<const uint8_t*>(W) + ((long)expert * N + n0) * rowbytes;
+    const uint8_t* wsrow = WSc + ((long)expert * N + n0) * scrow;
+    auto issue = [&](int s) {
+        uint8_t* stg = ring + (s % RING) * INK2_STAGE;
+        const int r = lane >> 1, h = lane & 1;
+        ink2_cp16(stg + r * 32 + h * 16, wrow + (long)r * rowbytes + s * 32 + h * 16);
+        // FP4: the step's 4 ue4m3 bytes; FP8: the 4 ue8m0 bytes of steps s & ~3 .. + 3
+        if (lane < 16) ink2_cp4(stg + 512 + lane * 4, wsrow + (long)lane * scrow + (FP4 ? s * 4 : (s & ~3)));
+    };
+    if (n0 < N) {
+        for (int s = 0; s < RING - 1; ++s) {
+            if (s < steps) issue(s);
+            ink2_cp_commit();
+        }
+    }
     for (int i = tid; i < COLS * words; i += nthr) {
         const int j = i / words, w = i - j * words;
         sact[j * stride + w] = (uint32_t)j < count ? Act[(long)(grp[2 + j] / xdiv) * words + w] : 0u;
@@ -364,34 +391,11 @@ __global__ void ink2_expert_gemm_kernel(const uint32_t* __restrict__ Act, const 
         ssc[j * scw + w] = v;
     }
     __syncthreads();
-    const int n0 = (blockIdx.y * (nthr >> 5) + warp) * 16;
     if (n0 >= N) return;
     const int g = lane >> 2, t = lane & 3;
     float acc[NB][4];
 #pragma unroll
     for (int b = 0; b < NB; ++b) acc[b][0] = acc[b][1] = acc[b][2] = acc[b][3] = 0.0f;
-    // The weights are the bytes of this kernel. Each warp keeps RING stages in flight in its own
-    // shared-memory ring: a stage is one K step of its 16 weight rows, 16 x 32 B of codes copied as 32
-    // 16-byte cp.async (lane 2r + h: row r, half h) plus the rows' scale words. ldmatrix.x4 reads a
-    // stage back as the A fragment: matrix 0 = rows 0..7 first half, 1 = rows 8..15 first half, 2 and 3
-    // the second halves, which is a0..a3.
-    const int rowbytes = steps * 32;
-    const int scrow = FP4 ? 4 * steps : steps;
-    const int head = ((COLS * (stride + scw) * 4) + 15) & ~15;
-    uint8_t* ring = reinterpret_cast<uint8_t*>(ink2_sm) + head + warp * (RING * INK2_STAGE);
-    const uint8_t* wrow = reinterpret_cast<const uint8_t*>(W) + ((long)expert * N + n0) * rowbytes;
-    const uint8_t* wsrow = WSc + ((long)expert * N + n0) * scrow;
-    auto issue = [&](int s) {
-        uint8_t* stg = ring + (s % RING) * INK2_STAGE;
-        const int r = lane >> 1, h = lane & 1;
-        ink2_cp16(stg + r * 32 + h * 16, wrow + (long)r * rowbytes + s * 32 + h * 16);
-        // FP4: the step's 4 ue4m3 bytes; FP8: the 4 ue8m0 bytes of steps s & ~3 .. + 3
-        if (lane < 16) ink2_cp4(stg + 512 + lane * 4, wsrow + (long)lane * scrow + (FP4 ? s * 4 : (s & ~3)));
-    };
-    for (int s = 0; s < RING - 1; ++s) {
-        if (s < steps) issue(s);
-        ink2_cp_commit();
-    }
     const int li = lane >> 3, lr = lane & 7;
     const int ldoff = ((li & 1) * 8 + lr) * 32 + (li >> 1) * 16;
     // scale source of this lane: FP4 lanes t = 2, 3; FP8 lanes t = 0, 1 (row g, row g + 8)
@@ -558,7 +562,7 @@ int memra_ink2_expert_gemm_x(int kind, int nb, const void* act, const void* act_
     if (N <= 0 || N % 16 != 0 || K <= 0 || K % (kind == 0 ? 64 : 128) != 0) return 3;
     if (kind == 0 && (!act_amax || !w_amax)) return 4;
     if (!(nb == 1 || nb == 2 || (nb == 4 && kind == 0))) return 5;
-    if (wpb <= 0) wpb = nb == 1 ? 2 : 8;
+    if (wpb <= 0) wpb = nb == 1 ? 1 : 8;
     if (wpb > 8) return 6;
     const uint32_t* ap = static_cast<const uint32_t*>(act);
     const uint8_t* asp = static_cast<const uint8_t*>(act_scales);
