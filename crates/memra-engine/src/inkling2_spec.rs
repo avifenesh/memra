@@ -220,6 +220,9 @@ pub struct AdaptiveK {
     probe_every: usize,
     first_plain: Vec<f64>,
     probing: bool,
+    /// Realized committed tokens per second of each length (an exponential average of the
+    /// request's own steps); a measured length is priced by this, not by the model.
+    realized: Vec<Option<f64>>,
 }
 
 /// A length must beat a plain step by this factor to be taken.
@@ -237,6 +240,7 @@ impl AdaptiveK {
             probe_every: 16,
             first_plain: Vec::new(),
             probing: false,
+            realized: vec![None; max + 1],
         }
     }
 
@@ -268,8 +272,13 @@ impl AdaptiveK {
         let a = self.accept_rate();
         let mut best: Option<(usize, f64)> = None;
         for k in 1..=self.max {
-            let Some(t) = self.step_time(k) else { continue };
-            let rate = (1.0 - a.powi(k as i32 + 1)) / (1.0 - a) / t;
+            let rate = match self.realized[k] {
+                Some(r) => r,
+                None => {
+                    let Some(t) = self.step_time(k) else { continue };
+                    (1.0 - a.powi(k as i32 + 1)) / (1.0 - a) / t
+                }
+            };
             if best.is_none_or(|b| rate > b.1) {
                 best = Some((k, rate));
             }
@@ -317,6 +326,11 @@ impl AdaptiveK {
             return;
         }
         self.plain_run = 0;
+        let r = (accepted + 1) as f64 / secs.max(1e-9);
+        self.realized[k] = Some(match self.realized[k] {
+            Some(o) => 0.8 * o + 0.2 * r,
+            None => r,
+        });
         self.succ += accepted as f64;
         if accepted < k {
             self.fail += 1.0;
