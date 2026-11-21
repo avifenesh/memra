@@ -164,6 +164,7 @@ pub fn plan_with_expert_activation(
         })
         .collect::<Result<Vec<_>, PlanCompileError>>()?;
     let dense = dense_numerics(quant).map_err(&numerics_error)?;
+    declaration_covers_census(config, quant).map_err(&numerics_error)?;
 
     let slots = ink.slots();
     let layers = (0..slots).map(|slot| layer_plan(ink, slot, norm)).collect();
@@ -270,6 +271,60 @@ pub fn plan_with_expert_activation(
             vision_executed: false,
         }),
     })
+}
+
+/// The declaration and the derived census name the same tensors: every tensor the checkpoint
+/// must hold is in a parameter group of its file's part, and every declared tensor is one the
+/// checkpoint must hold. Quantization planes are declared through their bank.
+fn declaration_covers_census(
+    config: &ModelConfig,
+    quant: &crate::quant_groups::QuantGroups,
+) -> Result<(), String> {
+    let expected = expected_census(config)?;
+    let mut model = 0usize;
+    let mut drafter = 0usize;
+    for name in expected.keys() {
+        if plane_owner(name, &expected).is_some() {
+            continue;
+        }
+        match name.strip_prefix(DRAFTER_PREFIX) {
+            Some(tensor) => {
+                drafter += 1;
+                if quant.mtp_group(tensor).is_none() {
+                    return Err(format!("no mtp parameter group declares {tensor}"));
+                }
+            }
+            None => {
+                model += 1;
+                if quant.model_group(name).is_none() {
+                    return Err(format!("no model parameter group declares {name}"));
+                }
+            }
+        }
+    }
+    // Names are unique within a part, so equal counts leave no declared tensor unaccounted for;
+    // the loops below only name the first stray one.
+    for (part, groups, count, prefix) in [
+        ("model", &quant.model, model, ""),
+        ("mtp", &quant.mtp, drafter, DRAFTER_PREFIX),
+    ] {
+        if groups
+            .iter()
+            .map(|group| group.tensors.len())
+            .sum::<usize>()
+            == count
+        {
+            continue;
+        }
+        for tensor in groups.iter().flat_map(|group| &group.tensors) {
+            if !expected.contains_key(&format!("{prefix}{tensor}")) {
+                return Err(format!(
+                    "the {part} parameter groups declare {tensor}, which the config does not derive"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The dense tensor class of a trunk tensor; `None` for expert banks.

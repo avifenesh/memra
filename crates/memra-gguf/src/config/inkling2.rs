@@ -12,6 +12,14 @@ use crate::quant_groups::{ActivationQuant, ComputeDtype, QuantGroups};
 
 const FAMILY: &str = "inkling2";
 
+/// Upper bound on cache slots, the canonical compiler's layer cap. A loop multiplies layers by
+/// passes, so an unbounded pass count is an unbounded plan.
+pub const MAX_CACHE_SLOTS: u32 = 1_024;
+
+/// Inputs per scale block of the widest expert format (MXFP8: 32; NVFP4's 16 and the
+/// two-codes-per-byte packing divide it).
+const EXPERT_INPUT_BLOCK: u32 = 32;
+
 /// Text trunk, loop, vision tower, drafter and quantization declarations of one checkpoint.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Inkling2Config {
@@ -111,7 +119,10 @@ pub struct Inkling2DrafterConfig {
     pub block_size: u32,              // 8
     pub markov_rank: u32,             // 256
     pub markov_head_type: String,     // "rnn_hidden"
-    /// Trunk cache-slot outputs the drafter reads; `slots()` names the final hidden.
+    /// What the drafter reads from the trunk. The ids count layer VISITS in execution order
+    /// (prelude, each pass over the core, tail), not cache slots: every id but the last taps the
+    /// INPUT of that visit (the running residual stream on entry), and the last equals the
+    /// visit count and names the final hidden. Visit 23 is cache slot 29.
     pub target_layer_ids: Vec<u32>, // [5, 23, 41, 48]
 }
 
@@ -427,8 +438,11 @@ impl Inkling2Config {
         let layers = self.num_hidden_layers;
         let block = self.n_layers_per_attn_res_block;
         for (field, value) in [
+            ("model_max_length", self.model_max_length),
+            ("vocab_size", self.vocab_size),
             ("hidden_size", self.hidden_size),
             ("num_hidden_layers", layers),
+            ("num_attention_heads", self.num_attention_heads),
             ("num_key_value_heads", self.num_key_value_heads),
             ("head_dim", self.head_dim),
             ("d_rel", self.d_rel),
@@ -442,9 +456,79 @@ impl Inkling2Config {
             ("unpadded_vocab_size", self.unpadded_vocab_size),
             ("loop_config.gate_rank", self.loop_gate_rank),
             ("loop_config.core_start", self.loop_core_start),
+            ("vision_config.hidden_size", self.vision.hidden_size),
+            (
+                "vision_config.num_hidden_layers",
+                self.vision.num_hidden_layers,
+            ),
+            (
+                "vision_config.num_attention_heads",
+                self.vision.num_attention_heads,
+            ),
+            (
+                "vision_config.native_patch_size",
+                self.vision.native_patch_size,
+            ),
+            (
+                "vision_config.adapter_merge_size",
+                self.vision.adapter_merge_size,
+            ),
+            (
+                "vision_config.projection_hidden_dim",
+                self.vision.projection_hidden_dim,
+            ),
+            (
+                "vision_config.posemb_grid_size",
+                self.vision.posemb_grid_size,
+            ),
+            ("mtp_config.hidden_size", self.drafter.hidden_size),
+            (
+                "mtp_config.num_hidden_layers",
+                self.drafter.num_hidden_layers,
+            ),
+            (
+                "mtp_config.num_attention_heads",
+                self.drafter.num_attention_heads,
+            ),
+            (
+                "mtp_config.num_key_value_heads",
+                self.drafter.num_key_value_heads,
+            ),
+            ("mtp_config.head_dim", self.drafter.head_dim),
+            (
+                "mtp_config.intermediate_size",
+                self.drafter.intermediate_size,
+            ),
+            (
+                "mtp_config.sliding_window_size",
+                self.drafter.sliding_window_size,
+            ),
+            ("mtp_config.markov_rank", self.drafter.markov_rank),
         ] {
             expect(value > 0, format!("{field} is 0"))?;
         }
+        // The expert banks are packed two codes per byte and scaled per 16 (NVFP4) or 32 (MXFP8)
+        // inputs, over both the hidden width (gate/up input) and the expert width (down input).
+        for (field, value) in [
+            ("hidden_size", self.hidden_size),
+            ("intermediate_size", self.intermediate_size),
+        ] {
+            expect(
+                value.is_multiple_of(EXPERT_INPUT_BLOCK),
+                format!(
+                    "{field} {value} is not a whole number of {EXPERT_INPUT_BLOCK}-input scale blocks"
+                ),
+            )?;
+        }
+        // The ViT MLP width is hidden * mlp_ratio and must be a whole number.
+        let vision_mlp = f64::from(self.vision.hidden_size) * f64::from(self.vision.mlp_ratio);
+        expect(
+            vision_mlp.is_finite() && vision_mlp >= 1.0 && vision_mlp.fract() == 0.0,
+            format!(
+                "vision_config.hidden_size {} x mlp_ratio {} is not a whole width",
+                self.vision.hidden_size, self.vision.mlp_ratio
+            ),
+        )?;
         for (field, value) in [
             ("rms_norm_eps", self.rms_norm_eps),
             ("qk_l2_clip_threshold", self.qk_l2_clip_threshold),
@@ -567,6 +651,19 @@ impl Inkling2Config {
                 self.loop_core_start, self.loop_core_end
             ),
         )?;
+        // Every pass after the first adds one cache slot per core layer. Checked arithmetic:
+        // `slots()` and everything after this line may use the plain form.
+        let slots = (self.loop_num_passes - 1)
+            .checked_mul(self.loop_core_end - self.loop_core_start)
+            .and_then(|looped| looped.checked_add(layers))
+            .filter(|&slots| slots <= MAX_CACHE_SLOTS);
+        let Some(slots) = slots else {
+            return Err(format!(
+                "{layers} layers with {} passes over a core of {} need more than {MAX_CACHE_SLOTS} cache slots",
+                self.loop_num_passes,
+                self.loop_core_end - self.loop_core_start
+            ));
+        };
         expect(
             self.loop_core_start.is_multiple_of(block) && self.loop_core_end.is_multiple_of(block),
             format!(
@@ -605,22 +702,66 @@ impl Inkling2Config {
             ),
         )?;
         expect(
-            d.local_layer_ids
-                .iter()
-                .all(|&layer| layer < d.num_hidden_layers),
+            d.local_layer_ids.windows(2).all(|pair| pair[0] < pair[1])
+                && d.local_layer_ids
+                    .iter()
+                    .all(|&layer| layer < d.num_hidden_layers),
             format!(
-                "mtp_config.local_layer_ids {:?} names a block past {}",
+                "mtp_config.local_layer_ids {:?} is not a strictly increasing list of blocks below {}",
                 d.local_layer_ids, d.num_hidden_layers
             ),
         )?;
+        for (field, value) in [
+            ("mtp_config.q_bias", d.q_bias),
+            ("mtp_config.o_bias", d.o_bias),
+        ] {
+            expect(
+                !value,
+                format!("{field} is true; the drafter's projections carry no bias tensor"),
+            )?;
+        }
         expect(
-            !d.target_layer_ids.is_empty()
-                && d.target_layer_ids.windows(2).all(|pair| pair[0] < pair[1])
-                && d.target_layer_ids.iter().all(|&slot| slot <= self.slots()),
+            d.num_attention_heads.is_multiple_of(d.num_key_value_heads),
             format!(
-                "mtp_config.target_layer_ids {:?} is not an increasing list of cache slots up to {} (the final hidden)",
-                d.target_layer_ids,
-                self.slots()
+                "mtp_config.num_attention_heads {} is not a multiple of mtp_config.num_key_value_heads {}",
+                d.num_attention_heads, d.num_key_value_heads
+            ),
+        )?;
+        // One anchor row plus at least one drafted row.
+        expect(
+            d.block_size >= 2,
+            format!(
+                "mtp_config.block_size is {}; a block is the anchor plus at least one drafted row",
+                d.block_size
+            ),
+        )?;
+        for (field, value) in [
+            ("mtp_config.rms_norm_eps", d.rms_norm_eps),
+            ("mtp_config.rope_theta", d.rope_theta),
+        ] {
+            expect(
+                value.is_finite() && value > 0.0,
+                format!("{field} is {value}; it must be finite and positive"),
+            )?;
+        }
+        // The ids count layer VISITS in execution order (there are as many visits as cache
+        // slots). Every id but the last names a visit whose input is tapped; the last must be
+        // the visit count itself, which names the final hidden.
+        let taps = &d.target_layer_ids;
+        expect(
+            taps.len() >= 2,
+            format!(
+                "mtp_config.target_layer_ids {taps:?} needs at least two entries: a visit and the final hidden"
+            ),
+        )?;
+        expect(
+            taps.windows(2).all(|pair| pair[0] < pair[1]),
+            format!("mtp_config.target_layer_ids {taps:?} is not strictly increasing"),
+        )?;
+        expect(
+            taps.last() == Some(&slots),
+            format!(
+                "mtp_config.target_layer_ids {taps:?} does not end at {slots}, the visit count that names the final hidden"
             ),
         )?;
         Ok(())

@@ -10012,6 +10012,66 @@ mod tests {
         assert!((output[2] - 8.868_546_0).abs() < 1e-3, "{output:?}");
     }
 
+    /// `LogitsTransform::Truncate` through `execute` on a real tiny plan: every id below the
+    /// cut keeps its logit bit for bit, every id at or past it is unselectable, and the row
+    /// width does not change. This is the reference surface the registry names for
+    /// `LogitsTruncate`.
+    #[test]
+    fn logits_truncate_keeps_the_head_bits_and_makes_the_padded_tail_unselectable() {
+        let pack = memra_gguf::model_packs::by_alias("qwen3").expect("qwen3 pack");
+        let plan = pack.compile_tiny_plan().expect("tiny plan compiles");
+        let fixture = deterministic_fixture(&plan).unwrap();
+        let plain = execute(&plan, &fixture.weights, &fixture.token_ids).unwrap();
+        let vocab = plain.vocab;
+        assert!(vocab > 4 && plain.tokens > 1);
+        assert!(plain.logits.iter().all(|value| value.is_finite()));
+        let keep = vocab - 3;
+        let mut truncated_plan = plan.clone();
+        truncated_plan
+            .logits
+            .push(LogitsTransform::Truncate(keep as u32));
+        let truncated = execute(&truncated_plan, &fixture.weights, &fixture.token_ids).unwrap();
+        assert_eq!((truncated.tokens, truncated.vocab), (plain.tokens, vocab));
+        for (row, (cut, full)) in truncated
+            .logits
+            .chunks_exact(vocab)
+            .zip(plain.logits.chunks_exact(vocab))
+            .enumerate()
+        {
+            for id in 0..vocab {
+                if id < keep {
+                    assert_eq!(cut[id].to_bits(), full[id].to_bits(), "row {row} id {id}");
+                } else {
+                    assert_eq!(cut[id], f32::NEG_INFINITY, "row {row} id {id}");
+                }
+            }
+        }
+        // A cut at or past the width drops nothing.
+        let mut whole = plan.clone();
+        whole
+            .logits
+            .push(LogitsTransform::Truncate(vocab as u32 + 7));
+        let whole = execute(&whole, &fixture.weights, &fixture.token_ids).unwrap();
+        assert_eq!(whole.logits, plain.logits);
+        // Order matters and is the plan's: a softcap before the cut still caps the kept ids.
+        let mut capped = plan.clone();
+        capped.logits = vec![
+            LogitsTransform::Softcap(2.0),
+            LogitsTransform::Truncate(keep as u32),
+        ];
+        let capped = execute(&capped, &fixture.weights, &fixture.token_ids).unwrap();
+        for (cut, full) in capped
+            .logits
+            .chunks_exact(vocab)
+            .zip(plain.logits.chunks_exact(vocab))
+        {
+            for id in 0..keep {
+                assert_eq!(cut[id].to_bits(), (2.0 * (full[id] / 2.0).tanh()).to_bits());
+            }
+            assert!(cut[keep..].iter().all(|value| *value == f32::NEG_INFINITY));
+        }
+    }
+
     /// The qwen4_exp pack's tiny plan executes end-to-end through `execute`: gated
     /// residual entry/exit, GDN + QSA trunk, PLE on layer 1, MoE with the gated shared
     /// expert, and the separate-projection MTP block. 16 tokens so the indexer budget

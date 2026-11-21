@@ -459,7 +459,7 @@ fn is_quant_auxiliary(name: &str, headers: &BTreeMap<String, StInfo>) -> bool {
         })
     }) || STACKED_BANK_AUXILIARIES.into_iter().any(|suffix| {
         name.strip_suffix(suffix)
-            .is_some_and(|bank| is_stacked_bank_name(bank) && headers.contains_key(bank))
+            .is_some_and(|bank| is_stacked_bank(bank, headers))
     })
 }
 
@@ -472,6 +472,16 @@ const STACKED_BANK_AUXILIARIES: [&str; 3] = ["_scale", "_amax", "_outer_scale_de
 /// A bank name of the stacked-suffix spelling: it ends in `_weight` and is not a `.weight`.
 fn is_stacked_bank_name(name: &str) -> bool {
     name.ends_with("_weight") && !name.ends_with(".weight")
+}
+
+/// A stacked bank with suffix-spelled planes: the name has the spelling, the tensor exists and
+/// so does its `_scale`. This one predicate decides both which tensor folds planes and which
+/// tensors are planes, so a plane-suffixed tensor beside a `*_weight` tensor with no `_scale`
+/// (a controller weight, say) is never hidden: it stays a census row of its own.
+fn is_stacked_bank(name: &str, headers: &BTreeMap<String, StInfo>) -> bool {
+    is_stacked_bank_name(name)
+        && headers.contains_key(name)
+        && headers.contains_key(&format!("{name}_scale"))
 }
 
 /// Storage of a stacked expert bank with suffix-spelled planes. Two layouts exist:
@@ -686,8 +696,7 @@ pub fn census_from_safetensors_headers(
             Some(stem) => (format!("{stem}.weight"), Some(stem)),
             None => (physical_name.clone(), physical_name.strip_suffix(".weight")),
         };
-        let stacked_bank = is_stacked_bank_name(physical_name)
-            && headers.contains_key(&format!("{physical_name}_scale"));
+        let stacked_bank = is_stacked_bank(physical_name, headers);
         let auxiliaries: Vec<String> = if stacked_bank {
             Some(
                 STACKED_BANK_AUXILIARIES

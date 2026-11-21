@@ -814,3 +814,253 @@ fn a_missing_extra_reshaped_or_requantized_tensor_is_refused() {
         "MXFP8 stacked bank",
     );
 }
+
+/// The pinned quant declaration with one exact substitution.
+fn quant_with(from: &str, to: &str) -> String {
+    assert!(QUANT.contains(from), "{from} is not in the declaration");
+    QUANT.replacen(from, to, 1)
+}
+
+#[test]
+fn review_an_orphan_quantization_plane_stays_a_census_row_and_is_refused() {
+    let pinned = pinned_census();
+    let pinned_bytes: u64 = census_from_safetensors_headers(&headers_from(&pinned))
+        .unwrap()
+        .tensors
+        .iter()
+        .map(|row| row.entry.physical_bytes)
+        .sum();
+    // A plane-suffixed tensor beside a `*_weight` tensor that has no `_scale` is not a plane.
+    for (orphan, shape) in [
+        (
+            "model.llm.layers.6.controllers.attn.down_weight_amax",
+            vec![64],
+        ),
+        ("mtp.fuse_weight_outer_scale_denominator", vec![1]),
+    ] {
+        let mut census = pinned.clone();
+        census.insert(orphan.into(), ("F32".into(), shape.clone()));
+        let census = census_from_safetensors_headers(&headers_from(&census)).unwrap();
+        assert!(
+            census.tensors.iter().any(|row| row.entry.name == orphan),
+            "{orphan} left the census"
+        );
+        let bytes: u64 = census
+            .tensors
+            .iter()
+            .map(|row| row.entry.physical_bytes)
+            .sum();
+        assert_eq!(
+            bytes,
+            pinned_bytes + 4 * shape[0],
+            "{orphan} bytes are not counted"
+        );
+        let error = bind(&census).expect_err("an orphan plane must be refused");
+        assert!(error.contains(orphan), "{error}");
+    }
+}
+
+#[test]
+fn review_declared_weight_fields_are_typed_against_the_stored_layout() {
+    // The shipped declaration attaches: NVFP4 is [1, 16], MXFP8 declares [32, 32].
+    let mut config = bare_config();
+    config.attach_quant_groups(QUANT).unwrap();
+    let refuse = |text: String, needle: &str| {
+        let mut config = bare_config();
+        let error = config
+            .attach_quant_groups(&text)
+            .expect_err("the declaration must be refused");
+        assert!(error.contains(needle), "{needle:?} not in {error}");
+    };
+    refuse(
+        quant_with(
+            r#""weight_transform": "nvfp4_nearest""#,
+            r#""weight_transform": "bogus""#,
+        ),
+        "weight_transform",
+    );
+    refuse(
+        quant_with(r#""output_dtype": "uint8""#, r#""output_dtype": "int64""#),
+        "output_dtype",
+    );
+    refuse(
+        quant_with(
+            r#""weight_transform": "mxfp8_nearest""#,
+            r#""weight_transform": "nvfp4_nearest""#,
+        ),
+        "weight_transform",
+    );
+    refuse(
+        quant_with(
+            r#""output_dtype": "float8_e4m3fn""#,
+            r#""output_dtype": "bfloat16""#,
+        ),
+        "output_dtype",
+    );
+    // Block shapes: the compact text of the two quantized groups.
+    let compact = |text: &str| text.split_whitespace().collect::<String>();
+    let squeezed = compact(QUANT);
+    for (from, to) in [
+        (
+            r#""weight_block_shape":[1,16]"#,
+            r#""weight_block_shape":[7,3]"#,
+        ),
+        (
+            r#""weight_block_shape":[32,32]"#,
+            r#""weight_block_shape":[1,32]"#,
+        ),
+        (
+            r#""weight_block_shape":[32,32]"#,
+            r#""weight_block_shape":[128,128]"#,
+        ),
+    ] {
+        assert_eq!(squeezed.matches(from).count(), 1, "{from}");
+        refuse(squeezed.replacen(from, to, 1), "weight_block_shape");
+    }
+}
+
+#[test]
+fn review_the_loop_pass_count_is_bounded_without_overflow() {
+    for passes in ["4294967295", "100000", "85"] {
+        let text = config_with(r#""num_passes": 3"#, &format!(r#""num_passes": {passes}"#));
+        let Err(error) = HfConfig::try_parse(&text) else {
+            panic!("num_passes {passes} must be refused");
+        };
+        assert!(error.contains("cache slots"), "{error}");
+    }
+    // The cap is 1,024 slots: 84 passes are 24 + 83 * 12 = 1,020 slots and fit; 85 are 1,032.
+    // At 84 the slot bound passes and the next rule speaks: the drafter taps no longer end at
+    // the visit count.
+    let text = config_with(r#""num_passes": 3"#, r#""num_passes": 84"#);
+    let Err(error) = HfConfig::try_parse(&text) else {
+        panic!("the pinned taps do not fit an 84-pass loop");
+    };
+    assert!(
+        !error.contains("cache slots") && error.contains("does not end at 1020"),
+        "{error}"
+    );
+}
+
+#[test]
+fn review_drafter_taps_end_at_the_final_hidden_and_its_biases_are_refused() {
+    let refuse = |from: &str, to: &str, needle: &str| {
+        let squeezed: String = CONFIG.split_whitespace().collect();
+        assert_eq!(squeezed.matches(from).count(), 1, "{from}");
+        let Err(error) = HfConfig::try_parse(&squeezed.replacen(from, to, 1)) else {
+            panic!("{to} must be refused");
+        };
+        assert!(error.contains(needle), "{needle:?} not in {error}");
+    };
+    let taps = r#""target_layer_ids":[5,23,41,48]"#;
+    refuse(
+        taps,
+        r#""target_layer_ids":[5,23,41,47]"#,
+        "the final hidden",
+    );
+    refuse(taps, r#""target_layer_ids":[48]"#, "at least two");
+    refuse(taps, r#""target_layer_ids":[23,5,48]"#, "increasing");
+    refuse(
+        r#""rms_norm_eps":1e-06,"rope_theta":1000000.0,"local_layer_ids":[0,2]"#,
+        r#""rms_norm_eps":1e-06,"rope_theta":1000000.0,"local_layer_ids":[2,0]"#,
+        "mtp_config.local_layer_ids",
+    );
+    refuse(
+        r#""torch_dtype":"bfloat16","q_bias":false,"o_bias":false,"rms_norm_eps":1e-06,"rope_theta""#,
+        r#""torch_dtype":"bfloat16","q_bias":true,"o_bias":false,"rms_norm_eps":1e-06,"rope_theta""#,
+        "mtp_config.q_bias",
+    );
+    refuse(
+        r#""block_size":8"#,
+        r#""block_size":0"#,
+        "mtp_config.block_size",
+    );
+}
+
+#[test]
+fn review_zero_sizes_and_unaligned_widths_are_refused_at_the_config() {
+    let refuse = |pairs: &[(&str, &str)], needle: &str| {
+        let mut text: String = CONFIG.split_whitespace().collect();
+        for (from, to) in pairs {
+            assert_eq!(text.matches(from).count(), 1, "{from}");
+            text = text.replacen(from, to, 1);
+        }
+        let Err(error) = HfConfig::try_parse(&text) else {
+            panic!("{pairs:?} must be refused");
+        };
+        assert!(error.contains(needle), "{needle:?} not in {error}");
+    };
+    refuse(
+        &[
+            (
+                r#""num_attention_heads":24,"num_key_value_heads":8,"head_dim":128,"d_rel""#,
+                r#""num_attention_heads":0,"num_key_value_heads":8,"head_dim":128,"d_rel""#,
+            ),
+            (
+                r#""swa_num_attention_heads":24"#,
+                r#""swa_num_attention_heads":0"#,
+            ),
+        ],
+        "num_attention_heads is 0",
+    );
+    refuse(
+        &[(r#""model_max_length":1048576"#, r#""model_max_length":0"#)],
+        "model_max_length is 0",
+    );
+    // Packed and block-scaled widths: hidden and expert width in whole 32-input blocks.
+    refuse(
+        &[(
+            r#""intermediate_size":1152,"mlp_gate_softcap""#,
+            r#""intermediate_size":1150,"mlp_gate_softcap""#,
+        )],
+        "intermediate_size",
+    );
+    refuse(
+        &[
+            (
+                r#""hidden_size":2304,"num_hidden_layers":24"#,
+                r#""hidden_size":2310,"num_hidden_layers":24"#,
+            ),
+            (r#""text_hidden_size":2304"#, r#""text_hidden_size":2310"#),
+            (
+                r#""mtp_config":{"hidden_size":2304"#,
+                r#""mtp_config":{"hidden_size":2310"#,
+            ),
+        ],
+        "hidden_size 2310",
+    );
+}
+
+#[test]
+fn review_every_census_tensor_is_declared_and_every_declared_tensor_exists() {
+    // A dense tensor dropped from its group: its class is still declared, the tensor is not.
+    let mut config = bare_config();
+    config
+        .attach_quant_groups(&quant_with(r#""model.llm.norm.weight","#, ""))
+        .unwrap();
+    let error = PACK.compile_plan(&config).unwrap_err();
+    assert!(
+        format!("{error:?}").contains("model.llm.norm.weight"),
+        "{error:?}"
+    );
+    // A vision and a drafter tensor are covered too.
+    for dropped in [r#""model.visual.proj_in.weight","#, r#""mask_embed","#] {
+        let mut config = bare_config();
+        config
+            .attach_quant_groups(&quant_with(dropped, ""))
+            .unwrap();
+        assert!(PACK.compile_plan(&config).is_err(), "{dropped}");
+    }
+    // A declared tensor the checkpoint does not have.
+    let mut config = bare_config();
+    config
+        .attach_quant_groups(&quant_with(
+            r#""model.llm.norm.weight","#,
+            r#""model.llm.norm.weight", "model.llm.norm.bias","#,
+        ))
+        .unwrap();
+    let error = PACK.compile_plan(&config).unwrap_err();
+    assert!(
+        format!("{error:?}").contains("model.llm.norm.bias"),
+        "{error:?}"
+    );
+}

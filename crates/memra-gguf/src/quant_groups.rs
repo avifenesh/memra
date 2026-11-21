@@ -85,6 +85,51 @@ pub enum ActivationQuant {
     },
 }
 
+/// How a group's weights were produced from the trained ones (`weight_transform`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeightTransform {
+    /// `cast`: a dtype cast, no quantization.
+    Cast,
+    /// `nvfp4_nearest`.
+    Nvfp4Nearest,
+    /// `mxfp8_nearest`.
+    Mxfp8Nearest,
+}
+
+/// Stored dtype of a group's weights (`output_dtype`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoredDtype {
+    Float32,
+    Bfloat16,
+    /// `uint8`: packed e2m1 codes.
+    Uint8,
+    /// `float8_e4m3fn`.
+    Float8E4m3,
+}
+
+/// The typed reading of a group's `weight_block_shape`. Only the three values below are known;
+/// any other shape is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeightBlock {
+    /// `[]`: unquantized weights have no scale block.
+    None,
+    /// `[1, 16]`: one scale per 16 inputs of each output row (NVFP4). The stored `_scale`
+    /// plane has exactly that grid.
+    Row16,
+    /// `[32, 32]` on an MXFP8 group, read as one scale per 32 inputs of each output row.
+    ///
+    /// This is an explicit reading, decided from the bytes, of a declaration that does not match
+    /// what is stored. The stored `_scale` plane of a bank `[experts, out, in]` is
+    /// `[experts, out, in / 32]`: one ue8m0 exponent per ROW per 32 inputs, not one per 32x32
+    /// block. If the plane were a 32x32 grid repeated over its rows, every aligned group of 32
+    /// rows would be 32 identical rows; in the pinned Inkling 2 Mini checkpoint none of the
+    /// 73,728 such groups is (`research/modelplan-onboarding-inkling2mini-20261121/
+    /// mxfp8-scale-grid.tsv`). So the first 32 of the declaration is not a row block of the
+    /// stored scales, and the program dequantizes with the stored per-row exponents. The census
+    /// pins the stored grid independently (`MXFP8_E4M3`, block 1x32).
+    Mxfp8Declared32x32StoredRow32,
+}
+
 /// Storage of a quantized weight's outer scale.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WeightScaleFormat {
@@ -97,12 +142,12 @@ pub enum WeightScaleFormat {
 #[derive(Clone, PartialEq, Eq)]
 pub struct ParameterGroup {
     pub compute_dtype: ComputeDtype,
-    /// Stored dtype of the weight (`output_dtype`), verbatim.
-    pub output_dtype: String,
+    /// Stored dtype of the weight (`output_dtype`).
+    pub output_dtype: StoredDtype,
     /// `fwd_output_dtype`: the dtype the linear's output is accumulated in when it differs.
     pub fwd_output_dtype: Option<String>,
-    pub weight_transform: String,
-    pub weight_block_shape: Vec<u32>,
+    pub weight_transform: WeightTransform,
+    pub weight_block: WeightBlock,
     /// `weight_scale_format`: how a quantized weight's outer scale is stored.
     pub weight_scale_format: Option<WeightScaleFormat>,
     /// `None` is the declared `null`: the linear takes a floating-point input.
@@ -120,7 +165,7 @@ impl std::fmt::Debug for ParameterGroup {
             .field("output_dtype", &self.output_dtype)
             .field("fwd_output_dtype", &self.fwd_output_dtype)
             .field("weight_transform", &self.weight_transform)
-            .field("weight_block_shape", &self.weight_block_shape)
+            .field("weight_block", &self.weight_block)
             .field("weight_scale_format", &self.weight_scale_format)
             .field(
                 "required_activation_quantization",
@@ -282,6 +327,75 @@ fn parse_group(value: &Value, path: &str) -> Result<ParameterGroup, String> {
         .enumerate()
         .map(|(index, value)| unsigned(value, &format!("{path}.weight_block_shape[{index}]")))
         .collect::<Result<Vec<_>, _>>()?;
+    let declared = |key: &str, value: &str, want: &[&str]| -> Result<(), String> {
+        if want.contains(&value) {
+            Ok(())
+        } else {
+            Err(format!(
+                "hf_quant_config.json: {path}.{key} is {value:?}; a {compute} group stores {want:?}"
+            ))
+        }
+    };
+    // What each compute dtype stores, and how. A declaration that says otherwise describes
+    // another checkpoint layout, so it is refused instead of carried along unread.
+    let weight_transform_text = string(object, path, "weight_transform")?;
+    let output_dtype_text = string(object, path, "output_dtype")?;
+    let (weight_transform, output_dtype, weight_block) = match compute_dtype {
+        ComputeDtype::Float32 => {
+            declared("weight_transform", &weight_transform_text, &["cast"])?;
+            declared("output_dtype", &output_dtype_text, &["float32"])?;
+            (
+                WeightTransform::Cast,
+                StoredDtype::Float32,
+                WeightBlock::None,
+            )
+        }
+        ComputeDtype::Bfloat16 => {
+            declared("weight_transform", &weight_transform_text, &["cast"])?;
+            declared("output_dtype", &output_dtype_text, &["bfloat16"])?;
+            (
+                WeightTransform::Cast,
+                StoredDtype::Bfloat16,
+                WeightBlock::None,
+            )
+        }
+        ComputeDtype::Nvfp4 => {
+            declared(
+                "weight_transform",
+                &weight_transform_text,
+                &["nvfp4_nearest"],
+            )?;
+            declared("output_dtype", &output_dtype_text, &["uint8"])?;
+            (
+                WeightTransform::Nvfp4Nearest,
+                StoredDtype::Uint8,
+                WeightBlock::Row16,
+            )
+        }
+        ComputeDtype::Mxfp8 => {
+            declared(
+                "weight_transform",
+                &weight_transform_text,
+                &["mxfp8_nearest"],
+            )?;
+            declared("output_dtype", &output_dtype_text, &["float8_e4m3fn"])?;
+            (
+                WeightTransform::Mxfp8Nearest,
+                StoredDtype::Float8E4m3,
+                WeightBlock::Mxfp8Declared32x32StoredRow32,
+            )
+        }
+    };
+    let want_block: &[u32] = match weight_block {
+        WeightBlock::None => &[],
+        WeightBlock::Row16 => &[1, 16],
+        WeightBlock::Mxfp8Declared32x32StoredRow32 => &[32, 32],
+    };
+    if weight_block_shape != want_block {
+        return Err(format!(
+            "hf_quant_config.json: {path}.weight_block_shape is {weight_block_shape:?}; a {compute} group declares {want_block:?}"
+        ));
+    }
     // The key must be present: an explicit null is the declaration of a float input.
     let activation = object.get("required_activation_quantization").ok_or_else(|| {
         format!("hf_quant_config.json: {path}.required_activation_quantization is missing (null declares a float input)")
@@ -358,10 +472,10 @@ fn parse_group(value: &Value, path: &str) -> Result<ParameterGroup, String> {
     }
     Ok(ParameterGroup {
         compute_dtype,
-        output_dtype: string(object, path, "output_dtype")?,
+        output_dtype,
         fwd_output_dtype,
-        weight_transform: string(object, path, "weight_transform")?,
-        weight_block_shape,
+        weight_transform,
+        weight_block,
         weight_scale_format,
         required_activation_quantization,
         tensors,
@@ -460,14 +574,19 @@ mod tests {
     use super::*;
 
     fn group(compute: &str, activation: &str, tensors: &str) -> String {
-        let scale_format = if compute == "nvfp4" {
-            r#""weight_scale_format":"amax_denominator","#
-        } else {
-            ""
+        let (stored, transform, block, scale_format) = match compute {
+            "nvfp4" => (
+                "uint8",
+                "nvfp4_nearest",
+                "[1,16]",
+                r#""weight_scale_format":"amax_denominator","#,
+            ),
+            "mxfp8" => ("float8_e4m3fn", "mxfp8_nearest", "[32,32]", ""),
+            other => (other, "cast", "[]", ""),
         };
         format!(
-            r#"{{"compute_dtype":"{compute}","output_dtype":"x","weight_transform":"cast",{scale_format}
-            "weight_block_shape":[],"required_activation_quantization":{activation},
+            r#"{{"compute_dtype":"{compute}","output_dtype":"{stored}","weight_transform":"{transform}",{scale_format}
+            "weight_block_shape":{block},"required_activation_quantization":{activation},
             "tensors":[{tensors}]}}"#
         )
     }
@@ -531,6 +650,83 @@ mod tests {
     }
 
     #[test]
+    fn stored_dtype_transform_and_block_shape_are_typed_per_compute_dtype() {
+        let parsed = QuantGroups::parse(&file(&format!(
+            "{},{},{},{}",
+            group("float32", "null", r#""f""#),
+            group("bfloat16", "null", r#""b""#),
+            group("nvfp4", NVFP4_ACT, r#""w4""#),
+            group("mxfp8", MXFP8_ACT, r#""w8""#)
+        )))
+        .unwrap();
+        let fields = |name: &str| {
+            let group = parsed.model_group(name).unwrap();
+            (
+                group.weight_transform,
+                group.output_dtype,
+                group.weight_block,
+            )
+        };
+        assert_eq!(
+            fields("f"),
+            (
+                WeightTransform::Cast,
+                StoredDtype::Float32,
+                WeightBlock::None
+            )
+        );
+        assert_eq!(
+            fields("b"),
+            (
+                WeightTransform::Cast,
+                StoredDtype::Bfloat16,
+                WeightBlock::None
+            )
+        );
+        assert_eq!(
+            fields("w4"),
+            (
+                WeightTransform::Nvfp4Nearest,
+                StoredDtype::Uint8,
+                WeightBlock::Row16
+            )
+        );
+        // The MXFP8 declaration [32, 32] has one typed reading: stored per row per 32 inputs.
+        assert_eq!(
+            fields("w8"),
+            (
+                WeightTransform::Mxfp8Nearest,
+                StoredDtype::Float8E4m3,
+                WeightBlock::Mxfp8Declared32x32StoredRow32
+            )
+        );
+        let refuse = |text: String, needle: &str| {
+            let error = QuantGroups::parse(&file(&text)).unwrap_err();
+            assert!(error.contains(needle), "{needle:?} not in {error}");
+        };
+        let nvfp4 = group("nvfp4", NVFP4_ACT, r#""w""#);
+        let mxfp8 = group("mxfp8", MXFP8_ACT, r#""w""#);
+        refuse(nvfp4.replace("nvfp4_nearest", "bogus"), "weight_transform");
+        refuse(nvfp4.replace(r#""uint8""#, r#""int64""#), "output_dtype");
+        refuse(nvfp4.replace("[1,16]", "[7,3]"), "weight_block_shape");
+        refuse(nvfp4.replace("[1,16]", "[32,32]"), "weight_block_shape");
+        refuse(mxfp8.replace("[32,32]", "[1,32]"), "weight_block_shape");
+        refuse(
+            mxfp8.replace("mxfp8_nearest", "nvfp4_nearest"),
+            "weight_transform",
+        );
+        refuse(mxfp8.replace("float8_e4m3fn", "uint8"), "output_dtype");
+        refuse(
+            group("bfloat16", "null", r#""w""#).replace("[]", "[1,16]"),
+            "weight_block_shape",
+        );
+        refuse(
+            group("bfloat16", "null", r#""w""#).replace(r#""cast""#, r#""nvfp4_nearest""#),
+            "weight_transform",
+        );
+    }
+
+    #[test]
     fn an_omitted_or_mismatched_activation_declaration_is_refused() {
         let refuse = |text: String, needle: &str| {
             let error = QuantGroups::parse(&text).unwrap_err();
@@ -539,8 +735,8 @@ mod tests {
         // Omitted key: never read as "no quantizer".
         refuse(
             file(
-                r#"{"compute_dtype":"nvfp4","output_dtype":"uint8","weight_transform":"t",
-                "weight_block_shape":[],"tensors":["w"]}"#,
+                r#"{"compute_dtype":"nvfp4","output_dtype":"uint8","weight_transform":"nvfp4_nearest",
+                "weight_scale_format":"amax_denominator","weight_block_shape":[1,16],"tensors":["w"]}"#,
             ),
             "required_activation_quantization is missing",
         );

@@ -3305,6 +3305,14 @@ impl ModelConfig {
             .is_some_and(|inkling| inkling.quant.is_none())
     }
 
+    /// sha256 of the attached `hf_quant_config.json`, when the config's numerics come from one.
+    pub fn quant_groups_sha256(&self) -> Option<&str> {
+        self.inkling2
+            .as_ref()
+            .and_then(|inkling| inkling.quant.as_ref())
+            .map(|quant| quant.sha256.as_str())
+    }
+
     /// Attach the checkpoint's `hf_quant_config.json` (`parameter_groups` form). The family
     /// reads its expert formats and required activation quantizers from it.
     pub fn attach_quant_groups(&mut self, text: &str) -> Result<(), String> {

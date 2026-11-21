@@ -295,9 +295,19 @@ pub struct Inkling2Numerics {
     pub dense: Vec<DenseNumericsPlan>,
     /// Gate and up are one bank (`w13`) with interleaved output rows: row `2j` is gate `j`, row
     /// `2j + 1` is up `j`.
+    ///
+    /// READ, NOT PROVEN: the checkpoint does not state the direction; this is how the vendor's
+    /// serving code and the transformers conversion read the bank. It is in the plan text (and
+    /// so the plan hash) as the reading a test has to confirm against captured vectors, and the
+    /// lane's SEMANTICS.md lists it as open.
     pub gate_up_interleaved: bool,
     /// The routing weight multiplies the activation output before the down projection, so
-    /// before the down input is quantized.
+    /// before the down input is quantized. With quantized down inputs this placement changes
+    /// the function, so it belongs to the numeric class.
+    ///
+    /// READ, NOT PROVEN: this is the vendor serving code's order for the declared class; the
+    /// float-activation implementations multiply after the down projection. Same status as
+    /// `gate_up_interleaved`.
     pub routed_weight_before_down: bool,
     /// sha256 of the `hf_quant_config.json` the numerics were read from.
     pub quant_config_sha256: String,
@@ -338,9 +348,10 @@ pub struct Inkling2DrafterPlan {
     pub local_blocks: Vec<u32>,
     pub window: u32,
     pub head: DrafterHead,
-    /// The checkpoint's `target_layer_ids`, which count layer visits in execution order.
+    /// The checkpoint's `target_layer_ids`. They count layer visits in execution order; every
+    /// id but the last taps the input of that visit, and the last is the visit count.
     pub target_visit_ids: Vec<u32>,
-    /// The same taps as cache slots.
+    /// The same taps typed: the input of the cache slot each visit runs, then the final hidden.
     pub taps: Vec<DrafterTap>,
 }
 

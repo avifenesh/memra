@@ -2516,6 +2516,11 @@ fn format_lock(
         writeln!(output, "checkpoint_probe_sha256={}", probe_sha256(probe)).unwrap();
     }
     writeln!(output, "config_sha256={config}").unwrap();
+    // Only a family whose numerics come from `hf_quant_config.json` writes this line: every
+    // other lock keeps its bytes.
+    if let Some(line) = quant_config_lock_line(&source.config) {
+        output.push_str(&line);
+    }
     writeln!(output, "census_sha256={census}").unwrap();
     writeln!(output, "plan_sha256={plan}").unwrap();
     writeln!(output, "rewrite_manifest_sha256={rewrites}").unwrap();
@@ -2550,6 +2555,15 @@ fn format_lock(
         writeln!(output, "shard={}", lock_value(shard)).unwrap();
     }
     output
+}
+
+/// The lock line for `hf_quant_config.json`, a semantic input of the plan for a family that
+/// reads its numerics from it. The plan text carries the same hash, so `plan_sha256` already
+/// covers the file; the line makes that visible without reading the plan.
+fn quant_config_lock_line(config: &ModelConfig) -> Option<String> {
+    config
+        .quant_groups_sha256()
+        .map(|sha| format!("quant_config_sha256={sha}\n"))
 }
 
 fn parse_header(
@@ -3101,6 +3115,37 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use memra_reference::execute;
+
+    /// The lock names `hf_quant_config.json` for a family whose plan reads its numerics from
+    /// it, and only for such a family.
+    #[test]
+    fn lock_names_the_quant_declaration_only_where_the_plan_reads_one() {
+        let mut inkling = ModelConfig::from_hf(&HfConfig::parse(include_str!(
+            "../../memra-gguf/src/model_packs/inkling2/fixtures/config.json"
+        )));
+        assert_eq!(
+            quant_config_lock_line(&inkling),
+            None,
+            "nothing attached yet"
+        );
+        inkling
+            .attach_quant_groups(include_str!(
+                "../../memra-gguf/src/model_packs/inkling2/fixtures/hf_quant_config.json"
+            ))
+            .unwrap();
+        assert_eq!(
+            quant_config_lock_line(&inkling).as_deref(),
+            Some(
+                "quant_config_sha256=7c656207d3ce37879c7be209a036b0dde43bf01f78159bff06880b868ed57143\n"
+            )
+        );
+        let qwen = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":64,
+            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+            "intermediate_size":128,"vocab_size":16,"max_position_embeddings":128}"#,
+        ));
+        assert_eq!(quant_config_lock_line(&qwen), None);
+    }
 
     #[test]
     fn hf_template_lock_uses_decoded_json_and_refuses_malformed_sidecars() {
