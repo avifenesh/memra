@@ -1,0 +1,100 @@
+{
+  "format": "memra-inkling2mini-onboarding-sources-v1",
+  "captured_utc": "2026-11-21T00:25:00Z",
+  "checkpoint": {
+    "repo": "thinkingmachines/Inkling-2-Mini",
+    "revision": "ed40e7da625f594fc9c4990f5f66be24873c22d7",
+    "license": "apache-2.0",
+    "files": {
+      "config.json": {
+        "sha256": "a7a349601f0984c4abf999c480ef775d8567d21f5f84b4e8a3e035b44f288dc2",
+        "bytes": 2722
+      },
+      "model.safetensors.index.json": {
+        "sha256": "c1631065b7b00787993522dddc66a68b3abee869192977fb3dcb796e63bc5838",
+        "bytes": 109300
+      },
+      "hf_quant_config.json": {
+        "sha256": "7c656207d3ce37879c7be209a036b0dde43bf01f78159bff06880b868ed57143",
+        "bytes": 67924
+      },
+      "tokenizer.json": {
+        "sha256": "7f332727f9a3f093dd452a39cc978e6757627e5dad1b0673aa4e75174f236dd6",
+        "bytes": 26178678
+      },
+      "chat_template.jinja": {
+        "sha256": "53a9035f3255945704b5857657cfb00c1165090c0641c4f782a0cbf268cc16dc",
+        "bytes": 6868
+      },
+      "model-00001-of-00001.safetensors": {
+        "sha256": "65e60f51aa1284d4fb022584908c315270334d991828bb774af60584523539d1",
+        "bytes": 19526019168
+      },
+      "mtp.safetensors": {
+        "sha256": "7c3b651317f01f73bcf4e1dceba66ef8b7e1a1eac6bc171e882e690a4b10a1d2",
+        "bytes": 635801416
+      },
+      "tiktoken/tokenizer.model": {
+        "sha256": "f170372dd655728909228220d77cf6b8104a59f38a91262a7d2c4027906ec0d8",
+        "bytes": 3386494
+      },
+      "tokenizer_config.json": {
+        "sha256": "bf09342d285139fd37ce10c70878af1d52cb390e9901e10248654293a80ee636",
+        "bytes": 13235
+      },
+      "special_tokens_map.json": {
+        "sha256": "c16f44b3594563d82743ddb0417a2be1bfe3e2000dfad2da4b8f32554593e1a0",
+        "bytes": 529
+      },
+      "generation_config.json": {
+        "sha256": "a08737c07a65a8fdf69f7cf086576210e5aad4b241437090b26d7b0c4f7905f7",
+        "bytes": 98
+      },
+      "processor_config.json": {
+        "sha256": "d7350adce18c8be4b607f261c8f0f7eabbf720bb7aaf648a43d4f8372bbacc2d",
+        "bytes": 461
+      }
+    },
+    "main_shard": {
+      "file": "model-00001-of-00001.safetensors",
+      "tensors": 1244,
+      "data_bytes": 19525870752,
+      "header_bytes": 148408
+    },
+    "drafter_file": {
+      "file": "mtp.safetensors",
+      "tensors": 54,
+      "data_bytes": 635795744,
+      "header_bytes": 5664,
+      "indexed": false
+    },
+    "census_rows_sha256": "3752c60c4d5facbc9cbd089e76b710c2f1523c794ffc3776c2628dde9f3aa41c"
+  },
+  "references": {
+    "llama_cpp": {
+      "repo": "ggml-org/llama.cpp",
+      "commit": "29b52d398b294509746ec0a3f28948a3107c0213",
+      "subject": "model : Inkling 2 Mini (#32694)",
+      "files": [
+        "src/models/inkling2.cpp",
+        "src/models/inkling2-loop.cpp"
+      ],
+      "role": "second independent implementation of the float-activation trunk; triage only"
+    },
+    "transformers_pr": {
+      "repo": "huggingface/transformers",
+      "pull": 51050,
+      "title": "Add Inkling2 Mini",
+      "head": "6173a2f679ff4ed393afc499aefc569da7e68bc1",
+      "state_at_capture": "open",
+      "role": "oracle source for the float-activation class (loop modeling, expert dequantization)"
+    },
+    "vllm_image": {
+      "tag": "vllm/vllm-openai:inkling-2-mini",
+      "index_digest": "sha256:c2dc759f5984f69c1e2418c6af7c26eb756f5ed2a8934c768ae1253645d1449e",
+      "linux_amd64_digest": "sha256:a485440c62099c39659a7b723636073ed726dcb41f94cf6326e16af3a1d6f6bc",
+      "linux_arm64_digest": "sha256:ecdf0ccc663d86332459f5a50a38c30861a5079bc3924aa08fdc657ef10dd648",
+      "role": "only public source of the drafter program and of the declared activation-quantized class"
+    }
+  }
+}
