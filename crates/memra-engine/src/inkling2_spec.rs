@@ -4,10 +4,11 @@
 //! One numeric program per request: every committed token comes out of the route's own forward.
 //! A verify call runs the anchor and the proposals as one call of rows; the route computes a row
 //! from that row alone, so each row's logits are the bits a one-row decode call would give. On a
-//! partial accept the route goes back to the convolution history saved before the call and runs
-//! the accepted rows again (the same rows, so the same bits); the K/V caches need no copy (see
-//! `Carry`). Greedy output with drafting therefore equals greedy decode without it, token for
-//! token, which `ink2-spec --check-plain` gates.
+//! partial accept the route keeps the first rows of the verify call (`Route::commit_rows`): the
+//! call kept the convolution history after each of its rows, and the history after the last
+//! accepted row becomes the committed one; the K/V caches need no copy (see `Carry`). Greedy
+//! output with drafting therefore equals greedy decode without it, token for token, which
+//! `ink2-spec --check-plain` gates.
 
 use crate::inkling2_dspark::{DraftGpu, Shared};
 use crate::inkling2_gpu::{Head, Route};
@@ -36,8 +37,8 @@ pub struct SpecStats {
     pub accepted: usize,
     /// `hist[n]`: verify calls that accepted `n` proposals.
     pub hist: Vec<usize>,
-    /// Verify calls followed by a replay of the accepted rows.
-    pub replays: usize,
+    /// Verify calls that kept only their first rows (`Route::commit_rows`).
+    pub partial_commits: usize,
     /// One-row steps without proposals (near the end of the route's context).
     pub plain_steps: usize,
     pub prefill_s: f64,
@@ -115,15 +116,29 @@ pub fn plain_greedy(
     n: usize,
     stop: &[u32],
 ) -> Result<Vec<u32>, String> {
+    Ok(plain_greedy_timed(route, prompt, n, stop)?.0)
+}
+
+/// [`plain_greedy`] with its prefill and decode seconds (the decode is the route's one-row
+/// steps, the graph path when the route takes it).
+pub fn plain_greedy_timed(
+    route: &mut Route,
+    prompt: &[u32],
+    n: usize,
+    stop: &[u32],
+) -> Result<(Vec<u32>, f64, f64), String> {
     route.reset()?;
+    let t0 = std::time::Instant::now();
     let first = route.call(prompt, Head::LastArgmax, None)?;
+    let prefill = t0.elapsed().as_secs_f64();
+    let t1 = std::time::Instant::now();
     let mut tok = *first.argmax.last().ok_or("no argmax")?;
     let mut out = vec![tok];
     while out.len() < n && !stop.contains(&tok) {
         tok = route.forward(&[tok], Head::LastArgmax, None)?.argmax[0];
         out.push(tok);
     }
-    Ok(out)
+    Ok((out, prefill, t1.elapsed().as_secs_f64()))
 }
 
 /// Speculative decode: the prompt (its rows committed to the drafter), then verify calls of the
@@ -269,10 +284,14 @@ pub fn generate_arm(
         ));
     }
     route.set_capture(&slots)?;
-    let result = generate_inner(route, drafter, prompt, n, k, sampling, stop, arms);
+    let kept = route.keep_row_history(k + 1);
+    let result =
+        kept.and_then(|_| generate_inner(route, drafter, prompt, n, k, sampling, stop, arms));
     let off = route.set_capture(&[]);
+    let freed = route.keep_row_history(0);
     let out = result?;
     off?;
+    freed?;
     Ok(out)
 }
 
@@ -409,10 +428,10 @@ fn generate_inner(
         if accepted < kk && arms.skip_restore {
             route.position = carry.position() + accepted as u64 + 1;
         } else if accepted < kk {
-            // back to the history before the verify, and run the committed rows again
-            route.restore_carry(&carry)?;
-            route.forward(&rows[..accepted + 1], Head::None, None)?;
-            stats.replays += 1;
+            // keep the anchor and the accepted rows: the history after the last of them, from
+            // the verify call itself
+            route.commit_rows(accepted + 1)?;
+            stats.partial_commits += 1;
         }
         let cap = route.captured().ok_or("capture is off")?;
         drafter.commit(&route.dev, cap, chunk, 0, accepted + 1)?;
@@ -440,6 +459,141 @@ fn generate_inner(
     }
     stats.generated = out.len();
     Ok((out, stats))
+}
+
+/// Component costs at one request's state: the plain one-row step (graph path), a verify of
+/// `1..=max_rows` rows (eager, taps and row history kept), a proposal of `1..=max_k`, and a
+/// prefix commit. Each is the median of `reps` timed repetitions after one warm-up; the route's
+/// state is put back after each.
+pub struct BenchCosts {
+    pub plain_step_ms: f64,
+    /// `[rows - 1]`
+    pub verify_ms: Vec<f64>,
+    /// `[k - 1]`
+    pub draft_ms: Vec<f64>,
+    pub commit_rows_ms: f64,
+}
+
+fn median(mut v: Vec<f64>) -> f64 {
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    v[v.len() / 2]
+}
+
+pub fn bench_costs(
+    route: &mut Route,
+    drafter: &mut DraftGpu,
+    prompt: &[u32],
+    max_rows: usize,
+    reps: usize,
+) -> Result<BenchCosts, String> {
+    let slots = tap_slots(route, SpecArms::default())?;
+    // prefill with taps on, committed to the drafter
+    route.set_capture(&slots)?;
+    route.keep_row_history(max_rows)?;
+    route.reset()?;
+    drafter.reset();
+    let chunk = route.chunk;
+    let mut anchor = 0;
+    let parts: Vec<&[u32]> = prompt.chunks(chunk).collect();
+    let count = parts.len();
+    for (i, part) in parts.into_iter().enumerate() {
+        let o = route.forward(
+            part,
+            if i + 1 == count {
+                Head::LastArgmax
+            } else {
+                Head::None
+            },
+            None,
+        )?;
+        let cap = route.captured().ok_or("capture is off")?;
+        drafter.commit(&route.dev, cap, chunk, 0, part.len())?;
+        anchor = *o.argmax.last().ok_or("argmax")?;
+    }
+    let shared = Shared::of_route(route);
+    let mut carry = route.carry()?;
+    route.save_carry(&mut carry)?;
+    let time = |f: &mut dyn FnMut() -> Result<(), String>,
+                dev: &crate::inkling2_gpu::Dev|
+     -> Result<f64, String> {
+        dev.sync()?;
+        let t = std::time::Instant::now();
+        f()?;
+        dev.sync()?;
+        Ok(t.elapsed().as_secs_f64() * 1e3)
+    };
+    let mut verify_ms = Vec::new();
+    for rows in 1..=max_rows {
+        let toks = vec![anchor; rows];
+        let mut v = Vec::new();
+        for i in 0..=reps {
+            route.dev.sync()?;
+            let t = std::time::Instant::now();
+            route.forward(&toks, Head::AllArgmax, None)?;
+            route.dev.sync()?;
+            let ms = t.elapsed().as_secs_f64() * 1e3;
+            route.restore_carry(&carry)?;
+            if i > 0 {
+                v.push(ms);
+            }
+        }
+        verify_ms.push(median(v));
+    }
+    // commit of a prefix after a verify of max_rows rows
+    let toks = vec![anchor; max_rows];
+    let mut c = Vec::new();
+    for i in 0..=reps {
+        route.forward(&toks, Head::AllArgmax, None)?;
+        route.dev.sync()?;
+        let t = std::time::Instant::now();
+        route.commit_rows(2.min(max_rows))?;
+        route.dev.sync()?;
+        let ms = t.elapsed().as_secs_f64() * 1e3;
+        route.restore_carry(&carry)?;
+        if i > 0 {
+            c.push(ms);
+        }
+    }
+    let commit_rows_ms = median(c);
+    let mut draft_ms = Vec::new();
+    for k in 1..max_rows {
+        let mut v = Vec::new();
+        for i in 0..=reps {
+            let ms = time(
+                &mut || {
+                    drafter
+                        .propose(&route.dev, shared, anchor, k, None)
+                        .map(|_| ())
+                },
+                &route.dev,
+            )?;
+            if i > 0 {
+                v.push(ms);
+            }
+        }
+        draft_ms.push(median(v));
+    }
+    // the plain step on the route's graph path (taps off)
+    route.set_capture(&[])?;
+    let mut v = Vec::new();
+    for i in 0..=reps + 2 {
+        route.dev.sync()?;
+        let t = std::time::Instant::now();
+        route.forward(&[anchor], Head::LastArgmax, None)?;
+        route.dev.sync()?;
+        let ms = t.elapsed().as_secs_f64() * 1e3;
+        route.restore_carry(&carry)?;
+        if i > 2 {
+            v.push(ms);
+        }
+    }
+    route.keep_row_history(0)?;
+    Ok(BenchCosts {
+        plain_step_ms: median(v),
+        verify_ms,
+        draft_ms,
+        commit_rows_ms,
+    })
 }
 
 #[cfg(test)]
