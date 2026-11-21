@@ -9019,6 +9019,70 @@ fn unbuilt_session_booking(active: &[Session], workspace_booked: bool) -> usize 
     )
 }
 
+/// One spec admission's draft-state charge, split between the live gate and the books
+/// (memra#1379). After a trim the graph pool reads short until the first draft launch maps it
+/// again, so every spec admission in that window reads the same shortfall. The pool's graphs on
+/// one stream share that memory: the stream owes the shortfall once, not once per session.
+///
+/// Each admission's live gate checks the whole charge, since its free reading does not hold the
+/// unmapped reserve. The books (`booked_kv_bytes`, the predictive shadow book, the unbuilt
+/// booking) sum their sessions' charges, so a session carries the shortfall in them only where
+/// the active sessions of its model do not carry it already. A carrier released before the
+/// launch takes its carry out of the active set, and the next admission carries the shortfall
+/// again. Until that admission the books are one reserve short: the other sessions of the burst
+/// will still map it at their launch, and an arrival of another route or model in that gap is
+/// booked without it. So "once per stream" is not "always booked while owed"; no live gate
+/// charges another session's unmapped reserve, on main or here. Once the pool holds the reserve
+/// no admission owes any.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct DraftStateAdmission {
+    /// What the live gate charges: the per-session part plus the reserve's whole shortfall.
+    live: usize,
+    /// The reserve's shortfall this session carries in the books.
+    reserve_carried: usize,
+    /// The part of `live` the books leave out: the shortfall other active sessions carry.
+    unbooked: usize,
+}
+
+impl DraftStateAdmission {
+    /// A charge with no stream reserve (plain, or a DFlash draft plane).
+    fn session_only(bytes: usize) -> Self {
+        Self {
+            live: bytes,
+            ..Self::default()
+        }
+    }
+
+    /// `charge` against the reserve the active sessions of the model already carry (`carried`).
+    fn of(
+        charge: memra_engine::spec::DraftStateCharge,
+        carried: impl Iterator<Item = usize>,
+    ) -> Self {
+        let carried = carried.fold(0usize, usize::saturating_add);
+        let reserve_carried = charge.reserve_owed.saturating_sub(carried);
+        Self {
+            live: charge.total(),
+            reserve_carried,
+            unbooked: charge.reserve_owed - reserve_carried,
+        }
+    }
+
+    /// What this session books of a live charge `cost` that includes `self.live`.
+    fn booked(&self, cost: usize) -> usize {
+        cost.saturating_sub(self.unbooked)
+    }
+
+    /// The live gate's charge for `states` states of one request (a choice group's rows and its
+    /// snapshot) at a per-state charge `cost`: the states share the stream, so the shortfall is
+    /// charged once.
+    fn group_cost(&self, cost: usize, states: usize) -> usize {
+        let once = self.unbooked.saturating_add(self.reserve_carried);
+        cost.saturating_sub(once)
+            .saturating_mul(states)
+            .saturating_add(once)
+    }
+}
+
 /// SETTLE WAIT (memra#1255): an arrival the booked reading does not hold, while an admitted
 /// session still owes its unbuilt charge and the reading without that booking would hold it,
 /// waits for the next pass. The tick builds that session and the next reading shows what it took,
@@ -20498,6 +20562,9 @@ struct Session {
     /// no route state (`session_owns_route_state`); 0 for a test-constructed Session.
     admitted_charge_bytes: usize,
     admitted_workspace_bytes: usize,
+    /// The graph reserve's shortfall this session carries in the books (memra#1379,
+    /// `DraftStateAdmission`); later spec admissions of its model carry only what it does not.
+    draft_reserve_carried: usize,
     /// The predicted TOTAL completion tokens behind `shadow_kv_hat`; with
     /// `generated.len()` this gives the per-session remainder the would-reject
     /// Retry-After hint scans (D2 gap G6).
@@ -23566,13 +23633,24 @@ pub fn run(
             // the DflashKv sized by the same geometry the allocation uses, a constant above
             // two windows under the ring and the whole cap with it off. Before the ring it
             // was never charged and the residual learner absorbed it.
-            let draft_state_bytes = match (estimate_spec, dspark_drafts.get(&model_key)) {
-                (false, _) => 0,
-                (true, Some(draft)) => draft.resident_kv_bytes(admission_cap),
-                (true, None) => loaded[&model_key]
-                    .model
-                    .draft_session_admission_bytes(engine.device_graph_mem_reserved()),
+            // The graph reserve's shortfall is the stream's (memra#1379): the books carry it
+            // once across the model's active sessions, the live gate checks it on each.
+            let draft_admission = match (estimate_spec, dspark_drafts.get(&model_key)) {
+                (false, _) => DraftStateAdmission::session_only(0),
+                (true, Some(draft)) => {
+                    DraftStateAdmission::session_only(draft.resident_kv_bytes(admission_cap))
+                }
+                (true, None) => DraftStateAdmission::of(
+                    loaded[&model_key]
+                        .model
+                        .draft_session_admission_charge(engine.device_graph_mem_reserved()),
+                    active
+                        .iter()
+                        .filter(|s| s.model == model_key)
+                        .map(|s| s.draft_reserve_carried),
+                ),
             };
+            let draft_state_bytes = draft_admission.live;
             // The serve side reads this, never its own guess (memra#1173): a drafter session
             // exists only where this pass charged its plane.
             req.drafter_funded = estimate_spec && dspark_drafts.contains_key(&model_key);
@@ -23645,12 +23723,13 @@ pub fn run(
                 // (research/spill-b-20260919/DAY24.md section 1). The verdict reads the cost
                 // before the retained-prefix and eager arms run (they have not run yet at this
                 // seam), so this is the worst case the request can book, never less than the
-                // book. Its workspace is the held charge where the card keys it.
+                // book. Its workspace is the held charge where the card keys it. Its draft term
+                // is what the session books (memra#1379): the graph reserve once per stream.
                 let request_kv_hat = crate::admit_predict::RequestCharge::from_physical_cost(
-                    cost as u64,
+                    draft_admission.booked(cost) as u64,
                     context_cap_bytes as u64,
                     activation_bytes as u64,
-                    draft_state_bytes as u64,
+                    draft_admission.booked(draft_state_bytes) as u64,
                     crate::admit_predict::kv_hat_ring(
                         prompt_len as u64,
                         predicted,
@@ -23959,8 +24038,11 @@ pub fn run(
                     .map_or(1, |c| c.group.remaining().saturating_add(1));
                 // N remaining private states plus one transient full-prompt snapshot. Keep
                 // each admitted row's book at its own cost; this is the whole-group fit gate.
-                let mut required =
-                    admission_required(cost.saturating_mul(choice_state_count), reserve);
+                // The states share the stream: the graph reserve's shortfall once (memra#1379).
+                let mut required = admission_required(
+                    draft_admission.group_cost(cost, choice_state_count),
+                    reserve,
+                );
                 // EAGER-ARM twin (lane/step37-vram-admission-20260830): the draft-state
                 // charge models a session that CAPTURES its draft graphs. When headroom
                 // cannot hold that arm, the pre-capture reserve gate will refuse the
@@ -25749,8 +25831,13 @@ pub fn run(
                     // the P-tenant-p95 kv_hat, computed fresh at admission time so the
                     // in-flight sum is "each in-flight request's OWN admission-time
                     // kv_hat" per the contract. EVERY admitted session enters the book
-                    // as load: lanes, probes, and exempt tenants included.
-                    s.booked_kv_bytes = cost as u64;
+                    // as load: lanes, probes, and exempt tenants included. The books take the
+                    // graph reserve's shortfall once per stream (memra#1379): `booked_cost` and
+                    // `booked_draft` leave out what other active sessions of the model carry.
+                    let booked_cost = draft_admission.booked(cost);
+                    let booked_draft = draft_admission.booked(draft_state_bytes);
+                    s.draft_reserve_carried = draft_admission.reserve_carried;
+                    s.booked_kv_bytes = booked_cost as u64;
                     if admit_predict_cfg.armed {
                         let tenant_row = crate::auth::meter_key(&s.cache_ns).to_string();
                         let max_tokens_bound = (s.params.max_new != MAX_NEW_CTX_BOUNDED)
@@ -25765,10 +25852,10 @@ pub fn run(
                         // that matches the real book; revuto on #619), re-keyed to the
                         // predicted context; see the verdict site.
                         s.shadow_kv_hat = crate::admit_predict::RequestCharge::from_physical_cost(
-                            cost as u64,
+                            booked_cost as u64,
                             context_cap_bytes as u64,
                             activation_bytes as u64,
-                            draft_state_bytes as u64,
+                            booked_draft as u64,
                             crate::admit_predict::kv_hat_ring(
                                 prompt_len as u64,
                                 predicted,
@@ -25797,10 +25884,10 @@ pub fn run(
                     // WP-B day 45 (O4): the workspace term both books carry for this session.
                     if w_release {
                         let w_bytes = crate::admit_predict::RequestCharge::from_physical_cost(
-                            cost as u64,
+                            booked_cost as u64,
                             context_cap_bytes as u64,
                             activation_bytes as u64,
-                            draft_state_bytes as u64,
+                            booked_draft as u64,
                             0,
                         )
                         .prefill_workspace_bytes;
@@ -25812,13 +25899,13 @@ pub fn run(
                     }
                     // memra#1255: the charge this session was admitted on, booked while it owns
                     // no route state (`unbuilt_session_booking`).
-                    s.admitted_charge_bytes = cost;
+                    s.admitted_charge_bytes = booked_cost;
                     s.admitted_workspace_bytes =
                         crate::admit_predict::RequestCharge::from_physical_cost(
-                            cost as u64,
+                            booked_cost as u64,
                             context_cap_bytes as u64,
                             activation_bytes as u64,
-                            draft_state_bytes as u64,
+                            booked_draft as u64,
                             0,
                         )
                         .prefill_workspace_bytes as usize;
@@ -34906,6 +34993,7 @@ fn admit(
         booked_w_bytes: 0,
         admitted_charge_bytes: 0,
         admitted_workspace_bytes: 0,
+        draft_reserve_carried: 0,
         vmm_floor_rows: n_prompt,
         errored: false,
         shadow_kv_hat: 0,
@@ -43726,10 +43814,9 @@ mod tests {
         ));
         // The context term is the cost model's own (ring geometry included), once per state a
         // choice group builds, as the whole-group charge counts them; per stage under PP.
-        assert!(
-            squashed
-                .contains("admission_required(cost.saturating_mul(choice_state_count), reserve);")
-        );
+        assert!(squashed.contains(
+            "admission_required( draft_admission.group_cost(cost, choice_state_count), reserve, );"
+        ));
         assert!(reject.contains(
             "_ if device == primary_device => hint_costs .context_bytes(ctx, estimate_spec) \
              .saturating_mul(choice_state_count),"
@@ -45317,7 +45404,7 @@ mod tests {
             at("settle_wait(unbuilt_booked, headroom.sufficient(required), fits_unbooked)");
         let reclaim = at("let mut reclaim_spare = if !headroom.sufficient(required) {");
         let verdict = at("let mut verdict = vram_gate_first_read(");
-        let recorded = at("s.admitted_charge_bytes = cost;");
+        let recorded = at("s.admitted_charge_bytes = booked_cost;");
         let pushed = prod[recorded..]
             .find("active.push(s);")
             .map(|i| i + recorded)
@@ -45501,8 +45588,13 @@ mod tests {
             "{reserve}"
         );
         // The draft-plane charge itself keys on the armed drafter once the estimate is spec.
+        let dflash_arm = production
+            .find("(true, Some(draft)) => {")
+            .expect("the DFlash arm");
         assert!(
-            production.contains("(true, Some(draft)) => draft.resident_kv_bytes(admission_cap),")
+            production[dflash_arm..dflash_arm + 160].contains(
+                "DraftStateAdmission::session_only(draft.resident_kv_bytes(admission_cap))"
+            )
         );
         // The [spec-k] admit receipt prints on the DFlash route too.
         assert!(production.contains("if served_spec_route_capable(lm, dspark_draft_ready) {"));
@@ -56341,12 +56433,107 @@ mod tests {
         let src = include_str!("worker.rs");
         let prod = &src[..src.find("\nmod tests").expect("tests module exists")];
         let calls = prod.split_whitespace().collect::<Vec<_>>().join(" ");
-        assert_eq!(calls.matches(".draft_session_admission_bytes(").count(), 2);
+        // The boot calibration's one-session reading, and the admission's parts (memra#1379).
+        assert_eq!(calls.matches(".draft_session_admission_bytes(").count(), 1);
+        assert_eq!(calls.matches(".draft_session_admission_charge(").count(), 1);
+        for call in [
+            ".draft_session_admission_bytes(engine.device_graph_mem_reserved())",
+            ".draft_session_admission_charge(engine.device_graph_mem_reserved())",
+        ] {
+            assert_eq!(calls.matches(call).count(), 1, "{call}");
+        }
+        // The carriers are the model's own active sessions, and every admission records its
+        // carry before it joins them (memra#1379).
         assert_eq!(
             calls
-                .matches(".draft_session_admission_bytes(engine.device_graph_mem_reserved())")
+                .matches(".filter(|s| s.model == model_key) .map(|s| s.draft_reserve_carried),")
                 .count(),
-            2
+            1
+        );
+        let carry = calls
+            .find("s.draft_reserve_carried = draft_admission.reserve_carried;")
+            .expect("the carry");
+        let pushed = carry + calls[carry..].find("active.push(s);").expect("the push");
+        assert!(calls[carry..pushed].contains("s.booked_kv_bytes = booked_cost as u64;"));
+        assert!(calls[carry..pushed].contains("s.admitted_charge_bytes = booked_cost;"));
+    }
+
+    /// memra#1379: after a trim the graph pool reads empty until the first draft launch maps it
+    /// again, so a burst of spec admissions in that window all read the same 32 MiB shortfall.
+    /// The stream owes it once. Each admission's live gate still checks it, but the books sum
+    /// their sessions' charges, and they must carry it once across the burst, not once per
+    /// session: at 32 sessions on GB10's MTP shape (2 MiB per session, a 32 MiB reserve) main
+    /// booked 32 x 34 MiB = 1088 MiB, 992 MiB more than the 96 MiB the sessions will map.
+    #[test]
+    fn a_post_trim_burst_books_the_graph_reserve_once_per_stream() {
+        use super::DraftStateAdmission;
+        use memra_engine::spec::DraftStateCharge;
+        const MIB: usize = 1 << 20;
+        let (per_session, reserve) = (2 * MIB, 32 * MIB);
+        // The pool reads empty after the trim: every admission before the launch owes it all.
+        let trimmed = DraftStateCharge {
+            per_session,
+            reserve_owed: reserve,
+        };
+        // The admission site's walk: each admission reads the model's active carriers, books
+        // its charge and joins the active set. Another model's carrier does not count.
+        fn admit(
+            active: &mut Vec<(&'static str, usize)>,
+            model: &'static str,
+            charge: DraftStateCharge,
+        ) -> DraftStateAdmission {
+            let admission = DraftStateAdmission::of(
+                charge,
+                active
+                    .iter()
+                    .filter(|(m, _)| *m == model)
+                    .map(|&(_, carried)| carried),
+            );
+            active.push((model, admission.reserve_carried));
+            admission
+        }
+        let mut active = vec![("other", reserve)];
+        let burst: Vec<_> = (0..32).map(|_| admit(&mut active, "m", trimmed)).collect();
+        let booked: usize = burst.iter().map(|a| a.booked(a.live)).sum();
+        assert_eq!(booked, 32 * per_session + reserve);
+        let carried: usize = burst.iter().map(|a| a.reserve_carried).sum();
+        assert_eq!(carried, reserve);
+        assert_eq!(burst[0].reserve_carried, reserve);
+        // Every live check holds the whole shortfall: none of its free reading has it yet.
+        assert!(burst.iter().all(|a| a.live == per_session + reserve));
+        // A choice group's states share the stream: one shortfall in its live gate.
+        assert_eq!(
+            burst[1].group_cost(10 * MIB + burst[1].live, 4),
+            4 * (10 * MIB + per_session) + reserve
+        );
+
+        // The carrier is released before the launch: the next admission carries it again.
+        active.remove(1);
+        let next = admit(&mut active, "m", trimmed);
+        assert_eq!(next.reserve_carried, reserve);
+        assert_eq!(next.booked(next.live), per_session + reserve);
+        // A partial shortfall after a second trim, beside the full carry: nothing more is owed.
+        let partial = DraftStateCharge {
+            per_session,
+            reserve_owed: 20 * MIB,
+        };
+        assert_eq!(admit(&mut active, "m", partial).reserve_carried, 0);
+
+        // Healed after the trim (the launch mapped the reserve): no admission owes any.
+        let healed = DraftStateCharge {
+            per_session,
+            reserve_owed: 0,
+        };
+        let mut fresh = Vec::new();
+        let healed: Vec<_> = (0..32).map(|_| admit(&mut fresh, "m", healed)).collect();
+        assert!(healed.iter().all(|a| a.live == per_session
+            && a.reserve_carried == 0
+            && a.booked(a.live) == per_session));
+        // A charge with no stream reserve books what it charges.
+        let plane = DraftStateAdmission::session_only(64 * MIB);
+        assert_eq!(
+            (plane.booked(plane.live), plane.group_cost(64 * MIB, 3)),
+            (64 * MIB, 192 * MIB)
         );
     }
 
