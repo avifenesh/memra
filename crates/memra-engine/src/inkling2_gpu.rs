@@ -258,9 +258,8 @@ mod ffi {
             amax: *mut f32,
             y: *mut c_void,
             k: i32,
-            gate_cap: f32,
-            up_cap: f32,
-            mode: i32,
+            tg: *const f64,
+            tu: *const f64,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2_expert_gemm(
@@ -2640,6 +2639,9 @@ struct DeclaredWork {
     /// Red-arm buffers (the gate only): the pair -> token row list and unit routing weights.
     grows: Option<CudaSlice<u32>>,
     ones: Option<CudaSlice<f32>>,
+    /// SiTU's factor tables (memra_reference::inkling2_actquant::situ_tables) for the caps they
+    /// were built for, uploaded on the first declared layer.
+    situ: Option<((u32, u32), CudaSlice<f64>, CudaSlice<f64>)>,
 }
 
 /// Wrong declared programs the gate must tell apart from the right one (fault injection).
@@ -2676,6 +2678,7 @@ impl DeclaredWork {
             dn16: dev.zeros(p * hidden * 2)?,
             grows: None,
             ones: None,
+            situ: None,
         })
     }
 }
@@ -2729,6 +2732,15 @@ fn declared_experts(
         return Err("declared experts: bank shapes disagree with the layer".into());
     }
     let kind = if w13.fmt == FMT_NVFP4 { 0 } else { 1 };
+    let key = (caps.0.to_bits(), caps.1.to_bits());
+    if dq.situ.as_ref().is_none_or(|(k, _, _)| *k != key) {
+        let t = memra_reference::inkling2_actquant::situ_tables(caps.0, caps.1);
+        dq.situ = Some((key, dev.up(&t.gate)?, dev.up(&t.up)?));
+    }
+    let (tg, tu) = {
+        let (_, g, u) = dq.situ.as_ref().ok_or("SiTU tables")?;
+        (dptr(g, &st), dptr(u, &st))
+    };
     dev.launched("memra_ink2g_to_bf16", unsafe {
         ffi::memra_ink2g_to_bf16(
             dptr(mn, &st) as *const f32,
@@ -2778,9 +2790,8 @@ fn declared_experts(
                 dptr_mut(&mut dq.aq_a, &st) as *mut f32,
                 std::ptr::null_mut(),
                 k as i32,
-                caps.0,
-                caps.1,
-                0,
+                tg as *const f64,
+                tu as *const f64,
                 dev.sp(),
             )
         })
@@ -3815,6 +3826,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                     &got[r * hidden..(r + 1) * hidden],
                 );
             }
+            let situ = aq::situ_tables(caps.0, caps.1);
             let (mut worst, mut equal) = (0f64, 0usize);
             for r in 0..rows {
                 let row: Vec<f32> = x[r * hidden..(r + 1) * hidden]
@@ -3843,7 +3855,16 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         n: hidden,
                         k: width,
                     };
-                    aq::expert_block_w4a4(&row, &sel, gamma, &up, &down, caps).out
+                    aq::expert_block_w4a4(
+                        &row,
+                        &sel,
+                        gamma,
+                        &up,
+                        &down,
+                        &situ,
+                        aq::Accumulation::Sm120,
+                    )
+                    .out
                 } else {
                     let up = aq::Mxfp8Experts {
                         values: &d13,
@@ -3857,7 +3878,16 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         n: hidden,
                         k: width,
                     };
-                    aq::expert_block_w8a8(&row, &sel, gamma, &up, &down, caps).out
+                    aq::expert_block_w8a8(
+                        &row,
+                        &sel,
+                        gamma,
+                        &up,
+                        &down,
+                        &situ,
+                        aq::Accumulation::Sm120,
+                    )
+                    .out
                 };
                 let g = &got[r * hidden..(r + 1) * hidden];
                 let (mut num, mut den) = (0f64, 0f64);

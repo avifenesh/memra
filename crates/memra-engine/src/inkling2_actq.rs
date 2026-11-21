@@ -28,9 +28,8 @@ unsafe extern "C" {
         amax: *mut f32,
         y: *mut c_void,
         k: i32,
-        gate_cap: f32,
-        up_cap: f32,
-        mode: i32,
+        tg: *const f64,
+        tu: *const f64,
         stream: *mut c_void,
     ) -> i32;
     fn memra_ink2_cvt_probe(
@@ -108,6 +107,8 @@ pub struct Ink2Rows {
 /// One projection of the experts as stored in the checkpoint, on the device.
 pub struct Ink2Weights {
     pub quant: Ink2Quant,
+    /// Experts in the buffers: values `[experts][n][value_bytes(k)]`, scales likewise, amax `[experts]`.
+    pub experts: usize,
     pub n: usize,
     pub k: usize,
     pub values: CudaSlice<u8>,
@@ -116,6 +117,25 @@ pub struct Ink2Weights {
     pub amax: CudaSlice<f32>,
     /// The outer-scale denominator (NVFP4).
     pub denominator: f32,
+}
+
+/// SiTU's two factor tables on the device (65,536 f64 each, from
+/// [`reference::situ_tables`]), with the host copy the gates compare against.
+pub struct Ink2SituTables {
+    pub host: reference::SituTables,
+    pub gate: CudaSlice<u8>,
+    pub up: CudaSlice<u8>,
+}
+
+/// A group table on the device, built from a host expert-per-row list: the wrapper checks its
+/// experts and rows against the operands before every launch.
+pub struct Ink2Groups {
+    pub table: CudaSlice<u32>,
+    pub ngroups: usize,
+    pub nb: usize,
+    /// One past the largest expert id and the largest row in the table.
+    pub experts_end: usize,
+    pub rows_end: usize,
 }
 
 /// Whether this build carries the block-scaled expert GEMMs (the 120a family).
@@ -150,6 +170,35 @@ pub fn ink2_groups(expert_of_row: &[u32], nb: usize) -> (Vec<u32>, usize) {
 }
 
 impl Engine {
+    /// Upload SiTU's factor tables for the given caps (the checkpoint's are 4 and 25).
+    pub fn ink2_situ_tables(&self, gate_cap: f32, up_cap: f32) -> Res<Ink2SituTables> {
+        let host = reference::situ_tables(gate_cap, up_cap);
+        let bytes = |v: &[f64]| -> Vec<u8> { v.iter().flat_map(|x| x.to_le_bytes()).collect() };
+        Ok(Ink2SituTables {
+            gate: self.htod_bytes(&bytes(&host.gate))?,
+            up: self.htod_bytes(&bytes(&host.up))?,
+            host,
+        })
+    }
+
+    /// Upload the group table of [`ink2_groups`] for `expert_of_row` and `nb` B tiles.
+    pub fn ink2_groups_upload(&self, expert_of_row: &[u32], nb: usize) -> Res<Ink2Groups> {
+        if !(nb == 1 || nb == 2 || nb == 4) {
+            return Err(format!("ink2 groups: nb {nb} is not 1, 2 or 4").into());
+        }
+        let (table, ngroups) = ink2_groups(expert_of_row, nb);
+        if ngroups == 0 {
+            return Err("ink2 groups: no rows".into());
+        }
+        Ok(Ink2Groups {
+            table: self.htod_u32_v(&table)?,
+            ngroups,
+            nb,
+            experts_end: expert_of_row.iter().max().map_or(0, |e| *e as usize + 1),
+            rows_end: expert_of_row.len(),
+        })
+    }
+
     /// Allocate the outputs of a quantization of `rows` rows of width `k`.
     pub fn ink2_rows_alloc(&self, quant: Ink2Quant, rows: usize, k: usize) -> Res<Ink2Rows> {
         Ok(Ink2Rows {
@@ -182,9 +231,8 @@ impl Engine {
                 out.amax.device_ptr_mut(&stream).0 as *mut f32,
                 std::ptr::null_mut(),
                 out.k as i32,
-                0.0,
-                0.0,
-                0,
+                std::ptr::null(),
+                std::ptr::null(),
                 stream.cu_stream() as *mut c_void,
             )
         };
@@ -195,16 +243,14 @@ impl Engine {
     }
 
     /// The down projection's input: softcapped SwiGLU of interleaved bf16 `gate_up` (`[rows][2k]`)
-    /// times each row's routing weight, rounded to bf16 and quantized into `out`. `y` (optional,
-    /// `[rows][k]` bf16) receives the bf16 rows. `approx` selects the PTX approx instructions (a
-    /// measurement arm; the default is the fp32 library functions).
-    #[allow(clippy::too_many_arguments)]
+    /// times each row's routing weight, the mathematical value rounded once to bf16
+    /// ([`reference::situ_value`]), and quantized into `out`. `y` (optional, `[rows][k]` bf16)
+    /// receives the bf16 rows.
     pub fn ink2_situ_quant_into(
         &self,
         gate_up: &CudaSlice<u8>,
         gamma: &CudaSlice<f32>,
-        caps: (f32, f32),
-        approx: bool,
+        tables: &Ink2SituTables,
         out: &mut Ink2Rows,
         y: Option<&mut CudaSlice<u8>>,
     ) -> Res<()> {
@@ -237,9 +283,8 @@ impl Engine {
                 out.amax.device_ptr_mut(&stream).0 as *mut f32,
                 y_ptr,
                 out.k as i32,
-                caps.0,
-                caps.1,
-                i32::from(approx),
+                tables.gate.device_ptr(&stream).0 as *const f64,
+                tables.up.device_ptr(&stream).0 as *const f64,
                 stream.cu_stream() as *mut c_void,
             )
         };
@@ -272,27 +317,59 @@ impl Engine {
     }
 
     /// The grouped expert GEMM: quantized rows `act` against `w`, bf16 `out` (`[rows][n]`, two bytes
-    /// each); `acc` (optional, `[rows][n]`) receives the fp32 accumulators. `groups` is from
-    /// [`ink2_groups`] with the same `nb`. `wpb` (warps per block) takes 0 for the default. Asynchronous
-    /// on the stream.
-    #[allow(clippy::too_many_arguments)]
+    /// each); `acc` (optional, `[rows][n]`) receives the fp32 accumulators. `wpb` (warps per block)
+    /// takes 0 for the default. Every buffer length, the group table's experts and rows, and the
+    /// launch shape are checked here, so no argument reaches memory outside its buffer.
+    /// Asynchronous on the stream.
     pub fn ink2_expert_gemm_into(
         &self,
         w: &Ink2Weights,
         act: &Ink2Rows,
-        groups: &CudaSlice<u32>,
-        ngroups: usize,
-        nb: usize,
+        groups: &Ink2Groups,
         wpb: usize,
         out: &mut CudaSlice<u8>,
         acc: Option<&mut CudaSlice<f32>>,
     ) -> Res<()> {
-        if w.quant != act.quant || w.k != act.k || out.len() != act.rows * w.n * 2 {
+        let (q, n, k) = (w.quant, w.n, w.k);
+        if q != act.quant || k != act.k || out.len() != act.rows * n * 2 {
             return Err("ink2 expert gemm: operand shapes disagree".into());
         }
+        let step = if q == Ink2Quant::Nvfp4 { 64 } else { 128 };
+        if n == 0
+            || n % 16 != 0
+            || k == 0
+            || k % step != 0
+            || n > i32::MAX as usize
+            || k > i32::MAX as usize
+        {
+            return Err(format!(
+                "ink2 expert gemm: n {n} (multiple of 16) or k {k} (multiple of {step}) refused"
+            )
+            .into());
+        }
+        if w.values.len() != w.experts * n * q.value_bytes(k)
+            || w.scales.len() != w.experts * n * q.scale_bytes(k)
+            || (q == Ink2Quant::Nvfp4 && w.amax.len() < w.experts)
+        {
+            return Err("ink2 expert gemm: weight buffers are not [experts][n][k]".into());
+        }
+        if act.values.len() != act.rows * q.value_bytes(k)
+            || act.scales.len() != act.rows * q.scale_bytes(k)
+            || (q == Ink2Quant::Nvfp4 && act.amax.len() < act.rows)
+        {
+            return Err("ink2 expert gemm: activation buffers are not [rows][k]".into());
+        }
+        if groups.experts_end > w.experts || groups.rows_end > act.rows {
+            return Err(format!(
+                "ink2 expert gemm: the group table names expert {} of {} or row {} of {}",
+                groups.experts_end, w.experts, groups.rows_end, act.rows
+            )
+            .into());
+        }
+        let (nb, ngroups) = (groups.nb, groups.ngroups);
         let words = unsafe { memra_ink2_group_words(nb as i32) } as usize;
-        if groups.len() < ngroups * words {
-            return Err("ink2 expert gemm: group table shorter than its count".into());
+        if groups.table.len() != ngroups * words || ngroups > i32::MAX as usize || wpb > 8 {
+            return Err("ink2 expert gemm: group table or launch shape refused".into());
         }
         self.gpu.ctx.bind_to_thread()?;
         let stream = self.stream();
@@ -316,7 +393,7 @@ impl Engine {
                 w.scales.device_ptr(&stream).0 as *const c_void,
                 w.amax.device_ptr(&stream).0 as *const f32,
                 w.denominator,
-                groups.device_ptr(&stream).0 as *const u32,
+                groups.table.device_ptr(&stream).0 as *const u32,
                 ngroups as i32,
                 out.device_ptr_mut(&stream).0 as *mut c_void,
                 acc_ptr,
@@ -351,17 +428,8 @@ fn count_diff<T: PartialEq>(a: &[T], b: &[T]) -> usize {
     a.iter().zip(b).filter(|(x, y)| x != y).count()
 }
 
-/// Distance in bf16 steps between two bf16 values held as fp32.
-fn bf16_ulps(a: f32, b: f32) -> i64 {
-    let key = |v: f32| {
-        let bits = (v.to_bits() >> 16) as i64;
-        if bits & 0x8000 != 0 {
-            -(bits & 0x7fff)
-        } else {
-            bits
-        }
-    };
-    (key(a) - key(b)).abs()
+fn bits(v: &[f32]) -> Vec<u32> {
+    v.iter().map(|x| x.to_bits()).collect()
 }
 
 struct XorShift(u64);
@@ -390,11 +458,21 @@ impl XorShift {
     }
 }
 
+/// Devices on which the tensor-core chain models were measured bit for bit (the device capture and
+/// the gate's cells). On any other device the gate reports the model match and holds only the
+/// summation bound and the epilogue: an unmeasured chain is not a gate.
+pub const INK2_CHAIN_MEASURED: &[&str] = &["NVIDIA GeForce RTX 5090 Laptop GPU"];
+
+fn chain_measured(e: &Engine) -> (bool, String) {
+    let name = e.gpu.ctx.name().unwrap_or_default();
+    (INK2_CHAIN_MEASURED.contains(&name.as_str()), name)
+}
+
 /// Device weights with their host copies: values, scales, per-expert amax.
 pub type Ink2WeightsWithHost = (Ink2Weights, Vec<u8>, Vec<u8>, Vec<f32>);
 
 /// Random expert weights in the checkpoint's layout. NVFP4 scale bytes stay in a mid range and
-/// MXFP8 values avoid the NaN codes.
+/// MXFP8 values avoid the NaN codes; `subnormal` makes 97% of the MXFP8 codes e4m3 subnormals.
 pub fn ink2_random_weights(
     e: &Engine,
     quant: Ink2Quant,
@@ -402,6 +480,7 @@ pub fn ink2_random_weights(
     n: usize,
     k: usize,
     seed: u64,
+    subnormal: bool,
 ) -> Res<Ink2WeightsWithHost> {
     let mut rng = XorShift(seed | 1);
     let mut values = rng.bytes(experts * n * quant.value_bytes(k));
@@ -415,11 +494,19 @@ pub fn ink2_random_weights(
                     *v &= 0x80;
                 }
             });
+            if subnormal {
+                for v in values.iter_mut() {
+                    if rng.unit() < 0.97 {
+                        *v = (*v & 0x80) | (1 + (*v % 7));
+                    }
+                }
+            }
             scales.iter_mut().for_each(|s| *s = 110 + (*s % 14));
         }
     }
     let w = Ink2Weights {
         quant,
+        experts,
         n,
         k,
         values: e.htod_bytes(&values)?,
@@ -457,93 +544,39 @@ fn sum_bound(k: usize, magnitude: f64) -> f64 {
     (k as f64 - 1.0) * 2f64.powi(-23) * magnitude
 }
 
-/// Software models of one MMA chain over `step`-wide K steps, to say what reproduces the hardware.
-fn chain_models(a: &[f32], w: &[f32], step: usize) -> [f32; 5] {
-    let mut seq = 0f32; // index order, one fp32 add per product
-    let mut step_rn = 0f32; // exact step sum rounded to fp32, then one fp32 add
-    let mut fused_rn = 0f32; // round(acc + exact step sum), nearest
-    for (ca, cw) in a.chunks(step).zip(w.chunks(step)) {
-        let mut exact = 0f64;
-        for (x, y) in ca.iter().zip(cw) {
-            seq += x * y;
-            exact += f64::from(*x) * f64::from(*y);
-        }
-        step_rn += exact as f32;
-        fused_rn = (f64::from(fused_rn) + exact) as f32;
+/// A quantized operand row as the reference reads it: the dequantized values and, for MXFP8, the
+/// operand exponents the tensor core sees.
+struct Operand {
+    values: Vec<f32>,
+    exponents: Vec<i32>,
+}
+
+fn operand(quant: Ink2Quant, codes: &[u8], scales: &[u8]) -> Operand {
+    match quant {
+        Ink2Quant::Nvfp4 => Operand {
+            values: reference::nvfp4_dequant(codes, scales),
+            exponents: Vec::new(),
+        },
+        Ink2Quant::Mxfp8 => Operand {
+            values: reference::mxfp8_dequant(codes, scales),
+            exponents: reference::mxfp8_operand_exponents(codes, scales),
+        },
     }
-    let fused_rz = reference::dot_chain_rz(a, w, step); // the reference's tensor-core chain model
-    let trunc = reference::dot_chain_trunc(a, w, step, 25); // the truncating tensor-core model
-    [seq, step_rn, fused_rn, fused_rz, trunc]
 }
 
-struct GemmStats {
-    elements: usize,
-    equal_index_order: usize,
-    model_equal: [usize; 5],
-    max_ratio: f64,
-    over_bound: usize,
-    max_ulp: u32,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn gemm_stats(
-    acc: &[f32],
-    a_rows: &[Vec<f32>],
-    w_rows: &dyn Fn(usize, usize) -> Vec<f32>,
-    expert: &[u32],
-    n: usize,
-    k: usize,
-    step: usize,
-) -> GemmStats {
-    let mut s = GemmStats {
-        elements: 0,
-        equal_index_order: 0,
-        model_equal: [0; 5],
-        max_ratio: 0.0,
-        over_bound: 0,
-        max_ulp: 0,
-    };
-    for (r, a) in a_rows.iter().enumerate() {
-        for col in 0..n {
-            let w = w_rows(expert[r] as usize, col);
-            let got = acc[r * n + col];
-            let models = chain_models(a, &w, step);
-            let (mut exact, mut mag) = (0f64, 0f64);
-            for (x, y) in a.iter().zip(&w) {
-                let p = f64::from(*x) * f64::from(*y);
-                exact += p;
-                mag += p.abs();
-            }
-            s.elements += 1;
-            for (i, m) in models.iter().enumerate() {
-                if m.to_bits() == got.to_bits() {
-                    s.model_equal[i] += 1;
-                }
-            }
-            if models[0].to_bits() == got.to_bits() {
-                s.equal_index_order += 1;
-            }
-            let err = (f64::from(got) - exact).abs();
-            if mag > 0.0 {
-                s.max_ratio = s.max_ratio.max(err / mag);
-            }
-            if err > sum_bound(k, mag) {
-                s.over_bound += 1;
-            }
-            let ulp = (i64::from(got.to_bits() as i32) - i64::from(models[0].to_bits() as i32))
-                .unsigned_abs();
-            if got.is_sign_negative() == models[0].is_sign_negative() {
-                s.max_ulp = s.max_ulp.max(ulp.min(u64::from(u32::MAX)) as u32);
-            }
+/// The reference's model of the sm_120a accumulator for one output.
+fn chain_model(quant: Ink2Quant, a: &Operand, w: &Operand) -> f32 {
+    match quant {
+        Ink2Quant::Nvfp4 => reference::dot_chain_rz(&a.values, &w.values, 64),
+        Ink2Quant::Mxfp8 => {
+            reference::dot_chain_trunc(&a.values, &a.exponents, &w.values, &w.exponents, 32, 25)
         }
     }
-    let _ = k;
-    s
 }
 
-/// One GEMM case on the device against the reference: the accumulators under the summation bound,
-/// the bf16 epilogue bit for bit from the device's own accumulators, and what software chain equals
-/// the hardware.
+/// One GEMM case on the device against the reference: the accumulators equal the reference's
+/// chain model bit for bit (on a measured device) and sit under the summation bound, and the bf16
+/// epilogue follows bit for bit from the device's own accumulators.
 #[allow(clippy::too_many_arguments)]
 fn gemm_case(
     e: &Engine,
@@ -562,8 +595,10 @@ fn gemm_case(
     fails: &mut usize,
 ) -> Res<()> {
     let rows = expert.len();
+    let experts = wv.len() / (n * quant.value_bytes(k));
     let w = Ink2Weights {
         quant,
+        experts,
         n,
         k,
         values: e.htod_bytes(wv)?,
@@ -572,103 +607,77 @@ fn gemm_case(
         denominator,
     };
     let act = quantize_on_device(e, quant, x, rows, k)?;
-    let (groups, ngroups) = ink2_groups(expert, nb);
-    let gd = e.htod_u32_v(&groups)?;
+    let groups = e.ink2_groups_upload(expert, nb)?;
     let mut out = e.alloc_u8(rows * n * 2)?;
     let mut acc = e.zeros(rows * n)?;
-    e.ink2_expert_gemm_into(&w, &act, &gd, ngroups, nb, 0, &mut out, Some(&mut acc))?;
+    e.ink2_expert_gemm_into(&w, &act, &groups, 0, &mut out, Some(&mut acc))?;
     let acc = e.dtoh(&acc)?;
     let out = bf16_from_bytes(&e.dtoh_u8(&out)?);
-    // operands as the reference dequantizes them, from the reference's own quantization
     let (vb, sb) = (quant.value_bytes(k), quant.scale_bytes(k));
-    let mut a_rows = Vec::new();
-    let mut row_scale = Vec::new();
+    let (mut elements, mut model_equal, mut index_equal, mut over_bound, mut epi_bad) =
+        (0usize, 0usize, 0usize, 0usize, 0usize);
+    let mut max_ratio = 0f64;
     for r in 0..rows {
         let xr = &x[r * k..(r + 1) * k];
-        match quant {
+        let ex = expert[r] as usize;
+        let (a, row_scale) = match quant {
             Ink2Quant::Nvfp4 => {
                 let q = reference::nvfp4_act_quant(xr);
-                row_scale.push(reference::nvfp4_row_scale(
-                    q.amax,
-                    wamax[expert[r] as usize],
-                    denominator,
-                ));
-                a_rows.push(reference::nvfp4_dequant(&q.codes, &q.scales));
+                let s = reference::nvfp4_row_scale(q.amax, wamax[ex], denominator);
+                (operand(quant, &q.codes, &q.scales), s)
             }
             Ink2Quant::Mxfp8 => {
                 let (v, s) = reference::mxfp8_act_quant(xr);
-                row_scale.push(1.0);
-                a_rows.push(reference::mxfp8_dequant(&v, &s));
+                (operand(quant, &v, &s), 1.0)
             }
-        }
-    }
-    let w_rows = |ex: usize, col: usize| {
-        let r = ex * n + col;
-        match quant {
-            Ink2Quant::Nvfp4 => {
-                reference::nvfp4_dequant(&wv[r * vb..(r + 1) * vb], &ws[r * sb..(r + 1) * sb])
+        };
+        for col in 0..n {
+            let rr = ex * n + col;
+            let wo = operand(
+                quant,
+                &wv[rr * vb..(rr + 1) * vb],
+                &ws[rr * sb..(rr + 1) * sb],
+            );
+            let got = acc[r * n + col];
+            elements += 1;
+            model_equal += usize::from(chain_model(quant, &a, &wo).to_bits() == got.to_bits());
+            index_equal += usize::from(
+                reference::dot_index_order(&a.values, &wo.values).to_bits() == got.to_bits(),
+            );
+            let (mut exact, mut mag) = (0f64, 0f64);
+            for (p, q) in a.values.iter().zip(&wo.values) {
+                let t = f64::from(*p) * f64::from(*q);
+                exact += t;
+                mag += t.abs();
             }
-            Ink2Quant::Mxfp8 => {
-                reference::mxfp8_dequant(&wv[r * vb..(r + 1) * vb], &ws[r * sb..(r + 1) * sb])
+            let err = (f64::from(got) - exact).abs();
+            if mag > 0.0 {
+                max_ratio = max_ratio.max(err / mag);
             }
-        }
-    };
-    let step = if quant == Ink2Quant::Nvfp4 { 64 } else { 32 };
-    let s = gemm_stats(&acc, &a_rows, &w_rows, expert, n, k, step);
-    // epilogue: bf16((acc * 1.0) * row scale) from the device accumulators, and against the reference out
-    let (mut epi_bad, mut ref_diff, mut ref_max_ulp) = (0usize, 0usize, 0i64);
-    for r in 0..rows {
-        let wr_out: Vec<f32> = (0..n)
-            .map(|c| reference::dot_index_order(&a_rows[r], &w_rows(expert[r] as usize, c)))
-            .collect();
-        for c in 0..n {
+            over_bound += usize::from(err > sum_bound(k, mag));
             let want = match quant {
-                Ink2Quant::Nvfp4 => reference::bf16(acc[r * n + c] * row_scale[r]),
-                Ink2Quant::Mxfp8 => reference::bf16(acc[r * n + c]),
+                Ink2Quant::Nvfp4 => reference::bf16((got * 1.0f32) * row_scale),
+                Ink2Quant::Mxfp8 => reference::bf16(got),
             };
-            if want.to_bits() != out[r * n + c].to_bits() {
-                epi_bad += 1;
-            }
-            let reference_out = match quant {
-                Ink2Quant::Nvfp4 => reference::bf16(wr_out[c] * row_scale[r]),
-                Ink2Quant::Mxfp8 => reference::bf16(wr_out[c]),
-            };
-            let d = bf16_ulps(reference_out, out[r * n + c]);
-            if d != 0 {
-                ref_diff += 1;
-            }
-            ref_max_ulp = ref_max_ulp.max(d);
+            epi_bad += usize::from(want.to_bits() != out[r * n + col].to_bits());
         }
     }
-    // The accumulators under the summation bound and the epilogue bit for bit from them are the whole
-    // claim. The bf16 distance from the index-order reference is reported, not gated: a sum that
-    // cancels can sit many bf16 steps from its reference inside the same absolute bound.
-    // W4A4 also has to equal the reference's tensor-core chain model bit for bit (model 3 is
-    // `reference::dot_chain_rz` at this K step).
-    // and W8A8 the truncating model (model 4, `reference::dot_chain_trunc` at guard 25).
-    let chain_ok = match quant {
-        Ink2Quant::Nvfp4 => s.model_equal[3] == s.elements,
-        Ink2Quant::Mxfp8 => s.model_equal[4] == s.elements,
-    };
-    let ok = s.over_bound == 0 && epi_bad == 0 && chain_ok;
+    let (measured, device) = chain_measured(e);
+    let chain_ok = !measured || model_equal == elements;
     verdict(
         lines,
         fails,
-        ok,
+        over_bound == 0 && epi_bad == 0 && chain_ok,
         format!(
-            "{name} [n={n} k={k} rows={rows} nb={nb}] acc: over-bound={}/{} max|err|/sum|p|={:.3e} (bound {:.3e}) \
-             bit-equal index-order={} step-rn={} fused-rn={} chain-rz={} chain-trunc25={} max-ulp-vs-index-order={}; \
-             epilogue bit-bad={epi_bad}; bf16 vs reference: differ={ref_diff} max={ref_max_ulp} step",
-            s.over_bound,
-            s.elements,
-            s.max_ratio,
+            "{name} [n={n} k={k} rows={rows} nb={nb}] acc: chain-model bit-equal={model_equal}/{elements} ({}) \
+             index-order bit-equal={index_equal}; over-bound={over_bound} max|err|/sum|p|={max_ratio:.3e} (bound {:.3e}); \
+             epilogue bit-bad={epi_bad}",
+            if measured {
+                "gated".to_string()
+            } else {
+                format!("reported only: the chain is not measured on {device}")
+            },
             (k as f64 - 1.0) * 2f64.powi(-23),
-            s.equal_index_order,
-            s.model_equal[1],
-            s.model_equal[2],
-            s.model_equal[3],
-            s.model_equal[4],
-            s.max_ulp,
         ),
     );
     Ok(())
@@ -676,7 +685,7 @@ fn gemm_case(
 
 /// The device accumulators and bf16 outputs of the golden GEMM records (one record each, tags
 /// `acc` and `out`), in the goldens' container: what the tensor core computed, for the reference's
-/// CPU test of its chain model.
+/// CPU test of its chain models.
 pub fn ink2_actq_capture(e: &Engine) -> Res<Vec<u8>> {
     use reference::goldens::{bf16s, f32s, parse, u32s};
     if !ink2_actq_built() {
@@ -694,7 +703,7 @@ pub fn ink2_actq_capture(e: &Engine) -> Res<Vec<u8>> {
             Ink2Quant::Mxfp8
         };
         let d = u32s(&r["dims"]);
-        let (n, k) = (d[1] as usize, d[2] as usize);
+        let (experts, n, k) = (d[0] as usize, d[1] as usize, d[2] as usize);
         let expert = u32s(&r["expert"]);
         let rows = expert.len();
         let (wv, ws, wamax, denominator) = match quant {
@@ -704,10 +713,11 @@ pub fn ink2_actq_capture(e: &Engine) -> Res<Vec<u8>> {
                 f32s(&r["wamax"]),
                 f32s(&r["denom"])[0],
             ),
-            Ink2Quant::Mxfp8 => (&r["w"], &r["wexps"], vec![1.0; d[0] as usize], 1.0),
+            Ink2Quant::Mxfp8 => (&r["w"], &r["wexps"], vec![1.0; experts], 1.0),
         };
         let w = Ink2Weights {
             quant,
+            experts,
             n,
             k,
             values: e.htod_bytes(wv)?,
@@ -716,11 +726,10 @@ pub fn ink2_actq_capture(e: &Engine) -> Res<Vec<u8>> {
             denominator,
         };
         let act = quantize_on_device(e, quant, &bf16s(&r["x"]), rows, k)?;
-        let (groups, ngroups) = ink2_groups(&expert, 1);
-        let gd = e.htod_u32_v(&groups)?;
+        let groups = e.ink2_groups_upload(&expert, 1)?;
         let mut out = e.alloc_u8(rows * n * 2)?;
         let mut acc = e.zeros(rows * n)?;
-        e.ink2_expert_gemm_into(&w, &act, &gd, ngroups, 1, 0, &mut out, Some(&mut acc))?;
+        e.ink2_expert_gemm_into(&w, &act, &groups, 0, &mut out, Some(&mut acc))?;
         let acc: Vec<u8> = e.dtoh(&acc)?.iter().flat_map(|v| v.to_le_bytes()).collect();
         let mut record = reference::goldens::Record::new();
         record.insert("acc".into(), acc);
@@ -728,6 +737,258 @@ pub fn ink2_actq_capture(e: &Engine) -> Res<Vec<u8>> {
         records.insert(name.clone(), record);
     }
     Ok(reference::goldens::write(&records))
+}
+
+/// SiTU fused with the quantizer against the reference, bit for bit: the bf16 rows and the
+/// quantization of the device's own rows. Also counts, on the CPU side, the outputs whose f64 value
+/// lies within 2^-40 (relative) of a bf16 rounding boundary: a nonzero count would make the one
+/// rounding depend on the f64 factors' last bits.
+#[allow(clippy::too_many_arguments)]
+fn situ_case(
+    e: &Engine,
+    tables: &Ink2SituTables,
+    quant: Ink2Quant,
+    name: &str,
+    gate_up: &[u16],
+    gamma: &[f32],
+    k: usize,
+    lines: &mut Vec<String>,
+    fails: &mut usize,
+) -> Res<()> {
+    let rows = gamma.len();
+    let gu: Vec<u8> = gate_up.iter().flat_map(|v| v.to_le_bytes()).collect();
+    let gd = e.htod_bytes(&gu)?;
+    let gm = e.htod(gamma)?;
+    let mut out = e.ink2_rows_alloc(quant, rows, k)?;
+    let mut y = e.alloc_u8(rows * k * 2)?;
+    e.ink2_situ_quant_into(&gd, &gm, tables, &mut out, Some(&mut y))?;
+    let y = bf16_from_bytes(&e.dtoh_u8(&y)?);
+    let (values, scales) = (e.dtoh_u8(&out.values)?, e.dtoh_u8(&out.scales)?);
+    let t = &tables.host;
+    let (mut differ, mut quant_bad, mut near) = (0usize, 0usize, 0usize);
+    let (vb, sb) = (quant.value_bytes(k), quant.scale_bytes(k));
+    for r in 0..rows {
+        let row: Vec<f32> = gate_up[r * 2 * k..(r + 1) * 2 * k]
+            .iter()
+            .map(|b| f32::from_bits(u32::from(*b) << 16))
+            .collect();
+        let want = reference::situ_row(&row, gamma[r], t);
+        let yr = &y[r * k..(r + 1) * k];
+        differ += count_diff(&bits(&want), &bits(yr));
+        for j in 0..k {
+            let z = (t.gate[gate_up[r * 2 * k + 2 * j] as usize]
+                * t.up[gate_up[r * 2 * k + 2 * j + 1] as usize])
+                * f64::from(gamma[r]);
+            if z.is_finite() && z != 0.0 {
+                // distance to the nearest bf16 midpoint, relative
+                let lo = f64::from(f32::from_bits(((z as f32).to_bits() >> 16) << 16));
+                let ulp = f64::from(f32::from_bits((((z as f32).to_bits() >> 16) + 1) << 16)) - lo;
+                let mid = lo + ulp / 2.0;
+                if ((z - mid) / z).abs() < 2f64.powi(-40) {
+                    near += 1;
+                }
+            }
+        }
+        let (rv, rs) = match quant {
+            Ink2Quant::Nvfp4 => {
+                let q = reference::nvfp4_act_quant(yr);
+                (q.codes, q.scales)
+            }
+            Ink2Quant::Mxfp8 => reference::mxfp8_act_quant(yr),
+        };
+        quant_bad += count_diff(&rv, &values[r * vb..(r + 1) * vb])
+            + count_diff(&rs, &scales[r * sb..(r + 1) * sb]);
+    }
+    verdict(
+        lines,
+        fails,
+        differ == 0 && quant_bad == 0,
+        format!(
+            "{name} [rows={rows} k={k}] bf16 rows differ from the f64 reference={differ}/{}; quantization of the device rows bit-bad={quant_bad}; outputs within 2^-40 of a bf16 midpoint={near}",
+            rows * k
+        ),
+    );
+    Ok(())
+}
+
+/// The routed experts of the golden `chain/*` records end to end on the device (quantize, w13,
+/// SiTU and its quantization, w2; the slot combine on the host) against the reference's expert
+/// block with the sm_120a accumulators, bit for bit at every stage.
+fn expert_block_case(
+    e: &Engine,
+    tables: &Ink2SituTables,
+    kind: &str,
+    r: &reference::goldens::Record,
+    lines: &mut Vec<String>,
+    fails: &mut usize,
+) -> Res<()> {
+    use reference::goldens::{bf16s, f32s, u32s};
+    let quant = if kind == "nvfp4" {
+        Ink2Quant::Nvfp4
+    } else {
+        Ink2Quant::Mxfp8
+    };
+    let d = u32s(&r["dims"]);
+    let (experts, h, f, tokens, topk) = (
+        d[0] as usize,
+        d[1] as usize,
+        d[2] as usize,
+        d[3] as usize,
+        d[4] as usize,
+    );
+    let x = bf16s(&r["x"]);
+    let sel = u32s(&r["sel"]);
+    let gamma = f32s(&r["gamma"]);
+    let tag = |s: &str| {
+        if kind == "nvfp4" {
+            format!("{s}codes")
+        } else {
+            s.to_string()
+        }
+    };
+    let stag = |s: &str| {
+        if kind == "nvfp4" {
+            format!("{s}scales")
+        } else {
+            format!("{s}exps")
+        }
+    };
+    let (a13, a2) = if kind == "nvfp4" {
+        (f32s(&r["w13amax"]), f32s(&r["w2amax"]))
+    } else {
+        (vec![1.0; experts], vec![1.0; experts])
+    };
+    let (d13, d2) = if kind == "nvfp4" {
+        (f32s(&r["w13denom"])[0], f32s(&r["w2denom"])[0])
+    } else {
+        (1.0, 1.0)
+    };
+    let upload = |name: &str, n: usize, k: usize, amax: &[f32], den: f32| -> Res<Ink2Weights> {
+        Ok(Ink2Weights {
+            quant,
+            experts,
+            n,
+            k,
+            values: e.htod_bytes(&r[&tag(name)])?,
+            scales: e.htod_bytes(&r[&stag(name)])?,
+            amax: e.htod(amax)?,
+            denominator: den,
+        })
+    };
+    let w13 = upload("w13", 2 * f, h, &a13, d13)?;
+    let w2 = upload("w2", h, f, &a2, d2)?;
+    // one routed row per (token, slot): its own copy of the token's quantized input
+    let rows = tokens * topk;
+    let xr: Vec<f32> = (0..rows)
+        .flat_map(|row| x[(row / topk) * h..(row / topk + 1) * h].to_vec())
+        .collect();
+    let act = quantize_on_device(e, quant, &xr, rows, h)?;
+    let groups = e.ink2_groups_upload(&sel, 1)?;
+    let mut gu = e.alloc_u8(rows * 2 * f * 2)?;
+    e.ink2_expert_gemm_into(&w13, &act, &groups, 0, &mut gu, None)?;
+    let gm = e.htod(&gamma)?;
+    let mut yq = e.ink2_rows_alloc(quant, rows, f)?;
+    let mut y = e.alloc_u8(rows * f * 2)?;
+    e.ink2_situ_quant_into(&gu, &gm, tables, &mut yq, Some(&mut y))?;
+    let mut down = e.alloc_u8(rows * h * 2)?;
+    e.ink2_expert_gemm_into(&w2, &yq, &groups, 0, &mut down, None)?;
+    let (gu, y, down) = (
+        bf16_from_bytes(&e.dtoh_u8(&gu)?),
+        bf16_from_bytes(&e.dtoh_u8(&y)?),
+        bf16_from_bytes(&e.dtoh_u8(&down)?),
+    );
+    let (mut bad_gu, mut bad_y, mut bad_down, mut bad_out) = (0, 0, 0, 0);
+    let wv13 = (&r[&tag("w13")], &r[&stag("w13")]);
+    let wv2 = (&r[&tag("w2")], &r[&stag("w2")]);
+    for t in 0..tokens {
+        let s: Vec<usize> = sel[t * topk..(t + 1) * topk]
+            .iter()
+            .map(|v| *v as usize)
+            .collect();
+        let gmm = &gamma[t * topk..(t + 1) * topk];
+        let xt = &x[t * h..(t + 1) * h];
+        let want = if quant == Ink2Quant::Nvfp4 {
+            let w13r = reference::Nvfp4Experts {
+                codes: wv13.0,
+                scales: wv13.1,
+                amax: &a13,
+                denominator: d13,
+                n: 2 * f,
+                k: h,
+            };
+            let w2r = reference::Nvfp4Experts {
+                codes: wv2.0,
+                scales: wv2.1,
+                amax: &a2,
+                denominator: d2,
+                n: h,
+                k: f,
+            };
+            reference::expert_block_w4a4(
+                xt,
+                &s,
+                gmm,
+                &w13r,
+                &w2r,
+                &tables.host,
+                reference::Accumulation::Sm120,
+            )
+        } else {
+            let w13r = reference::Mxfp8Experts {
+                values: wv13.0,
+                exponents: wv13.1,
+                n: 2 * f,
+                k: h,
+            };
+            let w2r = reference::Mxfp8Experts {
+                values: wv2.0,
+                exponents: wv2.1,
+                n: h,
+                k: f,
+            };
+            reference::expert_block_w8a8(
+                xt,
+                &s,
+                gmm,
+                &w13r,
+                &w2r,
+                &tables.host,
+                reference::Accumulation::Sm120,
+            )
+        };
+        let mut comb = vec![0f32; h];
+        for slot in 0..topk {
+            let row = t * topk + slot;
+            bad_gu += count_diff(
+                &bits(&want.gate_up[slot]),
+                &bits(&gu[row * 2 * f..(row + 1) * 2 * f]),
+            );
+            bad_y += count_diff(&bits(&want.y[slot]), &bits(&y[row * f..(row + 1) * f]));
+            let dr = &down[row * h..(row + 1) * h];
+            bad_down += count_diff(&bits(&want.down[slot]), &bits(dr));
+            for (c, v) in comb.iter_mut().zip(dr) {
+                *c += v;
+            }
+        }
+        let comb: Vec<f32> = comb.into_iter().map(reference::bf16).collect();
+        bad_out += count_diff(&bits(&want.out), &bits(&comb));
+    }
+    let (measured, device) = chain_measured(e);
+    let ok = !measured || bad_gu + bad_y + bad_down + bad_out == 0;
+    verdict(
+        lines,
+        fails,
+        ok,
+        format!(
+            "ink2-expert-block-{kind} [tokens={tokens} top-k={topk} h={h} f={f}] vs the reference block (sm_120a accumulators): gate_up bad={bad_gu} y bad={bad_y} down bad={bad_down} out bad={bad_out}{}",
+            if measured {
+                String::new()
+            } else {
+                format!(" (reported only: the chain is not measured on {device})")
+            }
+        ),
+    );
+    Ok(())
 }
 
 /// The act-quant gates. Returns the verdict lines (each starts with its cell name and ends in
@@ -738,7 +999,7 @@ pub fn ink2_actq_gate(e: &Engine) -> Res<(Vec<String>, usize)> {
     let mut lines = Vec::new();
     let mut fails = 0usize;
 
-    // --- quantizers against the goldens, bit for bit
+    // --- quantizers against the goldens, bit for bit (the non-finite records included)
     for (cell, prefix, quant) in [
         ("ink2-actq-nvfp4", "nvfp4q/", Ink2Quant::Nvfp4),
         ("ink2-actq-mxfp8", "mxfp8q/", Ink2Quant::Mxfp8),
@@ -776,7 +1037,7 @@ pub fn ink2_actq_gate(e: &Engine) -> Res<(Vec<String>, usize)> {
         );
     }
 
-    // --- the hardware conversions against the same goldens (the open fact)
+    // --- the hardware conversions against the same goldens (the open fact); NaN reported
     if ink2_actq_built() {
         let mut bad4 = 0;
         let mut total4 = 0;
@@ -791,91 +1052,97 @@ pub fn ink2_actq_gate(e: &Engine) -> Res<(Vec<String>, usize)> {
         let x = f32s(&r["x"]);
         let (_, hw2) = e.ink2_cvt_probe(&x)?;
         let bad2 = count_diff(&hw2, &r["code"]);
+        let (n4, n2) = e.ink2_cvt_probe(&[f32::NAN, -f32::NAN])?;
         verdict(
             &mut lines,
             &mut fails,
-            bad4 == 0 && bad2 == 0,
+            bad4 == 0 && bad2 == 0 && n4 == [0x7f, 0x7f] && n2 == [0x7, 0x7],
             format!(
-                "ink2-cvt-hw cvt.rn.satfinite.e4m3x2.f32 vs RNE goldens bad={bad4}/{total4}; cvt.rn.satfinite.e2m1x2.f32 vs goldens bad={bad2}/{}",
-                x.len()
+                "ink2-cvt-hw cvt.rn.satfinite.e4m3x2.f32 vs RNE goldens bad={bad4}/{total4}; cvt.rn.satfinite.e2m1x2.f32 vs goldens bad={bad2}/{}; NaN, -NaN: hw e4m3 {:#04x} {:#04x}, hw e2m1 {:#x} {:#x} (the software rounding: 0x7f 0x7f, 0x7 0x7)",
+                x.len(),
+                n4[0],
+                n4[1],
+                n2[0],
+                n2[1]
             ),
         );
     } else {
         lines.push("SKIP ink2-cvt-hw (no block-scaled target in this build)".into());
     }
 
-    // --- SiTU fused with the quantizer: bf16 rows within one step of the f64-function reference,
-    //     and the quantization of the device's own rows bit for bit
+    // --- SiTU fused with the quantizer, bit for bit against the f64 reference
+    let tables = e.ink2_situ_tables(4.0, 25.0)?;
     for (cell, quant) in [
         ("ink2-situ-actq-nvfp4", Ink2Quant::Nvfp4),
         ("ink2-situ-actq-mxfp8", Ink2Quant::Mxfp8),
     ] {
-        let (rows, k) = (16usize, 1152usize);
+        // every bf16 bit pattern as a gate and as an up value (64 rows x 1024; the ups permuted)
         let mut rng = XorShift(0x5177_2026_1121);
-        let gate_up: Vec<f32> = (0..rows * 2 * k)
-            .map(|i| rng.gauss(if (i / (2 * k)) % 4 == 3 { 12.0 } else { 2.0 }))
-            .collect();
-        let gamma: Vec<f32> = (0..rows).map(|_| 0.05 + 3.0 * rng.unit()).collect();
-        let gd = e.htod_bytes(&bf16_bytes(&gate_up))?;
-        let gm = e.htod(&gamma)?;
-        let mut stats = Vec::new();
-        let mut quant_bad = 0usize;
-        let mut max_step = 0i64;
-        for approx in [false, true] {
-            if approx && !ink2_actq_built() {
-                continue;
-            }
-            let mut out = e.ink2_rows_alloc(quant, rows, k)?;
-            let mut y = e.alloc_u8(rows * k * 2)?;
-            e.ink2_situ_quant_into(&gd, &gm, (4.0, 25.0), approx, &mut out, Some(&mut y))?;
-            let y = bf16_from_bytes(&e.dtoh_u8(&y)?);
-            let (values, scales) = (e.dtoh_u8(&out.values)?, e.dtoh_u8(&out.scales)?);
-            let (mut differ, mut worst) = (0usize, 0i64);
-            for r in 0..rows {
-                let want =
-                    reference::situ_row(&gate_up[r * 2 * k..(r + 1) * 2 * k], gamma[r], 4.0, 25.0);
-                for (a, b) in want.iter().zip(&y[r * k..(r + 1) * k]) {
-                    let d = bf16_ulps(*a, *b);
-                    differ += usize::from(d != 0);
-                    worst = worst.max(d);
-                }
-                let yr = &y[r * k..(r + 1) * k];
-                let (vb, sb) = (quant.value_bytes(k), quant.scale_bytes(k));
-                let (rv, rs) = match quant {
-                    Ink2Quant::Nvfp4 => {
-                        let q = reference::nvfp4_act_quant(yr);
-                        (q.codes, q.scales)
-                    }
-                    Ink2Quant::Mxfp8 => reference::mxfp8_act_quant(yr),
-                };
-                quant_bad += count_diff(&rv, &values[r * vb..(r + 1) * vb])
-                    + count_diff(&rs, &scales[r * sb..(r + 1) * sb]);
-            }
-            if !approx {
-                max_step = worst;
-            }
-            stats.push(format!(
-                "{}: bf16 differ={differ}/{} max={worst} step",
-                if approx {
-                    "ptx-approx (measurement)"
-                } else {
-                    "library"
-                },
-                rows * k
-            ));
+        let (rows, k) = (64usize, 1024usize);
+        let mut ups: Vec<u16> = (0..=0xffffu16).collect();
+        for i in (1..ups.len()).rev() {
+            ups.swap(i, (rng.next() % (i as u64 + 1)) as usize);
         }
-        verdict(
+        let gu: Vec<u16> = (0..rows * k).flat_map(|i| [i as u16, ups[i]]).collect();
+        let gamma: Vec<f32> = (0..rows).map(|_| 0.05 + 3.0 * rng.unit()).collect();
+        situ_case(
+            e,
+            &tables,
+            quant,
+            &format!("{cell} every-bf16"),
+            &gu,
+            &gamma,
+            k,
             &mut lines,
             &mut fails,
-            quant_bad == 0 && max_step <= 1,
-            format!(
-                "{cell} [rows={rows} k={k}] {}; quantization of the device rows bit-bad={quant_bad}",
-                stats.join("; ")
-            ),
-        );
+        )?;
+        // the dense window: every gate with exponent field 117..133 against every such up
+        let pat: Vec<u16> = (0..2u16)
+            .flat_map(|s| {
+                (117u16..134)
+                    .flat_map(move |ex| (0..128u16).map(move |m| (s << 15) | (ex << 7) | m))
+            })
+            .collect();
+        let kk = pat.len();
+        let gu: Vec<u16> = (0..kk * kk)
+            .flat_map(|i| [pat[i % kk], pat[i / kk]])
+            .collect();
+        let gamma: Vec<f32> = (0..kk).map(|_| 0.05 + 3.0 * rng.unit()).collect();
+        situ_case(
+            e,
+            &tables,
+            quant,
+            &format!("{cell} window-117..133"),
+            &gu,
+            &gamma,
+            kk,
+            &mut lines,
+            &mut fails,
+        )?;
+        // a decode-like sample
+        let (rows, k) = (16usize, 1152usize);
+        let gu: Vec<u16> = (0..rows * 2 * k)
+            .map(|i| {
+                (rng.gauss(if (i / (2 * k)) % 4 == 3 { 12.0 } else { 2.0 })
+                    .to_bits()
+                    >> 16) as u16
+            })
+            .collect();
+        let gamma: Vec<f32> = (0..rows).map(|_| 0.05 + 3.0 * rng.unit()).collect();
+        situ_case(
+            e,
+            &tables,
+            quant,
+            &format!("{cell} gauss"),
+            &gu,
+            &gamma,
+            k,
+            &mut lines,
+            &mut fails,
+        )?;
     }
 
-    // --- expert GEMMs
+    // --- expert GEMMs and the whole expert block
     if ink2_actq_built() {
         for (prefix, quant, cell) in [
             ("w4a4/", Ink2Quant::Nvfp4, "ink2-w4a4-gemm"),
@@ -919,51 +1186,87 @@ pub fn ink2_actq_gate(e: &Engine) -> Res<(Vec<String>, usize)> {
                     )?;
                 }
             }
-            // the model's shapes: decode rows (top-8 of the experts, 1 and 8 tokens) and a prefill group
-            for (n, k, tag) in [(2304usize, 2304usize, "w13"), (2304, 1152, "w2")] {
-                let experts = 12usize;
-                let (_, wv, ws, wamax) =
-                    ink2_random_weights(e, quant, experts, n, k, 0xabc0 + n as u64 + k as u64)?;
-                let mut rng = XorShift(0x9e37 + k as u64);
-                for (rows, nb, shape) in [
-                    (8usize, 1usize, "decode M=1"),
-                    (64, 1, "decode M=8"),
-                    (
-                        40,
-                        if quant == Ink2Quant::Nvfp4 { 4 } else { 2 },
-                        "prefill group",
-                    ),
-                ] {
-                    let x: Vec<f32> = (0..rows * k)
-                        .map(|i| rng.gauss(1.0 + (i / k) as f32))
-                        .collect();
-                    let expert: Vec<u32> = (0..rows)
-                        .map(|r| {
-                            if shape == "prefill group" {
-                                (r % 2) as u32
-                            } else {
-                                ((r * 5 + r / 8) % experts) as u32
-                            }
-                        })
-                        .collect();
-                    gemm_case(
+            // the model's shapes: decode rows (top-8 of the experts, 1 and 8 tokens) and a prefill
+            // group; for W8A8 also weights that are 97% e4m3 subnormal codes
+            let variants: &[bool] = if quant == Ink2Quant::Mxfp8 {
+                &[false, true]
+            } else {
+                &[false]
+            };
+            for &subnormal in variants {
+                for (n, k, tag) in [(2304usize, 2304usize, "w13"), (2304, 1152, "w2")] {
+                    let experts = 12usize;
+                    let (_, wv, ws, wamax) = ink2_random_weights(
                         e,
-                        &format!("{cell} {tag} {shape}"),
                         quant,
-                        &wv,
-                        &ws,
-                        &wamax,
-                        1344.0,
+                        experts,
                         n,
                         k,
-                        &x,
-                        &expert,
-                        nb,
-                        &mut lines,
-                        &mut fails,
+                        0xabc0 + n as u64 + k as u64 + u64::from(subnormal),
+                        subnormal,
                     )?;
+                    let mut rng = XorShift(0x9e37 + k as u64);
+                    for (rows, nb, shape) in [
+                        (8usize, 1usize, "decode M=1"),
+                        (64, 1, "decode M=8"),
+                        (
+                            40,
+                            if quant == Ink2Quant::Nvfp4 { 4 } else { 2 },
+                            "prefill group",
+                        ),
+                    ] {
+                        // heavy-tailed rows: many act codes land in the e4m3 subnormal range
+                        let x: Vec<f32> = (0..rows * k)
+                            .map(|i| {
+                                let v = rng.gauss(1.0 + (i / k) as f32);
+                                if subnormal {
+                                    reference::bf16(v * (3.0 * rng.gauss(1.0)).exp())
+                                } else {
+                                    v
+                                }
+                            })
+                            .collect();
+                        let expert: Vec<u32> = (0..rows)
+                            .map(|r| {
+                                if shape == "prefill group" {
+                                    (r % 2) as u32
+                                } else {
+                                    ((r * 5 + r / 8) % experts) as u32
+                                }
+                            })
+                            .collect();
+                        gemm_case(
+                            e,
+                            &format!(
+                                "{cell} {tag} {shape}{}",
+                                if subnormal { " subnormal-weights" } else { "" }
+                            ),
+                            quant,
+                            &wv,
+                            &ws,
+                            &wamax,
+                            1344.0,
+                            n,
+                            k,
+                            &x,
+                            &expert,
+                            nb,
+                            &mut lines,
+                            &mut fails,
+                        )?;
+                    }
                 }
             }
+        }
+        for kind in ["nvfp4", "mxfp8"] {
+            expert_block_case(
+                e,
+                &tables,
+                kind,
+                &g[&format!("chain/{kind}")],
+                &mut lines,
+                &mut fails,
+            )?;
         }
     } else {
         lines.push("SKIP ink2-w4a4-gemm (no block-scaled target in this build)".into());
@@ -977,8 +1280,21 @@ fn weight_bytes(quant: Ink2Quant, n: usize, k: usize, distinct: usize) -> usize 
     distinct * n * (quant.value_bytes(k) + quant.scale_bytes(k))
 }
 
+/// A phase marker for the 250 ms telemetry log: `#MARK <unix seconds> <name> start|end`.
+fn mark(lines: &mut Vec<String>, name: &str, edge: &str) {
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    let line = format!("#MARK {t:.3} {name} {edge}");
+    println!("{line}");
+    lines.push(line);
+}
+
 /// Microbench of the expert GEMMs and the quantizers at the model's shapes. Every repetition reads
-/// a different set of experts out of `experts`, so the weights come from DRAM, not from L2.
+/// a different set of experts out of `experts`, so the weights come from DRAM, not from L2. Each
+/// figure is bytes (or FLOPs) over the measured time per call of back-to-back asynchronous calls;
+/// nothing is subtracted. Every phase prints `#MARK` lines for the telemetry cut.
 pub fn ink2_actq_bench(e: &Engine, experts: usize, reps: usize) -> Res<Vec<String>> {
     let mut lines = Vec::new();
     if !ink2_actq_built() {
@@ -988,30 +1304,23 @@ pub fn ink2_actq_bench(e: &Engine, experts: usize, reps: usize) -> Res<Vec<Strin
     }
     let hidden = 2304usize;
     let ff = 1152usize;
-    // The harness's own cost per call (argument marshalling, the launch, one trivial block): a GEMM
-    // of 16 outputs over K = 64. The kernel rows below include it; "net" subtracts it.
-    let overhead = {
-        let (w, _, _, _) = ink2_random_weights(e, Ink2Quant::Nvfp4, 1, 16, 64, 5)?;
-        let act = quantize_on_device(e, Ink2Quant::Nvfp4, &[1.0f32; 64], 1, 64)?;
-        let (groups, ngroups) = ink2_groups(&[0], 1);
-        let gd = e.htod_u32_v(&groups)?;
-        let mut out = e.alloc_u8(32)?;
-        let mut best = f64::MAX;
-        // also the warm-up: the card leaves its idle clocks during these calls
-        for _ in 0..40 {
-            let t0 = std::time::Instant::now();
-            for _ in 0..2000 {
-                e.ink2_expert_gemm_into(&w, &act, &gd, ngroups, 1, 1, &mut out, None)?;
+    // warm-up: the card leaves its idle clocks during these calls
+    {
+        let (w, _, _, _) = ink2_random_weights(e, Ink2Quant::Nvfp4, 8, 2 * ff, hidden, 5, false)?;
+        let act = quantize_on_device(e, Ink2Quant::Nvfp4, &vec![1.0f32; 8 * hidden], 8, hidden)?;
+        let groups = e.ink2_groups_upload(&(0..8).collect::<Vec<u32>>(), 1)?;
+        let mut out = e.alloc_u8(8 * 2 * ff * 2)?;
+        let t0 = std::time::Instant::now();
+        while t0.elapsed().as_secs_f64() < 2.0 {
+            for _ in 0..200 {
+                e.ink2_expert_gemm_into(&w, &act, &groups, 0, &mut out, None)?;
             }
             e.stream().synchronize()?;
-            best = best.min(t0.elapsed().as_secs_f64() * 1e6 / 2000.0);
         }
-        best
-    };
-    lines.push(format!("ink2-actq-bench call overhead (16 x 64 GEMM, one block): {overhead:.2} us/call (best of 40 x 2000 calls)"));
+    }
     for quant in [Ink2Quant::Nvfp4, Ink2Quant::Mxfp8] {
-        for (n, k, tag) in [(2 * ff, hidden, "w13 gate/up"), (hidden, ff, "w2 down")] {
-            let (w, _, _, _) = ink2_random_weights(e, quant, experts, n, k, 77 + k as u64)?;
+        for (n, k, tag) in [(2 * ff, hidden, "w13"), (hidden, ff, "w2")] {
+            let (w, _, _, _) = ink2_random_weights(e, quant, experts, n, k, 77 + k as u64, false)?;
             let mut rng = XorShift(4242);
             for (tokens, nb) in [
                 (1usize, 1usize),
@@ -1045,33 +1354,31 @@ pub fn ink2_actq_bench(e: &Engine, experts: usize, reps: usize) -> Res<Vec<Strin
                     d.sort_unstable();
                     d.dedup();
                     distinct_total += d.len();
-                    let (groups, ngroups) = ink2_groups(&expert, nb);
-                    tables.push((e.htod_u32_v(&groups)?, ngroups));
+                    tables.push(e.ink2_groups_upload(&expert, nb)?);
                 }
                 let mut out = e.alloc_u8(rows * n * 2)?;
                 let distinct = distinct_total as f64 / sets as f64;
                 let bytes = weight_bytes(quant, n, k, 1) as f64 * distinct;
                 let flops = 2.0 * rows as f64 * n as f64 * k as f64;
+                let phase = format!("{quant:?}-{tag}-t{tokens}");
+                mark(&mut lines, &phase, "start");
                 let mut arms = Vec::new();
                 let mut best_all = (f64::MAX, 0usize);
                 for wpb in [1usize, 2, 4, 8] {
                     let mut best = f64::MAX;
                     for _ in 0..5 {
-                        e.ink2_expert_gemm_into(
-                            &w,
-                            &act,
-                            &tables[0].0,
-                            tables[0].1,
-                            nb,
-                            wpb,
-                            &mut out,
-                            None,
-                        )?;
+                        e.ink2_expert_gemm_into(&w, &act, &tables[0], wpb, &mut out, None)?;
                         e.stream().synchronize()?;
                         let t0 = std::time::Instant::now();
                         for i in 0..reps {
-                            let (t, ng) = &tables[i % sets];
-                            e.ink2_expert_gemm_into(&w, &act, t, *ng, nb, wpb, &mut out, None)?;
+                            e.ink2_expert_gemm_into(
+                                &w,
+                                &act,
+                                &tables[i % sets],
+                                wpb,
+                                &mut out,
+                                None,
+                            )?;
                         }
                         e.stream().synchronize()?;
                         best = best.min(t0.elapsed().as_secs_f64() * 1e6 / reps as f64);
@@ -1081,18 +1388,19 @@ pub fn ink2_actq_bench(e: &Engine, experts: usize, reps: usize) -> Res<Vec<Strin
                         best_all = (best, wpb);
                     }
                 }
+                mark(&mut lines, &phase, "end");
                 let (best, wpb) = best_all;
                 lines.push(format!(
-                    "ink2-actq-bench {quant:?} {tag} tokens={tokens} rows={rows} nb={nb}: best {best:.1} us/call at wpb={wpb}, {:.2} MB weights ({distinct:.1} experts), {:.0} GB/s ({:.0} GB/s net of the call overhead), {:.2} TFLOP/s; us/call by arm: {} (best of 5 x {reps} calls, {sets} expert sets)",
+                    "ink2-actq-bench {quant:?} {tag} tokens={tokens} rows={rows} nb={nb}: best {best:.1} us/call at wpb={wpb}, {:.2} MB weights ({distinct:.1} experts), {:.0} GB/s, {:.2} TFLOP/s; us/call by arm: {} (best of 5 x {reps} calls, {sets} expert sets)",
                     bytes / 1e6,
                     bytes / best / 1e3,
-                    bytes / (best - overhead).max(0.1) / 1e3,
                     flops / best / 1e6,
                     arms.join(" "),
                 ));
             }
         }
         // quantizers
+        let tables = e.ink2_situ_tables(4.0, 25.0)?;
         for (rows, k, situ) in [
             (1usize, hidden, false),
             (8, hidden, false),
@@ -1106,12 +1414,14 @@ pub fn ink2_actq_bench(e: &Engine, experts: usize, reps: usize) -> Res<Vec<Strin
             let xd = e.htod_bytes(&bf16_bytes(&x))?;
             let gm = e.htod(&vec![1.0f32; rows])?;
             let mut out = e.ink2_rows_alloc(quant, rows, k)?;
+            let phase = format!("{quant:?}-quant{}-r{rows}", if situ { "-situ" } else { "" });
+            mark(&mut lines, &phase, "start");
             let mut best = f64::MAX;
-            for _ in 0..3 {
+            for _ in 0..5 {
                 let t0 = std::time::Instant::now();
                 for _ in 0..reps {
                     if situ {
-                        e.ink2_situ_quant_into(&xd, &gm, (4.0, 25.0), false, &mut out, None)?;
+                        e.ink2_situ_quant_into(&xd, &gm, &tables, &mut out, None)?;
                     } else {
                         e.ink2_act_quant_into(&xd, &mut out)?;
                     }
@@ -1119,9 +1429,13 @@ pub fn ink2_actq_bench(e: &Engine, experts: usize, reps: usize) -> Res<Vec<Strin
                 e.stream().synchronize()?;
                 best = best.min(t0.elapsed().as_secs_f64() * 1e6 / reps as f64);
             }
+            mark(&mut lines, &phase, "end");
+            let moved =
+                (rows * width * 2 + rows * (quant.value_bytes(k) + quant.scale_bytes(k))) as f64;
             lines.push(format!(
-                "ink2-actq-bench {quant:?} quantize{} rows={rows} k={k}: {best:.1} us/call (best of 3 x {reps} calls)",
-                if situ { " + SiTU" } else { "" }
+                "ink2-actq-bench {quant:?} quantize{} rows={rows} k={k}: {best:.1} us/call, {:.1} GB/s of input and output (best of 5 x {reps} calls)",
+                if situ { " + SiTU" } else { "" },
+                moved / best / 1e3,
             ));
         }
     }

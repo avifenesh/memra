@@ -931,9 +931,11 @@ pub mod spill;
 mod spill_pread;
 pub mod step_guard;
 
-// MiMo V2.6 inspection components. Automatic serving selection remains closed.
+// Inkling 2 Mini routed experts, the act-quant class: kernels, gates and bench; no serving route.
 pub mod inkling2_actq;
 pub mod inkling2_gpu;
+
+// MiMo V2.6 inspection components. Automatic serving selection remains closed.
 pub mod mimo_attn_load;
 pub mod mimo_audio_attn_ffi;
 pub mod mimo_audio_codec_frontend;
