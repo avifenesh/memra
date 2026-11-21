@@ -26,13 +26,14 @@ use crate::dsv4::TensorSpec;
 use crate::model_plan::{
     ActivationPlan, AttentionInputs, AttentionPlan, BeyondExtent, BlockAttentionPlan, ClipScale,
     DenseNumericsPlan, DenseTensorClass, DraftAttentionPlan, DraftBlockPlan, DraftFusePlan,
-    DraftRnnHeadPlan, DraftRopePlan, DraftRowInput, DraftSourcePlan, DrafterHead, DrafterTap,
-    ExpertActivationMode, ExpertNumericsPlan, ExpertWeightFormat, Inkling2DrafterPlan,
-    Inkling2NumericClass, Inkling2Numerics, Inkling2Plan, Inkling2WeightClass, KvCacheFormat,
-    L2ClipPlan, LayerPlan, LogPositionScalePlan, LogitsTransform, LoopMessageTarget, LoopPlan,
-    LoopSlotPlan, MlpPlan, MoeMlpPlan, NormKind, NormPlan, OutputGatePlan, QuerySinkPlan,
-    RelativeBiasAttentionPlan, RelativeBiasPlan, RelativeBiasStatePlan, ResidualTopology, RnnChunk,
-    RnnInput, RouterPlan, ShortConvPlan, ShortConvTaps, StatePlan, ValueNorm, WeightTransform,
+    DraftRnnHeadPlan, DraftRopePlan, DraftRowInput, DraftSourcePlan, DrafterPlan, DrafterTap,
+    DsparkContextLayers, DsparkFusion, DsparkLayers, DsparkMarkov, DsparkPlan, DsparkRows,
+    ExpertActivationMode, ExpertNumericsPlan, ExpertWeightFormat, Inkling2NumericClass,
+    Inkling2Numerics, Inkling2Plan, Inkling2WeightClass, KvCacheFormat, L2ClipPlan, LayerPlan,
+    LogPositionScalePlan, LogitsTransform, LoopMessageTarget, LoopPlan, LoopSlotPlan, MlpPlan,
+    MoeMlpPlan, NormKind, NormPlan, OutputGatePlan, QuerySinkPlan, RelativeBiasAttentionPlan,
+    RelativeBiasPlan, RelativeBiasStatePlan, ResidualTopology, RnnChunk, RnnInput, RouterPlan,
+    ShortConvPlan, ShortConvTaps, StatePlan, ValueNorm, WeightTransform,
 };
 use crate::quant_groups::ComputeDtype;
 use crate::tensor_contract::{
@@ -324,10 +325,63 @@ pub fn plan_with_classes(
             LogitsTransform::Truncate(ink.unpadded_vocab_size),
         ],
         mtp_blocks: Vec::new(),
-        // The shipped drafter is declared on `inkling2.drafter`; it is not a `DsparkPlan`
-        // program and nothing executes it, so no executable draft source is claimed.
-        drafter: None,
-        draft_source: DraftSourcePlan::None,
+        // The shipped drafter (`mtp.safetensors`, in the checkpoint) is a DSpark program with
+        // its own variants of the rows, fusion, layers and Markov head, and no confidence head.
+        drafter: Some(DrafterPlan::Dspark(DsparkPlan {
+            block_size: drafter.block_size,
+            noise_token_id: 0,
+            target_layer_ids: drafter.target_layer_ids.clone(),
+            markov_rank: drafter.markov_rank,
+            blocks: Vec::new(),
+            rows: DsparkRows::Block(DraftBlockPlan {
+                rows: drafter.block_size,
+                anchor: DraftRowInput::TrunkEmbeddingNormed,
+                mask: DraftRowInput::LearnedMask,
+                proposals: drafter.block_size - 1,
+            }),
+            fusion: DsparkFusion::FuseWeights {
+                fuse: DraftFusePlan {
+                    rows: drafter.num_hidden_layers + 1,
+                    taps: drafter.target_layer_ids.len() as u32,
+                },
+                taps,
+            },
+            layers: DsparkLayers::Context(Box::new(DsparkContextLayers {
+                layers: drafter.num_hidden_layers,
+                query_heads: drafter.num_attention_heads,
+                kv_heads: drafter.num_key_value_heads,
+                head_dim: drafter.head_dim,
+                intermediate_size: drafter.intermediate_size,
+                hidden_size: drafter.hidden_size,
+                epsilon: drafter.rms_norm_eps,
+                attention: DraftAttentionPlan {
+                    scale: (drafter.head_dim as f32).powf(-0.5),
+                    qk_norm: true,
+                    rope: DraftRopePlan {
+                        theta: drafter.rope_theta,
+                    },
+                    context_key_norm: true,
+                    bidirectional_block: true,
+                    local_layers: drafter.local_layer_ids.clone(),
+                    local_context: drafter.sliding_window_size,
+                },
+                mlp_swiglu: true,
+            })),
+            markov: DsparkMarkov::RnnHidden(DraftRnnHeadPlan {
+                rank: drafter.markov_rank,
+                inputs: [
+                    RnnInput::State,
+                    RnnInput::PreviousToken,
+                    RnnInput::RowHidden,
+                    RnnInput::Feature,
+                ],
+                chunks: [RnnChunk::Gate, RnnChunk::Candidate, RnnChunk::Out],
+                folded_through_output: true,
+                softcap: ink.final_logit_softcapping,
+            }),
+            confidence: None,
+        })),
+        draft_source: DraftSourcePlan::Embedded,
         sampling_defaults: None,
         // A loop revisits its layers; no pipeline cut is declared.
         partition_boundaries: Vec::new(),
@@ -385,58 +439,6 @@ pub fn plan_with_classes(
                 gate_up_interleaved: true,
                 routed_weight_before_down: true,
                 quant_config_sha256: quant.sha256.clone(),
-            },
-            drafter: Inkling2DrafterPlan {
-                blocks: drafter.num_hidden_layers,
-                block_size: drafter.block_size,
-                query_heads: drafter.num_attention_heads,
-                kv_heads: drafter.num_key_value_heads,
-                head_dim: drafter.head_dim,
-                intermediate_size: drafter.intermediate_size,
-                rope_base: drafter.rope_theta,
-                local_blocks: drafter.local_layer_ids.clone(),
-                window: drafter.sliding_window_size,
-                head: DrafterHead::RnnHidden {
-                    rank: drafter.markov_rank,
-                },
-                target_visit_ids: drafter.target_layer_ids.clone(),
-                fuse: DraftFusePlan {
-                    rows: drafter.num_hidden_layers + 1,
-                    taps: drafter.target_layer_ids.len() as u32,
-                },
-                taps,
-                hidden_size: drafter.hidden_size,
-                epsilon: drafter.rms_norm_eps,
-                block: DraftBlockPlan {
-                    rows: drafter.block_size,
-                    anchor: DraftRowInput::TrunkEmbeddingNormed,
-                    mask: DraftRowInput::LearnedMask,
-                    proposals: drafter.block_size - 1,
-                },
-                attention: DraftAttentionPlan {
-                    scale: (drafter.head_dim as f32).powf(-0.5),
-                    qk_norm: true,
-                    rope: DraftRopePlan {
-                        theta: drafter.rope_theta,
-                    },
-                    context_key_norm: true,
-                    bidirectional_block: true,
-                    local_layers: drafter.local_layer_ids.clone(),
-                    local_context: drafter.sliding_window_size,
-                },
-                mlp_swiglu: true,
-                rnn: DraftRnnHeadPlan {
-                    rank: drafter.markov_rank,
-                    inputs: [
-                        RnnInput::State,
-                        RnnInput::PreviousToken,
-                        RnnInput::RowHidden,
-                        RnnInput::Feature,
-                    ],
-                    chunks: [RnnChunk::Gate, RnnChunk::Candidate, RnnChunk::Out],
-                    folded_through_output: true,
-                    softcap: ink.final_logit_softcapping,
-                },
             },
             vision_executed: false,
         }),
@@ -1128,11 +1130,21 @@ fn tensor_schema(
             operation: "inkling2 non-safetensors schema",
         });
     }
-    let Some(program) = plan.inkling2.as_ref() else {
+    if plan.inkling2.is_none() {
         return Err(TensorContractError::UnsupportedPlanOperation {
             operation: "inkling2 schema without its plan",
         });
+    }
+    let Some(DrafterPlan::Dspark(DsparkPlan {
+        layers: DsparkLayers::Context(draft_layers),
+        ..
+    })) = plan.drafter.as_ref()
+    else {
+        return Err(TensorContractError::UnsupportedPlanOperation {
+            operation: "inkling2 schema without its DSpark drafter",
+        });
     };
+    let draft_layers = draft_layers.layers;
     let expected = expected_census_for(config, plan).map_err(|_| {
         TensorContractError::UnsupportedPlanOperation {
             operation: "inkling2 schema without typed expert formats",
@@ -1174,7 +1186,7 @@ fn tensor_schema(
             names: vec![name.clone()],
             match_mode: TensorMatch::OneOf,
             shape,
-            owner: tensor_owner(name, program.drafter.blocks),
+            owner: tensor_owner(name, draft_layers),
             transform: TensorTransform::Identity,
             quant,
             auxiliaries: Some(planes),

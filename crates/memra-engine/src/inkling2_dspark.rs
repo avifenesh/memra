@@ -1,5 +1,5 @@
-//! Inkling 2 Mini's DSpark drafter on one GPU (`cu/inkling2_dspark.cu`): the plan's
-//! `Inkling2DrafterPlan` with BF16 weights as stored and f32 activations, beside the trunk's
+//! Inkling 2 Mini's DSpark drafter on one GPU (`cu/inkling2_dspark.cu`): the Inkling 2
+//! variants of the plan's `DsparkPlan` with BF16 weights as stored and f32 activations, beside the trunk's
 //! route (`crate::inkling2_gpu`), with which it shares the token embedding, its norm and the
 //! output projection. The reference is memra-reference `inkling2_drafter` (f64).
 //!
@@ -165,16 +165,12 @@ mod ffi {
             rank: i32,
             stream: *mut c_void,
         ) -> i32;
-        pub fn memra_ink2d_cap_pick(
+        pub fn memra_ink2d_cap(
             base: *const f32,
             bias: *const f32,
             cap: f32,
             logits: *mut f32,
             n: i32,
-            part_v: *mut f32,
-            part_i: *mut u32,
-            token: *mut u32,
-            prev: *mut u32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2d_fold(
@@ -426,8 +422,6 @@ pub struct DraftGpu {
     bias: CudaSlice<f32>,
     /// `[rows - 1, vocab]`: the softcapped logits of every proposal of the last block.
     logits: CudaSlice<f32>,
-    part_v: CudaSlice<f32>,
-    part_i: CudaSlice<u32>,
     tokens: CudaSlice<u32>,
     prev: CudaSlice<u32>,
     /// Bytes allocated for the drafter (weights, fold, caches, work).
@@ -639,8 +633,6 @@ impl DraftGpu {
             base: dev.zeros((rows - 1) * g.vocab)?,
             bias: dev.zeros(g.vocab)?,
             logits: dev.zeros((rows - 1) * g.vocab)?,
-            part_v: dev.zeros(g.vocab.div_ceil(256))?,
-            part_i: dev.zeros(g.vocab.div_ceil(256))?,
             tokens: dev.zeros(rows)?,
             prev: dev.zeros(1)?,
             bytes: 0,
@@ -1237,6 +1229,16 @@ impl DraftGpu {
         let zeros = vec![0f32; r];
         dev.put(&zeros, &mut self.state)?;
         let mut out = Vec::with_capacity(k);
+        // the previous token of row i: the anchor (or a chosen token) in prev, else the greedy
+        // proposal of row i - 1
+        let (prev0, tokens0, greedy) = (p(&self.prev, &st), p(&self.tokens, &st), choose.is_none());
+        let prev_at = |i: usize| {
+            if greedy && i > 0 {
+                tokens0 + ((i - 1) * 4) as u64
+            } else {
+                prev0
+            }
+        };
         for i in 0..k {
             match &self.w1_nv {
                 Some((c, s, t)) => dev.launched("memra_ink2d_markov_in_nvfp4", unsafe {
@@ -1245,7 +1247,7 @@ impl DraftGpu {
                         p(c, &st) as *const _,
                         p(s, &st) as *const _,
                         *t,
-                        p(&self.prev, &st) as *const u32,
+                        prev_at(i) as *const u32,
                         pm(&mut self.minp, &st) as *mut f32,
                         r as i32,
                         dev.sp(),
@@ -1255,7 +1257,7 @@ impl DraftGpu {
                     ffi::memra_ink2d_markov_in(
                         p(&self.state, &st) as *const f32,
                         p(&self.w1, &st) as *const _,
-                        p(&self.prev, &st) as *const u32,
+                        prev_at(i) as *const u32,
                         pm(&mut self.minp, &st) as *mut f32,
                         r as i32,
                         dev.sp(),
@@ -1306,24 +1308,27 @@ impl DraftGpu {
             )?;
             let logits_i = pm(&mut self.logits, &st) + (i * vocab * 4) as u64;
             let token_i = pm(&mut self.tokens, &st) + (i * 4) as u64;
-            dev.launched("memra_ink2d_cap_pick", unsafe {
-                ffi::memra_ink2d_cap_pick(
+            dev.launched("memra_ink2d_cap", unsafe {
+                ffi::memra_ink2d_cap(
                     (p(&self.base, &st) + (i * vocab * 4) as u64) as *const f32,
                     p(&self.bias, &st) as *const f32,
                     g.softcap as f32,
                     logits_i as *mut f32,
                     vocab as i32,
-                    pm(&mut self.part_v, &st) as *mut f32,
-                    pm(&mut self.part_i, &st) as *mut u32,
-                    token_i as *mut u32,
-                    if choose.is_some() {
-                        std::ptr::null_mut()
-                    } else {
-                        pm(&mut self.prev, &st) as *mut u32
-                    },
                     dev.sp(),
                 )
             })?;
+            if choose.is_none() {
+                // the first maximum: the DeepSeek-V4 DSpark drafter's argmax kernel
+                dev.launched("memra_dsv4_argmax", unsafe {
+                    crate::dsv4_ffi::memra_dsv4_argmax(
+                        logits_i as *const f32,
+                        vocab as i64,
+                        token_i as *mut i32,
+                        dev.sp(),
+                    )
+                })?;
+            }
             if let Some(c) = choose.as_deref_mut() {
                 let row = dev.down(&self.logits, i * vocab, vocab)?;
                 let t = c(i, &row);

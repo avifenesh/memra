@@ -313,70 +313,12 @@ __global__ void dk_markov_gate_kernel(const float* __restrict__ ctx, const float
   }
 }
 
-// logits = cap * tanh((base + bias) / cap); per-block first maximum into part.
+// logits = cap * tanh((base + bias) / cap). The first maximum is memra_dsv4_argmax (cu/dsv4_gpu.cu),
+// the argmax the DeepSeek-V4 DSpark drafter takes of its rows.
 __global__ void dk_cap_kernel(const float* __restrict__ base, const float* __restrict__ bias, float cap,
-                              float* __restrict__ logits, int n, float* __restrict__ part_v,
-                              uint32_t* __restrict__ part_i) {
-  __shared__ float bv[256];
-  __shared__ uint32_t bi[256];
+                              float* __restrict__ logits, int n) {
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
-  float v = -INFINITY;
-  uint32_t idx = 0xffffffffu;
-  if (i < n) {
-    v = cap * tanhf((base[i] + bias[i]) / cap);
-    logits[i] = v;
-    idx = (uint32_t)i;
-  }
-  bv[threadIdx.x] = v;
-  bi[threadIdx.x] = idx;
-  __syncthreads();
-  for (int s = blockDim.x / 2; s > 0; s >>= 1) {
-    if (threadIdx.x < s) {
-      const float ov = bv[threadIdx.x + s];
-      const uint32_t oi = bi[threadIdx.x + s];
-      if (ov > bv[threadIdx.x] || (ov == bv[threadIdx.x] && oi < bi[threadIdx.x])) {
-        bv[threadIdx.x] = ov;
-        bi[threadIdx.x] = oi;
-      }
-    }
-    __syncthreads();
-  }
-  if (threadIdx.x == 0) {
-    part_v[blockIdx.x] = bv[0];
-    part_i[blockIdx.x] = bi[0];
-  }
-}
-
-__global__ void dk_pick_kernel(const float* __restrict__ part_v, const uint32_t* __restrict__ part_i, int parts,
-                               uint32_t* __restrict__ token, uint32_t* __restrict__ prev) {
-  __shared__ float bv[1024];
-  __shared__ uint32_t bi[1024];
-  float v = -INFINITY;
-  uint32_t idx = 0xffffffffu;
-  for (int p = threadIdx.x; p < parts; p += blockDim.x) {
-    if (part_v[p] > v || (part_v[p] == v && part_i[p] < idx)) {
-      v = part_v[p];
-      idx = part_i[p];
-    }
-  }
-  bv[threadIdx.x] = v;
-  bi[threadIdx.x] = idx;
-  __syncthreads();
-  for (int s = blockDim.x / 2; s > 0; s >>= 1) {
-    if (threadIdx.x < s) {
-      const float ov = bv[threadIdx.x + s];
-      const uint32_t oi = bi[threadIdx.x + s];
-      if (ov > bv[threadIdx.x] || (ov == bv[threadIdx.x] && oi < bi[threadIdx.x])) {
-        bv[threadIdx.x] = ov;
-        bi[threadIdx.x] = oi;
-      }
-    }
-    __syncthreads();
-  }
-  if (threadIdx.x == 0) {
-    *token = bi[0];
-    if (prev) *prev = bi[0];
-  }
+  if (i < n) logits[i] = cap * tanhf((base[i] + bias[i]) / cap);
 }
 
 // fold[v, j] = sum_h head[v, h] * how[h, j]; fold_b[v] = sum_h head[v, h] * hob[h]; f64 sums.
@@ -589,16 +531,10 @@ int memra_ink2d_markov_gate(const float* ctx, const float* add, const float* add
   return dk_rc();
 }
 
-// Softcapped logits of base + bias, and their first maximum into token (and prev, when given).
-// part_v / part_i hold ceil(n / 256) entries.
-int memra_ink2d_cap_pick(const float* base, const float* bias, float cap, float* logits, int n, float* part_v,
-                         uint32_t* part_i, uint32_t* token, uint32_t* prev, void* stream) {
-  if (!base || !bias || !logits || !part_v || !part_i || !token || n <= 0 || cap <= 0.f) return 46011;
-  const int parts = (n + 255) / 256;
-  dk_cap_kernel<<<parts, 256, 0, (cudaStream_t)stream>>>(base, bias, cap, logits, n, part_v, part_i);
-  const int rc = dk_rc();
-  if (rc) return rc;
-  dk_pick_kernel<<<1, 1024, 0, (cudaStream_t)stream>>>(part_v, part_i, parts, token, prev);
+// Softcapped logits of base + bias.
+int memra_ink2d_cap(const float* base, const float* bias, float cap, float* logits, int n, void* stream) {
+  if (!base || !bias || !logits || n <= 0 || cap <= 0.f) return 46011;
+  dk_cap_kernel<<<(n + 255) / 256, 256, 0, (cudaStream_t)stream>>>(base, bias, cap, logits, n);
   return dk_rc();
 }
 
