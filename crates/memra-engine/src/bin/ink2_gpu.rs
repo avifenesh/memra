@@ -6,7 +6,9 @@
 //!        ink2-gpu CKPT_DIR --numeric-class [--class ...]
 //!   --class nvfp4-rig        the family's default class: every layer on its declared activation
 //!                            quantizer, the minted NVFP4 overlay (MXFP8 banks, unembed, attention
-//!                            outside the loop core) and e4m3 KV on every slot
+//!                            of every layer) and e4m3 KV on every slot
+//!   --class nvfp4-rig-outside-loop   a measurement class: nvfp4-rig with the loop core's
+//!                            attention read as stored (BF16)
 //!   --class shipped          (alias: declared) the checkpoint as stored, the declared quantizers,
 //!                            an f32 KV cache
 //!   --class float            every layer on float expert inputs, the checkpoint as stored (the
@@ -139,11 +141,16 @@ fn parse() -> Result<Args, String> {
     if a.class == "declared" {
         a.class = "shipped".into();
     }
-    if !matches!(a.class.as_str(), "nvfp4-rig" | "shipped" | "float") {
-        return Err("--class is nvfp4-rig, shipped (declared) or float".into());
+    if !matches!(
+        a.class.as_str(),
+        "nvfp4-rig" | "nvfp4-rig-outside-loop" | "shipped" | "float"
+    ) {
+        return Err(
+            "--class is nvfp4-rig, nvfp4-rig-outside-loop, shipped (declared) or float".into(),
+        );
     }
-    if a.overlay.is_some() && a.class != "nvfp4-rig" {
-        return Err("--overlay belongs to --class nvfp4-rig".into());
+    if a.overlay.is_some() && !a.class.starts_with("nvfp4-rig") {
+        return Err("--overlay belongs to the nvfp4-rig classes".into());
     }
     if a.red.commit_on_error && a.inject_failure.is_none() {
         return Err("--red commit-on-error is an arm of --inject-failure".into());
@@ -173,6 +180,9 @@ fn compile(
     let program = default.inkling2.as_ref().ok_or("not an inkling2 plan")?;
     let plan = if a.class == "nvfp4-rig" {
         memra_gguf::model_packs::inkling2::nvfp4_rig_plan(&config)
+            .map_err(|e| format!("plan: {e:?}"))?
+    } else if a.class == "nvfp4-rig-outside-loop" {
+        memra_gguf::model_packs::inkling2::nvfp4_rig_outside_loop_plan(&config)
             .map_err(|e| format!("plan: {e:?}"))?
     } else if a.class == "float" {
         let modes = vec![ExpertActivationMode::Float; program.numerics.experts.len()];

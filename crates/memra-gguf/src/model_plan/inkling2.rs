@@ -296,13 +296,18 @@ pub enum Inkling2WeightClass {
     /// `shipped`: every weight as the checkpoint stores it and an f32 KV cache. The
     /// checkpoint-faithful class.
     Shipped,
-    /// `nvfp4-rig` (coordinator decision 8, from the per-layer KL receipts): the tensors of
+    /// `nvfp4-rig` (coordinator decision 8, from the per-layer KL receipts, and the owner's ruling to
+    /// convert the loop attention too): the tensors of
     /// [`crate::model_packs::inkling2::nvfp4_rig::rig_tensors`] (the MXFP8 expert banks, the
-    /// output projection, the attention projections outside the loop core) are read from a minted
+    /// output projection, the attention projections of every layer) are read from a minted
     /// NVFP4 overlay bound to the checkpoint by hash, and every cache slot stores its keys and
     /// values as unit-scale e4m3. The minted dense projections take f32 inputs (weight-only); the
     /// minted expert banks run the NVFP4 declared program of the shipped NVFP4 layers.
     Nvfp4Rig,
+    /// `nvfp4-rig-outside-loop`: a measurement class, `nvfp4-rig` with the loop core's attention
+    /// (layers 6-17) read as stored. It was decision 8's first default; the owner ruled the loop
+    /// attention converted too (2026-11-21 ~14:25) and asked for both sets measured.
+    Nvfp4RigOutsideLoop,
 }
 
 impl Inkling2WeightClass {
@@ -311,6 +316,7 @@ impl Inkling2WeightClass {
         match self {
             Inkling2WeightClass::Shipped => "shipped",
             Inkling2WeightClass::Nvfp4Rig => "nvfp4-rig",
+            Inkling2WeightClass::Nvfp4RigOutsideLoop => "nvfp4-rig-outside-loop",
         }
     }
 
@@ -318,6 +324,7 @@ impl Inkling2WeightClass {
         match name {
             "shipped" => Some(Inkling2WeightClass::Shipped),
             "nvfp4-rig" => Some(Inkling2WeightClass::Nvfp4Rig),
+            "nvfp4-rig-outside-loop" => Some(Inkling2WeightClass::Nvfp4RigOutsideLoop),
             _ => None,
         }
     }

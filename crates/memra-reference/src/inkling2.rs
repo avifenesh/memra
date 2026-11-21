@@ -368,7 +368,7 @@ pub fn minted_dense(
 ) -> Result<BTreeMap<String, Vec<f32>>, ReferenceError> {
     let program = program(plan)?;
     let mut out = BTreeMap::new();
-    let expected = program.numerics.weight_class == Inkling2WeightClass::Nvfp4Rig;
+    let expected = program.numerics.weight_class != Inkling2WeightClass::Shipped;
     if expected == program.numerics.minted.is_empty() {
         return Err(invalid(
             None,

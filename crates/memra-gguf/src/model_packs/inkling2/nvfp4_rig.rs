@@ -294,11 +294,36 @@ impl RigTensor {
     }
 }
 
-/// True for a physical layer whose attention the class converts: every layer outside the loop
-/// core (coordinator decision 8: the core's attention is read three times per token and is the
-/// most sensitive; it stays BF16).
-pub fn converts_attention(ink: &Inkling2Config, physical: u32) -> bool {
-    physical < ink.loop_core_start || physical >= ink.loop_core_end
+/// True for a physical layer whose attention the class converts: every layer (owner ruling
+/// 2026-11-21 ~14:25, "convert the loop attention too, measure it"; coordinator decision 8 had
+/// kept the loop core 6-17 in BF16). The overlay holds them all.
+pub fn converts_attention(_ink: &Inkling2Config, _physical: u32) -> bool {
+    true
+}
+
+/// True for a layer of the loop core (its attention runs once per pass).
+pub fn in_loop_core(ink: &Inkling2Config, physical: u32) -> bool {
+    physical >= ink.loop_core_start && physical < ink.loop_core_end
+}
+
+/// True for an attention projection of a loop-core layer.
+pub fn is_loop_attention(ink: &Inkling2Config, t: &RigTensor) -> bool {
+    let RigTensor::Dense { name } = t else {
+        return false;
+    };
+    name.strip_prefix("model.llm.layers.")
+        .and_then(|r| r.split('.').next())
+        .and_then(|l| l.parse::<u32>().ok())
+        .is_some_and(|l| in_loop_core(ink, l) && name.contains(".attn."))
+}
+
+/// The tensors a plan reads from the overlay: the whole set, or (the measurement class
+/// `nvfp4-rig-outside-loop`) the set without the loop core's attention.
+pub fn class_tensors(ink: &Inkling2Config, loop_attention: bool) -> Result<Vec<RigTensor>, String> {
+    Ok(rig_tensors(ink)?
+        .into_iter()
+        .filter(|t| loop_attention || !is_loop_attention(ink, t))
+        .collect())
 }
 
 /// True for a physical layer whose expert banks the class converts: the layers the checkpoint
@@ -804,6 +829,7 @@ pub fn bind_overlay(
     base: &crate::safetensors::StModel,
     ink: &Inkling2Config,
     quant_config_sha256: &str,
+    loop_attention: bool,
     threads: usize,
 ) -> Result<BoundOverlay, String> {
     let at = |e: String| format!("{CLASS_NAME} overlay {}: {e}", overlay_dir.display());
@@ -853,8 +879,13 @@ pub fn bind_overlay(
     let mut planes = BTreeMap::new();
     let mut checks: Vec<HashCheck<'_>> = Vec::new();
     let get = model_getter(base);
+    let mut total = 0usize;
     for (t, m) in want.iter().zip(&manifest.tensors) {
         let shape = source_shape(&get, t).map_err(at)?;
+        total += overlay_planes(t, &shape).len();
+        if !loop_attention && is_loop_attention(ink, t) {
+            continue;
+        }
         for (plane, dtype, pshape) in overlay_planes(t, &shape) {
             let (info, data) = overlay
                 .raw(&plane)
@@ -880,11 +911,10 @@ pub fn bind_overlay(
             checks.push((format!("base {plane}"), data, want.clone()));
         }
     }
-    if overlay.len() != planes.len() {
+    if overlay.len() != total {
         return Err(at(format!(
-            "{OVERLAY_FILE} holds {} tensors, the class's set is {}",
+            "{OVERLAY_FILE} holds {} tensors, the class's set is {total}",
             overlay.len(),
-            planes.len()
         )));
     }
     check_hashes(&checks, threads).map_err(at)?;

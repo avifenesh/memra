@@ -4,11 +4,13 @@
 # 2 kernel cells (ink2-gpu-gate: every ink2g cell, the nvfp4-rig ones included)
 # 3 full-tensor golden: lane F's quantizer on CUDA vs the overlay manifest
 # 4 route correctness under nvfp4-rig: chunkings bit-identity, greedy on the p1 tape
-# 5 corpus hidden dumps (nvfp4-rig and shipped) on rawdoc and chatwrap, scored with lane F's metric
-# 6 lane F's own harness on the nvfp4-rig set (rawdoc, chatwrap)
-# 7 decode speed, nvfp4-rig vs shipped, interleaved ABBAAB, clamp check before each take
+# 5 corpus hidden dumps (nvfp4-rig, nvfp4-rig-outside-loop and shipped) on rawdoc and chatwrap, scored with lane F's metric
+# 6 lane F's own harness on both nvfp4-rig sets, cumulative (rawdoc, chatwrap)
+# 7 decode speed, nvfp4-rig / outside-loop / shipped, three each in a balanced order (ABC CBA ACB), clamp check before each take
 set -u
 L=$(cd "$(dirname "$0")" && pwd)
+# the lane writes READY once binary, overlay and script agree; a lease taken before then gives the card back
+[ -f "$L/READY" ] || { echo "not ready: lease returned"; exit 3; }
 O=$L/gpu-run
 mkdir -p "$O"
 W=$HOME/.cache/inkling2mini/wt-mint
@@ -48,20 +50,22 @@ if [ "$step" = all ] || [ "$step" = cells ]; then
 fi
 if [ "$step" = all ] || [ "$step" = kl ]; then
   for set in rawdoc chatwrap; do
-    for cls in nvfp4-rig shipped; do
+    for cls in nvfp4-rig nvfp4-rig-outside-loop shipped; do
       run "hidden-$set-$cls" "$BIN/ink2-gpu" "$M" --class "$cls" --corpus "$K/corpus/$set.json" --hidden-out "$O/hidden-$set-$cls.safetensors" --chunk 512 --context 2048
       run "score-$set-$cls" $PY "$L/score_kl.py" "$set" "$O/hidden-$set-$cls.safetensors" "$cls" "$M.nvfp4-rig" "$O/kl-$set-$cls.json"
     done
   done
   run lanef-harness bash -c "cd $K && $PY klrun.py --jobs $L/lanef-jobs.json --budget-s 1500"
   for set in rawdoc chatwrap; do
-    cp "$K/results/arms/$set/${set}_lanem_nvfp4rig.json" "$O/" 2>/dev/null
-    run "lanef-stats-$set" $PY "$L/lanef_stats.py" "$K/results/arms/$set/${set}_lanem_nvfp4rig.npz" "$O/lanef-$set-nvfp4rig.json"
+    for arm in rig_outside_loop rig_all; do
+      cp "$K/results/arms/$set/${set}_lanem_$arm.json" "$O/" 2>/dev/null
+      run "lanef-stats-$set-$arm" $PY "$L/lanef_stats.py" "$K/results/arms/$set/${set}_lanem_$arm.npz" "$O/lanef-$set-$arm.json"
+    done
   done
 fi
 if [ "$step" = all ] || [ "$step" = speed ]; then
   i=0
-  for cls in nvfp4-rig shipped shipped nvfp4-rig nvfp4-rig shipped; do
+  for cls in nvfp4-rig nvfp4-rig-outside-loop shipped shipped nvfp4-rig-outside-loop nvfp4-rig nvfp4-rig shipped nvfp4-rig-outside-loop; do
     i=$((i+1))
     clamp
     run "speed-$i-$cls" "$BIN/ink2-gpu" "$M" --class "$cls" --tape "$T/p1_chat.actq_f32" --gen 128 --out "$O/speed-$i-$cls.json"

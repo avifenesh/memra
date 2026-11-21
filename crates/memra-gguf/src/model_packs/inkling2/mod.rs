@@ -180,6 +180,17 @@ pub fn nvfp4_rig_plan(config: &ModelConfig) -> Result<ModelPlan, PlanCompileErro
     )
 }
 
+/// The measurement class `nvfp4-rig-outside-loop`: `nvfp4-rig` with the loop core's attention
+/// read as stored (BF16), every layer on its declared quantizer.
+pub fn nvfp4_rig_outside_loop_plan(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
+    let layers = inkling(config)?.num_hidden_layers as usize;
+    plan_with_classes(
+        config,
+        Inkling2WeightClass::Nvfp4RigOutsideLoop,
+        &vec![ExpertActivationMode::Declared; layers],
+    )
+}
+
 /// The tiny config under `nvfp4-rig` with the expert input mode chosen per physical layer.
 pub fn tiny_nvfp4_rig_plan(modes: &[ExpertActivationMode]) -> Result<ModelPlan, PlanCompileError> {
     plan_with_classes(&tiny_config()?, Inkling2WeightClass::Nvfp4Rig, modes)
@@ -226,7 +237,8 @@ pub fn plan_with_classes(
         epsilon: ink.rms_norm_eps,
         weight_transform: WeightTransform::Identity,
     };
-    let rig = weight_class == Inkling2WeightClass::Nvfp4Rig;
+    let rig = weight_class != Inkling2WeightClass::Shipped;
+    let loop_attention = weight_class == Inkling2WeightClass::Nvfp4Rig;
     // The NVFP4 program a minted bank runs: the declared quantizer of the shipped NVFP4 layers.
     let nvfp4_declared = (0..ink.num_hidden_layers)
         .filter_map(|physical| ink.expert_quant(physical).ok())
@@ -351,7 +363,7 @@ pub fn plan_with_classes(
                 default_weight_class: Inkling2WeightClass::Nvfp4Rig,
                 weight_class,
                 minted: if rig {
-                    nvfp4_rig::rig_tensors(ink)
+                    nvfp4_rig::class_tensors(ink, loop_attention)
                         .map_err(&numerics_error)?
                         .iter()
                         .map(|t| t.name().to_string())
@@ -1030,7 +1042,10 @@ pub fn expected_census_for(
         return Ok(map);
     }
     let ink = inkling(config).map_err(|e| format!("{e:?}"))?;
-    let set = nvfp4_rig::rig_tensors(ink)?;
+    let set = nvfp4_rig::class_tensors(
+        ink,
+        program.numerics.weight_class == Inkling2WeightClass::Nvfp4Rig,
+    )?;
     let names: Vec<&str> = set.iter().map(|t| t.name()).collect();
     if names
         != program

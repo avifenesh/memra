@@ -6,14 +6,17 @@ Coordinator decision 8 (2026-11-21), from lane F's per-layer KL receipts
 - the checkpoint's declared activation-quant experts (NVFP4 W4A4 on layers 0-19);
 - the MXFP8 expert banks of layers 20-23 converted to NVFP4, running the same NVFP4 W4A4 program;
 - an NVFP4 output projection (`unembed`) and NVFP4 attention projections (q, k, v, o, output gate,
-  relative-bias projection) on every physical layer outside the loop core (0-5, 18-23); these
-  are weight-only: f32 inputs, f32 accumulation;
+  relative-bias projection) on every physical layer, the loop core 6-17 included (owner ruling
+  2026-11-21 ~14:25: "convert the loop attention too, measure it"); these are weight-only: f32
+  inputs, f32 accumulation;
 - unit-scale e4m3 K and V on all 48 cache slots (the f32 value after the key clip and the value norm,
   rounded to nearest, ties to even, saturating at 448), as lane F measured it (`klh.fp8_kv` on the
   output of `k_proj` / `v_proj`, which is what the cache stores).
 
-The loop core's attention (layers 6-17) stays BF16. The checkpoint as stored stays the named class
-`shipped`. A request runs one class.
+Decision 8's first set kept the loop core's attention in BF16; it stays as the measurement class
+`nvfp4-rig-outside-loop` (the same overlay, the loop-core attention planes not read), so both sets
+are measured side by side. The checkpoint as stored stays the named class `shipped`. A request runs
+one class.
 
 ## The mint
 
@@ -26,15 +29,15 @@ layout (`_weight`, `_weight_scale`, `_weight_amax`, `_weight_outer_scale_denomin
 tensors in the modelopt layout (`.weight`, `.weight_scale`, `.weight_scale_2` = t).
 
 Overlay of the pinned checkpoint (`~/models/inkling2-mini.nvfp4-rig/`, read-only):
-81 tensors, `overlay.safetensors` 2,734,946,340 bytes, sha256
-`445690f9f6102c899cd1b10fe29be1696b13796e5295fd2d9d27f8b439eabefc`; the manifest
+153 tensors, `overlay.safetensors` 2,916,121,412 bytes, sha256
+`cb47da1a33e683a6664b48e1b937b818a696ee761d15723d1f39f7241d1acc04`; the manifest
 (`overlay-manifest.json`, a copy) binds the source file's sha256 (`65e60f51...`, the pinned
 weights hash), size and header hash, the `hf_quant_config.json` hash, and the sha256 of every source
-tensor it replaces and of every overlay tensor. Mint: `mint.log` (247 s, 12 threads). Weight
+tensor it replaces and of every overlay tensor. Mint: `mint.log` (339 s, 12 threads). Weight
 relative MSE 6.7e-3 on every tensor (`manifest.json` `rel_mse`), lane F's own figure for NVFP4.
 
 `ink2-mint verify` (`mint-verify.log`): the loader's binding check, both full-file hashes, and a
-re-mint of all 81 tensors byte-identical.
+re-mint of all 153 tensors byte-identical.
 
 Proof that the port is lane F's quantizer:
 
@@ -45,7 +48,7 @@ Proof that the port is lane F's quantizer:
   is its short run; `quantizer_matches_lane_f_goldens`: 0 code bytes, 0 scale bytes, 0 tensor scales
   and 0 dequantized values differ on every case. The long run (2.6 M elements) also matched with 0
   differences (`INK2_RIG_GOLDEN=... cargo test -p memra-gguf nvfp4_rig -- --include-ignored`).
-- `golden_full.py`: the same quantizer on CUDA over all 81 full tensors, hashed and compared with the
+- `golden_full.py`: the same quantizer on CUDA over all 153 full tensors, hashed and compared with the
   manifest (`gpu-run/golden-full-cuda.json`).
 
 ## Loader and contract
@@ -60,7 +63,7 @@ class's set, another base file size or header, another quantization config, and 
 overlay tensor whose sha256 differs (`overlay_binds_its_checkpoint_and_refuses_every_mismatch`:
 one flipped overlay byte, one flipped byte of a replaced source tensor, another config hash, a short
 manifest). On the real checkpoint: `ink2-gpu CKPT --contract-check` binds 1170 tensors under
-`nvfp4-rig` with every red arm refused.
+`nvfp4-rig` and under `nvfp4-rig-outside-loop`, every red arm refused.
 
 ## Reference executor and tiny gate
 
@@ -69,7 +72,7 @@ F's arms ran), minted banks through the declared NVFP4 program, e4m3 K/V per the
 Tiny variant `nvfp4-rig`: the tiny checkpoint with its overlay minted at run time, pinned to an
 independent oracle (`tiny_rig_oracle.py`: lane E's activation-quant simulation on an f32 stream, the
 overlay dequantized in numpy, K/V rounded to e4m3 by a forward hook). Reference vs oracle: max abs
-1.7e-6 over 12,000 logits (the declared variant's band, 1e-5); `memra model verify tiny --against
+2.2e-6 over 12,000 logits (the declared variant's band, 1e-5); `memra model verify tiny --against
 inkling2` passes with the variant. Red arms: f32 KV, and the plan over the base checkpoint without
 its overlay (refused).
 

@@ -553,12 +553,12 @@ impl Ckpt {
         let overlay = match (class, overlay) {
             (Inkling2WeightClass::Shipped, Some(o)) => {
                 return Err(format!(
-                    "the shipped class reads the checkpoint as stored; an overlay ({}) belongs to nvfp4-rig",
+                    "the shipped class reads the checkpoint as stored; an overlay ({}) belongs to the nvfp4-rig classes",
                     o.display()
                 ));
             }
             (Inkling2WeightClass::Shipped, None) => None,
-            (Inkling2WeightClass::Nvfp4Rig, given) => {
+            (Inkling2WeightClass::Nvfp4Rig | Inkling2WeightClass::Nvfp4RigOutsideLoop, given) => {
                 let odir =
                     given.map_or_else(|| nvfp4_rig::default_overlay_dir(dir), |p| p.to_path_buf());
                 let quant = std::fs::read(dir.join("hf_quant_config.json"))
@@ -571,6 +571,7 @@ impl Ckpt {
                     &st,
                     ink,
                     &nvfp4_rig::sha256_hex(&quant),
+                    class == Inkling2WeightClass::Nvfp4Rig,
                     threads,
                 )?;
                 for name in bound.planes.keys() {

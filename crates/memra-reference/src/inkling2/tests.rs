@@ -1348,8 +1348,8 @@ fn nvfp4_rig_plan_reads_the_minted_set_and_e4m3_kv_on_every_slot() {
     assert_eq!(numerics.default_weight_class, Inkling2WeightClass::Nvfp4Rig);
     assert!(numerics.kv.iter().all(|k| *k == KvCacheFormat::E4m3Unit));
     assert_eq!(numerics.kv.len(), plan.layers.len());
-    // tiny: prelude 0-1 and coda 6-7 attention (6 each), the MXFP8 banks of layers 6-7, the unembed
-    assert_eq!(numerics.minted.len(), 4 * 6 + 2 * 2 + 1);
+    // tiny: the attention of all 8 layers (6 each), the MXFP8 banks of layers 6-7, the unembed
+    assert_eq!(numerics.minted.len(), 8 * 6 + 2 * 2 + 1);
     for e in &numerics.experts {
         assert_eq!(e.minted, e.physical_layer >= 6);
         assert_eq!(e.weight, ExpertWeightFormat::Nvfp4Amax);

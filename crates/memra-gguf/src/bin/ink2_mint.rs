@@ -87,7 +87,7 @@ fn verify(ckpt: &Path, dir: &Path, threads: usize) -> Result<(), String> {
     let (config, quant_sha) = config(ckpt)?;
     let ink = config.inkling2.as_ref().ok_or("not an inkling2 config")?;
     let base = StModel::open(ckpt).map_err(|e| format!("open {}: {e}", ckpt.display()))?;
-    let bound = rig::bind_overlay(ckpt, dir, &base, ink, &quant_sha, threads)?;
+    let bound = rig::bind_overlay(ckpt, dir, &base, ink, &quant_sha, true, threads)?;
     eprintln!(
         "ink2-mint: binding check OK in {:.1}s",
         t0.elapsed().as_secs_f64()

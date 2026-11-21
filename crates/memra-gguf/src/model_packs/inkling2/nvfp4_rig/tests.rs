@@ -166,8 +166,17 @@ fn class_tensor_set_of_the_shipped_config() {
         .unwrap();
     let ink = config.inkling2.as_ref().unwrap();
     let set = rig_tensors(ink).unwrap();
-    // 12 layers x 6 projections, 4 layers x 2 banks, the unembed
-    assert_eq!(set.len(), 12 * 6 + 4 * 2 + 1);
+    // 24 layers x 6 projections, 4 layers x 2 banks, the unembed
+    assert_eq!(set.len(), 24 * 6 + 4 * 2 + 1);
+    // the measurement subset leaves the loop core's 12 x 6 attention projections as stored
+    let outside = class_tensors(ink, false).unwrap();
+    assert_eq!(outside.len(), 12 * 6 + 4 * 2 + 1);
+    assert!(
+        !outside
+            .iter()
+            .any(|t| t.name().starts_with("model.llm.layers.6.attn"))
+    );
+    assert_eq!(class_tensors(ink, true).unwrap(), set);
     let experts: Vec<_> = set
         .iter()
         .filter(|t| matches!(t, RigTensor::Experts { .. }))
@@ -184,12 +193,12 @@ fn class_tensor_set_of_the_shipped_config() {
             .any(|t| t.name() == "model.llm.layers.18.attn.wq_du.weight")
     );
     assert!(
-        !set.iter()
-            .any(|t| t.name().starts_with("model.llm.layers.6.attn"))
+        set.iter()
+            .any(|t| t.name() == "model.llm.layers.6.attn.wq_du.weight")
     );
     assert!(
-        !set.iter()
-            .any(|t| t.name().starts_with("model.llm.layers.17.attn"))
+        set.iter()
+            .any(|t| t.name() == "model.llm.layers.17.attn.wr_du.weight")
     );
 }
 
@@ -220,7 +229,15 @@ fn bind_tiny(ckpt: &Path, out: &Path) -> Result<BoundOverlay, String> {
     let config = super::super::tiny_model_config().unwrap();
     let base = crate::safetensors::StModel::open(ckpt).unwrap();
     let sha = sha256_hex(super::super::TINY_QUANT_CONFIG.as_bytes());
-    bind_overlay(ckpt, out, &base, config.inkling2.as_ref().unwrap(), &sha, 2)
+    bind_overlay(
+        ckpt,
+        out,
+        &base,
+        config.inkling2.as_ref().unwrap(),
+        &sha,
+        true,
+        2,
+    )
 }
 
 fn rewrite(path: &Path, f: impl FnOnce(&mut Vec<u8>)) {
@@ -238,7 +255,37 @@ fn rewrite(path: &Path, f: impl FnOnce(&mut Vec<u8>)) {
 fn overlay_binds_its_checkpoint_and_refuses_every_mismatch() {
     let (ckpt, out) = tiny_dirs("bind");
     let bound = bind_tiny(&ckpt, &out).unwrap();
-    assert_eq!(bound.manifest.tensors.len(), 4 * 6 + 2 * 2 + 1);
+    assert_eq!(bound.manifest.tensors.len(), 8 * 6 + 2 * 2 + 1);
+    // the outside-loop measurement class binds the same overlay and maps the prelude and coda
+    let config = super::super::tiny_model_config().unwrap();
+    let base = crate::safetensors::StModel::open(&ckpt).unwrap();
+    let sha = sha256_hex(super::super::TINY_QUANT_CONFIG.as_bytes());
+    let outside = bind_overlay(
+        &ckpt,
+        &out,
+        &base,
+        config.inkling2.as_ref().unwrap(),
+        &sha,
+        false,
+        2,
+    )
+    .unwrap();
+    assert!(
+        !outside
+            .planes
+            .contains_key("model.llm.layers.2.attn.wq_du.weight")
+    );
+    assert!(
+        outside
+            .planes
+            .contains_key("model.llm.layers.1.attn.wq_du.weight")
+    );
+    assert!(
+        bound
+            .planes
+            .contains_key("model.llm.layers.2.attn.wq_du.weight")
+    );
+    drop((outside, base));
     // read-only, and a second mint into the same directory refuses
     assert!(
         std::fs::metadata(out.join(OVERLAY_FILE))
@@ -287,6 +334,7 @@ fn overlay_binds_its_checkpoint_and_refuses_every_mismatch() {
             &base,
             config.inkling2.as_ref().unwrap(),
             "00",
+            true,
             2
         )
         .is_err()

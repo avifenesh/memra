@@ -1122,9 +1122,16 @@ fn nvfp4_rig_binds_only_the_checkpoint_merged_with_its_overlay() {
     let rig = nvfp4_rig_plan(&config).unwrap();
     let shipped = PACK.compile_plan(&config).unwrap();
     let merged = rig_census(&config, &rig);
-    // the merged census is the shipped one with 81 tensors moved to the NVFP4 layout: 73 dense
+    // the merged census is the shipped one with 153 tensors moved to the NVFP4 layout: 145 dense
     // tensors gain two planes (scale, scale_2), 8 MXFP8 banks trade one plane for three
-    assert_eq!(merged.len(), pinned_census().len() + 73 * 2 + 8 * 2);
+    assert_eq!(merged.len(), pinned_census().len() + 145 * 2 + 8 * 2);
+    // the outside-loop measurement class leaves the loop core's attention as stored
+    let outside = nvfp4_rig_outside_loop_plan(&config).unwrap();
+    let merged_outside = rig_census(&config, &outside);
+    assert_eq!(merged_outside.len(), pinned_census().len() + 73 * 2 + 8 * 2);
+    assert!(bind_with(&outside, &merged_outside).is_ok());
+    assert!(bind_with(&outside, &merged).is_err());
+    assert!(bind_with(&rig, &merged_outside).is_err());
     assert_eq!(
         merged["model.llm.unembed.weight"],
         ("U8".to_string(), vec![201024, 1152])
@@ -1137,10 +1144,10 @@ fn nvfp4_rig_binds_only_the_checkpoint_merged_with_its_overlay() {
         merged["model.llm.layers.0.attn.wq_du.weight_scale_2"],
         ("F32".to_string(), vec![])
     );
-    // loop-core attention stays as stored
+    // loop-core attention is minted too (owner ruling 2026-11-21)
     assert_eq!(
         merged["model.llm.layers.6.attn.wq_du.weight"],
-        ("BF16".to_string(), vec![3072, 2304])
+        ("U8".to_string(), vec![3072, 1152])
     );
     let bound = bind_with(&rig, &merged).unwrap();
     assert_eq!(bound, bind_with(&shipped, &pinned_census()).unwrap());
