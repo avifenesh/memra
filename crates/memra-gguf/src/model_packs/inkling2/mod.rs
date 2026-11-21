@@ -44,6 +44,11 @@ const FAMILY: &str = "inkling2";
 /// Census prefix of the drafter file's tensors.
 pub const DRAFTER_PREFIX: &str = "mtp.";
 
+/// The oracle numeric class of the checkpoint's declared program (NVFP4 W4A4 on layers 0..19,
+/// MXFP8 W8A8 on 20..23, everything outside the experts in f32): the class name a
+/// `memra-checkpoint-oracle-v1` tape of that program carries, and the key of its parity band.
+pub const DECLARED_PARITY_CLASS: &str = "inkling2-declared-activation-quant";
+
 /// Epsilon of the L2 clips, the residual mixes and the controller norms. It is a constant of the
 /// program, not a config key.
 const PROGRAM_EPSILON: f32 = 1e-6;

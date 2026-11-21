@@ -900,6 +900,9 @@ pub enum Tap {
     AttnKeys,
     AttnValues,
     AttnOut,
+    /// The head's normalized rows (after the output mix and norm, before the unembed),
+    /// `[rows, hidden]`; reported with slot `u32::MAX`.
+    FinalNorm,
 }
 
 /// A caller's view into a call.
@@ -1643,6 +1646,11 @@ impl Route {
     }
 
     /// Kept vocabulary rows (the padded ids are never computed).
+    /// The stream width.
+    pub fn hidden_size(&self) -> usize {
+        self.hidden
+    }
+
     pub fn vocab(&self) -> usize {
         self.keep
     }
@@ -1810,6 +1818,121 @@ impl Route {
         obs: Option<&mut (dyn Observer + '_)>,
     ) -> Result<CallOut, String> {
         self.forward_inner(tokens, head, obs, None)
+    }
+
+    /// The declared program's MoE output of `slot` for host rows `x` (`[rows, hidden]`) and their
+    /// picks and routing weights (`[rows, top_k]`), computed on the host by the reference
+    /// (`memra_reference::inkling2_actquant`, the sm_120 accumulator model) from this route's
+    /// resident expert bytes. The checkpoint-parity gate holds the route's MoE output against it
+    /// bit for bit. Rows run on `threads` host threads. `index_order` is the check's red arm: the
+    /// reference's ascending-index accumulator instead of the sm_120 model.
+    pub fn reference_moe(
+        &self,
+        slot: u32,
+        x: &[f32],
+        ids: &[u32],
+        wts: &[f32],
+        threads: usize,
+        index_order: bool,
+    ) -> Result<Vec<f32>, String> {
+        use memra_reference::inkling2_actquant as aq;
+        // the red arm of the check: the reference's ascending-index accumulator, not the card's
+        let acc = if index_order {
+            aq::Accumulation::IndexOrder
+        } else {
+            aq::Accumulation::Sm120
+        };
+        let program = program(&self.plan)?;
+        let info = *program
+            .loop_plan
+            .slots
+            .get(slot as usize)
+            .ok_or_else(|| format!("slot {slot}: not in the plan"))?;
+        let m = moe_of(&self.plan.layers[slot as usize])?;
+        let ActivationPlan::SwiGluSoftcapped { gate_cap, up_cap } = m.activation else {
+            return Err("an activation other than softcapped SwiGLU".into());
+        };
+        let lw = &self.layers[info.physical_layer as usize];
+        let (hidden, top_k) = (self.hidden, m.experts_per_token as usize);
+        let rows = x.len() / hidden;
+        if x.len() != rows * hidden || ids.len() != rows * top_k || wts.len() != rows * top_k {
+            return Err("reference_moe: row shapes disagree".into());
+        }
+        type HostBank = (Vec<u8>, Vec<u8>, Vec<f32>);
+        let host = |b: &Bank| -> Result<HostBank, String> {
+            let (dn, sn) = b.strides();
+            let e = m.expert_count as usize;
+            Ok((
+                self.dev.down(&b.data, 0, dn as usize * e)?,
+                self.dev.down(&b.scales, 0, sn as usize * e)?,
+                if b.fmt == FMT_NVFP4 {
+                    self.dev.down(&b.amax, 0, e)?
+                } else {
+                    Vec::new()
+                },
+            ))
+        };
+        let (d13, s13, a13) = host(&lw.w13)?;
+        let (d2, s2, a2) = host(&lw.w2)?;
+        let (b13, b2) = (&lw.w13, &lw.w2);
+        let situ = aq::situ_tables(decimal(gate_cap) as f32, decimal(up_cap) as f32);
+        let one = |r: usize| -> Vec<f32> {
+            let row: Vec<f32> = x[r * hidden..(r + 1) * hidden]
+                .iter()
+                .map(|v| aq::bf16(*v))
+                .collect();
+            let sel: Vec<usize> = ids[r * top_k..(r + 1) * top_k]
+                .iter()
+                .map(|e| *e as usize)
+                .collect();
+            let gamma = &wts[r * top_k..(r + 1) * top_k];
+            if b13.fmt == FMT_NVFP4 {
+                let up = aq::Nvfp4Experts {
+                    codes: &d13,
+                    scales: &s13,
+                    amax: &a13,
+                    denominator: b13.denom,
+                    n: b13.n,
+                    k: b13.k,
+                };
+                let down = aq::Nvfp4Experts {
+                    codes: &d2,
+                    scales: &s2,
+                    amax: &a2,
+                    denominator: b2.denom,
+                    n: b2.n,
+                    k: b2.k,
+                };
+                aq::expert_block_w4a4(&row, &sel, gamma, &up, &down, &situ, acc).out
+            } else {
+                let up = aq::Mxfp8Experts {
+                    values: &d13,
+                    exponents: &s13,
+                    n: b13.n,
+                    k: b13.k,
+                };
+                let down = aq::Mxfp8Experts {
+                    values: &d2,
+                    exponents: &s2,
+                    n: b2.n,
+                    k: b2.k,
+                };
+                aq::expert_block_w8a8(&row, &sel, gamma, &up, &down, &situ, acc).out
+            }
+        };
+        let mut out = vec![0f32; rows * hidden];
+        let per = rows.div_ceil(threads.max(1)).max(1);
+        std::thread::scope(|s| {
+            for (c, chunk) in out.chunks_mut(per * hidden).enumerate() {
+                let one = &one;
+                s.spawn(move || {
+                    for (i, dst) in chunk.chunks_mut(hidden).enumerate() {
+                        dst.copy_from_slice(&one(c * per + i));
+                    }
+                });
+            }
+        });
+        Ok(out)
     }
 
     /// Device bytes one sequence of `context` positions holds (rings, conv histories and the
@@ -2637,6 +2760,15 @@ impl Route {
                 dev.sp(),
             )
         })?;
+        if let Some(o) = obs.as_mut()
+            && o.wants(Tap::FinalNorm)
+        {
+            o.floats(
+                u32::MAX,
+                Tap::FinalNorm,
+                &dev.down(&w.mn, 0, rows * hidden)?,
+            );
+        }
         let mut out = CallOut {
             argmax: Vec::new(),
             logits: Vec::new(),

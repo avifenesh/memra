@@ -76,6 +76,11 @@ struct Args {
     contract_check: bool,
     attn_probe: Vec<u32>,
     batch_check: Option<(usize, usize, usize, usize, usize)>,
+    /// `--moe-ref STRIDE`: hold the route's MoE output of every slot against the host reference
+    /// (lane D's `inkling2_actquant`) bit for bit at every STRIDE-th position.
+    moe_ref: usize,
+    dump_hidden: Option<(PathBuf, PathBuf)>,
+    moe_ref_index_order: bool,
 }
 
 fn parse() -> Result<Args, String> {
@@ -95,6 +100,11 @@ fn parse() -> Result<Args, String> {
             "--score" => a.score = true,
             "--force-router" => a.force_router = true,
             "--force-moe-in" => a.force_moe_in = true,
+            "--moe-ref" => a.moe_ref = num(val()?)?,
+            "--dump-hidden" => {
+                let corpus = PathBuf::from(val()?);
+                a.dump_hidden = Some((corpus, PathBuf::from(val()?)));
+            }
             "--gen" => a.gen_tokens = num(val()?)?,
             "--limit" => a.limit = num(val()?)?,
             "--chunk" => a.chunk = num(val()?)?,
@@ -134,6 +144,8 @@ fn parse() -> Result<Args, String> {
                     "ties-high" => a.red.ties_high = true,
                     "commit-on-error" => a.red.commit_on_error = true,
                     "batch-rows-rotated" => a.red.batch_rows_rotated = true,
+                    // the --moe-ref check's own red arm: the reference accumulates in index order
+                    "moe-ref-index-order" => a.moe_ref_index_order = true,
                     _ => return Err(format!("unknown red arm {v}")),
                 }
                 a.red_names.push(v);
@@ -351,6 +363,79 @@ struct Compare<'a> {
     route_rows: Vec<(usize, usize)>,
     min_margin: f64,
     error: Option<String>,
+    moe_ref: Option<MoeRef>,
+}
+
+/// The rows of one call the reference check holds: per slot the MoE input, picks, routing
+/// weights and the route's MoE output of every kept row.
+#[derive(Default)]
+struct MoeRefSlot {
+    rows: Vec<usize>,
+    x: Vec<f32>,
+    ids: Vec<u32>,
+    wts: Vec<f32>,
+    out: Vec<f32>,
+}
+
+struct MoeRef {
+    stride: usize,
+    index_order: bool,
+    cur: BTreeMap<u32, MoeRefSlot>,
+    /// per slot: rows checked, rows bit-equal, bf16 outputs differing, worst row rel L2
+    per_slot: Vec<(usize, usize, usize, f64)>,
+}
+
+impl MoeRef {
+    fn keep(&self, base: usize, row: usize) -> bool {
+        (base + row).is_multiple_of(self.stride)
+    }
+    fn take<T: Copy>(&self, base: usize, data: &[T], width: usize) -> (Vec<usize>, Vec<T>) {
+        let mut rows = Vec::new();
+        let mut out = Vec::new();
+        for (r, chunk) in data.chunks_exact(width).enumerate() {
+            if self.keep(base, r) {
+                rows.push(base + r);
+                out.extend_from_slice(chunk);
+            }
+        }
+        (rows, out)
+    }
+    /// Checks the kept rows against the host reference and clears them.
+    fn drain(&mut self, route: &Route, hidden: usize) -> Result<(), String> {
+        let threads = std::thread::available_parallelism()
+            .map_or(8, |n| n.get() / 2)
+            .max(1);
+        for (slot, s) in std::mem::take(&mut self.cur) {
+            if s.rows.is_empty() {
+                continue;
+            }
+            let want =
+                route.reference_moe(slot, &s.x, &s.ids, &s.wts, threads, self.index_order)?;
+            if want.len() != s.out.len() {
+                return Err(format!(
+                    "slot {slot}: the reference and the route disagree on rows"
+                ));
+            }
+            let e = &mut self.per_slot[slot as usize];
+            for (g, w) in s.out.chunks_exact(hidden).zip(want.chunks_exact(hidden)) {
+                let differ = g
+                    .iter()
+                    .zip(w)
+                    .filter(|(a, b)| a.to_bits() != b.to_bits())
+                    .count();
+                let (mut num, mut den) = (0f64, 0f64);
+                for (a, b) in g.iter().zip(w) {
+                    num += (f64::from(*a) - f64::from(*b)).powi(2);
+                    den += f64::from(*b).powi(2);
+                }
+                e.0 += 1;
+                e.1 += usize::from(differ == 0);
+                e.2 += differ;
+                e.3 = e.3.max((num / den.max(1e-300)).sqrt());
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Compare<'_> {
@@ -381,7 +466,8 @@ impl Observer for Compare<'_> {
     fn wants(&self, tap: Tap) -> bool {
         match tap {
             Tap::ResidAttn | Tap::ResidFfn | Tap::RouteMargin => true,
-            Tap::MoeOut => self.tape.moe_out.is_some(),
+            Tap::MoeIn | Tap::RouteWeights => self.moe_ref.is_some(),
+            Tap::MoeOut => self.tape.moe_out.is_some() || self.moe_ref.is_some(),
             _ => false,
         }
     }
@@ -394,6 +480,27 @@ impl Observer for Compare<'_> {
                 if let Some(shard) = &tape.moe_out {
                     self.rows_of(shard, "moe_out", slot, data, 2);
                 }
+                let (base, hidden) = (self.base, self.hidden);
+                if let Some(mr) = self.moe_ref.as_mut() {
+                    let (_, out) = mr.take(base, data, hidden);
+                    mr.cur.entry(slot).or_default().out.extend(out);
+                }
+            }
+            Tap::MoeIn => {
+                let (base, hidden) = (self.base, self.hidden);
+                if let Some(mr) = self.moe_ref.as_mut() {
+                    let (rows, x) = mr.take(base, data, hidden);
+                    let e = mr.cur.entry(slot).or_default();
+                    e.rows.extend(rows);
+                    e.x.extend(x);
+                }
+            }
+            Tap::RouteWeights => {
+                let (base, top_k) = (self.base, self.top_k);
+                if let Some(mr) = self.moe_ref.as_mut() {
+                    let (_, w) = mr.take(base, data, top_k);
+                    mr.cur.entry(slot).or_default().wts.extend(w);
+                }
             }
             Tap::RouteMargin => {
                 for m in data {
@@ -404,6 +511,11 @@ impl Observer for Compare<'_> {
         }
     }
     fn picks(&mut self, slot: u32, ids: &[u32]) {
+        let (base, top_k) = (self.base, self.top_k);
+        if let Some(mr) = self.moe_ref.as_mut() {
+            let (_, p) = mr.take(base, ids, top_k);
+            mr.cur.entry(slot).or_default().ids.extend(p);
+        }
         let Ok(t) = tensor(&self.tape.router, "route_ids", "I32") else {
             self.error.get_or_insert("the tape has no route_ids".into());
             return;
@@ -886,8 +998,164 @@ impl Observer for Digest {
     }
 }
 
+/// The `memra model verify checkpoint` runner contract: `ink2-gpu CKPT_DIR TOKEN...` with
+/// `MEMRA_ORACLE_OUT=FILE` runs the checkpoint's declared class over the tokens and writes the
+/// last token's logits as a `memra-checkpoint-oracle-v1` tape. The class name is the pack's
+/// declared parity class, the one its band is keyed on.
+fn oracle_runner(out: PathBuf) -> Result<(), String> {
+    let mut it = std::env::args().skip(1);
+    let ckpt = PathBuf::from(
+        it.next()
+            .ok_or("usage: MEMRA_ORACLE_OUT=FILE ink2-gpu CKPT_DIR TOKEN...")?,
+    );
+    let tokens = it
+        .map(|t| t.parse::<u32>().map_err(|e| format!("token {t}: {e}")))
+        .collect::<Result<Vec<_>, _>>()?;
+    if tokens.is_empty() {
+        return Err("the oracle runner needs at least one token".into());
+    }
+    let a = Args {
+        ckpt,
+        class: "declared".into(),
+        chunk: 512,
+        ..Args::default()
+    };
+    let (plan, pack, config) = compile(&a)?;
+    let program = plan.inkling2.as_ref().ok_or("not an inkling2 plan")?;
+    if program.numerics.class
+        != memra_gguf::model_plan::Inkling2NumericClass::DeclaredActivationQuant
+    {
+        return Err(format!(
+            "the oracle runner runs the declared class, the plan is {:?}",
+            program.numerics.class
+        ));
+    }
+    let ck = Ckpt::open(&a.ckpt, pack, &config, &plan)?;
+    let dev = Dev::new(0)?;
+    let context = (tokens.len() + 8).next_power_of_two().max(2048);
+    let mut route = Route::load(dev, &ck, &plan, context, a.chunk)?;
+    let vocab = route.vocab();
+    let mut logits = Vec::new();
+    for s0 in (0..tokens.len()).step_by(a.chunk) {
+        let s1 = (s0 + a.chunk).min(tokens.len());
+        logits = route.forward(&tokens[s0..s1], Head::Last, None)?.logits;
+    }
+    if logits.len() != vocab {
+        return Err(format!(
+            "{} logits for the last token, vocab {vocab}",
+            logits.len()
+        ));
+    }
+    let mut tsv = format!(
+        "format\tmemra-checkpoint-oracle-v1\nengine\tmemra-inkling2-gpu\nnumeric_class\t{}\ntokens\t{}\nvocab\t{vocab}\n",
+        memra_gguf::model_packs::inkling2::DECLARED_PARITY_CLASS,
+        tokens
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    for (i, v) in logits.iter().enumerate() {
+        tsv.push_str(&format!("logit\t{i}\t{:08x}\n", v.to_bits()));
+    }
+    std::fs::write(&out, tsv).map_err(|e| format!("{}: {e}", out.display()))
+}
+
+/// `--dump-hidden CORPUS.json OUT_DIR`: each document (`[{"name", "ids"}]`) teacher-forced from a
+/// fresh state, its head-normalized rows written as `OUT_DIR/<index>.f32` (`[T, hidden]`), so an
+/// independent harness scores this route's distributions with its own head.
+struct FinalRows {
+    rows: Vec<f32>,
+}
+
+impl Observer for FinalRows {
+    fn wants(&self, tap: Tap) -> bool {
+        tap == Tap::FinalNorm
+    }
+    fn floats(&mut self, _slot: u32, tap: Tap, data: &[f32]) {
+        if tap == Tap::FinalNorm {
+            self.rows.extend_from_slice(data);
+        }
+    }
+    fn picks(&mut self, _slot: u32, _ids: &[u32]) {}
+    fn forced(&mut self, _slot: u32, _rows: usize) -> Option<(Vec<u32>, Vec<f32>)> {
+        None
+    }
+}
+
+fn dump_hidden(a: &Args, corpus: &Path, out: &Path) -> Result<(), String> {
+    let docs: Vec<serde_json::Value> = serde_json::from_str(
+        &std::fs::read_to_string(corpus).map_err(|e| format!("{}: {e}", corpus.display()))?,
+    )
+    .map_err(|e| format!("{}: {e}", corpus.display()))?;
+    let docs: Vec<(String, Vec<u32>)> = docs
+        .iter()
+        .map(|d| {
+            let ids = d["ids"]
+                .as_array()
+                .ok_or("a document without ids")?
+                .iter()
+                .map(|v| v.as_u64().map(|x| x as u32).ok_or("a non-integer id"))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((d["name"].as_str().unwrap_or("").to_string(), ids))
+        })
+        .collect::<Result<_, &str>>()?;
+    let longest = docs.iter().map(|d| d.1.len()).max().unwrap_or(1);
+    let (plan, pack, config) = compile(a)?;
+    let class = numeric_class(&plan)?;
+    let ck = Ckpt::open(&a.ckpt, pack, &config, &plan)?;
+    let dev = Dev::new(a.device)?;
+    let context = (longest + 8).next_power_of_two().max(2048);
+    let mut route = Route::load(dev, &ck, &plan, context, a.chunk)?;
+    std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
+    let t0 = Instant::now();
+    let mut index = Vec::new();
+    for (i, (name, ids)) in docs.iter().enumerate() {
+        route.reset()?;
+        let mut obs = FinalRows {
+            rows: Vec::with_capacity(ids.len() * route.hidden_size()),
+        };
+        for s0 in (0..ids.len()).step_by(a.chunk) {
+            let s1 = (s0 + a.chunk).min(ids.len());
+            route.forward(&ids[s0..s1], Head::None, Some(&mut obs))?;
+        }
+        let bytes: Vec<u8> = obs.rows.iter().flat_map(|v| v.to_le_bytes()).collect();
+        std::fs::write(out.join(format!("{i}.f32")), bytes).map_err(|e| format!("{e}"))?;
+        index.push(serde_json::json!({"index": i, "name": name, "tokens": ids.len()}));
+    }
+    let meta = serde_json::json!({
+        "runner": "ink2-gpu --dump-hidden",
+        "numeric_class": class,
+        "corpus": corpus.display().to_string(),
+        "chunk": a.chunk,
+        "context": context,
+        "hidden": route.hidden_size(),
+        "docs": index,
+        "seconds": t0.elapsed().as_secs_f64(),
+        "clocks_at_end": clocks(),
+        "loadavg_at_end": loadavg(),
+    });
+    std::fs::write(
+        out.join("meta.json"),
+        serde_json::to_string_pretty(&meta).unwrap(),
+    )
+    .map_err(|e| format!("{e}"))?;
+    eprintln!(
+        "ink2-gpu: dumped {} documents in {:.1}s",
+        docs.len(),
+        t0.elapsed().as_secs_f64()
+    );
+    Ok(())
+}
+
 fn run() -> Result<(), String> {
+    if let Some(out) = std::env::var_os("MEMRA_ORACLE_OUT") {
+        return oracle_runner(PathBuf::from(out));
+    }
     let a = parse()?;
+    if let Some((corpus, out)) = &a.dump_hidden {
+        return dump_hidden(&a, corpus, out);
+    }
     let (plan, pack, config) = compile(&a)?;
     let class = numeric_class(&plan)?;
     if a.numeric_class {
@@ -1023,6 +1291,12 @@ fn run() -> Result<(), String> {
             route_rows: vec![(0, 0); nslots],
             min_margin: f64::INFINITY,
             error: None,
+            moe_ref: (a.moe_ref > 0).then(|| MoeRef {
+                stride: a.moe_ref,
+                index_order: a.moe_ref_index_order,
+                cur: BTreeMap::new(),
+                per_slot: vec![(0, 0, 0, 0f64); nslots],
+            }),
         };
         let lt = tensor(&tape.logits, "logits_post", "F32")?;
         if lt.shape[1] != vocab {
@@ -1076,6 +1350,11 @@ fn run() -> Result<(), String> {
                 return Err(e);
             }
         }
+        // every kept row of a slot at once: one download of the slot's expert bank, and the rows
+        // spread over the host threads
+        if let Some(mr) = cmp.moe_ref.as_mut() {
+            mr.drain(&route, hidden)?;
+        }
         let rel = |d: &[Dist]| {
             d.iter()
                 .map(|x| (x.rel() * 1e9).round() / 1e9)
@@ -1113,6 +1392,23 @@ fn run() -> Result<(), String> {
             "greedy_tokens": tape.greedy.len(),
             "greedy_first_miss": greedy_first_miss,
         });
+        if let Some(mr) = &cmp.moe_ref {
+            let rows: usize = mr.per_slot.iter().map(|s| s.0).sum();
+            let equal: usize = mr.per_slot.iter().map(|s| s.1).sum();
+            let differ: usize = mr.per_slot.iter().map(|s| s.2).sum();
+            receipt["moe_reference"] = serde_json::json!({
+                "reference": "memra_reference::inkling2_actquant expert_block_w4a4 / expert_block_w8a8, Accumulation::Sm120, from the route's resident expert bytes",
+                "stride": mr.stride,
+                "red_arm_index_order_reference": mr.index_order,
+                "rows_checked": rows,
+                "rows_bit_equal": equal,
+                "bf16_outputs_differing": differ,
+                "per_slot": mr.per_slot.iter().enumerate().map(|(s, e)| serde_json::json!({"slot": s, "rows": e.0, "rows_bit_equal": e.1, "outputs_differing": e.2, "worst_row_rel_l2": e.3})).collect::<Vec<_>>(),
+            });
+            eprintln!(
+                "ink2-gpu: moe reference: {equal}/{rows} rows bit-equal over {nslots} slots ({differ} bf16 outputs differ)"
+            );
+        }
         eprintln!(
             "ink2-gpu: score {} positions in {:.1}s: resid attn worst slot {:.3e}, ffn worst slot {:.3e}, router rows {eq}/{all}, logits max abs {:.3e} KL mean {:.3e}, argmax {}/{}, greedy {greedy_equal}/{}",
             total,
