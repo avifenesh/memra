@@ -2107,6 +2107,148 @@ __global__ void __launch_bounds__(256) r_attn_kernel(RAttn a) {
   }
 }
 
+// A prefill call's kernel: one block a (query, chunk) scores every head, 32 a pass, four heads a
+// warp. The shared-memory loads bound this kernel, so a lane loads a key value once for its
+// four heads (their score dots and output sums run side by side, each head's chain as before).
+// To leave room for the 32 queries the tile is staged a piece at a time: four pieces of 128
+// latent values a key and the 64 rope values. A pass runs the dots piece by piece in value
+// order, the softmax step, then the outputs of each latent piece (the last first, the first
+// last: it stays for the next pass's dots). Every head's tile sequence (score chain in value
+// order, max, sums, each output's sum in key order) is that of `r_attn_kernel`.
+#define AT_PD 128              // latent values a key in a piece
+#define AT_PW (AT_PD + 1)      // f32 a key row of a piece in shared memory
+#define AT_NPC 5               // pieces: 4 latent, 1 rope
+template <int NP>
+__global__ void __launch_bounds__(256) r_attn_all_kernel(RAttn a) {
+  r_pdl_trigger();
+  r_pdl_wait();
+  extern __shared__ __align__(16) unsigned char smem[];
+  float* qs = (float*)smem;                 // [32][576]: the pass's queries
+  float* ks = qs + 32 * AT_DK;              // [32][129]: a piece of the tile
+  float* ps = ks + AT_TILE * AT_PW;         // [32][32]
+  __shared__ long krow[AT_TILE];            // the tile's cache rows (element offsets)
+  const int qi = blockIdx.x, c = blockIdx.z;
+  const int tid = threadIdx.x, lane = tid & 31, hl = tid >> 5;
+  int len, lo = 0;
+  if (a.mode == 1) {
+    len = a.lens[qi];
+  } else {
+    const int p = a.qpos[qi];
+    lo = a.window > 0 ? max(0, p - a.window + 1) : 0;
+    len = p - lo + 1;
+  }
+  const int j0 = c * AT_CHUNK, j1 = min(len, j0 + AT_CHUNK);
+  float o[NP][4][16], m[NP][4], l[NP][4];
+#pragma unroll
+  for (int p = 0; p < NP; p++) {
+#pragma unroll
+    for (int s = 0; s < 4; s++) {
+#pragma unroll
+      for (int i = 0; i < 16; i++) o[p][s][i] = 0.0f;
+      m[p][s] = -INFINITY;
+      l[p][s] = 0.0f;
+    }
+  }
+  // piece `pc`: values pc * 128 .. of each key (the last piece the 64 rope values)
+  auto load_piece = [&](int pc) {
+    const int w4 = (pc < AT_NPC - 1 ? AT_PD : AT_DK - AT_DV) / 4;  // float4 a key
+#pragma unroll
+    for (int u = 0; u < AT_TILE * (AT_PD / 4) / 256; u++) {
+      const int e = tid + u * 256;
+      if (e < AT_TILE * w4) {
+        const int r = e / w4, d4 = e % w4;
+        const long kr0 = krow[r];
+        const float4 v =
+            kr0 >= 0 ? *(const float4*)(a.kv + kr0 + pc * AT_PD + 4 * d4) : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        float* dst = ks + r * AT_PW + 4 * d4;
+        dst[0] = v.x;
+        dst[1] = v.y;
+        dst[2] = v.z;
+        dst[3] = v.w;
+      }
+    }
+  };
+  for (int t0 = j0; t0 < j1; t0 += AT_TILE) {
+    const int nt = min(AT_TILE, j1 - t0);
+    if (tid < AT_TILE) krow[tid] = tid < nt ? (long)r_key_row(a, qi, t0 + tid, lo) * AT_DK : -1;
+    __syncthreads();  // the tile's rows; the previous tile is done
+    load_piece(0);
+#pragma unroll
+    for (int p = 0; p < NP; p++) {
+      for (int e = tid; e < 32 * AT_DK; e += 256) qs[e] = a.q[((long)qi * a.H + p * 32) * AT_DK + e];
+      const float* kr = ks + lane * AT_PW;
+      float d[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+#pragma unroll
+      for (int pc = 0; pc < AT_NPC; pc++) {
+        if (pc > 0) load_piece(pc);
+        __syncthreads();  // the piece (and with the first the pass's queries) is in place
+        if (lane < nt) {
+          const int w4 = (pc < AT_NPC - 1 ? AT_PD : AT_DK - AT_DV) / 4;
+#pragma unroll 4
+          for (int d4 = 0; d4 < w4; d4++) {
+            const float k0 = kr[4 * d4], k1 = kr[4 * d4 + 1], k2 = kr[4 * d4 + 2], k3 = kr[4 * d4 + 3];
+#pragma unroll
+            for (int s = 0; s < 4; s++) {
+              const float4 qv = ((const float4*)(qs + (hl + 8 * s) * AT_DK))[pc * (AT_PD / 4) + d4];
+              d[s] += qv.x * k0;
+              d[s] += qv.y * k1;
+              d[s] += qv.z * k2;
+              d[s] += qv.w * k3;
+            }
+          }
+        }
+        __syncthreads();  // the piece is scored
+      }
+#pragma unroll
+      for (int s = 0; s < 4; s++) {
+        const float sc = lane < nt ? d[s] * a.scale : -INFINITY;
+        const float mt = r_warp_max(sc);
+        const float mn = fmaxf(m[p][s], mt);
+        const float corr = expf(m[p][s] - mn);
+        const float pr = lane < nt ? expf(sc - mn) : 0.0f;
+        l[p][s] = l[p][s] * corr + r_warp_sum(pr);
+        m[p][s] = mn;
+#pragma unroll
+        for (int i = 0; i < 16; i++) o[p][s][i] *= corr;
+        ps[(hl + 8 * s) * AT_TILE + lane] = pr;
+      }
+      __syncwarp();
+      // the outputs of each latent piece (4 a piece: values lane + 32 i), the first piece last
+#pragma unroll
+      for (int pc = AT_NPC - 2; pc >= 0; pc--) {
+        load_piece(pc);
+        __syncthreads();
+        for (int kk = 0; kk < nt; kk++) {
+          const float* vr = ks + kk * AT_PW;
+          float pk[4];
+#pragma unroll
+          for (int s = 0; s < 4; s++) pk[s] = ps[(hl + 8 * s) * AT_TILE + kk];
+#pragma unroll
+          for (int i = 0; i < AT_PD / 32; i++) {
+            const float v = vr[lane + 32 * i];
+#pragma unroll
+            for (int s = 0; s < 4; s++) o[p][s][pc * (AT_PD / 32) + i] += pk[s] * v;
+          }
+        }
+        __syncthreads();  // the piece is used (the first stays for the next pass)
+      }
+    }
+  }
+#pragma unroll
+  for (int p = 0; p < NP; p++) {
+#pragma unroll
+    for (int s = 0; s < 4; s++) {
+      const long pidx = ((long)qi * a.H + p * 32 + s * 8 + hl) * a.C + c;
+#pragma unroll
+      for (int i = 0; i < 16; i++) a.po[pidx * AT_DV + lane + 32 * i] = o[p][s][i];
+      if (lane == 0) {
+        a.pml[pidx * 2] = m[p][s];
+        a.pml[pidx * 2 + 1] = l[p][s];
+      }
+    }
+  }
+}
+
 // out[q, h, :] = merge of the chunks in order, the sink in the max and the denominator
 __global__ void r_attn_merge_kernel(const float* po, const float* pml, const float* sinks, int H, int C, float* out) {
   r_pdl_trigger();
@@ -2148,6 +2290,28 @@ extern "C" int memra_hy4r_attn(const float* q, const void* kv, const int* list, 
     cudaFuncSetAttribute(r_attn_kernel<4>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)m8);
     cudaFuncSetAttribute(r_attn_kernel<2>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)m8);
     cudaFuncSetAttribute(r_attn_kernel<1>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)m8);
+  }
+  // a prefill call (more (query, chunk) units than two waves of the SMs): a block a unit scores
+  // all the heads
+  static bool all_attr = false;
+  if (!all_attr) {
+    const size_t ma = sizeof(float) * (32 * AT_DK + AT_TILE * AT_PW + 32 * AT_TILE);
+    cudaFuncSetAttribute(r_attn_all_kernel<2>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)ma);
+    cudaFuncSetAttribute(r_attn_all_kernel<1>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)ma);
+    all_attr = true;
+  }
+  if ((H == 64 || H == 32) && (long)rows * C >= 2L * sms) {
+    const size_t smem = sizeof(float) * (32 * AT_DK + AT_TILE * AT_PW + 32 * AT_TILE);
+    dim3 grid(rows, 1, C);
+    cudaStream_t st = (cudaStream_t)stream;
+    if (H == 64)
+      r_launch(r_attn_all_kernel<2>, grid, 256, smem, st, a);
+    else
+      r_launch(r_attn_all_kernel<1>, grid, 256, smem, st, a);
+    int rc = r_rc();
+    if (rc) return rc;
+    r_launch(r_attn_merge_kernel, dim3(rows, H), 128, 0, st, po, pml, sinks, H, C, out);
+    return r_rc();
   }
   int hgs = 8;
   while (hgs > 1 && (long)rows * (H / (hgs / 2)) * C <= sms) hgs /= 2;

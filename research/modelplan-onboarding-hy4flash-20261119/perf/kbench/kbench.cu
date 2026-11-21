@@ -225,6 +225,33 @@ int main(int argc, char** argv) {
     timeit("attn indexed 32h 2048 keys", 2048.0 * 576 * 4, [&] {
       memra_hy4r_attn(q, kv, list, 2048, lens, qp, 1, 0, 0, 0, 1, 32, 8, 0.0625f, sinks, po, pml, out, st);
     });
+    // a prefill slab: 256 queries at positions 1849..2104 over the same caches
+    {
+      std::vector<int> qh2(256);
+      for (int i = 0; i < 256; i++) qh2[i] = p - 255 + i;
+      int* qps;
+      CK(cudaMalloc(&qps, 256 * 4));
+      CK(cudaMemcpy(qps, qh2.data(), 256 * 4, cudaMemcpyHostToDevice));
+      float* q2 = dev_x(256 * 64, 576);
+      float *po2, *pml2, *out2;
+      CK(cudaMalloc(&po2, (size_t)256 * 64 * 2 * 512 * 4));
+      CK(cudaMalloc(&pml2, (size_t)256 * 64 * 2 * 2 * 4));
+      CK(cudaMalloc(&out2, (size_t)256 * 64 * 512 * 4));
+      timeit("attn prefill sliding 256q 64h", 256.0 * 512 * 576 * 4, [&] {
+        memra_hy4r_attn(q2, kv, nullptr, 0, nullptr, qps, 0, 512, 512, 0, 256, 64, 2, 0.0625f, sinks, po2, pml2, out2, st);
+      });
+      // its bits against the one-head-a-warp kernel are checked by the route's tapes
+      std::vector<float> h1((size_t)256 * 64 * 512);
+      CK(cudaMemcpy(h1.data(), out2, h1.size() * 4, cudaMemcpyDeviceToHost));
+      double sum = 0;
+      for (float v : h1) sum += v;
+      printf("attn prefill checksum %.9g\n", sum);
+      if (const char* f = getenv("KB_DUMP")) {
+        FILE* fp = fopen(f, "wb");
+        fwrite(h1.data(), 4, h1.size(), fp);
+        fclose(fp);
+      }
+    }
     return 0;
   }
   // address-spread check: the o_proj shape over many copies of its weight spread through a large

@@ -1,0 +1,37 @@
+# kbench attn, a prefill slab (256 queries, 64 heads, 512-key windows): old = 8 heads a block (r_attn_kernel<8>), new = the all-heads kernel of each trial build (a build-time switch chose the old path); the 33.5 MB of outputs compared byte for byte
+== K40 (all heads a block, a warp a head)
+== old (8 heads a block)
+attn sliding 64h 512 keys                         77.9 us     15.1 GB/s
+attn indexed 32h 2048 keys                       137.1 us     34.4 GB/s
+attn prefill sliding 256q 64h                   9453.8 us     31.9 GB/s
+attn prefill checksum -90819.4658
+== new (all heads a block)
+attn sliding 64h 512 keys                         75.6 us     15.6 GB/s
+attn indexed 32h 2048 keys                       119.4 us     39.5 GB/s
+attn prefill sliding 256q 64h                   8357.4 us     36.1 GB/s
+attn prefill checksum -90819.4658
+ATTN_BITS_EQUAL 33554432 bytes
+== K41 (two heads a warp, the tile in two halves)
+== old (8 heads a block)
+attn sliding 64h 512 keys                         75.5 us     15.6 GB/s
+attn indexed 32h 2048 keys                       118.6 us     39.8 GB/s
+attn prefill sliding 256q 64h                   9197.4 us     32.8 GB/s
+attn prefill checksum -90819.4658
+== new (all heads a block)
+attn sliding 64h 512 keys                         75.6 us     15.6 GB/s
+attn indexed 32h 2048 keys                       119.1 us     39.6 GB/s
+attn prefill sliding 256q 64h                   6803.7 us     44.4 GB/s
+attn prefill checksum -90819.4658
+ATTN_BITS_EQUAL 33554432 bytes
+== K42 (four heads a warp, the tile in five pieces)
+== old (8 heads a block)
+attn sliding 64h 512 keys                         75.5 us     15.6 GB/s
+attn indexed 32h 2048 keys                       118.9 us     39.7 GB/s
+attn prefill sliding 256q 64h                   9231.0 us     32.7 GB/s
+attn prefill checksum -90819.4658
+== new (all heads a block)
+attn sliding 64h 512 keys                         75.6 us     15.6 GB/s
+attn indexed 32h 2048 keys                       121.2 us     38.9 GB/s
+attn prefill sliding 256q 64h                   5428.3 us     55.6 GB/s
+attn prefill checksum -90819.4658
+ATTN_BITS_EQUAL 33554432 bytes

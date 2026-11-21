@@ -1,0 +1,39 @@
+# ncu, r_attn_all_kernel<8> (all heads a block, a warp a head) on the slab
+  void r_attn_all_kernel<8>(RAttn) (256, 1, 2)x(256, 1, 1), Context 1, Stream 13, Device 0, CC 12.1
+    lts__t_bytes.sum                                          Mbyte       974.20
+    smsp__inst_executed.sum                                    inst  744,243,200
+    smsp__pcsamp_warps_issue_stalled_barrier                   warp        5,111
+    smsp__pcsamp_warps_issue_stalled_branch_resolving      branches        3,059
+    smsp__pcsamp_warps_issue_stalled_dispatch_stall            warp          319
+    smsp__pcsamp_warps_issue_stalled_lg_throttle               warp        1,256
+    smsp__pcsamp_warps_issue_stalled_long_scoreboard           warp       46,134
+    smsp__pcsamp_warps_issue_stalled_math_pipe_throttle        warp          149
+    smsp__pcsamp_warps_issue_stalled_mio_throttle              warp      157,024
+    smsp__pcsamp_warps_issue_stalled_not_selected              warp       14,458
+    smsp__pcsamp_warps_issue_stalled_selected                  warp       45,882
+    smsp__pcsamp_warps_issue_stalled_short_scoreboard          warp       41,273
+    smsp__pcsamp_warps_issue_stalled_wait                      warp       72,406
+    Section: GPU Speed Of Light Throughput
+    Memory Throughput                 %         83.38
+    Duration                         ms          8.03
+    L1/TEX Cache Throughput           %         86.33
+    L2 Cache Throughput               %          6.13
+    Compute (SM) Throughput           %         83.38
+    Executed Ipc Active   inst/cycle         0.93
+    Executed Ipc Elapsed  inst/cycle         0.90
+    Issue Slots Busy               %        22.57
+    Issued Ipc Active     inst/cycle         0.93
+    SM Busy                        %        27.91
+    Mem Busy                                         %        47.36
+    L1/TEX Hit Rate                                  %         0.21
+    L2 Hit Rate                                      %        84.89
+    Mem Pipes Busy                                   %        83.38
+    One or More Eligible                   %        23.28
+    Issued Warp Per Scheduler                        0.23
+    No Eligible                            %        76.72
+    Eligible Warps Per Scheduler        warp         0.31
+          of 2.00 active warps per scheduler, but only an average of 0.31 warps were eligible per cycle. Eligible       
+    Block Limit Registers                 block            1
+    Achieved Occupancy                        %        16.66
+    Achieved Active Warps Per SM           warp         8.00
+N5_DONE

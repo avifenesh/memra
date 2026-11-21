@@ -63,6 +63,7 @@ L2.
 | 14: a small-row stage loads its operands first; a BF16 stage is two tiles | 17.30 [17.30-17.31] | 57.7 | 16.17 [16.16-16.19] | 61.7 | 102.3 | 320.0 |
 | 15: the router's top-k as k rounds of the block's best | 17.37 [17.36-17.37] | 57.5 | 16.22 [16.20-16.23] | 61.5 | 102.6 | 320.0 |
 | 16: the router's scores, picks, weights and one-row plan in one block | 17.51 [17.50-17.54] | 57.1 | 16.33 [16.33-16.35] | 61.0 | 106.1 | 319.6 |
+| 17: prefill attention: a block a (query, chunk) scores every head, four heads a warp | 17.47 [17.45-17.49] | 57.1 | 16.32 [16.29-16.35] | 61.0 | 105.3 | 388.3 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -275,6 +276,27 @@ table the count, plan and place kernels build for those picks. The input gather 
 Decode step 57.5 -> 57.1 ms on `chat`, 61.5 -> 61.0 ms on `long`; `chat`'s prefill 103 -> 106
 tokens/s. 3 of 3 tapes bit-equal (`long` and `long-split` run the new kernel and record its
 picks; `chat` forced runs the old path).
+
+### 17. Prefill attention: every head on one copy of a key tile (`receipts/s17-attn-prefill/`)
+
+`long`'s prefill spent 43% of its time in attention. A block scored 8 heads of a query against a
+32-key tile it staged for itself, a warp a head: each lane loaded a key value once for one head.
+`ncu` on the kernel (`ncu-attn.txt`): shared-memory load throughput bounds it (the memory pipes
+83% busy, 0.93 instructions a cycle an SM, the top stall the memory instruction queue), five
+shared loads for four multiply-adds in the score dot and 17 for 16 in the output sum.
+
+`r_attn_all_kernel` (a prefill call: at least two waves of (query, chunk) units): one block a
+(query, chunk) scores every head, 32 a pass, four heads a warp, so a lane loads a key value
+once for four heads' chains. To leave shared memory for 32 queries the tile is staged a piece
+at a time (four pieces of 128 latent values a key and the 64 rope values): the score dots piece
+by piece in value order, the softmax step, then each latent piece's outputs. A head's sequence
+for a tile (its score chain in value order, the tile's max and sums, each output's sum in key
+order) is unchanged; a decode call keeps `r_attn_kernel`.
+
+`kbench attn` (a slab of 256 queries, 64 heads, 512-key windows; `kbench.txt`): 9.2 ms with 8
+heads a block -> 8.4 ms with all the heads a block and a warp a head -> 6.8 ms with two heads a
+warp -> 5.4 ms with four; the 33.5 MB of outputs equal byte for byte in each. `long`'s prefill
+319.6 -> 388.3 tokens/s; decode unchanged. 3 of 3 tapes bit-equal.
 
 Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct
