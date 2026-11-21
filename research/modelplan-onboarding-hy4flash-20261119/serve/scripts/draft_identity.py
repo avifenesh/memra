@@ -8,9 +8,10 @@ same binary with `MEMRA_HY4F_DRAFT=0`: every served answer found at the same pla
 (token ids, text, content, reasoning, tool calls, stop and finish reasons, status) must be equal,
 and an answer, a key or a cell on one side only is a difference. That covers greedy, the seeded
 sampled request (alone and beside others), the penalized request, the stop string and the budget
-cut, the efforts, the tool call round trip and the concurrent sets. Timings, the served context
-and the server's log lines are not answers and are not compared. Exits 1 on any difference or
-when a required cell holds no answer.
+cut, the efforts, the tool call round trip and the concurrent sets. A usage's prompt and
+completion token counts are compared; its `spec` (the draft rounds, present only when a request
+drafted), timings, the served context and the server's log lines are not answers and are not
+compared. Exits 1 on any difference or when a required cell holds no answer.
 """
 
 import json
@@ -21,8 +22,9 @@ off = json.load(open(sys.argv[2]))
 out = sys.argv[3] if len(sys.argv) > 3 else None
 
 FIELDS = ("tokens", "text", "content", "reasoning", "tool_calls", "stop", "finish", "status")
-# the server's log lines kept in the report: not answers
-LOG_KEYS = ("admits", "waits", "last_step")
+# not answers: the server's log lines kept in the report, and a usage's draft rounds
+SKIP_KEYS = ("admits", "waits", "last_step", "spec")
+USAGE = ("prompt_tokens", "completion_tokens")
 REQUIRED = ("cases", "solo", "sampled", "penalties", "stops", "concurrent", "tools", "efforts", "stream",
             "cancel", "admission", "long")
 
@@ -31,8 +33,7 @@ differ = []
 
 
 def is_answer(x):
-    return isinstance(x, dict) and (isinstance(x.get("tokens"), list) or "content" in x
-                                    or "status" in x or "error" in x)
+    return isinstance(x, dict) and (isinstance(x.get("tokens"), list) or "status" in x)
 
 
 def note(path, field, a, b):
@@ -43,21 +44,21 @@ def walk(a, b, path):
     """Both sides are walked together: a place that holds an answer on either side is an answer,
     and a key, an item or a kind present on one side only is a difference."""
     if isinstance(a, dict) and isinstance(b, dict):
-        answer = is_answer(a) or is_answer(b)
-        if answer:
+        if is_answer(a) or is_answer(b):
             cell = path[0] if path else ""
             compared[cell] = compared.get(cell, 0) + 1
-            for f in FIELDS:
-                if a.get(f) != b.get(f):
-                    note(path, f, a.get(f), b.get(f))
-            if ("error" in a) != ("error" in b) or bool(a.get("error")) != bool(b.get("error")):
-                note(path, "error", a.get("error"), b.get("error"))
+        # an answer's fields are compared wherever they sit, in an answer or in a cell's own keys
+        for f in FIELDS + (USAGE if path and path[-1] == "usage" else ()):
+            if (f in a or f in b) and a.get(f) != b.get(f):
+                note(path, f, a.get(f), b.get(f))
+        if ("error" in a or "error" in b) and bool(a.get("error")) != bool(b.get("error")):
+            note(path, "error", a.get("error"), b.get("error"))
         for k in sorted(set(a) | set(b)):
-            if k in LOG_KEYS:
+            if k in SKIP_KEYS:
                 continue
             if k not in a or k not in b:
                 note(path + [k], "key", "present" if k in a else "missing", "present" if k in b else "missing")
-            elif not (answer and k in FIELDS):
+            elif k not in FIELDS:
                 walk(a[k], b[k], path + [k])
     elif isinstance(a, list) and isinstance(b, list):
         if len(a) != len(b):
