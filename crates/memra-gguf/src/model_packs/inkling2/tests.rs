@@ -331,6 +331,37 @@ fn the_plan_types_the_48_slot_program() {
         ]
     );
     assert_eq!(program.drafter.head, DrafterHead::RnnHidden { rank: 256 });
+    // The typed draft program (vLLM `inkling2/nvidia/dspark.py`, lane note NOTES.md section 1).
+    let d = &program.drafter;
+    assert_eq!((d.hidden_size, d.epsilon), (2304, 1e-6));
+    assert_eq!(
+        d.block,
+        crate::model_plan::DraftBlockPlan {
+            rows: 8,
+            anchor: crate::model_plan::DraftRowInput::TrunkEmbeddingNormed,
+            mask: crate::model_plan::DraftRowInput::LearnedMask,
+            proposals: 7,
+        }
+    );
+    assert_eq!((d.fuse.rows, d.fuse.taps), (4, 4));
+    assert_eq!(d.attention.local_layers, [0, 2]);
+    assert_eq!(d.attention.local_context, 1024);
+    assert_eq!(d.attention.rope.theta, 1e6);
+    assert_eq!(d.attention.scale, 128f32.powf(-0.5));
+    assert!(d.attention.bidirectional_block && d.attention.qk_norm && d.attention.context_key_norm);
+    assert!(d.mlp_swiglu && d.intermediate_size == 9216);
+    assert_eq!(d.rnn.rank, 256);
+    assert_eq!(d.rnn.softcap, 30.0);
+    assert!(d.rnn.folded_through_output);
+    assert_eq!(
+        d.rnn.inputs,
+        [
+            crate::model_plan::RnnInput::State,
+            crate::model_plan::RnnInput::PreviousToken,
+            crate::model_plan::RnnInput::RowHidden,
+            crate::model_plan::RnnInput::Feature,
+        ]
+    );
     assert!(!program.vision_executed);
 }
 
