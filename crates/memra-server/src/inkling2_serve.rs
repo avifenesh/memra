@@ -566,7 +566,13 @@ fn class_name(plan: &memra_gguf::model_plan::ModelPlan) -> Result<&'static str, 
     use memra_gguf::model_plan::Inkling2NumericClass as C;
     let program = plan.inkling2.as_ref().ok_or("not an inkling2 plan")?;
     match program.numerics.class {
-        C::DeclaredActivationQuant => Ok("shipped"),
+        C::DeclaredActivationQuant
+            if program.numerics.weight_class
+                == memra_gguf::model_plan::Inkling2WeightClass::Shipped =>
+        {
+            Ok("shipped")
+        }
+        C::DeclaredActivationQuant => Ok("nvfp4-rig"),
         other => Err(format!(
             "the {other:?} class is not served (bring-up and measurement classes only)"
         )),
@@ -576,12 +582,22 @@ fn class_name(plan: &memra_gguf::model_plan::ModelPlan) -> Result<&'static str, 
 fn bring_up(cfg: &EngineCfg) -> Result<Up, String> {
     let config = load_config(&cfg.dir)?;
     let pack = memra_gguf::model_packs::for_config(&config).ok_or("no pack matches this config")?;
-    let plan = pack
-        .compile_plan(&config)
-        .map_err(|e| format!("plan: {e:?}"))?;
+    // the class this boot serves: MEMRA_INK2_CLASS, else the checkpoint's shipped program
+    let want = std::env::var("MEMRA_INK2_CLASS").unwrap_or_else(|_| "shipped".to_string());
+    let plan = match want.as_str() {
+        "shipped" => pack.compile_plan(&config),
+        "nvfp4-rig" => memra_gguf::model_packs::inkling2::nvfp4_rig_plan(&config),
+        other => {
+            return Err(format!(
+                "MEMRA_INK2_CLASS={other}: the inkling2 route serves shipped or nvfp4-rig"
+            ));
+        }
+    }
+    .map_err(|e| format!("plan: {e:?}"))?;
     let class = memra_engine::inkling2_gpu::numeric_class(&plan)?;
     let name = class_name(&plan)?;
-    let ck = Ckpt::open(&cfg.dir, pack, &config, &plan)?;
+    // nvfp4-rig binds the checkpoint merged with its minted overlay (the sibling <dir>.nvfp4-rig)
+    let ck = Ckpt::open_with_overlay(&cfg.dir, pack, &config, &plan, None)?;
     let dev = Dev::new(0)?;
     // the route's own sequence is never served: the smallest it can hold, then dropped
     let mut route = Route::load(dev, &ck, &plan, 1, CHUNK)?;
