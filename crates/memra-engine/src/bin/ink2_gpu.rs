@@ -331,7 +331,22 @@ struct Compare<'a> {
     route_rows: Vec<(usize, usize)>,
     min_margin: f64,
     error: Option<String>,
+    /// FNV-1a 64 of the bits of every tap row a slot emitted, in call order: two runs of the
+    /// same program on the same tokens and chunking hold equal digests
+    digest_attn: Vec<u64>,
+    digest_ffn: Vec<u64>,
 }
+
+fn fnv_fold(mut h: u64, data: &[f32]) -> u64 {
+    for v in data {
+        for b in v.to_bits().to_le_bytes() {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    h
+}
+const FNV0: u64 = 0xcbf2_9ce4_8422_2325;
 
 impl Compare<'_> {
     fn rows_of(&mut self, shard: &StShard, name: &str, slot: u32, data: &[f32], into: usize) {
@@ -367,6 +382,15 @@ impl Observer for Compare<'_> {
     }
     fn floats(&mut self, slot: u32, tap: Tap, data: &[f32]) {
         let tape = self.tape;
+        match tap {
+            Tap::ResidAttn => {
+                self.digest_attn[slot as usize] = fnv_fold(self.digest_attn[slot as usize], data)
+            }
+            Tap::ResidFfn => {
+                self.digest_ffn[slot as usize] = fnv_fold(self.digest_ffn[slot as usize], data)
+            }
+            _ => {}
+        }
         match tap {
             Tap::ResidAttn => self.rows_of(&tape.resid_attn, "resid_attn", slot, data, 0),
             Tap::ResidFfn => self.rows_of(&tape.resid_ffn, "resid_ffn", slot, data, 1),
@@ -863,7 +887,10 @@ fn run() -> Result<(), String> {
             route_rows: vec![(0, 0); nslots],
             min_margin: f64::INFINITY,
             error: None,
+            digest_attn: vec![FNV0; nslots],
+            digest_ffn: vec![FNV0; nslots],
         };
+        let mut digest_logits = FNV0;
         let lt = tensor(&tape.logits, "logits_post", "F32")?;
         if lt.shape[1] != vocab {
             return Err(format!(
@@ -884,6 +911,7 @@ fn run() -> Result<(), String> {
         for (s0, s1) in calls {
             cmp.base = s0;
             let out = route.forward(&tape.all_ids[s0..s1], Head::All, Some(&mut cmp))?;
+            digest_logits = fnv_fold(digest_logits, &out.logits);
             for (row, got) in out.logits.chunks_exact(vocab).enumerate() {
                 let pos = s0 + row;
                 if let Some(&tr) = tape.logit_rows.get(&pos) {
@@ -926,6 +954,13 @@ fn run() -> Result<(), String> {
             .route_rows
             .iter()
             .fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+        let hex = |d: &[u64]| d.iter().map(|v| format!("{v:016x}")).collect::<Vec<_>>();
+        receipt["digest"] = serde_json::json!({
+            "chunk": a.chunk,
+            "resid_attn_per_slot": hex(&cmp.digest_attn),
+            "resid_ffn_per_slot": hex(&cmp.digest_ffn),
+            "logits": format!("{digest_logits:016x}"),
+        });
         receipt["score"] = serde_json::json!({
             "positions": total,
             "seconds": t0.elapsed().as_secs_f64(),
