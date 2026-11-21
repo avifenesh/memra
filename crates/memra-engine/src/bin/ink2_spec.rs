@@ -126,7 +126,12 @@ fn run() -> Result<(), String> {
     let default = pack
         .compile_plan(&config)
         .map_err(|e| format!("plan: {e:?}"))?;
-    let plan: ModelPlan = if a.class == "float" {
+    let plan: ModelPlan = if a.class == "nvfp4-rig" {
+        // the family's default class: its overlay (the checkpoint's sibling) binds by hash, and
+        // the drafter shares its NVFP4 unembed
+        memra_gguf::model_packs::inkling2::nvfp4_rig_plan(&config)
+            .map_err(|e| format!("plan: {e:?}"))?
+    } else if a.class == "float" {
         let n = default
             .inkling2
             .as_ref()
@@ -183,7 +188,7 @@ fn run() -> Result<(), String> {
         .iter()
         .find(|(_, m)| m.raw("fuse_weight").is_some())
         .ok_or("no drafter file among the checkpoint's auxiliary files")?;
-    let shared = Shared::of_route(&route);
+    let shared = Shared::of_route(&route)?;
     let mut drafter = DraftGpu::load(
         &route.dev,
         g.clone(),
@@ -371,7 +376,7 @@ fn per_position(
     route.set_capture(&slots)?;
     route.reset()?;
     drafter.reset();
-    let shared = Shared::of_route(route);
+    let shared = Shared::of_route(route)?;
     let (h, nt, chunk) = (g.hidden, g.taps, route.chunk);
     let k = g.rows - 1;
     let mut argmax = Vec::new();
@@ -461,7 +466,7 @@ fn crosscheck(
             anchor = *o.argmax.last().ok_or("argmax")?;
         }
     }
-    let shared = Shared::of_route(route);
+    let shared = Shared::of_route(route)?;
     let k = g.rows - 1;
     let gpu_tokens = drafter.propose(&route.dev, shared, anchor, k, None)?;
     let gpu_logits = drafter.logits(&route.dev, k)?;
