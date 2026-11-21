@@ -249,7 +249,8 @@ fn gate(args: &[String]) -> Result<(), String> {
 }
 
 /// One greedy run: plain (`k == 0`) or speculative. Returns the ids, each emitted token's logits
-/// row, the rounds' accepted counts and the decode seconds.
+/// row, the rounds' accepted counts, the drafts made, and the prefill and decode seconds. A round
+/// is a verify call; the last token is a plain call when the budget leaves no draft to keep.
 #[allow(clippy::type_complexity)]
 fn greedy(
     route: &mut Route,
