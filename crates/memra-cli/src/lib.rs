@@ -2846,6 +2846,13 @@ fn pinned_tiny_variant_oracle(family: &str, variant: &str) -> Option<&'static st
         ("inkling2", "declared") => Some(include_str!(
             "../tests/fixtures/tiny-oracle/inkling2-declared.tsv"
         )),
+        // nvfp4-rig: the same activation-quant simulation on the tiny checkpoint merged with its
+        // minted overlay (dense tensors dequantized by the oracle, the MXFP8 banks as NVFP4) and
+        // unit-scale e4m3 K/V on every slot
+        // (research/modelplan-onboarding-inkling2mini-20261121/nvfp4-rig/tiny_rig_oracle.py).
+        ("inkling2", "nvfp4-rig") => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/inkling2-nvfp4-rig.tsv"
+        )),
         _ => None,
     }
 }
@@ -3840,7 +3847,8 @@ mod tests {
         tiny_gate_verdict(pack, band, pinned, &drifted).unwrap();
         // The pack has no band of its own to fall back on.
         assert!(tiny_gate_verdict(pack, TinyGate::PackBand, pinned, pinned).is_err());
-        // Every float-activation run is exact; only "declared" has a band.
+        // Every float-activation run is exact; only the activation-quant variants ("declared",
+        // and "nvfp4-rig" on top of it) have a band.
         let plan = pack.compile_tiny_plan().unwrap();
         assert_eq!(
             deterministic_fixture(&plan).unwrap().tiny_gate,
@@ -3849,7 +3857,7 @@ mod tests {
         for variant in memra_reference::tiny_variants(&plan).unwrap() {
             assert_eq!(
                 variant.fixture.tiny_gate == TinyGate::Exact,
-                variant.name != "declared",
+                !matches!(variant.name, "declared" | "nvfp4-rig"),
                 "{}",
                 variant.name
             );

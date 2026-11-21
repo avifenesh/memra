@@ -27,13 +27,14 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use cudarc::driver::{CudaContext, CudaGraph, CudaSlice, CudaStream, DevicePtr, DevicePtrMut, sys};
+use memra_gguf::model_packs::inkling2::nvfp4_rig;
 use memra_gguf::model_plan::{
     ActivationPlan, AttentionInputs, AttentionPlan, BeyondExtent, ClipScale, ExpertActivationMode,
     ExpertWeightFormat, Inkling2Plan, LayerPlan, LogitsTransform, LoopMessageTarget, MlpPlan,
     ModelPlan, MoeMlpPlan, NormKind, NormPlan, RelativeBiasAttentionPlan, ResidualTopology,
     RouterPlan, ShortConvTaps, WeightTransform,
 };
-use memra_gguf::model_plan::{BlockAttentionPlan, ValueNorm};
+use memra_gguf::model_plan::{BlockAttentionPlan, Inkling2WeightClass, KvCacheFormat, ValueNorm};
 use memra_gguf::safetensors::StModel;
 use memra_reference::inkling2::ops::decimal;
 
@@ -41,7 +42,8 @@ use memra_reference::inkling2::ops::decimal;
 pub fn numeric_class(plan: &ModelPlan) -> Result<String, String> {
     let program = plan.inkling2.as_ref().ok_or("not an inkling2 plan")?;
     Ok(format!(
-        "inkling2-gpu-f32-stream/{:?}",
+        "inkling2-gpu-f32-stream/{}/{:?}",
+        program.numerics.weight_class.name(),
         program.numerics.class
     ))
 }
@@ -80,6 +82,7 @@ mod ffi {
             out: *mut f32,
             r: i32,
             h: i32,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_norm(
@@ -89,12 +92,17 @@ mod ffi {
             y: *mut f32,
             r: i32,
             h: i32,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_gemm_tile_v0(
             x: *const c_void,
             ldx: i64,
             w: *const c_void,
+            scales: *const c_void,
+            amax: *const f32,
+            denom: f32,
+            fmt: i32,
             y: *mut c_void,
             ldy: i64,
             m: i32,
@@ -123,6 +131,7 @@ mod ffi {
             h: i32,
             scratch: *mut f64,
             scratch_len: i64,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_mix_v0(
@@ -150,6 +159,7 @@ mod ffi {
             rank: i32,
             scratch: *mut f64,
             scratch_len: i64,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_controller_v0(
@@ -180,6 +190,7 @@ mod ffi {
             r: i32,
             heads: i32,
             width: i32,
+            prec: i32,
             desc: *const c_void,
             which: i32,
             stream: *mut c_void,
@@ -197,6 +208,7 @@ mod ffi {
             r: i32,
             c: i32,
             k: i32,
+            prec: i32,
             desc: *const c_void,
             which: i32,
             stream: *mut c_void,
@@ -206,8 +218,9 @@ mod ffi {
             rel: *const f32,
             table: *const f32,
             sink: *const f32,
-            kc: *const f32,
-            vc: *const f32,
+            kc: *const c_void,
+            vc: *const c_void,
+            kv_e4m3: i32,
             cap: i64,
             posd: *const i64,
             pos0: i64,
@@ -222,10 +235,55 @@ mod ffi {
             rank: i32,
             scr: *mut f64,
             scr_ld: i64,
+            scr_rows: i32,
+            prec: i32,
             desc: *const c_void,
             stream: *mut c_void,
         ) -> i32;
-        pub fn memra_ink2g_gate(y: *mut f32, g: *const f32, n: i64, stream: *mut c_void) -> i32;
+        pub fn memra_ink2g_gate(
+            y: *mut f32,
+            g: *const f32,
+            n: i64,
+            prec: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_ink2g_attn_e4m3(
+            q: *const f32,
+            rel: *const f32,
+            table: *const f32,
+            sink: *const f32,
+            kc: *const u8,
+            vc: *const u8,
+            cap: i64,
+            pos0: i64,
+            window: i32,
+            extent: i32,
+            mask_beyond: i32,
+            out: *mut f32,
+            r: i32,
+            heads: i32,
+            kv_heads: i32,
+            dim: i32,
+            rank: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_ink2g_heads_e4m3(
+            mode: i32,
+            x: *const f32,
+            thr: f64,
+            eps: f64,
+            posd: *const i64,
+            pos0: i64,
+            dst: *mut u8,
+            cap: i64,
+            r: i32,
+            heads: i32,
+            width: i32,
+            prec: i32,
+            desc: *const c_void,
+            which: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_ink2g_route(
             logits: *const f32,
             bias: *const f32,
@@ -237,6 +295,7 @@ mod ffi {
             margin: *mut f32,
             r: i32,
             e: i32,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_swiglu(
@@ -281,6 +340,7 @@ mod ffi {
             best: *mut u32,
             r: i32,
             n: i32,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_tiles(
@@ -407,6 +467,94 @@ pub struct Dev {
     pub round_trips: Cell<u64>,
     /// Bytes allocated through this handle.
     pub allocated: Cell<usize>,
+    /// The precision arm of each operation group (0: the f64 program).
+    pub prec: Cell<Prec>,
+}
+
+/// Precision arms per operation group: 0 = f64 (the #1397 program), 1 = f32, 2 = f32 with every
+/// sequential sum compensated (Kahan); attention also 3 = f64 with a chunk's scores split over
+/// blocks (f64g). A measurement seam: each arm is a different numeric program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Prec {
+    pub controller: u8,
+    pub mix: u8,
+    /// norms and clips: the embedding and RMS norms, the q / k / r clips, tau and the value norm
+    pub norm: u8,
+    pub conv: u8,
+    pub router: u8,
+    /// the attention output gate and the logit softcap
+    pub epilogue: u8,
+    /// scores, softmax and value accumulation
+    pub attn: u8,
+}
+
+impl Default for Prec {
+    /// The route's program: the arms adopted by docs/decisions/INKLING2-PRECISION-ARMS.md (the
+    /// controller, the norms and clips and the epilogues in f32; attention f64 with a chunk's scores
+    /// split over blocks); every other group f64.
+    fn default() -> Self {
+        Self {
+            controller: 1,
+            mix: 0,
+            norm: 1,
+            conv: 0,
+            router: 0,
+            epilogue: 1,
+            attn: 3,
+        }
+    }
+}
+
+impl Prec {
+    /// Every group in f64: the #1397 program (the reference of a precision measurement).
+    pub fn all_f64() -> Self {
+        Self {
+            controller: 0,
+            mix: 0,
+            norm: 0,
+            conv: 0,
+            router: 0,
+            epilogue: 0,
+            attn: 0,
+        }
+    }
+
+    /// "group=f32|f32c|f64,..." on top of the default (all = every group)
+    pub fn parse(spec: &str) -> Result<Self, String> {
+        let mut p = Self::default();
+        for item in spec.split(',').filter(|x| !x.is_empty()) {
+            let (g, v) = item
+                .split_once('=')
+                .ok_or(format!("precision arm {item}: group=f32|f32c|f64"))?;
+            let v = match v {
+                "f64" => 0,
+                "f32" => 1,
+                "f32c" => 2,
+                "f64g" => 3,
+                _ => return Err(format!("precision {v}: f64, f32 or f32c")),
+            };
+            let all = g == "all";
+            let mut hit = all;
+            for (name, slot) in [
+                ("controller", &mut p.controller),
+                ("mix", &mut p.mix),
+                ("norm", &mut p.norm),
+                ("conv", &mut p.conv),
+                ("router", &mut p.router),
+                ("epilogue", &mut p.epilogue),
+                ("attn", &mut p.attn),
+            ] {
+                if all || name == g {
+                    *slot = v;
+                    hit = true;
+                }
+            }
+            if !hit {
+                return Err(format!("precision group {g}"));
+            }
+        }
+        Ok(p)
+    }
 }
 
 fn dptr<T>(s: &CudaSlice<T>, st: &CudaStream) -> u64 {
@@ -448,6 +596,7 @@ impl Dev {
             copies: Cell::new(0),
             round_trips: Cell::new(0),
             allocated: Cell::new(0),
+            prec: Cell::new(Prec::default()),
         }
     }
 
@@ -557,6 +706,9 @@ pub struct Ckpt {
     /// `(prefix, model)` of each auxiliary file the pack names (the drafter's `mtp.safetensors`).
     pub auxiliary: Vec<(&'static str, StModel)>,
     pub bytes_read: Cell<usize>,
+    /// `nvfp4-rig`: the minted overlay bound to the checkpoint by hash; its tensors replace the
+    /// base tensors of their names.
+    pub overlay: Option<nvfp4_rig::BoundOverlay>,
 }
 
 fn bf16_to_f32(b: &[u8]) -> Vec<f32> {
@@ -580,12 +732,60 @@ impl Ckpt {
         cfg: &memra_gguf::config::ModelConfig,
         plan: &ModelPlan,
     ) -> Result<Self, String> {
+        Self::open_with_overlay(dir, pack, cfg, plan, None)
+    }
+
+    /// [`Ckpt::open`] for a plan of either weight class. An `nvfp4-rig` plan binds the overlay
+    /// directory `overlay` (default: the checkpoint's sibling `<name>.nvfp4-rig`) by hash before
+    /// the census is built, and refuses without one; a `shipped` plan refuses an overlay.
+    pub fn open_with_overlay(
+        dir: &std::path::Path,
+        pack: &'static memra_gguf::model_packs::ModelPack,
+        cfg: &memra_gguf::config::ModelConfig,
+        plan: &ModelPlan,
+        overlay: Option<&std::path::Path>,
+    ) -> Result<Self, String> {
         let st = StModel::open(dir).map_err(|e| format!("open {}: {e}", dir.display()))?;
         let mut headers: BTreeMap<String, memra_gguf::safetensors::StInfo> = BTreeMap::new();
         for name in st.names() {
             let info = st.info(name).ok_or_else(|| format!("{name}: no header"))?;
             headers.insert(name.clone(), info.clone());
         }
+        let class = program(plan)?.numerics.weight_class;
+        let overlay = match (class, overlay) {
+            (Inkling2WeightClass::Shipped, Some(o)) => {
+                return Err(format!(
+                    "the shipped class reads the checkpoint as stored; an overlay ({}) belongs to the nvfp4-rig classes",
+                    o.display()
+                ));
+            }
+            (Inkling2WeightClass::Shipped, None) => None,
+            (Inkling2WeightClass::Nvfp4Rig | Inkling2WeightClass::Nvfp4RigOutsideLoop, given) => {
+                let odir =
+                    given.map_or_else(|| nvfp4_rig::default_overlay_dir(dir), |p| p.to_path_buf());
+                let quant = std::fs::read(dir.join("hf_quant_config.json"))
+                    .map_err(|e| format!("hf_quant_config.json: {e}"))?;
+                let ink = cfg.inkling2.as_ref().ok_or("not an inkling2 config")?;
+                let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+                let bound = nvfp4_rig::bind_overlay(
+                    dir,
+                    &odir,
+                    &st,
+                    ink,
+                    &nvfp4_rig::sha256_hex(&quant),
+                    class == Inkling2WeightClass::Nvfp4Rig,
+                    threads,
+                )?;
+                for name in bound.planes.keys() {
+                    let (info, _) = bound
+                        .overlay
+                        .raw(name)
+                        .ok_or_else(|| format!("overlay {name}: no header"))?;
+                    headers.insert(name.clone(), info.clone());
+                }
+                Some(bound)
+            }
+        };
         let mut auxiliary = Vec::new();
         for aux in pack.auxiliary_files {
             let path = dir.join(aux.file);
@@ -616,6 +816,7 @@ impl Ckpt {
             pack,
             auxiliary,
             bytes_read: Cell::new(0),
+            overlay,
         })
     }
 
@@ -701,7 +902,7 @@ impl Ckpt {
         if bound(name) {
             return Ok(());
         }
-        for plane in ["_scale", "_amax", "_outer_scale_denominator"] {
+        for plane in ["_scale", "_amax", "_outer_scale_denominator", "_scale_2"] {
             if name.strip_suffix(plane).is_some_and(bound) {
                 return Ok(());
             }
@@ -718,10 +919,15 @@ impl Ckpt {
         shape: &[usize],
     ) -> Result<(&str, &[u8]), String> {
         self.contracted(name)?;
-        let (info, bytes) = self
-            .st
-            .raw(name)
-            .ok_or_else(|| format!("the checkpoint has no tensor {name}"))?;
+        let (info, bytes) = match self
+            .overlay
+            .as_ref()
+            .filter(|o| o.planes.contains_key(name))
+        {
+            Some(o) => o.overlay.raw(name),
+            None => self.st.raw(name),
+        }
+        .ok_or_else(|| format!("the checkpoint has no tensor {name}"))?;
         // The bound contract has checked the storage and shape of every tensor; the loader's own
         // expectation is an assertion that the two agree.
         debug_assert!(
@@ -755,6 +961,127 @@ impl Ckpt {
 
     fn f32_dev(&self, dev: &Dev, name: &str, shape: &[usize]) -> Result<CudaSlice<f32>, String> {
         dev.up(&self.f32s(name, shape)?)
+    }
+
+    /// A dense projection `[n, k]` as the plan's class reads it: the overlay's minted NVFP4
+    /// planes when the overlay holds the name, else the stored BF16.
+    fn dense(&self, dev: &Dev, name: &str, n: usize, k: usize) -> Result<DenseW, String> {
+        if !self
+            .overlay
+            .as_ref()
+            .is_some_and(|o| o.planes.contains_key(name))
+        {
+            return Ok(DenseW {
+                fmt: FMT_BF16,
+                data: self.bf16(dev, name, &[n, k])?,
+                scales: None,
+                t: None,
+            });
+        }
+        if !k.is_multiple_of(16) {
+            return Err(format!("{name}: NVFP4 rows are whole blocks of 16"));
+        }
+        let codes = self.shaped(name, &["U8"], &[n, k / 2])?.1;
+        let scales = self
+            .shaped(&format!("{name}_scale"), &["F8_E4M3"], &[n, k / 16])?
+            .1;
+        if let Some(at) = scales.iter().position(|s| s & 0x7f == 0x7f) {
+            return Err(format!("{name}_scale byte {at} is an e4m3 NaN code"));
+        }
+        let t = self.f32s(&format!("{name}_scale_2"), &[])?;
+        if !(t[0].is_finite() && t[0] > 0.0) {
+            return Err(format!("{name}_scale_2 = {}: finite and positive", t[0]));
+        }
+        Ok(DenseW {
+            fmt: FMT_NVFP4,
+            data: dev.up(codes)?,
+            scales: Some(dev.up(scales)?),
+            t: Some(dev.up(&t)?),
+        })
+    }
+}
+
+/// A dense projection's weight: BF16 as stored, or (`nvfp4-rig`) minted NVFP4 codes with per-16
+/// e4m3 scales and the tensor scale, weight-only on the f32 inputs. The NVFP4 sum is the tile
+/// GEMM's: per 16 inputs a sequential fused multiply-add over the codes, scaled by the block's
+/// scale into the row sum, and the tensor scale applied once in f64 to the finished sum (it is the
+/// kernel's per-expert factor of one expert over a denominator of 1).
+struct DenseW {
+    fmt: i32,
+    data: CudaSlice<u8>,
+    scales: Option<CudaSlice<u8>>,
+    t: Option<CudaSlice<f32>>,
+}
+
+/// A weight's format and device addresses (data, block scales, tensor scale; 0 when absent).
+type WeightParts = (i32, u64, u64, u64);
+
+fn bf16_parts(w: &CudaSlice<u8>, st: &CudaStream) -> WeightParts {
+    (FMT_BF16, dptr(w, st), 0, 0)
+}
+
+impl DenseW {
+    fn parts(&self, st: &CudaStream) -> WeightParts {
+        (
+            self.fmt,
+            dptr(&self.data, st),
+            self.scales.as_ref().map_or(0, |s| dptr(s, st)),
+            self.t.as_ref().map_or(0, |t| dptr(t, st)),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)] // allow: one GEMM
+    fn gemm_parts(
+        dev: &Dev,
+        (fmt, data, scales, t): WeightParts,
+        x: u64,
+        ldx: usize,
+        y: u64,
+        ldy: usize,
+        m: usize,
+        n: usize,
+        k: usize,
+    ) -> Result<(), String> {
+        dev.launched("memra_ink2g_gemm", unsafe {
+            ffi::memra_ink2g_gemm(
+                x as *const c_void,
+                ldx as i64,
+                data as *const c_void,
+                scales as *const c_void,
+                0,
+                0,
+                t as *const f32,
+                1.0,
+                fmt,
+                0,
+                std::ptr::null(),
+                0,
+                1,
+                i32::from(m == 1),
+                y as *mut c_void,
+                ldy as i64,
+                m as i32,
+                n as i32,
+                k as i32,
+                dev.sp(),
+            )
+        })
+    }
+
+    /// `y[m, n] = x[m, k] W^T`, `x` and `y` device addresses with row strides `ldx` and `ldy`.
+    #[allow(clippy::too_many_arguments)] // allow: one GEMM
+    fn gemm(
+        &self,
+        dev: &Dev,
+        x: u64,
+        ldx: usize,
+        y: u64,
+        ldy: usize,
+        m: usize,
+        n: usize,
+        k: usize,
+    ) -> Result<(), String> {
+        Self::gemm_parts(dev, self.parts(&dev.st), x, ldx, y, ldy, m, n, k)
     }
 }
 
@@ -892,13 +1219,13 @@ struct LayerW {
     norms: Vec<CudaSlice<f32>>,
     /// The attention mix queries and their count (none on the first layer).
     attn_queries: Option<(CudaSlice<f32>, usize)>,
-    wq: CudaSlice<u8>,
-    wr: CudaSlice<u8>,
+    wq: DenseW,
+    wr: DenseW,
     sink: CudaSlice<u8>,
-    gate: CudaSlice<u8>,
-    wk: CudaSlice<u8>,
-    wv: CudaSlice<u8>,
-    wo: CudaSlice<u8>,
+    gate: DenseW,
+    wk: DenseW,
+    wv: DenseW,
+    wo: DenseW,
     q_scale: Option<CudaSlice<f32>>,
     r_scale: Option<CudaSlice<f32>>,
     table: CudaSlice<f32>,
@@ -917,8 +1244,13 @@ struct LayerW {
 }
 
 struct SlotState {
+    /// The f32 K/V cache (a one-element placeholder when the slot stores e4m3).
     kc: CudaSlice<f32>,
     vc: CudaSlice<f32>,
+    /// The e4m3 K/V cache of a `KvCacheFormat::E4m3Unit` slot (a placeholder otherwise).
+    kc8: CudaSlice<u8>,
+    vc8: CudaSlice<u8>,
+    fp8: bool,
     /// Rows the cache holds: the context for a full slot, a ring for a sliding one.
     cap: usize,
     /// K, V, attention output, MLP output: two buffers each. `Route::parity` names the committed
@@ -980,9 +1312,9 @@ pub enum Tap {
     AttnKeys,
     AttnValues,
     AttnOut,
-    /// The head's normalized rows (after the output mix and norm, before the unembed),
-    /// `[rows, hidden]`; reported with slot `u32::MAX`.
-    FinalNorm,
+    /// The final hidden state after the output mix and norm, the unembed's input, `[rows,
+    /// hidden]`, under the slot number `layers`.
+    FinalHidden,
 }
 
 /// A caller's view into a call.
@@ -1063,10 +1395,11 @@ struct Work {
     dscr: CudaSlice<f64>,
     /// the call's position on the device (the kernels that read a position take it from here)
     posd: CudaSlice<i64>,
-    /// f64 scores of a decode step's split attention: [heads][asc_ld], asc_ld the most keys a row
-    /// attends (the largest window, or the context)
+    /// f64 scores of the split attention: [asc_rows][heads][asc_ld], asc_ld the most keys a row
+    /// attends (the largest window, or the context); a chunk runs asc_rows rows a launch pair
     asc: CudaSlice<f64>,
     asc_ld: usize,
+    asc_rows: usize,
     logits: CudaSlice<f32>,
     best: CudaSlice<u32>,
     tok: CudaSlice<u32>,
@@ -1132,7 +1465,7 @@ pub struct Route {
     slots: Vec<SlotState>,
     embed: CudaSlice<u8>,
     embed_norm: CudaSlice<f32>,
-    unembed: CudaSlice<u8>,
+    unembed: DenseW,
     out_norm: CudaSlice<f32>,
     out_query: CudaSlice<f32>,
     w: Work,
@@ -1503,25 +1836,22 @@ impl Route {
             layers.push(LayerW {
                 norms,
                 attn_queries,
-                wq: ck.bf16(&dev, &format!("{prefix}attn.wq_du.weight"), &[qw, hidden])?,
-                wr: ck.bf16(
+                wq: ck.dense(&dev, &format!("{prefix}attn.wq_du.weight"), qw, hidden)?,
+                wr: ck.dense(
                     &dev,
                     &format!("{prefix}attn.wr_du.weight"),
-                    &[heads * rank, hidden],
+                    heads * rank,
+                    hidden,
                 )?,
                 sink: ck.bf16(
                     &dev,
                     &format!("{prefix}attn.attn_sink_proj.weight"),
                     &[heads, hidden],
                 )?,
-                gate: ck.bf16(
-                    &dev,
-                    &format!("{prefix}attn.gate_attn.weight"),
-                    &[qw, hidden],
-                )?,
-                wk: ck.bf16(&dev, &format!("{prefix}attn.wk_dv.weight"), &[kvw, hidden])?,
-                wv: ck.bf16(&dev, &format!("{prefix}attn.wv_dv.weight"), &[kvw, hidden])?,
-                wo: ck.bf16(&dev, &format!("{prefix}attn.wo_ud.weight"), &[hidden, qw])?,
+                gate: ck.dense(&dev, &format!("{prefix}attn.gate_attn.weight"), qw, hidden)?,
+                wk: ck.dense(&dev, &format!("{prefix}attn.wk_dv.weight"), kvw, hidden)?,
+                wv: ck.dense(&dev, &format!("{prefix}attn.wv_dv.weight"), kvw, hidden)?,
+                wo: ck.dense(&dev, &format!("{prefix}attn.wo_ud.weight"), hidden, qw)?,
                 q_scale: scale("q_l2_clip", a.query_clip.scale, dim)?,
                 r_scale: scale("rel_l2_clip", a.relative.clip.scale, rank)?,
                 table: ck.f32_dev(
@@ -1572,7 +1902,7 @@ impl Route {
         }
         let embed = ck.bf16(&dev, &format!("{LLM}embed.weight"), &[vocab, hidden])?;
         let embed_norm = ck.f32_dev(&dev, &format!("{LLM}embed_norm.weight"), &[hidden])?;
-        let unembed = ck.bf16(&dev, &format!("{LLM}unembed.weight"), &[vocab, hidden])?;
+        let unembed = ck.dense(&dev, &format!("{LLM}unembed.weight"), vocab, hidden)?;
         let out_norm = ck.f32_dev(&dev, &format!("{LLM}norm.weight"), &[hidden])?;
         let out_query = ck.f32_dev(&dev, &format!("{LLM}attn_res.output_query"), &[hidden])?;
         let weight_bytes = dev.allocated.get();
@@ -1613,18 +1943,28 @@ impl Route {
             };
             let history = a.key_conv.kernel as usize - 1;
             max_keys = max_keys.max(a.window.map_or(context, |w| w as usize));
+            let fp8 = program.numerics.kv[layer.index as usize] == KvCacheFormat::E4m3Unit;
+            let elem = if fp8 { 1 } else { 4 };
             let kv_rows = if a.window.is_some() {
-                account.kv_rings += 2 * cap * kvw * 4;
+                account.kv_rings += 2 * cap * kvw * elem;
                 cap
             } else {
                 full_kv.push((slots.len(), cap * kvw));
-                account.per_position += 2 * kvw * 4;
+                account.per_position += 2 * kvw * elem;
                 1
             };
             let before = dev.allocated.get();
+            let (f32_rows, u8_rows) = if fp8 {
+                (1, kv_rows * kvw)
+            } else {
+                (kv_rows * kvw, 1)
+            };
             slots.push(SlotState {
-                kc: dev.zeros(kv_rows * kvw)?,
-                vc: dev.zeros(kv_rows * kvw)?,
+                kc: dev.zeros(f32_rows)?,
+                vc: dev.zeros(f32_rows)?,
+                kc8: dev.zeros(u8_rows)?,
+                vc8: dev.zeros(u8_rows)?,
+                fp8,
                 cap,
                 conv: [
                     [dev.zeros(history * kvw)?, dev.zeros(history * kvw)?],
@@ -1639,7 +1979,10 @@ impl Route {
                     ],
                 ],
             });
-            account.conv += dev.allocated.get() - before - 2 * kv_rows * kvw * 4;
+            account.conv += dev.allocated.get()
+                - before
+                - 2 * kv_rows * kvw * elem
+                - 2 * if fp8 { 4 } else { 1 };
             max_q = max_q.max((a.query_heads * a.head_dim) as usize);
             max_kv = max_kv.max(kvw);
             max_r = max_r.max((a.query_heads * a.relative.rank) as usize);
@@ -1654,7 +1997,9 @@ impl Route {
                 blocks.insert(layer.index, dev.zeros(chunk * hidden)?);
             }
         }
-        // the decode step's attention scores grow with the context too
+        // the split attention's scores: 64 MiB of rows a launch pair, at least one row, which grows
+        // with the context
+        let asc_rows = ((64usize << 20) / (max_heads * max_keys * 8)).clamp(1, chunk);
         if max_keys == context {
             account.per_position += max_heads * 8;
         }
@@ -1698,8 +2043,9 @@ impl Route {
             moe: dev.zeros(rh)?,
             dscr: dev.zeros(chunk * 128)?,
             posd: dev.zeros(1)?,
-            asc: dev.zeros(max_heads * max_keys)?,
+            asc: dev.zeros(asc_rows * max_heads * max_keys)?,
             asc_ld: max_keys,
+            asc_rows,
             logits: dev.zeros(HEAD_ROWS * keep)?,
             best: dev.zeros(HEAD_ROWS)?,
             tok: dev.zeros(chunk)?,
@@ -1721,8 +2067,13 @@ impl Route {
             ));
         }
         for (slot, elems) in full_kv {
-            slots[slot].kc = dev.zeros(elems)?;
-            slots[slot].vc = dev.zeros(elems)?;
+            if slots[slot].fp8 {
+                slots[slot].kc8 = dev.zeros(elems)?;
+                slots[slot].vc8 = dev.zeros(elems)?;
+            } else {
+                slots[slot].kc = dev.zeros(elems)?;
+                slots[slot].vc = dev.zeros(elems)?;
+            }
         }
         account.kv_full = kv_bytes;
         dev.sync()?;
@@ -1919,6 +2270,7 @@ impl Route {
                 hidden as i32,
                 dptr_mut(scr, st) as *mut f64,
                 scr.len() as i64,
+                dev.prec.get().mix as i32,
                 dev.sp(),
             )
         })
@@ -2136,9 +2488,15 @@ impl Route {
             let pair = |n: usize| -> Result<[CudaSlice<f32>; 2], String> {
                 Ok([dev.zeros(n)?, dev.zeros(n)?])
             };
+            // the slot's cache in the plan's format, as Route::load lays it out
+            let fp8 = program.numerics.kv[layer.index as usize] == KvCacheFormat::E4m3Unit;
+            let (f32_rows, u8_rows) = if fp8 { (1, cap * kvw) } else { (cap * kvw, 1) };
             slots.push(SlotState {
-                kc: dev.zeros(cap * kvw)?,
-                vc: dev.zeros(cap * kvw)?,
+                kc: dev.zeros(f32_rows)?,
+                vc: dev.zeros(f32_rows)?,
+                kc8: dev.zeros(u8_rows)?,
+                vc8: dev.zeros(u8_rows)?,
+                fp8,
                 cap,
                 conv: [
                     pair(history * kvw)?,
@@ -2299,8 +2657,16 @@ impl Route {
                         let mut d = RowDesc {
                             pos,
                             cap: ss.cap as i64,
-                            kc: dptr_mut(&mut ss.kc, &st),
-                            vc: dptr_mut(&mut ss.vc, &st),
+                            kc: if ss.fp8 {
+                                dptr_mut(&mut ss.kc8, &st)
+                            } else {
+                                dptr_mut(&mut ss.kc, &st)
+                            },
+                            vc: if ss.fp8 {
+                                dptr_mut(&mut ss.vc8, &st)
+                            } else {
+                                dptr_mut(&mut ss.vc, &st)
+                            },
                             ..RowDesc::default()
                         };
                         for j in 0..4 {
@@ -2348,6 +2714,7 @@ impl Route {
                 dptr_mut(&mut w.h, &st) as *mut f32,
                 rows as i32,
                 hidden as i32,
+                dev.prec.get().norm as i32,
                 dev.sp(),
             )
         })?;
@@ -2474,6 +2841,7 @@ impl Route {
                             lp.gate_rank as i32,
                             dptr_mut(&mut w.dscr, &st) as *mut f64,
                             w.dscr.len() as i64,
+                            dev.prec.get().controller as i32,
                             dev.sp(),
                         )
                     })?;
@@ -2501,6 +2869,7 @@ impl Route {
                         normed[i] as *mut f32,
                         rows as i32,
                         hidden as i32,
+                        dev.prec.get().norm as i32,
                         dev.sp(),
                     )
                 })?;
@@ -2510,80 +2879,82 @@ impl Route {
             // ---- projections
             let proj = |dev: &Dev,
                         x: u64,
-                        wt: &CudaSlice<u8>,
+                        wt: WeightParts,
                         y: &mut CudaSlice<f32>,
                         n: usize|
              -> Result<(), String> {
-                dev.launched("memra_ink2g_gemm", unsafe {
-                    ffi::memra_ink2g_gemm(
-                        x as *const c_void,
-                        hidden as i64,
-                        dptr(wt, &st) as *const c_void,
-                        std::ptr::null(),
-                        0,
-                        0,
-                        std::ptr::null(),
-                        1.0,
-                        FMT_BF16,
-                        0,
-                        std::ptr::null(),
-                        0,
-                        1,
-                        i32::from(rows == 1),
-                        dptr_mut(y, &st) as *mut c_void,
-                        n as i64,
-                        rows as i32,
-                        n as i32,
-                        hidden as i32,
-                        dev.sp(),
-                    )
-                })
+                DenseW::gemm_parts(dev, wt, x, hidden, dptr_mut(y, &st), n, rows, n, hidden)
             };
             if rows == 1 {
-                // a decode step: the projections that read the three normed inputs in one launch
-                // (the same bits as one GEMV each)
-                let mut jobs: Vec<(u64, u64, u64, usize)> = vec![
-                    (xq, dptr(&lw.wq, &st), dptr_mut(&mut w.qb, &st), qw),
-                    (
-                        xq,
-                        dptr(&lw.wr, &st),
-                        dptr_mut(&mut w.rb, &st),
-                        heads * rank,
-                    ),
-                    (xq, dptr(&lw.sink, &st), dptr_mut(&mut w.sinkb, &st), heads),
-                    (xq, dptr(&lw.gate, &st), dptr_mut(&mut w.gateb, &st), qw),
-                    (xk, dptr(&lw.wk, &st), dptr_mut(&mut w.kp, &st), kvw),
-                    (xv, dptr(&lw.wv, &st), dptr_mut(&mut w.vp, &st), kvw),
-                ];
-                if let Some((wp, groups)) = &lw.kconv.dynamic {
-                    jobs.push((
-                        xk,
-                        dptr(wp, &st),
-                        dptr_mut(&mut w.dynk, &st),
-                        groups * lw.kconv.kernel,
-                    ));
+                // a decode step: the BF16 projections that read the three normed inputs in one
+                // launch (the same bits as one GEMV each); an NVFP4 projection runs its own GEMV
+                let list: Vec<(u64, WeightParts, u64, usize)> = {
+                    let mut l = vec![
+                        (xq, lw.wq.parts(&st), dptr_mut(&mut w.qb, &st), qw),
+                        (xq, lw.wr.parts(&st), dptr_mut(&mut w.rb, &st), heads * rank),
+                        (
+                            xq,
+                            bf16_parts(&lw.sink, &st),
+                            dptr_mut(&mut w.sinkb, &st),
+                            heads,
+                        ),
+                        (xq, lw.gate.parts(&st), dptr_mut(&mut w.gateb, &st), qw),
+                        (xk, lw.wk.parts(&st), dptr_mut(&mut w.kp, &st), kvw),
+                        (xv, lw.wv.parts(&st), dptr_mut(&mut w.vp, &st), kvw),
+                    ];
+                    if let Some((wp, groups)) = &lw.kconv.dynamic {
+                        l.push((
+                            xk,
+                            bf16_parts(wp, &st),
+                            dptr_mut(&mut w.dynk, &st),
+                            groups * lw.kconv.kernel,
+                        ));
+                    }
+                    if let Some((wp, groups)) = &lw.vconv.dynamic {
+                        l.push((
+                            xv,
+                            bf16_parts(wp, &st),
+                            dptr_mut(&mut w.dynv, &st),
+                            groups * lw.vconv.kernel,
+                        ));
+                    }
+                    l
+                };
+                let mut jobs: Vec<(u64, u64, u64, usize)> = Vec::new();
+                for (x, parts, y, n) in list {
+                    if parts.0 == FMT_BF16 {
+                        jobs.push((x, parts.1, y, n));
+                    } else {
+                        DenseW::gemm_parts(dev, parts, x, hidden, y, n, 1, n, hidden)?;
+                    }
                 }
-                if let Some((wp, groups)) = &lw.vconv.dynamic {
-                    jobs.push((
-                        xv,
-                        dptr(wp, &st),
-                        dptr_mut(&mut w.dynv, &st),
-                        groups * lw.vconv.kernel,
-                    ));
+                if !jobs.is_empty() {
+                    gemv_jobs(dev, &jobs, hidden)?;
                 }
-                gemv_jobs(dev, &jobs, hidden)?;
             } else {
-                proj(dev, xq, &lw.wq, &mut w.qb, qw)?;
-                proj(dev, xq, &lw.wr, &mut w.rb, heads * rank)?;
-                proj(dev, xq, &lw.sink, &mut w.sinkb, heads)?;
-                proj(dev, xq, &lw.gate, &mut w.gateb, qw)?;
-                proj(dev, xk, &lw.wk, &mut w.kp, kvw)?;
-                proj(dev, xv, &lw.wv, &mut w.vp, kvw)?;
+                proj(dev, xq, lw.wq.parts(&st), &mut w.qb, qw)?;
+                proj(dev, xq, lw.wr.parts(&st), &mut w.rb, heads * rank)?;
+                proj(dev, xq, bf16_parts(&lw.sink, &st), &mut w.sinkb, heads)?;
+                proj(dev, xq, lw.gate.parts(&st), &mut w.gateb, qw)?;
+                proj(dev, xk, lw.wk.parts(&st), &mut w.kp, kvw)?;
+                proj(dev, xv, lw.wv.parts(&st), &mut w.vp, kvw)?;
                 if let Some((wp, groups)) = &lw.kconv.dynamic {
-                    proj(dev, xk, wp, &mut w.dynk, groups * lw.kconv.kernel)?;
+                    proj(
+                        dev,
+                        xk,
+                        bf16_parts(wp, &st),
+                        &mut w.dynk,
+                        groups * lw.kconv.kernel,
+                    )?;
                 }
                 if let Some((wp, groups)) = &lw.vconv.dynamic {
-                    proj(dev, xv, wp, &mut w.dynv, groups * lw.vconv.kernel)?;
+                    proj(
+                        dev,
+                        xv,
+                        bf16_parts(wp, &st),
+                        &mut w.dynv,
+                        groups * lw.vconv.kernel,
+                    )?;
                 }
             }
 
@@ -2621,6 +2992,7 @@ impl Route {
                         rows as i32,
                         nheads as i32,
                         width as i32,
+                        dev.prec.get().norm as i32,
                         desc_slot as *const c_void,
                         which,
                         dev.sp(),
@@ -2696,6 +3068,7 @@ impl Route {
                         rows as i32,
                         cw.channels as i32,
                         cw.kernel as i32,
+                        dev.prec.get().conv as i32,
                         desc_slot as *const c_void,
                         which,
                         dev.sp(),
@@ -2724,38 +3097,79 @@ impl Route {
                 vcv,
                 1,
             )?;
-            let kc = dptr_mut(&mut ss.kc, &st);
-            let vc = dptr_mut(&mut ss.vc, &st);
-            heads_k(
-                dev,
-                0,
-                kcv,
-                None,
-                decimal(a.key_clip.threshold),
-                decimal(a.key_clip.epsilon),
-                false,
-                kc,
-                ss.cap,
-                kvh,
-                dim,
-                1,
-            )?;
-            heads_k(
-                dev,
-                1,
-                vcv,
-                None,
-                0.0,
-                decimal(a.value_norm_epsilon),
-                false,
-                vc,
-                ss.cap,
-                kvh,
-                dim,
-                2,
-            )?;
+            let (kc, vc) = if ss.fp8 {
+                (dptr_mut(&mut ss.kc8, &st), dptr_mut(&mut ss.vc8, &st))
+            } else {
+                (dptr_mut(&mut ss.kc, &st), dptr_mut(&mut ss.vc, &st))
+            };
+            if ss.fp8 {
+                // K and V land in the e4m3 cache: the same epilogue, rounded once on the store
+                for (mode, x, thr, eps, dst) in [
+                    (
+                        0,
+                        kcv,
+                        decimal(a.key_clip.threshold),
+                        decimal(a.key_clip.epsilon),
+                        kc,
+                    ),
+                    (1, vcv, 0.0, decimal(a.value_norm_epsilon), vc),
+                ] {
+                    let which = mode + 1;
+                    dev.launched("memra_ink2g_heads_e4m3", unsafe {
+                        ffi::memra_ink2g_heads_e4m3(
+                            mode,
+                            x as *const f32,
+                            thr,
+                            eps,
+                            posd as *const i64,
+                            pos0 as i64,
+                            dst as *mut u8,
+                            ss.cap as i64,
+                            rows as i32,
+                            kvh as i32,
+                            dim as i32,
+                            dev.prec.get().norm as i32,
+                            desc_slot as *const c_void,
+                            which,
+                            dev.sp(),
+                        )
+                    })?;
+                }
+            } else {
+                heads_k(
+                    dev,
+                    0,
+                    kcv,
+                    None,
+                    decimal(a.key_clip.threshold),
+                    decimal(a.key_clip.epsilon),
+                    false,
+                    kc,
+                    ss.cap,
+                    kvh,
+                    dim,
+                    1,
+                )?;
+                heads_k(
+                    dev,
+                    1,
+                    vcv,
+                    None,
+                    0.0,
+                    decimal(a.value_norm_epsilon),
+                    false,
+                    vc,
+                    ss.cap,
+                    kvh,
+                    dim,
+                    2,
+                )?;
+            }
 
             // ---- attention, output gate, output projection, short convolution, residual
+            let window = a.window.map_or(0, |v| v as i32);
+            let mask = i32::from(a.relative.beyond_extent == BeyondExtent::Masked);
+            let att = dptr_mut(&mut w.att, &st);
             // The split form's scratch holds the keys of the load's context; a sequence made with
             // new_seq can hold more (the serve route loads at one position), and its full slots
             // then run the tiled form, the same bits.
@@ -2771,15 +3185,16 @@ impl Route {
                     rb as *const f32,
                     dptr(&lw.table, &st) as *const f32,
                     dptr(&w.sinkb, &st) as *const f32,
-                    kc as *const f32,
-                    vc as *const f32,
+                    kc as *const c_void,
+                    vc as *const c_void,
+                    i32::from(ss.fp8),
                     ss.cap as i64,
                     posd as *const i64,
                     pos0 as i64,
-                    a.window.map_or(0, |v| v as i32),
+                    window,
                     extent as i32,
-                    i32::from(a.relative.beyond_extent == BeyondExtent::Masked),
-                    dptr_mut(&mut w.att, &st) as *mut f32,
+                    mask,
+                    att as *mut f32,
                     rows as i32,
                     heads as i32,
                     kvh as i32,
@@ -2787,6 +3202,14 @@ impl Route {
                     rank as i32,
                     scr as *mut f64,
                     scr_ld,
+                    // attn arm 3: the f64 program with a chunk's scores split over blocks in groups of
+                    // asc_rows rows (the decode form, per row); a different f64 evaluation order
+                    if dev.prec.get().attn == 3 {
+                        w.asc_rows as i32
+                    } else {
+                        0
+                    },
+                    (dev.prec.get().attn % 3) as i32,
                     desc_slot as *const c_void,
                     dev.sp(),
                 )
@@ -2806,8 +3229,18 @@ impl Route {
                     Tap::AttnTable,
                     &dev.down(&lw.table, 0, rank * extent)?,
                 );
-                o.floats(slot, Tap::AttnKeys, &dev.down(&ss.kc, 0, ss.cap * kvw)?);
-                o.floats(slot, Tap::AttnValues, &dev.down(&ss.vc, 0, ss.cap * kvw)?);
+                let cache = |f: &CudaSlice<f32>, b: &CudaSlice<u8>| -> Result<Vec<f32>, String> {
+                    Ok(if ss.fp8 {
+                        dev.down(b, 0, ss.cap * kvw)?
+                            .into_iter()
+                            .map(nvfp4_rig::e4m3_value)
+                            .collect()
+                    } else {
+                        dev.down(f, 0, ss.cap * kvw)?
+                    })
+                };
+                o.floats(slot, Tap::AttnKeys, &cache(&ss.kc, &ss.kc8)?);
+                o.floats(slot, Tap::AttnValues, &cache(&ss.vc, &ss.vc8)?);
                 o.floats(slot, Tap::AttnOut, &dev.down(&w.att, 0, rows * qw)?);
             }
             dev.launched("memra_ink2g_gate", unsafe {
@@ -2815,33 +3248,20 @@ impl Route {
                     dptr_mut(&mut w.att, &st) as *mut f32,
                     dptr(&w.gateb, &st) as *const f32,
                     (rows * qw) as i64,
+                    dev.prec.get().epilogue as i32,
                     dev.sp(),
                 )
             })?;
-            dev.launched("memra_ink2g_gemm", unsafe {
-                ffi::memra_ink2g_gemm(
-                    dptr(&w.att, &st) as *const c_void,
-                    qw as i64,
-                    dptr(&lw.wo, &st) as *const c_void,
-                    std::ptr::null(),
-                    0,
-                    0,
-                    std::ptr::null(),
-                    1.0,
-                    FMT_BF16,
-                    0,
-                    std::ptr::null(),
-                    0,
-                    1,
-                    i32::from(rows == 1),
-                    dptr_mut(&mut w.proj, &st) as *mut c_void,
-                    hidden as i64,
-                    rows as i32,
-                    hidden as i32,
-                    qw as i32,
-                    dev.sp(),
-                )
-            })?;
+            lw.wo.gemm(
+                dev,
+                dptr(&w.att, &st),
+                qw,
+                dptr_mut(&mut w.proj, &st),
+                hidden,
+                rows,
+                hidden,
+                qw,
+            )?;
             let h_mut = dptr_mut(&mut w.h, &st);
             if r.starts_block {
                 // the incoming stream becomes a block; the layer starts a new stream
@@ -2915,6 +3335,7 @@ impl Route {
                         lp.gate_rank as i32,
                         dptr_mut(&mut w.dscr, &st) as *mut f64,
                         w.dscr.len() as i64,
+                        dev.prec.get().controller as i32,
                         dev.sp(),
                     )
                 })?;
@@ -2927,6 +3348,7 @@ impl Route {
                     dptr_mut(&mut w.mn, &st) as *mut f32,
                     rows as i32,
                     hidden as i32,
+                    dev.prec.get().norm as i32,
                     dev.sp(),
                 )
             })?;
@@ -3003,17 +3425,15 @@ impl Route {
                 dptr_mut(&mut w.mn, &st) as *mut f32,
                 rows as i32,
                 hidden as i32,
+                dev.prec.get().norm as i32,
                 dev.sp(),
             )
         })?;
-        if let Some(o) = obs.as_mut()
-            && o.wants(Tap::FinalNorm)
+        if let Some(o) = obs
+            && o.wants(Tap::FinalHidden)
         {
-            o.floats(
-                u32::MAX,
-                Tap::FinalNorm,
-                &dev.down(&w.mn, 0, rows * hidden)?,
-            );
+            let n = plan.layers.len() as u32;
+            o.floats(n, Tap::FinalHidden, &dev.down(&w.mn, 0, rows * hidden)?);
         }
         let mut out = CallOut {
             argmax: Vec::new(),
@@ -3027,12 +3447,12 @@ impl Route {
         let mut at = first;
         while at < rows {
             let n = HEAD_ROWS.min(rows - at);
-            Self::gemm_bf16(
+            unembed.gemm(
                 dev,
-                &w.mn,
-                at * hidden,
-                unembed,
-                &mut w.logits,
+                dptr(&w.mn, &st) + (at * hidden * 4) as u64,
+                hidden,
+                dptr_mut(&mut w.logits, &st),
+                keep,
                 n,
                 keep,
                 hidden,
@@ -3045,6 +3465,7 @@ impl Route {
                     dptr_mut(&mut w.best, &st) as *mut u32,
                     n as i32,
                     keep as i32,
+                    dev.prec.get().epilogue as i32,
                     dev.sp(),
                 )
             })?;
@@ -3124,6 +3545,7 @@ impl Route {
                 dptr_mut(&mut w.margin, &st) as *mut f32,
                 rows as i32,
                 experts as i32,
+                dev.prec.get().router as i32,
                 dev.sp(),
             )
         })?;
@@ -3435,6 +3857,12 @@ fn declared_experts(
             pairs
         }
     };
+    // device-built groups hold one routed row each: the GEMM stages only that column (nb 0)
+    let gemm_nb = if host_ids.is_some() && rows > 1 {
+        nb
+    } else {
+        0
+    };
     // The MoE input is quantized once per token (one block a row); the gate/up GEMM reads row
     // pair / top_k for each routed pair. The SiTU input holds a row per pair (the pair's gate/up row),
     // one block a pair. The quantizer writes the row it reads.
@@ -3474,7 +3902,7 @@ fn declared_experts(
         dev.launched("memra_ink2_expert_gemm", unsafe {
             ffi::memra_ink2_expert_gemm_x(
                 kind,
-                nb as i32,
+                gemm_nb as i32,
                 dptr(&dq.aq_v, &st) as *const c_void,
                 dptr(&dq.aq_s, &st) as *const c_void,
                 dptr(&dq.aq_a, &st) as *const f32,
@@ -3615,6 +4043,8 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
         }
         lines.push(format!("{line} {}", if ok { "OK" } else { "FAIL" }));
     };
+    // the cells below test the f64 forms against their #1397 oracles; the adopted arms run last
+    dev.prec.set(Prec::all_f64());
     let mut rng = Rng(0x1234_5678_9abc_def1);
     // a result that rounds an f64 value once to f32
     const ROUND: f64 = 1.2e-7;
@@ -3675,6 +4105,10 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 dptr(&xd, &st) as *const c_void,
                 k as i64,
                 dptr(&wd, &st) as *const c_void,
+                std::ptr::null(),
+                std::ptr::null(),
+                1.0,
+                FMT_BF16,
                 dptr_mut(&mut v0, &st) as *mut c_void,
                 n as i64,
                 m as i32,
@@ -3734,6 +4168,254 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             format!(
                 "ink2g-gemv-jobs [k={k} jobs={} n={ns:?}] one launch vs the tile GEMM bit-differ={differ}",
                 ns.len()
+            ),
+        );
+    }
+
+    // ---- nvfp4-rig: a minted dense NVFP4 projection on f32 inputs (weight-only)
+    {
+        let (m, n, k) = (70usize, 200usize, 2304usize);
+        let wv = rng.vec(n * k, 0.05);
+        let t = nvfp4_rig::tensor_scale(nvfp4_rig::amax(&wv));
+        let mut codes = vec![0u8; n * k / 2];
+        let mut scales = vec![0u8; n * k / 16];
+        nvfp4_rig::quantize_rows(&wv, k, t, &mut codes, &mut scales, 4);
+        let deq = nvfp4_rig::dequant_rows(&codes, &scales, k, t);
+        let dw = DenseW {
+            fmt: FMT_NVFP4,
+            data: dev.up(&codes)?,
+            scales: Some(dev.up(&scales)?),
+            t: Some(dev.up(&[t])?),
+        };
+        let x = rng.vec(m * k, 1.0);
+        let xd = dev.up(&x)?;
+        let mut y = dev.zeros::<f32>(m * n)?;
+        dw.gemm(dev, dptr(&xd, &st), k, dptr_mut(&mut y, &st), n, m, n, k)?;
+        let got = dev.down(&y, 0, m * n)?;
+        // the exact value of the class's weight c * s * t, and the reference's f32 spelling of it
+        let (mut ratio, mut ref_ratio) = (0f64, 0f64);
+        for r in 0..m {
+            let xr = wide(&x[r * k..(r + 1) * k]);
+            for o in 0..n {
+                let (mut exact, mut mag, mut refsum) = (0f64, 0f64, 0f64);
+                for i in 0..k {
+                    let byte = codes[(o * k + i) / 2];
+                    let c = nvfp4_rig::e2m1_value(if i % 2 == 0 { byte & 15 } else { byte >> 4 });
+                    let s = nvfp4_rig::e4m3_scale_value(scales[(o * k + i) / 16]);
+                    let p = f64::from(c) * f64::from(s) * f64::from(t) * xr[i];
+                    exact += p;
+                    mag += p.abs();
+                    refsum += f64::from(deq[o * k + i]) * xr[i];
+                }
+                ratio = ratio.max((f64::from(got[r * n + o]) - exact).abs() / mag.max(1e-300));
+                ref_ratio = ref_ratio.max((refsum - exact).abs() / mag.max(1e-300));
+            }
+        }
+        let mut alone = 0usize;
+        for r in [0usize, 13, 63, 64, 69] {
+            let mut one = dev.zeros::<f32>(n)?;
+            dw.gemm(
+                dev,
+                dptr(&xd, &st) + (r * k * 4) as u64,
+                k,
+                dptr_mut(&mut one, &st),
+                n,
+                1,
+                n,
+                k,
+            )?;
+            alone += bits_differ(&dev.down(&one, 0, n)?, &got[r * n..(r + 1) * n]);
+        }
+        // the #1397 tile kernel on the same weights: the prefill GEMM and the GEMV keep its bits
+        let mut v0 = dev.zeros::<f32>(m * n)?;
+        dev.launched("memra_ink2g_gemm_tile_v0", unsafe {
+            ffi::memra_ink2g_gemm_tile_v0(
+                dptr(&xd, &st) as *const c_void,
+                k as i64,
+                dptr(&dw.data, &st) as *const c_void,
+                dw.scales.as_ref().map_or(0, |s| dptr(s, &st)) as *const c_void,
+                dw.t.as_ref().map_or(0, |t| dptr(t, &st)) as *const f32,
+                1.0,
+                FMT_NVFP4,
+                dptr_mut(&mut v0, &st) as *mut c_void,
+                n as i64,
+                m as i32,
+                n as i32,
+                k as i32,
+                dev.sp(),
+            )
+        })?;
+        alone += bits_differ(&dev.down(&v0, 0, m * n)?, &got);
+        let bound = k as f64 * 2f64.powi(-23);
+        verdict(
+            ratio <= bound && ref_ratio <= 2.0 * 2f64.powi(-24) && alone == 0,
+            format!(
+                "ink2g-gemm-nvfp4-dense [m={m} n={n} k={k}] minted by the class's quantizer: max|err|/sum|p| vs c*s*t = {ratio:.3e} (bound {bound:.3e}); the reference's fl32(c*fl32(s*t)) weights {ref_ratio:.3e} (bound 2^-23); rows alone (decode GEMV) and the #1397 tile kernel vs in the call (prefill GEMM) bit-differ={alone}"
+            ),
+        );
+    }
+
+    // ---- nvfp4-rig: K/V into an e4m3 cache, and attention over it
+    {
+        let (rows, kvh, dim, cap, pos0) = (9usize, 8usize, 128usize, 16usize, 11i64);
+        let mut x = rng.vec(rows * kvh * dim, 3.0);
+        // out of range, subnormal and signed-zero inputs on purpose
+        x[0] = 1e4;
+        x[1] = -1e4;
+        x[2] = 3e-4;
+        x[3] = -0.0;
+        x[4] = 1.0625;
+        let xd = dev.up(&x)?;
+        let mut differ = 0usize;
+        for mode in [0i32, 1] {
+            let (thr, eps) = if mode == 0 {
+                (22.627416997969522, 1e-6)
+            } else {
+                (0.0, 1e-6)
+            };
+            let mut f = dev.zeros::<f32>(cap * kvh * dim)?;
+            let mut b = dev.zeros::<u8>(cap * kvh * dim)?;
+            dev.launched("memra_ink2g_heads", unsafe {
+                ffi::memra_ink2g_heads(
+                    mode,
+                    dptr(&xd, &st) as *const f32,
+                    std::ptr::null(),
+                    thr,
+                    eps,
+                    std::ptr::null(),
+                    pos0,
+                    0,
+                    0.0,
+                    dptr_mut(&mut f, &st) as *mut f32,
+                    cap as i64,
+                    rows as i32,
+                    kvh as i32,
+                    dim as i32,
+                    0,
+                    std::ptr::null(),
+                    0,
+                    dev.sp(),
+                )
+            })?;
+            dev.launched("memra_ink2g_heads_e4m3", unsafe {
+                ffi::memra_ink2g_heads_e4m3(
+                    mode,
+                    dptr(&xd, &st) as *const f32,
+                    thr,
+                    eps,
+                    std::ptr::null(),
+                    pos0,
+                    dptr_mut(&mut b, &st) as *mut u8,
+                    cap as i64,
+                    rows as i32,
+                    kvh as i32,
+                    dim as i32,
+                    0,
+                    std::ptr::null(),
+                    0,
+                    dev.sp(),
+                )
+            })?;
+            let (fv, bv) = (
+                dev.down(&f, 0, cap * kvh * dim)?,
+                dev.down(&b, 0, cap * kvh * dim)?,
+            );
+            for r in 0..rows {
+                let at = ((pos0 as usize + r) % cap) * kvh * dim;
+                for i in 0..kvh * dim {
+                    let v = fv[at + i];
+                    let want = nvfp4_rig::e4m3_rne_index(v.abs().min(448.0))
+                        | if v.is_sign_negative() { 0x80 } else { 0 };
+                    differ += usize::from(bv[at + i] != want);
+                }
+            }
+        }
+        verdict(
+            differ == 0,
+            format!(
+                "ink2g-kv-e4m3 [rows={rows} kv_heads={kvh} dim={dim} ring cap={cap}] key clip and value norm into the e4m3 cache: bytes differing from round-to-nearest-even of the f32 cache's values = {differ}"
+            ),
+        );
+
+        let (heads, rank, extent, window) = (24usize, 16usize, 12usize, 0i32);
+        let (r2, pos2, cap2) = (5usize, 30i64, 40usize);
+        let q = rng.vec(r2 * heads * dim, 0.3);
+        let rel = rng.vec(r2 * heads * rank, 0.5);
+        let table = rng.vec(rank * extent, 0.5);
+        let sink = rng.vec(r2 * heads, 1.0);
+        let mut kb = rng.bytes(cap2 * kvh * dim);
+        let mut vb = rng.bytes(cap2 * kvh * dim);
+        for v in kb.iter_mut().chain(vb.iter_mut()) {
+            if *v & 0x7f == 0x7f {
+                *v &= 0x80;
+            }
+        }
+        let kf: Vec<f32> = kb.iter().map(|b| nvfp4_rig::e4m3_value(*b)).collect();
+        let vf: Vec<f32> = vb.iter().map(|b| nvfp4_rig::e4m3_value(*b)).collect();
+        let (qd, reld, tabd, sinkd) = (dev.up(&q)?, dev.up(&rel)?, dev.up(&table)?, dev.up(&sink)?);
+        let (kbd, vbd, kfd, vfd) = (dev.up(&kb)?, dev.up(&vb)?, dev.up(&kf)?, dev.up(&vf)?);
+        let mut o8 = dev.zeros::<f32>(r2 * heads * dim)?;
+        let mut o32 = dev.zeros::<f32>(r2 * heads * dim)?;
+        dev.launched("memra_ink2g_attn_e4m3", unsafe {
+            ffi::memra_ink2g_attn_e4m3(
+                dptr(&qd, &st) as *const f32,
+                dptr(&reld, &st) as *const f32,
+                dptr(&tabd, &st) as *const f32,
+                dptr(&sinkd, &st) as *const f32,
+                dptr(&kbd, &st) as *const u8,
+                dptr(&vbd, &st) as *const u8,
+                cap2 as i64,
+                pos2,
+                window,
+                extent as i32,
+                0,
+                dptr_mut(&mut o8, &st) as *mut f32,
+                r2 as i32,
+                heads as i32,
+                kvh as i32,
+                dim as i32,
+                rank as i32,
+                dev.sp(),
+            )
+        })?;
+        dev.launched("memra_ink2g_attn", unsafe {
+            ffi::memra_ink2g_attn(
+                dptr(&qd, &st) as *const f32,
+                dptr(&reld, &st) as *const f32,
+                dptr(&tabd, &st) as *const f32,
+                dptr(&sinkd, &st) as *const f32,
+                dptr(&kfd, &st) as *const c_void,
+                dptr(&vfd, &st) as *const c_void,
+                0,
+                cap2 as i64,
+                std::ptr::null(),
+                pos2,
+                window,
+                extent as i32,
+                0,
+                dptr_mut(&mut o32, &st) as *mut f32,
+                r2 as i32,
+                heads as i32,
+                kvh as i32,
+                dim as i32,
+                rank as i32,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                std::ptr::null(),
+                dev.sp(),
+            )
+        })?;
+        let d = bits_differ(
+            &dev.down(&o8, 0, r2 * heads * dim)?,
+            &dev.down(&o32, 0, r2 * heads * dim)?,
+        );
+        verdict(
+            d == 0,
+            format!(
+                "ink2g-attn-e4m3 [rows={r2} heads={heads} kv_heads={kvh} dim={dim} keys={}] attention over the e4m3 cache vs the f32 kernel over its exact values: bit-differ={d}",
+                pos2 + r2 as i64
             ),
         );
     }
@@ -3881,6 +4563,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 dptr_mut(&mut out, &st) as *mut f32,
                 rows as i32,
                 h as i32,
+                dev.prec.get().norm as i32,
                 dev.sp(),
             )
         })?;
@@ -3901,6 +4584,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 dptr_mut(&mut out, &st) as *mut f32,
                 rows as i32,
                 h as i32,
+                dev.prec.get().norm as i32,
                 dev.sp(),
             )
         })?;
@@ -4009,6 +4693,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 rank as i32,
                 dptr_mut(&mut scr, &st) as *mut f64,
                 (rows * rank) as i64,
+                dev.prec.get().controller as i32,
                 dev.sp(),
             )
         })?;
@@ -4046,6 +4731,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 rank as i32,
                 dptr_mut(&mut scr, &st) as *mut f64,
                 (rows * rank) as i64,
+                dev.prec.get().controller as i32,
                 dev.sp(),
             )
         })?;
@@ -4108,6 +4794,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                     rows as i32,
                     heads as i32,
                     width as i32,
+                    dev.prec.get().norm as i32,
                     std::ptr::null(),
                     0,
                     dev.sp(),
@@ -4209,6 +4896,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         *rows as i32,
                         c as i32,
                         k as i32,
+                        dev.prec.get().conv as i32,
                         std::ptr::null(),
                         0,
                         dev.sp(),
@@ -4290,11 +4978,12 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             ));
         }
         let (qd, rd, td, sd) = (dev.up(&q)?, dev.up(&rel)?, dev.up(&table)?, dev.up(&sink)?);
-        let run = |splits: &[usize]| -> Result<Vec<f32>, String> {
+        // scr_rows 0: a call of several rows runs the tiled kernel; else the split form in groups
+        let run = |splits: &[usize], scr_rows: i32| -> Result<Vec<f32>, String> {
             let mut kc = dev.zeros::<f32>(cap * kvw)?;
             let mut vc = dev.zeros::<f32>(cap * kvw)?;
             let mut out = dev.zeros::<f32>(total * heads * dim)?;
-            let mut ascr = dev.zeros::<f64>(heads * cap)?;
+            let mut ascr = dev.zeros::<f64>(3 * heads * cap)?;
             let mut at = 0usize;
             for rows in splits {
                 // the rows of the call enter the cache before any row attends
@@ -4319,8 +5008,9 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         (dptr(&rd, &st) + (at * heads * rank * 4) as u64) as *const f32,
                         dptr(&td, &st) as *const f32,
                         (dptr(&sd, &st) + (at * heads * 4) as u64) as *const f32,
-                        dptr(&kc, &st) as *const f32,
-                        dptr(&vc, &st) as *const f32,
+                        dptr(&kc, &st) as *const c_void,
+                        dptr(&vc, &st) as *const c_void,
+                        0,
                         cap as i64,
                         std::ptr::null(),
                         at as i64,
@@ -4336,6 +5026,8 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         // a call of one row runs the split form
                         dptr_mut(&mut ascr, &st) as *mut f64,
                         cap as i64,
+                        scr_rows,
+                        dev.prec.get().attn as i32,
                         std::ptr::null(),
                         dev.sp(),
                     )
@@ -4345,15 +5037,18 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             }
             dev.down(&out, 0, total * heads * dim)
         };
-        let chunked = run(&vec![8; total / 8])?;
-        let ones = run(&vec![1; total])?;
+        let chunked = run(&vec![8; total / 8], 0)?;
+        let ones = run(&vec![1; total], 0)?;
+        // a chunk in the split form, 3 rows a launch pair (a short last group)
+        let grouped = run(&vec![8; total / 8], 3)?;
+        let grouped_differ = bits_differ(&grouped, &chunked);
         // against the scale of a value row: an output is a convex mix of values of order 1
         let e = worst_rel(&chunked, &want, 1.0);
         let alone = bits_differ(&chunked, &ones);
         verdict(
-            e <= ROUND && alone == 0,
+            e <= ROUND && alone == 0 && grouped_differ == 0,
             format!(
-                "{name} [positions={total} window={window} extent={extent} mask_beyond={mask} cache rows={cap}] max |err| / (|ref| + 1)={e:.3e}; calls of 8 vs calls of 1 bit-differ={alone}"
+                "{name} [positions={total} window={window} extent={extent} mask_beyond={mask} cache rows={cap}] max |err| / (|ref| + 1)={e:.3e}; calls of 8 vs calls of 1 (split form) bit-differ={alone}; calls of 8 split 3 rows a launch vs the tiled kernel bit-differ={grouped_differ}"
             ),
         );
     }
@@ -4387,6 +5082,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                     dptr_mut(&mut margin, &st) as *mut f32,
                     rows as i32,
                     experts as i32,
+                    dev.prec.get().router as i32,
                     dev.sp(),
                 )
             })?;
@@ -4503,6 +5199,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 dptr_mut(&mut best, &st) as *mut u32,
                 2,
                 n as i32,
+                dev.prec.get().epilogue as i32,
                 dev.sp(),
             )
         })?;
@@ -4770,6 +5467,106 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 "ink2g-load-refusals E8M0 0xFF, NVFP4 amax NaN / inf / 0 / negative, denominator 0: refused {}/{}; valid planes accepted {accepted}",
                 refused.iter().filter(|r| **r).count(),
                 refused.len()
+            ),
+        );
+    }
+    // ---- the adopted precision arms (docs/decisions/INKLING2-PRECISION-ARMS.md) against their f64
+    // reference operations: controller, norms and clips, the output gate and softcap in f32
+    dev.prec.set(Prec::default());
+    {
+        const F32: f64 = 5e-5;
+        let (h, rows, rank) = (2304usize, 3usize, 64usize);
+        let x = rng.vec(rows * h, 2.0);
+        let msg = rng.vec(rows * h, 0.7);
+        let nw = rng.vec(h, 1.0);
+        let (down, forget, gain) = (
+            rng.bf16(rank * 2 * h, 0.02),
+            rng.bf16(h * rank, 0.1),
+            rng.bf16(h * rank, 0.1),
+        );
+        let (xd, md, nd) = (dev.up(&x)?, dev.up(&msg)?, dev.up(&nw)?);
+        let (dd, fd, gd) = (
+            dev.up(&bf16_bytes(&down))?,
+            dev.up(&bf16_bytes(&forget))?,
+            dev.up(&bf16_bytes(&gain))?,
+        );
+        let mut out = dev.zeros::<f32>(rows * h)?;
+        let mut scr = dev.zeros::<f64>(rows * (rank + 2 * h))?;
+        dev.launched("memra_ink2g_norm", unsafe {
+            ffi::memra_ink2g_norm(
+                dptr(&xd, &st) as *const f32,
+                dptr(&nd, &st) as *const f32,
+                1e-6,
+                dptr_mut(&mut out, &st) as *mut f32,
+                rows as i32,
+                h as i32,
+                dev.prec.get().norm as i32,
+                dev.sp(),
+            )
+        })?;
+        let want: Vec<f64> = x
+            .chunks_exact(h)
+            .flat_map(|r| ops::rms_norm(&wide(r), Some(&nw), 1e-6))
+            .collect();
+        let e_norm = worst_rel(&dev.down(&out, 0, rows * h)?, &want, 1e-6);
+        dev.launched("memra_ink2g_controller", unsafe {
+            ffi::memra_ink2g_controller(
+                dptr(&xd, &st) as *const f32,
+                dptr(&md, &st) as *const f32,
+                dptr(&dd, &st) as *const c_void,
+                dptr(&fd, &st) as *const c_void,
+                dptr(&gd, &st) as *const c_void,
+                1e-6,
+                dptr_mut(&mut out, &st) as *mut f32,
+                rows as i32,
+                h as i32,
+                rank as i32,
+                dptr_mut(&mut scr, &st) as *mut f64,
+                scr.len() as i64,
+                dev.prec.get().controller as i32,
+                dev.sp(),
+            )
+        })?;
+        let want: Vec<f64> = (0..rows)
+            .flat_map(|r| {
+                ops::controller(
+                    &wide(&x[r * h..(r + 1) * h]),
+                    &wide(&msg[r * h..(r + 1) * h]),
+                    &down,
+                    &forget,
+                    &gain,
+                    1e-6,
+                )
+            })
+            .collect();
+        let e_ctrl = worst_rel(&dev.down(&out, 0, rows * h)?, &want, 1e-6);
+        let mut y = dev.up(&x)?;
+        dev.launched("memra_ink2g_gate", unsafe {
+            ffi::memra_ink2g_gate(
+                dptr_mut(&mut y, &st) as *mut f32,
+                dptr(&md, &st) as *const f32,
+                (rows * h) as i64,
+                dev.prec.get().epilogue as i32,
+                dev.sp(),
+            )
+        })?;
+        let want: Vec<f64> = x
+            .iter()
+            .zip(&msg)
+            .map(|(a, g)| f64::from(*a) / (1.0 + (-f64::from(*g)).exp()))
+            .collect();
+        let e_gate = worst_rel(&dev.down(&y, 0, rows * h)?, &want, 1e-6);
+        let p = dev.prec.get();
+        verdict(
+            e_norm <= F32
+                && e_ctrl <= F32
+                && e_gate <= F32
+                && p.norm == 1
+                && p.controller == 1
+                && p.epilogue == 1
+                && p.attn == 3,
+            format!(
+                "ink2g-prec-adopted [{p:?}] f32 norm max rel={e_norm:.3e}, f32 controller max rel={e_ctrl:.3e}, f32 output gate max rel={e_gate:.3e} (bound {F32:.0e})"
             ),
         );
     }
