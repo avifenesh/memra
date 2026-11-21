@@ -1,0 +1,1693 @@
+[
+ {
+  "name": "text",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|><|content_text|>Sunny in Paris.<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "content": "Sunny in Paris."
+  }
+ },
+ {
+  "name": "text-unterminated",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|><|content_text|>Sunny in",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "content": "Sunny in"
+  }
+ },
+ {
+  "name": "text-no-eos",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|><|content_text|>Sunny.<|end_message|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "content": "Sunny."
+  }
+ },
+ {
+  "name": "thinking-then-text",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|><|content_thinking|>Paris is in France.\n<|end_message|><|message_model|><|content_text|>Sunny.<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "reasoning_content": "Paris is in France.\n",
+   "content": "Sunny."
+  }
+ },
+ {
+  "name": "thinking-only-unterminated",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|><|content_thinking|>Still thinking",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "reasoning_content": "Still thinking"
+  }
+ },
+ {
+  "name": "two-thinking-two-text",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|><|content_thinking|>a<|end_message|><|message_model|><|content_text|>1<|end_message|><|message_model|><|content_thinking|>b<|end_message|><|message_model|><|content_text|>2<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "reasoning_content": "ab",
+   "content": "12"
+  }
+ },
+ {
+  "name": "whitespace-is-kept",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|><|content_thinking|>  pad \n<|end_message|><|message_model|><|content_text|>\n  body  \n<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "reasoning_content": "  pad \n",
+   "content": "\n  body  \n"
+  }
+ },
+ {
+  "name": "empty-text",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|><|content_text|><|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant"
+  }
+ },
+ {
+  "name": "no-model-marker",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|content_thinking|>t<|end_message|><|content_text|>c<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "reasoning_content": "t",
+   "content": "c"
+  }
+ },
+ {
+  "name": "stray-text-outside-messages",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "lead <|message_model|><|content_text|>kept<|end_message|> between <|message_model|><|content_text|>!<|end_message|> tail<|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "content": "kept!"
+  }
+ },
+ {
+  "name": "header-text-before-kind",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>planner<|content_text|>named<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "content": "named"
+  }
+ },
+ {
+  "name": "tool-error-and-tool-text-are-content",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|><|content_tool_error|>E<|end_message|><|message_model|><|content_invoke_tool_text|>T<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "content": "ET"
+  }
+ },
+ {
+  "name": "marker-inside-a-message-is-text",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|><|content_text|>a <|content_thinking|> b <|message_model|> c <|content_model_end_sampling|> d<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "content": "a <|content_thinking|> b <|message_model|> c <|content_model_end_sampling|> d"
+  }
+ },
+ {
+  "name": "call",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>get_weather<|content_invoke_tool_json|>{\"name\":\"get_weather\",\"args\":{\"city\":\"Paris\"}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_weather",
+     "description": "Current weather for a city.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "city": {
+        "type": "string",
+        "description": "City name"
+       },
+       "days": {
+        "type": "integer"
+       },
+       "metric": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "city"
+      ]
+     }
+    }
+   }
+  ],
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "arguments": {
+       "city": "Paris"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-no-tools-given",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>get_weather<|content_invoke_tool_json|>{\"name\":\"get_weather\",\"args\":{\"city\":\"Paris\",\"days\":\"3\"}}<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "arguments": {
+       "city": "Paris",
+       "days": "3"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-typed-arguments",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>get_weather<|content_invoke_tool_json|>{\"name\":\"get_weather\",\"args\":{\"city\":\"Paris\",\"days\":3,\"metric\":true}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_weather",
+     "description": "Current weather for a city.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "city": {
+        "type": "string",
+        "description": "City name"
+       },
+       "days": {
+        "type": "integer"
+       },
+       "metric": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "city"
+      ]
+     }
+    }
+   }
+  ],
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "arguments": {
+       "city": "Paris",
+       "days": 3,
+       "metric": true
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-string-arguments-coerced-by-schema",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>get_weather<|content_invoke_tool_json|>{\"name\":\"get_weather\",\"args\":{\"city\":\"75001\",\"days\":\"3\",\"metric\":\"true\"}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_weather",
+     "description": "Current weather for a city.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "city": {
+        "type": "string",
+        "description": "City name"
+       },
+       "days": {
+        "type": "integer"
+       },
+       "metric": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "city"
+      ]
+     }
+    }
+   }
+  ],
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "arguments": {
+       "city": "75001",
+       "days": 3,
+       "metric": true
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-coercions",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>search<|content_invoke_tool_json|>{\"name\":\"search\",\"args\":{\"query\":5,\"top_k\":\"2.50\",\"Filters\":\"[\\\"a\\\"]\",\"opts\":\"null\",\"unknown\":\"7\"}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "function": {
+     "parameters": {
+      "type": "object",
+      "required": [
+       "query"
+      ],
+      "properties": {
+       "top_k": {
+        "type": "number",
+        "default": 5,
+        "minimum": 0.5
+       },
+       "query": {
+        "type": "string",
+        "description": "Text <b>&</b> 'quotes' \"double\" \\ back"
+       },
+       "Filters": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "enum": [
+          "b",
+          "a",
+          "C"
+         ]
+        }
+       },
+       "opts": {
+        "type": [
+         "object",
+         "null"
+        ],
+        "additionalProperties": true
+       }
+      }
+     },
+     "name": "search",
+     "description": "Search the web: returns JSON — “quoted” 中文 \n second line\t tab.",
+     "strict": false
+    },
+    "type": "function"
+   }
+  ],
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "search",
+      "arguments": {
+       "query": 5,
+       "top_k": 2.5,
+       "Filters": [
+        "a"
+       ],
+       "opts": null,
+       "unknown": "7"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-coercion-failures-stay-strings",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>get_weather<|content_invoke_tool_json|>{\"name\":\"get_weather\",\"args\":{\"days\":\"three\",\"metric\":\"yes\"}}<|end_message|><|message_model|>get_weather<|content_invoke_tool_json|>{\"name\":\"get_weather\",\"args\":{\"days\":\"3.0\",\"metric\":\"0\"}}<|end_message|><|message_model|>get_weather<|content_invoke_tool_json|>{\"name\":\"get_weather\",\"args\":{\"days\":\"3.5\",\"metric\":\" TRUE \"}}<|end_message|><|message_model|>search<|content_invoke_tool_json|>{\"name\":\"search\",\"args\":{\"top_k\":\"7\",\"Filters\":\"{}\",\"opts\":\"[1]\"}}<|end_message|><|message_model|>search<|content_invoke_tool_json|>{\"name\":\"search\",\"args\":{\"top_k\":\"nan\",\"opts\":\"{\\\"k\\\": 1}\"}}<|end_message|><|message_model|>search<|content_invoke_tool_json|>{\"name\":\"search\",\"args\":{\"top_k\":\"1e3\",\"opts\":\" None \"}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_weather",
+     "description": "Current weather for a city.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "city": {
+        "type": "string",
+        "description": "City name"
+       },
+       "days": {
+        "type": "integer"
+       },
+       "metric": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "city"
+      ]
+     }
+    }
+   },
+   {
+    "function": {
+     "parameters": {
+      "type": "object",
+      "required": [
+       "query"
+      ],
+      "properties": {
+       "top_k": {
+        "type": "number",
+        "default": 5,
+        "minimum": 0.5
+       },
+       "query": {
+        "type": "string",
+        "description": "Text <b>&</b> 'quotes' \"double\" \\ back"
+       },
+       "Filters": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "enum": [
+          "b",
+          "a",
+          "C"
+         ]
+        }
+       },
+       "opts": {
+        "type": [
+         "object",
+         "null"
+        ],
+        "additionalProperties": true
+       }
+      }
+     },
+     "name": "search",
+     "description": "Search the web: returns JSON — “quoted” 中文 \n second line\t tab.",
+     "strict": false
+    },
+    "type": "function"
+   }
+  ],
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "arguments": {
+       "days": "three",
+       "metric": "yes"
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "arguments": {
+       "days": 3,
+       "metric": false
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "arguments": {
+       "days": "3.5",
+       "metric": true
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "search",
+      "arguments": {
+       "top_k": 7,
+       "Filters": "{}",
+       "opts": "[1]"
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "search",
+      "arguments": {
+       "top_k": "nan",
+       "opts": {
+        "k": 1
+       }
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "search",
+      "arguments": {
+       "top_k": 1000,
+       "opts": null
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "thinking-text-and-two-calls",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|><|content_thinking|>Need both.<|end_message|><|message_model|><|content_text|>Checking.<|end_message|><|message_model|>get_weather<|content_invoke_tool_json|>{\"name\":\"get_weather\",\"args\":{\"city\":\"Paris\"}}<|end_message|><|message_model|>search<|content_invoke_tool_json|>{\"name\":\"search\",\"args\":{\"query\":\"météo 中文 🙂\",\"opts\":{\"a\":[1,{\"b\":null}]}}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_weather",
+     "description": "Current weather for a city.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "city": {
+        "type": "string",
+        "description": "City name"
+       },
+       "days": {
+        "type": "integer"
+       },
+       "metric": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "city"
+      ]
+     }
+    }
+   },
+   {
+    "function": {
+     "parameters": {
+      "type": "object",
+      "required": [
+       "query"
+      ],
+      "properties": {
+       "top_k": {
+        "type": "number",
+        "default": 5,
+        "minimum": 0.5
+       },
+       "query": {
+        "type": "string",
+        "description": "Text <b>&</b> 'quotes' \"double\" \\ back"
+       },
+       "Filters": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "enum": [
+          "b",
+          "a",
+          "C"
+         ]
+        }
+       },
+       "opts": {
+        "type": [
+         "object",
+         "null"
+        ],
+        "additionalProperties": true
+       }
+      }
+     },
+     "name": "search",
+     "description": "Search the web: returns JSON — “quoted” 中文 \n second line\t tab.",
+     "strict": false
+    },
+    "type": "function"
+   }
+  ],
+  "message": {
+   "role": "assistant",
+   "reasoning_content": "Need both.",
+   "content": "Checking.",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "arguments": {
+       "city": "Paris"
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "search",
+      "arguments": {
+       "query": "météo 中文 🙂",
+       "opts": {
+        "a": [
+         1,
+         {
+          "b": null
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-header-name-is-ignored",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>other<|content_invoke_tool_json|>{\"name\":\"get_weather\",\"args\":{\"city\":\"Paris\"}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_weather",
+     "description": "Current weather for a city.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "city": {
+        "type": "string",
+        "description": "City name"
+       },
+       "days": {
+        "type": "integer"
+       },
+       "metric": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "city"
+      ]
+     }
+    }
+   }
+  ],
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "arguments": {
+       "city": "Paris"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-json-with-whitespace",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|> \n{ \"name\" : \"ping\" ,\n \"args\" : { } }\n <|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "name": "ping"
+   }
+  ],
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "ping",
+      "arguments": {}
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-extra-keys",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|>{\"args\":{\"a\":1},\"id\":7,\"name\":\"ping\"}<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "ping",
+      "arguments": {
+       "a": 1
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-unterminated-complete-json",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"ping\",\"args\":{}}",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "ping",
+      "arguments": {}
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-end-message-inside-a-string",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"ping\",\"args\":{\"s\":\"a<|end_message|>b\"}}<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "error": "ValueError: json parser could not parse region as JSON.",
+  "memra": {
+   "reason": "the first end marker closes the span, as in the vendor parser, which then raises",
+   "message": {
+    "role": "assistant",
+    "content": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"ping\",\"args\":{\"s\":\"a<|end_message|>"
+   }
+  }
+ },
+ {
+  "name": "call-args-not-an-object",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"ping\",\"args\":[1,2]}<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "ping",
+      "arguments": [
+       1,
+       2
+      ]
+     }
+    }
+   ]
+  },
+  "memra": {
+   "reason": "the OpenAI wire's arguments are an object",
+   "message": {
+    "role": "assistant",
+    "content": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"ping\",\"args\":[1,2]}<|end_message|>"
+   }
+  }
+ },
+ {
+  "name": "call-name-not-a-string",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":7,\"args\":{}}<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": 7,
+      "arguments": {}
+     }
+    }
+   ]
+  },
+  "memra": {
+   "reason": "the OpenAI wire's name is a string",
+   "message": {
+    "role": "assistant",
+    "content": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":7,\"args\":{}}<|end_message|>"
+   }
+  }
+ },
+ {
+  "name": "call-malformed-json",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|><|content_text|>before<|end_message|><|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"ping\",\"args\":{<|end_message|><|message_model|><|content_text|>after<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "error": "ValueError: json parser could not parse region as JSON.",
+  "memra": {
+   "reason": "malformed span surfaces verbatim; the vendor raises",
+   "message": {
+    "role": "assistant",
+    "content": "before<|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"ping\",\"args\":{<|end_message|>after"
+   }
+  }
+ },
+ {
+  "name": "call-missing-args",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"ping\"}<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "error": "ValueError: transform placeholder '{content.args}' is missing key 'args'. Available: ['name']",
+  "memra": {
+   "reason": "malformed span surfaces verbatim; the vendor raises",
+   "message": {
+    "role": "assistant",
+    "content": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"ping\"}<|end_message|>"
+   }
+  }
+ },
+ {
+  "name": "call-missing-name",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|>{\"args\":{}}<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "error": "ValueError: transform placeholder '{content.name}' is missing key 'name'. Available: ['args']",
+  "memra": {
+   "reason": "malformed span surfaces verbatim; the vendor raises",
+   "message": {
+    "role": "assistant",
+    "content": "<|message_model|>ping<|content_invoke_tool_json|>{\"args\":{}}<|end_message|>"
+   }
+  }
+ },
+ {
+  "name": "call-json-not-an-object",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|>[\"ping\"]<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "error": "ValueError: transform placeholder '{content.name}' cannot index into list at 'name'",
+  "memra": {
+   "reason": "malformed span surfaces verbatim; the vendor raises",
+   "message": {
+    "role": "assistant",
+    "content": "<|message_model|>ping<|content_invoke_tool_json|>[\"ping\"]<|end_message|>"
+   }
+  }
+ },
+ {
+  "name": "call-unterminated-partial-json",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"ping\",\"ar",
+  "tools": null,
+  "error": "ValueError: json parser could not parse region as JSON.",
+  "memra": {
+   "reason": "unterminated span surfaces verbatim; the vendor raises",
+   "message": {
+    "role": "assistant",
+    "content": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"ping\",\"ar"
+   }
+  }
+ },
+ {
+  "name": "call-numbers-keep-their-value",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"big\":123456789012345678901234567890,\"neg\":-18446744073709551616,\"small\":1e-07,\"exp\":1E5,\"frac\":2.50}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "t",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "i": {
+        "type": "integer"
+       },
+       "n": {
+        "type": "number"
+       },
+       "b": {
+        "type": "boolean"
+       },
+       "o": {
+        "type": "object"
+       },
+       "a": {
+        "type": "array"
+       },
+       "u": {
+        "anyOf": [
+         {
+          "type": "integer"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "s": {
+        "type": [
+         "string",
+         "integer"
+        ]
+       },
+       "n0": {
+        "type": "integer",
+        "nullable": 0
+       },
+       "ne": {
+        "type": "integer",
+        "nullable": ""
+       },
+       "nl": {
+        "type": "integer",
+        "nullable": []
+       },
+       "nt": {
+        "type": "integer",
+        "nullable": true
+       },
+       "n1": {
+        "type": "integer",
+        "nullable": 1
+       }
+      }
+     }
+    }
+   }
+  ],
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "t",
+      "arguments": {
+       "big": 123456789012345678901234567890,
+       "neg": -18446744073709551616,
+       "small": 1e-07,
+       "exp": 100000.0,
+       "frac": 2.5
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-number-overflow",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"n\":1E400,\"m\":-1e999}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "t",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "i": {
+        "type": "integer"
+       },
+       "n": {
+        "type": "number"
+       },
+       "b": {
+        "type": "boolean"
+       },
+       "o": {
+        "type": "object"
+       },
+       "a": {
+        "type": "array"
+       },
+       "u": {
+        "anyOf": [
+         {
+          "type": "integer"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "s": {
+        "type": [
+         "string",
+         "integer"
+        ]
+       },
+       "n0": {
+        "type": "integer",
+        "nullable": 0
+       },
+       "ne": {
+        "type": "integer",
+        "nullable": ""
+       },
+       "nl": {
+        "type": "integer",
+        "nullable": []
+       },
+       "nt": {
+        "type": "integer",
+        "nullable": true
+       },
+       "n1": {
+        "type": "integer",
+        "nullable": 1
+       }
+      }
+     }
+    }
+   }
+  ],
+  "vendor": "{'role': 'assistant', 'tool_calls': [{'type': 'function', 'function': {'name': 't', 'arguments': {'n': inf, 'm': -inf}}}]}",
+  "memra": {
+   "reason": "a number literal passes through as the model wrote it; the vendor reads inf, which JSON cannot carry",
+   "message": {
+    "role": "assistant",
+    "tool_calls": [
+     {
+      "type": "function",
+      "function": {
+       "name": "t",
+       "arguments_json": "{\"n\":1E400,\"m\":-1e999}"
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "name": "call-nan-literal",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"n\":NaN,\"m\":Infinity}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "t",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "i": {
+        "type": "integer"
+       },
+       "n": {
+        "type": "number"
+       },
+       "b": {
+        "type": "boolean"
+       },
+       "o": {
+        "type": "object"
+       },
+       "a": {
+        "type": "array"
+       },
+       "u": {
+        "anyOf": [
+         {
+          "type": "integer"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "s": {
+        "type": [
+         "string",
+         "integer"
+        ]
+       },
+       "n0": {
+        "type": "integer",
+        "nullable": 0
+       },
+       "ne": {
+        "type": "integer",
+        "nullable": ""
+       },
+       "nl": {
+        "type": "integer",
+        "nullable": []
+       },
+       "nt": {
+        "type": "integer",
+        "nullable": true
+       },
+       "n1": {
+        "type": "integer",
+        "nullable": 1
+       }
+      }
+     }
+    }
+   }
+  ],
+  "vendor": "{'role': 'assistant', 'tool_calls': [{'type': 'function', 'function': {'name': 't', 'arguments': {'n': nan, 'm': inf}}}]}",
+  "memra": {
+   "reason": "NaN and Infinity are not JSON; the vendor reads them as floats",
+   "message": {
+    "role": "assistant",
+    "content": "<|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"n\":NaN,\"m\":Infinity}}<|end_message|>"
+   }
+  }
+ },
+ {
+  "name": "call-duplicate-keys",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"a\",\"name\":\"ping\",\"args\":{\"k\":1,\"j\":2,\"k\":3}}<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "ping",
+      "arguments": {
+       "k": 3,
+       "j": 2
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-deep-nesting",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"ping\",\"args\":{\"d\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}}<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "vendor": "parsed; arguments nested 201 deep",
+  "memra": {
+   "reason": "nesting past 128 levels is refused before it can exhaust the stack",
+   "message": {
+    "role": "assistant",
+    "content": "<|message_model|>ping<|content_invoke_tool_json|>{\"name\":\"ping\",\"args\":{\"d\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}}<|end_message|>"
+   }
+  }
+ },
+ {
+  "name": "call-casts",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"i\":\" 42 \",\"n\":\"-0\",\"u\":\"null\",\"s\":\"7\",\"b\":\"TRUE\",\"o\":\"{\\\"k\\\":[1]}\",\"a\":\"[1,\\\"x\\\"]\"}}<|end_message|><|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"i\":\"+7\",\"n\":\"1e3\",\"u\":\"12\",\"s\":\"x\",\"b\":\" 0 \"}}<|end_message|><|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"i\":\"007\",\"n\":\"2.50\",\"u\":\" None \",\"b\":\"1\"}}<|end_message|><|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"i\":\"-0.0\",\"n\":\"1E2\",\"o\":\"[1]\",\"a\":\"{}\"}}<|end_message|><|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"i\":\"9007199254740993\",\"n\":\"0.1\",\"u\":\"3.0\"}}<|end_message|><|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"i\":\"1e20\",\"n\":\"1e400\",\"u\":\"nan\"}}<|end_message|><|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"i\":\"123456789012345678901234567890\",\"n\":\"-inf\",\"u\":\"3.5\"}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "t",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "i": {
+        "type": "integer"
+       },
+       "n": {
+        "type": "number"
+       },
+       "b": {
+        "type": "boolean"
+       },
+       "o": {
+        "type": "object"
+       },
+       "a": {
+        "type": "array"
+       },
+       "u": {
+        "anyOf": [
+         {
+          "type": "integer"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "s": {
+        "type": [
+         "string",
+         "integer"
+        ]
+       },
+       "n0": {
+        "type": "integer",
+        "nullable": 0
+       },
+       "ne": {
+        "type": "integer",
+        "nullable": ""
+       },
+       "nl": {
+        "type": "integer",
+        "nullable": []
+       },
+       "nt": {
+        "type": "integer",
+        "nullable": true
+       },
+       "n1": {
+        "type": "integer",
+        "nullable": 1
+       }
+      }
+     }
+    }
+   }
+  ],
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "t",
+      "arguments": {
+       "i": 42,
+       "n": 0,
+       "u": null,
+       "s": 7,
+       "b": true,
+       "o": {
+        "k": [
+         1
+        ]
+       },
+       "a": [
+        1,
+        "x"
+       ]
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "t",
+      "arguments": {
+       "i": 7,
+       "n": 1000,
+       "u": 12,
+       "s": "x",
+       "b": false
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "t",
+      "arguments": {
+       "i": 7,
+       "n": 2.5,
+       "u": null,
+       "b": true
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "t",
+      "arguments": {
+       "i": 0,
+       "n": 100,
+       "o": "[1]",
+       "a": "{}"
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "t",
+      "arguments": {
+       "i": 9007199254740993,
+       "n": 0.1,
+       "u": 3
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "t",
+      "arguments": {
+       "i": 100000000000000000000,
+       "n": "1e400",
+       "u": "nan"
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "t",
+      "arguments": {
+       "i": 123456789012345678901234567890,
+       "n": "-inf",
+       "u": "3.5"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-casts-python-spellings",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"i\":\"1_000\",\"n\":\"1_0.5\",\"u\":\"１２３\",\"s\":\"٣\"}}<|end_message|><|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"n\":\"12345678901234567890\"}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "t",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "i": {
+        "type": "integer"
+       },
+       "n": {
+        "type": "number"
+       },
+       "b": {
+        "type": "boolean"
+       },
+       "o": {
+        "type": "object"
+       },
+       "a": {
+        "type": "array"
+       },
+       "u": {
+        "anyOf": [
+         {
+          "type": "integer"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "s": {
+        "type": [
+         "string",
+         "integer"
+        ]
+       },
+       "n0": {
+        "type": "integer",
+        "nullable": 0
+       },
+       "ne": {
+        "type": "integer",
+        "nullable": ""
+       },
+       "nl": {
+        "type": "integer",
+        "nullable": []
+       },
+       "nt": {
+        "type": "integer",
+        "nullable": true
+       },
+       "n1": {
+        "type": "integer",
+        "nullable": 1
+       }
+      }
+     }
+    }
+   }
+  ],
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "t",
+      "arguments": {
+       "i": 1000,
+       "n": 10.5,
+       "u": 123,
+       "s": 3
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "t",
+      "arguments": {
+       "n": 12345678901234567168
+      }
+     }
+    }
+   ]
+  },
+  "memra": {
+   "reason": "digit separators and non-ASCII digits are Python numerals, not JSON Schema numbers, and stay strings; a digit string cast to number keeps every digit, where the vendor rounds it through a float",
+   "message": {
+    "role": "assistant",
+    "tool_calls": [
+     {
+      "type": "function",
+      "function": {
+       "name": "t",
+       "arguments": {
+        "i": "1_000",
+        "n": "1_0.5",
+        "u": "１２３",
+        "s": "٣"
+       }
+      }
+     },
+     {
+      "type": "function",
+      "function": {
+       "name": "t",
+       "arguments": {
+        "n": 12345678901234567890
+       }
+      }
+     }
+    ]
+   }
+  }
+ },
+ {
+  "name": "call-nullable-truthiness",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"n0\":\"null\",\"ne\":\"null\",\"nl\":\"null\",\"nt\":\"null\",\"n1\":\"null\"}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "t",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "i": {
+        "type": "integer"
+       },
+       "n": {
+        "type": "number"
+       },
+       "b": {
+        "type": "boolean"
+       },
+       "o": {
+        "type": "object"
+       },
+       "a": {
+        "type": "array"
+       },
+       "u": {
+        "anyOf": [
+         {
+          "type": "integer"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "s": {
+        "type": [
+         "string",
+         "integer"
+        ]
+       },
+       "n0": {
+        "type": "integer",
+        "nullable": 0
+       },
+       "ne": {
+        "type": "integer",
+        "nullable": ""
+       },
+       "nl": {
+        "type": "integer",
+        "nullable": []
+       },
+       "nt": {
+        "type": "integer",
+        "nullable": true
+       },
+       "n1": {
+        "type": "integer",
+        "nullable": 1
+       }
+      }
+     }
+    }
+   }
+  ],
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "t",
+      "arguments": {
+       "n0": "null",
+       "ne": "null",
+       "nl": "null",
+       "nt": null,
+       "n1": null
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-list-items",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>t<|content_invoke_tool_json|>{\"name\":\"t\",\"args\":{\"i\":[\"1\",\"2\",3,\"x\",null],\"a\":[\"1\"],\"b\":[\"true\",\"no\"]}}<|end_message|><|content_model_end_sampling|>",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "t",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "i": {
+        "type": "integer"
+       },
+       "n": {
+        "type": "number"
+       },
+       "b": {
+        "type": "boolean"
+       },
+       "o": {
+        "type": "object"
+       },
+       "a": {
+        "type": "array"
+       },
+       "u": {
+        "anyOf": [
+         {
+          "type": "integer"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "s": {
+        "type": [
+         "string",
+         "integer"
+        ]
+       },
+       "n0": {
+        "type": "integer",
+        "nullable": 0
+       },
+       "ne": {
+        "type": "integer",
+        "nullable": ""
+       },
+       "nl": {
+        "type": "integer",
+        "nullable": []
+       },
+       "nt": {
+        "type": "integer",
+        "nullable": true
+       },
+       "n1": {
+        "type": "integer",
+        "nullable": 1
+       }
+      }
+     }
+    }
+   }
+  ],
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "t",
+      "arguments": {
+       "i": [
+        1,
+        2,
+        3,
+        "x",
+        null
+       ],
+       "a": [
+        "1"
+       ],
+       "b": [
+        true,
+        "no"
+       ]
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-long-header",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh<|content_invoke_tool_json|>{\"name\":\"ping\",\"args\":{}}<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "message": {
+   "role": "assistant",
+   "tool_calls": [
+    {
+     "type": "function",
+     "function": {
+      "name": "ping",
+      "arguments": {}
+     }
+    }
+   ]
+  }
+ },
+ {
+  "name": "call-long-header-malformed",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh<|content_invoke_tool_json|>{\"name\":\"ping\"<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "error": "ValueError: json parser could not parse region as JSON.",
+  "memra": {
+   "reason": "malformed span surfaces verbatim; the vendor raises; a header past the cap is not kept",
+   "message": {
+    "role": "assistant",
+    "content": "<|content_invoke_tool_json|>{\"name\":\"ping\"<|end_message|>"
+   }
+  }
+ },
+ {
+  "name": "call-header-at-the-cap-malformed",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh<|content_invoke_tool_json|>{\"name\":\"ping\"<|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "error": "ValueError: json parser could not parse region as JSON.",
+  "memra": {
+   "reason": "malformed span surfaces verbatim; the vendor raises",
+   "message": {
+    "role": "assistant",
+    "content": "<|message_model|>hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh<|content_invoke_tool_json|>{\"name\":\"ping\"<|end_message|>"
+   }
+  }
+ },
+ {
+  "name": "call-ends-after-marker",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|>",
+  "tools": null,
+  "error": "ValueError: json parser could not parse region as JSON.",
+  "memra": {
+   "reason": "malformed span surfaces verbatim; the vendor raises",
+   "message": {
+    "role": "assistant",
+    "content": "<|message_model|>ping<|content_invoke_tool_json|>"
+   }
+  }
+ },
+ {
+  "name": "call-empty-body",
+  "prefix": "<|message_system|>tool_declare<|content_xml|>[{\"description\":\"Current weather for a city.\",\"name\":\"get_weather\",\"parameters\":{\"properties\":{\"city\":{\"description\":\"City name\",\"type\":\"string\"},\"days\":{\"type\":\"integer\"},\"metric\":{\"type\":\"boolean\"}},\"required\":[\"city\"],\"type\":\"object\"},\"type\":\"function\"}]<|end_message|><|message_system|><|content_text|>Thinking effort level: 0.9<|end_message|><|message_user|><|content_text|>What is the weather in Paris?<|end_message|>",
+  "output": "<|message_model|>ping<|content_invoke_tool_json|><|end_message|><|content_model_end_sampling|>",
+  "tools": null,
+  "error": "ValueError: json parser could not parse region as JSON.",
+  "memra": {
+   "reason": "malformed span surfaces verbatim; the vendor raises",
+   "message": {
+    "role": "assistant",
+    "content": "<|message_model|>ping<|content_invoke_tool_json|><|end_message|>"
+   }
+  }
+ }
+]

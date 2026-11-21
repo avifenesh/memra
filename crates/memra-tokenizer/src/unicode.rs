@@ -873,6 +873,178 @@ pub fn split_deepseek_v3(text: &str) -> Vec<String> {
     words
 }
 
+// ---- gpt-4o (o200k) split ---------------------------------------------------------------
+
+/// Scalar classes of the gpt-4o split, as `unicode_gpt4o_data` numbers them.
+mod g4 {
+    pub const OTHER: u8 = 0;
+    /// `\p{Lu}` or `\p{Lt}`.
+    pub const UPPER: u8 = 1;
+    /// `\p{Ll}`.
+    pub const LOWER: u8 = 2;
+    /// `\p{Lm}` or `\p{Lo}`: a member of both letter-run classes of the regex.
+    pub const UNCASED: u8 = 3;
+    /// `\p{M}`: also a member of both letter-run classes.
+    pub const MARK: u8 = 4;
+    pub const NUMBER: u8 = 5;
+    /// `\s`.
+    pub const SPACE: u8 = 6;
+}
+
+fn gpt4o_class(cpt: u32) -> u8 {
+    let ranges = &crate::unicode_gpt4o_data::GPT4O_CLASS_RANGES;
+    let i = ranges.partition_point(|&(_, last, _)| last < cpt);
+    match ranges.get(i) {
+        Some(&(first, _, class)) if first <= cpt => class,
+        _ => g4::OTHER,
+    }
+}
+
+/// Pre-tokenizer split for the gpt-4o / o200k_base `Split` regex (`GPT4O_PRETOKENIZE_REGEX` in
+/// the crate root; llama.cpp `LLAMA_VOCAB_PRE_TYPE_GPT4O`), behavior `Isolated`:
+///
+/// ```text
+/// 1  [^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?
+/// 2  [^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?
+/// 3  \p{N}{1,3}
+/// 4   ?[^\s\p{L}\p{N}]+[\r\n/]*
+/// 5  \s*[\r\n]+
+/// 6  \s+(?!\S)
+/// 7  \s+
+/// ```
+///
+/// A scan of the ordered alternation, not a regex engine. Alternatives 1 and 2 are the only
+/// ones whose result depends on backtracking, because `\p{Lm}`, `\p{Lo}` and `\p{M}` sit in both
+/// the upper and the lower run class and `\p{M}` also in the optional prefix class: the scan
+/// tries the prefix taken and then not taken, and in alternative 1 gives the upper run back one
+/// scalar at a time until the lower run finds a member, which is the order a backtracking
+/// engine explores. The classes are Oniguruma's own (`unicode_gpt4o_data`); the contraction
+/// suffix folds case the way that engine does (`contraction_fold`).
+pub fn split_gpt4o(text: &str) -> Vec<String> {
+    let cpts: Vec<char> = text.chars().collect();
+    let cls: Vec<u8> = cpts.iter().map(|&c| gpt4o_class(c as u32)).collect();
+    let n = cpts.len();
+
+    let is_rn = |i: usize| cpts[i] == '\r' || cpts[i] == '\n';
+    let upper = |i: usize| matches!(cls[i], g4::UPPER | g4::UNCASED | g4::MARK);
+    let lower = |i: usize| matches!(cls[i], g4::LOWER | g4::UNCASED | g4::MARK);
+    // `[^\r\n\p{L}\p{N}]`
+    let prefix = |i: usize| !is_rn(i) && matches!(cls[i], g4::OTHER | g4::MARK | g4::SPACE);
+    // `[^\s\p{L}\p{N}]`
+    let other = |i: usize| matches!(cls[i], g4::OTHER | g4::MARK);
+    let space = |i: usize| cls[i] == g4::SPACE;
+    let run = |from: usize, member: &dyn Fn(usize) -> bool| -> usize {
+        let mut end = from;
+        while end < n && member(end) {
+            end += 1;
+        }
+        end
+    };
+    // `(?i:'s|'t|'re|'ve|'m|'ll|'d)?` at `at`: the scalars it takes (0, 2 or 3).
+    let contraction = |at: usize| -> usize {
+        if at + 1 >= n || cpts[at] != '\'' {
+            return 0;
+        }
+        let fold = |i: usize| char::from_u32(contraction_fold(cpts[i] as u32)).unwrap_or('\0');
+        match fold(at + 1) {
+            's' | 't' | 'm' | 'd' => 2,
+            'r' | 'v' if at + 2 < n && fold(at + 2) == 'e' => 3,
+            'l' if at + 2 < n && fold(at + 2) == 'l' => 3,
+            _ => 0,
+        }
+    };
+    // Alternatives 1 (`upper_first` false: `U*L+`) and 2 (`U+L*`).
+    let word = |pos: usize, upper_first: bool| -> Option<usize> {
+        for take_prefix in [true, false] {
+            let start = if take_prefix {
+                if !prefix(pos) {
+                    continue;
+                }
+                pos + 1
+            } else {
+                pos
+            };
+            let upper_end = run(start, &upper);
+            let body_end = if upper_first {
+                (upper_end > start).then(|| run(upper_end, &lower))
+            } else {
+                let mut from = upper_end;
+                loop {
+                    let lower_end = run(from, &lower);
+                    if lower_end > from {
+                        break Some(lower_end);
+                    }
+                    if from == start {
+                        break None;
+                    }
+                    from -= 1;
+                }
+            };
+            if let Some(end) = body_end {
+                return Some(end + contraction(end));
+            }
+        }
+        None
+    };
+    let match_at = |pos: usize| -> Option<usize> {
+        if let Some(end) = word(pos, false).or_else(|| word(pos, true)) {
+            return Some(end);
+        }
+        if cls[pos] == g4::NUMBER {
+            let mut end = pos + 1;
+            while end < n && end < pos + 3 && cls[end] == g4::NUMBER {
+                end += 1;
+            }
+            return Some(end);
+        }
+        // ` ?[^\s\p{L}\p{N}]+[\r\n/]*`: without the space the scan would start on it and fail.
+        let from = if cpts[pos] == ' ' { pos + 1 } else { pos };
+        let other_end = run(from, &other);
+        if other_end > from {
+            return Some(run(other_end, &|i| is_rn(i) || cpts[i] == '/'));
+        }
+        let space_end = run(pos, &space);
+        if space_end == pos {
+            return None;
+        }
+        // `\s*[\r\n]+`: the greedy `\s*` gives back to the last line break of the run.
+        if let Some(last) = (pos..space_end).rev().find(|&i| is_rn(i)) {
+            return Some(last + 1);
+        }
+        // `\s+(?!\S)`: all of a run that ends the text, else all but its last scalar.
+        if space_end == n {
+            return Some(space_end);
+        }
+        if space_end - pos >= 2 {
+            return Some(space_end - 1);
+        }
+        Some(space_end)
+    };
+
+    let piece = |from: usize, to: usize| cpts[from..to].iter().collect::<String>();
+    let mut words = Vec::new();
+    let mut unmatched_from = 0usize;
+    let mut pos = 0usize;
+    while pos < n {
+        match match_at(pos) {
+            Some(end) => {
+                debug_assert!(end > pos);
+                if unmatched_from < pos {
+                    words.push(piece(unmatched_from, pos));
+                }
+                words.push(piece(pos, end));
+                pos = end;
+                unmatched_from = end;
+            }
+            None => pos += 1,
+        }
+    }
+    if unmatched_from < n {
+        words.push(piece(unmatched_from, n));
+    }
+    words
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

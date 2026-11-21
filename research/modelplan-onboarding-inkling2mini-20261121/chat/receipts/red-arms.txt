@@ -1,0 +1,35 @@
+Red arms of the review round (PR 1394, 2026-11-21). Each line group is the test output of the
+tree with one fix turned off; cargo's own build lines and paths are left out.
+
+== 1. Response parser of the first revision (16b9e45e44) against the 46 parse fixtures ==
+(the old ToolStreamParser::inkling2, its test made to list failures instead of stopping at one)
+OLD PARSER fails 9 of 46: ["call-numbers-keep-their-value (whole FAIL, streamed FAIL)", "call-number-overflow (whole FAIL, streamed FAIL)", "call-casts (whole FAIL, streamed FAIL)", "call-casts-python-spellings (whole FAIL, streamed FAIL)", "call-nullable-truthiness (whole FAIL, streamed FAIL)", "call-list-items (whole FAIL, streamed FAIL)", "call-long-header-malformed (whole FAIL, streamed ok)", "call-header-at-the-cap-malformed (whole ok, streamed FAIL)", "call-ends-after-marker (whole FAIL, streamed FAIL)"]
+
+== 2. GGUF path with the family's whole-word lookup off (PreSplit::gguf_ignore_merges false) ==
+$ MEMRA_GLM53_TOKENIZER_DIR=<GLM-5.3-Flash @ 04c4e9e9> cargo test -p memra-tokenizer --test whole_word_lookup -- --nocapture
+assertion `left == right` failed: glm4 declares the lookup
+test both_load_paths_take_the_whole_word_lookup_from_the_family ... FAILED
+test the_inkling2_vocabulary_as_a_gguf_gives_the_checkpoint_ids ... FAILED
+glm53 tokenizer.json: ignore-merges corpus 1786 cases, 0 differ
+glm53 tokenizer.json: pre-tokenizer corpus 526 cases, 0 differ
+glm53 gguf: ignore-merges corpus 1786 cases, 1695 differ
+gguf: 1695 of 1786 differ: ["piece-99855", "sentence-99855", "piece-99924", "sentence-99924", "piece-101502", "sentence-101502", "piece-102222", "sentence-102222"]
+test glm53_flash_gives_the_checkpoint_ids_on_both_load_paths ... FAILED
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.02s
+
+== 3. Null or missing content rendered as "" (the no_content arm off) ==
+$ cargo test -p memra-tokenizer --test inkling2_chat
+test every_render_matches_the_artifact_template ... FAILED
+test result: FAILED. 8 passed; 1 failed; 1 ignored
+
+== 4. Tool-JSON numbers written as the request spelled them (py_json_number off) ==
+$ cargo test -p memra-tokenizer --test inkling2_chat
+test tool_json_numbers_render_as_python_prints_them_whatever_their_spelling ... FAILED
+test result: FAILED. 8 passed; 1 failed; 1 ignored
+
+== 5. tokenizer.json path with ignore_merges not read (final 992-case corpus of the first revision) ==
+337 of 992 differ (exactly the unmerged-* cases); a_word_that_is_one_piece_encodes_without_the_merge_table FAILED
+
+== 6. The glm4 split in place of the gpt-4o split (same corpus) ==
+7 of 992 differ: raw-thai-no-spaces, raw-devanagari-marks, raw-combining-accent, raw-mixed-kitchen-sink,
+own-case-uncased, own-marks, own-mixed-scripts
