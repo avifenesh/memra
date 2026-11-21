@@ -58,6 +58,7 @@ L2.
 | 9: attention tiles prefetched, heads a block by SM count | 14.69 [14.69-14.71] | 67.9 | 13.81 [13.79-13.83] | 72.2 | 106.6 | 318.0 |
 | 10: a small-row stage's weight tile as one bulk copy | 16.53 [16.52-16.54] | 60.4 | 15.43 [15.40-15.46] | 64.6 | 107.1 | 319.5 |
 | 11: the per-row kernels' strided loads issued together | 16.79 [16.76-16.82] | 59.5 | 15.71 [15.66-15.72] | 63.5 | 107.4 | 318.1 |
+| 12: the small kernels let their dependent launch before they wait | 16.94 [16.93-16.99] | 58.9 | 15.87 [15.84-15.88] | 62.9 | 102.7 | 319.2 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -198,9 +199,22 @@ thread walked its strided elements one load after the other, each waiting for th
 `r_rms_kernel` 8.5 us for 4,096 values, the hyper-connection reductions and mix, the expert
 combine (16 slots x 16 outputs a thread), the router weights. Each thread now issues up to 16 of
 its loads together and then runs the same chain in the same order; RoPE takes a thread a pair.
-In the profile with programmatic launch on, the RMS norms went 2.56 -> 0.92 ms a step, the combine
-0.68 -> 0.23, the router weights 0.51 -> 0.10. Decode step 60.4 -> 59.5 ms on `chat`, 64.6 -> 63.5
-ms on `long`; 3 of 3 tapes bit-equal.
+Decode step 60.4 -> 59.5 ms on `chat`, 64.6 -> 63.5 ms on `long`; 3 of 3 tapes bit-equal.
+
+### 12. Small kernels: launch the dependent first (`receipts/s12-trigger-first/`)
+
+A small kernel waited for its predecessor and only then let its own dependent launch, so each
+kernel of a chain of small ones was launched while the one before it already ran. They now
+signal first and wait second (as the small-row GEMMs did): a whole chain and the GEMM after it
+are launched while the GEMM before it streams, and the GEMM's first stages load during the
+chain. Decode step 59.5 -> 58.9 ms on `chat`, 63.5 -> 62.9 ms on `long`; 3 of 3 tapes bit-equal.
+`chat`'s 36-token prefill reads 107 -> 103 tokens/s; `long`'s is unchanged.
+
+With steps 11 and 12 the profile with programmatic launch on
+(`profile-chat-pdl-on-step10-vs-step12.txt`, `tools/excl.py`: a kernel's time is its end minus
+the later of its start and its predecessor's end) has the RMS norms at 0.92 ms a step (2.56),
+the expert combine 0.23 (0.68), the router weights 0.10 (0.51). A top-k by rank instead of the
+radix select was tried with them and dropped: the same 0.60 ms a step.
 
 Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct

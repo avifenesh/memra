@@ -214,8 +214,8 @@ static __device__ __forceinline__ void r_mma(float* c, const uint32_t* a, const 
 // accumulator, the FP8 block scale folded in every 128 inputs.
 template <int BM, int FMT>
 __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   constexpr int WR = BM == 64 ? 32 : 16;
   constexpr int WC = BM == 64 ? 32 : 16;
   constexpr int MT = WR / 16;
@@ -1081,8 +1081,8 @@ static __device__ float r_block_sum(float v, float* red) {
 
 // y = w * (x * rsqrt(mean(x^2) + eps)), one block (256) per row
 __global__ void r_rms_kernel(const float* x, long ldx, const float* w, float* y, long ldy, int d, float eps) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   __shared__ float red[32];
   const float* xr = x + (long)blockIdx.x * ldx;
   float* yr = y + (long)blockIdx.x * ldy;
@@ -1125,8 +1125,8 @@ extern "C" int memra_hy4r_rms(const float* x, long ldx, const float* w, float* y
 // (2i, 2i+1) of the last rope dims; cos/sin from the call's table [rows of positions, dim/2]
 __global__ void r_rope_kernel(float* x, long ldrow, long ldhead, int heads, int off, int half, const float2* cs,
                               const int* posrow) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int r = blockIdx.x;
   const float2* c = cs + (long)posrow[r] * half;
   const int e = blockIdx.y * blockDim.x + threadIdx.x;  // a thread a pair
@@ -1148,8 +1148,8 @@ extern "C" int memra_hy4r_rope(float* x, long ldrow, long ldhead, int rows, int 
 
 // the call's cos/sin table: row r is position pos0 + r, inv_freq in f64
 __global__ void r_rope_table_kernel(float2* out, int pos0, int rows, int half, const double* inv) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int e = blockIdx.x * blockDim.x + threadIdx.x;
   if (e >= rows * half) return;
   const int r = e / half, i = e % half;
@@ -1180,8 +1180,8 @@ extern "C" int memra_hy4r_rope_table(void* out, int pos0, int rows, int half, co
 #define HC_SPLIT 4
 __global__ void __launch_bounds__(HC_T / HC_SPLIT) r_hc_dots_kernel(const float* s, const float* fn, int width,
                                                                    int fns, float* parts) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int r = blockIdx.x, j = blockIdx.y;
   const int t = blockIdx.z * (HC_T / HC_SPLIT) + threadIdx.x;
   const float* flat = s + (long)r * width;
@@ -1206,8 +1206,8 @@ __global__ void __launch_bounds__(HC_T / HC_SPLIT) r_hc_dots_kernel(const float*
 __global__ void __launch_bounds__(HC_T) r_hc_mix_kernel(const float* s, const float* parts, const float* base,
                                                         const float* scale, int nstream, int h, int fns, float mix_eps,
                                                         float eps, float mag, float* post, float* x) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   __shared__ float red[17][HC_T / 32];
   __shared__ float dot[17];
   __shared__ float mix[16];
@@ -1280,8 +1280,8 @@ extern "C" int memra_hy4r_hc(const float* s, const float* fn, const float* base,
 
 // s[r, j, :] = post[r, j] * a[r, :] + s[r, j, :]
 __global__ void r_write_back_kernel(float* s, const float* post, const float* a, int nstream, int h, long total) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const long e = (long)blockIdx.x * blockDim.x + threadIdx.x;
   if (e >= total) return;
   const long r = e / ((long)nstream * h);
@@ -1301,8 +1301,8 @@ extern "C" int memra_hy4r_write_back(float* s, const float* post, const float* a
 // out = silu(min(g, lim)) * clamp(u, -lim, lim) (lim < 0: no clamp); `gate_rows` scales: the
 // attention output gate, out = o * sigmoid(g) when mode == 1
 __global__ void r_act_kernel(const float* g, const float* u, float* out, long n, float lim, int mode) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const long e = (long)blockIdx.x * blockDim.x + threadIdx.x;
   if (e >= n) return;
   if (mode == 1) {
@@ -1325,8 +1325,8 @@ extern "C" int memra_hy4r_act(const float* g, const float* u, float* out, long n
 
 // y[r, :] = a[r, :] + b[r, :] (+ bias)
 __global__ void r_add_kernel(float* y, const float* a, const float* b, const float* bias, long n, int d) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const long e = (long)blockIdx.x * blockDim.x + threadIdx.x;
   if (e >= n) return;
   float v = a[e];
@@ -1343,8 +1343,8 @@ extern "C" int memra_hy4r_add(float* y, const float* a, const float* b, const fl
 
 // strided copy of `cols` f32 values a row, optionally into BF16 (`to_bf16`)
 __global__ void r_copy_kernel(const float* src, long lds, void* dst, long ldd, int cols, int to_bf16, const int* dstrow) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int r = blockIdx.x;
   const long dr = dstrow ? dstrow[r] : r;
   for (int c = threadIdx.x; c < cols; c += blockDim.x) {
@@ -1365,8 +1365,8 @@ extern "C" int memra_hy4r_copy(const float* src, long lds, void* dst, long ldd, 
 
 // BF16 rows gathered into another BF16 buffer: dst[i] = src[rows[i]] (`words` u32 a row)
 __global__ void r_gather_bf_kernel(const uint32_t* src, long lds, const int* rows, uint32_t* dst, long ldd, int words) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int i = blockIdx.x;
   const long sr = rows[i];
   for (int c = threadIdx.x; c < words; c += blockDim.x) dst[(long)i * ldd + c] = src[sr * lds + c];
@@ -1381,8 +1381,8 @@ extern "C" int memra_hy4r_gather_bf(const void* src, long lds, const int* rows, 
 
 // embedding rows on every stream: s[r, j, :] = embed[tok[r]]
 __global__ void r_embed_kernel(const uint16_t* table, const int* tok, float* s, int nstream, int h) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int r = blockIdx.x;
   const uint16_t* row = table + (long)tok[r] * h;
   for (int d = threadIdx.x; d < h; d += blockDim.x) {
@@ -1410,8 +1410,8 @@ static __device__ __forceinline__ uint32_t r_key(float v) {
 // select finds the k-th key; one ordered pass emits.
 __global__ void __launch_bounds__(256) r_topk_kernel(const float* vals, long ldv, int n, int k, int reverse_ties,
                                                      int* out, long ldo) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   __shared__ int hist[256];
   __shared__ int sh[4];
   __shared__ int wsum[8];
@@ -1507,8 +1507,8 @@ extern "C" int memra_hy4r_topk(const float* vals, long ldv, int rows, int n, int
 // scores = sigmoid(logits), choice = scores + bias (both F32, as the program computes them)
 __global__ void r_router_scores_kernel(const float* logits, const float* bias, float* scores, float* choice, long n,
                                        int e) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= n) return;
   const float s = 1.0f / (1.0f + expf(-logits[i]));
@@ -1527,8 +1527,8 @@ extern "C" int memra_hy4r_router_scores(const float* logits, const float* bias, 
 // weights of the applied picks: w = scores[pick] (normalized when the plan says so) * scaling
 __global__ void r_router_w_kernel(const float* scores, int e, const int* picks, int k, int normalize, float scaling,
                                   float* w, int rows) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int r = blockIdx.x * blockDim.x + threadIdx.x;
   if (r >= rows) return;
   float z = 0.0f;
@@ -1573,8 +1573,8 @@ extern "C" int memra_hy4r_router_weights(const float* scores, int rows, int e, c
 // counts[e] over the picks; then one block: offsets, tiles (expert, row0, rows) of `bm` rows,
 // every unused tile zeroed; cursor = offsets
 __global__ void r_moe_count_kernel(const int* picks, int n, int* counts) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < n) atomicAdd(&counts[picks[i]], 1);
 }
@@ -1584,8 +1584,8 @@ __global__ void r_moe_count_kernel(const int* picks, int n, int* counts) {
 #define RM_THREADS 512
 __global__ void __launch_bounds__(RM_THREADS) r_moe_plan_kernel(const int* counts, int ne, int bm, int max_tiles,
                                                                 int* cursor, int* tiles) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   __shared__ int sc[2][RM_THREADS];
   __shared__ int carry[2];
   const int tid = threadIdx.x;
@@ -1636,15 +1636,15 @@ __global__ void __launch_bounds__(RM_THREADS) r_moe_plan_kernel(const int* count
 // each (token, slot) takes a row of its expert's group (the row order inside a group does not
 // change any row's result); xg[row] = x[token]
 __global__ void r_moe_place_kernel(const int* picks, int n, int k, int* cursor, int* rowmap) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < n) rowmap[i] = atomicAdd(&cursor[picks[i]], 1);
 }
 
 __global__ void r_moe_gather_kernel(const float* x, int d, const int* rowmap, int k, float* xg) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int i = blockIdx.x;  // token * k + slot
   const float* src = x + (long)(i / k) * d;
   float* dst = xg + (long)rowmap[i] * d;
@@ -1666,8 +1666,8 @@ extern "C" int memra_hy4r_moe_group(const int* picks, int rows, int k, int ne, i
 
 // out[t, :] = sum over slots in order (ascending expert) of w[t, slot] * y[rowmap[t, slot], :]
 __global__ void r_moe_combine_kernel(const float* y, int d, const int* rowmap, const float* w, int k, float* out) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int t = blockIdx.x;
   if (k <= 16) {
     // the slots' rows and weights once, then an output's k values as independent loads and the
@@ -1736,8 +1736,8 @@ static __device__ __forceinline__ int r_key_row(const RAttn& a, int q, int j, in
 // can spread its few (head, chunk) units over more SMs with fewer heads a block.
 template <int HG>
 __global__ void __launch_bounds__(256) r_attn_kernel(RAttn a) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   extern __shared__ __align__(16) unsigned char smem[];
   float* qs = (float*)smem;                 // [HG][576]
   float* ks = qs + HG * AT_DK;              // [32][577]
@@ -1849,8 +1849,8 @@ __global__ void __launch_bounds__(256) r_attn_kernel(RAttn a) {
 
 // out[q, h, :] = merge of the chunks in order, the sink in the max and the denominator
 __global__ void r_attn_merge_kernel(const float* po, const float* pml, const float* sinks, int H, int C, float* out) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int qi = blockIdx.x, h = blockIdx.y;
   const long b = ((long)qi * H + h) * C;
   float M = sinks[h];
@@ -1916,8 +1916,8 @@ extern "C" int memra_hy4r_attn(const float* q, const void* kv, const int* list, 
 __global__ void r_pool_kernel(const float* tk, int dim, int pool, const float* kvp, const float* kgp,
                               const float* ape, const float* key_norm, float eps, int rd, const float2* cs, int cs_pos0,
                               int g0, float* out) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   __shared__ float keys[8][128];
   __shared__ float pooled[128];
   __shared__ float red[32];
@@ -1985,8 +1985,8 @@ extern "C" int memra_hy4r_pool(const void* tk, int dim, int pool, const float* k
 __global__ void __launch_bounds__(IL_G) r_index_logits_kernel(const float* qi, const float* hw, const float* gk,
                                                               const int* qpos, int heads, int dim, int pool, int ng,
                                                               float hscale, float* out) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   __shared__ float qs[16 * 128];
   __shared__ float ws[16];
   __shared__ float ks[IL_G * 129];
@@ -2032,8 +2032,8 @@ extern "C" int memra_hy4r_index_logits(const float* qi, const float* hw, const f
 #define RC_T 1024
 __global__ void __launch_bounds__(RC_T) r_recall_kernel(const int* picks, int kp, const int* qpos, int pool, int* sel,
                                                          int* list, int ldl, int* lens) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   __shared__ int s[RC_T];
   __shared__ int wsum[RC_T / 32];
   __shared__ int tot[2];
@@ -2100,8 +2100,8 @@ extern "C" int memra_hy4r_recall(const int* picks, int kp, const int* qpos, int 
 
 // forced recall (the oracle's sel, own included): only the key rows
 __global__ void r_recall_forced_kernel(const int* sel, int ks, const int* qpos, int pool, int* list, int ldl, int* lens) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int r = blockIdx.x;
   if (threadIdx.x != 0) return;
   const int p = qpos[r];
@@ -2131,8 +2131,8 @@ extern "C" int memra_hy4r_recall_forced(const int* sel, int ks, const int* qpos,
 // emb[t, head*dim + d] = rms(e4m3(code) * row scale, head_norm[head]) per (token, head)
 __global__ void r_engram_rows_kernel(const uint8_t* codes, const float* scales, const float* norms, int heads, int dim,
                                      float eps, float* emb) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   const int t = blockIdx.x, hd = threadIdx.y;
   const int lane = threadIdx.x;
   const uint8_t* c = codes + ((long)t * heads + hd) * dim;
@@ -2167,8 +2167,8 @@ extern "C" int memra_hy4r_engram_rows(const void* codes, const float* scales, co
 __global__ void r_engram_mix_kernel(float* s, const float* keyraw, const float* main, const float* norm_key,
                                     const float* norm_query, const float* scales, const uint8_t* mask, int nstream, int h,
                                     float eps) {
-  r_pdl_wait();
   r_pdl_trigger();
+  r_pdl_wait();
   __shared__ float red[32];
   const int t = blockIdx.x, j = blockIdx.y;
   float* sr = s + ((long)t * nstream + j) * h;

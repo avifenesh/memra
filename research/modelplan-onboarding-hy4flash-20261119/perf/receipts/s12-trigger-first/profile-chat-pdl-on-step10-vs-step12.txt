@@ -1,0 +1,41 @@
+r_gemv_kernel< 96x17x1                         8.693   8.771  n   41   41
+r_gemv_kernel< 96x1x1                          8.691   8.745  n   43   43
+r_gemv_kernel< 512x1x1                         8.351   8.741  n   60   60
+r_gemv_kernel< 48x17x1                         4.628   4.869  n   41   41
+r_gemv_kernel< 144x1x1                         4.776   4.670  n   41   41
+r_gemv_f32_split_kernel 30208x1x1              3.092   3.163  n    1    1
+r_gemv_kernel< 192x1x1                         2.998   3.103  n   41   41
+r_rms_kernel                                   2.562   0.919  n  269  269
+r_gemv_kernel< 8x1x64                          1.863   2.026  n   30   30
+r_gemv_kernel< 256x1x1                         1.567   1.769  n   23   23
+r_gemv_kernel< 16x1x64                         1.664   1.559  n   30   30
+r_gemv_kernel< 50x1x1                          1.374   1.386  n   30   30
+r_attn_kernel<                                 0.620   0.963  n   42   42
+r_hc_dots_kernel                               0.706   0.920  n   85   85
+r_gemv_f32_split_kernel 128x1x1                0.729   0.771  n   41   41
+r_gemv_kernel< 480x1x1                         0.762   0.752  n    4    4
+r_gemv_kernel< 432x1x1                         0.714   0.722  n    2    2
+r_moe_combine_kernel                           0.677   0.232  n   41   41
+r_attn_merge_kernel                            0.673   0.203  n   42   42
+r_topk_kernel                                  0.608   0.000  n   41    0
+r_topk_rank_kernel                             0.000   0.603  n    0   41
+r_hc_mix_kernel                                0.560   0.602  n   85   85
+r_gemv_kernel< 54x1x1                          0.532   0.539  n   11   11
+r_router_w_kernel                              0.508   0.095  n   41   41
+r_gemv_kernel< 8x1x32                          0.318   0.393  n   12   12
+r_pool_kernel                                  0.380   0.389  n   12   12
+r_gemv_kernel< 16x1x32                         0.358   0.310  n   12   12
+~idle                                          0.305   0.312  n    0    0
+r_rope_kernel                                  0.297   0.114  n   84   84
+r_write_back_kernel                            0.144   0.287  n   84   84
+r_gemv_kernel< 310x1x1                         0.247   0.266  n    1    1
+r_act_kernel                                   0.253   0.135  n  125  125
+r_copy_kernel                                  0.186   0.238  n  138  138
+r_add_kernel                                   0.073   0.104  n   61   61
+r_moe_plan_kernel                              0.091   0.101  n   41   41
+r_moe_gather_kernel                            0.075   0.079  n   41   41
+r_engram_rows_kernel                           0.075   0.076  n    4    4
+r_engram_mix_kernel                            0.063   0.069  n    4    4
+r_router_scores_kernel                         0.063   0.056  n   41   41
+r_moe_count_kernel                             0.056   0.050  n   41   41
+total                                         60.448  59.218
