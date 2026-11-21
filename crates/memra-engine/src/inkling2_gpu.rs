@@ -854,6 +854,17 @@ pub enum Tap {
     RouteWeights,
     /// The router's margin: key of the last pick minus key of the first one left out, `[rows]`.
     RouteMargin,
+    /// Attention probe (only for a slot `Observer::attn_probe` names): the clipped and scaled
+    /// queries `[rows, heads * dim]`, the relative-position inputs `[rows, heads * rank]`, the
+    /// sink logits `[rows, heads]`, the bias table `[rank, extent]`, the slot's whole key and
+    /// value caches `[cap, kv_heads * dim]` and the attention output before the gate.
+    AttnQ,
+    AttnRel,
+    AttnSink,
+    AttnTable,
+    AttnKeys,
+    AttnValues,
+    AttnOut,
 }
 
 /// A caller's view into a call.
@@ -861,6 +872,10 @@ pub trait Observer {
     /// Which float taps to download.
     fn wants(&self, tap: Tap) -> bool;
     fn floats(&mut self, slot: u32, tap: Tap, data: &[f32]);
+    /// Download the attention probe taps of this slot.
+    fn attn_probe(&self, _slot: u32) -> bool {
+        false
+    }
     /// The router's own picks in rank order, `[rows, top_k]`.
     fn picks(&mut self, slot: u32, ids: &[u32]);
     /// Picks and weights to run instead of the router's (`[rows, top_k]` each), or `None`.
@@ -2160,6 +2175,25 @@ impl Route {
                     dev.sp(),
                 )
             })?;
+            if let Some(o) = obs.as_deref_mut()
+                && o.attn_probe(slot)
+            {
+                o.floats(slot, Tap::AttnQ, &dev.down(&w.qb, 0, rows * qw)?);
+                o.floats(
+                    slot,
+                    Tap::AttnRel,
+                    &dev.down(&w.rb, 0, rows * heads * rank)?,
+                );
+                o.floats(slot, Tap::AttnSink, &dev.down(&w.sinkb, 0, rows * heads)?);
+                o.floats(
+                    slot,
+                    Tap::AttnTable,
+                    &dev.down(&lw.table, 0, rank * extent)?,
+                );
+                o.floats(slot, Tap::AttnKeys, &dev.down(&ss.kc, 0, ss.cap * kvw)?);
+                o.floats(slot, Tap::AttnValues, &dev.down(&ss.vc, 0, ss.cap * kvw)?);
+                o.floats(slot, Tap::AttnOut, &dev.down(&w.att, 0, rows * qw)?);
+            }
             dev.launched("memra_ink2g_gate", unsafe {
                 ffi::memra_ink2g_gate(
                     dptr_mut(&mut w.att, &st) as *mut f32,

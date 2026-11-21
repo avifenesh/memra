@@ -25,6 +25,9 @@
 //!   --contract-check         CPU only: bind the tensor contract over the census and check that
 //!                            its red arms (extra, missing, reshaped, retyped tensor; a read of a
 //!                            name it does not bind) are refused
+//!   --attn-probe S,S..       the tape's prompt, then the last 4 query rows of the last call of
+//!                            each full-attention slot S recomputed on the host from the route's
+//!                            own queries and caches, in f64 and as an f32 eager program
 //!   --inject-failure SLOT    the atomicity gate: the tape's first --limit ids, half as a prefill,
 //!                            then one decode call that fails after SLOT, then one decode call per
 //!                            later id; every slot output and logit row must equal a clean run
@@ -65,6 +68,7 @@ struct Args {
     score: bool,
     inject_failure: Option<u32>,
     contract_check: bool,
+    attn_probe: Vec<u32>,
 }
 
 fn parse() -> Result<Args, String> {
@@ -93,6 +97,11 @@ fn parse() -> Result<Args, String> {
             "--numeric-class" => a.numeric_class = true,
             "--inject-failure" => a.inject_failure = Some(num(val()?)? as u32),
             "--contract-check" => a.contract_check = true,
+            "--attn-probe" => {
+                for v in val()?.split(',') {
+                    a.attn_probe.push(num(v.into())? as u32);
+                }
+            }
             "--chunkings" => {
                 let v = val()?;
                 let (x, y) = v.split_once(',').ok_or("--chunkings A,B")?;
@@ -353,7 +362,7 @@ impl Observer for Compare<'_> {
         match tap {
             Tap::ResidAttn | Tap::ResidFfn | Tap::RouteMargin => true,
             Tap::MoeOut => self.tape.moe_out.is_some(),
-            Tap::MoeIn | Tap::RouteWeights => false,
+            _ => false,
         }
     }
     fn floats(&mut self, slot: u32, tap: Tap, data: &[f32]) {
@@ -424,6 +433,219 @@ impl Observer for Compare<'_> {
         }
         Some(out)
     }
+}
+
+// ---- attention probe -------------------------------------------------------------------------
+
+#[derive(Default)]
+struct AttnProbe {
+    slots: Vec<u32>,
+    taps: BTreeMap<(u32, u8), Vec<f32>>,
+}
+
+fn tap_id(tap: Tap) -> u8 {
+    match tap {
+        Tap::AttnQ => 0,
+        Tap::AttnRel => 1,
+        Tap::AttnSink => 2,
+        Tap::AttnTable => 3,
+        Tap::AttnKeys => 4,
+        Tap::AttnValues => 5,
+        Tap::AttnOut => 6,
+        _ => 255,
+    }
+}
+
+impl Observer for AttnProbe {
+    fn wants(&self, _tap: Tap) -> bool {
+        false
+    }
+    fn floats(&mut self, slot: u32, tap: Tap, data: &[f32]) {
+        self.taps.insert((slot, tap_id(tap)), data.to_vec());
+    }
+    fn picks(&mut self, _slot: u32, _ids: &[u32]) {}
+    fn forced(&mut self, _slot: u32, _rows: usize) -> Option<(Vec<u32>, Vec<f32>)> {
+        None
+    }
+    fn attn_probe(&self, slot: u32) -> bool {
+        self.slots.contains(&slot)
+    }
+}
+
+/// One query row in f32 the way an f32 eager program computes it: f32 dot products, f32 softmax
+/// with the max subtracted and the sink in the denominator, f32 value sum (keys oldest first).
+#[allow(clippy::too_many_arguments)]
+fn attend_f32(
+    q: &[f32],
+    bias: &[f64],
+    sink: f32,
+    keys: &[f32],
+    values: &[f32],
+    nkeys: usize,
+    pos: usize,
+    kvw: usize,
+    kvh: usize,
+    dim: usize,
+    extent: usize,
+    mask_beyond: bool,
+) -> Vec<f32> {
+    let scale = 1.0f32 / (dim as f32).sqrt();
+    let mut s = vec![f32::NEG_INFINITY; nkeys];
+    for (d, sd) in s.iter_mut().enumerate() {
+        if d >= extent && mask_beyond {
+            continue;
+        }
+        let k = &keys[(pos - d) * kvw + kvh * dim..][..dim];
+        let dot: f32 = q.iter().zip(k).map(|(a, b)| a * b).sum();
+        *sd = dot * scale + if d < extent { bias[d] as f32 } else { 0.0 };
+    }
+    let top = s.iter().copied().fold(sink, f32::max);
+    let e: Vec<f32> = s.iter().map(|v| (v - top).exp()).collect();
+    let den: f32 = e.iter().sum::<f32>() + (sink - top).exp();
+    let mut out = vec![0f32; dim];
+    for d in (0..nkeys).rev() {
+        let v = &values[(pos - d) * kvw + kvh * dim..][..dim];
+        for (o, x) in out.iter_mut().zip(v) {
+            *o += e[d] / den * x;
+        }
+    }
+    out
+}
+
+fn rel_l2(a: &[f64], b: &[f64]) -> f64 {
+    let (mut n, mut d) = (0f64, 0f64);
+    for (x, y) in a.iter().zip(b) {
+        n += (x - y).powi(2);
+        d += y.powi(2);
+    }
+    (n / d.max(1e-300)).sqrt()
+}
+
+/// The tape's prompt through the route, then for each probed slot the last `rows` query rows of
+/// the last call recomputed on the host from the route's own inputs and caches: in f64 (the
+/// reference attention) and in f32 (an f32 eager program). Returns the receipt section.
+fn attn_probe(
+    route: &mut Route,
+    plan: &ModelPlan,
+    tokens: &[u32],
+    slots: &[u32],
+    rows: usize,
+) -> Result<serde_json::Value, String> {
+    use memra_reference::inkling2::ops;
+    route.reset()?;
+    let last = tokens.len() - ((tokens.len() - 1) % route.chunk + 1);
+    if last > 0 {
+        route.call(&tokens[..last], Head::None, None)?;
+    }
+    let mut probe = AttnProbe {
+        slots: slots.to_vec(),
+        ..AttnProbe::default()
+    };
+    route.forward(&tokens[last..], Head::None, Some(&mut probe))?;
+    let call_rows = tokens.len() - last;
+    let mut out = serde_json::Map::new();
+    for &slot in slots {
+        let layer = &plan.layers[slot as usize];
+        let memra_gguf::model_plan::AttentionPlan::RelativeBias(a) = &layer.attention else {
+            return Err(format!("slot {slot} has no relative-bias attention"));
+        };
+        let (heads, kvh, dim, rank, extent) = (
+            a.query_heads as usize,
+            a.kv_heads as usize,
+            a.head_dim as usize,
+            a.relative.rank as usize,
+            a.relative.extent as usize,
+        );
+        let (qw, kvw) = (heads * dim, kvh * dim);
+        let mask = a.relative.beyond_extent == memra_gguf::model_plan::BeyondExtent::Masked;
+        let get = |t: Tap| {
+            probe
+                .taps
+                .get(&(slot, tap_id(t)))
+                .ok_or(format!("slot {slot}: no probe tap"))
+        };
+        let (q, rel, sink, table, keys, values, att) = (
+            get(Tap::AttnQ)?,
+            get(Tap::AttnRel)?,
+            get(Tap::AttnSink)?,
+            get(Tap::AttnTable)?,
+            get(Tap::AttnKeys)?,
+            get(Tap::AttnValues)?,
+            get(Tap::AttnOut)?,
+        );
+        let cap = keys.len() / kvw;
+        let shape = ops::AttentionShape {
+            query_heads: heads,
+            kv_heads: kvh,
+            head_dim: dim,
+            window: a.window.map(|w| w as usize),
+            extent,
+            mask_beyond_extent: mask,
+        };
+        let mut rows_out = Vec::new();
+        for r in call_rows.saturating_sub(rows)..call_rows {
+            let pos = last + r;
+            if a.window.is_some() || cap <= pos {
+                return Err(format!(
+                    "slot {slot}: the probe reads a full-attention cache"
+                ));
+            }
+            let nkeys = pos + 1;
+            let wide = |x: &[f32]| x.iter().map(|v| f64::from(*v)).collect::<Vec<f64>>();
+            let bias = ops::relative_bias(
+                &wide(&rel[r * heads * rank..][..heads * rank]),
+                table,
+                rank,
+                extent,
+            );
+            let positions: Vec<u64> = (0..nkeys as u64).collect();
+            let want = ops::attend(
+                &shape,
+                &wide(&q[r * qw..][..qw]),
+                &bias,
+                &wide(&sink[r * heads..][..heads]),
+                pos as u64,
+                ops::CachedRows {
+                    positions: &positions,
+                    keys: &wide(&keys[..nkeys * kvw]),
+                    values: &wide(&values[..nkeys * kvw]),
+                },
+            );
+            let gpu = wide(&att[r * qw..][..qw]);
+            let mut f32_rows = Vec::with_capacity(qw);
+            for h in 0..heads {
+                f32_rows.extend(attend_f32(
+                    &q[r * qw + h * dim..][..dim],
+                    &bias[h * extent..][..extent],
+                    sink[r * heads + h],
+                    keys,
+                    values,
+                    nkeys,
+                    pos,
+                    kvw,
+                    h / (heads / kvh),
+                    dim,
+                    extent,
+                    mask,
+                ));
+            }
+            let f32w = wide(&f32_rows);
+            rows_out.push(serde_json::json!({
+                "position": pos,
+                "keys": nkeys,
+                "gpu_vs_f64_rel_l2": rel_l2(&gpu, &want),
+                "f32_eager_vs_f64_rel_l2": rel_l2(&f32w, &want),
+                "gpu_vs_f32_eager_rel_l2": rel_l2(&gpu, &f32w),
+            }));
+            eprintln!(
+                "ink2-gpu: attn probe slot {slot} position {pos} ({nkeys} keys): gpu vs f64 {:.3e}, f32 eager vs f64 {:.3e}",
+                rel_l2(&gpu, &want),
+                rel_l2(&f32w, &want)
+            );
+        }
+        out.insert(slot.to_string(), serde_json::Value::Array(rows_out));
+    }
+    Ok(serde_json::Value::Object(out))
 }
 
 fn argmax(row: &[f32]) -> u32 {
@@ -879,6 +1101,10 @@ fn run() -> Result<(), String> {
             "ink2-gpu: chunkings {x} vs {y} over {limit} rows: slot rows differ {slot_rows_differ}/{}, logit rows differ {logit_rows_differ}, argmax differ {argmax_differ}",
             limit * nslots
         );
+    }
+    if !a.attn_probe.is_empty() {
+        let tokens = &tape.all_ids[..tape.prompt];
+        receipt["attn_probe"] = attn_probe(&mut route, &plan, tokens, &a.attn_probe, 4)?;
     }
     if let Some(fail_slot) = a.inject_failure {
         let limit = if a.limit > 0 {
