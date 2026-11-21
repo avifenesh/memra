@@ -1,11 +1,13 @@
 """A few real chat turns through the served route: the answers, their timings and the DFly2 usage.
 
-usage: python3 real_turns.py ADDR KEY MODEL OUT_JSON
+usage: python3 real_turns.py ADDR KEY MODEL OUT_JSON [--greedy] [--runs N]
 
-Greedy chat completions, one request at a time, each stopping at its own end. Each turn's answer
-is written with its wall time and, when the route drafts, its usage's `spec` (rounds, drafted,
-accepted); run it against a server with drafting on and one with it off and compare the answers
-(they must be equal).
+Chat completions, one request at a time, each stopping at its own end, sampled at the artifact's
+`generation_config.json` (temperature 0.9, no top-k, no top-p) with seed 20261121, so a drafting
+and a non-drafting server of one binary give the same answers, and so does every repeat.
+`--runs N` asks each turn N times and keeps every wall time and their median; the answers of the
+repeats must be equal. `--greedy` asks for temperature 0: the identity and fault cells of step 10
+ran that way; speed is read sampled.
 """
 
 import json
@@ -15,6 +17,8 @@ import urllib.error
 import urllib.request
 
 addr, key, model, out = sys.argv[1:5]
+GREEDY = "--greedy" in sys.argv[5:]
+RUNS = int(sys.argv[sys.argv.index("--runs") + 1]) if "--runs" in sys.argv else 1
 
 TURNS = [
     ("capital", [{"role": "user", "content": "What is the capital of Japan, and what is it known for? Two sentences."}],
@@ -47,18 +51,30 @@ def post(path, body, timeout=3600):
 
 
 rows = []
+ok = True
 for name, messages, extra in TURNS:
-    body = {"model": model, "messages": messages, "max_tokens": 256, "temperature": 0} | extra
-    st, raw, dt = post("/v1/chat/completions", body)
-    j = json.loads(raw) if st == 200 else {"error": raw}
-    ch = (j.get("choices") or [{}])[0]
-    msg = ch.get("message") or {}
-    usage = j.get("usage") or {}
-    row = {"turn": name, "status": st, "prompt_tokens": usage.get("prompt_tokens"),
-           "completion_tokens": usage.get("completion_tokens"), "finish": ch.get("finish_reason"),
-           "wall_s": round(dt, 3), "spec": usage.get("spec"), "content": msg.get("content"),
-           "reasoning": msg.get("reasoning"), "error": j.get("error")}
+    sampling = {"temperature": 0} if GREEDY else {"temperature": 0.9, "seed": 20261121}
+    body = {"model": model, "messages": messages, "max_tokens": 256} | sampling | extra
+    walls, row = [], None
+    for _ in range(RUNS):
+        st, raw, dt = post("/v1/chat/completions", body)
+        j = json.loads(raw) if st == 200 else {"error": raw}
+        ch = (j.get("choices") or [{}])[0]
+        msg = ch.get("message") or {}
+        usage = j.get("usage") or {}
+        got = {"turn": name, "status": st, "sampling": sampling, "prompt_tokens": usage.get("prompt_tokens"),
+               "completion_tokens": usage.get("completion_tokens"), "finish": ch.get("finish_reason"),
+               "spec": usage.get("spec"), "content": msg.get("content"),
+               "reasoning": msg.get("reasoning"), "error": j.get("error")}
+        if row is not None and got != row:
+            ok = False
+            got["repeat_differs"] = True
+        row = got
+        walls.append(round(dt, 3))
+    row["walls_s"] = walls
+    row["wall_s"] = sorted(walls)[len(walls) // 2]
     rows.append(row)
     print(json.dumps({k: row[k] for k in ("turn", "status", "prompt_tokens", "completion_tokens", "finish",
-                                          "wall_s", "spec")}), flush=True)
+                                          "wall_s", "walls_s", "spec")}), flush=True)
 json.dump(rows, open(out, "w"), indent=1)
+sys.exit(0 if ok and all(r["status"] == 200 for r in rows) else 1)

@@ -6,6 +6,9 @@
 # reads: $D/target/release/memra-server, $D/tapes.json, $D/route-gen.json, the PR 7 requests
 # (D defaults to the step 9 run directory; step 10 runs it from its own with D=...). `what` is
 # `both` (all three) or a comma list of gate, bench and turns (real_turns.py's chat turns).
+# The readings and the turns are sampled at the model card's settings; TURNS_GREEDY=1 in this
+# script's environment asks the turns for temperature 0 (the identity and fault cells), TURNS_RUNS=N
+# for N repeats of each turn.
 set -u
 tag=$1; what=${2:-both}; shift 2 || shift $#
 D=${D:-$HOME/hy4flash/pr9}
@@ -45,13 +48,13 @@ if has gate; then
 fi
 if has bench; then
   python3 $S/bench.py 127.0.0.1:$port $key hy4 $HOME/hy4flash/pr7/requests "$out/bench.jsonl" \
-    > "$out/bench.log" 2>&1
+    --server-log "$log" > "$out/bench.log" 2>&1
   brc=$?
   echo "BENCH rc=$brc $(date '+%F %T')" >> "$out/run.txt"
   [ $brc -ne 0 ] && [ $rc -eq 0 ] && rc=$brc
 fi
 if has turns; then
-  python3 $S/real_turns.py 127.0.0.1:$port $key hy4 "$out/turns.json" > "$out/turns.log" 2>&1
+  python3 $S/real_turns.py 127.0.0.1:$port $key hy4 "$out/turns.json" ${TURNS_GREEDY:+--greedy} ${TURNS_RUNS:+--runs $TURNS_RUNS} > "$out/turns.log" 2>&1
   trc=$?
   echo "TURNS rc=$trc $(date '+%F %T')" >> "$out/run.txt"
   [ $trc -ne 0 ] && [ $rc -eq 0 ] && rc=$trc
