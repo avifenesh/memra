@@ -176,8 +176,10 @@ pub struct AdaptiveK {
     max: usize,
     succ: f64,
     fail: f64,
+    /// `time[0]`: a plain one-row step.
     time: Vec<Option<f64>>,
     steps: usize,
+    plain_run: usize,
 }
 
 impl AdaptiveK {
@@ -188,6 +190,7 @@ impl AdaptiveK {
             fail: 1.0,
             time: vec![None; max + 1],
             steps: 0,
+            plain_run: 0,
         }
     }
 
@@ -210,15 +213,24 @@ impl AdaptiveK {
         Some((my + slope * (k as f64 - mx)).max(1e-6))
     }
 
-    /// The length of the next verify call (1..=max).
+    /// The length of the next verify call (1..=max), or 0 for a plain one-row step. A request
+    /// that keeps choosing plain steps tries a length of 2 every 16 of them, so its acceptance
+    /// estimate follows the text.
     pub fn choose(&self) -> usize {
         match self.steps {
             0 => return self.max,
             1 => return 2.min(self.max),
+            2 => return 0,
             _ => {}
+        }
+        if self.plain_run >= 16 {
+            return 2.min(self.max);
         }
         let a = (self.succ / (self.succ + self.fail)).min(0.999);
         let mut best = (1, f64::NEG_INFINITY);
+        if let Some(t) = self.time[0] {
+            best = (0, 1.0 / t);
+        }
         for k in 1..=self.max {
             let Some(t) = self.step_time(k) else { continue };
             let tokens = (1.0 - a.powi(k as i32 + 1)) / (1.0 - a);
@@ -230,11 +242,17 @@ impl AdaptiveK {
         best.0
     }
 
-    /// A finished step of length `k` that accepted `accepted` proposals in `secs`.
+    /// A finished step of length `k` (0: a plain step) that accepted `accepted` proposals in
+    /// `secs`.
     pub fn record(&mut self, k: usize, accepted: usize, secs: f64) {
-        self.succ += accepted as f64;
-        if accepted < k {
-            self.fail += 1.0;
+        if k == 0 {
+            self.plain_run += 1;
+        } else {
+            self.plain_run = 0;
+            self.succ += accepted as f64;
+            if accepted < k {
+                self.fail += 1.0;
+            }
         }
         self.time[k] = Some(match self.time[k] {
             Some(t) => 0.7 * t + 0.3 * secs,
@@ -471,6 +489,9 @@ fn generate_inner(
                 }
             };
             stats.plain_steps += 1;
+            if let Some(a) = adapt.as_mut() {
+                a.record(0, 0, t_step.elapsed().as_secs_f64());
+            }
             out.push(anchor);
             continue;
         }
@@ -787,6 +808,8 @@ mod tests {
         a.record(7, 7, 0.070);
         assert_eq!(a.choose(), 2);
         a.record(2, 2, 0.032);
+        assert_eq!(a.choose(), 0, "the third step times a plain step");
+        a.record(0, 0, 0.021);
         for _ in 0..20 {
             a.record(7, 7, 0.070);
         }
@@ -794,10 +817,15 @@ mod tests {
         let mut b = AdaptiveK::new(7);
         b.record(7, 0, 0.070);
         b.record(2, 0, 0.032);
+        b.record(0, 0, 0.021);
         for _ in 0..20 {
             b.record(2, 0, 0.032);
         }
-        assert_eq!(b.choose(), 1, "nothing accepted: the shortest");
+        assert_eq!(b.choose(), 0, "nothing accepted: plain steps");
+        for _ in 0..16 {
+            b.record(0, 0, 0.021);
+        }
+        assert_eq!(b.choose(), 2, "after 16 plain steps, one probe");
     }
 
     #[test]
