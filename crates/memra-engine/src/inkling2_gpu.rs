@@ -480,8 +480,9 @@ pub struct Prec {
 
 impl Default for Prec {
     /// The route's program: the arms adopted by docs/decisions/INKLING2-PRECISION-ARMS.md (the
-    /// controller, the norms and clips and the epilogues in f32; attention f64 with a chunk's scores
-    /// split over blocks); every other group f64.
+    /// controller and the norms and clips in f32; attention f64 with a chunk's scores split over
+    /// blocks); every other group f64 (the epilogue in f32 was backed off: with the norms it moves
+    /// p3 into the 1e-2 flip cluster).
     fn default() -> Self {
         Self {
             controller: 1,
@@ -489,7 +490,7 @@ impl Default for Prec {
             norm: 1,
             conv: 0,
             router: 0,
-            epilogue: 1,
+            epilogue: 0,
             attn: 3,
         }
     }
@@ -5145,10 +5146,10 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 && e_gate <= F32
                 && p.norm == 1
                 && p.controller == 1
-                && p.epilogue == 1
+                && p.epilogue == 0
                 && p.attn == 3,
             format!(
-                "ink2g-prec-adopted [{p:?}] f32 norm max rel={e_norm:.3e}, f32 controller max rel={e_ctrl:.3e}, f32 output gate max rel={e_gate:.3e} (bound {F32:.0e})"
+                "ink2g-prec-adopted [{p:?}] f32 norm max rel={e_norm:.3e}, f32 controller max rel={e_ctrl:.3e}, output gate (f64) max rel={e_gate:.3e} (bound {F32:.0e})"
             ),
         );
     }
