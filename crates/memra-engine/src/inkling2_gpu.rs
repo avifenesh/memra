@@ -767,14 +767,14 @@ impl Dev {
         }
     }
 
-    fn bind(&self) -> Result<(), String> {
+    pub(crate) fn bind(&self) -> Result<(), String> {
         self.st
             .context()
             .bind_to_thread()
             .map_err(|e| format!("bind: {e:?}"))
     }
 
-    fn sp(&self) -> *mut c_void {
+    pub(crate) fn sp(&self) -> *mut c_void {
         self.st.cu_stream() as *mut c_void
     }
 
@@ -813,7 +813,7 @@ impl Dev {
         Ok(out)
     }
 
-    fn put<T: cudarc::driver::DeviceRepr>(
+    pub(crate) fn put<T: cudarc::driver::DeviceRepr>(
         &self,
         host: &[T],
         dst: &mut CudaSlice<T>,
@@ -836,9 +836,27 @@ impl Dev {
         self.round_trips.set(0);
     }
 
-    fn launched(&self, name: &str, rc: i32) -> Result<(), String> {
+    pub(crate) fn launched(&self, name: &str, rc: i32) -> Result<(), String> {
         self.launches.set(self.launches.get() + 1);
         ck(name, rc)
+    }
+
+    /// The stream every launch of this handle goes to.
+    pub fn stream(&self) -> &Arc<CudaStream> {
+        &self.st
+    }
+
+    /// `bytes` from device address `src` to `dst`, on the stream.
+    pub(crate) fn copy_raw(&self, dst: u64, src: u64, bytes: usize) -> Result<(), String> {
+        self.copies.set(self.copies.get() + 1);
+        ck("memra_ink2g_copy", unsafe {
+            ffi::memra_ink2g_copy(
+                dst as *mut c_void,
+                src as *const c_void,
+                bytes as i64,
+                self.sp(),
+            )
+        })
     }
 
     /// f32 rows `src` to `dst` (`n` elements).
@@ -1484,6 +1502,8 @@ pub enum Head {
     LastArgmax,
     /// Every row: logits and argmax.
     All,
+    /// Every row: argmax only (a verify call that needs no distribution).
+    AllArgmax,
 }
 
 pub struct CallOut {
@@ -1628,6 +1648,25 @@ pub struct Route {
     pub weight_bytes: usize,
     /// Where the card's memory went at load.
     pub account: MemoryAccount,
+    /// Rows of the drafter's taps, when a caller asked for them ([`Route::set_capture`]).
+    capture: Option<Capture>,
+}
+
+/// The drafter's taps of one call: the stream on entry to each named slot (the running partial
+/// block, before the depth mix and any norm), then the final norm output, `[taps, chunk, hidden]`.
+struct Capture {
+    slots: Vec<u32>,
+    buf: CudaSlice<f32>,
+}
+
+/// The committed convolution history (which of the two buffers, see `SlotState::conv`) and the
+/// position of a request, noted before a call whose last rows may be rejected. Nothing is
+/// copied: the call writes the other buffers. The K/V caches need no copy either: a rejected row's keys sit at
+/// positions past the committed ones, which the next call writes before any row reads them
+/// (the sliding rings hold `window - 1 + chunk` rows).
+pub struct Carry {
+    parity: usize,
+    position: u64,
 }
 
 fn program(plan: &ModelPlan) -> Result<&Inkling2Plan, String> {
@@ -2237,7 +2276,73 @@ impl Route {
             hidden,
             weight_bytes,
             account,
+            capture: None,
         })
+    }
+
+    /// Capture the stream on entry to each of `slots` and the final norm output on every later
+    /// call. Their order is the tap order; an empty list turns capture off.
+    pub fn set_capture(&mut self, slots: &[u32]) -> Result<(), String> {
+        if slots.is_empty() {
+            self.capture = None;
+            return Ok(());
+        }
+        if let Some(bad) = slots.iter().find(|s| **s as usize >= self.slots.len()) {
+            return Err(format!(
+                "capture of slot {bad}; the plan has {}",
+                self.slots.len()
+            ));
+        }
+        let buf = self
+            .dev
+            .zeros::<f32>((slots.len() + 1) * self.chunk * self.hidden)?;
+        self.capture = Some(Capture {
+            slots: slots.to_vec(),
+            buf,
+        });
+        Ok(())
+    }
+
+    /// The last call's taps, `[taps, chunk, hidden]` (row `r` of tap `t` at
+    /// `(t * chunk + r) * hidden`).
+    pub fn captured(&self) -> Option<&CudaSlice<f32>> {
+        self.capture.as_ref().map(|c| &c.buf)
+    }
+
+    /// The trunk's token embedding `[vocab, hidden]` (BF16 bytes), its norm weight and epsilon,
+    /// and the output projection `[vocab, hidden]` (BF16 bytes; the first `vocab()` rows get
+    /// logits).
+    pub fn shared_weights(&self) -> (&CudaSlice<u8>, &CudaSlice<f32>, &CudaSlice<u8>) {
+        (&self.embed, &self.embed_norm, &self.unembed)
+    }
+
+    pub fn plan(&self) -> &ModelPlan {
+        &self.plan
+    }
+
+    /// Buffers for [`Route::save_carry`].
+    pub fn carry(&self) -> Result<Carry, String> {
+        Ok(Carry {
+            parity: self.parity,
+            position: self.position,
+        })
+    }
+
+    /// Note the committed convolution history and the position. A call writes the other
+    /// buffer of each history and swaps only when it succeeds, so the noted buffers stay as
+    /// they are through the next call.
+    pub fn save_carry(&self, carry: &mut Carry) -> Result<(), String> {
+        carry.parity = self.parity;
+        carry.position = self.position;
+        Ok(())
+    }
+
+    /// Back to the noted convolution history and position (valid after one call since the
+    /// note: the call wrote the other buffers).
+    pub fn restore_carry(&mut self, carry: &Carry) -> Result<(), String> {
+        self.parity = carry.parity;
+        self.position = carry.position;
+        Ok(())
     }
 
     /// Kept vocabulary rows (the padded ids are never computed).
@@ -2513,6 +2618,7 @@ impl Route {
             softcap,
             keep,
             hidden,
+            capture,
             ..
         } = self;
         let (hidden, chunk, red, softcap, keep) = (*hidden, *chunk, *red, *softcap, *keep);
@@ -2567,6 +2673,12 @@ impl Route {
                     None => {}
                 }
                 pass = info.pass;
+            }
+            if let Some(c) = capture.as_mut()
+                && let Some(tap) = c.slots.iter().position(|s| *s == slot)
+            {
+                let dst = dptr_mut(&mut c.buf, &st) + ((tap * chunk * hidden) * 4) as u64;
+                dev.copy_raw(dst, dptr(&w.h, &st), rows * hidden * 4)?;
             }
             let layer = &plan.layers[slot as usize];
             let lw = &layers[info.physical_layer as usize];
@@ -3311,6 +3423,11 @@ impl Route {
             let n = plan.layers.len() as u32;
             o.floats(n, Tap::FinalHidden, &dev.down(&w.mn, 0, rows * hidden)?);
         }
+        if let Some(c) = capture.as_mut() {
+            let tap = c.slots.len();
+            let dst = dptr_mut(&mut c.buf, &st) + ((tap * chunk * hidden) * 4) as u64;
+            dev.copy_raw(dst, dptr(&w.mn, &st), rows * hidden * 4)?;
+        }
         let mut out = CallOut {
             argmax: Vec::new(),
             logits: Vec::new(),
@@ -3318,7 +3435,7 @@ impl Route {
         let first = match head {
             Head::None => rows,
             Head::LastArgmax => rows - 1,
-            Head::All => 0,
+            Head::All | Head::AllArgmax => 0,
         };
         let mut at = first;
         while at < rows {
