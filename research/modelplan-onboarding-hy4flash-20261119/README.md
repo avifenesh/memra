@@ -231,9 +231,10 @@ header tensors).
   as block `[1, in]` (`QuantConstraint::Fp8RowF32`) instead of the 128x128 default, and reads a
   standalone I32 tensor (`QuantConstraint::I32`), which binds only through an explicit `I32`
   requirement, never as a canonical weight. Every other family's census is unchanged.
-- The DFly2 drafter and the vision tower are contract-owned and not in the text plan. The DFly2
-  MLP width (9,216) is not in the config; the vendor runtime takes it from the checkpoint, so the
-  pack pins it as a constant that the census checks.
+- The DFly2 drafter and the vision tower are contract-owned and not in the text plan (the drafter
+  runs since step 10, beside the plan). The DFly2 MLP width (9,216) is not in the config; the
+  vendor runtime takes it from the checkpoint, so the pack pins it as a constant that the census
+  checks.
 
 ## Tests
 
@@ -1163,7 +1164,7 @@ checkpoint directory whose `model_type` is `hy_v4_flash` loads here and never th
 - **Policy contract** (`route_contract::RouteContract::hy4f_thread`): every surface implemented,
   prime fairness by the chunk-a-step schedule.
 - **Not served, by name:** `response_format`, image and video parts, `min_p`, DFly2 drafts,
-  prefix reuse.
+  prefix reuse. (DFly2 drafts are served since step 10.)
 
 ## Gates
 
@@ -1218,7 +1219,7 @@ batched step) is the lever for aggregate throughput, and needs its own batched-v
 - Speed (a separate lane): batched decode across sessions (calls run one at a time, so aggregate
   throughput is flat in the number of requests), tensor-core attention, fused and staged GEMMs,
   launch count, overlapped Engram reads, CUDA graphs. A batched-vs-solo gate comes with any batching.
-- DFly2 drafts (step 10), with the open question of the drafter's dense MLP width: 9,216 in the
+- Done in step 10. DFly2 drafts, with the open question of the drafter's dense MLP width: 9,216 in the
   checkpoint's tensors, not in the config, where the vLLM derivation defaults it to
   `intermediate_size` (13,824) before reading the checkpoint (step 1's open questions).
 - The sm_120a record and the device battery cells for this stack (the landing runs them).
@@ -1229,3 +1230,325 @@ batched step) is the lever for aggregate throughput, and needs its own batched-v
 `serve/scripts/`: `serve_gate.sh TAG [gate|bench|both] [ENV=...]` boots the server, runs
 `chat_gate.py` and `bench.py` against it and stops it; the lane's other scripts are in
 `serve/receipts/scripts/` with the run box's paths.
+
+# Step 10: the DFly2 drafter and speculative decoding on one GB10 (2026-11-21)
+
+Verdict: the checkpoint's DFly2 drafter runs in memra, in f64 in memra-reference and on the GPU
+route in the route's numeric class, and the serve route drafts with it. The program is the pinned
+vLLM program's (transformers PR #50903 does not run the drafter). memra-reference matches its f64
+oracle bit for bit on the tiny fixture and within 2.4e-7 on the artifact's own drafter weights, over
+241 draft rounds of the chat and long probes. The GPU route, target and drafter together with the
+oracle's target picks applied, sits within the class band at every one of 1,205 draft steps, with
+every draft argmax equal to the oracle's. Wrong drafters fail. Served with drafts on, every token
+equals the undrafted route's: the logits rows are bit-identical, the step 9 serve gates pass, and
+every answer of the gate equals a drafts-off server's, greedy, sampled, penalized and stopped. A
+draft round or ring backup that is refused costs the request its drafts, not its answer. The
+drafter's MLP width is the checkpoint's, 9,216. The record `hy_v4_flash-gpu-1x-gb10` is re-pinned
+to the drafting route (`ef45222ac6d154c65a3e3122260241a32ceb2501`). The decode readings below are measurements, not claims; a
+separate lane tunes kernel speed.
+
+## The width
+
+Step 1 left one question open: the drafter's dense MLP width. The tensors are 9,216 wide; the
+config declares no `dfly_intermediate_size`; the vLLM derivation (`_derive_dfly_config`) sets the
+derived config's `intermediate_size` to `dfly_intermediate_size` or, undeclared, the trunk's 13,824.
+The pinned program settles it. `HYV4DFlyModel` builds no MLP at construction unless a width is
+declared or the weights are dummies. `HYV4DFlyForCausalLM.load_weights` then materializes each
+layer's MLP from the gate, up and down shapes it streams (`materialize_ffn(weight.shape[...])`),
+refuses a declared width that disagrees ("dfly_intermediate_size disagrees with checkpoint") and
+widths that differ between layers. So 13,824 is read only for `load_format=dummy`, and the width is
+the checkpoint's. Both pinned revisions hold 9,216 on all five layers, the NVFP4 artifact and its
+BF16 source (`dfly/source_widths.py`, `dfly/receipts/widths-*.json`, from the headers by range
+requests).
+
+memra pins that width for a config that declares none (`model_packs::hy_v4_flash::DFLY_FFN_WIDTH`),
+reads `dfly_intermediate_size` when declared (`dfly_ffn_width`), and the census binds every drafter
+MLP tensor to it. The pack test `the_drafter_mlp_width_is_the_checkpoints` binds the artifact's
+headers at 9,216, and refuses them by shape when the config declares 13,824 or 4,608. A
+checkpoint of another undeclared width is refused rather than read, which is narrower than the
+vendor (it would read it), and fails closed.
+
+## The program
+
+`vllm/models/hy_v4/nvidia/{dfly,dfly_speculator,dfly_inputs,dfly_target_reuse}.py`,
+`vllm/models/hy_v4/dfly_config.py`, `vllm/models/hy_v4_flash/dfly_config.py`, and the decoder
+layer, MLA attention and feed-forward they build on, at vLLM PR #68296 head 8cbb80efa397. Every
+file is checked against its git blob in the pinned tree. One draft round starts at the target's
+last accepted position `p`:
+
+- **Block.** `[anchor, mask x k]` at positions `p + 1 ..= p + 1 + k`. The anchor is the token the
+  target chose at `p`; the mask is 120009. `k` is the artifact's `speculative_config.num_speculative_tokens`, 5.
+- **Fusion.** Slot 0's embedding becomes `e + gate * eh_proj(cat(enorm(e), hnorm(h_p)))`, with
+  `h_p` the target's final normed hidden row at `p`, the head's input.
+- **Layers.** Five single-stream decoder layers. Each runs gated MLA with 32 heads (the indexed geometry), its sink,
+  RoPE at theta 1e7, `post_proj_norm`, and no indexer, then a dense SwiGLU of 9,216 without a clamp.
+  Draft layer `i` reads target layer `[25, 29, 33, 37, 41][i]`. Its keys for block row `j` are
+  that layer's cached latent and rope key at the slots the target's attention read for `p`: the
+  indexer's 511 recalled groups plus its own past the 2,048-key budget, every slot up to `p` below
+  it (`_reference_reuse_indices`: the snapshot row filtered to slots before `anchor`, a local
+  window of 0), then block rows `0..=j`. The block's own latent rows are written into the target
+  layer's cache at `p + 1 ..`. That is vLLM's shared storage, and the verify call writes those
+  rows again.
+- **Drafts.** `final_norm(hidden + residual)`. For step `s`, the hidden correction
+  `hidden[s + 1] + down(silu(gate) * up)(cat(hidden_norm(hidden[s + 1]), embed_norm(e(prev))))`
+  feeds the target's F32 head, and the draft is the first maximum. `prev` is the anchor, then each
+  step's draft.
+
+The vLLM modules need CUDA and its runtime. `dfly/make_dfly_oracle.py` transcribes the program
+onto torch on CPU, naming the lines it follows. The one CPU-runnable piece of the pinned tree, the
+test suite's torch reference of the index rows, is executed from its blob-checked file to build
+every key list. The artifact's drafter MLP and hidden correction are ModelOpt NVFP4, which the
+pinned DFly quantization check (8-bit only) would refuse to load. The oracle therefore runs the
+vLLM math with the artifact's exact dequantization, as the trunk's oracle does.
+
+**Target inputs.** The f64 target oracle of step 7 ran again with `--dump-dfly`. It wrote every
+position's final hidden row, the cached latent and rope key of the five target layers, and the
+slots each of their queries attended, taken from the indexer's returned mask. Its logits, router
+and indexer picks are byte-identical to step 7's tapes on `chat` and `long`.
+
+## Reference parity
+
+`crates/memra-reference/src/hy_v4_flash_dfly.rs` (`draft_round`), its trunk capture
+`hy_v4_flash_trunk::execute_for_draft`, and the runner `src/bin/hy4f_dfly.rs`:
+
+| run | rounds x drafts | max abs vs f64 oracle | argmax equal | drafts equal |
+|---|---:|---:|---:|---:|
+| tiny (2 blocks on layers 1 and 5, width 32, k = 3), 120 anchors across the budget and the decode | 120 x 3 | 0 (bit for bit, logits sha256 `2313f638`) | 360 / 360 | 120 / 120 |
+| artifact, `chat`, every position | 38 x 5 | 6.0e-8 | 190 / 190 | 38 / 38 |
+| artifact, `long`, 203 anchors (every 16th, 2,040 to 2,110, and 163, 426, 756, 1,083) | 203 x 5 | 2.4e-7 | 1,015 / 1,015 | 203 / 203 |
+
+The tiny fixture is `tiny-dfly-config.json`: the tiny config with a drafter whose declared width
+(32) is not the trunk's (48), its tensors seeded in the artifact's classes. The oracle's tiny tape
+is pinned in `dfly/tiny/oracle/`. `crates/memra-reference/tests/hy_v4_flash_dfly_tiny.rs` checks
+the match, checks that each wrong drafter fails, and checks that a drafter geometry at the trunk's
+width reads no weight.
+
+**Red arms.** Each runs through the same comparison and fails it. Moves are the largest logit move
+against the f64 oracle, unforced:
+
+| wrong program | tiny | `chat` | `long` |
+|---|---:|---:|---:|
+| each draft layer reads the next one's target layer (rotated) | 9.5 | 43.1 (164 argmax of 190) | 38.9 (994 of 1,015) |
+| the MLP at half its width | 9.1 | 32.1 (86) | 34.3 (613) |
+| hidden correction off | 6.5 | 29.1 (94) | 25.3 (637) |
+| the history at half the target's top-k | 8.5 | 0 | 25.1 (461) |
+
+The halved top-k is the same program as the right one wherever the target attended fewer than
+1,024 keys, as on `chat`. Only `long` tells them apart, and it refuses the arm there. The
+half-width MLP drafts better than the right program teacher-forced on `long`: 0.61 drafts kept a
+round against 0.58. Acceptance therefore cannot be the gate.
+
+## The GPU drafter
+
+`crates/memra-engine/src/hy4f_route/dfly.rs`, beside the route and additive to it. The route gets
+one hook after each layer of a call, which keeps the recall lists of the target index layers' last
+17 rows. It also gets a `dfly` field. No target kernel changed. The drafter runs in the route's
+class, `hy-v4-flash-bf16x2-activations`: every weight GEMM's input carried as two BF16 terms, the
+weights as stored (BF16; FP8 128x128 blocks; NVFP4 with its E4M3 group scales and the tensor's
+`weight_scale_2`), and F32 norms, RoPE, softmax and head. Its attention is the route's absorbed MLA
+kernel in list mode, over the target layer's cache. The drafter's weights take 0.70 GiB beside the
+target's 87.5 GiB.
+
+**Band.** The band is set from the pinned program's own backends, never from the route. It is
+twice the composite `bf16x2a` backend's spread against f64, measured on the gate's requests. The
+composite backend is the step 8 target backend forced to the f64 picks, with its drafter inputs
+dumped, followed by the drafter's `bf16x2a` backend over them, forced along the f64 drafts: 2.2e-4
+on `chat`, and 0.0199 on `long` at anchor 1,083, the position where step 8's target spread peaks.
+That gives a band of 0.0398, the factor step 8 used. Over the f64 target's own inputs, the
+drafter's backend alone spreads 1.6e-4. The GPU drafter on those inputs spreads 9.3e-4, four times
+more, with a relative bias of -5.7e-6 across all logits. The target class shows the same ratio on
+`chat` in step 8 (1.2e-3 against 3.1e-4). The cause is not isolated, so the drafter-only numbers
+are a diagnostic and set no band.
+
+**The gate.** `hy4f-spec gate-route` runs the whole route on each request teacher-forced, with the
+f64 oracle's router and indexer picks applied, as the class's checkpoint gate runs. It keeps every
+row's hidden state and every target index layer's history, then drafts at the oracle tape's
+anchors from its own cache, last first, along the oracle's drafts.
+`dfly/compare_dfly.py --atol 0.0398`:
+
+| request | rounds | max abs (where) | per-round max, p50 | argmax equal | own drafts equal |
+|---|---:|---:|---:|---:|---:|
+| `chat` | 38 | 6.7e-4 | 4.4e-4 | 190 / 190 | 38 / 38 |
+| `long` | 203 | 4.0e-3 (anchor 756) | 3.8e-4 | 1,015 / 1,015 | 203 / 203 |
+
+The pin's binaries give the same bytes: the logits of both composite tapes hash as the first
+run's did (`dfly/receipts/tapes/logits.sha256`, `compare/gpu-composite-*-ef45222ac6.json`), and the
+drafter-only runs and their four wrong drafters repeat number for number
+(`compare/gpu-drafter-only-*-ef45222ac6.json`, `gpu-red-*-ef45222ac6.json`).
+
+**Drafter-only runs.** `hy4f-spec gate` drafts from the f64 oracle's inputs rounded to F32. It
+holds only the embedding, the head and the drafter. Its numbers: `chat` 6.3e-4, `long` 9.3e-4,
+every argmax equal. Its red arms all fail, with moves forced along the f64 drafts:
+
+| wrong program | `chat` | `long` |
+|---|---:|---:|
+| rotated target layers | 23.9 (106 argmax of 190) | 41.1 (961 of 1,015) |
+| half-width MLP | 10.2 (56) | 27.6 (433) |
+| hidden correction off | 29.1 (94) | 25.3 (637) |
+| half top-k | 0.001 (0) | 17.0 (396) |
+
+## Speculative decoding
+
+**One call verifies.** After every call, the drafter proposes `k` tokens from the call's last kept
+row. The next call scores the anchor and the drafts together, one call of `k + 1` rows. Every
+kernel of the route computes a row on its own in an order that depends on neither the call's
+other rows nor its length (step 8 and step 9), so each row is the one-token decode call's row bit
+for bit. Tokens are chosen row by row as a decode call chooses them. Greedy is the first maximum;
+sampling is the position-keyed draw with the penalty window grown token by token. A draft is kept
+while it equals the choice before it, and the first other choice ends the round. The tokens are
+therefore the undrafted route's, greedy or sampled. Drafts change only the number of calls.
+
+**Rollback.** The call's rows past the kept ones are dropped (`Route::rollback_in`). The history is
+cut. The sliding rings' rows that the call overwrote get back what they held, from a copy taken
+before the call (`ring_backup_in`, 30 layers x `k + 1` rows). Every other cache row past the kept
+positions is written again before any query reads it: the indexed layers' latent and token keys,
+and the pooled group keys of groups whose fourth key was dropped.
+
+**Draft state.** `DraftStateCharge` (memra#1383) is not in this stack's base, so the route books
+the same two parts in its own book. Per session, it books one round's cache positions beside the
+request's own: `k + 1` positions, 212 KB at `k = 5`. Shared by the route, it books the drafter's
+weights and call scratch: resident, and grown by a warm-up round past the indexer budget before the
+book's ceiling is read. That costs 7.3 MiB of scratch, measured at boot. The served context is then
+509,886 positions, where step 9 served 531,000; it is read from the free memory at boot and moves
+with it. The serve log names both (`[admission] route=hy4f-thread per-session draft-state charge`).
+The serve loop keeps a round's block and verify rows inside the request's own positions, so the
+booked round is a reservation that no call writes.
+
+**A refused round.** A draft round or a verify call's ring backup that the route refuses (memory,
+a non-finite draft logit) ends drafting for that request, which is served on by the undrafted
+route's one-token calls. The round's block rows sit past the session's positions and are written
+again before any query reads them. A device fault stops the route, as without drafts.
+
+**Identity on the route.** `hy4f-spec gen` runs plain greedy and drafted greedy in one process,
+`k = 5`:
+
+| request | tokens | ids equal | every logits row bit-equal | rounds | drafts kept a round | tokens a round |
+|---|---:|---|---|---:|---:|---:|
+| `chat` (36-token prompt, no stop at EOS) | 128 | yes | yes (sha256 `e13a9dc4`) | 27 | 3.70 | 4.70 |
+| `long` (2,104-token prompt, 2,048-token chunks) | 64 | yes | yes (sha256 `e6ba60ee`) | 23 | 1.74 | 2.74 |
+
+The `chat` run keeps generating past its answer and repeats "Paris" and the end token. Its
+acceptance is that loop's, not a chat turn's. A round drafts no more than the budget can still emit, and
+the last token is a plain call. In the same process, N = 3 each: `chat` decodes at 5.80 tok/s
+plain and 14.59 drafted, `long` at 5.39 and 8.16 (`dfly/receipts/gen/*-ef45222ac6.json`).
+
+## Through the server
+
+All of this section ran on one GB10 with the binaries of the record's pin, `ef45222ac6`
+(`dfly/receipts/bins-ef45222ac6.sha256`), in one chain (`dfly/receipts/scripts/pin-chain.sh`).
+
+**The step 9 gates with drafts on.** The served-answer gates (`serve/scripts/chat_gate.py`) with
+drafts on at the default 5 (`dfly/receipts/serve/spec5-ef45222ac6/`): every cell passes. That covers
+render, and served greedy equal to `hy4f-gpu --gen` on the three requests, where the plain route's
+ids are the pin's. It covers the 23 teacher-forced positions equal to the verified tapes, and 2,
+3, 4 and 6 concurrent requests equal to solo. It covers streaming, efforts, a tool call round
+trip, and seeded sampling equal twice alone and beside three others. It covers stops, penalties,
+refusals and cancellation; admission of three 203,954-token sessions on the 509,886-position
+context, two at once and the third deferred; and the 30,934-token needle, found in 192 s.
+
+**Drafts on against drafts off.** The gate's own cells compare answers inside one server, so with
+drafts on both sides of a cell draft. `serve/scripts/draft_identity.py` compares the whole report
+of the drafting server with the report of the same binary under `MEMRA_HY4F_DRAFT=0`
+(`serve/plain-ef45222ac6/`), answer by answer: token ids, text, content, reasoning, tool calls, stop
+and finish reasons, status and the usage's token counts. All 51 answers are equal
+(`serve/draft-identity-ef45222ac6.json`): the three cases, 6 solo greedy answers, 15 answers of the
+concurrent sets, the stream, 8 effort answers, the tool call round trip, the seeded sampled
+request alone twice and beside three others, the stop string and the budget cut, the penalized
+request twice, the cancel's follow-up, the admission set and the needle. An answer, a key or a
+cell on one side only fails the comparison.
+
+**A refused round, served.** `MEMRA_HY4F_DRAFT_FAULT` is the gate's door (FLAGS.md). `draft:3`
+refuses, in every request, the draft round after its third verified round, after that round ran
+and wrote its block rows; `backup:3` refuses the ring backup of the fourth verify call, after the
+backup was taken. Both go through the branches a refusal by the route takes. The six chat turns
+below, served under each (`serve/fault-draft-ef45222ac6/`, `serve/fault-backup-ef45222ac6/`), equal the
+drafts-off server's answers, content and reasoning (`serve/scripts/turns_identity.py --rounds 3
+--log`): every turn reports exactly 3 rounds, 36 to 240 of its tokens come from plain calls
+after them, and the server logged one refusal a turn.
+
+**Readings.** These are measurements only. One GB10, the same binaries, `serve/scripts/bench.py`
+(greedy, `ignore_eos`, one warm-up then N = 3 a cell, medians), in one window: drafts on, off
+(`MEMRA_HY4F_DRAFT=0`), on again.
+
+| workload | decode tok/s a request, drafts off | drafts on (first run / second run) | aggregate tok/s, off / on |
+|---|---:|---:|---:|
+| chat, c = 1, 36 / 128 tokens | 5.95 | 15.6 / 15.7 | 5.87 / 14.9 and 15.0 |
+| long, c = 1, 2,104 / 64 tokens | 5.40 | 8.2 / 8.2 | 2.92 / 3.55 |
+| chat, c = 4 | 1.49 | 3.96 to 4.04 | 5.88 / 14.9 |
+| long, c = 4 | 0.61 to 1.46 | 0.73 to 2.49 | 2.00 / 2.25 |
+
+TTFT does not move (0.43 s on `chat`, 10.3 s on `long`): the prefill is the same calls. The bench's
+`chat` requests generate past the answer through `ignore_eos`, into the repeated "Paris" and the end
+token, which the drafter predicts well: 27 rounds for 128 tokens, 100 of 133 drafts kept (0.75). On
+`long`, 23 rounds for 64 tokens kept 40 of 112 (0.36). Calls still run one at a time, so the
+aggregate at c = 4 is the c = 1 rate.
+
+**Acceptance.** Drafts kept a round, `k = 5`:
+
+| source | rounds | kept a round | acceptance rate | tokens a round |
+|---|---:|---:|---:|---:|
+| `chat` probe, teacher-forced oracle rounds at every position (prompt included) | 38 | 0.18 | 0.04 | |
+| `long` probe, teacher-forced oracle rounds at 203 anchors | 203 | 0.58 | 0.12 | |
+| `chat`, 128 generated tokens past EOS | 27 | 3.70 | 0.75 | 4.70 |
+| `long`, 64 generated tokens | 23 | 1.74 | 0.36 | 2.74 |
+
+The teacher-forced rows score drafts against the request's own continuation from every anchor,
+the prompt's positions included, where the continuation is not the model's. They measure the
+drafter, not a served answer.
+
+**Real chat turns.** `serve/scripts/real_turns.py`: six greedy chat turns, one at a time, each
+stopping at its own end, against the server with drafts off and with drafts on
+(`serve/plain-ef45222ac6/`, `serve/spec5-ef45222ac6/`). Every answer and reasoning text is equal between
+the two (`serve/turns-identity-ef45222ac6.json`). Measurements only:
+
+| turn | completion tokens | rounds | drafts kept / drafted | acceptance rate | wall s, drafts off | wall s, drafts on |
+|---|---:|---:|---:|---:|---:|---:|
+| capital (two sentences) | 49 | 21 | 29 / 105 | 0.28 | 9.1 | 7.0 |
+| code (a Python function) | 203 | 50 | 154 / 250 | 0.62 | 36.8 | 16.8 |
+| explain (a paragraph) | 136 | 56 | 81 / 280 | 0.29 | 24.6 | 18.2 |
+| list (five tips, cut at 256) | 256 | 122 | 133 / 606 | 0.22 | 46.5 | 39.5 |
+| reasoning (effort high) | 97 | 26 | 72 / 130 | 0.55 | 17.4 | 8.6 |
+| translate | 196 | 73 | 124 / 365 | 0.34 | 35.4 | 23.7 |
+
+Over the six turns the drafter keeps 593 of 1,736 drafts (0.34), and the turns take 169.8 s with
+drafts off and 113.8 s with drafts on. Code and reasoning text draft well. Lists and prose keep
+about one draft in four, where a round of five drafts saves little at this untuned call cost.
+
+## The record
+
+`hy_v4_flash-gpu-1x-gb10` stays NativeQualified and moves its pin from step 9's `2e915e65a9` to
+`ef45222ac6d154c65a3e3122260241a32ceb2501`, the drafting route. At the pin, on one GB10: `memra model verify checkpoint`
+(native side `hy4f-gpu`) and `verify serve` (the pin's memra-server, drafting) pass
+(`verified=Checkpoint`, `verified=Serve`; `dfly/receipts/verify-ef45222ac6/`, every number of
+`checkpoint-parity.tsv` equal to step 9's), and `verify tiny` with its CI test passes on the
+pin's tree with every oracle file equal to step 9's (`dfly/receipts/verify-ef45222ac6-tiny/`). Step
+9's receipts stay in `serve/receipts/`. Commits after the pin are receipts, docs, the two
+comparison scripts, a FLAGS row's wording, the boundary allowlist's pin of `Cargo.lock` and the
+record; none changes a file under `crates/`.
+
+## For step 11
+
+- Replay acceptance with the BF16 drafter against this artifact's NVFP4 drafter. The BF16 source
+  holds the same five layers at 9,216 in BF16 (`dfly/receipts/widths-bf16-source.json`). Replaying
+  the same probes and turns through both arms on the same target gives the quantization's cost in
+  acceptance. The prefill numeric config is part of the acceptance config, so the target arm stays
+  this class.
+- Sampled drafting. Drafts here are greedy even for sampled requests, which keeps the tokens
+  exact; the checkpoint declares `draft_sample_method: probabilistic`. A drafted sample at the
+  request's temperature with rejection sampling is another acceptance arm and needs its own
+  distribution gate.
+- A draft gate like the deepseek-v4.1 route's (stop drafting a request whose rounds do not pay),
+  and batched verify rows across requests (the speed lane's batched decode).
+
+## Commands
+
+- `dfly/make_dfly_oracle.py CKPT REQUEST TARGET OUT --vllm-src DIR [--dtype f64|bf16x2a]
+  [--anchors SPEC] [--force-drafts TAPE] [--red ARM]`, over a target dump from
+  `checkpoint/make_checkpoint_oracle.py --dump-dfly` or `tiny/make_tiny_oracle.py --dump-dfly`.
+- `memra-reference hy4f_dfly tiny-image|tiny|checkpoint ...`, `memra-engine hy4f-spec gate|gate-route|gen ...`.
+- `dfly/compare_dfly.py ORACLE NATIVE [--atol X]`.
+- `serve/scripts/serve_gate.sh TAG gate,bench,turns [MEMRA_HY4F_DRAFT=N]` with `D=` the run directory.
+- `serve/scripts/draft_identity.py ON_JSON OFF_JSON [OUT_JSON]` over two `chat_gate.py` reports;
+  `serve/scripts/turns_identity.py OFF_JSON OTHER_JSON [--out OUT_JSON] [--rounds N --log SERVER_LOG]`
+  over two `real_turns.py` outputs.
+- The run box's chains are in `dfly/receipts/scripts/`.
