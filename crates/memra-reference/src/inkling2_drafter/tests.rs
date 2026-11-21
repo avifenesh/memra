@@ -115,8 +115,9 @@ fn tiny_drafter_matches_the_pinned_torch_port() {
     }
 }
 
-/// Red arms: each wrong program the oracle must catch. A layer that is not local, the latent
-/// taken from the new state, the softcap before the bias, and no RoPE on the context keys.
+/// Red arms: each wrong program the oracle must catch: no local window, swapped fuse rows, a
+/// window one wider, the latent taken from the new state, the softcap before the bias, and no
+/// RoPE on the context keys.
 #[test]
 fn tiny_drafter_red_arms_fail_the_oracle() {
     let oracle = StImage::parse(TINY_ORACLE).unwrap();
@@ -161,6 +162,87 @@ fn tiny_drafter_red_arms_fail_the_oracle() {
     let mut t = tiny();
     t.drafter.g.local_context += 1;
     assert!(run(&mut t) > 1e-6, "window edge");
+    // the Markov and RoPE points
+    for (name, red) in [
+        (
+            "latent from the new state",
+            DraftRed {
+                latent_from_state: true,
+                ..DraftRed::default()
+            },
+        ),
+        (
+            "softcap before the bias",
+            DraftRed {
+                softcap_before_bias: true,
+                ..DraftRed::default()
+            },
+        ),
+        (
+            "no RoPE on the context keys",
+            DraftRed {
+                no_rope_context_keys: true,
+                ..DraftRed::default()
+            },
+        ),
+    ] {
+        let mut t = tiny();
+        t.drafter.red = red;
+        let e = run(&mut t);
+        assert!(e > 1e-6, "{name}: {e:e}");
+    }
+}
+
+/// Every plan field the executor depends on is read: another input or chunk order, another
+/// anchor or mask row input, or another attention scale is refused, not run as the shipped one.
+#[test]
+fn plan_fields_the_executor_does_not_run_are_refused() {
+    use memra_gguf::model_plan::{DraftRowInput, RnnChunk, RnnInput};
+    let plan = checkpoint_plan();
+    assert!(DraftGeometry::of_plan(&plan).is_ok());
+    let mutate = |f: &dyn Fn(&mut memra_gguf::model_plan::Inkling2DrafterPlan)| {
+        let mut p = plan.clone();
+        f(&mut p.inkling2.as_mut().unwrap().drafter);
+        DraftGeometry::of_plan(&p)
+    };
+    assert!(
+        mutate(&|d| d.rnn.inputs.swap(0, 1))
+            .unwrap_err()
+            .contains("inputs")
+    );
+    assert!(mutate(&|d| d.rnn.inputs[3] = RnnInput::RowHidden).is_err());
+    assert!(
+        mutate(&|d| d.rnn.chunks = [RnnChunk::Candidate, RnnChunk::Gate, RnnChunk::Out])
+            .unwrap_err()
+            .contains("chunks")
+    );
+    assert!(
+        mutate(&|d| d.block.anchor = DraftRowInput::LearnedMask)
+            .unwrap_err()
+            .contains("anchor")
+    );
+    assert!(mutate(&|d| d.block.mask = DraftRowInput::TrunkEmbeddingNormed).is_err());
+    assert!(
+        mutate(&|d| d.attention.scale = 1.0)
+            .unwrap_err()
+            .contains("scale")
+    );
+}
+
+fn checkpoint_plan() -> memra_gguf::model_plan::ModelPlan {
+    use memra_gguf::config::{HfConfig, ModelConfig};
+    let mut config = ModelConfig::from_hf(&HfConfig::parse(include_str!(
+        "../../../memra-gguf/src/model_packs/inkling2/fixtures/config.json"
+    )));
+    config
+        .attach_quant_groups(include_str!(
+            "../../../memra-gguf/src/model_packs/inkling2/fixtures/hf_quant_config.json"
+        ))
+        .unwrap();
+    memra_gguf::model_packs::for_config(&config)
+        .unwrap()
+        .compile_plan(&config)
+        .unwrap()
 }
 
 /// The checkpoint's plan gives the shipped drafter geometry.
@@ -198,6 +280,7 @@ fn checkpoint_plan_geometry() {
             embed_epsilon: g.embed_epsilon,
             vocab: 200058,
             padded_vocab: 201024,
+            scale: 1.0 / 128f64.sqrt(),
         }
     );
 }

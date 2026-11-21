@@ -2,8 +2,8 @@
 // The program is the typed plan's (memra_gguf::model_plan::inkling2::Inkling2DrafterPlan) and the
 // reference is memra_reference::inkling2_drafter (f64), operation for operation.
 //
-// Numeric class: BF16 weights as stored, f32 activations between operations; norm and softmax
-// reductions and the RoPE angles run in f64. A proposal never changes a committed token (the
+// Numeric class: BF16 weights as stored, f32 activations between operations; norm reductions,
+// the RoPE angles and the fold run in f64; the attention softmax is an f32 online softmax. A proposal never changes a committed token (the
 // verify forward is the trunk's own program), so this class decides acceptance only.
 //
 // Return codes: 0 ok, 10000 + cudaError_t, 46xxx for a refused contract.

@@ -279,6 +279,8 @@ pub struct DraftGpu {
     prev: CudaSlice<u32>,
     /// Bytes allocated for the drafter (weights, fold, caches, work).
     pub bytes: usize,
+    /// Of them, the context K/V (f32; the full layers grow with the context).
+    pub kv: usize,
 }
 
 fn ck(name: &str, rc: i32) -> Result<(), String> {
@@ -314,6 +316,24 @@ impl DraftGpu {
         );
         if g.taps == 0 || rows < 2 || chunk == 0 || context < rows {
             return Err("a drafter with no taps, a block under two rows or no room".into());
+        }
+        // admission: everything the drafter allocates, against the driver's free memory, before
+        // the first upload (a margin of 256 MiB for the allocator and the driver)
+        let kv = Self::kv_bytes(&g, context, chunk);
+        let per_layer = (qw * h + 4 * kvw * h + h * qw + 3 * f * h) * 2;
+        let need = g.layers * per_layer
+            + g.padded_vocab * r * 2
+            + 3 * r * (2 * r + 2 * h) * 2
+            + g.vocab * (r + 1) * 4
+            + 2 * (rows - 1) * g.vocab * 4
+            + kv
+            + chunk.max(rows) * (h + 2 * kvw) * 4
+            + rows * (4 * h + 2 * qw + 2 * kvw + 3 * f) * 4;
+        let (free, _) = dev.driver_free()?;
+        if need + (256 << 20) > free {
+            return Err(format!(
+                "the drafter needs {need} bytes ({kv} of them context K/V for {context} positions) and the driver has {free} free"
+            ));
         }
         let b16 = |name: String, shape: &[usize]| -> Result<CudaSlice<u8>, String> {
             dev.up(&bf16_bytes(&src.tensor(&name, shape)?))
@@ -434,12 +454,35 @@ impl DraftGpu {
             tokens: dev.zeros(rows)?,
             prev: dev.zeros(1)?,
             bytes: 0,
+            kv: 0,
             st,
             g,
         };
         let mut me = me;
         me.bytes = dev.allocated.get() - before;
+        me.kv = Self::kv_bytes(&me.g, context, chunk);
         Ok(me)
+    }
+
+    /// Context K/V bytes of a drafter at `context` positions and `chunk` rows per commit.
+    pub fn kv_bytes(g: &DraftGeometry, context: usize, chunk: usize) -> usize {
+        let kvw = g.kv_heads * g.head_dim;
+        (0..g.layers)
+            .map(|i| {
+                let cap = if g.local_layers.contains(&i) {
+                    (g.local_context + chunk).next_power_of_two()
+                } else {
+                    context
+                };
+                2 * cap * kvw * 4
+            })
+            .sum()
+    }
+
+    /// Enter the drafter's memory in a route's account.
+    pub fn charge(&self, account: &mut crate::inkling2_gpu::MemoryAccount) {
+        account.drafter = self.bytes;
+        account.drafter_kv = self.kv;
     }
 
     /// Forget the request.
@@ -724,7 +767,7 @@ impl DraftGpu {
                     g.heads as i32,
                     g.kv_heads as i32,
                     d as i32,
-                    (1.0 / (d as f64).sqrt()) as f32,
+                    g.scale as f32,
                     pm(&mut self.att, &st) as *mut f32,
                     dev.sp(),
                 )
@@ -836,8 +879,10 @@ impl DraftGpu {
         if self.len == 0 {
             return Err("a proposal needs a committed position (the head's feature)".into());
         }
-        if self.len + g.rows > self.context {
-            return Err("the block runs past the drafter's context".into());
+        // the block's rows are scratch (no cache row is written for them), so a block may run
+        // past the context; only the committed positions must fit
+        if self.len > self.context {
+            return Err("the drafter's context is full".into());
         }
         dev.bind()?;
         self.block(dev, shared, anchor)?;

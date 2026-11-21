@@ -284,7 +284,7 @@ def generate(out_dir):
     tensors["taps"] = taps.to(torch.bfloat16)
     tensors["anchors"] = anchors.to(torch.int64)
     tensors["forced"] = forced.to(torch.int64)
-    fixture_sha = write_st(out / "inkling2-drafter-tiny.safetensors", tensors)
+    fixture_sha = write_st(out / "inkling2-drafter-tiny.bin", tensors)
 
     oracle = {}
     for s, P in enumerate(SCENARIOS):
@@ -301,7 +301,7 @@ def generate(out_dir):
         for i in range(cfg["num_hidden_layers"]):
             oracle[f"s{s}.ctx_k.{i}"] = torch.stack(d.ctx_k[i])
             oracle[f"s{s}.ctx_v.{i}"] = torch.stack(d.ctx_v[i])
-    oracle_sha = write_st(out / "inkling2-drafter-tiny-oracle.safetensors", oracle)
+    oracle_sha = write_st(out / "inkling2-drafter-tiny-oracle.bin", oracle)
     run = dict(config=cfg, seed=SEED, scenarios=SCENARIOS, torch=torch.__version__,
                fixture_sha256=fixture_sha, oracle_sha256=oracle_sha,
                greedy=[oracle[f"s{s}.tokens"].tolist() for s in range(len(SCENARIOS))])
