@@ -74,8 +74,10 @@ pub static PACK: ModelPack = ModelPack {
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
     // The artifact ships `chat_template.jinja`.
     template: TemplateContract::ArtifactRequired,
-    // The reference executor runs the plan (memra-reference `inkling2`); no tuned surface does.
-    support: Some(NativeSupport::NativeReference),
+    // The shipped class is qualified on its GPU route (record inkling2-shipped-gpu-1x-5090:
+    // CheckpointParity on the declared class's band and Serve, on the pinned artifact); no tuned
+    // rewrite is qualified.
+    support: Some(NativeSupport::NativeQualified),
     gates: &[
         Gate::Config,
         Gate::TokenizerTemplate,
