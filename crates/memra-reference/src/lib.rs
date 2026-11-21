@@ -79,6 +79,18 @@ impl ReferenceTensor {
 
 pub type ReferenceWeights = BTreeMap<TensorId, ReferenceTensor>;
 
+/// How the tiny gate compares a fixture's run with its pinned oracle.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TinyGate {
+    /// Within the pack's checkpoint-parity band.
+    PackBand,
+    /// The run's oracle text is the pinned bytes.
+    Exact,
+    /// Within a band stated for this run alone, with the argmax of every position required. The
+    /// band is the tiny gate's and is never a checkpoint-parity band.
+    Band { max_abs: f32, max_rel: f32 },
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReferenceFixture {
     pub token_ids: Vec<u32>,
@@ -93,6 +105,8 @@ pub struct ReferenceFixture {
     /// ([`execute_fixture`]). Empty: the prefill is one chunk. Only Inkling 2 plans have a chunked
     /// reference prefill.
     pub chunk_ends: Vec<usize>,
+    /// How the tiny gate compares this fixture's run with its pinned oracle.
+    pub tiny_gate: TinyGate,
     /// The fixture as checkpoint-format files (file name, bytes) an external oracle loads to
     /// run the source program on the same weights. Empty when the weights were generated
     /// directly in f32.
@@ -684,6 +698,7 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
         multimodal_token_ids,
         decode_from: None,
         chunk_ends: Vec::new(),
+        tiny_gate: TinyGate::PackBand,
         checkpoint_files: Vec::new(),
     })
 }

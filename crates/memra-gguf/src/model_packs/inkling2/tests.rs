@@ -1063,3 +1063,36 @@ fn review_every_census_tensor_is_declared_and_every_declared_tensor_exists() {
         "{error:?}"
     );
 }
+
+#[test]
+fn no_checkpoint_band_is_declared_for_any_numeric_class() {
+    // A fallback band would let an oracle of any class, the float-activation one included, write
+    // a CheckpointParity pass for this pack.
+    assert_eq!(PACK.checkpoint_parity, None);
+    assert!(PACK.checkpoint_parity_classes.is_empty());
+    for class in [
+        "source-weights-float32-accumulation",
+        "inkling2-float-activation",
+        "inkling2-declared-activation-quant",
+    ] {
+        assert_eq!(PACK.checkpoint_parity_for(class), None, "{class}");
+    }
+}
+
+#[test]
+fn loop_controller_norms_take_the_config_rms_epsilon() {
+    let text = TINY_CONFIG.replacen("\"rms_norm_eps\": 1e-06", "\"rms_norm_eps\": 1e-05", 1);
+    assert_ne!(text, TINY_CONFIG);
+    let mut config = ModelConfig::from_hf(&HfConfig::parse(&text));
+    config.attach_quant_groups(TINY_QUANT_CONFIG).unwrap();
+    let plan = PACK.compile_plan(&config).unwrap();
+    assert_eq!(
+        plan.inkling2.as_ref().unwrap().loop_plan.controller_epsilon,
+        1e-5
+    );
+    // The depth mixes keep the program's constant.
+    let ResidualTopology::BlockAttention(residual) = &plan.layers[3].residual else {
+        panic!("block attention residual");
+    };
+    assert_eq!(residual.epsilon, 1e-6);
+}

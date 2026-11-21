@@ -36,7 +36,7 @@ use memra_gguf::tensor_contract::TensorId;
 use crate::inkling2_actquant as actquant;
 use crate::{
     ReferenceDecodeTrace, ReferenceError, ReferenceFixture, ReferenceLayerState, ReferenceOutput,
-    ReferenceState, ReferenceTensor, ReferenceWeights, tensor, tensor_i64,
+    ReferenceState, ReferenceTensor, ReferenceWeights, TinyGate, tensor, tensor_i64,
 };
 use ops::{AttentionShape, ConvHistory, ExpertBank};
 
@@ -1265,9 +1265,19 @@ pub fn weights_from_safetensors(image: &[u8]) -> Result<ReferenceWeights, Refere
     Ok(weights)
 }
 
+/// The tiny gate's tolerance for the `declared` variant, and for nothing else. The variant's
+/// oracle runs an f32 stream and this executor's trunk is f64; on the tiny fixture the two are
+/// 2.3e-6 apart at most. The float-activation runs are gated on bit equality. This is not a
+/// checkpoint-parity band: the pack declares none.
+pub const TINY_DECLARED_GATE: TinyGate = TinyGate::Band {
+    max_abs: 1e-5,
+    max_rel: 1e-5,
+};
+
 fn tiny_fixture(
     chunk_ends: &[usize],
     decode_from: Option<usize>,
+    tiny_gate: TinyGate,
 ) -> Result<ReferenceFixture, ReferenceError> {
     let schedule = format!(
         "{{\n  \"input_ids\": {:?},\n  \"chunk_ends\": {:?},\n  \"decode_from\": {}\n}}\n",
@@ -1282,6 +1292,7 @@ fn tiny_fixture(
         multimodal_token_ids: None,
         decode_from,
         chunk_ends: chunk_ends.to_vec(),
+        tiny_gate,
         checkpoint_files: vec![
             ("model.safetensors".into(), TINY_CHECKPOINT.to_vec()),
             ("config.json".into(), pack::TINY_CONFIG.as_bytes().to_vec()),
@@ -1299,7 +1310,7 @@ fn tiny_fixture(
 /// bytes.
 pub fn fixture(plan: &ModelPlan) -> Result<ReferenceFixture, ReferenceError> {
     program(plan)?;
-    tiny_fixture(&[], None)
+    tiny_fixture(&[], None, TinyGate::Exact)
 }
 
 /// The tiny gate's variants: the same plan, weights and tokens under schedules that move slot
@@ -1323,7 +1334,7 @@ pub fn tiny_variants(plan: &ModelPlan) -> Result<Vec<crate::TinyVariant>, Refere
         Ok(crate::TinyVariant {
             name,
             plan: plan.clone(),
-            fixture: tiny_fixture(chunk_ends, decode_from)?,
+            fixture: tiny_fixture(chunk_ends, decode_from, TinyGate::Exact)?,
         })
     };
     Ok(vec![
@@ -1334,7 +1345,7 @@ pub fn tiny_variants(plan: &ModelPlan) -> Result<Vec<crate::TinyVariant>, Refere
             name: "declared",
             plan: pack::tiny_declared_plan()
                 .map_err(|_| invalid(None, "the inkling2 tiny config compiles its default plan"))?,
-            fixture: tiny_fixture(&[], None)?,
+            fixture: tiny_fixture(&[], None, TINY_DECLARED_GATE)?,
         },
     ])
 }

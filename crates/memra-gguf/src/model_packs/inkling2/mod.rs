@@ -80,17 +80,13 @@ pub static PACK: ModelPack = ModelPack {
         Gate::RewriteParity,
         Gate::Serve,
     ],
-    // The band of the f64 reference executor against a CPU oracle, which is the tiny gate's
-    // tolerance. The float-activation oracle is f64 and the reference matches it to the bit after
-    // rounding to f32; the declared-class oracle runs an f32 stream, and its distance from the
-    // f64 trunk (2.3e-6 on the tiny fixture) sets the band. No checkpoint oracle of the declared
-    // class exists yet: a serving-class oracle names its own class and band before its checkpoint
-    // gate can pass, and a float-activation pass is never evidence for the declared class.
-    checkpoint_parity: Some(CheckpointParityGate {
-        max_abs: 1e-5,
-        max_rel: 1e-5,
-        require_argmax: true,
-    }),
+    // No band is declared, for any class, so `verify checkpoint` cannot pass: a band of the
+    // declared class has to come from that class's source program measured on two backends, and
+    // none has been. With no fallback band, a float-activation oracle cannot write a
+    // CheckpointParity pass for a pack whose default class is the declared one. The tiny gate
+    // does not read this field: its fixtures carry their own comparison (memra-reference
+    // `TinyGate`).
+    checkpoint_parity: None,
     checkpoint_parity_classes: &[],
     checkpoint_probe: None,
     matches_config: |config| matches!(config.arch, Arch::Inkling2Loop) && config.inkling2.is_some(),
@@ -280,7 +276,9 @@ pub fn plan_with_expert_activation(
                 core_end: ink.loop_core_end,
                 passes: ink.loop_num_passes,
                 gate_rank: ink.loop_gate_rank,
-                controller_epsilon: PROGRAM_EPSILON,
+                // The message gate's norms take the config's RMS epsilon; the residual and
+                // message mixes take the program's constant.
+                controller_epsilon: ink.rms_norm_eps,
                 targets: [
                     LoopMessageTarget::Query,
                     LoopMessageTarget::Key,

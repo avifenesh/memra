@@ -286,11 +286,15 @@ fn relative_bias_is_a_table_over_backward_distance_and_zero_outside_it() {
     }
 }
 
+#[derive(Clone, Copy, Default)]
 struct AttentionArm {
     window: Option<usize>,
     mask_beyond_extent: bool,
     /// The sink logit as the module projects it, or folded into the bias with a zero sink.
     fold_sink: bool,
+    /// With `fold_sink`: the sink comes off the bias inside the table only, so a key past the
+    /// table keeps a zero bias.
+    fold_inside_table_only: bool,
     drop_sink: bool,
 }
 
@@ -333,7 +337,7 @@ fn attention(r: &Record, sliding: bool, arm: &AttentionArm) -> Vec<f64> {
         if arm.fold_sink {
             // The sink comes off the bias of EVERY attended key, so the table is first padded
             // with the zero bias of the keys past it.
-            let padded = if shape.mask_beyond_extent {
+            let padded = if shape.mask_beyond_extent || arm.fold_inside_table_only {
                 extent
             } else {
                 extent.max(TOKENS)
@@ -421,8 +425,7 @@ fn sliding_attention_sees_itself_and_window_minus_one_back() {
     let arm = |window| AttentionArm {
         window: Some(window),
         mask_beyond_extent: true,
-        fold_sink: false,
-        drop_sink: false,
+        ..AttentionArm::default()
     };
     assert_matches(
         "sliding attention",
@@ -443,8 +446,7 @@ fn sliding_attention_sees_itself_and_window_minus_one_back() {
     let wide = AttentionArm {
         window: Some(WINDOW + 1),
         mask_beyond_extent: true,
-        fold_sink: false,
-        drop_sink: false,
+        ..AttentionArm::default()
     };
     assert_matches(
         "the table ends the window",
@@ -454,8 +456,7 @@ fn sliding_attention_sees_itself_and_window_minus_one_back() {
     let unmasked = AttentionArm {
         window: Some(WINDOW + 1),
         mask_beyond_extent: false,
-        fold_sink: false,
-        drop_sink: false,
+        ..AttentionArm::default()
     };
     assert_differs("window + 1", &attention(&r, true, &unmasked), &expected);
 }
@@ -467,8 +468,7 @@ fn full_attention_gives_keys_past_the_table_a_zero_bias() {
     let arm = AttentionArm {
         window: None,
         mask_beyond_extent: false,
-        fold_sink: false,
-        drop_sink: false,
+        ..AttentionArm::default()
     };
     assert_matches("full attention", &attention(&r, false, &arm), &expected);
     let masked = AttentionArm {
@@ -495,12 +495,36 @@ fn the_sink_is_one_more_logit_in_the_denominator() {
             mask_beyond_extent: sliding,
             fold_sink,
             drop_sink,
+            ..AttentionArm::default()
         };
         // The other spelling (the sink subtracted from the bias of every attended key, then a
         // zero sink) is the same function.
         assert_matches(name, &attention(&r, sliding, &arm(true, false)), &expected);
         assert_differs(name, &attention(&r, sliding, &arm(false, true)), &expected);
     }
+}
+
+#[test]
+fn a_sink_folded_inside_the_table_only_is_another_function_on_a_full_layer() {
+    let r = record("attention_full");
+    let expected = r.f64s("out");
+    let inside = AttentionArm {
+        fold_sink: true,
+        fold_inside_table_only: true,
+        ..AttentionArm::default()
+    };
+    let actual = attention(&r, false, &inside);
+    // While every key is inside the table the two spellings agree; from the first query with a
+    // key past it (position `extent`) that key keeps a zero bias the sink never came off.
+    let edge = EXTENT * HIDDEN;
+    assert_matches("inside the table", &actual[..edge], &expected[..edge]);
+    assert_differs(
+        "first key past the table",
+        &actual[edge..edge + HIDDEN],
+        &expected[edge..edge + HIDDEN],
+    );
+    let miss = worst(&actual, &expected);
+    assert!((0.345..0.346).contains(&miss), "{miss}");
 }
 
 fn mix(r: &Record, queries: usize, blocks: usize) -> Vec<f64> {
@@ -687,7 +711,7 @@ fn softcapped_swiglu_caps_the_linear_gate_factor_and_up_but_not_the_sigmoid() {
 }
 
 #[test]
-fn nvfp4_bank_dequantizes_to_the_oracle_bit_for_bit() {
+fn nvfp4_bank_dequantizes_exactly_and_its_f32_spelling_is_the_oracle_bit_for_bit() {
     let r = record("dequant_nvfp4");
     let (experts, bank_rows, inputs) = (3, 6, 64);
     let amax: Vec<f32> = r.weight("amax");
@@ -702,7 +726,10 @@ fn nvfp4_bank_dequantizes_to_the_oracle_bit_for_bit() {
     };
     let stored = bank(r.raw("bytes_codes").to_vec());
     assert!(!stored.has_nan_code());
-    // The oracle's op in f32: fl32(fl32(val(code) * scale) * fl32(amax / denominator)).
+    // The oracle's op is f32: fl32(fl32(val(code) * scale) * fl32(amax / denominator)). That
+    // spelling, built from the bank's own `code_scale`, is the oracle bit for bit. The value the
+    // executor uses is `ExpertBank::expert`: the same product with one f64 division, so it sits
+    // within two f32 roundings of the oracle and is asserted so, element by element.
     let expected = r.weight("out");
     let per_expert = bank_rows * inputs;
     let (mut nonzero, mut worst_exact) = (0, 0.0f64);
@@ -729,17 +756,26 @@ fn nvfp4_bank_dequantizes_to_the_oracle_bit_for_bit() {
     }
     assert!(nonzero > experts * per_expert / 2);
     assert!(worst_exact < 2.0 * f64::from(f32::EPSILON), "{worst_exact}");
-    // Nibble order: the even element is the low nibble. Swapped, the bank is another tensor.
+    // Nibble order: the even element is the low nibble. With the nibbles swapped, what the
+    // executor would use (`ExpertBank::expert`) is far from the oracle.
     let swapped = bank(
         r.raw("bytes_codes")
             .iter()
             .map(|b| b.rotate_left(4))
             .collect(),
     );
-    let moved = (0..per_expert)
-        .filter(|&index| swapped.code_scale(0, index) != stored.code_scale(0, index))
+    let oracle: Vec<f64> = expected[..per_expert]
+        .iter()
+        .map(|v| f64::from(*v))
+        .collect();
+    assert_differs("nibbles swapped", &swapped.expert(0), &oracle);
+    let off = swapped
+        .expert(0)
+        .iter()
+        .zip(&oracle)
+        .filter(|(a, e)| (*a - *e).abs() > 1e-6)
         .count();
-    assert!(moved > per_expert / 2, "{moved}");
+    assert!(off > per_expert / 2, "{off}");
 }
 
 #[test]
@@ -1172,4 +1208,94 @@ fn the_fixture_is_the_pinned_checkpoint_image_and_its_schedules() {
             operation: "chunked reference prefill",
         }
     );
+}
+
+// ============================ the pinned oracles ============================
+
+/// The tiny gate's pinned oracles (memra-cli's fixtures), compared here too so that this crate's
+/// own tests pin the program and not only its parts.
+const PINNED_FLOAT: &str =
+    include_str!("../../../memra-cli/tests/fixtures/tiny-oracle/inkling2.tsv");
+const PINNED_DECLARED: &str =
+    include_str!("../../../memra-cli/tests/fixtures/tiny-oracle/inkling2-declared.tsv");
+
+fn pinned(text: &str) -> Vec<f32> {
+    let rows: Vec<f32> = text
+        .lines()
+        .skip(1)
+        .map(|line| {
+            let bits = line.rsplit('\t').next().unwrap();
+            f32::from_bits(u32::from_str_radix(bits, 16).unwrap())
+        })
+        .collect();
+    assert_eq!(rows.len(), 40 * 300);
+    rows
+}
+
+#[test]
+fn float_activation_program_is_the_pinned_oracle_to_the_bit_under_every_schedule() {
+    let (plan, weights) = (tiny_plan(), tiny_weights());
+    let oracle: Vec<u32> = pinned(PINNED_FLOAT).iter().map(|v| v.to_bits()).collect();
+    for (ends, decode) in [
+        (vec![], None),
+        (vec![8, 12, 24], None),
+        (vec![7, 11, 23], None),
+        (vec![], Some(5)),
+    ] {
+        let out = run(&plan, &weights, &ends, decode);
+        let bits: Vec<u32> = out.logits.iter().map(|v| v.to_bits()).collect();
+        let first = bits.iter().zip(&oracle).position(|(a, e)| a != e);
+        assert_eq!(first, None, "{ends:?} {decode:?}: first differing logit");
+    }
+    for variant in crate::tiny_variants(&plan).unwrap() {
+        let exact = variant.fixture.tiny_gate == crate::TinyGate::Exact;
+        assert_eq!(exact, variant.name != "declared", "{}", variant.name);
+    }
+    assert_eq!(
+        crate::deterministic_fixture(&plan).unwrap().tiny_gate,
+        crate::TinyGate::Exact
+    );
+}
+
+#[test]
+fn declared_program_is_inside_its_tiny_band_of_the_simulation_with_every_argmax() {
+    let out = run(
+        &pack::tiny_declared_plan().unwrap(),
+        &tiny_weights(),
+        &[],
+        None,
+    );
+    let oracle = pinned(PINNED_DECLARED);
+    let crate::TinyGate::Band { max_abs, max_rel } = TINY_DECLARED_GATE else {
+        panic!("the declared variant has a stated band");
+    };
+    let mut worst = 0f32;
+    for (actual, expected) in out.logits.iter().zip(&oracle) {
+        let distance = (actual - expected).abs();
+        assert!(distance <= max_abs + max_rel * expected.abs(), "{distance}");
+        worst = worst.max(distance);
+    }
+    // 2.3e-6 when the band was set; a move toward the band's edge is a change to look at.
+    assert!(worst < 4e-6, "{worst}");
+    let argmax = |row: &[f32]| {
+        row.iter()
+            .enumerate()
+            .fold(
+                (0, f32::MIN),
+                |best, (i, v)| if *v > best.1 { (i, *v) } else { best },
+            )
+            .0
+    };
+    for (position, (actual, expected)) in out.logits.chunks(300).zip(oracle.chunks(300)).enumerate()
+    {
+        assert_eq!(argmax(actual), argmax(expected), "position {position}");
+    }
+    // The float-activation oracle is not this program's oracle.
+    let float = pinned(PINNED_FLOAT);
+    let apart = out
+        .logits
+        .iter()
+        .zip(&float)
+        .fold(0f32, |w, (a, e)| w.max((a - e).abs()));
+    assert!(apart > 1.0, "{apart}");
 }
