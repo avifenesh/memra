@@ -428,6 +428,7 @@ __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
 #define GV_COLS (GV_WARPS * 8)
 #define GV_ROWB 128               // stored weight bytes a row a stage
 #define GV_LDS GV_ROWB            // smem weight row stride: the tile as stored (its swizzle spreads banks)
+#define GV_TPS_BF16 2             // a BF16 stage is two tiles (128 inputs, as an FP8 stage)
 #define GV_SCS 32                 // NVFP4 scale bytes a row a stage (16 used)
 #define GV_SMEM_MAX (96 * 1024)
 static_assert(GV_COLS == RT_ROWS && GV_ROWB == RT_BYTES, "a small-row stage is one weight tile");
@@ -477,9 +478,10 @@ static __device__ __forceinline__ uint32_t r_e4m3x2_bf16x2(uint16_t c) {
 
 template <int FMT>
 struct GvGeom {
-  static constexpr int KPS = FMT == R_BF16 ? GV_ROWB / 2 : (FMT == R_FP8 ? GV_ROWB : GV_ROWB * 2);
+  static constexpr int TPS = FMT == R_BF16 ? GV_TPS_BF16 : 1;       // weight tiles a stage
+  static constexpr int KPS = FMT == R_BF16 ? TPS * GV_ROWB / 2 : (FMT == R_FP8 ? GV_ROWB : GV_ROWB * 2);
   static constexpr int NQ = KPS / 16;                                // 16-wide K steps a stage
-  static constexpr int WB = GV_COLS * GV_LDS;                        // weight bytes a stage
+  static constexpr int WB = TPS * GV_COLS * GV_LDS;                  // weight bytes a stage
   static constexpr int SB = FMT == R_NVFP4 ? GV_COLS * GV_SCS : (FMT == R_FP8 ? 16 : 0);
   static constexpr int XLD = KPS * 4 + 16;                           // activation row stride
   static constexpr int LUT = FMT == R_NVFP4 ? 1024 : 0;
@@ -560,7 +562,10 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
   auto issue_w = [&](int st) {
     if (st < nst) {
       unsigned char* buf = gsm + (st % STAGES) * SBYTES;
-      if (tid == 0) r_bulk(buf, wtile + (long)st * (RT_ROWS * RT_BYTES), RT_ROWS * RT_BYTES, &mbar[st % STAGES]);
+      if (tid == 0) {
+        const int nt = min(G::TPS, (int)(wrow / RT_BYTES) - st * G::TPS);  // tiles of this stage
+        r_bulk(buf, wtile + (long)st * G::TPS * (RT_ROWS * RT_BYTES), nt * (RT_ROWS * RT_BYTES), &mbar[st % STAGES]);
+      }
       const int k0 = st * G::KPS;
       if (FMT == R_NVFP4) {
         const int s0 = k0 / 16;
@@ -631,8 +636,8 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
     const unsigned char* brow = buf + (warp * 8 + r) * GV_LDS;
     const int sw = r & 7;  // the row's piece swizzle (row (warp * 8 + r) % 8 == r)
     const unsigned char* xs = buf + G::WB + G::SB;
-    const int kbase = st * G::KPS;
-    const int nq = min(G::KPS, k - kbase) / 16;
+    // a row is a whole number of 128-byte tiles (45009 otherwise): a one-tile stage is always full
+    const int nq = G::TPS == 1 ? G::NQ : min(G::KPS, k - st * G::KPS) / 16;
     float bs = 1.0f;
     if (FMT == R_FP8) bs = *(const float*)(buf + G::WB);
     if (MR) {
@@ -653,79 +658,92 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
       __syncwarp();
     }
     if (n0 < n) {
+      // a group of q-steps: every operand load first (independent, in flight together), then the
+      // group's mma chain in q order
+      constexpr int QB = G::NQ > 8 ? 8 : G::NQ;
 #pragma unroll
-      for (int q = 0; q < G::NQ; q++) {
-        if (q >= nq) break;
-        const int kk = kbase + q * 16;
-        uint32_t ah[4] = {0u, 0u, 0u, 0u}, al[4] = {0u, 0u, 0u, 0u};
-        if (MR) {
-          if (a0) {
-            const uint4 v = ab[(q * MS + r) * 4 + j];
-            ah[0] = v.x;
-            ah[2] = v.y;
-            al[0] = v.z;
-            al[2] = v.w;
-          }
-        } else {
-          const float* x0 = (const float*)(xs + r * G::XLD);
-          const float* x1 = (const float*)(xs + (r + 8) * G::XLD);
-          float2 v00 = make_float2(0.f, 0.f), v02 = v00, v10 = v00, v12 = v00;
-          if (a0) {
-            v00 = *(const float2*)(x0 + q * 16 + 2 * j);
-            v02 = *(const float2*)(x0 + q * 16 + 8 + 2 * j);
-          }
-          if (a1) {
-            v10 = *(const float2*)(x1 + q * 16 + 2 * j);
-            v12 = *(const float2*)(x1 + q * 16 + 8 + 2 * j);
-          }
-          ah[0] = r_pack(v00.x, v00.y);
-          ah[1] = r_pack(v10.x, v10.y);
-          ah[2] = r_pack(v02.x, v02.y);
-          ah[3] = r_pack(v12.x, v12.y);
-          al[0] = r_pack(v00.x - r_bf(r_tobf(v00.x)), v00.y - r_bf(r_tobf(v00.y)));
-          al[1] = r_pack(v10.x - r_bf(r_tobf(v10.x)), v10.y - r_bf(r_tobf(v10.y)));
-          al[2] = r_pack(v02.x - r_bf(r_tobf(v02.x)), v02.y - r_bf(r_tobf(v02.y)));
-          al[3] = r_pack(v12.x - r_bf(r_tobf(v12.x)), v12.y - r_bf(r_tobf(v12.y)));
-        }
-        uint32_t b[2];
-        if (FMT == R_BF16) {
-          b[0] = *(const uint32_t*)(brow + (((2 * q) ^ sw) * 16) + j * 4);
-          b[1] = *(const uint32_t*)(brow + (((2 * q + 1) ^ sw) * 16) + j * 4);
-        } else if (FMT == R_FP8) {
-          const uint16_t c0 = *(const uint16_t*)(brow + ((q ^ sw) * 16) + 2 * j);
-          const uint16_t c1 = *(const uint16_t*)(brow + ((q ^ sw) * 16) + 8 + 2 * j);
-          if (!RED) {
-            b[0] = r_e4m3x2_bf16x2(c0);
-            b[1] = r_e4m3x2_bf16x2(c1);
-          } else {
-            b[0] = r_pack(r_e4m3((uint8_t)c0) * bs, r_e4m3((uint8_t)(c0 >> 8)) * bs);
-            b[1] = r_pack(r_e4m3((uint8_t)c1) * bs, r_e4m3((uint8_t)(c1 >> 8)) * bs);
-          }
-        } else {
-          const unsigned char* cp = brow + (((q >> 1) ^ sw) * 16) + (q & 1) * 8;
-          const uint8_t c0 = cp[j], c1 = cp[4 + j];
-          const float gsf = r_e4m3(buf[G::WB + (warp * 8 + r) * GV_SCS + q]);
-          if (!RED) {
-            // code pair times the group scale in BF16: the product is exact, so it equals the
-            // F32 product rounded to BF16
-            const __nv_bfloat162 gs2 = __float2bfloat162_rn(gsf);
-            const uint32_t l0 = lut[c0], l1 = lut[c1];
-            b[0] = r_bf2_bits(__hmul2(*(const __nv_bfloat162*)&l0, gs2));
-            b[1] = r_bf2_bits(__hmul2(*(const __nv_bfloat162*)&l1, gs2));
-          } else {
-            const float gs = gsf * s2;
-            b[0] = r_pack(r_e2m1(c0) * gs, r_e2m1(c0 >> 4) * gs);
-            b[1] = r_pack(r_e2m1(c1) * gs, r_e2m1(c1 >> 4) * gs);
-          }
-        }
-        float* c = fold_blocks ? part : acc;
-        r_mma(c, ah, b);
-        r_mma(c, al, b);
-        if (fold_blocks && (((kk + 16) % 128) == 0 || kk + 16 >= k)) {
+      for (int q0 = 0; q0 < G::NQ; q0 += QB) {
+        uint32_t ahv[QB][4], alv[QB][4], bv[QB][2];
 #pragma unroll
-          for (int i = 0; i < 4; i++) {
-            acc[i] = __fmaf_rn(part[i], bs, acc[i]);
-            part[i] = 0.0f;
+        for (int u = 0; u < QB; u++) {
+          const int q = q0 + u;
+#pragma unroll
+          for (int i = 0; i < 4; i++) ahv[u][i] = alv[u][i] = 0u;
+          if (MR) {
+            if (a0) {
+              const uint4 v = ab[(q * MS + r) * 4 + j];
+              ahv[u][0] = v.x;
+              ahv[u][2] = v.y;
+              alv[u][0] = v.z;
+              alv[u][2] = v.w;
+            }
+          } else {
+            const float* x0 = (const float*)(xs + r * G::XLD);
+            const float* x1 = (const float*)(xs + (r + 8) * G::XLD);
+            float2 v00 = make_float2(0.f, 0.f), v02 = v00, v10 = v00, v12 = v00;
+            if (a0) {
+              v00 = *(const float2*)(x0 + q * 16 + 2 * j);
+              v02 = *(const float2*)(x0 + q * 16 + 8 + 2 * j);
+            }
+            if (a1) {
+              v10 = *(const float2*)(x1 + q * 16 + 2 * j);
+              v12 = *(const float2*)(x1 + q * 16 + 8 + 2 * j);
+            }
+            ahv[u][0] = r_pack(v00.x, v00.y);
+            ahv[u][1] = r_pack(v10.x, v10.y);
+            ahv[u][2] = r_pack(v02.x, v02.y);
+            ahv[u][3] = r_pack(v12.x, v12.y);
+            alv[u][0] = r_pack(v00.x - r_bf(r_tobf(v00.x)), v00.y - r_bf(r_tobf(v00.y)));
+            alv[u][1] = r_pack(v10.x - r_bf(r_tobf(v10.x)), v10.y - r_bf(r_tobf(v10.y)));
+            alv[u][2] = r_pack(v02.x - r_bf(r_tobf(v02.x)), v02.y - r_bf(r_tobf(v02.y)));
+            alv[u][3] = r_pack(v12.x - r_bf(r_tobf(v12.x)), v12.y - r_bf(r_tobf(v12.y)));
+          }
+          if (FMT == R_BF16) {
+            const unsigned char* bt = brow + (q / 4) * (RT_ROWS * RT_BYTES);  // the q-step's tile
+            const int qq = q % 4;
+            bv[u][0] = *(const uint32_t*)(bt + (((2 * qq) ^ sw) * 16) + j * 4);
+            bv[u][1] = *(const uint32_t*)(bt + (((2 * qq + 1) ^ sw) * 16) + j * 4);
+          } else if (FMT == R_FP8) {
+            const uint16_t c0 = *(const uint16_t*)(brow + ((q ^ sw) * 16) + 2 * j);
+            const uint16_t c1 = *(const uint16_t*)(brow + ((q ^ sw) * 16) + 8 + 2 * j);
+            if (!RED) {
+              bv[u][0] = r_e4m3x2_bf16x2(c0);
+              bv[u][1] = r_e4m3x2_bf16x2(c1);
+            } else {
+              bv[u][0] = r_pack(r_e4m3((uint8_t)c0) * bs, r_e4m3((uint8_t)(c0 >> 8)) * bs);
+              bv[u][1] = r_pack(r_e4m3((uint8_t)c1) * bs, r_e4m3((uint8_t)(c1 >> 8)) * bs);
+            }
+          } else {
+            const unsigned char* cp = brow + (((q >> 1) ^ sw) * 16) + (q & 1) * 8;
+            const uint8_t c0 = cp[j], c1 = cp[4 + j];
+            const float gsf = r_e4m3(buf[G::WB + (warp * 8 + r) * GV_SCS + q]);
+            if (!RED) {
+              // code pair times the group scale in BF16: the product is exact, so it equals the
+              // F32 product rounded to BF16
+              const __nv_bfloat162 gs2 = __float2bfloat162_rn(gsf);
+              const uint32_t l0 = lut[c0], l1 = lut[c1];
+              bv[u][0] = r_bf2_bits(__hmul2(*(const __nv_bfloat162*)&l0, gs2));
+              bv[u][1] = r_bf2_bits(__hmul2(*(const __nv_bfloat162*)&l1, gs2));
+            } else {
+              const float gs = gsf * s2;
+              bv[u][0] = r_pack(r_e2m1(c0) * gs, r_e2m1(c0 >> 4) * gs);
+              bv[u][1] = r_pack(r_e2m1(c1) * gs, r_e2m1(c1 >> 4) * gs);
+            }
+          }
+        }
+#pragma unroll
+        for (int u = 0; u < QB; u++) {
+          const int q = q0 + u;
+          if (q >= nq) break;
+          float* c = fold_blocks ? part : acc;
+          r_mma(c, ahv[u], bv[u]);
+          r_mma(c, alv[u], bv[u]);
+          if (fold_blocks && q == G::NQ - 1) {  // the stage is one 128-input block
+  #pragma unroll
+            for (int i = 0; i < 4; i++) {
+              acc[i] = __fmaf_rn(part[i], bs, acc[i]);
+              part[i] = 0.0f;
+            }
           }
         }
       }

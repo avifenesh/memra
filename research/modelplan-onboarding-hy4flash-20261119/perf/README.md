@@ -60,6 +60,7 @@ L2.
 | 11: the per-row kernels' strided loads issued together | 16.79 [16.76-16.82] | 59.5 | 15.71 [15.66-15.72] | 63.5 | 107.4 | 318.1 |
 | 12: the small kernels let their dependent launch before they wait | 16.94 [16.93-16.99] | 58.9 | 15.87 [15.84-15.88] | 62.9 | 102.7 | 319.2 |
 | 13: the hyper-connection mix writes the row's RMS norm; indexer chains side by side | 16.98 [16.96-16.99] | 58.7 | 15.92 [15.91-15.94] | 62.6 | 102.9 | 320.9 |
+| 14: a small-row stage loads its operands first; a BF16 stage is two tiles | 17.30 [17.30-17.31] | 57.7 | 16.17 [16.16-16.19] | 61.7 | 102.3 | 320.0 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -233,6 +234,22 @@ just wrote (a thread's elements in order, the block tree). The indexer's group l
 group's 16 head dots side by side (each in input order) instead of one after the other, and
 the pooled keys' two weight rows load 16 inputs at a time. Decode step 58.9 -> 58.7 ms on `chat`,
 62.9 -> 62.6 ms on `long`; 3 of 3 tapes bit-equal.
+
+### 14. Small-row stage: operands first, BF16 two tiles (`receipts/s14-gemv-stage/`)
+
+`ncu` on the small-row kernels (`kbench`): the routed experts ran 1.27 instructions a cycle an SM
+with 0.39 eligible warps a scheduler, stalled on shared-memory loads and fixed waits, the tensor
+pipe not throttled. A q-step loaded its code bytes, then the table entries they index, then
+multiplied, one step after the other. A stage now loads the operands of up to 8 q-steps together
+(weights, scales, table entries, split activations) and then runs their mma chain in q order;
+the step count is a constant (a row is a whole number of tiles) and the FP8 block scale folds at
+the stage's end, so the loop has no data-dependent branch. A BF16 stage takes two tiles (128
+inputs, one 8 KiB copy), half the stage turns of a long BF16 row. Each output's mma sequence is
+unchanged (`kbench`: every case equal to the tiled kernel).
+
+`kbench.txt`: experts 108 -> 104 us, `qa` 33.5 -> 29.3 us and `kva` 30.6 -> 24.6 us with the
+two-tile stage, the BF16 latent projections 5 to 10% faster. Decode step 58.7 -> 57.7 ms on
+`chat`, 62.6 -> 61.7 ms on `long`; 3 of 3 tapes bit-equal.
 
 Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct

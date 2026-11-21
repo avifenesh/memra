@@ -123,7 +123,8 @@ int main(int argc, char** argv) {
     const int reps = 20;
     double tot = 0;
     for (int i = 0; i < reps; i++) {
-      read_thrash<<<192, 256, 0, st>>>((const uint4*)thrash, thrash_bytes / 16, sink);
+      // KB_WARM: no thrash, the weights stay in L2 (the kernel's rate without the memory bus)
+      if (!getenv("KB_WARM")) read_thrash<<<192, 256, 0, st>>>((const uint4*)thrash, thrash_bytes / 16, sink);
       CK(cudaEventRecord(e0, st));
       fn();
       CK(cudaEventRecord(e1, st));
