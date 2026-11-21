@@ -933,6 +933,7 @@ pub mod step_guard;
 
 // MiMo V2.6 inspection components. Automatic serving selection remains closed.
 pub mod inkling2_actq;
+pub mod inkling2_gpu;
 pub mod mimo_attn_load;
 pub mod mimo_audio_attn_ffi;
 pub mod mimo_audio_codec_frontend;

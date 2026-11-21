@@ -668,6 +668,11 @@ fn main() {
             // Inkling 2 Mini routed experts: the act-quant quantizers (portable) and the W4A4 /
             // W8A8 block-scaled expert GEMMs (120a family; elsewhere the launcher refuses).
             "cu/inkling2_actq.cu",
+            // Inkling 2 Mini native GPU route: tile GEMM and decode GEMV over the stored formats,
+            // relative-bias attention with the per-query sink, clip / tau / value-norm epilogues,
+            // short convolutions with carried state, depth mix, loop controller, router.
+            // Portable CUDA C.
+            "cu/inkling2_gpu.cu",
         ] {
             println!("cargo:rerun-if-changed={mmq_src}");
             let compile_src =
