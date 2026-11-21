@@ -160,6 +160,7 @@ mod ffi {
             scale: *const f32,
             thr: f64,
             eps: f64,
+            posd: *const i64,
             pos0: i64,
             log_floor: i32,
             alpha: f64,
@@ -193,6 +194,7 @@ mod ffi {
             kc: *const f32,
             vc: *const f32,
             cap: i64,
+            posd: *const i64,
             pos0: i64,
             window: i32,
             extent: i32,
@@ -203,6 +205,8 @@ mod ffi {
             kv_heads: i32,
             dim: i32,
             rank: i32,
+            scr: *mut f64,
+            scr_ld: i64,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_gate(y: *mut f32, g: *const f32, n: i64, stream: *mut c_void) -> i32;
@@ -997,6 +1001,12 @@ struct Work {
     moe: CudaSlice<f32>,
     /// f64 scratch of the split mix and controller (rows x 128)
     dscr: CudaSlice<f64>,
+    /// the call's position on the device (the kernels that read a position take it from here)
+    posd: CudaSlice<i64>,
+    /// f64 scores of a decode step's split attention: [heads][asc_ld], asc_ld the most keys a row
+    /// attends (the largest window, or the context)
+    asc: CudaSlice<f64>,
+    asc_ld: usize,
     logits: CudaSlice<f32>,
     best: CudaSlice<u32>,
     tok: CudaSlice<u32>,
@@ -1519,6 +1529,7 @@ impl Route {
         ) = (
             0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 1usize,
         );
+        let mut max_keys = 1usize;
         let mut blocks = BTreeMap::new();
         for layer in &plan.layers {
             let a = attention_of(layer)?;
@@ -1530,6 +1541,7 @@ impl Route {
                 None => context,
             };
             let history = a.key_conv.kernel as usize - 1;
+            max_keys = max_keys.max(a.window.map_or(context, |w| w as usize));
             let kv_rows = if a.window.is_some() {
                 account.kv_rings += 2 * cap * kvw * 4;
                 cap
@@ -1571,6 +1583,10 @@ impl Route {
                 blocks.insert(layer.index, dev.zeros(chunk * hidden)?);
             }
         }
+        // the decode step's attention scores grow with the context too
+        if max_keys == context {
+            account.per_position += max_heads * 8;
+        }
         let pairs = chunk * max_k;
         let tile_words = unsafe { ffi::memra_ink2g_tile_words() } as usize;
         let rh = chunk * hidden;
@@ -1610,6 +1626,9 @@ impl Route {
             dn: dev.zeros(pairs * hidden)?,
             moe: dev.zeros(rh)?,
             dscr: dev.zeros(chunk * 128)?,
+            posd: dev.zeros(1)?,
+            asc: dev.zeros(max_heads * max_keys)?,
+            asc_ld: max_keys,
             logits: dev.zeros(HEAD_ROWS * keep)?,
             best: dev.zeros(HEAD_ROWS)?,
             tok: dev.zeros(chunk)?,
@@ -1878,6 +1897,8 @@ impl Route {
         let lp = &program.loop_plan;
         let rh = chunk * hidden;
         dev.put(tokens, &mut w.tok)?;
+        dev.put(&[pos0 as i64], &mut w.posd)?;
+        let posd = dptr(&w.posd, &st);
         dev.launched("memra_ink2g_embed", unsafe {
             ffi::memra_ink2g_embed(
                 dptr(embed, &st) as *const c_void,
@@ -2145,6 +2166,7 @@ impl Route {
                         scale.map_or(std::ptr::null(), |s| dptr(s, &st) as *const f32),
                         thr,
                         eps,
+                        posd as *const i64,
                         pos0 as i64,
                         if tau { log_floor } else { 0 },
                         alpha,
@@ -2281,6 +2303,7 @@ impl Route {
                     kc as *const f32,
                     vc as *const f32,
                     ss.cap as i64,
+                    posd as *const i64,
                     pos0 as i64,
                     a.window.map_or(0, |v| v as i32),
                     extent as i32,
@@ -2291,6 +2314,8 @@ impl Route {
                     kvh as i32,
                     dim as i32,
                     rank as i32,
+                    dptr_mut(&mut w.asc, &st) as *mut f64,
+                    w.asc_ld as i64,
                     dev.sp(),
                 )
             })?;
@@ -3524,6 +3549,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                     },
                     thr,
                     1e-6,
+                    std::ptr::null(),
                     pos0 as i64,
                     log_floor,
                     0.1,
@@ -3714,6 +3740,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             let mut kc = dev.zeros::<f32>(cap * kvw)?;
             let mut vc = dev.zeros::<f32>(cap * kvw)?;
             let mut out = dev.zeros::<f32>(total * heads * dim)?;
+            let mut ascr = dev.zeros::<f64>(heads * cap)?;
             let mut at = 0usize;
             for rows in splits {
                 // the rows of the call enter the cache before any row attends
@@ -3741,6 +3768,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         dptr(&kc, &st) as *const f32,
                         dptr(&vc, &st) as *const f32,
                         cap as i64,
+                        std::ptr::null(),
                         at as i64,
                         window as i32,
                         extent as i32,
@@ -3751,6 +3779,9 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         kvh as i32,
                         dim as i32,
                         rank as i32,
+                        // a call of one row runs the split form
+                        dptr_mut(&mut ascr, &st) as *mut f64,
+                        cap as i64,
                         dev.sp(),
                     )
                 })?;

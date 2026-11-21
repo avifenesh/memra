@@ -594,11 +594,11 @@ __global__ void ink2g_mix_out_kernel(Ink2gStates st, int ns, int nq, const doubl
 // log_floor > 0. The row lands at dst row (pos0 + r) % cap when cap > 0 (a cache ring), else r.
 // dst may be x (a block reads its head before it writes it).
 __global__ void ink2g_heads_kernel(int mode, const float* x, const float* __restrict__ scale, double thr,
-                                   double eps, int64_t pos0, int log_floor, double alpha, float* dst,
-                                   int64_t cap, int heads, int width) {
+                                   double eps, const int64_t* __restrict__ posd, int64_t pos0, int log_floor,
+                                   double alpha, float* dst, int64_t cap, int heads, int width) {
   __shared__ double sh[8];
   const int r = blockIdx.x, h = blockIdx.y, t = threadIdx.x;
-  const int64_t pos = pos0 + r;
+  const int64_t pos = (posd ? *posd : pos0) + r;
   const int64_t drow = cap > 0 ? pos % cap : (int64_t)r;
   double v = 0.0;
   if (t < width) {
@@ -726,6 +726,71 @@ __global__ void ink2g_attn_kernel(const float* __restrict__ q, const float* __re
   if (t < dim) out[((int64_t)r * heads + h) * dim + t] = (float)(a / den);
 }
 
+
+// ---- decode attention, split over blocks ----------------------------------------------------------
+// The same function as ink2g_attn_kernel for a call of one row: every score is the same f64
+// expression (ink2g_attn_score), the maximum and the denominator run with the same 256-thread
+// mapping and block reductions, and the output sums the same exp(score - max) terms in the same
+// oldest-first order, so the bits are equal. Phase 1 spreads the scores over blocks of
+// INK2G_SC_KEYS keys into f64 scratch [heads][ld]; phase 2 runs one block per head. pos is read from
+// posd when it is set (a graph replays one step at every position).
+#define INK2G_SC_KEYS 256
+__global__ void __launch_bounds__(INK2G_SC_KEYS) ink2g_attn_scores_kernel(
+    const float* __restrict__ q, const float* __restrict__ rel, const float* __restrict__ table,
+    const float* __restrict__ kc, int64_t cap, const int64_t* __restrict__ posd, int64_t pos0, int window, int extent,
+    int mask_beyond, double* __restrict__ scr, int64_t ld, int heads, int kv_heads, int dim, int rank) {
+  __shared__ double bias[INK2G_SC_KEYS];
+  __shared__ float qs[256];
+  const int h = blockIdx.y, t = threadIdx.x;
+  const int64_t pos = posd ? *posd : pos0;
+  const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
+  const int64_t d0 = (int64_t)blockIdx.x * INK2G_SC_KEYS;
+  if (d0 >= nkeys) return;
+  const int kvh = h / (heads / kv_heads);
+  const int kvw = kv_heads * dim;
+  const float* relr = rel + (int64_t)h * rank;
+  const int64_t d = d0 + t;
+  if (d < extent && d < nkeys) {
+    double b = 0.0;
+    for (int i = 0; i < rank; i++) b += (double)relr[i] * (double)table[(int64_t)i * extent + d];
+    bias[t] = b;
+  }
+  for (int i = t; i < dim; i += blockDim.x) qs[i] = q[(int64_t)h * dim + i];
+  __syncthreads();
+  if (d >= nkeys) return;
+  const double scale = 1.0 / sqrt((double)dim);
+  scr[(int64_t)h * ld + d] = ink2g_attn_score(qs, kc, cap, pos, d, kvw, kvh, dim, extent, mask_beyond, bias - d0, scale);
+}
+
+__global__ void ink2g_attn_fold_kernel(const float* __restrict__ sink, const float* __restrict__ vc, int64_t cap,
+                                       const int64_t* __restrict__ posd, int64_t pos0, int window,
+                                       double* __restrict__ scr, int64_t ld, float* __restrict__ out, int heads,
+                                       int kv_heads, int dim) {
+  __shared__ double sh[8];
+  const int h = blockIdx.y, t = threadIdx.x, nt = blockDim.x;
+  const int64_t pos = posd ? *posd : pos0;
+  const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
+  const int kvh = h / (heads / kv_heads);
+  const int kvw = kv_heads * dim;
+  double* sc = scr + (int64_t)h * ld;
+  const double sk = (double)sink[h];
+  double top = -INFINITY;
+  for (int64_t d = t; d < nkeys; d += nt) top = fmax(top, sc[d]);
+  top = fmax(ink2g_block_max(top, sh), sk);
+  double den = 0.0;
+  for (int64_t d = t; d < nkeys; d += nt) {
+    const double e = exp(sc[d] - top);
+    sc[d] = e;
+    den += e;
+  }
+  den = ink2g_block_sum(den, sh) + exp(sk - top);  // its barriers order the stores above
+  if (t < dim) {
+    double a = 0.0;
+    for (int64_t d = nkeys - 1; d >= 0; d--)  // oldest key first, as the reference sums
+      a += sc[d] * (double)vc[((pos - d) % cap) * kvw + kvh * dim + t];
+    out[(int64_t)h * dim + t] = (float)(a / den);
+  }
+}
 
 // y *= sigmoid(g)
 __global__ void ink2g_gate_kernel(float* __restrict__ y, const float* __restrict__ g, int64_t n) {
@@ -1057,13 +1122,15 @@ int memra_ink2g_controller_v0(const float* x, const float* msg, const void* down
   return ink2g_rc();
 }
 
-int memra_ink2g_heads(int mode, const float* x, const float* scale, double thr, double eps, int64_t pos0,
-                      int log_floor, double alpha, float* dst, int64_t cap, int R, int heads, int width,
-                      void* stream) {
+// posd (nullable): the device copy of pos0, read by the kernel (a graph replays one step at every
+// position); pos0 must still be the call's position.
+int memra_ink2g_heads(int mode, const float* x, const float* scale, double thr, double eps, const int64_t* posd,
+                      int64_t pos0, int log_floor, double alpha, float* dst, int64_t cap, int R, int heads,
+                      int width, void* stream) {
   if ((mode != 0 && mode != 1) || !x || !dst || R <= 0 || heads <= 0 || width <= 0 || width > 256) return 45015;
   if (heads > 65535) return 45016;
   const int threads = ((width + 31) / 32) * 32;
-  ink2g_heads_kernel<<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(mode, x, scale, thr, eps, pos0,
+  ink2g_heads_kernel<<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(mode, x, scale, thr, eps, posd, pos0,
                                                                          log_floor, alpha, dst, cap, heads, width);
   return ink2g_rc();
 }
@@ -1083,9 +1150,13 @@ int memra_ink2g_conv(int mode, const float* x, const float* state_in, float* sta
   return ink2g_rc();
 }
 
+// posd (nullable): the device copy of pos0. scr (nullable): f64 scratch [heads][scr_ld] with scr_ld at
+// least the keys a row attends (the window, or the context); with it a call of one row runs the split
+// form (the same bits).
 int memra_ink2g_attn(const float* q, const float* rel, const float* table, const float* sink, const float* kc,
-                     const float* vc, int64_t cap, int64_t pos0, int window, int extent, int mask_beyond, float* out,
-                     int R, int heads, int kv_heads, int dim, int rank, void* stream) {
+                     const float* vc, int64_t cap, const int64_t* posd, int64_t pos0, int window, int extent,
+                     int mask_beyond, float* out, int R, int heads, int kv_heads, int dim, int rank, double* scr,
+                     int64_t scr_ld, void* stream) {
   if (!q || !rel || !table || !sink || !kc || !vc || !out) return 45021;
   if (R <= 0 || heads <= 0 || kv_heads <= 0 || heads % kv_heads != 0 || dim <= 0 || dim > 256 || rank <= 0)
     return 45022;
@@ -1094,6 +1165,17 @@ int memra_ink2g_attn(const float* q, const float* rel, const float* table, const
   // every key a row of this call reads is still in the cache: the ring holds the window of its
   // oldest row and the rows of the call
   if ((window > 0 ? (int64_t)window - 1 + R : last + 1) > cap) return 45024;
+  if (R == 1 && scr) {
+    // the most keys a row can attend: a replayed step reads its position on the device
+    const int64_t most = window > 0 ? (int64_t)window : cap;
+    if (scr_ld < most || dim > 256) return 45025;
+    ink2g_attn_scores_kernel<<<dim3((unsigned)((most + INK2G_SC_KEYS - 1) / INK2G_SC_KEYS), heads), INK2G_SC_KEYS, 0,
+                               (cudaStream_t)stream>>>(q, rel, table, kc, cap, posd, pos0, window, extent, mask_beyond,
+                                                       scr, scr_ld, heads, kv_heads, dim, rank);
+    ink2g_attn_fold_kernel<<<dim3(1, heads), 256, 0, (cudaStream_t)stream>>>(sink, vc, cap, posd, pos0, window, scr,
+                                                                           scr_ld, out, heads, kv_heads, dim);
+    return ink2g_rc();
+  }
   ink2g_attn_kernel<<<dim3(R, heads), 256, 0, (cudaStream_t)stream>>>(
       q, rel, table, sink, kc, vc, cap, pos0, window, extent, mask_beyond, out, heads, kv_heads, dim, rank);
   return ink2g_rc();

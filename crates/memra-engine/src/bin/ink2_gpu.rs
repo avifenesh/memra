@@ -16,6 +16,8 @@
 //!                            per-slot gate of a class that is not continuous)
 //!   --gen N                  greedy: the tape's prompt, then N - 1 decode calls on the argmax,
 //!                            scored against the tape's greedy ids; timed, launches counted
+//!   --prompt-len N           with --gen: the prompt is the tape's ids repeated to N tokens (a
+//!                            context length for timing; no oracle ids past the tape's)
 //!   --chunkings A,B --limit N   the first N tape ids as calls of A rows and again as calls of B
 //!                            rows (1 = one token per call); the logits and every slot's output
 //!                            must be bit-identical
@@ -56,6 +58,8 @@ struct Args {
     force_router: bool,
     force_moe_in: bool,
     gen_tokens: usize,
+    /// --prompt-len N: the gen prompt is the tape's tokens repeated to N (a context length for timing)
+    prompt_len: usize,
     chunkings: Option<(usize, usize)>,
     limit: usize,
     red: RedArms,
@@ -89,6 +93,7 @@ fn parse() -> Result<Args, String> {
             "--force-router" => a.force_router = true,
             "--force-moe-in" => a.force_moe_in = true,
             "--gen" => a.gen_tokens = num(val()?)?,
+            "--prompt-len" => a.prompt_len = num(val()?)?,
             "--limit" => a.limit = num(val()?)?,
             "--chunk" => a.chunk = num(val()?)?,
             "--context" => a.context = num(val()?)?,
@@ -785,7 +790,11 @@ fn run() -> Result<(), String> {
         None => None,
     };
     let tape = tape.as_ref().ok_or("a mode needs --tape DIR")?;
-    let need = tape.all_ids.len().max(tape.prompt + a.gen_tokens) + 8;
+    let need = tape
+        .all_ids
+        .len()
+        .max(tape.prompt.max(a.prompt_len) + a.gen_tokens)
+        + 8;
     let context = if a.context > 0 {
         a.context
     } else {
@@ -1005,7 +1014,14 @@ fn run() -> Result<(), String> {
     if a.gen_tokens > 0 {
         route.reset()?;
         route.dev.sync()?;
-        let prompt = &tape.all_ids[..tape.prompt];
+        let prompt: Vec<u32> = if a.prompt_len > 0 {
+            (0..a.prompt_len)
+                .map(|i| tape.all_ids[i % tape.all_ids.len()])
+                .collect()
+        } else {
+            tape.all_ids[..tape.prompt].to_vec()
+        };
+        let prompt = &prompt[..];
         let tp = Instant::now();
         let mut next = *route
             .call(prompt, Head::LastArgmax, None)?
