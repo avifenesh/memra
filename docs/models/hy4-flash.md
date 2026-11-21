@@ -58,8 +58,8 @@ MEMRA_MODELS=hy4=/path/Hy4-flash-NVFP4 memra-server
 ## Limits
 
 - Untuned: about 6 tok/s decode without drafts and 205 tok/s prefill on a 2,104-token prompt for
-  one request; with drafts, six chat turns read 1.2 to 2.2 times the undrafted speed (the
-  drafter keeps 0.22 to 0.62 of its drafts). Requests run one call at a time, so throughput does
+  one request; with drafts, six sampled chat turns read 1.2 to 2.2 times the undrafted speed
+  (the drafter keeps 0.25 to 0.65 of its drafts). Requests run one call at a time, so throughput does
   not grow with concurrency.
 - No prefix reuse, constrained decoding or vision; drafts are greedy for sampled requests too.
 - One GB10 only; the record covers no other device.
