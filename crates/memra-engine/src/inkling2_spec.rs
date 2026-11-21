@@ -165,6 +165,85 @@ pub fn generate(
     )
 }
 
+/// The proposal length of each verify call when a request asks for an adaptive one (`k == 0`):
+/// the length that maximizes expected committed tokens per second of a step. Expected tokens
+/// come from the request's own acceptance under a geometric model (a proposal is accepted with
+/// probability `a` given the ones before it were; `a` counts accepted proposals against first
+/// rejections, from a prior of 2 to 1); step seconds are measured per length on this request
+/// (an exponential average) and a line through the measured lengths fills the others. The first
+/// two steps measure the longest length and 2.
+pub struct AdaptiveK {
+    max: usize,
+    succ: f64,
+    fail: f64,
+    time: Vec<Option<f64>>,
+    steps: usize,
+}
+
+impl AdaptiveK {
+    pub fn new(max: usize) -> Self {
+        Self {
+            max,
+            succ: 2.0,
+            fail: 1.0,
+            time: vec![None; max + 1],
+            steps: 0,
+        }
+    }
+
+    fn step_time(&self, k: usize) -> Option<f64> {
+        if let Some(t) = self.time[k] {
+            return Some(t);
+        }
+        let pts: Vec<(f64, f64)> = (1..=self.max)
+            .filter_map(|j| self.time[j].map(|t| (j as f64, t)))
+            .collect();
+        if pts.len() < 2 {
+            return None;
+        }
+        let n = pts.len() as f64;
+        let (sx, sy) = pts.iter().fold((0.0, 0.0), |a, p| (a.0 + p.0, a.1 + p.1));
+        let (mx, my) = (sx / n, sy / n);
+        let sxx: f64 = pts.iter().map(|p| (p.0 - mx) * (p.0 - mx)).sum();
+        let sxy: f64 = pts.iter().map(|p| (p.0 - mx) * (p.1 - my)).sum();
+        let slope = if sxx > 0.0 { sxy / sxx } else { 0.0 };
+        Some((my + slope * (k as f64 - mx)).max(1e-6))
+    }
+
+    /// The length of the next verify call (1..=max).
+    pub fn choose(&self) -> usize {
+        match self.steps {
+            0 => return self.max,
+            1 => return 2.min(self.max),
+            _ => {}
+        }
+        let a = (self.succ / (self.succ + self.fail)).min(0.999);
+        let mut best = (1, f64::NEG_INFINITY);
+        for k in 1..=self.max {
+            let Some(t) = self.step_time(k) else { continue };
+            let tokens = (1.0 - a.powi(k as i32 + 1)) / (1.0 - a);
+            let rate = tokens / t;
+            if rate > best.1 {
+                best = (k, rate);
+            }
+        }
+        best.0
+    }
+
+    /// A finished step of length `k` that accepted `accepted` proposals in `secs`.
+    pub fn record(&mut self, k: usize, accepted: usize, secs: f64) {
+        self.succ += accepted as f64;
+        if accepted < k {
+            self.fail += 1.0;
+        }
+        self.time[k] = Some(match self.time[k] {
+            Some(t) => 0.7 * t + 0.3 * secs,
+            None => secs,
+        });
+        self.steps += 1;
+    }
+}
+
 /// Red arms of the speculative gates (all off by default).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SpecArms {
@@ -262,10 +341,18 @@ pub fn generate_arm(
     arms: SpecArms,
 ) -> Result<(Vec<u32>, SpecStats), String> {
     let slots = tap_slots(route, arms)?;
-    if route.chunk < k + 1 {
+    // k == 0: the request's proposal length adapts (`AdaptiveK`) up to the block's
+    let kmax = if k == 0 { drafter.g.rows - 1 } else { k };
+    if kmax > drafter.g.rows - 1 {
+        return Err(format!(
+            "{kmax} proposals; a block holds {}",
+            drafter.g.rows - 1
+        ));
+    }
+    if route.chunk < kmax + 1 {
         return Err(format!(
             "a verify of {} rows; the route holds {}",
-            k + 1,
+            kmax + 1,
             route.chunk
         ));
     }
@@ -284,7 +371,7 @@ pub fn generate_arm(
         ));
     }
     route.set_capture(&slots)?;
-    let kept = route.keep_row_history(k + 1);
+    let kept = route.keep_row_history(kmax + 1);
     let result =
         kept.and_then(|_| generate_inner(route, drafter, prompt, n, k, sampling, stop, arms));
     let off = route.set_capture(&[]);
@@ -315,7 +402,7 @@ fn generate_inner(
         Sampling::Greedy => Rng(0),
     };
     let mut stats = SpecStats {
-        hist: vec![0; k + 1],
+        hist: vec![0; k.max(drafter.g.rows - 1) + 1],
         ..SpecStats::default()
     };
     let t0 = std::time::Instant::now();
@@ -352,6 +439,7 @@ fn generate_inner(
     route.dev.sync()?;
     stats.prefill_s = t0.elapsed().as_secs_f64();
     let t1 = std::time::Instant::now();
+    let mut adapt = (k == 0).then(|| AdaptiveK::new(drafter.g.rows - 1));
     let mut carry = route.carry()?;
     let mut out = vec![anchor];
     let vocab = route.vocab();
@@ -365,7 +453,9 @@ fn generate_inner(
                 route.context
             ));
         }
-        let kk = k.min(n - out.len()).min(room - 1);
+        let want = adapt.as_ref().map_or(k, AdaptiveK::choose);
+        let kk = want.min(n - out.len()).min(room - 1);
+        let t_step = std::time::Instant::now();
         if kk == 0 {
             let head = match sampling {
                 Sampling::Greedy => Head::LastArgmax,
@@ -435,6 +525,9 @@ fn generate_inner(
         }
         let cap = route.captured().ok_or("capture is off")?;
         drafter.commit(&route.dev, cap, chunk, 0, accepted + 1)?;
+        if let Some(a) = adapt.as_mut() {
+            a.record(kk, accepted, t_step.elapsed().as_secs_f64());
+        }
         stats.steps += 1;
         stats.proposed += kk;
         stats.accepted += accepted;
@@ -683,6 +776,28 @@ mod tests {
             red > 2e-2,
             "red arm (resample from the target) must be biased: {red:e}"
         );
+    }
+
+    /// The adaptive length explores the longest length and 2, then picks by the measured times:
+    /// with high acceptance and a cheap extra row it goes long, with low acceptance short.
+    #[test]
+    fn adaptive_k_follows_acceptance_and_step_time() {
+        let mut a = AdaptiveK::new(7);
+        assert_eq!(a.choose(), 7);
+        a.record(7, 7, 0.070);
+        assert_eq!(a.choose(), 2);
+        a.record(2, 2, 0.032);
+        for _ in 0..20 {
+            a.record(7, 7, 0.070);
+        }
+        assert_eq!(a.choose(), 7, "every proposal accepted: the longest");
+        let mut b = AdaptiveK::new(7);
+        b.record(7, 0, 0.070);
+        b.record(2, 0, 0.032);
+        for _ in 0..20 {
+            b.record(2, 0, 0.032);
+        }
+        assert_eq!(b.choose(), 1, "nothing accepted: the shortest");
     }
 
     #[test]
