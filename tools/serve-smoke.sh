@@ -4,9 +4,10 @@
 # determinism, and spec-vs-plain greedy identity (the exactness contract at
 # the SERVING level, not just the kernel gates).
 #
-# Usage: tools/serve-smoke.sh [model.gguf [draft.gguf]]
+# Usage: tools/serve-smoke.sh [model.gguf|checkpoint-dir [draft.gguf]]
 # Defaults to the Qwen3.5-9B NVFP4 MTP model and its own-trim regime draft (see MODEL and
-# DRAFT below). Exits nonzero on any failed check.
+# DRAFT below). A safetensors checkpoint directory runs the arms its pack's row in
+# tools/serve-smoke-packs.tsv names. Exits nonzero on any failed check.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -34,7 +35,7 @@ fi
 # it; gemma assistant drafts use MEMRA_DRAFT, not the '+draft' NextN attach.
 MODEL="${1:-/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}"
 DRAFT="${2:-/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf}"
-[ -f "$MODEL" ] || { echo "serve-smoke: SKIP (no model at $MODEL)"; exit 0; }
+[ -f "$MODEL" ] || [ -d "$MODEL" ] || { echo "serve-smoke: SKIP (no model at $MODEL)"; exit 0; }
 PORT="${MEMRA_SMOKE_PORT:-8177}"
 ADDR=127.0.0.1:$PORT
 BASE=http://$ADDR
@@ -47,6 +48,33 @@ FAILS=0
 SMOKE_BOOT=0
 PASS() { echo "  ok: $1"; }
 FAIL() { echo "  FAIL: $1"; FAILS=$((FAILS+1)); }
+
+# A checkpoint DIRECTORY (a safetensors pack) is served by its pack's route. Its pack comes from
+# the config contract (`memra model inspect`, the artifact lock's family=), and its row in
+# tools/serve-smoke-packs.tsv says the server env and which arms run. A GGUF file reads no row:
+# PACK_ARMS stays empty and every arm runs, as it always has.
+PACK_ARMS=""
+PACK_ENV=""
+if [ -d "$MODEL" ]; then
+  cargo build --release -p memra-cli || { echo "serve-smoke: memra CLI build FAILED"; exit 1; }
+  # the first family of the manifest whose pack's config contract the checkpoint passes
+  PACK=""
+  for fam in $(awk -F'\t' '!/^#/ && NF { print $1 }' tools/serve-smoke-packs.tsv); do
+    PACK_INSPECT=$(mktemp -d "${TMPDIR:-/tmp}/serve-smoke-pack.XXXXXX") || exit 1
+    "${CARGO_TARGET_DIR:-target}"/release/memra model inspect "$MODEL" --against "$fam" --out "$PACK_INSPECT" >/dev/null 2>&1 \
+      && PACK=$(sed -n 's/^family=//p' "$PACK_INSPECT/artifact.lock" 2>/dev/null)
+    rm -rf -- "$PACK_INSPECT"
+    [ -n "$PACK" ] && break
+  done
+  ROW=$(awk -F'\t' -v f="$PACK" '!/^#/ && $1 == f { print; exit }' tools/serve-smoke-packs.tsv)
+  [ -n "$PACK" ] && [ -n "$ROW" ] || { echo "serve-smoke: FAIL (no serve-smoke row for the pack of $MODEL: family '${PACK:-unknown}'; add it to tools/serve-smoke-packs.tsv)"; exit 1; }
+  PACK_ENV=$(cut -f2 <<<"$ROW"); [ "$PACK_ENV" = "-" ] && PACK_ENV=""
+  PACK_ARMS=",$(cut -f3 <<<"$ROW"),"
+  echo "serve-smoke: pack $PACK (env: ${PACK_ENV:-none}; arms: $(cut -f3 <<<"$ROW"))"
+  # shellcheck disable=SC2086 # the row's NAME=value pairs, one word each
+  [ -n "$PACK_ENV" ] && export $PACK_ENV
+fi
+arm_on() { [ -z "$PACK_ARMS" ] || [[ "$PACK_ARMS" == *",$1,"* ]]; }
 
 # Build UNCONDITIONALLY (cargo is incremental — a no-op when fresh, cheap). The old
 # `[ -x BIN ] || cargo build` idiom silently ran a STALE binary whenever one merely
@@ -179,6 +207,7 @@ stop_server
 # MEMRA_SERVE_SPEC=0: the smoke model embeds an MTP head and spec sessions bypass the
 # prefix cache by policy — the gate must run the batched bulk tier the cache serves.
 # A FRESH server so the /metrics counters start from zero (the closed forms assume it).
+if arm_on cache-meter; then
 echo "== serve-smoke: cache-metering exactness =="
 export MEMRA_SERVE_SPEC=0
 if start_server "smoke=$MODEL"; then
@@ -190,9 +219,12 @@ else
   FAIL "cache-metering server did not start"
 fi
 unset MEMRA_SERVE_SPEC
+else
+  echo "== serve-smoke: cache-metering arm SKIP (pack $PACK runs no such arm)"
+fi
 
 # 8. spec serving: same greedy prompt must produce IDENTICAL text to plain serving
-if [ -f "$DRAFT" ]; then
+if arm_on spec && [ -f "$DRAFT" ]; then
   echo "== serve-smoke: spec serving (draft attached) =="
   start_server "smoke=$MODEL+$DRAFT" || exit 1
   SA=$(chat "Explain what a mutex is in one sentence." 64 | say)
@@ -439,7 +471,7 @@ fi
 #       keeps its content and events.
 # same canonical path as local-ci.sh's G12 (MEMRA_G12_MODEL overrides there too)
 GEMMA_MODEL="${GEMMA_MODEL:-/data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf}"
-if [ -f "$GEMMA_MODEL" ]; then
+if arm_on gemma4 && [ -f "$GEMMA_MODEL" ]; then
   echo "== serve-smoke: gemma4 arm (default scheduler; the worker-panic regression) =="
   if start_server "smoke=$GEMMA_MODEL"; then
     gchat() { # extra-json-fields [prompt [max_tokens]]
@@ -531,7 +563,7 @@ fi
 # remained clean. This arm also pins the immediate safety contract: routed-MoE carried
 # chunks stay serial until a multi-chunk + serving-decode gate qualifies that path.
 Q35_COLD_MODEL="${MEMRA_Q35_COLD_MODEL:-/data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf}"
-if [ -f "$Q35_COLD_MODEL" ]; then
+if arm_on q35-cold && [ -f "$Q35_COLD_MODEL" ]; then
   echo "== serve-smoke: Q35 mixed c=4 cold-prefill exactness =="
   unset MEMRA_PRIME_BATCH MEMRA_PREFILL_TICK MEMRA_PRIME_BATCH_MAX_T \
     MEMRA_PRIME_BATCH_HOLD_MS
@@ -590,7 +622,7 @@ fi
 #   (b) the calibration ran at plain_cap=8 and its plain table has exactly 8 entries;
 #   (c) one greedy request returns text, and the server is alive after it with zero panics.
 Q35_SPEC_DRAFT="${MEMRA_Q35_SPEC_DRAFT:-$(dirname "$Q35_COLD_MODEL")/draft-35b-owntrim-nvfp4head-q4blk.gguf}"
-if [ -f "$Q35_COLD_MODEL" ] && [ -f "$Q35_SPEC_DRAFT" ]; then
+if arm_on moe-spec && [ -f "$Q35_COLD_MODEL" ] && [ -f "$Q35_SPEC_DRAFT" ]; then
   echo "== serve-smoke: MoE spec arm (default env: boot spec-cost calibration at wave cap 8) =="
   export MEMRA_CTX=4096
   if start_server "smoke=$Q35_COLD_MODEL+$Q35_SPEC_DRAFT"; then

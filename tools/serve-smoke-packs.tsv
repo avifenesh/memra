@@ -1,0 +1,9 @@
+# serve-smoke rows for safetensors packs (tools/serve-smoke.sh with a checkpoint directory).
+# A directory's pack is the one its config contract selects (`memra model inspect`, the artifact
+# lock's family=); its row says what the battery boots with and which arms it runs. A GGUF file
+# reads no row and runs every arm, as before.
+#   family     the pack's family
+#   server_env space-separated NAME=value pairs the server boots with ("-" for none)
+#   arms       comma-separated arms: plain (checks 1-7), cache-meter, spec, gemma4, q35-cold, moe-spec
+# family	server_env	arms
+inkling2	MEMRA_CTX=8192	plain
