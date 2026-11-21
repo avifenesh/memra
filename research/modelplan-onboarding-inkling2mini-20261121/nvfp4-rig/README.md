@@ -88,4 +88,24 @@ its overlay (refused).
   even of the f32 values) and `ink2g-attn-e4m3` (bit-identical to the f32 kernel over the decoded
   values).
 
-Results of the lease (`gpu_run.sh`, `gpu-run/`): see the section below once filled.
+## Lease results (2026-11-21 16:47-17:17, `gpu_run.sh`, `gpu-run/`; head a6b8a7f69e, binaries in `gpu-run/binaries.sha256`)
+
+- Clocks: clampcheck OK before every timed take; telemetry (`telemetry.csv`, 7,024 samples at 250 ms)
+  holds no P2 or 11,001 MHz sample.
+- Kernel cells (`kernel-cells.log`): all `ink2g` cells pass. `ink2g-gemm-nvfp4-dense` max|err|/sum|p|
+  5.3e-8 (bound 2.7e-4), rows alone bit-equal. `ink2g-kv-e4m3` 0 bytes differ. `ink2g-attn-e4m3`
+  0 bits differ.
+- Route under nvfp4-rig: calls of 26 vs calls of 1 over 57 rows, every slot row and logit row bit-equal
+  (`chunkings-rig.log`). Greedy 32/32 equal to the p1 tape. Resident weights 14.33 GiB.
+- Full-tensor golden: on the CPU, lane F's quantizer equals the overlay on all 145 dense tensors
+  (`golden-full-cpu-dense.json`, 0 differences). On CUDA (`gpu-run/golden-full-cuda.json`) the 8
+  expert banks and 107 dense tensors are equal; 38 dense tensors differ because CUDA torch divides a
+  tensor by a scalar as a multiply by the reciprocal, so `t = amax / 2688` moves by one ulp (t_ok=False
+  on exactly those). The mint keeps the stated division.
+- KL, decode and memory for both sets: `docs/decisions/INKLING2-NVFP4-RIG.md`. The route reproduces lane
+  F's harness. All-layer nvfp4-rig on rawdoc: KL real 0.0279 (route) / 0.0267 (harness), dNLL +0.0195 /
+  +0.0150. Outside-loop: 0.0212 / 0.0196, +0.0097 / +0.0102. Shipped route: 0.0127, +0.0010. Decode on
+  today's kernels: shipped 5.0, outside-loop 4.4, nvfp4-rig 3.3 tok/s. Max context: 73.5k (shipped) to
+  538k (nvfp4-rig).
+- Per-layer arms `w:attn:L0`..`L23` on rawdoc and chatwrap (lane F's harness): `drive_perlayer.sh`,
+  `gpu-run/perlayer-*.json`.

@@ -35,7 +35,10 @@ def bf16(name):
 
 rows = []
 bad = 0
+KIND = os.environ.get("GOLDEN_KIND")  # dense | experts | unset (all)
 for t in man["tensors"]:
+    if KIND and t["kind"] != KIND:
+        continue
     t0 = time.time()
     name = t["name"]
     if t["kind"] == "dense":
