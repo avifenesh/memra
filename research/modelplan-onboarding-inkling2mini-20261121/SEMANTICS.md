@@ -1,11 +1,16 @@
 # Inkling 2 Mini: program semantics and open facts
 
 Read from `config.json`, `hf_quant_config.json`, the safetensors headers, llama.cpp at
-`29b52d398b29` (`inkling2.cpp`, `inkling2-loop.cpp`) and transformers PR 51050 at
-`6173a2f679ff`. The module math below is common to both numeric classes. They differ only at the expert
-GEMMs: the declared class, which is the default and the support target, quantizes the expert
-inputs (see Stored quantization); the float-activation class, a bring-up and oracle step, does
-not. Nothing here was executed by memra.
+`29b52d398b29` (`inkling2.cpp`, `inkling2-loop.cpp`), transformers PR 51050 at `6173a2f679ff`
+and the model code of the vendor's serving image (the files listed in `sources.lock.json`).
+Nothing here was executed by memra.
+
+There are two numeric classes. The **declared** class is the program `hf_quant_config.json`
+requires: the routed experts take quantized inputs. It is the default and the support target.
+The **float-activation** class runs the experts on float inputs; it is a bring-up and oracle
+step. Every section below is common to both classes except [MoE](#moe), which states each class
+on its own: the two differ in the expert inputs, in where the routing weight is applied and in
+how the routing weights are normalized.
 
 ## Trunk
 
@@ -70,12 +75,37 @@ not. Nothing here was executed by memra.
 
 ## MoE
 
+Common to both classes:
+
 - 128 experts, top 8, no shared expert, expert width 1152.
-- Router in f32: `sigmoid(W x)`, top-k on score plus `gate.bias`, weights normalized over the
-  selected set (eps 1e-20), times `route_scale` 8.
-- Expert: `softcap(g, 4) * sigmoid(g) * softcap(u, 25)` with `softcap(x, c) = c * tanh(x / c)`,
-  then down, then the routed weight, accumulated in f32. `w13` holds gate and up interleaved
-  on the output dimension.
+- Router scores in f32: `sigmoid(W x)`. Selection is top-k on score plus `gate.bias`; the
+  routing weights are the selected raw sigmoids, normalized over the selected set and multiplied
+  by `route_scale` 8.
+- Expert activation: `softcap(g, 4) * sigmoid(g) * softcap(u, 25)` with
+  `softcap(x, c) = c * tanh(x / c)`. `w13` holds gate and up; the combined output of the 8
+  experts is accumulated in f32.
+
+Declared class (read from the vendor image's code; the default):
+
+- The token's row is quantized once (NVFP4 on layers 0-19, MXFP8 on 20-23) and that quantized
+  row feeds the gate/up GEMM of each of its 8 experts.
+- The routing weight multiplies the activation output BEFORE the down projection, and the
+  product is quantized again, per routed row, before the down GEMM. With a quantized down input
+  this placement changes the result, so it is part of the class.
+- The routing weights are normalized with no epsilon. Selection ties go to the lower expert
+  index.
+- Everything outside the two expert GEMMs is BF16 with f32 accumulation.
+
+Float-activation class (the transformers PR and llama.cpp; bring-up only):
+
+- Float inputs against exactly dequantized expert weights.
+- The routing weight multiplies AFTER the down projection.
+- llama.cpp normalizes the routing weights with an epsilon of 1e-20.
+
+In exact arithmetic the two placements of the routing weight are equal; under input
+quantization or BF16 rounding they are not. Which rows of `w13` are gate and which are up, and
+the declared class's placement, are read from code and listed as open below until a test
+proves them.
 
 ## Stored quantization
 
@@ -134,7 +164,7 @@ program fact only when a test proves it.
 | 3 | The window edge, read as "counts the current token" | tiny fixture run past the window |
 | 4 | The sink form: the two spellings (a sink in the denominator, or the sink subtracted from the bias with a zero sink) are equal on paper | tiny fixture |
 | 5 | NVFP4 nibble order and e4m3 scale decode | one expert dequantized against the PR's op, bit for bit |
-| 6 | Whether the MXFP8 scale grid is `[1, 32]` everywhere, as the shapes say, against the declared `[32, 32]` | the same check on a layer 20-23 expert |
+| 6 | The MXFP8 group declares `weight_block_shape [32, 32]` and stores one exponent per row per 32 inputs (`census-groups.tsv`). Whether the stored planes are a 32x32 grid repeated over rows | read the scale planes: a repeated grid makes every aligned 32-row group uniform |
 | 7 | Whether single-term BF16 GEMM inputs hold the argmax | checkpoint parity on the GPU class |
 | 8 | Top-k tie order in the router, read as lower index first | checked against the oracle |
 | 9 | Gate/up interleave direction of `w13` | one expert bank against captured vectors |
