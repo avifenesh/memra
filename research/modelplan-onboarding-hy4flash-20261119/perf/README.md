@@ -56,6 +56,7 @@ L2.
 | 7: GEMM weights resident in 4 KiB tiles | 14.18 [14.18-14.18] | 70.5 | 13.00 [13.00-13.04] | 76.7 | 106.0 | 294.1 |
 | 8: hyper-connection reductions as partials, tree in the mix | 14.46 [14.44-14.46] | 69.2 | 13.23 [13.22-13.25] | 75.3 | 107.1 | 298.2 |
 | 9: attention tiles prefetched, heads a block by SM count | 14.69 [14.69-14.71] | 67.9 | 13.81 [13.79-13.83] | 72.2 | 106.6 | 318.0 |
+| 10: a small-row stage's weight tile as one bulk copy | 16.53 [16.52-16.54] | 60.4 | 15.43 [15.40-15.46] | 64.6 | 107.1 | 319.5 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -176,6 +177,17 @@ while one is scored, and the score reads the query as 16-byte broadcasts. Each s
 output is the same chain. `kbench attn`: 164 -> 79 us (sliding, 512 keys), 170 -> 119 us
 (indexed, 2,048 keys). Decode step 69.2 -> 67.9 ms on `chat`, 75.3 -> 72.2 ms on `long`;
 `long`'s prefill 298 -> 318 tokens/s.
+
+### 10. A stage's weight tile as one bulk copy (`receipts/s10-bulk-tiles/`)
+
+A small-row stage loaded its 4 KiB weight tile as 256 16-byte `cp.async` copies, two a thread,
+each with its own address and its own place in shared memory (rows 144 bytes apart to keep a
+warp's 8 rows on distinct banks). The tile is now one `cp.async.bulk` copy issued by one thread,
+completing on the stage's mbarrier; the tile lands as stored (rows 128 bytes apart), and to keep
+the banks distinct `memra_hy4r_tile` stores row r's 16-byte pieces XOR-swizzled by r % 8 (`r_toff`;
+the prefill kernel reads the same layout). The bytes a product reads are the same, so no value
+moves: 3 of 3 tapes bit-equal. Decode step 67.9 -> 60.4 ms on `chat` (16.53 tokens/s), 72.2 ->
+64.6 ms on `long` (15.43); prefill unchanged.
 
 Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct

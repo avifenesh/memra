@@ -117,16 +117,18 @@ static void r_launch(void (*kernel)(KArgs...), dim3 grid, dim3 block, size_t sme
 //
 // The GEMM weights are resident in a tile layout (`memra_hy4r_tile`): the stored bytes of 32 rows
 // x 128 bytes contiguous, tiles of a 32-row block in K order, blocks in row order; rows padded to
-// a multiple of 32 with zeros, a row a multiple of 128 bytes. A decode GEMM's stage of a 32-row
-// block is then one contiguous 4 KiB read. The values are the stored ones, so no result moves.
+// a multiple of 32 with zeros, a row a multiple of 128 bytes. Within a tile, row r's 16-byte
+// pieces sit XOR-swizzled by r % 8, so the 8 rows a warp reads land on distinct banks when the
+// tile is copied to shared memory as is. A decode GEMM's stage of a 32-row block is one 4 KiB
+// bulk copy. The values are the stored ones, so no result moves.
 
 #define RT_ROWS 32
 #define RT_BYTES 128
 
 // byte `b` of row `row` in the tile layout of rows of `rb` bytes
 static __host__ __device__ __forceinline__ long r_toff(long row, long b, long rb) {
-  return ((row / RT_ROWS) * (rb / RT_BYTES) + b / RT_BYTES) * (RT_ROWS * RT_BYTES) + (row % RT_ROWS) * RT_BYTES +
-         b % RT_BYTES;
+  const long rt = row % RT_ROWS, piece = ((b % RT_BYTES) / 16) ^ (rt & 7);
+  return ((row / RT_ROWS) * (rb / RT_BYTES) + b / RT_BYTES) * (RT_ROWS * RT_BYTES) + rt * RT_BYTES + piece * 16 + b % 16;
 }
 
 // dst (tile layout, `batch` entries dst_bs bytes apart) from src rows (src_ld bytes apart, batch
@@ -139,7 +141,8 @@ __global__ void r_tile_kernel(const uint8_t* src, long rows, long rb, long src_l
   const long tile = e / (RT_ROWS * RT_BYTES / 16), in = e % (RT_ROWS * RT_BYTES / 16);
   const long nst = rb / RT_BYTES;
   const long cb = tile / nst, st = tile % nst;
-  const long r = cb * RT_ROWS + in / (RT_BYTES / 16), piece = in % (RT_BYTES / 16);
+  const long rt = in / (RT_BYTES / 16), r = cb * RT_ROWS + rt;
+  const long piece = (in % (RT_BYTES / 16)) ^ (rt & 7);  // the stored piece at this place
   uint4 v = make_uint4(0u, 0u, 0u, 0u);
   if (r < rows) v = *(const uint4*)(src + b * src_bs + r * src_ld + st * RT_BYTES + piece * 16);
   *(uint4*)(dst + b * dst_bs + e * 16) = v;
@@ -269,9 +272,8 @@ __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
   auto load = [&](int k0) {
     if (wok) {
       if (FMT == R_BF16) {
-        const uint4* p = (const uint4*)(w + r_toff(gn, ((long)k0 + wk) * 2, (long)k * 2));
-        wraw[0] = p[0];
-        wraw[1] = p[1];
+        wraw[0] = *(const uint4*)(w + r_toff(gn, ((long)k0 + wk) * 2, (long)k * 2));
+        wraw[1] = *(const uint4*)(w + r_toff(gn, ((long)k0 + wk) * 2 + 16, (long)k * 2));
       } else if (FMT == R_FP8) {
         wraw[0] = *(const uint4*)(w + r_toff(gn, (long)k0 + wk, (long)k));
       } else {
@@ -425,7 +427,7 @@ __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
 #define GV_WARPS 4
 #define GV_COLS (GV_WARPS * 8)
 #define GV_ROWB 128               // stored weight bytes a row a stage
-#define GV_LDS (GV_ROWB + 16)     // smem weight row stride: the 8 rows of a warp on distinct banks
+#define GV_LDS GV_ROWB            // smem weight row stride: the tile as stored (its swizzle spreads banks)
 #define GV_SCS 32                 // NVFP4 scale bytes a row a stage (16 used)
 #define GV_SMEM_MAX (96 * 1024)
 static_assert(GV_COLS == RT_ROWS && GV_ROWB == RT_BYTES, "a small-row stage is one weight tile");
@@ -438,6 +440,26 @@ static __device__ __forceinline__ void r_cp16(void* dst, const void* src, bool o
 static __device__ __forceinline__ void r_cp4(void* dst, const void* src) {
   const unsigned d = (unsigned)__cvta_generic_to_shared(dst);
   asm volatile("cp.async.ca.shared.global [%0], [%1], 4;\n" ::"r"(d), "l"(src));
+}
+// a stage's weight tile: one bulk copy completing on the stage's mbarrier
+static __device__ __forceinline__ void r_mb_init(uint64_t* mb) {
+  asm volatile("mbarrier.init.shared::cta.b64 [%0], 1;" ::"r"((unsigned)__cvta_generic_to_shared(mb)));
+}
+static __device__ __forceinline__ void r_bulk(void* dst, const void* src, unsigned bytes, uint64_t* mb) {
+  const unsigned m = (unsigned)__cvta_generic_to_shared(mb), d = (unsigned)__cvta_generic_to_shared(dst);
+  asm volatile("mbarrier.arrive.expect_tx.shared::cta.b64 _, [%0], %1;" ::"r"(m), "r"(bytes) : "memory");
+  asm volatile("cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes [%0], [%1], %2, [%3];" ::"r"(d),
+               "l"(src), "r"(bytes), "r"(m)
+               : "memory");
+}
+static __device__ __forceinline__ void r_mb_wait(uint64_t* mb, unsigned parity) {
+  const unsigned m = (unsigned)__cvta_generic_to_shared(mb);
+  unsigned ok = 0;
+  while (!ok)
+    asm volatile("{ .reg .pred p; mbarrier.try_wait.parity.shared::cta.b64 p, [%1], %2; selp.u32 %0, 1, 0, p; }"
+                 : "=r"(ok)
+                 : "r"(m), "r"(parity)
+                 : "memory");
 }
 static __device__ __forceinline__ void r_cp_commit() { asm volatile("cp.async.commit_group;\n" ::); }
 template <int N>
@@ -470,6 +492,7 @@ struct GvGeom {
 // MR: 1..4 rows (pre-split activations), 0 for up to 16 rows
 template <int FMT, int STAGES, int MR, bool RED>
 __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
+  // pdl: resident weights before the wait (plain mode; grouped mode waits first for its tiles)
   using G = GvGeom<FMT>;
   constexpr int NT = GV_WARPS * 32;
   extern __shared__ __align__(16) unsigned char gsm[];
@@ -523,27 +546,21 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
   const float* xb = x + (long)m0 * ldx;
   if (FMT == R_NVFP4 && !RED)
     for (int c = tid; c < 256; c += NT) lut[c] = r_bf2_bits(__floats2bfloat162_rn(r_e2m1(c), r_e2m1(c >> 4)));
-  // this thread's weight rows are fixed: chunk c = tid + i * NT -> row c / 8, piece c % 8
-  const unsigned char* wsrc[GV_COLS * 8 / NT];
-  bool wok[GV_COLS * 8 / NT];
-#pragma unroll
-  for (int i = 0; i < GV_COLS * 8 / NT; i++) {
-    const int c = tid + i * NT, r = c >> 3, gn = nb0 + r;
-    wok[i] = gn < n;
-    // the stage's 32 rows are one contiguous tile (see r_toff): chunk c at c * 16
-    wsrc[i] = w + r_toff(nb0, 0, wrow) + (long)c * 16;
+  // the block's 32 rows: a stage is one contiguous tile (see r_toff), rows past n zero
+  const unsigned char* wtile = w + r_toff(nb0, 0, wrow);
+  __shared__ uint64_t mbar[STAGES];  // a stage's weight tile landed
+  if (tid == 0) {
+    for (int i = 0; i < STAGES; i++) r_mb_init(&mbar[i]);
+    asm volatile("fence.mbarrier_init.release.cluster;" ::: "memory");
   }
+  __syncthreads();
 
   // a stage's weight side (resident weights and scales) and its activation side (a
   // predecessor's output)
   auto issue_w = [&](int st) {
     if (st < nst) {
       unsigned char* buf = gsm + (st % STAGES) * SBYTES;
-#pragma unroll
-      for (int i = 0; i < GV_COLS * 8 / NT; i++) {
-        const int c = tid + i * NT;
-        r_cp16(buf + (c >> 3) * GV_LDS + (c & 7) * 16, wsrc[i] + (long)st * (RT_ROWS * RT_BYTES), wok[i]);
-      }
+      if (tid == 0) r_bulk(buf, wtile + (long)st * (RT_ROWS * RT_BYTES), RT_ROWS * RT_BYTES, &mbar[st % STAGES]);
       const int k0 = st * G::KPS;
       if (FMT == R_NVFP4) {
         const int s0 = k0 / 16;
@@ -607,10 +624,12 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
   float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f}, part[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   for (int st = 0; st < nst; st++) {
     r_cp_wait<STAGES - 2>();
+    r_mb_wait(&mbar[st % STAGES], (st / STAGES) & 1);
     __syncthreads();  // stage st landed for every thread; stage st - 1 is free to refill
     issue(st + STAGES - 1);
     const unsigned char* buf = gsm + (st % STAGES) * SBYTES;
     const unsigned char* brow = buf + (warp * 8 + r) * GV_LDS;
+    const int sw = r & 7;  // the row's piece swizzle (row (warp * 8 + r) % 8 == r)
     const unsigned char* xs = buf + G::WB + G::SB;
     const int kbase = st * G::KPS;
     const int nq = min(G::KPS, k - kbase) / 16;
@@ -670,11 +689,11 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
         }
         uint32_t b[2];
         if (FMT == R_BF16) {
-          b[0] = *(const uint32_t*)(brow + q * 32 + j * 4);
-          b[1] = *(const uint32_t*)(brow + q * 32 + 16 + j * 4);
+          b[0] = *(const uint32_t*)(brow + (((2 * q) ^ sw) * 16) + j * 4);
+          b[1] = *(const uint32_t*)(brow + (((2 * q + 1) ^ sw) * 16) + j * 4);
         } else if (FMT == R_FP8) {
-          const uint16_t c0 = *(const uint16_t*)(brow + q * 16 + 2 * j);
-          const uint16_t c1 = *(const uint16_t*)(brow + q * 16 + 8 + 2 * j);
+          const uint16_t c0 = *(const uint16_t*)(brow + ((q ^ sw) * 16) + 2 * j);
+          const uint16_t c1 = *(const uint16_t*)(brow + ((q ^ sw) * 16) + 8 + 2 * j);
           if (!RED) {
             b[0] = r_e4m3x2_bf16x2(c0);
             b[1] = r_e4m3x2_bf16x2(c1);
@@ -683,7 +702,8 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
             b[1] = r_pack(r_e4m3((uint8_t)c1) * bs, r_e4m3((uint8_t)(c1 >> 8)) * bs);
           }
         } else {
-          const uint8_t c0 = brow[q * 8 + j], c1 = brow[q * 8 + 4 + j];
+          const unsigned char* cp = brow + (((q >> 1) ^ sw) * 16) + (q & 1) * 8;
+          const uint8_t c0 = cp[j], c1 = cp[4 + j];
           const float gsf = r_e4m3(buf[G::WB + (warp * 8 + r) * GV_SCS + q]);
           if (!RED) {
             // code pair times the group scale in BF16: the product is exact, so it equals the
@@ -851,6 +871,7 @@ template <int WARPS, int STAGES, int ROWB>
 __global__ void __launch_bounds__(WARPS * 32) r_gemv_f32_kernel(const float* __restrict__ x, long ldx,
                                                                const uint16_t* __restrict__ w, float* __restrict__ y,
                                                                long ldy, int m, int n, int k) {
+  // pdl: resident weights before the wait
   constexpr int LDS = ROWB + 16;
   constexpr int XB = ROWB * 2;  // the stage's ROWB / 2 inputs of an activation row, F32
   extern __shared__ __align__(16) unsigned char fsm[];
@@ -973,10 +994,10 @@ __global__ void __launch_bounds__(GS_T) r_gemv_f32_split_kernel(const float* __r
                                                                 const uint16_t* __restrict__ w, float* __restrict__ y,
                                                                 long ldy, int m, int n, int k) {
   r_pdl_trigger();
+  r_pdl_wait();
   extern __shared__ float part[];  // [m][GS_OB][k / 16]
   const int o0 = blockIdx.x * GS_OB;
   const int steps = k / 16;
-  r_pdl_wait();
   for (int u = threadIdx.x; u < GS_OB * steps; u += GS_T) {
     const int o = u / steps, c = u - o * steps;
     if (o0 + o >= n) continue;

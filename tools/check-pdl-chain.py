@@ -7,6 +7,11 @@ on the stream still runs. That is correct only when the kernel waits for its pre
 first load or store, so the entry must be the body's first statement. Exit 1 lists every kernel
 that breaks this, and every launched kernel whose definition was not found.
 
+The Hy4-flash route (cu/hy4f_route.cu) launches its kernels through `r_launch` with the same
+attribute; each such kernel opens with `r_pdl_wait();` (optionally after `r_pdl_trigger();`), or
+carries the line `// pdl: resident weights before the wait` when it reads only the resident weights
+into shared memory before its wait.
+
 Usage: tools/check-pdl-chain.py [cu-dir]   (default crates/memra-engine/cu)
 """
 import pathlib, re, sys
@@ -51,6 +56,25 @@ for f, s in text.items():
         found.add(name)
         if not rest.lstrip().startswith("MEMRA_PDL_CHAIN_ENTRY();"):
             bad.append(f"{f.name}: {name} does not open with MEMRA_PDL_CHAIN_ENTRY()")
+# the Hy4-flash route's launcher
+r_launched, r_found = set(), set()
+for f, s in text.items():
+    for m in re.finditer(r"r_launch\(\s*([A-Za-z_]\w*)", s):
+        if m.group(1) != "void":
+            r_launched.add(m.group(1))
+for f, s in text.items():
+    for name, rest in bodies(s):
+        if name not in r_launched:
+            continue
+        r_found.add(name)
+        head = rest.lstrip()
+        if head.startswith("r_pdl_trigger();"):
+            head = head[len("r_pdl_trigger();"):].lstrip()
+        body = rest[: rest.find("\n}\n")] if "\n}\n" in rest else rest
+        if not head.startswith("r_pdl_wait();") and "// pdl: resident weights before the wait" not in body:
+            bad.append(f"{f.name}: {name} does not open with r_pdl_wait()")
+launched |= r_launched
+found |= r_found
 missing = sorted(launched - found)
 for line in bad + [f"no definition found for chain-launched kernel {n}" for n in missing]:
     print(line)
