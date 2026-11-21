@@ -41,6 +41,8 @@ pub struct DraftGeometry {
     pub vocab: usize,
     /// Rows of `markov_w1` (the padded vocabulary).
     pub padded_vocab: usize,
+    /// Attention softmax scale (the plan's `head_dim^-0.5`, taken exactly).
+    pub scale: f64,
 }
 
 fn decimal(value: f32) -> f64 {
@@ -55,6 +57,40 @@ impl DraftGeometry {
         let DrafterHead::RnnHidden { rank } = d.head;
         if rank != d.rnn.rank || !d.rnn.folded_through_output || !d.mlp_swiglu {
             return Err("a drafter head or MLP this executor does not run".into());
+        }
+        use memra_gguf::model_plan::{DraftRowInput, RnnChunk, RnnInput};
+        if d.rnn.inputs
+            != [
+                RnnInput::State,
+                RnnInput::PreviousToken,
+                RnnInput::RowHidden,
+                RnnInput::Feature,
+            ]
+        {
+            return Err(format!(
+                "recurrent head inputs {:?}; this executor runs [State, PreviousToken, RowHidden, Feature]",
+                d.rnn.inputs
+            ));
+        }
+        if d.rnn.chunks != [RnnChunk::Gate, RnnChunk::Candidate, RnnChunk::Out] {
+            return Err(format!(
+                "recurrent head chunks {:?}; this executor runs [Gate, Candidate, Out]",
+                d.rnn.chunks
+            ));
+        }
+        if d.block.anchor != DraftRowInput::TrunkEmbeddingNormed
+            || d.block.mask != DraftRowInput::LearnedMask
+        {
+            return Err(
+                "a draft block whose anchor or mask rows this executor does not build".into(),
+            );
+        }
+        // the plan states the scale in f32; it must be head_dim^-0.5 rounded to f32
+        if d.attention.scale != (1.0 / f64::from(d.head_dim).sqrt()) as f32 {
+            return Err(format!(
+                "attention scale {} is not head_dim^-0.5 for head_dim {}",
+                d.attention.scale, d.head_dim
+            ));
         }
         if !(d.attention.qk_norm && d.attention.context_key_norm && d.attention.bidirectional_block)
         {
@@ -101,6 +137,7 @@ impl DraftGeometry {
             embed_epsilon: decimal(program.embedding_norm.epsilon),
             vocab,
             padded_vocab: plan.vocab_size as usize,
+            scale: 1.0 / f64::from(d.head_dim).sqrt(),
         })
     }
 
@@ -223,6 +260,19 @@ pub struct Drafter {
     /// Per layer, `[positions, kv_width]`.
     pub ctx_k: Vec<Vec<f64>>,
     pub ctx_v: Vec<Vec<f64>>,
+    /// Wrong programs the oracle must tell apart (test arms; all off by default).
+    pub red: DraftRed,
+}
+
+/// Red arms of the drafter's own gates.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DraftRed {
+    /// `latent = tanh(new state)` instead of `tanh(out)`.
+    pub latent_from_state: bool,
+    /// `softcap(base) + bias` instead of `softcap(base + bias)`.
+    pub softcap_before_bias: bool,
+    /// Context keys without RoPE.
+    pub no_rope_context_keys: bool,
 }
 
 fn dot(a: &[f64], b: &[f64]) -> f64 {
@@ -297,6 +347,7 @@ impl Drafter {
             alpha,
             ctx_k: vec![Vec::new(); layers],
             ctx_v: vec![Vec::new(); layers],
+            red: DraftRed::default(),
         }
     }
 
@@ -341,14 +392,21 @@ impl Drafter {
             let ctx = self.mix(taps, l, &lw.fuse_norm);
             let mut k = linear(&lw.k_ctx, &ctx);
             let v = linear(&lw.v_ctx, &ctx);
-            heads_norm_rope(
-                &mut k,
-                self.g.head_dim,
-                &lw.k_ctx_norm,
-                self.g.epsilon,
-                pos,
-                self.g.theta,
-            );
+            if self.red.no_rope_context_keys {
+                for head in k.chunks_exact_mut(self.g.head_dim) {
+                    let n = rms(head, &lw.k_ctx_norm, self.g.epsilon);
+                    head.copy_from_slice(&n);
+                }
+            } else {
+                heads_norm_rope(
+                    &mut k,
+                    self.g.head_dim,
+                    &lw.k_ctx_norm,
+                    self.g.epsilon,
+                    pos,
+                    self.g.theta,
+                );
+            }
             self.ctx_k[l].extend(k);
             self.ctx_v[l].extend(v);
         }
@@ -385,7 +443,7 @@ impl Drafter {
             let at = row * kvw + kh * d..row * kvw + (kh + 1) * d;
             (&keys[at.clone()], &values[at])
         };
-        let scale = 1.0 / (d as f64).sqrt();
+        let scale = g.scale;
         let group = g.heads / g.kv_heads;
         let mut out = vec![0.0; rows * qw];
         for r in 0..rows {
@@ -502,7 +560,11 @@ impl Drafter {
                 let gate = sigmoid(raw[j]);
                 let cand = raw[r + j].tanh();
                 state[j] = gate * state[j] + (1.0 - gate) * cand;
-                latent[j] = raw[2 * r + j].tanh();
+                latent[j] = if self.red.latent_from_state {
+                    state[j].tanh()
+                } else {
+                    raw[2 * r + j].tanh()
+                };
             }
             // hidden_out(latent), then the shared head: the fold's value in exact arithmetic
             let u: Vec<f64> = self
@@ -527,7 +589,11 @@ impl Drafter {
                     base += f64::from(*w) * x;
                     bias += f64::from(*w) * uu;
                 }
-                logits.push(g.softcap * ((base + bias) / g.softcap).tanh());
+                logits.push(if self.red.softcap_before_bias {
+                    g.softcap * (base / g.softcap).tanh() + bias
+                } else {
+                    g.softcap * ((base + bias) / g.softcap).tanh()
+                });
             }
             let tok = choose(i, &logits[start..]);
             tokens.push(tok);
@@ -647,13 +713,14 @@ pub fn tiny_geometry() -> DraftGeometry {
         embed_epsilon: 1e-6,
         vocab: 40,
         padded_vocab: 48,
+        scale: 0.25,
     }
 }
 
 /// The tiny fixture (weights, trunk tensors, taps, anchors, forced chains) and its pinned
 /// float64 oracle.
-pub const TINY_FIXTURE: &[u8] = include_bytes!("fixtures/inkling2-drafter-tiny.safetensors");
-pub const TINY_ORACLE: &[u8] = include_bytes!("fixtures/inkling2-drafter-tiny-oracle.safetensors");
+pub const TINY_FIXTURE: &[u8] = include_bytes!("fixtures/inkling2-drafter-tiny.bin");
+pub const TINY_ORACLE: &[u8] = include_bytes!("fixtures/inkling2-drafter-tiny-oracle.bin");
 /// Committed positions of each oracle scenario.
 pub const TINY_SCENARIOS: [usize; 3] = [1, 4, 13];
 
