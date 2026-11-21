@@ -223,7 +223,11 @@ fn the_plan_types_the_48_slot_program() {
             LogitsTransform::Truncate(200_058)
         ]
     );
-    assert!(plan.drafter.is_none() && plan.mtp_blocks.is_empty());
+    assert!(plan.mtp_blocks.is_empty());
+    assert_eq!(
+        plan.draft_source,
+        crate::model_plan::DraftSourcePlan::Embedded
+    );
     assert!(plan.partition_boundaries.is_empty());
     let program = plan.inkling2.as_ref().unwrap();
     let loop_plan = &program.loop_plan;
@@ -320,46 +324,68 @@ fn the_plan_types_the_48_slot_program() {
     // 4 full layers, 2 of them in the core and visited 3 times: 8 full slots, 40 sliding.
     assert_eq!(full_slots, [5, 11, 17, 23, 29, 35, 41, 47]);
 
-    // The drafter's taps count layer visits; as slots they are the inputs of 5, 29 and 47.
+    // The drafter is a DSpark program with the Inkling 2 variants (vLLM
+    // `inkling2/nvidia/dspark.py`, lane note NOTES.md section 1).
+    use crate::model_plan::{
+        DraftBlockPlan, DraftRowInput, DrafterPlan, DsparkFusion, DsparkLayers, DsparkMarkov,
+        DsparkRows, RnnInput,
+    };
+    let Some(DrafterPlan::Dspark(dspark)) = plan.drafter.as_ref() else {
+        panic!("the drafter is a DSpark plan");
+    };
+    assert!(!dspark.is_deepseek_v4());
     assert_eq!(
-        program.drafter.taps,
-        [
+        (dspark.block_size, dspark.markov_rank, dspark.confidence),
+        (8, 256, None)
+    );
+    assert_eq!(dspark.target_layer_ids, [5, 23, 41, 48]);
+    assert!(dspark.blocks.is_empty());
+    assert_eq!(
+        dspark.rows,
+        DsparkRows::Block(DraftBlockPlan {
+            rows: 8,
+            anchor: DraftRowInput::TrunkEmbeddingNormed,
+            mask: DraftRowInput::LearnedMask,
+            proposals: 7,
+        })
+    );
+    // The taps count layer visits; as slots they are the inputs of 5, 29 and 47.
+    let DsparkFusion::FuseWeights { fuse, taps } = &dspark.fusion else {
+        panic!("a fuse matrix");
+    };
+    assert_eq!(
+        taps,
+        &[
             DrafterTap::SlotInput { slot: 5 },
             DrafterTap::SlotInput { slot: 29 },
             DrafterTap::SlotInput { slot: 47 },
             DrafterTap::FinalNorm,
         ]
     );
-    assert_eq!(program.drafter.head, DrafterHead::RnnHidden { rank: 256 });
-    // The typed draft program (vLLM `inkling2/nvidia/dspark.py`, lane note NOTES.md section 1).
-    let d = &program.drafter;
-    assert_eq!((d.hidden_size, d.epsilon), (2304, 1e-6));
-    assert_eq!(
-        d.block,
-        crate::model_plan::DraftBlockPlan {
-            rows: 8,
-            anchor: crate::model_plan::DraftRowInput::TrunkEmbeddingNormed,
-            mask: crate::model_plan::DraftRowInput::LearnedMask,
-            proposals: 7,
-        }
-    );
-    assert_eq!((d.fuse.rows, d.fuse.taps), (4, 4));
+    assert_eq!((fuse.rows, fuse.taps), (4, 4));
+    let DsparkLayers::Context(d) = &dspark.layers else {
+        panic!("context layers");
+    };
+    assert_eq!((d.layers, d.hidden_size, d.epsilon), (3, 2304, 1e-6));
     assert_eq!(d.attention.local_layers, [0, 2]);
     assert_eq!(d.attention.local_context, 1024);
     assert_eq!(d.attention.rope.theta, 1e6);
     assert_eq!(d.attention.scale, 128f32.powf(-0.5));
     assert!(d.attention.bidirectional_block && d.attention.qk_norm && d.attention.context_key_norm);
     assert!(d.mlp_swiglu && d.intermediate_size == 9216);
-    assert_eq!(d.rnn.rank, 256);
-    assert_eq!(d.rnn.softcap, 30.0);
-    assert!(d.rnn.folded_through_output);
+    let DsparkMarkov::RnnHidden(rnn) = &dspark.markov else {
+        panic!("the recurrent head");
+    };
+    assert_eq!(rnn.rank, 256);
+    assert_eq!(rnn.softcap, 30.0);
+    assert!(rnn.folded_through_output);
     assert_eq!(
-        d.rnn.inputs,
+        rnn.inputs,
         [
-            crate::model_plan::RnnInput::State,
-            crate::model_plan::RnnInput::PreviousToken,
-            crate::model_plan::RnnInput::RowHidden,
-            crate::model_plan::RnnInput::Feature,
+            RnnInput::State,
+            RnnInput::PreviousToken,
+            RnnInput::RowHidden,
+            RnnInput::Feature,
         ]
     );
     assert!(!program.vision_executed);
@@ -462,7 +488,7 @@ fn every_new_operation_is_named_and_no_surface_accepts_the_plan() {
         OperationKind::RelativeBiasState,
         OperationKind::BlockAttentionResidual,
         OperationKind::SoftcappedSwiGluActivation,
-        OperationKind::DsparkRnnDrafter,
+        OperationKind::DsparkContextAttention,
         OperationKind::LogitsTruncate,
     ] {
         assert!(
@@ -478,12 +504,12 @@ fn every_new_operation_is_named_and_no_surface_accepts_the_plan() {
     assert!(
         !plan
             .trunk_operations()
-            .contains(&OperationKind::DsparkRnnDrafter)
+            .contains(&OperationKind::DsparkContextAttention)
     );
     assert!(
         plan.draft_operations()
             .unwrap()
-            .contains(&OperationKind::DsparkRnnDrafter)
+            .contains(&OperationKind::DsparkContextAttention)
     );
     let rewrites = crate::execution_manifest::execution_rewrites(&plan);
     assert!(!rewrites.is_empty());
@@ -500,7 +526,7 @@ fn every_new_operation_is_named_and_no_surface_accepts_the_plan() {
                     OperationKind::RelativeBiasAttention
                         | OperationKind::LoopWeightSharing
                         | OperationKind::Nvfp4W4A4Experts
-                        | OperationKind::DsparkRnnDrafter
+                        | OperationKind::DsparkContextAttention
                 )
             }),
             "{} does not name an inkling2 blocker: {:?}",

@@ -365,13 +365,13 @@ pub struct SpecArms {
 /// The slots whose inputs the drafter reads, from the plan (then the final norm), with an arm's
 /// override.
 pub fn tap_slots(route: &Route, arms: SpecArms) -> Result<Vec<u32>, String> {
-    let taps = &route
-        .plan()
-        .inkling2
-        .as_ref()
-        .ok_or("not an inkling2 plan")?
-        .drafter
-        .taps;
+    let Some(memra_gguf::model_plan::DrafterPlan::Dspark(memra_gguf::model_plan::DsparkPlan {
+        fusion: memra_gguf::model_plan::DsparkFusion::FuseWeights { taps, .. },
+        ..
+    })) = route.plan().drafter.as_ref()
+    else {
+        return Err("a plan without a DSpark drafter that fuses its taps".into());
+    };
     let mut slots: Vec<u32> = taps
         .iter()
         .filter_map(|t| match t {

@@ -1,5 +1,5 @@
 //! Inkling 2 Mini DSpark drafter (`mtp.safetensors`): the unfused f64 reference of
-//! `Inkling2DrafterPlan` (memra-gguf `model_plan::inkling2`).
+//! the Inkling 2 variants of `DsparkPlan` (memra-gguf `model_plan::dspark`).
 //!
 //! The program, per committed position `p` (the trunk ran the token at `p`):
 //! `ctx_l = rms(sum_t alpha[l][t] * tap_t(p), dflare_norm_l)`, `k = rope(rms_head(k_ctx(ctx_l)))`,
@@ -16,7 +16,7 @@
 //! to bf16 at many points; that class is not implemented here. A proposal never changes a
 //! committed token: verification runs the trunk's own program.
 
-use memra_gguf::model_plan::{DrafterHead, Inkling2DrafterPlan, ModelPlan};
+use memra_gguf::model_plan::ModelPlan;
 
 /// Geometry and constants of one drafter, read from the plan.
 #[derive(Debug, Clone, PartialEq)]
@@ -52,14 +52,42 @@ fn decimal(value: f32) -> f64 {
 impl DraftGeometry {
     /// The drafter of an inkling2 plan; refuses a plan without one or a head it does not run.
     pub fn of_plan(plan: &ModelPlan) -> Result<Self, String> {
+        use memra_gguf::model_plan::{
+            DraftRowInput, DrafterPlan, DsparkFusion, DsparkLayers, DsparkMarkov, DsparkRows,
+            RnnChunk, RnnInput,
+        };
         let program = plan.inkling2.as_ref().ok_or("not an inkling2 plan")?;
-        let d: &Inkling2DrafterPlan = &program.drafter;
-        let DrafterHead::RnnHidden { rank } = d.head;
-        if rank != d.rnn.rank || !d.rnn.folded_through_output || !d.mlp_swiglu {
+        let Some(DrafterPlan::Dspark(dspark)) = plan.drafter.as_ref() else {
+            return Err("an inkling2 plan without its DSpark drafter".into());
+        };
+        // the DSpark variants this executor runs; any other refuses
+        let (
+            DsparkRows::Block(block),
+            DsparkFusion::FuseWeights { fuse, taps },
+            DsparkLayers::Context(d),
+            DsparkMarkov::RnnHidden(rnn),
+            None,
+        ) = (
+            &dspark.rows,
+            &dspark.fusion,
+            &dspark.layers,
+            &dspark.markov,
+            dspark.confidence,
+        )
+        else {
+            return Err(format!(
+                "DSpark variants this executor does not run: {:?}",
+                (&dspark.rows, &dspark.layers, dspark.confidence)
+            ));
+        };
+        let rank = dspark.markov_rank;
+        if rank != rnn.rank || !rnn.folded_through_output || !d.mlp_swiglu {
             return Err("a drafter head or MLP this executor does not run".into());
         }
-        use memra_gguf::model_plan::{DraftRowInput, RnnChunk, RnnInput};
-        if d.rnn.inputs
+        if !dspark.blocks.is_empty() || block.rows != dspark.block_size {
+            return Err("a drafter with trunk blocks or a block of another size".into());
+        }
+        if rnn.inputs
             != [
                 RnnInput::State,
                 RnnInput::PreviousToken,
@@ -69,17 +97,17 @@ impl DraftGeometry {
         {
             return Err(format!(
                 "recurrent head inputs {:?}; this executor runs [State, PreviousToken, RowHidden, Feature]",
-                d.rnn.inputs
+                rnn.inputs
             ));
         }
-        if d.rnn.chunks != [RnnChunk::Gate, RnnChunk::Candidate, RnnChunk::Out] {
+        if rnn.chunks != [RnnChunk::Gate, RnnChunk::Candidate, RnnChunk::Out] {
             return Err(format!(
                 "recurrent head chunks {:?}; this executor runs [Gate, Candidate, Out]",
-                d.rnn.chunks
+                rnn.chunks
             ));
         }
-        if d.block.anchor != DraftRowInput::TrunkEmbeddingNormed
-            || d.block.mask != DraftRowInput::LearnedMask
+        if block.anchor != DraftRowInput::TrunkEmbeddingNormed
+            || block.mask != DraftRowInput::LearnedMask
         {
             return Err(
                 "a draft block whose anchor or mask rows this executor does not build".into(),
@@ -96,10 +124,10 @@ impl DraftGeometry {
         {
             return Err("a drafter attention this executor does not run".into());
         }
-        if d.block.proposals + 1 != d.block.rows || d.fuse.taps as usize != d.taps.len() {
+        if block.proposals + 1 != block.rows || fuse.taps as usize != taps.len() {
             return Err("a drafter block or fuse shape this executor does not run".into());
         }
-        if d.fuse.rows != d.blocks + 1 {
+        if fuse.rows != d.layers + 1 {
             return Err("a fuse matrix without one row per layer plus the head".into());
         }
         let mut vocab = plan.vocab_size as usize;
@@ -111,19 +139,19 @@ impl DraftGeometry {
                 _ => {}
             }
         }
-        if softcap != Some(d.rnn.softcap) {
+        if softcap != Some(rnn.softcap) {
             return Err("the drafter's softcap differs from the trunk's final softcap".into());
         }
         Ok(Self {
             hidden: d.hidden_size as usize,
-            layers: d.blocks as usize,
+            layers: d.layers as usize,
             heads: d.query_heads as usize,
             kv_heads: d.kv_heads as usize,
             head_dim: d.head_dim as usize,
             intermediate: d.intermediate_size as usize,
             rank: rank as usize,
-            rows: d.block.rows as usize,
-            taps: d.taps.len(),
+            rows: block.rows as usize,
+            taps: taps.len(),
             local_layers: d
                 .attention
                 .local_layers
@@ -133,7 +161,7 @@ impl DraftGeometry {
             local_context: d.attention.local_context as usize,
             theta: decimal(d.attention.rope.theta),
             epsilon: decimal(d.epsilon),
-            softcap: decimal(d.rnn.softcap),
+            softcap: decimal(rnn.softcap),
             embed_epsilon: decimal(program.embedding_norm.epsilon),
             vocab,
             padded_vocab: plan.vocab_size as usize,
