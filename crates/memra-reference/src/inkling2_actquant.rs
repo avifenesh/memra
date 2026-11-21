@@ -9,8 +9,11 @@
 //! (`research/modelplan-onboarding-inkling2mini-20261121/actquant/gen_goldens.py`).
 //!
 //! Two parts are models, not proofs, and say so:
-//! - the GEMM accumulates in fp32 in ascending index order. The tensor core's addition order is
-//!   hardware defined, so a kernel is compared with this under a per-element bound.
+//! - the GEMM accumulator. The checkpoint declares fp32 accumulation and no order. The functions
+//!   named `index_order` (and the goldens) add in ascending index order. The sm_120 tensor core
+//!   does not: [`dot_chain_rz`] (W4A4) and [`dot_chain_trunc`] (W8A8) are what the card computes,
+//!   measured there and pinned by a committed device capture. Every model stays inside
+//!   `(K - 1) * 2^-23 * sum |a_i w_i|` of the exact sum.
 //! - SiTU evaluates `exp2` and `tanh` in f64 and rounds once to fp32.
 
 /// Largest finite fp32, the clamp of every reciprocal in the NVFP4 quantizer.
@@ -249,6 +252,97 @@ pub fn dot_index_order(a: &[f32], w: &[f32]) -> f32 {
     acc
 }
 
+/// The sm_120 block-scaled tensor-core accumulator as measured on the card: one fp32 accumulator
+/// chained over ascending `step`-wide K steps, each step adding the exact sum of its products to
+/// the accumulator with a single rounding toward zero. On an RTX 5090 Laptop (sm_120a) this equals
+/// the `kind::mxf4nvf4` m16n8k64 chain bit for bit (`step` 64) on every element the gate runs and on
+/// the committed device capture. It is a model of that hardware, not part of the checkpoint's
+/// specification, and it does not describe the `kind::mxf8f6f4` e4m3 chain.
+pub fn dot_chain_rz(a: &[f32], w: &[f32], step: usize) -> f32 {
+    assert_eq!(a.len(), w.len());
+    let mut acc = 0f32;
+    for (ca, cw) in a.chunks(step).zip(w.chunks(step)) {
+        // The products are exact in fp32. Their step sum is exact in f64 while the step's products
+        // span fewer than 53 bits, which holds for e2m1 values under block scales within about
+        // 2^20 of each other; wider steps are outside what the model was measured on.
+        let mut sum = 0f64;
+        for (x, y) in ca.iter().zip(cw) {
+            sum += f64::from(*x) * f64::from(*y);
+        }
+        acc = add_round_toward_zero(acc, sum);
+    }
+    acc
+}
+
+/// The sm_120 `kind::mxf8f6f4` e4m3 chain as measured on the card (K step 32, `guard` 25): within
+/// a step every product and the accumulator are truncated toward zero to the quantum
+/// `2^(emax - guard)`, where `emax` is the largest of the accumulator's exponent and the products'
+/// operand-exponent sums (`exponent(a) + exponent(w)`, not renormalised); the truncated terms are
+/// summed exactly and the sum is truncated to fp32. Bit-identical to the device on the committed
+/// capture and on every element the gate runs. A model of that hardware, not of the checkpoint.
+pub fn dot_chain_trunc(a: &[f32], w: &[f32], step: usize, guard: i32) -> f32 {
+    assert_eq!(a.len(), w.len());
+    let exponent = |x: f32| ((f64::from(x).to_bits() >> 52) & 0x7ff) as i32 - 1023;
+    let mut acc = 0f32;
+    for (ca, cw) in a.chunks(step).zip(w.chunks(step)) {
+        let mut emax = i32::MIN;
+        for (x, y) in ca.iter().zip(cw) {
+            if *x != 0.0 && *y != 0.0 {
+                emax = emax.max(exponent(*x) + exponent(*y));
+            }
+        }
+        if acc != 0.0 {
+            emax = emax.max(exponent(acc));
+        }
+        if emax == i32::MIN {
+            continue;
+        }
+        let shift = emax - guard;
+        let q = 2f64.powi(shift);
+        // every term is below 2^(guard + 2) quanta: the integer sum is exact
+        let mut sum = (f64::from(acc) / q).trunc() as i64;
+        for (x, y) in ca.iter().zip(cw) {
+            sum += ((f64::from(*x) * f64::from(*y)) / q).trunc() as i64;
+        }
+        let mut magnitude = sum.unsigned_abs();
+        let mut scale = shift;
+        let bits = 64 - magnitude.leading_zeros() as i32;
+        if bits > 24 {
+            magnitude >>= bits - 24; // toward zero
+            scale += bits - 24;
+        }
+        let value = (magnitude as f64 * 2f64.powi(scale)) as f32;
+        acc = if sum < 0 { -value } else { value };
+    }
+    acc
+}
+
+/// `acc + sum` rounded once toward zero to fp32, without a double rounding: the f64 sum is split
+/// into its rounded value and its exact error first.
+fn add_round_toward_zero(acc: f32, sum: f64) -> f32 {
+    let a = f64::from(acc);
+    let hi = a + sum;
+    // TwoSum: hi + lo == a + sum exactly
+    let bb = hi - a;
+    let lo = (a - (hi - bb)) + (sum - bb);
+    let mut r = hi as f32;
+    if !r.is_finite() {
+        return if hi.is_finite() {
+            f32::MAX.copysign(r)
+        } else {
+            r
+        };
+    }
+    let d = f64::from(r) - hi; // exact
+    let positive = hi > 0.0 || (hi == 0.0 && lo > 0.0);
+    let negative = hi < 0.0 || (hi == 0.0 && lo < 0.0);
+    if (positive && d > lo) || (negative && d < lo) {
+        // |r| is above the exact value: one step toward zero
+        r = f32::from_bits(r.to_bits() - 1);
+    }
+    r
+}
+
 /// The NVFP4 GEMM's per-row output factor: `(act_amax * w_amax) * rcp(1536 * denominator)`.
 #[inline]
 pub fn nvfp4_row_scale(act_amax: f32, w_amax: f32, denominator: f32) -> f32 {
@@ -289,6 +383,23 @@ pub fn w4a4_accumulate(row: &Nvfp4Row, w: &Nvfp4Experts<'_>, expert: usize) -> V
                 &w.scales[r * w.k / 16..(r + 1) * w.k / 16],
             );
             dot_index_order(&a, &wr)
+        })
+        .collect()
+}
+
+/// [`w4a4_accumulate`] with the sm_120 tensor-core chain ([`dot_chain_rz`], K step 64) in place of
+/// the index-order sum.
+pub fn w4a4_accumulate_chain(row: &Nvfp4Row, w: &Nvfp4Experts<'_>, expert: usize) -> Vec<f32> {
+    let a = nvfp4_dequant(&row.codes, &row.scales);
+    assert_eq!(a.len(), w.k);
+    (0..w.n)
+        .map(|n| {
+            let r = expert * w.n + n;
+            let wr = nvfp4_dequant(
+                &w.codes[r * w.k / 2..(r + 1) * w.k / 2],
+                &w.scales[r * w.k / 16..(r + 1) * w.k / 16],
+            );
+            dot_chain_rz(&a, &wr, 64)
         })
         .collect()
 }
@@ -445,6 +556,10 @@ pub mod goldens {
     /// The committed goldens.
     pub const BYTES: &[u8] = include_bytes!("fixtures/inkling2-actquant-goldens.bin");
 
+    /// What an RTX 5090 Laptop (sm_120a) computed for the golden GEMM records: per record the fp32
+    /// accumulators (`acc`) and the bf16 output (`out`) of `ink2-actq-gate --capture`.
+    pub const SM120_CAPTURE: &[u8] = include_bytes!("fixtures/inkling2-actquant-sm120-capture.bin");
+
     /// One record: tag -> bytes.
     pub type Record = BTreeMap<String, Vec<u8>>;
 
@@ -479,6 +594,24 @@ pub mod goldens {
             out.insert(name, record);
         }
         Ok(out)
+    }
+
+    /// Serializes records into a container.
+    pub fn write(records: &BTreeMap<String, Record>) -> Vec<u8> {
+        let mut out = b"INK2AQ01".to_vec();
+        out.extend_from_slice(&(records.len() as u32).to_le_bytes());
+        for (name, record) in records {
+            out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            out.extend_from_slice(name.as_bytes());
+            out.extend_from_slice(&(record.len() as u32).to_le_bytes());
+            for (tag, data) in record {
+                out.extend_from_slice(&(tag.len() as u16).to_le_bytes());
+                out.extend_from_slice(tag.as_bytes());
+                out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+                out.extend_from_slice(data);
+            }
+        }
+        out
     }
 
     /// Little-endian u16 blob.
@@ -745,6 +878,81 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The tensor-core chain models against what the card computed, without a GPU: W4A4 is the
+    /// exact step sum added with one rounding toward zero, W8A8 the truncating model at guard 25,
+    /// and the bf16 epilogue follows from the captured accumulators.
+    #[test]
+    fn chain_models_equal_the_sm120_capture() {
+        let g = parse(goldens::BYTES).unwrap();
+        let cap = parse(goldens::SM120_CAPTURE).unwrap();
+        let mut elements = 0;
+        for (name, c) in &cap {
+            let r = &g[name];
+            let d = u32s(&r["dims"]);
+            let (n, k, rows) = (d[1] as usize, d[2] as usize, d[3] as usize);
+            let x = bf16s(&r["x"]);
+            let expert = u32s(&r["expert"]);
+            let (acc, out) = (f32s(&c["acc"]), bf16s(&c["out"]));
+            let index_order = f32s(&r["acc"]);
+            let mut differs_from_index_order = 0;
+            for i in 0..rows {
+                let e = expert[i] as usize;
+                let xr = &x[i * k..(i + 1) * k];
+                let (a, scale) = if name.starts_with("w4a4/") {
+                    let q = nvfp4_act_quant(xr);
+                    let scale = nvfp4_row_scale(q.amax, f32s(&r["wamax"])[e], f32s(&r["denom"])[0]);
+                    (nvfp4_dequant(&q.codes, &q.scales), Some(scale))
+                } else {
+                    let (v, s) = mxfp8_act_quant(xr);
+                    (mxfp8_dequant(&v, &s), None)
+                };
+                for col in 0..n {
+                    let row = e * n + col;
+                    let (w, model) = if name.starts_with("w4a4/") {
+                        let w = nvfp4_dequant(
+                            &r["wcodes"][row * k / 2..(row + 1) * k / 2],
+                            &r["wscales"][row * k / 16..(row + 1) * k / 16],
+                        );
+                        let model = dot_chain_rz(&a, &w, 64);
+                        (w, model)
+                    } else {
+                        let w = mxfp8_dequant(
+                            &r["w"][row * k..(row + 1) * k],
+                            &r["wexps"][row * k / 32..(row + 1) * k / 32],
+                        );
+                        let model = dot_chain_trunc(&a, &w, 32, 25);
+                        (w, model)
+                    };
+                    let got = acc[i * n + col];
+                    assert_eq!(
+                        model.to_bits(),
+                        got.to_bits(),
+                        "{name} row {i} col {col}: {model:e} vs device {got:e}"
+                    );
+                    let want = match scale {
+                        Some(s) => bf16((got * 1.0f32) * s),
+                        None => bf16(got),
+                    };
+                    assert_eq!(
+                        want.to_bits(),
+                        out[i * n + col].to_bits(),
+                        "{name} row {i} col {col} epilogue"
+                    );
+                    differs_from_index_order +=
+                        usize::from(index_order[i * n + col].to_bits() != got.to_bits());
+                    let _ = w;
+                    elements += 1;
+                }
+            }
+            // the index-order sum is not the device's program: the capture has to show it
+            assert!(
+                differs_from_index_order > 0,
+                "{name}: the capture equals the index-order sum everywhere"
+            );
+        }
+        assert!(elements >= 1000, "{elements} elements");
     }
 
     #[test]

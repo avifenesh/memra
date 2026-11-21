@@ -69,6 +69,7 @@ replaces three of them on some targets.
 | MiMo V2.6 components | the 15 `mimo_*` TUs listed in [their section](#mimo-v26-native-components) |
 | DeepSeek-V4.1 | `cu/dsv41_gpu.cu`, `cu/dsv41_cutlass.cu` (its FP8/FP4 GEMMs on the vendored CUTLASS, the `120a` family; the stub elsewhere) |
 | Tensor-parallel collectives | `cu/tp_ar.cu` |
+| Inkling 2 Mini routed experts | `cu/inkling2_actq.cu` (the act-quant quantizers on every target; the block-scaled expert GEMMs on the `120a` family, a refusal elsewhere) |
 
 ### Optional CUTLASS archives
 
@@ -438,6 +439,23 @@ refusal words 40043 (entry) and 40044 (exit) instead of hanging.
 | `memra_tp_ar_gather_i32`, `memra_tp_ar_gather_rows_f32`; kernels `memra_tp_ar_gather_i32_kernel`, `memra_tp_ar_gather_rows_f32_kernel` | opaque word gather in rank order (TP indexer candidates) and the exact attention TP2 row join; pure bit movement | i32, f32 | any | `MEMRA_GLM5_TP_INDEXER_SPLIT_PRIME`; DSV4 attention TP2 ([DSV4-TPEP-DEFAULT.md](decisions/DSV4-TPEP-DEFAULT.md)) | `tp_ar::ArLink::gather_i32`, `TpEpArState::gather_rows_into` | `tests/glm5_tp_indexer_split.rs` |
 | `memra_tp_ar_push_reduce`, `memra_tp_ar_push_gather_rows_f32`; kernels `memra_tp_ar_push_gather_rows_kernel`, `memra_tp_ar_push_reduce_kernel` | TP/EP push joins: write into the peer's output, raise one flag, finish locally | f32 | any | `MEMRA_DSV4_AR_PUSH` | `src/dsv4_ep.rs` | DSV4 TP/EP gates |
 
+### cu/inkling2_actq.cu
+
+The routed experts of Inkling 2 Mini in the checkpoint's declared act-quant class: NVFP4 W4A4
+(per-row amax, four-over-six MAE scale selection) and MXFP8 W8A8. The reference is
+`memra_reference::inkling2_actquant`; its golden vectors are a torch port of the checkpoint's
+serving ops (`research/modelplan-onboarding-inkling2mini-20261121/actquant/`). No pack record and
+no serving route reach these kernels yet, and which layers run the class is the plan's per-layer
+choice: every entry takes the numeric kind per call. `build.rs` passes
+`-DMEMRA_INK2_BLOCK_SCALED=1` on the `120a` family; without it `memra_ink2_expert_gemm` returns
+refusal 9 and `memra_ink2_actq_built` returns 0.
+
+| Symbol | Computes | Types | Arch | Selected by | Caller | Gate |
+| --- | --- | --- | --- | --- | --- | --- |
+| `memra_ink2_actq`; kernels `ink2_actq_kernel<SITU, NVFP4>` | one block per row: the bf16 row (or its softcapped SwiGLU times the routing weight, rounded once to bf16) into shared memory with the row amax, then whole quantization blocks per thread. NVFP4: both candidate block scales, the pairwise error tree, the strict four-over-six choice, software e2m1 and e4m3 rounding, one IEEE fp32 operation per reference operation. MXFP8: round-up ue8m0 scale per 32 | bf16 in; e2m1 + e4m3 + fp32 amax, or e4m3 + ue8m0 out | any (the PTX approx SiTU arm: `120a` family) | the caller's `kind` and `situ` arguments | `Engine::ink2_act_quant_into`, `Engine::ink2_situ_quant_into` (`src/inkling2_actq.rs`) | `kernel-check` cells `ink2-actq-nvfp4`, `ink2-actq-mxfp8` (bit-identical to the goldens), `ink2-situ-actq-nvfp4`, `ink2-situ-actq-mxfp8`; `ink2-actq-gate` |
+| `memra_ink2_expert_gemm`, `memra_ink2_group_words`, `memra_ink2_actq_built`; kernels `ink2_expert_gemm_kernel<FP4, NB>` | the grouped expert GEMM with the weights on the MMA's 16-row A operand and up to `8 * NB` routed rows of one expert on B: each warp streams its 16 weight rows in the stored row-major layout through a private 8-stage `cp.async` ring and reads a stage back with `ldmatrix` as the A fragment (no repack); the group's activation rows are staged once in shared memory. W4A4 on `kind::mxf4nvf4` m16n8k64 (ue4m3 per 16), W8A8 on `kind::mxf8f6f4` m16n8k32 (ue8m0 per 32), one fp32 accumulator chain over ascending K steps, then the NVFP4 row scale `(act_amax * w_amax) * rcp(1536 * denominator)` and one bf16 rounding | e2m1 x e2m1 or e4m3 x e4m3, fp32 accumulate, bf16 out | `120a` family | the caller's `kind` and `nb` (decode: 1; a prefill group: 4 for W4A4, 2 for W8A8) | `Engine::ink2_expert_gemm_into` | `kernel-check` cells `ink2-w4a4-gemm`, `ink2-w8a8-gemm` (accumulators bit-identical to the reference's tensor-core chain models and inside the summation bound, epilogue bit-identical from the device accumulators); `ink2-actq-gate --bench` |
+| `memra_ink2_cvt_probe`; kernels `ink2_cvt_probe_kernel` | the hardware `cvt.rn.satfinite.e4m3x2.f32` and `cvt.rn.satfinite.e2m1x2.f32` of each input, for the gate that compares them with the software rounding | fp32 in, one byte out | `120a` family (0xff elsewhere) | gate only | `Engine::ink2_cvt_probe` | `kernel-check` cell `ink2-cvt-hw` |
+
 ### MiMo V2.6 native components
 
 Fifteen TUs that implement pinned MiMo V2.6 checkpoint components. They have no pack record and
@@ -486,6 +504,7 @@ admitted by its own gate.
 | --- | --- | --- | --- |
 | HC24 split dots S8, S16, S32 | `dsv4_hc_dot_split_partial_kernel<...>`, `dsv4_hc_dot_split_reduce_kernel<...>` | `dsv4_hc_dot_split_gate`; S16 is the default | [DSV4-HC24-SPLIT-DOTS.md](decisions/DSV4-HC24-SPLIT-DOTS.md) |
 | DSV4 matrix expert program | `memra_moe_kq_gemm_sk`, `memra_moe_kq_gemm_sk_gu`, `memra_moe_kq_gemm_sk_gu_half2`, `memra_moe_kq_gemm_sk_gu_half2_dispatches`, `memra_moe_kq_gemm_sk_gu_m1`, `memra_moe_kq_gemm_sk_gu_m1_half2`, `memra_moe_kq_gemm_sk_m1`, `memra_moe_kq_gemm_sk_m1_half2`, `memra_moe_kq_gemm_sk_m1_half2_dispatches`, `memra_moe_kq_m1_stream`, `memra_moe_kq_m1_stream_dequant_probe`, `memra_moe_kq_m1_stream_dispatches`, `memra_moe_kq_mrow_stream`, `memra_moe_kq_mrow_stream_dispatches`, `memra_dsv4_moe_fused_dispatches`, `memra_dsv4_moe_fused_down`, `memra_dsv4_moe_fused_down_part`, `memra_dsv4_moe_fused_gu`, `memra_dsv4_moe_fused_gu_part` | `dsv4_moe_program_class_gate` | [DSV4-MATRIX-MOE-PROGRAM.md](decisions/DSV4-MATRIX-MOE-PROGRAM.md) |
+| Inkling 2 expert MMA chains (`sm_120` block-scaled FP4 and FP8) | `ink2_expert_gemm_kernel<FP4, NB>` (`memra_ink2_expert_gemm`) | `ink2-w4a4-gemm` and `ink2-w8a8-gemm`: an index-order fp32 sum does not reproduce the tensor core; the kernels equal `dot_chain_rz` (W4A4) and `dot_chain_trunc` at guard 25 (W8A8) bit for bit | `research/modelplan-onboarding-inkling2mini-20261121/actquant/README.md` |
 | `dsa-warp-online-f32` | `memra_mla_dsa_attn_split_f32` | argmax gate in `dsa-decode-gate`, plain decode only | `research/b200-dsa-decode-20260902/ROOFLINE.md` |
 | bf16-mma k-pool scorer | `memra_mla_kpool_score_tc_f32` | served-prompt ids | [GLM5-B200-DOORS.md](decisions/GLM5-B200-DOORS.md) |
 | `mla_warp_row_reduce` | `memra_mla_absorb_q_wp_bf16`, `memra_mla_absorb_q_wp_bf16_kernel`, `memra_mla_absorb_q_wp_f32`, `memra_mla_absorb_q_wp_kernel`, `memra_mla_decompress_v_wp_bf16`, `memra_mla_decompress_v_wp_bf16_kernel`, `memra_mla_decompress_v_wp_f32`, `memra_mla_decompress_v_wp_kernel` | served tape | [GLM5-B200-DOORS.md](decisions/GLM5-B200-DOORS.md) |
