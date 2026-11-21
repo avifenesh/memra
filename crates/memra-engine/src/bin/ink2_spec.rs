@@ -254,8 +254,17 @@ fn run() -> Result<(), String> {
     let mut failed = 0;
     for (id, kind, ids) in &prompts {
         let plain = if a.check_plain {
-            let (p, prefill_s, decode_s) =
-                plain_greedy_timed(&mut route, ids, a.gen_tokens, &stop)?;
+            let (p, prefill_s, decode_s) = match a.sample {
+                Some(t) => memra_engine::inkling2_spec::plain_sampled_timed(
+                    &mut route,
+                    ids,
+                    a.gen_tokens,
+                    &stop,
+                    t,
+                    a.seed,
+                )?,
+                None => plain_greedy_timed(&mut route, ids, a.gen_tokens, &stop)?,
+            };
             writeln!(
                 out,
                 "{}",
@@ -289,7 +298,11 @@ fn run() -> Result<(), String> {
                     tap_slot: a.red_tap,
                 },
             )?;
-            let equal = plain.as_ref().map(|p| *p == toks);
+            // a sampled request has no token-for-token reference
+            let equal = plain
+                .as_ref()
+                .filter(|_| a.sample.is_none())
+                .map(|p| *p == toks);
             let first_diff = plain.as_ref().and_then(|p| {
                 p.iter()
                     .zip(&toks)
@@ -310,7 +323,7 @@ fn run() -> Result<(), String> {
                     "temperature": a.sample, "k": k, "prompt_tokens": ids.len(), "generated": st.generated,
                     "steps": st.steps, "proposed": st.proposed, "accepted": st.accepted,
                     "acceptance_length": st.acceptance_length(), "tokens_per_step": st.tokens_per_step(),
-                    "hist": st.hist, "partial_commits": st.partial_commits, "plain_steps": st.plain_steps, "prefill_s": st.prefill_s, "decode_s": st.decode_s,
+                    "hist": st.hist, "k_hist": st.k_hist, "partial_commits": st.partial_commits, "plain_steps": st.plain_steps, "prefill_s": st.prefill_s, "decode_s": st.decode_s,
                     "decode_tok_s": (st.generated.max(1) - 1) as f64 / st.decode_s,
                     "equal_plain": equal, "first_diff": first_diff, "tokens": toks})
             )
