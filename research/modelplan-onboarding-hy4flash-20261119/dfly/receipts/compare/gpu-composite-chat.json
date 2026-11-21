@@ -1,0 +1,28 @@
+{
+ "request": "chat",
+ "anchors": 38,
+ "k": 5,
+ "oracle": "vllm-pr68296@8cbb80efa397-transcribed-cpu-f64",
+ "oracle_red": null,
+ "native": "memra-engine-hy4f_route-dfly-gpu-composite",
+ "native_red": null,
+ "native_forced": true,
+ "bitwise_equal": false,
+ "max_abs": 0.0006694793701171875,
+ "max_at": {
+  "anchor": 10,
+  "step": 3,
+  "token": 6239
+ },
+ "per_anchor_max_p50": 0.0004391670227050781,
+ "per_anchor_max_p99": 0.0006523656845092775,
+ "argmax_steps": 190,
+ "argmax_differ": 0,
+ "argmax_differ_near_ties": 0,
+ "argmax_differ_far": [],
+ "own_drafts_equal_rounds": 38,
+ "oracle_mean_accepted_teacher_forced": 0.18421052631578946,
+ "native_mean_accepted_teacher_forced": 0.18421052631578946,
+ "atol": 0.0398,
+ "verdict": "pass"
+}

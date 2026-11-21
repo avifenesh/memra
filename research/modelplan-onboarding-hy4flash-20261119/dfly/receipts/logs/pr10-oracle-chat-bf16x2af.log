@@ -1,0 +1,12 @@
+START 2026-11-21 00:33:48
+[     5.9s] resident tensors 1349, 26.5 GB
+[     5.9s] bf16x2a: 516 linear layers round their input
+[     5.9s] model ready (bf16x2a), 42 layers, Engram at decoder layers [1, 11, 21, 31]
+[     5.9s] forcing 0 indexer and 164 router calls from /home/avifenesh/hy4flash/pr7/tapes/chat-f64
+[   276.8s] call 1/4 tokens 0..36 indexer_layers=0 engram_layers=4
+[   300.2s] call 2/4 tokens 36..37 indexer_layers=0 engram_layers=4
+[   323.8s] call 3/4 tokens 37..38 indexer_layers=0 engram_layers=4
+[   347.4s] call 4/4 tokens 38..39 indexer_layers=0 engram_layers=4
+[   347.4s] dfly target inputs written to /home/avifenesh/hy4flash/pr10/target/chat-bf16x2af
+{"engine": "transformers-pr50903@b865850d0532-cpu-bf16x2a", "request": "chat", "positions": 39, "decode_from": 36, "seconds": 347.4, "logits_sha256": "6881b2be76134c839d47d82f924e2cb30b9b70e32e5f507419917e0f0fe79974", "indexer_records": 0, "engram_records": 16}
+EXIT rc=0 2026-11-21 00:39:40

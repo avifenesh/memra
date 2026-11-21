@@ -1,0 +1,7 @@
+START 2026-11-21 00:19:10 tag=chat-bf16x2af req=chat dtype=bf16x2a args=--force-drafts dtapes/chat-f64
+[     1.3s] drafter: 5 layers, MLP width 9216 (declared None), k=5, target index [25, 29, 33, 37, 41] kv [25, 29, 33, 37, 41], topk 2048, window 0, mask 120009, bf16x2a
+[     2.0s] anchor 1/38 p=0 drafts=[198, 220, 983, 21, 12] target_next=[120001, 120039, 59785, 287, 62]
+[    18.3s] anchor 26/38 p=25 drafts=[13489, 13, 120030, 802, 8778] target_next=[4962, 13, 120025, 120000, 611]
+[    28.1s] anchor 38/38 p=37 drafts=[120025, 120025, 120025, 120025, 120025] target_next=[]
+{"request": "chat", "dtype": "bf16x2a", "red": null, "anchors": 38, "k": 5, "logits_sha256": "fe149c9472db2439a8915d207241b77a1c71ac44761a10fd8d9aa8bbd4ec9b81", "mean_accepted_teacher_forced": 0.1842, "seconds": 28.1}
+EXIT rc=0 2026-11-21 00:19:39

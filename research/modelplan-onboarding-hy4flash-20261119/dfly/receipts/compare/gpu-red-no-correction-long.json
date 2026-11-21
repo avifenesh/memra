@@ -1,0 +1,169 @@
+{
+ "request": "long",
+ "anchors": 203,
+ "k": 5,
+ "oracle": "vllm-pr68296@8cbb80efa397-transcribed-cpu-f64",
+ "oracle_red": null,
+ "native": "memra-engine-hy4f_route-dfly-gpu",
+ "native_red": "no-correction",
+ "native_forced": true,
+ "bitwise_equal": false,
+ "max_abs": 25.253581523895264,
+ "max_at": {
+  "anchor": 2054,
+  "step": 0,
+  "token": 31626
+ },
+ "per_anchor_max_p50": 8.37292766571045,
+ "per_anchor_max_p99": 22.760174331665038,
+ "argmax_steps": 1015,
+ "argmax_differ": 637,
+ "argmax_differ_near_ties": 4,
+ "argmax_differ_far": [
+  {
+   "anchor": 0,
+   "step": 0,
+   "oracle": 198,
+   "native": 120025,
+   "gap": 4.4265971183776855
+  },
+  {
+   "anchor": 0,
+   "step": 1,
+   "oracle": 220,
+   "native": 120025,
+   "gap": 5.567809581756592
+  },
+  {
+   "anchor": 0,
+   "step": 2,
+   "oracle": 983,
+   "native": 220,
+   "gap": 6.536613464355469
+  },
+  {
+   "anchor": 0,
+   "step": 3,
+   "oracle": 21,
+   "native": 120025,
+   "gap": 10.053140640258789
+  },
+  {
+   "anchor": 0,
+   "step": 4,
+   "oracle": 12,
+   "native": 120025,
+   "gap": 7.447409152984619
+  },
+  {
+   "anchor": 32,
+   "step": 1,
+   "oracle": 220,
+   "native": 25,
+   "gap": 6.746507167816162
+  },
+  {
+   "anchor": 32,
+   "step": 2,
+   "oracle": 16,
+   "native": 120025,
+   "gap": 6.585151672363281
+  },
+  {
+   "anchor": 32,
+   "step": 3,
+   "oracle": 13,
+   "native": 120025,
+   "gap": 7.90605354309082
+  },
+  {
+   "anchor": 32,
+   "step": 4,
+   "oracle": 499,
+   "native": 120025,
+   "gap": 1.8463010787963867
+  },
+  {
+   "anchor": 48,
+   "step": 1,
+   "oracle": 1059,
+   "native": 1792,
+   "gap": 2.7950572967529297
+  },
+  {
+   "anchor": 48,
+   "step": 3,
+   "oracle": 4438,
+   "native": 11,
+   "gap": 1.6853790283203125
+  },
+  {
+   "anchor": 64,
+   "step": 3,
+   "oracle": 28940,
+   "native": 88692,
+   "gap": 5.334469795227051
+  },
+  {
+   "anchor": 64,
+   "step": 4,
+   "oracle": 11,
+   "native": 88692,
+   "gap": 1.665297508239746
+  },
+  {
+   "anchor": 80,
+   "step": 0,
+   "oracle": 30023,
+   "native": 775,
+   "gap": 6.55690860748291
+  },
+  {
+   "anchor": 80,
+   "step": 1,
+   "oracle": 21238,
+   "native": 60,
+   "gap": 3.7163591384887695
+  },
+  {
+   "anchor": 80,
+   "step": 3,
+   "oracle": 14000,
+   "native": 60,
+   "gap": 6.7687249183654785
+  },
+  {
+   "anchor": 80,
+   "step": 4,
+   "oracle": 715,
+   "native": 120025,
+   "gap": 7.117997169494629
+  },
+  {
+   "anchor": 96,
+   "step": 1,
+   "oracle": 303,
+   "native": 8,
+   "gap": 9.2409086227417
+  },
+  {
+   "anchor": 96,
+   "step": 2,
+   "oracle": 21242,
+   "native": 120025,
+   "gap": 6.063881874084473
+  },
+  {
+   "anchor": 96,
+   "step": 3,
+   "oracle": 30023,
+   "native": 120025,
+   "gap": 8.589591979980469
+  }
+ ],
+ "own_drafts_equal_rounds": 6,
+ "oracle_mean_accepted_teacher_forced": 0.5763546798029556,
+ "native_mean_accepted_teacher_forced": 0.30049261083743845,
+ "atol": 0.0398,
+ "verdict": "fail"
+}

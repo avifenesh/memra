@@ -1,0 +1,10 @@
+START 2026-11-20 23:25:11 req=chat
+[     3.8s] resident tensors 1349, 53.0 GB
+[     3.8s] model ready (f64), 42 layers, Engram at decoder layers [1, 11, 21, 31]
+[   255.8s] call 1/4 tokens 0..36 indexer_layers=0 engram_layers=4
+[   278.1s] call 2/4 tokens 36..37 indexer_layers=0 engram_layers=4
+[   299.1s] call 3/4 tokens 37..38 indexer_layers=0 engram_layers=4
+[   320.0s] call 4/4 tokens 38..39 indexer_layers=0 engram_layers=4
+[   320.0s] dfly target inputs written to /home/avifenesh/hy4flash/pr10/target/chat
+{"engine": "transformers-pr50903@b865850d0532-cpu-f64", "request": "chat", "positions": 39, "decode_from": 36, "seconds": 320.0, "logits_sha256": "ca3729b674b7e5c88658d2771dcfd2bcd82b4290adfabbd1e0bc2522bf2421a5", "indexer_records": 0, "engram_records": 16}
+EXIT rc=0 2026-11-20 23:30:35

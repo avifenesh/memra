@@ -1,0 +1,17 @@
+START 2026-11-21 00:40:09
+[     4.6s] resident tensors 1349, 26.5 GB
+[     4.6s] bf16x2a: 516 linear layers round their input
+[     4.6s] model ready (bf16x2a), 42 layers, Engram at decoder layers [1, 11, 21, 31]
+[     5.0s] forcing 108 indexer and 369 router calls from /home/avifenesh/hy4flash/pr7/tapes/long-f64
+[  1104.8s] call 1/9 tokens 0..2104 indexer_layers=12 engram_layers=4
+[  1123.3s] call 2/9 tokens 2104..2105 indexer_layers=12 engram_layers=4
+[  1141.7s] call 3/9 tokens 2105..2106 indexer_layers=12 engram_layers=4
+[  1159.0s] call 4/9 tokens 2106..2107 indexer_layers=12 engram_layers=4
+[  1176.2s] call 5/9 tokens 2107..2108 indexer_layers=12 engram_layers=4
+[  1194.2s] call 6/9 tokens 2108..2109 indexer_layers=12 engram_layers=4
+[  1211.8s] call 7/9 tokens 2109..2110 indexer_layers=12 engram_layers=4
+[  1229.6s] call 8/9 tokens 2110..2111 indexer_layers=12 engram_layers=4
+[  1246.8s] call 9/9 tokens 2111..2112 indexer_layers=12 engram_layers=4
+[  1247.0s] dfly target inputs written to /home/avifenesh/hy4flash/pr10/target/long-bf16x2af
+{"engine": "transformers-pr50903@b865850d0532-cpu-bf16x2a", "request": "long", "positions": 2112, "decode_from": 2104, "seconds": 1247.2, "logits_sha256": "7e94d413eb2e43dab916c6b9d664602c6fac42b9a233dfcfec3743f1d24b1410", "indexer_records": 108, "engram_records": 36}
+EXIT rc=0 2026-11-21 01:01:02

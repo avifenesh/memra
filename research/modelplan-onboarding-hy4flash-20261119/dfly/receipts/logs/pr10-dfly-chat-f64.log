@@ -1,0 +1,7 @@
+START 2026-11-20 23:32:05 tag=chat-f64 req=chat dtype=f64 args=
+[     7.6s] drafter: 5 layers, MLP width 9216 (declared None), k=5, target index [25, 29, 33, 37, 41] kv [25, 29, 33, 37, 41], topk 2048, window 0, mask 120009, f64
+[    15.6s] anchor 1/38 p=0 drafts=[198, 220, 983, 21, 12] target_next=[120001, 120039, 59785, 287, 62]
+[   204.9s] anchor 26/38 p=25 drafts=[13489, 13, 120030, 802, 8778] target_next=[4962, 13, 120025, 120000, 611]
+[   296.7s] anchor 38/38 p=37 drafts=[120025, 120025, 120025, 120025, 120025] target_next=[]
+{"request": "chat", "dtype": "f64", "red": null, "anchors": 38, "k": 5, "logits_sha256": "18f643011437f2d55401f6b9ef52e990d1923cd59fe28b03a5682cc2c5663acc", "mean_accepted_teacher_forced": 0.1842, "seconds": 296.7}
+EXIT rc=0 2026-11-20 23:37:03
