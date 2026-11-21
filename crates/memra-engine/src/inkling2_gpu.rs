@@ -80,6 +80,7 @@ mod ffi {
             out: *mut f32,
             r: i32,
             h: i32,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_norm(
@@ -89,6 +90,7 @@ mod ffi {
             y: *mut f32,
             r: i32,
             h: i32,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_gemm_tile_v0(
@@ -123,6 +125,7 @@ mod ffi {
             h: i32,
             scratch: *mut f64,
             scratch_len: i64,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_mix_v0(
@@ -150,6 +153,7 @@ mod ffi {
             rank: i32,
             scratch: *mut f64,
             scratch_len: i64,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_controller_v0(
@@ -180,6 +184,7 @@ mod ffi {
             r: i32,
             heads: i32,
             width: i32,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_conv(
@@ -195,6 +200,7 @@ mod ffi {
             r: i32,
             c: i32,
             k: i32,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_attn(
@@ -218,9 +224,17 @@ mod ffi {
             rank: i32,
             scr: *mut f64,
             scr_ld: i64,
+            scr_rows: i32,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
-        pub fn memra_ink2g_gate(y: *mut f32, g: *const f32, n: i64, stream: *mut c_void) -> i32;
+        pub fn memra_ink2g_gate(
+            y: *mut f32,
+            g: *const f32,
+            n: i64,
+            prec: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_ink2g_route(
             logits: *const f32,
             bias: *const f32,
@@ -232,6 +246,7 @@ mod ffi {
             margin: *mut f32,
             r: i32,
             e: i32,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_swiglu(
@@ -276,6 +291,7 @@ mod ffi {
             best: *mut u32,
             r: i32,
             n: i32,
+            prec: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_tiles(
@@ -399,6 +415,64 @@ pub struct Dev {
     pub round_trips: Cell<u64>,
     /// Bytes allocated through this handle.
     pub allocated: Cell<usize>,
+    /// The precision arm of each operation group (0: the f64 program).
+    pub prec: Cell<Prec>,
+}
+
+/// Precision arms per operation group: 0 = f64 (the #1397 program), 1 = f32, 2 = f32 with every
+/// sequential sum compensated (Kahan); attention also 3 = f64 with a chunk's scores split over
+/// blocks (f64g). A measurement seam: each arm is a different numeric program.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Prec {
+    pub controller: u8,
+    pub mix: u8,
+    /// norms and clips: the embedding and RMS norms, the q / k / r clips, tau and the value norm
+    pub norm: u8,
+    pub conv: u8,
+    pub router: u8,
+    /// the attention output gate and the logit softcap
+    pub epilogue: u8,
+    /// scores, softmax and value accumulation
+    pub attn: u8,
+}
+
+impl Prec {
+    /// "group=f32|f32c|f64,..." (all = every group)
+    pub fn parse(spec: &str) -> Result<Self, String> {
+        let mut p = Self::default();
+        for item in spec.split(',').filter(|x| !x.is_empty()) {
+            let (g, v) = item
+                .split_once('=')
+                .ok_or(format!("precision arm {item}: group=f32|f32c|f64"))?;
+            let v = match v {
+                "f64" => 0,
+                "f32" => 1,
+                "f32c" => 2,
+                "f64g" => 3,
+                _ => return Err(format!("precision {v}: f64, f32 or f32c")),
+            };
+            let all = g == "all";
+            let mut hit = all;
+            for (name, slot) in [
+                ("controller", &mut p.controller),
+                ("mix", &mut p.mix),
+                ("norm", &mut p.norm),
+                ("conv", &mut p.conv),
+                ("router", &mut p.router),
+                ("epilogue", &mut p.epilogue),
+                ("attn", &mut p.attn),
+            ] {
+                if all || name == g {
+                    *slot = v;
+                    hit = true;
+                }
+            }
+            if !hit {
+                return Err(format!("precision group {g}"));
+            }
+        }
+        Ok(p)
+    }
 }
 
 fn dptr<T>(s: &CudaSlice<T>, st: &CudaStream) -> u64 {
@@ -440,6 +514,7 @@ impl Dev {
             copies: Cell::new(0),
             round_trips: Cell::new(0),
             allocated: Cell::new(0),
+            prec: Cell::new(Prec::default()),
         }
     }
 
@@ -1020,10 +1095,11 @@ struct Work {
     dscr: CudaSlice<f64>,
     /// the call's position on the device (the kernels that read a position take it from here)
     posd: CudaSlice<i64>,
-    /// f64 scores of a decode step's split attention: [heads][asc_ld], asc_ld the most keys a row
-    /// attends (the largest window, or the context)
+    /// f64 scores of the split attention: [asc_rows][heads][asc_ld], asc_ld the most keys a row
+    /// attends (the largest window, or the context); a chunk runs asc_rows rows a launch pair
     asc: CudaSlice<f64>,
     asc_ld: usize,
+    asc_rows: usize,
     logits: CudaSlice<f32>,
     best: CudaSlice<u32>,
     tok: CudaSlice<u32>,
@@ -1609,7 +1685,9 @@ impl Route {
                 blocks.insert(layer.index, dev.zeros(chunk * hidden)?);
             }
         }
-        // the decode step's attention scores grow with the context too
+        // the split attention's scores: 64 MiB of rows a launch pair, at least one row, which grows
+        // with the context
+        let asc_rows = ((64usize << 20) / (max_heads * max_keys * 8)).clamp(1, chunk);
         if max_keys == context {
             account.per_position += max_heads * 8;
         }
@@ -1653,8 +1731,9 @@ impl Route {
             moe: dev.zeros(rh)?,
             dscr: dev.zeros(chunk * 128)?,
             posd: dev.zeros(1)?,
-            asc: dev.zeros(max_heads * max_keys)?,
+            asc: dev.zeros(asc_rows * max_heads * max_keys)?,
             asc_ld: max_keys,
+            asc_rows,
             logits: dev.zeros(HEAD_ROWS * keep)?,
             best: dev.zeros(HEAD_ROWS)?,
             tok: dev.zeros(chunk)?,
@@ -1868,6 +1947,7 @@ impl Route {
                 hidden as i32,
                 dptr_mut(scr, st) as *mut f64,
                 scr.len() as i64,
+                dev.prec.get().mix as i32,
                 dev.sp(),
             )
         })
@@ -2004,6 +2084,7 @@ impl Route {
                 dptr_mut(&mut w.h, &st) as *mut f32,
                 rows as i32,
                 hidden as i32,
+                dev.prec.get().norm as i32,
                 dev.sp(),
             )
         })?;
@@ -2125,6 +2206,7 @@ impl Route {
                             lp.gate_rank as i32,
                             dptr_mut(&mut w.dscr, &st) as *mut f64,
                             w.dscr.len() as i64,
+                            dev.prec.get().controller as i32,
                             dev.sp(),
                         )
                     })?;
@@ -2152,6 +2234,7 @@ impl Route {
                         normed[i] as *mut f32,
                         rows as i32,
                         hidden as i32,
+                        dev.prec.get().norm as i32,
                         dev.sp(),
                     )
                 })?;
@@ -2271,6 +2354,7 @@ impl Route {
                         rows as i32,
                         nheads as i32,
                         width as i32,
+                        dev.prec.get().norm as i32,
                         dev.sp(),
                     )
                 })
@@ -2336,6 +2420,7 @@ impl Route {
                         rows as i32,
                         cw.channels as i32,
                         cw.kernel as i32,
+                        dev.prec.get().conv as i32,
                         dev.sp(),
                     )
                 })
@@ -2412,6 +2497,14 @@ impl Route {
                     rank as i32,
                     dptr_mut(&mut w.asc, &st) as *mut f64,
                     w.asc_ld as i64,
+                    // attn arm 3: the f64 program with a chunk's scores split over blocks in groups of
+                    // asc_rows rows (the decode form, per row); a different f64 evaluation order
+                    if dev.prec.get().attn == 3 {
+                        w.asc_rows as i32
+                    } else {
+                        0
+                    },
+                    (dev.prec.get().attn % 3) as i32,
                     dev.sp(),
                 )
             })?;
@@ -2439,6 +2532,7 @@ impl Route {
                     dptr_mut(&mut w.att, &st) as *mut f32,
                     dptr(&w.gateb, &st) as *const f32,
                     (rows * qw) as i64,
+                    dev.prec.get().epilogue as i32,
                     dev.sp(),
                 )
             })?;
@@ -2537,6 +2631,7 @@ impl Route {
                         lp.gate_rank as i32,
                         dptr_mut(&mut w.dscr, &st) as *mut f64,
                         w.dscr.len() as i64,
+                        dev.prec.get().controller as i32,
                         dev.sp(),
                     )
                 })?;
@@ -2549,6 +2644,7 @@ impl Route {
                     dptr_mut(&mut w.mn, &st) as *mut f32,
                     rows as i32,
                     hidden as i32,
+                    dev.prec.get().norm as i32,
                     dev.sp(),
                 )
             })?;
@@ -2621,6 +2717,7 @@ impl Route {
                 dptr_mut(&mut w.mn, &st) as *mut f32,
                 rows as i32,
                 hidden as i32,
+                dev.prec.get().norm as i32,
                 dev.sp(),
             )
         })?;
@@ -2654,6 +2751,7 @@ impl Route {
                     dptr_mut(&mut w.best, &st) as *mut u32,
                     n as i32,
                     keep as i32,
+                    dev.prec.get().epilogue as i32,
                     dev.sp(),
                 )
             })?;
@@ -2723,6 +2821,7 @@ impl Route {
                 dptr_mut(&mut w.margin, &st) as *mut f32,
                 rows as i32,
                 experts as i32,
+                dev.prec.get().router as i32,
                 dev.sp(),
             )
         })?;
@@ -3034,6 +3133,12 @@ fn declared_experts(
             pairs
         }
     };
+    // device-built groups hold one routed row each: the GEMM stages only that column (nb 0)
+    let gemm_nb = if host_ids.is_some() && rows > 1 {
+        nb
+    } else {
+        0
+    };
     // The MoE input is quantized once per token (one block a row); the gate/up GEMM reads row
     // pair / top_k for each routed pair. The SiTU input holds a row per pair (the pair's gate/up row),
     // one block a pair. The quantizer writes the row it reads.
@@ -3073,7 +3178,7 @@ fn declared_experts(
         dev.launched("memra_ink2_expert_gemm", unsafe {
             ffi::memra_ink2_expert_gemm_x(
                 kind,
-                nb as i32,
+                gemm_nb as i32,
                 dptr(&dq.aq_v, &st) as *const c_void,
                 dptr(&dq.aq_s, &st) as *const c_void,
                 dptr(&dq.aq_a, &st) as *const f32,
@@ -3480,6 +3585,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 dptr_mut(&mut out, &st) as *mut f32,
                 rows as i32,
                 h as i32,
+                dev.prec.get().norm as i32,
                 dev.sp(),
             )
         })?;
@@ -3500,6 +3606,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 dptr_mut(&mut out, &st) as *mut f32,
                 rows as i32,
                 h as i32,
+                dev.prec.get().norm as i32,
                 dev.sp(),
             )
         })?;
@@ -3608,6 +3715,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 rank as i32,
                 dptr_mut(&mut scr, &st) as *mut f64,
                 (rows * rank) as i64,
+                dev.prec.get().controller as i32,
                 dev.sp(),
             )
         })?;
@@ -3645,6 +3753,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 rank as i32,
                 dptr_mut(&mut scr, &st) as *mut f64,
                 (rows * rank) as i64,
+                dev.prec.get().controller as i32,
                 dev.sp(),
             )
         })?;
@@ -3707,6 +3816,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                     rows as i32,
                     heads as i32,
                     width as i32,
+                    dev.prec.get().norm as i32,
                     dev.sp(),
                 )
             })
@@ -3806,6 +3916,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         *rows as i32,
                         c as i32,
                         k as i32,
+                        dev.prec.get().conv as i32,
                         dev.sp(),
                     )
                 })?;
@@ -3885,11 +3996,12 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             ));
         }
         let (qd, rd, td, sd) = (dev.up(&q)?, dev.up(&rel)?, dev.up(&table)?, dev.up(&sink)?);
-        let run = |splits: &[usize]| -> Result<Vec<f32>, String> {
+        // scr_rows 0: a call of several rows runs the tiled kernel; else the split form in groups
+        let run = |splits: &[usize], scr_rows: i32| -> Result<Vec<f32>, String> {
             let mut kc = dev.zeros::<f32>(cap * kvw)?;
             let mut vc = dev.zeros::<f32>(cap * kvw)?;
             let mut out = dev.zeros::<f32>(total * heads * dim)?;
-            let mut ascr = dev.zeros::<f64>(heads * cap)?;
+            let mut ascr = dev.zeros::<f64>(3 * heads * cap)?;
             let mut at = 0usize;
             for rows in splits {
                 // the rows of the call enter the cache before any row attends
@@ -3931,6 +4043,8 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         // a call of one row runs the split form
                         dptr_mut(&mut ascr, &st) as *mut f64,
                         cap as i64,
+                        scr_rows,
+                        dev.prec.get().attn as i32,
                         dev.sp(),
                     )
                 })?;
@@ -3939,15 +4053,18 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             }
             dev.down(&out, 0, total * heads * dim)
         };
-        let chunked = run(&vec![8; total / 8])?;
-        let ones = run(&vec![1; total])?;
+        let chunked = run(&vec![8; total / 8], 0)?;
+        let ones = run(&vec![1; total], 0)?;
+        // a chunk in the split form, 3 rows a launch pair (a short last group)
+        let grouped = run(&vec![8; total / 8], 3)?;
+        let grouped_differ = bits_differ(&grouped, &chunked);
         // against the scale of a value row: an output is a convex mix of values of order 1
         let e = worst_rel(&chunked, &want, 1.0);
         let alone = bits_differ(&chunked, &ones);
         verdict(
-            e <= ROUND && alone == 0,
+            e <= ROUND && alone == 0 && grouped_differ == 0,
             format!(
-                "{name} [positions={total} window={window} extent={extent} mask_beyond={mask} cache rows={cap}] max |err| / (|ref| + 1)={e:.3e}; calls of 8 vs calls of 1 bit-differ={alone}"
+                "{name} [positions={total} window={window} extent={extent} mask_beyond={mask} cache rows={cap}] max |err| / (|ref| + 1)={e:.3e}; calls of 8 vs calls of 1 (split form) bit-differ={alone}; calls of 8 split 3 rows a launch vs the tiled kernel bit-differ={grouped_differ}"
             ),
         );
     }
@@ -3981,6 +4098,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                     dptr_mut(&mut margin, &st) as *mut f32,
                     rows as i32,
                     experts as i32,
+                    dev.prec.get().router as i32,
                     dev.sp(),
                 )
             })?;
@@ -4097,6 +4215,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 dptr_mut(&mut best, &st) as *mut u32,
                 2,
                 n as i32,
+                dev.prec.get().epilogue as i32,
                 dev.sp(),
             )
         })?;

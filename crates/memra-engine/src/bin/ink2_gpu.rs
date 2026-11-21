@@ -16,6 +16,9 @@
 //!                            per-slot gate of a class that is not continuous)
 //!   --gen N                  greedy: the tape's prompt, then N - 1 decode calls on the argmax,
 //!                            scored against the tape's greedy ids; timed, launches counted
+//!   --prec SPEC              precision arms, group=f32|f32c|f64 (groups: controller, mix, norm, conv,
+//!                            router, epilogue, attn, all)
+//!   --corpus FILE --arms A;B  teacher-forced KL and NLL of each arm against all-f64 (lane F's corpora)
 //!   --eager                  no decode graph: every step eager (the graph's check arm)
 //!   --gen-digest             with --gen: an FNV digest of every step's logits row (untimed check)
 //!   --prompt-len N           with --gen: the prompt is the tape's ids repeated to N tokens (a
@@ -37,7 +40,9 @@
 //!                            later id; every slot output and logit row must equal a clean run
 //!   --chunk N                rows one call may hold (default 512)
 
-use memra_engine::inkling2_gpu::{Ckpt, Dev, Head, Observer, RedArms, Route, Tap, numeric_class};
+use memra_engine::inkling2_gpu::{
+    Ckpt, Dev, Head, Observer, Prec, RedArms, Route, Tap, numeric_class,
+};
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_plan::{ExpertActivationMode, ModelPlan};
 use memra_gguf::safetensors::StShard;
@@ -66,6 +71,11 @@ struct Args {
     gen_digest: bool,
     /// --eager: no decode graph (the check arm of a graph's bits)
     eager: bool,
+    /// --prec SPEC: precision arms (group=f32|f32c|f64,...; see Prec)
+    prec: String,
+    /// --corpus FILE --arms SPEC;SPEC: teacher-forced KL / NLL of each arm against all-f64
+    corpus: Option<PathBuf>,
+    arms: String,
     chunkings: Option<(usize, usize)>,
     limit: usize,
     red: RedArms,
@@ -102,6 +112,9 @@ fn parse() -> Result<Args, String> {
             "--prompt-len" => a.prompt_len = num(val()?)?,
             "--gen-digest" => a.gen_digest = true,
             "--eager" => a.eager = true,
+            "--prec" => a.prec = val()?,
+            "--corpus" => a.corpus = Some(PathBuf::from(val()?)),
+            "--arms" => a.arms = val()?,
             "--limit" => a.limit = num(val()?)?,
             "--chunk" => a.chunk = num(val()?)?,
             "--context" => a.context = num(val()?)?,
@@ -685,6 +698,152 @@ fn attn_probe(
     Ok(serde_json::Value::Object(out))
 }
 
+/// --corpus: teacher-forced runs of every document of a corpus (lane F's rawdoc / chatwrap JSON:
+/// ids, sampled) under the reference precision (all f64) and each arm. Per position: KL(ref || arm)
+/// over the full vocabulary in f64, the NLL of the next token under both, top-1 agreement.
+fn corpus_run(
+    route: &mut Route,
+    path: &Path,
+    arms: &str,
+    out: Option<&PathBuf>,
+) -> Result<(), String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let docs: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("corpus: {e}"))?;
+    let docs = docs.as_array().ok_or("corpus: a list of documents")?;
+    let specs: Vec<String> = arms
+        .split(';')
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+    let precs: Vec<Prec> = specs
+        .iter()
+        .map(|s| Prec::parse(s))
+        .collect::<Result<_, _>>()?;
+    let threads = std::thread::available_parallelism()
+        .map_or(8, |n| n.get())
+        .min(16);
+    // per row: log-softmax in f64, stored as f32 deltas from the row's max is not needed: keep f64 lse
+    let lse_rows = |logits: &[f32], keep: usize| -> Vec<f64> {
+        let rows = logits.len() / keep;
+        let mut out = vec![0f64; rows];
+        std::thread::scope(|sc| {
+            for (ci, chunk) in out.chunks_mut(rows.div_ceil(threads).max(1)).enumerate() {
+                let base = ci * rows.div_ceil(threads).max(1);
+                sc.spawn(move || {
+                    for (i, o) in chunk.iter_mut().enumerate() {
+                        let x = &logits[(base + i) * keep..(base + i + 1) * keep];
+                        let top = x
+                            .iter()
+                            .fold(f64::NEG_INFINITY, |a, v| a.max(f64::from(*v)));
+                        *o = top
+                            + x.iter()
+                                .map(|v| (f64::from(*v) - top).exp())
+                                .sum::<f64>()
+                                .ln();
+                    }
+                });
+            }
+        });
+        out
+    };
+    let mut per_arm: Vec<BTreeMap<&str, Vec<f64>>> = vec![BTreeMap::new(); precs.len()];
+    let t0 = Instant::now();
+    for (di, d) in docs.iter().enumerate() {
+        let ids: Vec<u32> = d["ids"]
+            .as_array()
+            .ok_or("a document without ids")?
+            .iter()
+            .map(|v| v.as_u64().unwrap_or(0) as u32)
+            .collect();
+        let sampled: Vec<u8> = d["sampled"]
+            .as_array()
+            .map(|a| a.iter().map(|v| v.as_u64().unwrap_or(0) as u8).collect())
+            .unwrap_or_else(|| vec![0; ids.len()]);
+        let n = ids.len();
+        route.dev.prec.set(Prec::default());
+        route.reset()?;
+        let rl = route.call(&ids, Head::All, None)?.logits;
+        let keep = rl.len() / n;
+        let rz = lse_rows(&rl, keep);
+        for (ai, p) in precs.iter().enumerate() {
+            route.dev.prec.set(*p);
+            route.reset()?;
+            let al = route.call(&ids, Head::All, None)?.logits;
+            let az = lse_rows(&al, keep);
+            let mut kl = vec![0f64; n];
+            std::thread::scope(|sc| {
+                let per = n.div_ceil(threads).max(1);
+                for (ci, chunk) in kl.chunks_mut(per).enumerate() {
+                    let (rl, al, rz, az) = (&rl, &al, &rz, &az);
+                    sc.spawn(move || {
+                        for (i, o) in chunk.iter_mut().enumerate() {
+                            let t = ci * per + i;
+                            let (x, y) =
+                                (&rl[t * keep..(t + 1) * keep], &al[t * keep..(t + 1) * keep]);
+                            *o = x
+                                .iter()
+                                .zip(y)
+                                .map(|(a, b)| {
+                                    let lp = f64::from(*a) - rz[t];
+                                    lp.exp() * (lp - (f64::from(*b) - az[t]))
+                                })
+                                .sum();
+                        }
+                    });
+                }
+            });
+            let m = &mut per_arm[ai];
+            for t in 0..n {
+                let has = t + 1 < n;
+                let lab = if has { ids[t + 1] as usize } else { 0 };
+                let (rr, aa) = (&rl[t * keep..(t + 1) * keep], &al[t * keep..(t + 1) * keep]);
+                m.entry("seq").or_default().push(di as f64);
+                m.entry("kl").or_default().push(kl[t]);
+                m.entry("has_label")
+                    .or_default()
+                    .push(f64::from(u8::from(has && lab < keep)));
+                m.entry("sampled").or_default().push(f64::from(if has {
+                    sampled[t + 1]
+                } else {
+                    0
+                }));
+                m.entry("nll_ref").or_default().push(if has && lab < keep {
+                    rz[t] - f64::from(rr[lab])
+                } else {
+                    0.0
+                });
+                m.entry("nll_arm").or_default().push(if has && lab < keep {
+                    az[t] - f64::from(aa[lab])
+                } else {
+                    0.0
+                });
+                m.entry("top1")
+                    .or_default()
+                    .push(f64::from(u8::from(argmax(rr) == argmax(aa))));
+            }
+        }
+        eprintln!(
+            "ink2-gpu corpus: doc {}/{} ({n} tokens) done at {:.0}s",
+            di + 1,
+            docs.len(),
+            t0.elapsed().as_secs_f64()
+        );
+    }
+    let arms_json: Vec<serde_json::Value> = specs
+        .iter()
+        .zip(&per_arm)
+        .map(|(s, m)| serde_json::json!({"spec": s, "arrays": m}))
+        .collect();
+    let receipt = serde_json::json!({"corpus": path.display().to_string(), "docs": docs.len(), "arms": arms_json});
+    let text = serde_json::to_string(&receipt).map_err(|e| e.to_string())?;
+    match out {
+        Some(p) => std::fs::write(p, text).map_err(|e| format!("{}: {e}", p.display()))?,
+        None => println!("{text}"),
+    }
+    Ok(())
+}
+
 fn argmax(row: &[f32]) -> u32 {
     let mut best = 0;
     for (i, v) in row.iter().enumerate() {
@@ -813,6 +972,10 @@ fn run() -> Result<(), String> {
     let dev = Dev::new(a.device)?;
     let mut route = Route::load(dev, &ck, &plan, context, a.chunk)?;
     route.set_red(a.red)?;
+    route.dev.prec.set(Prec::parse(&a.prec)?);
+    if let Some(cp) = &a.corpus {
+        return corpus_run(&mut route, cp, &a.arms, a.out.as_ref());
+    }
     eprintln!("ink2-gpu: {}", route.account.describe());
     let load_s = t_load.elapsed().as_secs_f64();
     eprintln!(
