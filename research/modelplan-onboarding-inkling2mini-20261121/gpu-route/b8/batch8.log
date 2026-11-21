@@ -1,0 +1,56 @@
+gpulock: 5090 leased as claude-code-20261121T094913-3710155 for 30m
+e8277e9ba497bc7f24f5c2cfee5e083e76be588043007b9a612ee6e84e21fe24  ink2-gpu
+c5afc3d01b82a9c5aca4d2df997af7fb49f674263082dc301f2ec1ad99f7f2d3  ink2-gpu-gate
+227ea80e2ceb76a75b0c8022c5bd82b444e68a5dee8a40d4c8613ac77e5080b8  kernel-check
+460e43b06ed9c3d58b1e78647800f2bd8b05724583b18a793bd260d12e292617  ink2-actq-gate
+MARK gate 10:49:51.869274638
+RC gate=0
+ink2g-swiglu-sum-head SwiGLU max rel=5.940e-8, routed sum max rel=5.921e-8, softcap max rel=5.895e-8, argmax [777, 3] (first of equal maxima: [777, 3]) OK
+ink2g-moe-declared-nvfp4 [rows=9 top_k=4 hidden=256 width=128] vs the reference block: bf16 outputs equal 2304/2304 (worst row rel L2 0.000e0); one call per row vs one call bit-differ=0; red arms moved: weight-after-down 1660/2304, token-rows 2304/2304 OK
+ink2g-moe-declared-mxfp8 [rows=9 top_k=4 hidden=256 width=128] vs the reference block: bf16 outputs equal 2304/2304 (worst row rel L2 0.000e0); one call per row vs one call bit-differ=0; red arms moved: weight-after-down 2212/2304, token-rows 2303/2304 OK
+ink2g-load-refusals E8M0 0xFF, NVFP4 amax NaN / inf / 0 / negative, denominator 0: refused 6/6; valid planes accepted true OK
+ink2-gpu-gate: ALL OK (18 cells, 0 skipped)
+MARK actq-gate 10:49:54.892892138
+RC actq-gate=0
+ink2-w8a8-gemm w2 decode M=8 subnormal-weights [n=2304 k=1152 rows=64 nb=1] acc: chain-model bit-equal=147456/147456 (gated) index-order bit-equal=6993; over-bound=0 max|err|/sum|p|=2.431e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w2 prefill group subnormal-weights [n=2304 k=1152 rows=40 nb=2] acc: chain-model bit-equal=92160/92160 (gated) index-order bit-equal=4428; over-bound=0 max|err|/sum|p|=2.266e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-expert-block-nvfp4 [tokens=5 top-k=3 h=128 f=128] vs the reference block (sm_120a accumulators): gate_up bad=0 y bad=0 down bad=0 out bad=0 OK
+ink2-expert-block-mxfp8 [tokens=5 top-k=3 h=128 f=128] vs the reference block (sm_120a accumulators): gate_up bad=0 y bad=0 down bad=0 out bad=0 OK
+ink2-actq-gate: ALL OK (48 lines)
+MARK p1-declared-forced 10:50:34.424913290
+RC p1-declared-forced=0
+ink2-gpu: score 57 positions in 6.6s: resid attn worst slot 1.714e-4, ffn worst slot 1.895e-4, router rows 2736/2736, logits max abs 1.263e-2 KL mean 2.354e-8, argmax 57/57, greedy 32/32
+MARK p2-declared-forced 10:50:45.539159912
+RC p2-declared-forced=0
+ink2-gpu: score 1531 positions in 31.7s: resid attn worst slot 2.036e-4, ffn worst slot 4.135e-4, router rows 73488/73488, logits max abs 9.243e-2 KL mean 2.106e-8, argmax 1531/1531, greedy 32/32
+MARK p1-declared 10:51:22.126662367
+RC p1-declared=0
+ink2-gpu: gen 32 ids, 25/32 equal to the oracle's greedy prefix; 1637.0 launches a token; 5.36 tok/s (clocks 2767 MHz, 14001 MHz, 102.21 W, 80, 100 %)
+gen 200001,200008,371,150409,171960,149887,150011,156021,181130,151661,149876,158808,149884,152978,152778,13,170289,150893,149911,4123,13,170289,151791,153606,25,220,47157,180553,25,177113,152778,166386
+ink2-gpu: 57 rows as calls of 26: 0.9s
+ink2-gpu: 57 rows as calls of 1: 10.8s
+ink2-gpu: chunkings 26 vs 1 over 57 rows: slot rows differ 0/2736, logit rows differ 0, argmax differ 0
+MARK p1-declared-vs-float 10:52:36.573225232
+RC p1-declared-vs-float=0
+ink2-gpu: score 57 positions in 6.5s: resid attn worst slot 1.344e-1, ffn worst slot 1.377e-1, router rows 1841/2736, logits max abs 7.690e0 KL mean 4.950e-2, argmax 50/57, greedy 31/32
+MARK p2-declared-vs-float 10:52:48.250540518
+RC p2-declared-vs-float=0
+ink2-gpu: score 1531 positions in 23.9s: resid attn worst slot 4.565e-1, ffn worst slot 4.589e-1, router rows 37512/73488, logits max abs 3.300e1 KL mean 3.878e-1, argmax 1339/1531, greedy 32/32
+ink2-gpu: 1500 rows as calls of 512: 10.7s
+ink2-gpu: 1500 rows as calls of 300: 11.0s
+ink2-gpu: chunkings 512 vs 300 over 1500 rows: slot rows differ 0/72000, logit rows differ 0, argmax differ 0
+MARK p3-declared-vs-f64 10:53:38.805962730
+RC p3-declared-vs-f64=0
+ink2-gpu: score 8260 positions in 86.0s: resid attn worst slot 2.865e-1, ffn worst slot 2.943e-1, router rows 199987/396480, logits max abs 1.765e1 KL mean 2.579e-2, argmax 144/148, greedy 1/1
+MARK atomic-declared 10:55:10.181532560
+RC atomic-declared=0
+ink2-gpu: one failed call after slot 33 at row 28, then 29 decode rows: slot rows differ 0/2784, logit rows differ 0
+MARK p1-float 10:55:27.609297237
+RC p1-float=0
+ink2-gpu: score 57 positions in 8.2s: resid attn worst slot 8.163e-7, ffn worst slot 7.208e-7, router rows 2736/2736, logits max abs 3.052e-5 KL mean 1.960e-12, argmax 57/57, greedy 32/32
+MARK p2-float-vs-f64 10:55:40.781012853
+RC p2-float-vs-f64=0
+ink2-gpu: score 1500 positions in 14.0s: resid attn worst slot 2.709e-6, ffn worst slot 2.767e-6, router rows 72000/72000, logits max abs 2.316e-4 KL mean 1.942e-12, argmax 288/288, greedy 1/1
+MARK p2-declared-vs-f64 10:56:00.302035867
+RC p2-declared-vs-f64=0
+ink2-gpu: score 1500 positions in 11.0s: resid attn worst slot 3.799e-1, ffn worst slot 3.845e-1, router rows 36540/72000, logits max abs 2.087e1 KL mean 9.790e-2, argmax 268/288, greedy 1/1
