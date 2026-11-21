@@ -39,6 +39,9 @@
 #define INK2G_MAX_EXTENT 1024
 // keys one attention tile holds (shared f64 scores)
 #define INK2G_ATTN_TILE 1024
+// keys the split fold stages at a time, and the widest head it stages
+#define INK2G_FOLD_TILE 32
+#define INK2G_FOLD_DIM 128
 #define INK2G_MAX_KERNEL 8
 
 namespace {
@@ -707,8 +710,14 @@ __global__ void __launch_bounds__(256) ink2g_mix_dot_kernel(Ink2gStates st, int 
     ss += v * v;
   }
   ss = ink2g_block_sum<T>(ss, sh);
-  const T inv = T(1.0) / sqrt(ss / (T)H + eps);
-  const T scale = T(1.0) / sqrt((T)H);
+  // one thread forms the two factors (an f64 sqrt and divide in every thread cost more than the dot)
+  __shared__ T fac[2];
+  if (threadIdx.x == 0) {
+    fac[0] = T(1.0) / sqrt(ss / (T)H + eps);
+    fac[1] = T(1.0) / sqrt((T)H);
+  }
+  __syncthreads();
+  const T inv = fac[0], scale = fac[1];
   const float* qr = queries + (int64_t)q * H;
   INK2G_ACC d = T(0.0);
   for (int j = threadIdx.x; j < H; j += blockDim.x) d += (T)qr[j] * ((T)row[j] * inv);
@@ -877,8 +886,10 @@ __global__ void ink2g_attn_kernel(const float* __restrict__ q, const float* __re
     bias[d] = b;
   }
   if (t < dim) qs[t] = q[((int64_t)r * heads + h) * dim + t];
+  __shared__ T scl;
+  if (t == 0) scl = T(1.0) / sqrt((T)dim);
   __syncthreads();
-  const T scale = T(1.0) / sqrt((T)dim);
+  const T scale = scl;
   const T sk = (T)sink[(int64_t)r * heads + h];
   T top = -INFINITY;
   for (int64_t d = t; d < nkeys; d += nt)
@@ -937,9 +948,11 @@ __global__ void __launch_bounds__(INK2G_SC_KEYS) ink2g_attn_scores_kernel(
     bias[t] = b;
   }
   for (int i = t; i < dim; i += blockDim.x) qs[i] = q[(int64_t)h * dim + i];
+  __shared__ T scl;
+  if (t == 0) scl = T(1.0) / sqrt((T)dim);
   __syncthreads();
   if (d >= nkeys) return;
-  const T scale = T(1.0) / sqrt((T)dim);
+  const T scale = scl;
   scr[(int64_t)h * ld + d] = ink2g_attn_score<T, KC, KV>(qs, kc, cap, pos, d, kvw, kvh, dim, extent, mask_beyond, bias - d0, scale);
 }
 
@@ -969,12 +982,26 @@ __global__ void ink2g_attn_fold_kernel(const float* __restrict__ sink, const KV*
     den += e;
   }
   den = ink2g_block_sum<T>(den, sh) + exp(sk - top);  // its barriers order the stores above
-  if (t < dim) {
-    INK2G_ACC a = T(0.0);
-    for (int64_t d = nkeys - 1; d >= 0; d--)  // oldest key first, as the reference sums
-      a += (T)sc[d] * (T)ink2g_kv_get(vc, ((pos - d) % cap) * kvw + kvh * dim + t);
-    out[(int64_t)h * dim + t] = (float)(a / den);
+  // The weighted sum, oldest key first as the reference sums. The block stages a tile of keys (their
+  // weights and value rows) at a time with every thread loading, so the chain of each output reads
+  // shared memory instead of waiting on one global load per key.
+  __shared__ double tw[INK2G_FOLD_TILE];
+  __shared__ float tv[INK2G_FOLD_TILE * INK2G_FOLD_DIM];
+  INK2G_ACC a = T(0.0);
+  for (int64_t hi = nkeys - 1; hi >= 0; hi -= INK2G_FOLD_TILE) {
+    const int nt_keys = (int)(hi + 1 < INK2G_FOLD_TILE ? hi + 1 : INK2G_FOLD_TILE);
+    // tile slot i holds key d = hi - i
+    for (int i = t; i < nt_keys; i += nt) tw[i] = sc[hi - i];
+    for (int e = t; e < nt_keys * dim; e += nt) {
+      const int i = e / dim, c = e - i * dim;
+      tv[i * INK2G_FOLD_DIM + c] = ink2g_kv_get(vc, ((pos - (hi - i)) % cap) * kvw + kvh * dim + c);
+    }
+    __syncthreads();
+    if (t < dim)
+      for (int i = 0; i < nt_keys; i++) a += (T)tw[i] * (T)tv[i * INK2G_FOLD_DIM + t];
+    __syncthreads();
   }
+  if (t < dim) out[(int64_t)h * dim + t] = (float)(a / den);
 }
 
 // y *= sigmoid(g)
@@ -989,6 +1016,17 @@ __global__ void ink2g_gate_kernel(float* __restrict__ y, const float* __restrict
 // lower expert (tie_high: the gate's red arm, to the higher), in rank order; weight =
 // score / (sum of the selected scores) * scale. margin (nullable) = key of rank top_k - 1 minus key
 // of rank top_k.
+// An order-preserving integer image of a finite value: a < b exactly when ord(a) < ord(b), equal values
+// (-0 and +0 too) give equal images. The router ranks on it: an f64 compare is as slow as an f64 fma here.
+__device__ __forceinline__ unsigned long long ink2g_ord(double v) {
+  unsigned long long b = (unsigned long long)__double_as_longlong(v == 0.0 ? 0.0 : v);
+  return (b >> 63) ? ~b : b | 0x8000000000000000ull;
+}
+__device__ __forceinline__ unsigned long long ink2g_ord(float v) {
+  uint32_t b = __float_as_uint(v == 0.0f ? 0.0f : v);
+  return (b >> 31) ? (unsigned long long)~b : (unsigned long long)(b | 0x80000000u);
+}
+
 template <typename T, bool KC>
 __global__ void ink2g_route_kernel(const float* __restrict__ logits, const float* __restrict__ bias, T scale,
                                    int top_k, int tie_high, uint32_t* __restrict__ ids, float* __restrict__ wts,
@@ -997,20 +1035,23 @@ __global__ void ink2g_route_kernel(const float* __restrict__ logits, const float
   __shared__ T score[1024];
   __shared__ T sel[64];
   __shared__ T edge[2];
+  __shared__ unsigned long long kord[1024];
   const int r = blockIdx.x;
   for (int i = threadIdx.x; i < E; i += blockDim.x) {
     const T s = T(1.0) / (T(1.0) + exp(-(T)logits[(int64_t)r * E + i]));
     score[i] = s;
     key[i] = bias ? s + (T)bias[i] : s;
+    kord[i] = ink2g_ord(key[i]);
   }
   __syncthreads();
   for (int i = threadIdx.x; i < E; i += blockDim.x) {
     int rank = 0;
     const T ki = key[i];
+    const unsigned long long oi = kord[i];
     for (int j = 0; j < E; j++) {
-      const T kj = key[j];
+      const unsigned long long oj = kord[j];
       const bool first = tie_high ? j > i : j < i;
-      rank += (kj > ki || (kj == ki && first)) ? 1 : 0;
+      rank += (oj > oi || (oj == oi && first)) ? 1 : 0;
     }
     if (rank < top_k) {
       ids[(int64_t)r * top_k + rank] = (uint32_t)i;
@@ -1385,7 +1426,7 @@ __global__ void __launch_bounds__(INK2G_GV_THREADS) ink2g_gemv_nvfp4_jobs_kernel
   const int groups = k >> 4, pstride = groups + 1;
   float* xs = ink2g_gj4;
   float* ps = ink2g_gj4 + k;
-  float* sv = ps + INK2G_GV_ROWS * pstride;
+  uint8_t* sv = reinterpret_cast<uint8_t*>(ps + INK2G_GV_ROWS * pstride);
   int j = 0;
   while (j + 1 < jobs.count && (int)blockIdx.x >= jobs.first[j + 1]) j++;
   const int r0 = ((int)blockIdx.x - jobs.first[j]) * INK2G_GV_ROWS;
@@ -1427,18 +1468,19 @@ __global__ void __launch_bounds__(INK2G_GV_THREADS) ink2g_gemv_nvfp4_jobs_kernel
           part = fmaf(xg[i], ink2g_e2m1((i & 1) ? (uint8_t)(b >> 4) : (uint8_t)b), part);
         }
         ps[rl * pstride + g] = part;
-        sv[rl * pstride + g] = ink2g_e4m3(sb[q][it]);
+        sv[rl * pstride + g] = sb[q][it];
       }
     }
   }
-  __syncthreads();
-  if (threadIdx.x < INK2G_GV_ROWS) {
-    const int row = r0 + threadIdx.x;
+  // each warp folds its own rows (lane q folds row q of the warp): no block-wide wait
+  __syncwarp();
+  if (lane < RPW) {
+    const int rl = warp + lane * (INK2G_GV_THREADS / 32), row = r0 + rl;
     if (row < n) {
-      const float* p = ps + threadIdx.x * pstride;
-      const float* sp = sv + threadIdx.x * pstride;
+      const float* p = ps + rl * pstride;
+      const uint8_t* sp = sv + rl * pstride;
       float acc = 0.0f;
-      for (int g = 0; g < groups; g++) acc = fmaf(p[g], sp[g], acc);
+      for (int g = 0; g < groups; g++) acc = fmaf(p[g], ink2g_e4m3(sp[g]), acc);
       jobs.y[j][row] = (float)((double)acc * (double)jobs.amax[j][0] / (double)jobs.denom[j]);
     }
   }
@@ -1468,7 +1510,7 @@ int ink2g_gemv_nvfp4_jobs(const float* const* xs, const void* const* ws, const v
   jobs.first[INK2G_JOBS] = blocks;
   jobs.count = count;
   const int iters = (k / 16 + 31) / 32;
-  const size_t smem = (size_t)k * 4 + (size_t)INK2G_GV_ROWS * (k / 16 + 1) * 8;
+  const size_t smem = (size_t)k * 4 + (size_t)INK2G_GV_ROWS * (k / 16 + 1) * 5;
   auto go = [&](auto kern) -> int {
     if (smem > 48 * 1024) {
       const cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
@@ -1486,6 +1528,127 @@ int ink2g_gemv_nvfp4_jobs(const float* const* xs, const void* const* ws, const v
     case 6: return go(ink2g_gemv_nvfp4_jobs_kernel<6>);
     case 7: return go(ink2g_gemv_nvfp4_jobs_kernel<7>);
     default: return go(ink2g_gemv_nvfp4_jobs_kernel<8>);
+  }
+}
+
+
+// ---- attention arm 4: f32 tiles over keys, f64 merges (a flash-decode split) ---------------------
+// Each block takes one tile of keys of a (row, head): the scores q . k / sqrt(dim) + bias and the
+// tile's max, exp and value sum in f32 (oldest key first). The merge combines the tiles of a row in
+// f64: M = max(sink, tile maxima), L = exp(sink - M) + sum_t exp(m_t - M) l_t, out = sum_t exp(m_t - M)
+// o_t / L, tiles oldest first. A different numeric program from arms 0..3: measured by KL.
+#define INK2G_T4_MAX_TILE 1024
+#define INK2G_T4_MAX_TILES 512
+template <typename KV>
+__global__ void __launch_bounds__(256) ink2g_attn_t4_kernel(
+    const float* __restrict__ q, const float* __restrict__ rel, const float* __restrict__ table,
+    const KV* __restrict__ kc, const KV* __restrict__ vc, int64_t cap, const int64_t* __restrict__ posd,
+    int64_t pos0, int window, int extent, int mask_beyond, double* __restrict__ scr, int64_t ld, int heads,
+    int kv_heads, int dim, int rank, int r0, int tile) {
+  __shared__ float sh[8];
+  __shared__ float qs[INK2G_FOLD_DIM];
+  __shared__ float sb[INK2G_T4_MAX_TILE];
+  __shared__ float sp[INK2G_T4_MAX_TILE];
+  __shared__ float tv[INK2G_FOLD_TILE * INK2G_FOLD_DIM];
+  __shared__ float scl;
+  const int ti = blockIdx.x, h = blockIdx.y, t = threadIdx.x, nt = blockDim.x, r = r0 + (int)blockIdx.z;
+  const int64_t pos = (posd ? *posd : pos0) + r;
+  const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
+  const int64_t d0 = (int64_t)ti * tile;
+  if (d0 >= nkeys) return;
+  const int cnt = (int)(nkeys - d0 < tile ? nkeys - d0 : tile);
+  const int kvh = h / (heads / kv_heads);
+  const int kvw = kv_heads * dim;
+  const float* relr = rel + ((int64_t)r * heads + h) * rank;
+  double* part = scr + ((int64_t)blockIdx.z * heads + h) * ld + (int64_t)ti * (dim + 2);
+  for (int i = t; i < dim; i += nt) qs[i] = q[((int64_t)r * heads + h) * dim + i];
+  if (t == 0) scl = 1.0f / sqrtf((float)dim);
+  for (int i = t; i < cnt; i += nt) {
+    const int64_t d = d0 + i;
+    if (d < extent) {
+      float b = 0.0f;
+      for (int k = 0; k < rank; k++) b += relr[k] * table[(int64_t)k * extent + d];
+      sb[i] = b;
+    }
+  }
+  __syncthreads();
+  float mx = -INFINITY;
+  for (int i = t; i < cnt; i += nt) {
+    const float s = ink2g_attn_score<float, false, KV>(qs, kc, cap, pos, d0 + i, kvw, kvh, dim, extent, mask_beyond,
+                                                       sb - d0, scl);
+    sp[i] = s;
+    mx = fmaxf(mx, s);
+  }
+  const float mt = ink2g_block_max<float>(mx, sh);
+  if (mt == -INFINITY) {
+    if (t == 0) {
+      part[0] = -INFINITY;
+      part[1] = 0.0;
+    }
+    for (int c = t; c < dim; c += nt) part[2 + c] = 0.0;
+    return;
+  }
+  float ls = 0.0f;
+  for (int i = t; i < cnt; i += nt) {
+    const float e = expf(sp[i] - mt);
+    sp[i] = e;
+    ls += e;
+  }
+  const float l = ink2g_block_sum<float>(ls, sh);  // its barriers order the stores above
+  float a = 0.0f;
+  for (int hi = cnt - 1; hi >= 0; hi -= INK2G_FOLD_TILE) {
+    const int n = hi + 1 < INK2G_FOLD_TILE ? hi + 1 : INK2G_FOLD_TILE;
+    for (int e = t; e < n * dim; e += nt) {
+      const int j = e / dim, c = e - j * dim;
+      tv[j * INK2G_FOLD_DIM + c] = ink2g_kv_get(vc, ((pos - (d0 + hi - j)) % cap) * kvw + kvh * dim + c);
+    }
+    __syncthreads();
+    if (t < dim)
+      for (int j = 0; j < n; j++) a = fmaf(sp[hi - j], tv[j * INK2G_FOLD_DIM + t], a);
+    __syncthreads();
+  }
+  if (t == 0) {
+    part[0] = (double)mt;
+    part[1] = (double)l;
+  }
+  if (t < dim) part[2 + t] = (double)a;
+}
+
+__global__ void __launch_bounds__(128) ink2g_attn_t4_merge_kernel(const float* __restrict__ sink,
+                                                                  const int64_t* __restrict__ posd, int64_t pos0,
+                                                                  int window, const double* __restrict__ scr,
+                                                                  int64_t ld, float* __restrict__ out, int heads,
+                                                                  int dim, int r0, int tile) {
+  __shared__ double w[INK2G_T4_MAX_TILES];
+  __shared__ double ms, lsum;
+  const int h = blockIdx.y, t = threadIdx.x, nt = blockDim.x, r = r0 + (int)blockIdx.x;
+  const int64_t pos = (posd ? *posd : pos0) + r;
+  const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
+  const int ntiles = (int)((nkeys + tile - 1) / tile);
+  const double* base = scr + ((int64_t)blockIdx.x * heads + h) * ld;
+  const double sk = (double)sink[(int64_t)r * heads + h];
+  if (t == 0) {
+    double m = sk;
+    for (int i = 0; i < ntiles; i++) m = fmax(m, base[(int64_t)i * (dim + 2)]);
+    ms = m;
+  }
+  __syncthreads();
+  const double m = ms;
+  for (int i = t; i < ntiles; i += nt) {
+    const double mi = base[(int64_t)i * (dim + 2)];
+    w[i] = mi == -INFINITY ? 0.0 : exp(mi - m);
+  }
+  __syncthreads();
+  if (t == 0) {
+    double l = exp(sk - m);
+    for (int i = ntiles - 1; i >= 0; i--) l += w[i] * base[(int64_t)i * (dim + 2) + 1];
+    lsum = l;
+  }
+  __syncthreads();
+  if (t < dim) {
+    double o = 0.0;
+    for (int i = ntiles - 1; i >= 0; i--) o += w[i] * base[(int64_t)i * (dim + 2) + 2 + t];
+    out[((int64_t)r * heads + h) * dim + t] = (float)(o / lsum);
   }
 }
 
@@ -1508,8 +1671,24 @@ static int ink2g_attn_any(const float* q, const float* rel, const float* table, 
     // the split form, scr_rows rows a launch pair (scratch [scr_rows][heads][scr_ld]); the most keys a
     // row can attend: a replayed step reads its position on the device
     const int64_t most = window > 0 ? (int64_t)window : (R == 1 ? cap : pos0 + R);
-    if (scr_ld < most || dim > 256) return 45025;
+    if (scr_ld < most || dim > INK2G_FOLD_DIM) return 45025;
     const int group = R == 1 ? 1 : scr_rows;
+    if (prec == 4) {
+      // tiles of 256 keys, wider when a row would need more than INK2G_T4_MAX_TILES of them
+      const int64_t tile = 256 * ((most + 256 * INK2G_T4_MAX_TILES - 1) / (256 * INK2G_T4_MAX_TILES));
+      if (tile > INK2G_T4_MAX_TILE || scr_ld < ((most + tile - 1) / tile) * (dim + 2)) return 45026;
+      for (int r0 = 0; r0 < R; r0 += group) {
+        const int n = R - r0 < group ? R - r0 : group;
+        const int64_t keys = R == 1 ? most : (window > 0 ? most : pos0 + r0 + n);
+        ink2g_attn_t4_kernel<KV><<<dim3((unsigned)((keys + tile - 1) / tile), heads, n), 256, 0, (cudaStream_t)stream>>>(
+            q, rel, table, kc, vc, cap, posd, pos0, window, extent, mask_beyond, scr, scr_ld, heads, kv_heads, dim,
+            rank, r0, (int)tile);
+        ink2g_attn_t4_merge_kernel<<<dim3(n, heads), 128, 0, (cudaStream_t)stream>>>(sink, posd, pos0, window, scr,
+                                                                                     scr_ld, out, heads, dim, r0,
+                                                                                     (int)tile);
+      }
+      return ink2g_rc();
+    }
     for (int r0 = 0; r0 < R; r0 += group) {
       const int n = R - r0 < group ? R - r0 : group;
       // the keys of the group's last row
@@ -1768,11 +1947,11 @@ int memra_ink2g_conv(int mode, const float* x, const float* state_in, float* sta
   if (mode == 1 && (!dyn || groups <= 0 || C % groups != 0)) return 45019;
   if (x == out) return 45020;
   switch (prec) {
-    case 1: ink2g_conv_kernel<float, false><<<(C + 255) / 256, 256, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
+    case 1: ink2g_conv_kernel<float, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
                                                                      add, out, R, C, K); break;
-    case 2: ink2g_conv_kernel<float, true><<<(C + 255) / 256, 256, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
+    case 2: ink2g_conv_kernel<float, true><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
                                                                      add, out, R, C, K); break;
-    default: ink2g_conv_kernel<double, false><<<(C + 255) / 256, 256, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
+    default: ink2g_conv_kernel<double, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
                                                                      add, out, R, C, K); break;
   }
   return ink2g_rc();
