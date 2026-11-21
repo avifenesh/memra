@@ -1,0 +1,7 @@
+# kbench small: 200 launches back to back on one stream (us each)
+# before: radix select, after: k rounds of the block's best
+topk 16 of 512      13.65 -> 11.62
+topk 40 of 512      9.47 (radix, unchanged: k > 32)
+rms 3072            2.35
+add 3072            1.77 (the launch floor)
+# tried: every element's rank from all the keys, 4 a load: 25.66 us

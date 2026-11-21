@@ -16,6 +16,11 @@ extern "C" int memra_hy4r_gemm(const float* x, long ldx, long xbs, const void* w
 extern "C" int memra_hy4r_tile(const void* src, long rows, long rb, long src_ld, long src_bs, void* dst, long dst_bs,
                                int batch, void* stream);
 extern "C" long memra_hy4r_tile_bytes(long rows, long rb);
+extern "C" int memra_hy4r_topk(const float* vals, long ldv, int rows, int n, int k, int reverse_ties, int* out, long ldo,
+                               void* stream);
+extern "C" int memra_hy4r_rms(const float* x, long ldx, const float* w, float* y, long ldy, int rows, int d, float eps,
+                              void* stream);
+extern "C" int memra_hy4r_add(float* y, const float* a, const float* b, const float* bias, long n, int d, void* stream);
 extern "C" int memra_hy4r_attn(const float* q, const void* kv, const int* list, int ldl, const int* lens, const int* qpos,
                                int mode, int window, int ring, int base, int rows, int H, int C, float scale,
                                const float* sinks, float* po, float* pml, float* out, void* stream);
@@ -311,6 +316,32 @@ int main(int argc, char** argv) {
     CK(cudaFree(w));
     CK(cudaFree(sc));
     CK(cudaFree(s2));
+  }
+  // small kernels alone: the router's top-k (16 of 512), an RMS norm of 3,072, the launch floor
+  if (*only && strstr(only, "small")) {
+    float* v = dev_x(1, 512);
+    int* o;
+    CK(cudaMalloc(&o, 64 * 4));
+    float* xx = dev_x(1, 3072);
+    float* yy;
+    CK(cudaMalloc(&yy, 3072 * 4));
+    float* ww = dev_x(1, 3072);
+    auto warm = [&](const char* name, auto&& fn) {
+      for (int i = 0; i < 20; i++) fn();
+      CK(cudaStreamSynchronize(st));
+      CK(cudaEventRecord(e0, st));
+      for (int i = 0; i < 200; i++) fn();
+      CK(cudaEventRecord(e1, st));
+      CK(cudaEventSynchronize(e1));
+      float ms;
+      CK(cudaEventElapsedTime(&ms, e0, e1));
+      printf("%-44s %9.2f us each (200 back to back)\n", name, ms * 1e3 / 200);
+    };
+    warm("topk 16 of 512", [&] { memra_hy4r_topk(v, 512, 1, 512, 16, 0, o, 16, st); });
+    warm("topk 40 of 512 (radix)", [&] { memra_hy4r_topk(v, 512, 1, 512, 40, 0, o, 40, st); });
+    warm("rms 3072", [&] { memra_hy4r_rms(xx, 3072, ww, yy, 3072, 1, 3072, 1e-6f, st); });
+    warm("add 3072", [&] { memra_hy4r_add(yy, xx, ww, nullptr, 3072, 3072, st); });
+    return 0;
   }
   // F32 islands: router 512x3072, head 120832x3072 (BF16 weights)
   for (int which = 0; which < 2; which++) {

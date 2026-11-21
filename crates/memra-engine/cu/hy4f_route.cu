@@ -1535,10 +1535,97 @@ __global__ void __launch_bounds__(256) r_topk_kernel(const float* vals, long ldv
   }
 }
 
+// The same picks for a small k (up to TK_K of up to TK_N values): k rounds, each taking the best
+// live element under the order above (larger key; equal keys the lower index, or the higher
+// with `reverse_ties`), then the picks written in ascending index order.
+#define TK_K 32
+#define TK_N 1024
+struct RBest {
+  uint32_t key;
+  int idx;
+};
+static __device__ __forceinline__ bool r_better(uint32_t ka, int ia, uint32_t kb, int ib, int rev) {
+  return ka > kb || (ka == kb && (rev ? ia > ib : ia < ib));
+}
+__global__ void __launch_bounds__(256) r_topk_best_kernel(const float* vals, long ldv, int n, int k, int reverse_ties,
+                                                          int* out, long ldo) {
+  r_pdl_trigger();
+  r_pdl_wait();
+  __shared__ uint32_t wkey[8];
+  __shared__ int widx[8];
+  __shared__ int sel[TK_K];
+  const float* v = vals + (long)blockIdx.x * ldv;
+  int* o = out + (long)blockIdx.x * ldo;
+  const int tid = threadIdx.x, lane = tid & 31, warp = tid >> 5;
+  const int kk = k < n ? k : n;
+  if (kk <= 0) return;
+  // this thread's elements tid, tid + 256, ...; a taken or absent one has key 0 (below every
+  // value's key) and index -1
+  uint32_t key[TK_N / 256];
+  int live[TK_N / 256];
+#pragma unroll
+  for (int c = 0; c < TK_N / 256; c++) {
+    const int i = tid + c * 256;
+    live[c] = i < n;
+    key[c] = i < n ? r_key(v[i]) : 0u;
+  }
+  for (int round = 0; round < kk; round++) {
+    uint32_t bk = 0u;
+    int bi = -1;
+#pragma unroll
+    for (int c = 0; c < TK_N / 256; c++) {
+      const int i = tid + c * 256;
+      if (live[c] && (bi < 0 || r_better(key[c], i, bk, bi, reverse_ties))) {
+        bk = key[c];
+        bi = i;
+      }
+    }
+#pragma unroll
+    for (int off = 16; off > 0; off >>= 1) {
+      const uint32_t ok = __shfl_xor_sync(0xffffffffu, bk, off);
+      const int oi = __shfl_xor_sync(0xffffffffu, bi, off);
+      if (oi >= 0 && (bi < 0 || r_better(ok, oi, bk, bi, reverse_ties))) {
+        bk = ok;
+        bi = oi;
+      }
+    }
+    if (lane == 0) {
+      wkey[warp] = bk;
+      widx[warp] = bi;
+    }
+    __syncthreads();
+    bk = 0u;
+    bi = -1;
+#pragma unroll
+    for (int w2 = 0; w2 < 8; w2++) {
+      const uint32_t ok = wkey[w2];
+      const int oi = widx[w2];
+      if (oi >= 0 && (bi < 0 || r_better(ok, oi, bk, bi, reverse_ties))) {
+        bk = ok;
+        bi = oi;
+      }
+    }
+    if (tid == 0) sel[round] = bi;
+#pragma unroll
+    for (int c = 0; c < TK_N / 256; c++)
+      if (tid + c * 256 == bi) live[c] = 0;
+    __syncthreads();
+  }
+  if (tid < kk) {
+    const int mine = sel[tid];
+    int pos = 0;
+    for (int j = 0; j < kk; j++) pos += sel[j] < mine;
+    o[pos] = mine;
+  }
+}
+
 extern "C" int memra_hy4r_topk(const float* vals, long ldv, int rows, int n, int k, int reverse_ties, int* out, long ldo,
                                void* stream) {
   if (rows == 0) return 0;
-  r_launch(r_topk_kernel, rows, 256, 0, (cudaStream_t)stream, vals, ldv, n, k, reverse_ties, out, ldo);
+  if (k <= TK_K && n <= TK_N)
+    r_launch(r_topk_best_kernel, rows, 256, 0, (cudaStream_t)stream, vals, ldv, n, k, reverse_ties, out, ldo);
+  else
+    r_launch(r_topk_kernel, rows, 256, 0, (cudaStream_t)stream, vals, ldv, n, k, reverse_ties, out, ldo);
   return r_rc();
 }
 

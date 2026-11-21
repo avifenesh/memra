@@ -61,6 +61,7 @@ L2.
 | 12: the small kernels let their dependent launch before they wait | 16.94 [16.93-16.99] | 58.9 | 15.87 [15.84-15.88] | 62.9 | 102.7 | 319.2 |
 | 13: the hyper-connection mix writes the row's RMS norm; indexer chains side by side | 16.98 [16.96-16.99] | 58.7 | 15.92 [15.91-15.94] | 62.6 | 102.9 | 320.9 |
 | 14: a small-row stage loads its operands first; a BF16 stage is two tiles | 17.30 [17.30-17.31] | 57.7 | 16.17 [16.16-16.19] | 61.7 | 102.3 | 320.0 |
+| 15: the router's top-k as k rounds of the block's best | 17.37 [17.36-17.37] | 57.5 | 16.22 [16.20-16.23] | 61.5 | 102.6 | 320.0 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -250,6 +251,16 @@ unchanged (`kbench`: every case equal to the tiled kernel).
 `kbench.txt`: experts 108 -> 104 us, `qa` 33.5 -> 29.3 us and `kva` 30.6 -> 24.6 us with the
 two-tile stage, the BF16 latent projections 5 to 10% faster. Decode step 58.7 -> 57.7 ms on
 `chat`, 62.6 -> 61.7 ms on `long`; 3 of 3 tapes bit-equal.
+
+### 15. Top-k of a small k (`receipts/s15-topk/`)
+
+The router picks 16 of 512 with a radix select: four histogram passes, each with a serial scan
+of 256 bins, 13.7 us a launch. For up to 32 picks of up to 1,024 values `r_topk_best_kernel`
+takes the best live element k times (a thread's own elements, a warp reduction, the 8 warp
+results), under the same order (larger value; equal values the lower index, or the higher with
+reversed ties), and writes the picks in ascending index order: 11.6 us. Decode step 57.7 -> 57.5
+ms on `chat`, 61.7 -> 61.5 ms on `long`; 3 of 3 tapes bit-equal (the router's picks are in the
+tapes).
 
 Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct
