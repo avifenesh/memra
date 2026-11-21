@@ -33,6 +33,8 @@ nvidia-smi --query-gpu=timestamp,pstate,utilization.gpu,memory.used,power.draw,t
 TEL=$!
 trap 'kill $TEL 2>/dev/null' EXIT
 step=${1:-all}
+log "head $(git -C "$W" rev-parse HEAD) dirty=$(git -C "$W" status --porcelain -- crates | wc -l)"
+sha256sum "$BIN/ink2-gpu" "$BIN/ink2-gpu-gate" >> "$O/binaries.sha256"
 run() { local name=$1; shift; log "START $name"; "$@" > "$O/$name.log" 2>&1; local rc=$?; log "END $name rc=$rc"; return 0; }
 
 if [ "$step" = all ] || [ "$step" = cells ]; then
