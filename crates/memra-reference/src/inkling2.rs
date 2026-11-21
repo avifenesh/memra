@@ -22,13 +22,16 @@
 
 pub mod ops;
 
+use std::collections::BTreeMap;
+
 use memra_gguf::model_packs::inkling2 as pack;
+use memra_gguf::model_packs::inkling2::nvfp4_rig as rig;
 use memra_gguf::model_plan::{
     ActivationPlan, AttentionInputs, AttentionPlan, BeyondExtent, BlockAttentionPlan, ClipScale,
-    ExpertActivationMode, ExpertWeightFormat, Inkling2Plan, L2ClipPlan, LayerPlan, LogitsTransform,
-    LoopMessageTarget, MlpPlan, ModelPlan, MoeMlpPlan, NormKind, NormPlan, OutputGatePlan,
-    QuerySinkPlan, RelativeBiasAttentionPlan, ResidualTopology, RouterPlan, ShortConvPlan,
-    ShortConvTaps, StatePlan, ValueNorm, WeightTransform,
+    ExpertActivationMode, ExpertWeightFormat, Inkling2Plan, Inkling2WeightClass, KvCacheFormat,
+    L2ClipPlan, LayerPlan, LogitsTransform, LoopMessageTarget, MlpPlan, ModelPlan, MoeMlpPlan,
+    NormKind, NormPlan, OutputGatePlan, QuerySinkPlan, RelativeBiasAttentionPlan, ResidualTopology,
+    RouterPlan, ShortConvPlan, ShortConvTaps, StatePlan, ValueNorm, WeightTransform,
 };
 use memra_gguf::quant_groups::{ActivationAmax, ActivationQuant, ActivationScale, ScaleSelection};
 use memra_gguf::tensor_contract::TensorId;
@@ -270,6 +273,8 @@ struct Session<'a> {
     plan: &'a ModelPlan,
     program: &'a Inkling2Plan,
     weights: &'a ReferenceWeights,
+    /// `nvfp4-rig`: the minted dense tensors, dequantized (see [`minted_dense`]).
+    dense: &'a BTreeMap<String, Vec<f32>>,
     /// One (gate/up, down) pair per physical layer.
     banks: Vec<(ExpertBank, ExpertBank)>,
     slots: Vec<SlotState>,
@@ -353,9 +358,87 @@ fn load_bank(
     Ok(bank)
 }
 
+/// The `nvfp4-rig` minted dense tensors (attention projections, the output projection) of
+/// `weights`, dequantized: each element is `fl32(code * fl32(s * t))` with `t` the tensor's
+/// `scale_2`, the values the class's KL study ran. Expert banks stay packed (the declared
+/// expert program reads them). Empty for `shipped`.
+pub fn minted_dense(
+    plan: &ModelPlan,
+    weights: &ReferenceWeights,
+) -> Result<BTreeMap<String, Vec<f32>>, ReferenceError> {
+    let program = program(plan)?;
+    let mut out = BTreeMap::new();
+    let expected = program.numerics.weight_class == Inkling2WeightClass::Nvfp4Rig;
+    if expected == program.numerics.minted.is_empty() {
+        return Err(invalid(
+            None,
+            "a plan reads minted tensors exactly when its weight class is nvfp4-rig",
+        ));
+    }
+    for name in &program.numerics.minted {
+        if name.contains(".mlp.experts.") {
+            continue;
+        }
+        let id = tensor_id(name);
+        let shape = weights
+            .get(&id)
+            .ok_or_else(|| ReferenceError::MissingTensor(id.clone()))?
+            .shape
+            .clone();
+        let [rows, half] = shape[..] else {
+            return Err(invalid(
+                None,
+                "a minted dense tensor is a matrix of code bytes",
+            ));
+        };
+        let k = half * 2;
+        if !k.is_multiple_of(16) {
+            return Err(invalid(None, "a minted row is whole blocks of 16"));
+        }
+        let codes = bytes(weights, name, &[rows, half])?;
+        let scales = bytes(weights, &format!("{name}_scale"), &[rows, k / 16])?;
+        let t = tensor(weights, &tensor_id(&format!("{name}_scale_2")), &[])?[0];
+        if !(t.is_finite() && t > 0.0) {
+            return Err(invalid(None, "a minted tensor's scale_2 is positive"));
+        }
+        if scales.iter().any(|s| *s & 0x7f == 0x7f) {
+            return Err(invalid(None, "a minted tensor holds an e4m3 NaN scale"));
+        }
+        out.insert(name.clone(), rig::dequant_rows(&codes, &scales, k, t));
+    }
+    Ok(out)
+}
+
+/// One key or value element as a unit-scale e4m3 cache stores it: the f32 value rounded to the
+/// nearest e4m3, ties to even, saturating at 448 (`KvCacheFormat::E4m3Unit`).
+pub fn e4m3_unit(x: f64) -> f64 {
+    let f = x as f32;
+    let v = rig::e4m3_scale_value(rig::e4m3_rne_index(f.abs().min(448.0)));
+    f64::from(v.copysign(f))
+}
+
+/// Merges a minted overlay image into `weights`: every overlay tensor replaces the base tensor of
+/// its name (and the bank's old planes, which the overlay names the same).
+pub fn merge_overlay(
+    weights: &mut ReferenceWeights,
+    overlay_image: &[u8],
+) -> Result<(), ReferenceError> {
+    for (id, tensor) in weights_from_safetensors(overlay_image)? {
+        weights.insert(id, tensor);
+    }
+    Ok(())
+}
+
 impl<'a> Session<'a> {
-    fn new(plan: &'a ModelPlan, weights: &'a ReferenceWeights) -> Result<Self, ReferenceError> {
+    fn new(
+        plan: &'a ModelPlan,
+        weights: &'a ReferenceWeights,
+        dense: &'a BTreeMap<String, Vec<f32>>,
+    ) -> Result<Self, ReferenceError> {
         let program = program(plan)?;
+        if program.numerics.kv.len() != plan.layers.len() {
+            return Err(invalid(None, "one KV cache format per slot"));
+        }
         if plan.embedding_scale != 1.0 {
             return Err(unsupported(None, "a scaled embedding"));
         }
@@ -466,6 +549,7 @@ impl<'a> Session<'a> {
             plan,
             program,
             weights,
+            dense,
             banks,
             slots: vec![SlotState::default(); plan.layers.len()],
             position: 0,
@@ -475,6 +559,16 @@ impl<'a> Session<'a> {
     }
 
     fn tensor(&self, name: &str, shape: &[usize]) -> Result<&'a [f32], ReferenceError> {
+        if let Some(values) = self.dense.get(name) {
+            if values.len() != shape.iter().product::<usize>() {
+                return Err(ReferenceError::TensorShape {
+                    id: Some(tensor_id(name)),
+                    expected: shape.to_vec(),
+                    actual_elements: values.len(),
+                });
+            }
+            return Ok(values);
+        }
         tensor(self.weights, &tensor_id(name), shape)
     }
 
@@ -865,13 +959,17 @@ impl<'a> Session<'a> {
                 &attention.value_conv,
                 xv,
             )?;
+            let fp8 = self.program.numerics.kv[slot as usize] == KvCacheFormat::E4m3Unit;
+            let cache = |x: f64| if fp8 { e4m3_unit(x) } else { x };
             let state = &mut self.slots[slot as usize];
             state.positions.push(position);
-            state.keys.extend(key);
+            state.keys.extend(key.into_iter().map(cache));
             for head in value.chunks_exact(dim) {
-                state
-                    .values
-                    .extend(ops::rms_norm(head, None, value_epsilon));
+                state.values.extend(
+                    ops::rms_norm(head, None, value_epsilon)
+                        .into_iter()
+                        .map(cache),
+                );
             }
         }
 
@@ -1193,7 +1291,8 @@ pub fn execute_schedule(
         ));
     }
     ends.extend(prefill + 1..=token_ids.len());
-    let mut session = Session::new(plan, weights)?;
+    let dense = minted_dense(plan, weights)?;
+    let mut session = Session::new(plan, weights, &dense)?;
     let mut logits = Vec::new();
     let mut layer_hidden = vec![Vec::new(); plan.layers.len()];
     let mut start = 0;
@@ -1332,6 +1431,37 @@ fn tiny_fixture(
     })
 }
 
+/// The tiny overlay: [`TINY_CHECKPOINT`]'s `nvfp4-rig` tensors minted by the class's quantizer
+/// (the attention outside the loop core, the MXFP8 banks of layers 6-7, the output projection).
+pub fn tiny_overlay() -> Result<Vec<u8>, ReferenceError> {
+    let bad = |_| invalid(None, "the tiny checkpoint mints its nvfp4-rig overlay");
+    let config = pack::tiny_model_config().map_err(|_| invalid(None, "the tiny config parses"))?;
+    let ink = config
+        .inkling2
+        .as_ref()
+        .ok_or(invalid(None, "the tiny config is an inkling2 config"))?;
+    let tensors = rig::image_tensors(TINY_CHECKPOINT).map_err(bad)?;
+    let get = |name: &str| {
+        tensors
+            .get(name)
+            .map(|(d, s, b)| (d.clone(), s.clone(), *b))
+    };
+    rig::mint_overlay_image(&get, ink).map_err(bad)
+}
+
+/// The `nvfp4-rig` variant's fixture: the tiny checkpoint with its minted overlay merged, as
+/// one prefill chunk. The checkpoint image carries both files, so an external oracle reads the
+/// same overlay bytes.
+fn tiny_rig_fixture() -> Result<ReferenceFixture, ReferenceError> {
+    let overlay = tiny_overlay()?;
+    let mut fixture = tiny_fixture(&[], None, TINY_DECLARED_GATE)?;
+    merge_overlay(&mut fixture.weights, &overlay)?;
+    fixture
+        .checkpoint_files
+        .push((rig::OVERLAY_FILE.into(), overlay));
+    Ok(fixture)
+}
+
 /// The tiny gate's main fixture: [`TINY_CHECKPOINT`] and [`TINY_TOKENS`] as one prefill chunk,
 /// with the checkpoint image an external oracle loads to run the source program on the same
 /// bytes.
@@ -1373,6 +1503,15 @@ pub fn tiny_variants(plan: &ModelPlan) -> Result<Vec<crate::TinyVariant>, Refere
             plan: pack::tiny_declared_plan()
                 .map_err(|_| invalid(None, "the inkling2 tiny config compiles its default plan"))?,
             fixture: tiny_fixture(&[], None, TINY_DECLARED_GATE)?,
+        },
+        crate::TinyVariant {
+            name: "nvfp4-rig",
+            plan: pack::tiny_nvfp4_rig_plan(&vec![
+                ExpertActivationMode::Declared;
+                program(plan)?.numerics.experts.len()
+            ])
+            .map_err(|_| invalid(None, "the inkling2 tiny config compiles its nvfp4-rig plan"))?,
+            fixture: tiny_rig_fixture()?,
         },
     ])
 }

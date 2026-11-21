@@ -19,9 +19,9 @@ pub use inkling2::{
     AttentionInputs, BeyondExtent, BlockAttentionPlan, ClipScale, DenseNumericsPlan,
     DenseTensorClass, DrafterHead, DrafterTap, ExpertActivationMode, ExpertNumericsPlan,
     ExpertWeightFormat, Inkling2DrafterPlan, Inkling2NumericClass, Inkling2Numerics, Inkling2Plan,
-    L2ClipPlan, LogPositionScalePlan, LoopMessageTarget, LoopPlan, LoopSlotPlan, OutputGatePlan,
-    QuerySinkPlan, RelativeBiasAttentionPlan, RelativeBiasPlan, RelativeBiasStatePlan,
-    ShortConvPlan, ShortConvTaps,
+    Inkling2WeightClass, KvCacheFormat, L2ClipPlan, LogPositionScalePlan, LoopMessageTarget,
+    LoopPlan, LoopSlotPlan, OutputGatePlan, QuerySinkPlan, RelativeBiasAttentionPlan,
+    RelativeBiasPlan, RelativeBiasStatePlan, ShortConvPlan, ShortConvTaps,
 };
 use speech::WhisperPlan;
 
