@@ -144,7 +144,9 @@ class Eval:
         o = self.r(torch.einsum("hbn,nhd->bhd", p, vv).reshape(B, nh * d))
         return self.r(o @ self.L(i, "self_attn.o_proj.weight").T)
 
-    def propose(self, anchor, feature_taps, k=7):
+    def propose(self, anchor, feature_taps, k=7, forced=None, keep=False):
+        """Greedy proposals (the next one conditions on the last), or on `forced`; with `keep`
+        also every step's softcapped logits [k, V]."""
         c = self.c
         B, r = c["rows"], c["rank"]
         P = len(self.ctx_k[0])
@@ -173,6 +175,7 @@ class Eval:
         state = torch.zeros(r, dtype=self.dt)
         prev = anchor
         out = []
+        kept = []
         for i in range(k):
             raw = ctx[i] + torch.cat([state, self.w["markov_head.markov_w1.weight"][prev]]) @ W[:, :2 * r].T
             if self.arm == "bf16pts":
@@ -191,8 +194,10 @@ class Eval:
                 logits = c["cap"] * torch.tanh((base[i] + bias) / c["cap"])
             tok = int(torch.argmax(logits))
             out.append(tok)
-            prev = tok
-        return out, logits
+            if keep:
+                kept.append(logits)
+            prev = forced[i] if forced is not None else tok
+        return out, (torch.stack(kept) if keep else logits)
 
 
 def load_drafter(path):
