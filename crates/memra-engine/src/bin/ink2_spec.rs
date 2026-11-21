@@ -12,10 +12,11 @@
 //!   --sample T     probabilistic drafting at temperature T (draft samples, ratio test)
 //!   --crosscheck   the first prompt's first block against the f64 reference drafter on CPU
 //!   --red-no-restore  the gate's red arm: a partial accept keeps the rejected rows' history
+//!   --red-tap-slot I:S  red arm: drafter tap I reads the input of slot S (the plan's: 5, 29, 47)
 
 use memra_engine::inkling2_dspark::{CkptDraft, DraftGpu, Shared};
 use memra_engine::inkling2_gpu::{Ckpt, Dev, Head, Route};
-use memra_engine::inkling2_spec::{Sampling, generate_arm, plain_greedy};
+use memra_engine::inkling2_spec::{Sampling, SpecArms, generate_arm, plain_greedy, tap_slots};
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_plan::{ExpertActivationMode, ModelPlan};
 use memra_reference::inkling2_drafter as refd;
@@ -40,6 +41,7 @@ struct Args {
     sample: Option<f64>,
     seed: u64,
     crosscheck: bool,
+    per_position: Option<PathBuf>,
     class: String,
     chunk: usize,
     context: usize,
@@ -47,6 +49,7 @@ struct Args {
     device: usize,
     limit: usize,
     red_no_restore: bool,
+    red_tap: Option<(usize, u32)>,
 }
 
 fn parse() -> Result<Args, String> {
@@ -78,7 +81,13 @@ fn parse() -> Result<Args, String> {
             "--sample" => a.sample = Some(val()?.parse().map_err(|e| format!("{e}"))?),
             "--seed" => a.seed = num(val()?)? as u64,
             "--crosscheck" => a.crosscheck = true,
+            "--per-position" => a.per_position = Some(PathBuf::from(val()?)),
             "--red-no-restore" => a.red_no_restore = true,
+            "--red-tap-slot" => {
+                let v = val()?;
+                let (i, s) = v.split_once(':').ok_or("--red-tap-slot INDEX:SLOT")?;
+                a.red_tap = Some((num(i.into())?, num(s.into())? as u32));
+            }
             "--class" => a.class = val()?,
             "--chunk" => a.chunk = num(val()?)?,
             "--context" => a.context = num(val()?)?,
@@ -175,6 +184,8 @@ fn run() -> Result<(), String> {
         a.context,
         a.chunk,
     )?;
+    drafter.charge(&mut route.account);
+    eprintln!("{}", route.account.describe());
     eprintln!(
         "loaded: route {:.3} GiB weights, drafter {:.3} GiB; class {}",
         route.weight_bytes as f64 / (1u64 << 30) as f64,
@@ -187,6 +198,27 @@ fn run() -> Result<(), String> {
     };
     if a.crosscheck {
         crosscheck(&mut route, &mut drafter, &aux.1, &ck, &g, &prompts[0].2)?;
+    }
+    if let Some(dir) = &a.per_position {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        for (id, kind, ids) in &prompts {
+            per_position(
+                &mut route,
+                &mut drafter,
+                &g,
+                dir,
+                id,
+                kind,
+                ids,
+                a.gen_tokens,
+                &stop,
+                SpecArms {
+                    skip_restore: false,
+                    tap_slot: a.red_tap,
+                },
+            )?;
+        }
+        return Ok(());
     }
     let mut failed = 0;
     for (id, kind, ids) in &prompts {
@@ -221,7 +253,10 @@ fn run() -> Result<(), String> {
                 k,
                 sampling,
                 &stop,
-                a.red_no_restore,
+                SpecArms {
+                    skip_restore: a.red_no_restore,
+                    tap_slot: a.red_tap,
+                },
             )?;
             let equal = plain.as_ref().map(|p| *p == toks);
             let first_diff = plain.as_ref().and_then(|p| {
@@ -263,6 +298,71 @@ fn run() -> Result<(), String> {
             "{failed} speculative runs differ from plain greedy decode"
         ));
     }
+    Ok(())
+}
+
+/// Teacher-forced proposals at every generated position: the plain greedy sequence of the
+/// prompt, run through the route once (rows independent of the chunking), each row committed to
+/// the drafter in order and, after row `P - 1`, seven proposals for the anchor `S[P]`. Writes
+/// `<id>.json` (sequence, route argmax per row, proposals per position) and `<id>.taps.f32`
+/// (`[positions, taps, hidden]` little-endian f32, the drafter's inputs) for the CPU arms.
+#[allow(clippy::too_many_arguments)] // allow: one request's whole configuration
+fn per_position(
+    route: &mut Route,
+    drafter: &mut DraftGpu,
+    g: &refd::DraftGeometry,
+    dir: &std::path::Path,
+    id: &str,
+    kind: &str,
+    prompt: &[u32],
+    n: usize,
+    stop: &[u32],
+    arms: SpecArms,
+) -> Result<(), String> {
+    let generated = plain_greedy(route, prompt, n, stop)?;
+    let mut seq = prompt.to_vec();
+    seq.extend_from_slice(&generated);
+    let slots = tap_slots(route, arms)?;
+    route.set_capture(&slots)?;
+    route.reset()?;
+    drafter.reset();
+    let shared = Shared::of_route(route);
+    let (h, nt, chunk) = (g.hidden, g.taps, route.chunk);
+    let k = g.rows - 1;
+    let mut argmax = Vec::new();
+    let mut props: Vec<Vec<u32>> = Vec::new();
+    let mut taps_out: Vec<u8> = Vec::with_capacity(seq.len() * nt * h * 4);
+    let mut at = 0;
+    for part in seq.chunks(chunk) {
+        let o = route.forward(part, Head::AllArgmax, None)?;
+        argmax.extend(o.argmax);
+        let cap = route.captured().ok_or("capture")?;
+        let all = route.dev.down(cap, 0, nt * chunk * h)?;
+        for r in 0..part.len() {
+            for t in 0..nt {
+                for v in &all[(t * chunk + r) * h..(t * chunk + r + 1) * h] {
+                    taps_out.extend_from_slice(&v.to_le_bytes());
+                }
+            }
+            drafter.commit(&route.dev, cap, chunk, r, 1)?;
+            let p = at + r + 1;
+            if p >= prompt.len() && p < seq.len() {
+                props.push(drafter.propose(&route.dev, shared, seq[p], k, None)?);
+            }
+        }
+        at += part.len();
+    }
+    route.set_capture(&[])?;
+    std::fs::write(dir.join(format!("{id}.taps.f32")), &taps_out).map_err(|e| e.to_string())?;
+    let json = serde_json::json!({"id": id, "kind": kind, "prompt_tokens": prompt.len(), "seq": seq,
+        "argmax": argmax, "first_anchor": prompt.len(), "proposals": props,
+        "taps": nt, "hidden": h, "numeric_class": memra_engine::inkling2_gpu::numeric_class(route.plan())?});
+    std::fs::write(dir.join(format!("{id}.json")), json.to_string()).map_err(|e| e.to_string())?;
+    eprintln!(
+        "per-position {id}: {} positions, {} proposals",
+        seq.len(),
+        props.len()
+    );
     Ok(())
 }
 
@@ -414,7 +514,6 @@ fn tiny_gate(a: &Args) -> Result<(), String> {
     let taps_dev = dev.up(&laid)?;
     let anchors = oracle_i64(&image, "anchors")?;
     let forced = oracle_i64(&image, "forced")?;
-    let mut drafter = DraftGpu::load(&dev, g.clone(), &image, shared, 64, 16)?;
     let worst = |got: &[f32], want: &[f64]| -> f64 {
         got.iter()
             .zip(want)
@@ -423,45 +522,50 @@ fn tiny_gate(a: &Args) -> Result<(), String> {
     };
     const BAND: f64 = 2e-5;
     let mut ok = true;
-    for (s, &p) in refd::TINY_SCENARIOS.iter().enumerate() {
-        drafter.reset();
-        // commits of 3 rows and a remainder: the commit split must not matter
-        let mut at = 0;
-        while at < p {
-            let n = 3.min(p - at);
-            drafter.commit(&dev, &taps_dev, total, at, n)?;
-            at += n;
+    // commits of up to 16 rows (local rings of 32 rows: no wrap) and of 3 rows (rings of 8:
+    // 13 committed positions wrap them)
+    for chunk in [16usize, 3] {
+        let mut drafter = DraftGpu::load(&dev, g.clone(), &image, shared, 64, chunk)?;
+        for (s, &p) in refd::TINY_SCENARIOS.iter().enumerate() {
+            drafter.reset();
+            // commits of 3 rows and a remainder: the commit split must not matter
+            let mut at = 0;
+            while at < p {
+                let n = 3.min(p - at).min(chunk);
+                drafter.commit(&dev, &taps_dev, total, at, n)?;
+                at += n;
+            }
+            let k = g.rows - 1;
+            let anchor = anchors[s] as u32;
+            let toks = drafter.propose(&dev, shared, anchor, k, None)?;
+            let logits = drafter.logits(&dev, k)?;
+            let (hidden, feature) = drafter.hidden(&dev)?;
+            let want_tokens: Vec<u32> = oracle_i64(&oracle, &format!("s{s}.tokens"))?
+                .iter()
+                .map(|v| *v as u32)
+                .collect();
+            let e_l = worst(&logits, &oracle.f64s(&format!("s{s}.logits"))?);
+            let e_h = worst(&hidden, &oracle.f64s(&format!("s{s}.hidden"))?);
+            let e_f = worst(&feature, &oracle.f64s(&format!("s{s}.f_rnn"))?);
+            let chain: Vec<u32> = forced[s * k..(s + 1) * k]
+                .iter()
+                .map(|v| *v as u32)
+                .collect();
+            let mut pick = |i: usize, _: &[f32]| chain[i];
+            drafter.propose(&dev, shared, anchor, k, Some(&mut pick))?;
+            let e_c = worst(
+                &drafter.logits(&dev, k)?,
+                &oracle.f64s(&format!("s{s}.forced_logits"))?,
+            );
+            let pass =
+                toks == want_tokens && e_l <= BAND && e_h <= BAND && e_f <= BAND && e_c <= BAND;
+            ok &= pass;
+            println!(
+                "ink2-dspark-tiny chunk {chunk} scenario {s} (P={p}): proposals {toks:?} (oracle {want_tokens:?}); max |gpu - f64| / (|f64| + 1): logits {e_l:.2e}, block rows {e_h:.2e}, feature {e_f:.2e}, forced chain {e_c:.2e} (band {BAND:.0e}) {}",
+                if pass { "PASS" } else { "FAIL" }
+            );
         }
-        let k = g.rows - 1;
-        let anchor = anchors[s] as u32;
-        let toks = drafter.propose(&dev, shared, anchor, k, None)?;
-        let logits = drafter.logits(&dev, k)?;
-        let (hidden, feature) = drafter.hidden(&dev)?;
-        let want_tokens: Vec<u32> = oracle_i64(&oracle, &format!("s{s}.tokens"))?
-            .iter()
-            .map(|v| *v as u32)
-            .collect();
-        let e_l = worst(&logits, &oracle.f64s(&format!("s{s}.logits"))?);
-        let e_h = worst(&hidden, &oracle.f64s(&format!("s{s}.hidden"))?);
-        let e_f = worst(&feature, &oracle.f64s(&format!("s{s}.f_rnn"))?);
-        let chain: Vec<u32> = forced[s * k..(s + 1) * k]
-            .iter()
-            .map(|v| *v as u32)
-            .collect();
-        let mut pick = |i: usize, _: &[f32]| chain[i];
-        drafter.propose(&dev, shared, anchor, k, Some(&mut pick))?;
-        let e_c = worst(
-            &drafter.logits(&dev, k)?,
-            &oracle.f64s(&format!("s{s}.forced_logits"))?,
-        );
-        let pass = toks == want_tokens && e_l <= BAND && e_h <= BAND && e_f <= BAND && e_c <= BAND;
-        ok &= pass;
-        println!(
-            "ink2-dspark-tiny scenario {s} (P={p}): proposals {toks:?} (oracle {want_tokens:?}); max |gpu - f64| / (|f64| + 1): logits {e_l:.2e}, block rows {e_h:.2e}, feature {e_f:.2e}, forced chain {e_c:.2e} (band {BAND:.0e}) {}",
-            if pass { "PASS" } else { "FAIL" }
-        );
     }
-    // red arm: the proposals of scenario 2 with the ring of a local layer one row short must fail
     if !ok {
         return Err("the GPU drafter does not match the oracle".into());
     }

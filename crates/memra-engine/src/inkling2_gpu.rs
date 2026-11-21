@@ -985,13 +985,17 @@ pub struct MemoryAccount {
     pub driver_free_after_load: usize,
     /// Positions the driver's free memory before the full caches holds at this chunk.
     pub max_context: usize,
+    /// A drafter loaded beside the route (`inkling2_dspark`): all its bytes, and of them the
+    /// context K/V that grows with the context. Zero without one.
+    pub drafter: usize,
+    pub drafter_kv: usize,
 }
 
 impl MemoryAccount {
     pub fn describe(&self) -> String {
         let g = |b: usize| b as f64 / (1u64 << 30) as f64;
         format!(
-            "memory: device {:.3} GiB, driver free at open {:.3}, weights {:.3}, full KV {:.3} ({} positions x {} B), rings {:.3}, conv {:.3}, work {:.3}, declared work {:.3}, driver free before KV {:.3} and after load {:.3}, max context {}",
+            "memory: device {:.3} GiB, driver free at open {:.3}, weights {:.3}, full KV {:.3} ({} positions x {} B), rings {:.3}, conv {:.3}, work {:.3}, declared work {:.3}, driver free before KV {:.3} and after load {:.3}, max context {}, drafter {:.3} (context K/V {:.3})",
             g(self.device_total),
             g(self.driver_free_at_open),
             g(self.weights),
@@ -1004,7 +1008,9 @@ impl MemoryAccount {
             g(self.declared_work),
             g(self.driver_free_before_kv),
             g(self.driver_free_after_load),
-            self.max_context
+            self.max_context,
+            g(self.drafter),
+            g(self.drafter_kv)
         )
     }
 }
