@@ -71,7 +71,8 @@ the same three arguments on `bs_moe_count_kernel<CH>` and `bs_moe_plan_small_ker
 no row map, as on main. The host bindings, the tensor-parallel caller and the gate are main's, unchanged by this
 change. The gate's plan checks already cover the row map on both forms: every plan checks that a clean selection
 marks no row, and `schedule/moe_plan/out_of_range_id` (3 rows, the one-block form, slice at row 37 of its call)
-and `schedule/moe_plan/out_of_range_id_rows700` (the three kernels) check exactly the faulted rows marked.
+and `schedule/moe_plan/out_of_range_id_rows700` with its 576-column twin `out_of_range_id_rows700_n576` (the three
+kernels) check exactly the faulted rows marked.
 
 The comparison, rebuilt with `nv_build.sh` and compared with `sass_cmp.py` on sm_120a and sm_121a:
 
