@@ -38,6 +38,8 @@ pub struct SpecStats {
     pub hist: Vec<usize>,
     /// Verify calls followed by a replay of the accepted rows.
     pub replays: usize,
+    /// One-row steps without proposals (near the end of the route's context).
+    pub plain_steps: usize,
     pub prefill_s: f64,
     pub decode_s: f64,
     /// Committed tokens after the prompt.
@@ -87,16 +89,22 @@ pub fn probs(logits: &[f32], temperature: f64) -> Vec<f64> {
 
 /// One draw from a distribution (inverse CDF; the last index takes the rounding remainder).
 pub fn draw(p: &[f64], rng: &mut Rng) -> u32 {
+    draw_at(p, rng.unit())
+}
+
+/// The index whose cumulative interval holds `u * total` (`u` in [0, 1)); a rounding remainder
+/// past the last interval goes to the last index with positive probability.
+fn draw_at(p: &[f64], u: f64) -> u32 {
     let total: f64 = p.iter().sum();
-    let u = rng.unit() * total;
+    let u = u * total;
     let mut acc = 0.0;
     for (i, v) in p.iter().enumerate() {
         acc += v;
-        if u < acc {
+        if u < acc && *v > 0.0 {
             return i as u32;
         }
     }
-    (p.len() - 1) as u32
+    p.iter().rposition(|v| *v > 0.0).unwrap_or(p.len() - 1) as u32
 }
 
 /// Greedy decode without drafting: the prompt in calls of `route.chunk` rows, then one row per
@@ -130,31 +138,40 @@ pub fn generate(
     sampling: Sampling,
     stop: &[u32],
 ) -> Result<(Vec<u32>, SpecStats), String> {
-    generate_arm(route, drafter, prompt, n, k, sampling, stop, false)
+    generate_arm(
+        route,
+        drafter,
+        prompt,
+        n,
+        k,
+        sampling,
+        stop,
+        SpecArms::default(),
+    )
 }
 
-/// [`generate`], or with `skip_restore` its red arm: on a partial accept the rejected rows stay
-/// in the convolution history and only the position goes back. The gate must catch it.
-#[allow(clippy::too_many_arguments)] // allow: one request's whole configuration
-pub fn generate_arm(
-    route: &mut Route,
-    drafter: &mut DraftGpu,
-    prompt: &[u32],
-    n: usize,
-    k: usize,
-    sampling: Sampling,
-    stop: &[u32],
-    skip_restore: bool,
-) -> Result<(Vec<u32>, SpecStats), String> {
-    let taps = route
+/// Red arms of the speculative gates (all off by default).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SpecArms {
+    /// On a partial accept the rejected rows stay in the convolution history and only the
+    /// position goes back.
+    pub skip_restore: bool,
+    /// Tap `(index, slot)`: the drafter's tap `index` reads the input of `slot` instead of the
+    /// plan's slot.
+    pub tap_slot: Option<(usize, u32)>,
+}
+
+/// The slots whose inputs the drafter reads, from the plan (then the final norm), with an arm's
+/// override.
+pub fn tap_slots(route: &Route, arms: SpecArms) -> Result<Vec<u32>, String> {
+    let taps = &route
         .plan()
         .inkling2
         .as_ref()
         .ok_or("not an inkling2 plan")?
         .drafter
-        .taps
-        .clone();
-    let slots: Vec<u32> = taps
+        .taps;
+    let mut slots: Vec<u32> = taps
         .iter()
         .filter_map(|t| match t {
             memra_gguf::model_plan::DrafterTap::SlotInput { slot } => Some(*slot),
@@ -166,6 +183,70 @@ pub fn generate_arm(
     {
         return Err("drafter taps other than slot inputs then the final norm".into());
     }
+    if let Some((i, s)) = arms.tap_slot {
+        *slots.get_mut(i).ok_or("a tap arm past the taps")? = s;
+    }
+    Ok(slots)
+}
+
+/// The probability-ratio test of one verify call (Leviathan et al. / Chen et al.): proposal `a`
+/// is accepted with probability `min(1, p_a(d_a) / q_a(d_a))`; on the first rejection the
+/// committed token is drawn from `norm(max(p_a - q_a, 0))`; after `k` accepts the bonus token is
+/// drawn from `p_k`. `p` holds `k + 1` target rows, `q` the `k` draft rows (each conditioned on
+/// the drafts before it). Returns `(accepted, next token)`. The committed tokens are distributed
+/// as the target's own samples.
+pub fn ratio_test(p: &[Vec<f64>], q: &[Vec<f64>], drafts: &[u32], rng: &mut Rng) -> (usize, u32) {
+    ratio_test_arm(p, q, drafts, rng, false)
+}
+
+/// [`ratio_test`], or with `resample_from_target` its red arm: a rejection draws from `p_a`
+/// instead of the residual (biased toward the rejected proposal).
+pub fn ratio_test_arm(
+    p: &[Vec<f64>],
+    q: &[Vec<f64>],
+    drafts: &[u32],
+    rng: &mut Rng,
+    resample_from_target: bool,
+) -> (usize, u32) {
+    let k = drafts.len();
+    for a in 0..k {
+        let d = drafts[a] as usize;
+        let ratio = if q[a][d] > 0.0 {
+            p[a][d] / q[a][d]
+        } else {
+            1.0
+        };
+        if rng.unit() < ratio.min(1.0) {
+            continue;
+        }
+        let residual: Vec<f64> = p[a]
+            .iter()
+            .zip(&q[a])
+            .map(|(x, y)| (x - y).max(0.0))
+            .collect();
+        let next = if !resample_from_target && residual.iter().sum::<f64>() > 0.0 {
+            draw(&residual, rng)
+        } else {
+            draw(&p[a], rng)
+        };
+        return (a, next);
+    }
+    (k, draw(&p[k], rng))
+}
+
+/// [`generate`] with red arms. Tap capture is turned off again on every return.
+#[allow(clippy::too_many_arguments)] // allow: one request's whole configuration
+pub fn generate_arm(
+    route: &mut Route,
+    drafter: &mut DraftGpu,
+    prompt: &[u32],
+    n: usize,
+    k: usize,
+    sampling: Sampling,
+    stop: &[u32],
+    arms: SpecArms,
+) -> Result<(Vec<u32>, SpecStats), String> {
+    let slots = tap_slots(route, arms)?;
     if route.chunk < k + 1 {
         return Err(format!(
             "a verify of {} rows; the route holds {}",
@@ -173,7 +254,39 @@ pub fn generate_arm(
             route.chunk
         ));
     }
+    if route.vocab() != drafter.g.vocab {
+        return Err(format!(
+            "the trunk keeps {} vocabulary rows and the drafter {}",
+            route.vocab(),
+            drafter.g.vocab
+        ));
+    }
+    if prompt.is_empty() || prompt.len() > route.context {
+        return Err(format!(
+            "a prompt of {} tokens; the route holds 1..={}",
+            prompt.len(),
+            route.context
+        ));
+    }
     route.set_capture(&slots)?;
+    let result = generate_inner(route, drafter, prompt, n, k, sampling, stop, arms);
+    let off = route.set_capture(&[]);
+    let out = result?;
+    off?;
+    Ok(out)
+}
+
+#[allow(clippy::too_many_arguments)] // allow: one request's whole configuration
+fn generate_inner(
+    route: &mut Route,
+    drafter: &mut DraftGpu,
+    prompt: &[u32],
+    n: usize,
+    k: usize,
+    sampling: Sampling,
+    stop: &[u32],
+    arms: SpecArms,
+) -> Result<(Vec<u32>, SpecStats), String> {
     route.reset()?;
     drafter.reset();
     let shared = Shared::of_route(route);
@@ -188,7 +301,6 @@ pub fn generate_arm(
     };
     let t0 = std::time::Instant::now();
     // prefill: the route's chunking, every row committed to the drafter
-    let mut last_logits = Vec::new();
     let mut anchor = 0;
     // (a sampled request runs its last prompt row alone, for its logits; rows do not depend on
     // the chunking)
@@ -214,20 +326,45 @@ pub fn generate_arm(
         if last {
             anchor = *out.argmax.last().ok_or("no argmax")?;
             if let Sampling::Sample { temperature, .. } = sampling {
-                last_logits = out.logits;
-                anchor = draw(&probs(&last_logits, temperature), &mut rng);
+                anchor = draw(&probs(&out.logits, temperature), &mut rng);
             }
         }
     }
     route.dev.sync()?;
     stats.prefill_s = t0.elapsed().as_secs_f64();
-    let _ = last_logits;
     let t1 = std::time::Instant::now();
     let mut carry = route.carry()?;
     let mut out = vec![anchor];
     let vocab = route.vocab();
     while out.len() < n && !stop.contains(&anchor) {
-        let kk = k.min(n - out.len()).max(1);
+        // the anchor's row and the proposals must fit the route's context: near its end the
+        // request finishes on shorter verifies, then on plain steps
+        let room = route.context - route.position as usize;
+        if room == 0 {
+            return Err(format!(
+                "the request reached the route's context of {}",
+                route.context
+            ));
+        }
+        let kk = k.min(n - out.len()).min(room - 1);
+        if kk == 0 {
+            let head = match sampling {
+                Sampling::Greedy => Head::LastArgmax,
+                Sampling::Sample { .. } => Head::All,
+            };
+            let o = route.forward(&[anchor], head, None)?;
+            let cap = route.captured().ok_or("capture is off")?;
+            drafter.commit(&route.dev, cap, chunk, 0, 1)?;
+            anchor = match sampling {
+                Sampling::Greedy => o.argmax[0],
+                Sampling::Sample { temperature, .. } => {
+                    draw(&probs(&o.logits, temperature), &mut rng)
+                }
+            };
+            stats.plain_steps += 1;
+            out.push(anchor);
+            continue;
+        }
         let (drafts, qrows) = match sampling {
             Sampling::Greedy => (
                 drafter.propose(&route.dev, shared, anchor, kk, None)?,
@@ -263,37 +400,13 @@ pub fn generate_arm(
                 (a, verify.argmax[a])
             }
             Sampling::Sample { temperature, .. } => {
-                let mut a = 0;
-                let mut next = None;
-                while a < kk {
-                    let p = probs(&verify.logits[a * vocab..(a + 1) * vocab], temperature);
-                    let q = &qrows[a];
-                    let d = drafts[a] as usize;
-                    let ratio = if q[d] > 0.0 { p[d] / q[d] } else { 1.0 };
-                    if rng.unit() < ratio.min(1.0) {
-                        a += 1;
-                        continue;
-                    }
-                    let residual: Vec<f64> =
-                        p.iter().zip(q).map(|(x, y)| (x - y).max(0.0)).collect();
-                    next = Some(if residual.iter().sum::<f64>() > 0.0 {
-                        draw(&residual, &mut rng)
-                    } else {
-                        draw(&p, &mut rng)
-                    });
-                    break;
-                }
-                let next = match next {
-                    Some(t) => t,
-                    None => draw(
-                        &probs(&verify.logits[kk * vocab..(kk + 1) * vocab], temperature),
-                        &mut rng,
-                    ),
-                };
-                (a, next)
+                let p: Vec<Vec<f64>> = (0..=kk)
+                    .map(|a| probs(&verify.logits[a * vocab..(a + 1) * vocab], temperature))
+                    .collect();
+                ratio_test(&p, &qrows, &drafts, &mut rng)
             }
         };
-        if accepted < kk && skip_restore {
+        if accepted < kk && arms.skip_restore {
             route.position = carry.position() + accepted as u64 + 1;
         } else if accepted < kk {
             // back to the history before the verify, and run the committed rows again
@@ -326,6 +439,81 @@ pub fn generate_arm(
         out.truncate(at + 1);
     }
     stats.generated = out.len();
-    route.set_capture(&[])?;
     Ok((out, stats))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A toy two-step chain: the committed pair must be distributed as the target's own
+    /// samples, with a draft far from the target. The red arm (a rejection resampled from the
+    /// target row instead of the residual) must fail the same check.
+    fn chain_error(red: bool, trials: usize) -> f64 {
+        let v = 4;
+        // target: p0 over the first token; p1[t0] over the second given the first
+        let p0 = vec![0.1, 0.2, 0.3, 0.4];
+        let p1 = |t: usize| -> Vec<f64> {
+            let mut r = vec![0.05; v];
+            r[(t + 1) % v] = 0.85;
+            r
+        };
+        let q0 = vec![0.4, 0.3, 0.2, 0.1];
+        let q1 = |t: usize| -> Vec<f64> {
+            let mut r = vec![0.1; v];
+            r[t] = 0.7;
+            r
+        };
+        let mut rng = Rng(7);
+        let mut counts = vec![0usize; v * v];
+        for _ in 0..trials {
+            let d0 = draw(&q0, &mut rng) as usize;
+            let d1 = draw(&q1(d0), &mut rng) as usize;
+            let p = vec![p0.clone(), p1(d0), vec![1.0 / v as f64; v]];
+            let q = vec![q0.clone(), q1(d0)];
+            let (a, next) = ratio_test_arm(&p, &q, &[d0 as u32, d1 as u32], &mut rng, red);
+            let (t0, t1) = match a {
+                0 => {
+                    let t0 = next as usize;
+                    (t0, draw(&p1(t0), &mut rng) as usize)
+                }
+                1 => (d0, next as usize),
+                _ => (d0, d1),
+            };
+            counts[t0 * v + t1] += 1;
+        }
+        let mut worst: f64 = 0.0;
+        for t0 in 0..v {
+            for t1 in 0..v {
+                let want = p0[t0] * p1(t0)[t1];
+                let got = counts[t0 * v + t1] as f64 / trials as f64;
+                worst = worst.max((got - want).abs());
+            }
+        }
+        worst
+    }
+
+    #[test]
+    fn ratio_test_preserves_the_target_distribution() {
+        let n = 400_000;
+        // the binomial standard error of the largest cell (0.34) at 400k trials is 7.5e-4
+        let ok = chain_error(false, n);
+        assert!(ok < 4e-3, "ratio test: max cell error {ok:e}");
+        let red = chain_error(true, n);
+        assert!(
+            red > 2e-2,
+            "red arm (resample from the target) must be biased: {red:e}"
+        );
+    }
+
+    #[test]
+    fn draw_never_returns_a_zero_probability_index() {
+        let mut rng = Rng(3);
+        let p = [0.5, 0.5, 0.0];
+        for _ in 0..10_000 {
+            assert_ne!(draw(&p, &mut rng), 2);
+        }
+        // the rounding corner: u at the total
+        assert_eq!(draw_at(&p, 1.0), 1);
+    }
 }
