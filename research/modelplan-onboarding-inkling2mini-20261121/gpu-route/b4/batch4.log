@@ -1,0 +1,35 @@
+gpulock: 5090 leased as claude-code-20261121T061533-750148 for 45m
+180 MHz, 9001 MHz, 22.96 W, 74, 0x0000000000000400
+14.67 17.04 13.70 2/5655 1126450
+GATE_RC=0
+ink2-gpu-gate: ALL OK (16 cells)
+ink2-gpu: class inkling2-gpu-f32-stream/DeclaredActivationQuant; resident weights 17.594 GiB, with state 18.860 GiB, loaded in 47.0s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 1531 positions in 23.7s: resid attn worst slot 1.353e-4, ffn worst slot 1.770e-4, router rows 73488/73488, logits max abs 3.960e-2 KL mean 2.680e-8, argmax 1531/1531, greedy 32/32
+RC=0
+ink2-gpu: class inkling2-gpu-f32-stream/DeclaredActivationQuant; resident weights 17.594 GiB, with state 18.860 GiB, loaded in 26.7s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 57 positions in 6.5s: resid attn worst slot 1.714e-4, ffn worst slot 1.859e-4, router rows 2736/2736, logits max abs 1.254e-2 KL mean 2.150e-8, argmax 57/57, greedy 32/32
+RC=0
+ink2-gpu: class inkling2-gpu-f32-stream/DeclaredActivationQuant; resident weights 17.594 GiB, with state 19.837 GiB, loaded in 21.1s; context 8448, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 8291 positions in 55.8s: resid attn worst slot 8.170e-2, ffn worst slot 8.494e-2, router rows 257967/397968, logits max abs 5.291e0 KL mean 1.194e-2, argmax 179/179, greedy 32/32
+RC=0
+ink2-gpu: class inkling2-gpu-f32-stream/DeclaredActivationQuant; resident weights 17.594 GiB, with state 18.860 GiB, loaded in 19.5s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 57 positions in 6.6s: resid attn worst slot 2.435e-1, ffn worst slot 2.518e-1, router rows 1866/2736, logits max abs 1.598e1 KL mean 6.125e-2, argmax 51/57, greedy 30/32
+ink2-gpu: gen 32 ids, 8/32 equal to the oracle's greedy prefix; 1637.0 launches a token; 5.38 tok/s (clocks 2767 MHz, 14001 MHz, 100.52 W, 78, 100 %)
+gen 200001,200008,371,150409,171960,149887,150011,156021,161043,151661,158808,149884,152978,152778,13,170289,150893,149911,4123,13,170289,151791,153606,25,220,47157,180553,25,151483,1638,152068,149971
+ink2-gpu: 57 rows as calls of 26: 0.9s
+ink2-gpu: 57 rows as calls of 1: 10.7s
+ink2-gpu: chunkings 26 vs 1 over 57 rows: slot rows differ 0/2736, logit rows differ 0, argmax differ 0
+RC=0
+ink2-gpu: class inkling2-gpu-f32-stream/DeclaredActivationQuant; resident weights 17.594 GiB, with state 18.860 GiB, loaded in 24.0s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 57 positions in 6.5s: resid attn worst slot 2.227e-1, ffn worst slot 2.352e-1, router rows 1850/2736, logits max abs 1.615e1 KL mean 4.504e-2, argmax 54/57, greedy 31/32
+RC=0
+ink2-gpu: class inkling2-gpu-f32-stream/DeclaredActivationQuant; resident weights 17.594 GiB, with state 18.860 GiB, loaded in 22.6s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 1531 positions in 21.9s: resid attn worst slot 4.560e-1, ffn worst slot 4.581e-1, router rows 37600/73488, logits max abs 3.045e1 KL mean 3.884e-1, argmax 1317/1531, greedy 32/32
+ink2-gpu: 1500 rows as calls of 512: 7.3s
+ink2-gpu: 1500 rows as calls of 300: 7.6s
+ink2-gpu: chunkings 512 vs 300 over 1500 rows: slot rows differ 0/72000, logit rows differ 0, argmax differ 0
+RC=0
+ink2-gpu: class inkling2-gpu-f32-stream/FloatActivation; resident weights 17.594 GiB, with state 18.798 GiB, loaded in 26.1s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 1531 positions in 34.2s: resid attn worst slot 3.258e-1, ffn worst slot 3.266e-1, router rows 54685/73488, logits max abs 2.336e1 KL mean 2.109e-1, argmax 1397/1531, greedy 32/32
+RC=0
+1590 MHz, 14001 MHz, 73.07 W, 75

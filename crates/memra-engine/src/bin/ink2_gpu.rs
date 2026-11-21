@@ -542,6 +542,28 @@ fn run() -> Result<(), String> {
 
     if a.score {
         let vocab = route.vocab();
+        // A forced MoE input exists only at the tape's kept positions; a chunk holding any other
+        // position would run unforced and score the drift of the whole stream instead of the MoE.
+        if a.force_moe_in {
+            let missing = (0..tape.all_ids.len())
+                .filter(|p| !tape.resid_rows.contains_key(p))
+                .count();
+            if tape.moe_in.is_none() || missing > 0 {
+                return Err(format!(
+                    "--force-moe-in needs the tape's MoE input at every position: {} has {} of {} positions{}",
+                    a.tape
+                        .as_ref()
+                        .map_or(String::new(), |p| p.display().to_string()),
+                    tape.all_ids.len() - missing,
+                    tape.all_ids.len(),
+                    if tape.moe_in.is_none() {
+                        " and no moe_in file"
+                    } else {
+                        ""
+                    }
+                ));
+            }
+        }
         let mut cmp = Compare {
             tape,
             hidden,
