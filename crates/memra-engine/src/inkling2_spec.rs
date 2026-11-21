@@ -39,8 +39,11 @@ pub struct SpecStats {
     pub hist: Vec<usize>,
     /// Verify calls that kept only their first rows (`Route::commit_rows`).
     pub partial_commits: usize,
-    /// One-row steps without proposals (near the end of the route's context).
+    /// One-row steps without proposals (an adaptive request's choice, or the end of the
+    /// route's context).
     pub plain_steps: usize,
+    /// `k_hist[k]`: verify calls of `k` proposals.
+    pub k_hist: Vec<usize>,
     pub prefill_s: f64,
     pub decode_s: f64,
     /// Committed tokens after the prompt.
@@ -119,6 +122,37 @@ pub fn plain_greedy(
     Ok(plain_greedy_timed(route, prompt, n, stop)?.0)
 }
 
+/// Sampled decode without drafting at `temperature` (the baseline of probabilistic drafting):
+/// the prompt in calls of `route.chunk` rows with its last row alone for its logits, then one
+/// row per call with the logits downloaded and sampled on the host, as the speculative loop's
+/// sampler draws. Returns the tokens, prefill and decode seconds.
+pub fn plain_sampled_timed(
+    route: &mut Route,
+    prompt: &[u32],
+    n: usize,
+    stop: &[u32],
+    temperature: f64,
+    seed: u64,
+) -> Result<(Vec<u32>, f64, f64), String> {
+    route.reset()?;
+    let mut rng = Rng(seed);
+    let t0 = std::time::Instant::now();
+    if prompt.len() > 1 {
+        route.call(&prompt[..prompt.len() - 1], Head::None, None)?;
+    }
+    let first = route.forward(&prompt[prompt.len() - 1..], Head::All, None)?;
+    let prefill = t0.elapsed().as_secs_f64();
+    let t1 = std::time::Instant::now();
+    let mut tok = draw(&probs(&first.logits, temperature), &mut rng);
+    let mut out = vec![tok];
+    while out.len() < n && !stop.contains(&tok) {
+        let o = route.forward(&[tok], Head::All, None)?;
+        tok = draw(&probs(&o.logits, temperature), &mut rng);
+        out.push(tok);
+    }
+    Ok((out, prefill, t1.elapsed().as_secs_f64()))
+}
+
 /// [`plain_greedy`] with its prefill and decode seconds (the decode is the route's one-row
 /// steps, the graph path when the route takes it).
 pub fn plain_greedy_timed(
@@ -166,12 +200,15 @@ pub fn generate(
 }
 
 /// The proposal length of each verify call when a request asks for an adaptive one (`k == 0`):
-/// the length that maximizes expected committed tokens per second of a step. Expected tokens
-/// come from the request's own acceptance under a geometric model (a proposal is accepted with
-/// probability `a` given the ones before it were; `a` counts accepted proposals against first
-/// rejections, from a prior of 2 to 1); step seconds are measured per length on this request
-/// (an exponential average) and a line through the measured lengths fills the others. The first
-/// two steps measure the longest length and 2.
+/// the length that maximizes expected committed tokens per second of a step, or a plain one-row
+/// step when no length beats it by `MARGIN`. Expected tokens come from the request's own
+/// acceptance under a geometric model (a proposal is accepted with probability `a` given the ones
+/// before it were; `a` counts accepted proposals against first rejections, from a prior of 2 to
+/// 1). Step seconds are measured per length on this request (an exponential average; a line
+/// through the measured lengths fills the others), and the plain step's from three plain steps
+/// at the start (their median), then every plain step. A request on plain steps probes a length
+/// of 2 after `probe_every` of them; a probe that loses to plain doubles the interval (16 up to
+/// 256), a length chosen on its rate resets it.
 pub struct AdaptiveK {
     max: usize,
     succ: f64,
@@ -180,7 +217,13 @@ pub struct AdaptiveK {
     time: Vec<Option<f64>>,
     steps: usize,
     plain_run: usize,
+    probe_every: usize,
+    first_plain: Vec<f64>,
+    probing: bool,
 }
+
+/// A length must beat a plain step by this factor to be taken.
+const MARGIN: f64 = 1.05;
 
 impl AdaptiveK {
     pub fn new(max: usize) -> Self {
@@ -191,6 +234,9 @@ impl AdaptiveK {
             time: vec![None; max + 1],
             steps: 0,
             plain_run: 0,
+            probe_every: 16,
+            first_plain: Vec::new(),
+            probing: false,
         }
     }
 
@@ -213,52 +259,81 @@ impl AdaptiveK {
         Some((my + slope * (k as f64 - mx)).max(1e-6))
     }
 
-    /// The length of the next verify call (1..=max), or 0 for a plain one-row step. A request
-    /// that keeps choosing plain steps tries a length of 2 every 16 of them, so its acceptance
-    /// estimate follows the text.
-    pub fn choose(&self) -> usize {
+    fn accept_rate(&self) -> f64 {
+        (self.succ / (self.succ + self.fail)).min(0.999)
+    }
+
+    /// The best length and its expected tokens per second, over 1..=max.
+    fn best_length(&self) -> Option<(usize, f64)> {
+        let a = self.accept_rate();
+        let mut best: Option<(usize, f64)> = None;
+        for k in 1..=self.max {
+            let Some(t) = self.step_time(k) else { continue };
+            let rate = (1.0 - a.powi(k as i32 + 1)) / (1.0 - a) / t;
+            if best.is_none_or(|b| rate > b.1) {
+                best = Some((k, rate));
+            }
+        }
+        best
+    }
+
+    /// The length of the next verify call (1..=max), or 0 for a plain one-row step.
+    pub fn choose(&mut self) -> usize {
+        self.probing = false;
         match self.steps {
             0 => return self.max,
             1 => return 2.min(self.max),
-            2 => return 0,
+            2..=4 => return 0,
             _ => {}
         }
-        if self.plain_run >= 16 {
-            return 2.min(self.max);
-        }
-        let a = (self.succ / (self.succ + self.fail)).min(0.999);
-        let mut best = (1, f64::NEG_INFINITY);
-        if let Some(t) = self.time[0] {
-            best = (0, 1.0 / t);
-        }
-        for k in 1..=self.max {
-            let Some(t) = self.step_time(k) else { continue };
-            let tokens = (1.0 - a.powi(k as i32 + 1)) / (1.0 - a);
-            let rate = tokens / t;
-            if rate > best.1 {
-                best = (k, rate);
+        let plain = self.time[0].map_or(0.0, |t| 1.0 / t);
+        match self.best_length() {
+            Some((k, rate)) if rate > MARGIN * plain => {
+                self.probe_every = 16;
+                k
             }
+            _ if self.plain_run >= self.probe_every => {
+                self.probing = true;
+                2.min(self.max)
+            }
+            _ => 0,
         }
-        best.0
     }
 
     /// A finished step of length `k` (0: a plain step) that accepted `accepted` proposals in
     /// `secs`.
     pub fn record(&mut self, k: usize, accepted: usize, secs: f64) {
+        self.steps += 1;
         if k == 0 {
             self.plain_run += 1;
-        } else {
-            self.plain_run = 0;
-            self.succ += accepted as f64;
-            if accepted < k {
-                self.fail += 1.0;
+            if self.first_plain.len() < 3 {
+                self.first_plain.push(secs);
+                let mut v = self.first_plain.clone();
+                v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                self.time[0] = Some(v[v.len() / 2]);
+            } else {
+                self.time[0] = self.time[0].map(|t| 0.7 * t + 0.3 * secs);
             }
+            return;
+        }
+        self.plain_run = 0;
+        self.succ += accepted as f64;
+        if accepted < k {
+            self.fail += 1.0;
         }
         self.time[k] = Some(match self.time[k] {
             Some(t) => 0.7 * t + 0.3 * secs,
             None => secs,
         });
-        self.steps += 1;
+        if self.probing {
+            let plain = self.time[0].map_or(0.0, |t| 1.0 / t);
+            let won = self.best_length().is_some_and(|b| b.1 > MARGIN * plain);
+            self.probe_every = if won {
+                16
+            } else {
+                (self.probe_every * 2).min(256)
+            };
+        }
     }
 }
 
@@ -471,7 +546,7 @@ fn generate_inner(
                 route.context
             ));
         }
-        let want = adapt.as_ref().map_or(k, AdaptiveK::choose);
+        let want = adapt.as_mut().map_or(k, AdaptiveK::choose);
         let kk = want.min(n - out.len()).min(room - 1);
         let t_step = std::time::Instant::now();
         if kk == 0 {
@@ -553,6 +628,10 @@ fn generate_inner(
         stats.proposed += kk;
         stats.accepted += accepted;
         stats.hist[accepted] += 1;
+        if stats.k_hist.len() <= kk {
+            stats.k_hist.resize(kk + 1, 0);
+        }
+        stats.k_hist[kk] += 1;
         for &t in &drafts[..accepted] {
             out.push(t);
             if stop.contains(&t) {
@@ -803,29 +882,41 @@ mod tests {
     /// with high acceptance and a cheap extra row it goes long, with low acceptance short.
     #[test]
     fn adaptive_k_follows_acceptance_and_step_time() {
+        // exploration: the longest, 2, then three plain steps
         let mut a = AdaptiveK::new(7);
-        assert_eq!(a.choose(), 7);
-        a.record(7, 7, 0.070);
-        assert_eq!(a.choose(), 2);
-        a.record(2, 2, 0.032);
-        assert_eq!(a.choose(), 0, "the third step times a plain step");
-        a.record(0, 0, 0.021);
+        for (want, (acc, secs)) in [7, 2, 0, 0, 0].into_iter().zip([
+            (7, 0.090),
+            (2, 0.052),
+            (0, 0.021),
+            (0, 0.040),
+            (0, 0.021),
+        ]) {
+            assert_eq!(a.choose(), want);
+            a.record(want, acc, secs);
+        }
+        // the median of the three plain steps, not the slow one
+        assert_eq!(a.time[0], Some(0.021));
         for _ in 0..20 {
-            a.record(7, 7, 0.070);
+            a.record(7, 7, 0.090);
         }
         assert_eq!(a.choose(), 7, "every proposal accepted: the longest");
         let mut b = AdaptiveK::new(7);
-        b.record(7, 0, 0.070);
-        b.record(2, 0, 0.032);
-        b.record(0, 0, 0.021);
-        for _ in 0..20 {
-            b.record(2, 0, 0.032);
+        for (k, secs) in [(7, 0.090), (2, 0.052), (0, 0.021), (0, 0.021), (0, 0.021)] {
+            b.choose();
+            b.record(k, 0, secs);
         }
         assert_eq!(b.choose(), 0, "nothing accepted: plain steps");
-        for _ in 0..16 {
-            b.record(0, 0, 0.021);
+        let mut probes = Vec::new();
+        for step in 0..200 {
+            let k = b.choose();
+            if k > 0 {
+                probes.push(step);
+            }
+            b.record(k, 0, if k > 0 { 0.052 } else { 0.021 });
         }
-        assert_eq!(b.choose(), 2, "after 16 plain steps, one probe");
+        // the first probe when the plain run reaches 16 (3 plain steps came from the exploration),
+        // then a losing probe doubles the interval: 32, then 64 plain steps
+        assert_eq!(&probes[..3], &[13, 13 + 33, 13 + 33 + 65], "{probes:?}");
     }
 
     #[test]
