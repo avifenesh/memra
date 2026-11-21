@@ -11,10 +11,11 @@
 //!                  token (the run-spec self-consistency gate); exit 1 on a mismatch
 //!   --sample T     probabilistic drafting at temperature T (draft samples, ratio test)
 //!   --crosscheck   the first prompt's first block against the f64 reference drafter on CPU
+//!   --red-no-restore  the gate's red arm: a partial accept keeps the rejected rows' history
 
 use memra_engine::inkling2_dspark::{CkptDraft, DraftGpu, Shared};
 use memra_engine::inkling2_gpu::{Ckpt, Dev, Head, Route};
-use memra_engine::inkling2_spec::{Sampling, generate, plain_greedy};
+use memra_engine::inkling2_spec::{Sampling, generate_arm, plain_greedy};
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_plan::{ExpertActivationMode, ModelPlan};
 use memra_reference::inkling2_drafter as refd;
@@ -45,6 +46,7 @@ struct Args {
     out: Option<PathBuf>,
     device: usize,
     limit: usize,
+    red_no_restore: bool,
 }
 
 fn parse() -> Result<Args, String> {
@@ -76,6 +78,7 @@ fn parse() -> Result<Args, String> {
             "--sample" => a.sample = Some(val()?.parse().map_err(|e| format!("{e}"))?),
             "--seed" => a.seed = num(val()?)? as u64,
             "--crosscheck" => a.crosscheck = true,
+            "--red-no-restore" => a.red_no_restore = true,
             "--class" => a.class = val()?,
             "--chunk" => a.chunk = num(val()?)?,
             "--context" => a.context = num(val()?)?,
@@ -210,7 +213,7 @@ fn run() -> Result<(), String> {
                 },
                 None => Sampling::Greedy,
             };
-            let (toks, st) = generate(
+            let (toks, st) = generate_arm(
                 &mut route,
                 &mut drafter,
                 ids,
@@ -218,6 +221,7 @@ fn run() -> Result<(), String> {
                 k,
                 sampling,
                 &stop,
+                a.red_no_restore,
             )?;
             let equal = plain.as_ref().map(|p| *p == toks);
             let first_diff = plain.as_ref().and_then(|p| {
