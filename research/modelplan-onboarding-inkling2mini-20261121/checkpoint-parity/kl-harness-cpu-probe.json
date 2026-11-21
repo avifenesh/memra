@@ -1,0 +1,17 @@
+{
+ "harness": "lane F klh.py (transformers PR #51050 text model, act-quant experts)",
+ "class": "inkling2-declared-activation-quant",
+ "load_s": 2.365370512008667,
+ "sets": {},
+ "probe": {
+  "actq": {
+   "argmax": 200001,
+   "vocab": 200058
+  },
+  "actq_rev": {
+   "argmax": 200001,
+   "vocab": 200058
+  }
+ },
+ "wall_s": 73.20623517036438
+}
