@@ -1,0 +1,16 @@
+START 2026-11-20 23:30:35 req=long
+[     5.0s] resident tensors 1349, 53.0 GB
+[     5.1s] model ready (f64), 42 layers, Engram at decoder layers [1, 11, 21, 31]
+[  1421.6s] call 1/9 tokens 0..2104 indexer_layers=12 engram_layers=4
+[  1443.0s] call 2/9 tokens 2104..2105 indexer_layers=12 engram_layers=4
+[  1462.0s] call 3/9 tokens 2105..2106 indexer_layers=12 engram_layers=4
+[  1478.8s] call 4/9 tokens 2106..2107 indexer_layers=12 engram_layers=4
+[  1496.3s] call 5/9 tokens 2107..2108 indexer_layers=12 engram_layers=4
+[  1515.1s] call 6/9 tokens 2108..2109 indexer_layers=12 engram_layers=4
+[  1532.5s] call 7/9 tokens 2109..2110 indexer_layers=12 engram_layers=4
+[  1551.7s] call 8/9 tokens 2110..2111 indexer_layers=12 engram_layers=4
+[  1569.9s] call 9/9 tokens 2111..2112 indexer_layers=12 engram_layers=4
+[  1570.2s] dfly target inputs written to /home/avifenesh/hy4flash/pr10/target/long
+{"engine": "transformers-pr50903@b865850d0532-cpu-f64", "request": "long", "positions": 2112, "decode_from": 2104, "seconds": 1570.3, "logits_sha256": "3a97fd65ad83747cf4a304f083e505ef620ac3da12f18d3e6bb9879f1dd0d977", "indexer_records": 108, "engram_records": 36}
+EXIT rc=0 2026-11-20 23:56:50
+CHAIN-DONE

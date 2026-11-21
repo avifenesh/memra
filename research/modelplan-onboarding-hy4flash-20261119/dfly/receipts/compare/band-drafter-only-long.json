@@ -1,0 +1,26 @@
+{
+ "request": "long",
+ "anchors": 203,
+ "k": 5,
+ "oracle": "vllm-pr68296@8cbb80efa397-transcribed-cpu-f64",
+ "oracle_red": null,
+ "native": "vllm-pr68296@8cbb80efa397-transcribed-cpu-bf16x2a",
+ "native_red": null,
+ "native_forced": true,
+ "bitwise_equal": false,
+ "max_abs": 0.00015878677368164062,
+ "max_at": {
+  "anchor": 2099,
+  "step": 3,
+  "token": 4053
+ },
+ "per_anchor_max_p50": 8.666515350341797e-05,
+ "per_anchor_max_p99": 0.00014780044555664062,
+ "argmax_steps": 1015,
+ "argmax_differ": 0,
+ "argmax_differ_near_ties": 0,
+ "argmax_differ_far": [],
+ "own_drafts_equal_rounds": 203,
+ "oracle_mean_accepted_teacher_forced": 0.5763546798029556,
+ "native_mean_accepted_teacher_forced": 0.5763546798029556
+}

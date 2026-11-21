@@ -1,0 +1,14 @@
+START 2026-11-20 23:57:18 tag=long-f64 req=long dtype=f64 args=--anchors stride:16,range:2040-2110,at:163,at:426,at:756,at:1083
+[     1.1s] drafter: 5 layers, MLP width 9216 (declared None), k=5, target index [25, 29, 33, 37, 41] kv [25, 29, 33, 37, 41], topk 2048, window 0, mask 120009, f64
+[     6.2s] anchor 1/203 p=0 drafts=[198, 220, 983, 21, 12] target_next=[120001, 120039, 59785, 287, 62]
+[   129.5s] anchor 26/203 p=384 drafts=[13, 17, 8, 341, 259] target_next=[13, 23, 220, 1726, 33]
+[   281.8s] anchor 51/203 p=756 drafts=[4394, 6255, 1016, 86393, 11] target_next=[25643, 10909, 6255, 1016, 13706]
+[   471.9s] anchor 76/203 p=1136 drafts=[676, 70, 63, 83312, 806] target_next=[39626, 2251, 9468, 6255, 269]
+[   661.5s] anchor 101/203 p=1536 drafts=[8673, 13, 499, 1016, 70] target_next=[37818, 302, 269, 9043, 303]
+[   781.5s] anchor 126/203 p=1936 drafts=[11, 42993, 11, 3378, 11] target_next=[11, 55565, 3647, 368, 1016]
+[   793.0s] anchor 151/203 p=2058 drafts=[75697, 23194, 63, 474, 259] target_next=[28014, 12689, 4994, 31, 27]
+[   804.7s] anchor 176/203 p=2083 drafts=[5738, 9773, 506, 28940, 11] target_next=[10740, 75547, 29444, 742, 292]
+[   816.6s] anchor 201/203 p=2108 drafts=[533, 50775, 259, 12761, 1792] target_next=[13, 120025]
+[   817.6s] anchor 203/203 p=2110 drafts=[120025, 120025, 120025, 120025, 120025] target_next=[]
+{"request": "long", "dtype": "f64", "red": null, "anchors": 203, "k": 5, "logits_sha256": "a89fced61fabe0627e65cbbef35f2463f97cb5222fa24746faa50cde24bfc194", "mean_accepted_teacher_forced": 0.5764, "seconds": 817.6}
+EXIT rc=0 2026-11-21 00:10:58
