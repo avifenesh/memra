@@ -1217,6 +1217,7 @@ pub fn caps(m: &Dsv4Model) -> ModelCaps {
         dsv4: enc || t.is_some_and(chat::template_is_dsv4),
         // `served_act_quant` refuses a V4.1 census at load, so this route never serves one.
         dsv41: false,
+        inkling2: None,
         // A dsv4 artifact is never a glm5 one (disjoint dialect markers); stated rather than
         // left to `..Default::default()`, which this literal does not use.
         glm5: false,

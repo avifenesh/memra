@@ -45,8 +45,9 @@ route; "qualified" and "tuned" belong to pack states.
 | [Hy3](models/hy3.md) | `hy3`, `hy3_nvfp4` | NativeReference for both <!-- support: hy3-bf16-reference,hy3_nvfp4-modelopt-w4a16 --> | W4A16 mint, EP-4 on 4x RTX PRO 6000; reported 2026-08-30, receipts not tracked | no |
 | [DeepSeek-V4.1-Flash](models/deepseek-v41-flash.md) | `deepseek_v41` | NativeQualified on one RTX PRO 6000, NativeReference on CPU <!-- support: deepseek_v41-gpu-1x-pro6000,deepseek_v41-reference --> | safetensors checkpoint through its own memra-server route, one RTX PRO 6000 with the routed experts in host memory; `verify serve` November 2026 | no |
 | [Qwen3.8-Flash-Next](models/qwen38-flash-next.md) | `qwen4_exp` | none (pack support `None`) | none (bring-up gate path) | no |
+| [Inkling 2 Mini](models/inkling2-mini.md) | `inkling2` | NativeReference <!-- support: inkling2-reference --> | safetensors checkpoint through its own memra-server route, one RTX 5090 Laptop GPU; serve receipts November 2026, `verify serve` pending | no |
 
-Packs with no model card: `qwen3`, `qwen3_moe`, `llama_dense`, `glm_dsa` (GLM-5 and 5.2) and `inkling2` (Inkling 2 Mini: the reference executor runs its plan, no tuned surface does and nothing serves it) are NativeReference on tiny fixtures; `olmoe`, `minimax_m3` and the `mimo_v2` profiles declare no state. <!-- support: qwen3-tiny-random,qwen3_moe-reference,llama_dense-reference,glm_dsa-reference,inkling2-reference -->
+Packs with no model card: `qwen3`, `qwen3_moe`, `llama_dense` and `glm_dsa` (GLM-5 and 5.2) are NativeReference on tiny fixtures; `olmoe`, `minimax_m3` and the `mimo_v2` profiles declare no state. <!-- support: qwen3-tiny-random,qwen3_moe-reference,llama_dense-reference,glm_dsa-reference -->
 
 Speech: the Whisper large-v3, Nemotron RNNT and Qwen3-TTS packs bind their checkpoints and execute
 nothing natively. The `/v1/audio/*` routes exist: transcription and session open answer 503
