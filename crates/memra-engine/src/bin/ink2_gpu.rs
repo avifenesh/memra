@@ -793,7 +793,7 @@ fn corpus_run(
             .map(|a| a.iter().map(|v| v.as_u64().unwrap_or(0) as u8).collect())
             .unwrap_or_else(|| vec![0; ids.len()]);
         let n = ids.len();
-        route.dev.prec.set(Prec::default());
+        route.dev.prec.set(Prec::all_f64());
         route.reset()?;
         let rl = route.call(&ids, Head::All, None)?.logits;
         let keep = rl.len() / n;

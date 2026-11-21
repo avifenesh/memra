@@ -464,7 +464,7 @@ pub struct Dev {
 /// Precision arms per operation group: 0 = f64 (the #1397 program), 1 = f32, 2 = f32 with every
 /// sequential sum compensated (Kahan); attention also 3 = f64 with a chunk's scores split over
 /// blocks (f64g). A measurement seam: each arm is a different numeric program.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Prec {
     pub controller: u8,
     pub mix: u8,
@@ -478,8 +478,38 @@ pub struct Prec {
     pub attn: u8,
 }
 
+impl Default for Prec {
+    /// The route's program: the arms adopted by docs/decisions/INKLING2-PRECISION-ARMS.md (the
+    /// controller, the norms and clips and the epilogues in f32; attention f64 with a chunk's scores
+    /// split over blocks); every other group f64.
+    fn default() -> Self {
+        Self {
+            controller: 1,
+            mix: 0,
+            norm: 1,
+            conv: 0,
+            router: 0,
+            epilogue: 1,
+            attn: 3,
+        }
+    }
+}
+
 impl Prec {
-    /// "group=f32|f32c|f64,..." (all = every group)
+    /// Every group in f64: the #1397 program (the reference of a precision measurement).
+    pub fn all_f64() -> Self {
+        Self {
+            controller: 0,
+            mix: 0,
+            norm: 0,
+            conv: 0,
+            router: 0,
+            epilogue: 0,
+            attn: 0,
+        }
+    }
+
+    /// "group=f32|f32c|f64,..." on top of the default (all = every group)
     pub fn parse(spec: &str) -> Result<Self, String> {
         let mut p = Self::default();
         for item in spec.split(',').filter(|x| !x.is_empty()) {
@@ -3605,6 +3635,8 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
         }
         lines.push(format!("{line} {}", if ok { "OK" } else { "FAIL" }));
     };
+    // the cells below test the f64 forms against their #1397 oracles; the adopted arms run last
+    dev.prec.set(Prec::all_f64());
     let mut rng = Rng(0x1234_5678_9abc_def1);
     // a result that rounds an f64 value once to f32
     const ROUND: f64 = 1.2e-7;
@@ -5017,6 +5049,106 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 "ink2g-load-refusals E8M0 0xFF, NVFP4 amax NaN / inf / 0 / negative, denominator 0: refused {}/{}; valid planes accepted {accepted}",
                 refused.iter().filter(|r| **r).count(),
                 refused.len()
+            ),
+        );
+    }
+    // ---- the adopted precision arms (docs/decisions/INKLING2-PRECISION-ARMS.md) against their f64
+    // reference operations: controller, norms and clips, the output gate and softcap in f32
+    dev.prec.set(Prec::default());
+    {
+        const F32: f64 = 5e-5;
+        let (h, rows, rank) = (2304usize, 3usize, 64usize);
+        let x = rng.vec(rows * h, 2.0);
+        let msg = rng.vec(rows * h, 0.7);
+        let nw = rng.vec(h, 1.0);
+        let (down, forget, gain) = (
+            rng.bf16(rank * 2 * h, 0.02),
+            rng.bf16(h * rank, 0.1),
+            rng.bf16(h * rank, 0.1),
+        );
+        let (xd, md, nd) = (dev.up(&x)?, dev.up(&msg)?, dev.up(&nw)?);
+        let (dd, fd, gd) = (
+            dev.up(&bf16_bytes(&down))?,
+            dev.up(&bf16_bytes(&forget))?,
+            dev.up(&bf16_bytes(&gain))?,
+        );
+        let mut out = dev.zeros::<f32>(rows * h)?;
+        let mut scr = dev.zeros::<f64>(rows * (rank + 2 * h))?;
+        dev.launched("memra_ink2g_norm", unsafe {
+            ffi::memra_ink2g_norm(
+                dptr(&xd, &st) as *const f32,
+                dptr(&nd, &st) as *const f32,
+                1e-6,
+                dptr_mut(&mut out, &st) as *mut f32,
+                rows as i32,
+                h as i32,
+                dev.prec.get().norm as i32,
+                dev.sp(),
+            )
+        })?;
+        let want: Vec<f64> = x
+            .chunks_exact(h)
+            .flat_map(|r| ops::rms_norm(&wide(r), Some(&nw), 1e-6))
+            .collect();
+        let e_norm = worst_rel(&dev.down(&out, 0, rows * h)?, &want, 1e-6);
+        dev.launched("memra_ink2g_controller", unsafe {
+            ffi::memra_ink2g_controller(
+                dptr(&xd, &st) as *const f32,
+                dptr(&md, &st) as *const f32,
+                dptr(&dd, &st) as *const c_void,
+                dptr(&fd, &st) as *const c_void,
+                dptr(&gd, &st) as *const c_void,
+                1e-6,
+                dptr_mut(&mut out, &st) as *mut f32,
+                rows as i32,
+                h as i32,
+                rank as i32,
+                dptr_mut(&mut scr, &st) as *mut f64,
+                scr.len() as i64,
+                dev.prec.get().controller as i32,
+                dev.sp(),
+            )
+        })?;
+        let want: Vec<f64> = (0..rows)
+            .flat_map(|r| {
+                ops::controller(
+                    &wide(&x[r * h..(r + 1) * h]),
+                    &wide(&msg[r * h..(r + 1) * h]),
+                    &down,
+                    &forget,
+                    &gain,
+                    1e-6,
+                )
+            })
+            .collect();
+        let e_ctrl = worst_rel(&dev.down(&out, 0, rows * h)?, &want, 1e-6);
+        let mut y = dev.up(&x)?;
+        dev.launched("memra_ink2g_gate", unsafe {
+            ffi::memra_ink2g_gate(
+                dptr_mut(&mut y, &st) as *mut f32,
+                dptr(&md, &st) as *const f32,
+                (rows * h) as i64,
+                dev.prec.get().epilogue as i32,
+                dev.sp(),
+            )
+        })?;
+        let want: Vec<f64> = x
+            .iter()
+            .zip(&msg)
+            .map(|(a, g)| f64::from(*a) / (1.0 + (-f64::from(*g)).exp()))
+            .collect();
+        let e_gate = worst_rel(&dev.down(&y, 0, rows * h)?, &want, 1e-6);
+        let p = dev.prec.get();
+        verdict(
+            e_norm <= F32
+                && e_ctrl <= F32
+                && e_gate <= F32
+                && p.norm == 1
+                && p.controller == 1
+                && p.epilogue == 1
+                && p.attn == 3,
+            format!(
+                "ink2g-prec-adopted [{p:?}] f32 norm max rel={e_norm:.3e}, f32 controller max rel={e_ctrl:.3e}, f32 output gate max rel={e_gate:.3e} (bound {F32:.0e})"
             ),
         );
     }
