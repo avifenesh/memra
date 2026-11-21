@@ -502,7 +502,7 @@ fn generate_inner(
 ) -> Result<(Vec<u32>, SpecStats), String> {
     route.reset()?;
     drafter.reset();
-    let shared = Shared::of_route(route);
+    let shared = Shared::of_route(route)?;
     let chunk = route.chunk;
     let mut rng = match sampling {
         Sampling::Sample { seed, .. } => Rng(seed),
@@ -743,7 +743,7 @@ pub fn bench_costs(
         drafter.commit(&route.dev, cap, chunk, 0, part.len())?;
         anchor = *o.argmax.last().ok_or("argmax")?;
     }
-    let shared = Shared::of_route(route);
+    let shared = Shared::of_route(route)?;
     let mut carry = route.carry()?;
     route.save_carry(&mut carry)?;
     let time = |f: &mut dyn FnMut() -> Result<(), String>,

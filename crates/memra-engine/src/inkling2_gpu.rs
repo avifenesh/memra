@@ -1089,6 +1089,17 @@ struct DenseW {
     t: Option<CudaSlice<f32>>,
 }
 
+/// The output projection a drafter shares with the trunk (see [`Route::shared_weights`]).
+pub enum SharedHead<'a> {
+    Bf16(&'a CudaSlice<u8>),
+    /// codes `[n, k/2]`, block scales `[n, k/16]` (e4m3) and the global scale
+    Nvfp4 {
+        codes: &'a CudaSlice<u8>,
+        scales: &'a CudaSlice<u8>,
+        global: f32,
+    },
+}
+
 /// A weight's format and device addresses (data, block scales, tensor scale; 0 when absent).
 type WeightParts = (i32, u64, u64, u64);
 
@@ -2219,11 +2230,32 @@ impl Route {
         self.tap_capture.as_ref().map(|c| &c.buf)
     }
 
-    /// The trunk's token embedding `[vocab, hidden]` (BF16 bytes), its norm weight and epsilon,
-    /// and the output projection `[vocab, hidden]` (BF16 bytes; the first `vocab()` rows get
-    /// logits).
-    pub fn shared_weights(&self) -> (&CudaSlice<u8>, &CudaSlice<f32>, &CudaSlice<u8>) {
-        (&self.embed, &self.embed_norm, &self.unembed)
+    /// The trunk's token embedding `[vocab, hidden]` (BF16 bytes), its norm weight, and the
+    /// output projection `[vocab, hidden]` as the class stores it: BF16 rows, or NVFP4 codes with
+    /// their e4m3 block scales and the global scale (the first `vocab()` rows get logits).
+    pub fn shared_weights(
+        &self,
+    ) -> Result<(&CudaSlice<u8>, &CudaSlice<f32>, SharedHead<'_>), String> {
+        let u = &self.unembed;
+        let head = match u.fmt {
+            FMT_BF16 => SharedHead::Bf16(&u.data),
+            FMT_NVFP4 => {
+                let (Some(scales), Some(t)) = (u.scales.as_ref(), u.t.as_ref()) else {
+                    return Err("an NVFP4 unembed without its scales".into());
+                };
+                SharedHead::Nvfp4 {
+                    codes: &u.data,
+                    scales,
+                    global: self.dev.down(t, 0, 1)?[0],
+                }
+            }
+            f => {
+                return Err(format!(
+                    "the drafter reads a BF16 or NVFP4 unembed, not format {f}"
+                ));
+            }
+        };
+        Ok((&self.embed, &self.embed_norm, head))
     }
 
     pub fn plan(&self) -> &ModelPlan {
