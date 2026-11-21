@@ -24,6 +24,7 @@ Measured serving routes with no standing gate:
 - [DeepSeek-V4-Flash](deepseek-v4-flash.md) (two cards, own serve door)
 - [DeepSeek-V4.1-Flash](deepseek-v41-flash.md) (one card, own route): NativeQualified on one RTX PRO 6000, a correctness route <!-- support: deepseek_v41-gpu-1x-pro6000 -->
 - [GLM-5.3-Flash](glm53-flash.md): its `glm5_next` pack is NativeReference <!-- support: glm5_next-reference -->
+- [Inkling 2 Mini](inkling2-mini.md) (one 24 GB card, own route): its `inkling2` pack is NativeReference; the route serves several requests at once in batched decode calls bit-equal to their solo runs <!-- support: inkling2-reference -->
 - [Qwen3-Embedding-8B](qwen3-embedding-8b.md) and [Qwen3-Reranker-8B](qwen3-reranker-8b.md) (capture models)
 
 Engine cells or reference executor only, no gated serving route:
