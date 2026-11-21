@@ -1429,8 +1429,8 @@ again before any query reads them. A device fault stops the route, as without dr
 
 The `chat` run keeps generating past its answer and repeats "Paris" and the end token. Its
 acceptance is that loop's, not a chat turn's. A round drafts no more than the budget can still emit, and
-the last token is a plain call. In the same process, N = 3 each: `chat` decodes at 5.80 tok/s
-plain and 14.59 drafted, `long` at 5.39 and 8.16 (`dfly/receipts/gen/*-ef45222ac6.json`).
+the last token is a plain call. These runs are greedy and are
+the identity check only: speed is not read on greedy decoding (`dfly/receipts/gen/*-ef45222ac6.json`).
 
 ## Through the server
 
@@ -1460,59 +1460,64 @@ cell on one side only fails the comparison.
 **A refused round, served.** `MEMRA_HY4F_DRAFT_FAULT` is the gate's door (FLAGS.md). `draft:3`
 refuses, in every request, the draft round after its third verified round, after that round ran
 and wrote its block rows; `backup:3` refuses the ring backup of the fourth verify call, after the
-backup was taken. Both go through the branches a refusal by the route takes. The six chat turns
-below, served under each (`serve/fault-draft-ef45222ac6/`, `serve/fault-backup-ef45222ac6/`), equal the
+backup was taken. Both go through the branches a refusal by the route takes. Six greedy chat
+turns (`serve/scripts/real_turns.py --greedy`; drafts on and off they are equal too,
+`serve/turns-identity-ef45222ac6.json`), served under each (`serve/fault-draft-ef45222ac6/`, `serve/fault-backup-ef45222ac6/`), equal the
 drafts-off server's answers, content and reasoning (`serve/scripts/turns_identity.py --rounds 3
 --log`): every turn reports exactly 3 rounds, 36 to 240 of its tokens come from plain calls
 after them, and the server logged one refusal a turn.
 
-**Readings.** These are measurements only. One GB10, the same binaries, `serve/scripts/bench.py`
-(greedy, `ignore_eos`, one warm-up then N = 3 a cell, medians), in one window: drafts on, off
-(`MEMRA_HY4F_DRAFT=0`), on again.
+**Readings, sampled.** These are measurements only. Speed is read on sampled decoding at the
+artifact's `generation_config.json` (temperature 0.9, no top-k, no top-p; the model card
+recommends the same), seed 20261121, never on greedy. One GB10, the pin's memra-server (the same
+sha256 as above), in one window: drafts on, off (`MEMRA_HY4F_DRAFT=0`), on again
+(`dfly/receipts/serve/sampled-spec5/`, `sampled-plain/`, `sampled-spec5-b/`,
+`scripts/sampled-chain.sh`). The seed makes both arms generate the same text: every bench request
+and every turn of both drafts-on runs equals the drafts-off run's
+(`serve/bench-identity-sampled-*.json`, 20 requests each; `serve/turns-identity-sampled-*.json`).
 
-| workload | decode tok/s a request, drafts off | drafts on (first run / second run) | aggregate tok/s, off / on |
-|---|---:|---:|---:|
-| chat, c = 1, 36 / 128 tokens | 5.95 | 15.6 / 15.7 | 5.87 / 14.9 and 15.0 |
-| long, c = 1, 2,104 / 64 tokens | 5.40 | 8.2 / 8.2 | 2.92 / 3.55 |
-| chat, c = 4 | 1.49 | 3.96 to 4.04 | 5.88 / 14.9 |
-| long, c = 4 | 0.61 to 1.46 | 0.73 to 2.49 | 2.00 / 2.25 |
+Decode speed is read where the answer is real: on the six chat turns, each to its own end, and on
+the `long` probe (a 2,104-token prompt). The `chat` probe is not a workload: its first sampled
+token is the end token, so a run past it generates no answer. The `long` rows are
+`serve/scripts/bench.py` (`ignore_eos` to the budget, one warm-up then N = 3, medians):
 
-TTFT does not move (0.43 s on `chat`, 10.3 s on `long`): the prefill is the same calls. The bench's
-`chat` requests generate past the answer through `ignore_eos`, into the repeated "Paris" and the end
-token, which the drafter predicts well: 27 rounds for 128 tokens, 100 of 133 drafts kept (0.75). On
-`long`, 23 rounds for 64 tokens kept 40 of 112 (0.36). Calls still run one at a time, so the
-aggregate at c = 4 is the c = 1 rate.
-
-**Acceptance.** Drafts kept a round, `k = 5`:
-
-| source | rounds | kept a round | acceptance rate | tokens a round |
+| workload | drafts off | drafts on (first / second run) | drafts kept / drafted | kept a round |
 |---|---:|---:|---:|---:|
-| `chat` probe, teacher-forced oracle rounds at every position (prompt included) | 38 | 0.18 | 0.04 | |
-| `long` probe, teacher-forced oracle rounds at 203 anchors | 203 | 0.58 | 0.12 | |
-| `chat`, 128 generated tokens past EOS | 27 | 3.70 | 0.75 | 4.70 |
-| `long`, 64 generated tokens | 23 | 1.74 | 0.36 | 2.74 |
+| long, c = 1, 2,104 / 64 tokens, decode tok/s | 5.39 | 7.94 / 8.14 | 40 / 111 (0.36) | 1.74 |
+| long, c = 1, aggregate tok/s (prefill included) | 2.92 | 3.51 / 3.55 | | |
+| long, c = 4, 32 tokens each, decode tok/s a request | 0.61 to 1.45 | 0.76 to 2.70 | 80 / 212 (0.38) | 1.82 |
+| long, c = 4, aggregate tok/s | 1.99 | 2.29 / 2.29 | | |
 
-The teacher-forced rows score drafts against the request's own continuation from every anchor,
-the prompt's positions included, where the continuation is not the model's. They measure the
-drafter, not a served answer.
+TTFT does not move (10.3 s on `long`): the prefill is the same calls. Calls still run one at a
+time, so four requests share the one-request rate.
 
-**Real chat turns.** `serve/scripts/real_turns.py`: six greedy chat turns, one at a time, each
-stopping at its own end, against the server with drafts off and with drafts on
-(`serve/plain-ef45222ac6/`, `serve/spec5-ef45222ac6/`). Every answer and reasoning text is equal between
-the two (`serve/turns-identity-ef45222ac6.json`). Measurements only:
+The six chat turns (`serve/scripts/real_turns.py --runs 3`: one request at a time, 256 tokens at
+most, each wall time the median of three; the three answers of a turn are equal). Tokens a second
+are the completion tokens over the whole wall time, the 0.4 s prefill included:
 
-| turn | completion tokens | rounds | drafts kept / drafted | acceptance rate | wall s, drafts off | wall s, drafts on |
-|---|---:|---:|---:|---:|---:|---:|
-| capital (two sentences) | 49 | 21 | 29 / 105 | 0.28 | 9.1 | 7.0 |
-| code (a Python function) | 203 | 50 | 154 / 250 | 0.62 | 36.8 | 16.8 |
-| explain (a paragraph) | 136 | 56 | 81 / 280 | 0.29 | 24.6 | 18.2 |
-| list (five tips, cut at 256) | 256 | 122 | 133 / 606 | 0.22 | 46.5 | 39.5 |
-| reasoning (effort high) | 97 | 26 | 72 / 130 | 0.55 | 17.4 | 8.6 |
-| translate | 196 | 73 | 124 / 365 | 0.34 | 35.4 | 23.7 |
+| turn | completion tokens | rounds | drafts kept / drafted | acceptance rate | wall s, drafts off | wall s, drafts on (first / second) | tok/s off | tok/s on |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| capital (two sentences) | 56 | 25 | 32 / 125 | 0.26 | 9.8 | 8.1 / 8.1 | 5.7 | 6.9 |
+| code (a Python function) | 203 | 48 | 156 / 240 | 0.65 | 35.3 | 15.8 / 15.8 | 5.8 | 12.9 |
+| explain (a paragraph) | 139 | 60 | 80 / 300 | 0.27 | 23.9 | 19.0 / 19.0 | 5.8 | 7.3 |
+| list (five tips, cut at 256) | 256 | 113 | 142 / 561 | 0.25 | 44.3 | 35.6 / 35.6 | 5.8 | 7.2 |
+| reasoning (effort high) | 96 | 32 | 65 / 160 | 0.41 | 16.6 | 10.3 / 10.3 | 5.8 | 9.4 |
+| translate | 179 | 75 | 105 / 375 | 0.28 | 30.8 | 23.5 / 23.5 | 5.8 | 7.6 |
 
-Over the six turns the drafter keeps 593 of 1,736 drafts (0.34), and the turns take 169.8 s with
-drafts off and 113.8 s with drafts on. Code and reasoning text draft well. Lists and prose keep
-about one draft in four, where a round of five drafts saves little at this untuned call cost.
+Over the six turns the drafter keeps 580 of 1,761 drafts (0.33), and the turns take 160.7 s with
+drafts off and 112.2 s with drafts on: 5.8 against 8.3 tokens a second. Code and reasoning text
+draft well. Lists and prose keep about one draft in four, where a round of five drafts saves
+little at this untuned call cost.
+
+The teacher-forced oracle rounds of the gates keep 0.18 drafts a round on the `chat` probe (38
+rounds, every position, the prompt included) and 0.58 on `long` (203 anchors). They score drafts
+against the request's own continuation, where the continuation is not the model's, and measure
+the drafter, not a served answer.
+
+An earlier version of this section read speed on greedy decoding (`chat` probe 5.95 to 15.6
+tok/s, `long` 5.40 to 8.2, six greedy turns 169.8 s to 113.8 s). Those readings are withdrawn
+as speed numbers: the `chat` row decoded past its answer into a repeated token. Their receipts
+stay as the greedy identity runs (`serve/spec5-ef45222ac6/`, `plain-ef45222ac6/`).
 
 ## The record
 

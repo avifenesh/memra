@@ -22,22 +22,22 @@ alone. Every answer of that gate equals the same binary's with `MEMRA_HY4F_DRAFT
 greedy, seeded sampled, penalized, stopped, streamed, tool calls
 (research/modelplan-onboarding-hy4flash-20261119/, step 10, `dfly/receipts/`).
 
-Speed, one GB10, through the server (`serve/scripts/bench.py`, N = 3 a cell, drafts on and off in
-the same window):
+Speed, one GB10, through the server, sampled at the artifact's `generation_config.json`
+(temperature 0.9, no top-k, no top-p, seed 20261121; speed is not read on greedy), drafts on and
+off in the same window, both arms generating the same text:
 
 | workload | drafts off | drafts on |
 |---|---:|---:|
-| chat, one request, 36-token prompt, 128 tokens (`ignore_eos`) | 5.95 tok/s | 15.6 tok/s |
-| long, one request, 2,104-token prompt, 64 tokens | 5.40 tok/s | 8.2 tok/s |
-| chat, four requests at once, aggregate | 5.88 tok/s | 14.9 tok/s |
-| long, four requests at once, aggregate | 2.00 tok/s | 2.25 tok/s |
-| six real chat turns, greedy, each to its own end, total wall | 169.8 s | 113.8 s |
+| long, one request, 2,104-token prompt, 64 tokens, decode | 5.39 tok/s | 7.94 tok/s |
+| long, four requests at once, aggregate | 1.99 tok/s | 2.29 tok/s |
+| six real chat turns, each to its own end, total wall | 160.7 s | 112.2 s |
+| the six turns, completion tokens over wall | 5.8 tok/s | 8.3 tok/s |
 
-One GB10, the binaries of `ef45222ac6`, 2026-11-21; decode tokens a second of a request, medians of
-N = 3 after a warm-up; the second drafts-on run of the window read 15.7 and 8.2. Each of the six
-turns is faster with drafts on, from 46.5 s to 39.5 s on a list (0.22 of its drafts kept) to 36.8 s
-to 16.8 s on code (0.62 kept). The `chat` bench row decodes past its answer into a repeated token
-and overstates a chat turn; the turns are the fair reading.
+One GB10, the memra-server of `ef45222ac6`, 2026-11-22; `long` rows are medians of N = 3 after a
+warm-up, turn walls medians of three; the second drafts-on run of the window read 8.14 tok/s and
+112.3 s. Each of the six turns is faster with drafts on, from 44.3 s to 35.6 s on a list (0.25
+of its drafts kept) to 35.3 s to 15.8 s on code (0.65 kept). Over the turns 0.33 of the drafts
+are kept; on `long` 0.36.
 
 ## Decision
 
