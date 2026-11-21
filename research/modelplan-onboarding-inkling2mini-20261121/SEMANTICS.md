@@ -2,8 +2,10 @@
 
 Read from `config.json`, `hf_quant_config.json`, the safetensors headers, llama.cpp at
 `29b52d398b29` (`inkling2.cpp`, `inkling2-loop.cpp`) and transformers PR 51050 at
-`6173a2f679ff`. Everything here describes the float-activation class unless it says otherwise.
-Nothing here was executed by memra.
+`6173a2f679ff`. The module math below is common to both numeric classes. They differ only at the expert
+GEMMs: the declared class, which is the default and the support target, quantizes the expert
+inputs (see Stored quantization); the float-activation class, a bring-up and oracle step, does
+not. Nothing here was executed by memra.
 
 ## Trunk
 
@@ -86,7 +88,10 @@ Nothing here was executed by memra.
 - `hf_quant_config.json` (`quant_method: inkling2`) is the `parameter_groups` form. The NVFP4
   group declares `required_activation_quantization` (`nvfp4_e2m1`, block 16, per-token amax,
   e4m3 scale, `fouroversix_mae` selection); the MXFP8 group declares `mxfp8_e4m3`, block 32,
-  ue8m0. Both reference implementations run float activations instead.
+  ue8m0. This declared program is the family's default numeric class. Both reference
+  implementations run float activations instead, so neither is an oracle for it; where the
+  activation quantizer sits (which expert inputs, before or after the routed weight) and the
+  exact four-over-six rule come from the vLLM image.
 
 ## Drafter (`mtp.safetensors`)
 
@@ -101,7 +106,7 @@ reference implements it.
 
 | # | Fact | How it closes |
 |---|---|---|
-| 1 | Which numeric class is the default: float-activation or the declared activation-quantized one | measurement after both exist; the source of the second is the vLLM image |
+| 1 | The exact activation-quantization program of the default class: which expert inputs are quantized, the per-token amax, the `fouroversix_mae` selection rule, rounding ties | extraction from the vLLM image; the float-activation class stays a bring-up oracle |
 | 2 | The drafter program: the meaning of slots `[5, 23, 41, 48]` (48 read as the final hidden), `fuse_weight`, the RNN head, the `_ctx` projections | extraction from the vLLM image |
 | 3 | Whether the sliding window counts the current token (transformers mask against llama.cpp `n_swa`) | tiny fixture run past the window |
 | 4 | The sink form: llama.cpp subtracts the sink from the bias and uses a zero sink; on paper this equals the PR's form | tiny fixture |

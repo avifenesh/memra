@@ -23,8 +23,8 @@ Onboard `thinkingmachines/Inkling-2-Mini` as a native memra family (`inkling2`, 
 |---|---|---|
 | Checkpoint | `thinkingmachines/Inkling-2-Mini@ed40e7da625f594fc9c4990f5f66be24873c22d7`, 12 files with sha256 and size | the semantic source |
 | llama.cpp | `29b52d398b294509746ec0a3f28948a3107c0213` (`src/models/inkling2.cpp`, `inkling2-loop.cpp`) | second implementation of the float-activation trunk, for triage |
-| transformers | PR 51050 at head `6173a2f679ff4ed393afc499aefc569da7e68bc1` (open at capture) | oracle source for the float-activation class |
-| vLLM image | `vllm/vllm-openai:inkling-2-mini`, index digest `sha256:c2dc759f...` | only public source of the drafter and of the activation-quantized class |
+| transformers | PR 51050 at head `6173a2f679ff4ed393afc499aefc569da7e68bc1` (open at capture) | oracle source for the float-activation bring-up class |
+| vLLM image | `vllm/vllm-openai:inkling-2-mini`, index digest `sha256:c2dc759f...` | only public source of the drafter and of the declared activation-quantized class, the default |
 
 External engines are oracles and baselines. Their results are never memra support evidence.
 
@@ -68,11 +68,14 @@ python3 research/modelplan-onboarding-inkling2mini-20261121/census.py <checkpoin
 
 1. Text only first; image parts fail closed.
 2. Weights stay as shipped.
-3. Two named numeric classes, never presented as one another. First `float-activation`: exact
-   code times scale dequantization with f32 or bf16 activations, the class the transformers PR
-   and llama.cpp both run. Then the class `hf_quant_config.json` declares as required
-   (NVFP4 W4A4 with per-token amax and four-over-six scale selection, MXFP8 W8A8), whose only
-   public source is the vLLM image. Which one is the default is decided by measurement later.
+3. The default numeric class, and the only support target, is the program the checkpoint
+   declares as required in `hf_quant_config.json`: NVFP4 W4A4 with per-token amax and
+   four-over-six scale selection on the layer 0-19 experts, MXFP8 W8A8 on the layer 20-23
+   experts. Its only public source is the vLLM image. The `float-activation` class (exact code
+   times scale dequantization with f32 or bf16 activations, what the transformers PR and
+   llama.cpp run) is a bring-up and oracle step: never the default and never a support claim.
+   The two classes are named and never presented as one another. No GGUF-style quant formats
+   (Q*_K, IQ*) enter this family's path.
 4. The base is `main`. Nothing stacks on unmerged branches.
 5. The family is `inkling2`; receipts live here.
 
