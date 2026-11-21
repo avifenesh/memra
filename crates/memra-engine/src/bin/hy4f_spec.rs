@@ -259,7 +259,7 @@ fn greedy(
     n: usize,
     k: usize,
     chunk: usize,
-) -> Result<(Vec<u32>, Vec<Vec<f32>>, Vec<usize>, f64, f64), String> {
+) -> Result<(Vec<u32>, Vec<Vec<f32>>, Vec<usize>, usize, f64, f64), String> {
     sess.reset();
     let tp = Instant::now();
     let mut last = Vec::new();
@@ -275,18 +275,24 @@ fn greedy(
     let mut ids = vec![argmax(&last)];
     let mut rows = vec![last];
     let mut accepted = Vec::new();
+    let mut drafted = 0usize;
     let td = Instant::now();
     // the source row of the last call: its last row
     let mut src_row = (prompt.len() - 1) % c;
     while ids.len() < n {
         let next = *ids.last().unwrap();
-        if k == 0 {
+        // a verify call of `kk` drafts emits up to `kk + 1` tokens: no more drafts than the budget
+        // can still emit after the anchor's row
+        let kk = k.min(n - ids.len() - 1);
+        if kk == 0 {
             let row = route.call_in(sess, &[next], false, None, None)?;
             ids.push(argmax(&row));
             rows.push(row);
+            // the next round's source row is this call's only row
+            src_row = 0;
             continue;
         }
-        let kk = k.min(n - ids.len());
+        drafted += kk;
         let d = route.draft_in(sess, src_row, next, kk, None, false)?;
         let mut verify = vec![next];
         verify.extend(&d.ids);
@@ -317,7 +323,14 @@ fn greedy(
         }
     }
     route.dev.sync()?;
-    Ok((ids, rows, accepted, prefill_s, td.elapsed().as_secs_f64()))
+    Ok((
+        ids,
+        rows,
+        accepted,
+        drafted,
+        prefill_s,
+        td.elapsed().as_secs_f64(),
+    ))
 }
 
 fn generate(args: &[String]) -> Result<(), String> {
@@ -369,7 +382,7 @@ fn generate(args: &[String]) -> Result<(), String> {
     );
     drop(ck);
     let mut sess = route.new_session(prompt.len() + n + k + 2)?;
-    let (plain, prow, _, _, plain_s) = greedy(
+    let (plain, prow, _, _, _, plain_s) = greedy(
         &mut route,
         plan.vocab_size as usize,
         &mut sess,
@@ -378,7 +391,7 @@ fn generate(args: &[String]) -> Result<(), String> {
         0,
         chunk,
     )?;
-    let (spec, srow, acc, _, spec_s) = greedy(
+    let (spec, srow, acc, drafted, _, spec_s) = greedy(
         &mut route,
         plan.vocab_size as usize,
         &mut sess,
@@ -415,10 +428,10 @@ fn generate(args: &[String]) -> Result<(), String> {
             "ids_equal": plain == spec, "logits_rows_bit_equal": rows_equal,
             "plain_rows_sha256": flat(&prow), "spec_rows_sha256": flat(&srow),
             "plain_ids": plain, "spec_ids": spec,
-            "rounds": rounds, "drafted": rounds * k, "accepted": accepted,
+            "rounds": rounds, "drafted": drafted, "accepted": accepted,
             "accepted_per_round": accepted as f64 / rounds.max(1) as f64,
             "tokens_per_round": (n - 1) as f64 / rounds.max(1) as f64,
-            "acceptance_rate": accepted as f64 / (rounds * k).max(1) as f64,
+            "acceptance_rate": accepted as f64 / drafted.max(1) as f64,
             "accepted_histogram": hist,
             "plain_decode_s": plain_s, "spec_decode_s": spec_s,
             "plain_decode_tok_s": (n - 1) as f64 / plain_s, "spec_decode_tok_s": (n - 1) as f64 / spec_s,
@@ -427,7 +440,7 @@ fn generate(args: &[String]) -> Result<(), String> {
     let mut exact = plain == spec && rows_equal;
     for run in 0..bench {
         for (arm, kk) in [("plain", 0), ("spec", k)] {
-            let (ids, _, acc, prefill_s, dec_s) = greedy(
+            let (ids, _, acc, drafted, prefill_s, dec_s) = greedy(
                 &mut route,
                 plan.vocab_size as usize,
                 &mut sess,
@@ -440,8 +453,8 @@ fn generate(args: &[String]) -> Result<(), String> {
                 "{}",
                 json!({"bench_run": run, "arm": arm, "tokens": ids.len(), "prefill_s": prefill_s,
                        "decode_s": dec_s, "decode_tok_s": (ids.len() - 1) as f64 / dec_s,
-                       "rounds": acc.len(), "accepted": acc.iter().sum::<usize>(),
-                       "ids_equal_plain": ids == plain})
+                       "rounds": acc.len(), "drafted": drafted,
+                       "accepted": acc.iter().sum::<usize>(), "ids_equal_plain": ids == plain})
             );
             exact &= ids == plain;
         }
