@@ -102,15 +102,40 @@ not. Nothing here was executed by memra.
 window 1024, `markov_head_type: rnn_hidden`, `target_layer_ids [5, 23, 41, 48]`. Neither
 reference implements it.
 
+## Read from reference code since this note was opened
+
+These come from the model code of the vendor's serving image (the only public source of the
+declared numeric class and the drafter). They are stated here as read, and each one becomes a
+program fact only when a test proves it.
+
+- Activation quantization applies to the routed experts only. The token's row is quantized once
+  before gate/up; each routed row is quantized again before down. Everything else is BF16 with
+  f32 accumulation.
+- The routing weight multiplies the activation output before the down projection, so before the
+  down input is quantized. The two float-activation implementations multiply after.
+- `w13` rows are interleaved: row `2j` is gate `j`, row `2j + 1` is up `j`.
+- The sliding window counts the current token: the query sees itself and 1023 positions back.
+  A sliding layer masks distances at or past its table; a full layer gives them a zero bias.
+- Static taps of a full layer's K and V convolutions are indexed by lag, current token first.
+- Router ties go to the lower expert index; the selected raw sigmoids are normalized with no
+  epsilon.
+- Drafter taps `[5, 23, 41, 48]` count layer visits in execution order and read the INPUT of
+  the visit (the running residual stream): as cache slots they are the inputs of slots 5, 29 and
+  47, plus the final normed hidden. The drafter has a learned mask embedding, a fuse matrix over
+  the taps, context K/V projections, a recurrent Markov head and no confidence head, so it is not
+  the `DsparkPlan` program.
+
 ## Open facts
 
 | # | Fact | How it closes |
 |---|---|---|
 | 1 | The exact activation-quantization program of the default class: which expert inputs are quantized, the per-token amax, the `fouroversix_mae` selection rule, rounding ties | extraction from the vLLM image; the float-activation class stays a bring-up oracle |
-| 2 | The drafter program: the meaning of slots `[5, 23, 41, 48]` (48 read as the final hidden), `fuse_weight`, the RNN head, the `_ctx` projections | extraction from the vLLM image |
-| 3 | Whether the sliding window counts the current token (transformers mask against llama.cpp `n_swa`) | tiny fixture run past the window |
-| 4 | The sink form: llama.cpp subtracts the sink from the bias and uses a zero sink; on paper this equals the PR's form | tiny fixture |
+| 2 | The drafter program, read from the image's code (above) and not yet typed as an executable plan | a drafter plan with its own reference implementation and oracle |
+| 3 | The window edge, read as "counts the current token" | tiny fixture run past the window |
+| 4 | The sink form: the two spellings (a sink in the denominator, or the sink subtracted from the bias with a zero sink) are equal on paper | tiny fixture |
 | 5 | NVFP4 nibble order and e4m3 scale decode | one expert dequantized against the PR's op, bit for bit |
 | 6 | Whether the MXFP8 scale grid is `[1, 32]` everywhere, as the shapes say, against the declared `[32, 32]` | the same check on a layer 20-23 expert |
 | 7 | Whether single-term BF16 GEMM inputs hold the argmax | checkpoint parity on the GPU class |
-| 8 | Top-k tie order in the router | pinned to index order; checked against the oracle |
+| 8 | Top-k tie order in the router, read as lower index first | checked against the oracle |
+| 9 | Gate/up interleave direction of `w13` | one expert bank against captured vectors |
+| 10 | Whether the routing weight enters before the down projection in the declared class | captured vectors of the declared class |
