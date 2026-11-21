@@ -11223,11 +11223,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // carried across calls against one call, and each red arm of the checkpoint gate.
     {
         let dev = memra_engine::inkling2_gpu::Dev::on(e.stream());
-        let (lines, failed) = memra_engine::inkling2_gpu::ink2g_gate(&dev)?;
-        for line in &lines {
-            println!("{line}");
+        // an error inside the gate is one failed cell, not the end of the summary
+        match memra_engine::inkling2_gpu::ink2g_gate(&dev) {
+            Ok((lines, failed)) => {
+                for line in &lines {
+                    println!("{line}");
+                }
+                fails += failed as i32;
+            }
+            Err(error) => {
+                println!("ink2g-gate FAIL: {error}");
+                fails += 1;
+            }
         }
-        fails += failed as i32;
     }
 
     for name in take_observed_cells() {

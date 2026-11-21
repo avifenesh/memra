@@ -37,6 +37,8 @@
 #define INK2G_TILE_WORDS (2 + TILE_M)
 #define INK2G_MAX_STATES 8
 #define INK2G_MAX_EXTENT 1024
+// keys one attention tile holds (shared f64 scores)
+#define INK2G_ATTN_TILE 1024
 #define INK2G_MAX_KERNEL 8
 
 namespace {
@@ -372,7 +374,7 @@ __global__ void ink2g_mix_kernel(Ink2gStates st, int ns, const float* __restrict
 // ---- loop controller ---------------------------------------------------------------------------
 // g = down . cat(rms(x), rms(m)); out = (1 - tanh(forget . g)) * x + tanh(gain . g) * m.
 // out may be x.
-__global__ void ink2g_controller_kernel(const float* __restrict__ x, const float* __restrict__ msg,
+__global__ void ink2g_controller_kernel(const float* x, const float* __restrict__ msg,
                                         const uint16_t* __restrict__ down, const uint16_t* __restrict__ forget,
                                         const uint16_t* __restrict__ gain, double eps, float* out, int H, int rank) {
   __shared__ double sh[8];
@@ -442,13 +444,14 @@ __global__ void ink2g_heads_kernel(int mode, const float* x, const float* __rest
 // mode 1 (dynamic): taps [K, C] and dyn [R, groups, K], both by lag with the current token first;
 //   out = (x + sum_lag (taps[lag, c] + dyn[r, group(c), lag]) * x[t - lag]) / sqrt(2K + 1).
 // add (nullable): out = add + conv. carry == 0 leaves the state untouched (the gate's red arm).
-__global__ void ink2g_conv_kernel(int mode, const float* __restrict__ x, float* __restrict__ state,
-                                  const float* __restrict__ taps, const float* __restrict__ dyn, int groups,
-                                  const float* add, float* out, int R, int C, int K, int carry) {
+__global__ void ink2g_conv_kernel(int mode, const float* __restrict__ x, const float* __restrict__ state_in,
+                                  float* __restrict__ state_out, const float* __restrict__ taps,
+                                  const float* __restrict__ dyn, int groups, const float* add, float* out, int R,
+                                  int C, int K) {
   const int c = blockIdx.x * blockDim.x + threadIdx.x;
   if (c >= C) return;
   double hist[INK2G_MAX_KERNEL];  // hist[l] = input l steps back, l in 1..K-1
-  for (int l = 1; l < K; l++) hist[l] = (double)state[(int64_t)(K - 1 - l) * C + c];
+  for (int l = 1; l < K; l++) hist[l] = (double)state_in[(int64_t)(K - 1 - l) * C + c];
   double tp[INK2G_MAX_KERNEL];
   for (int j = 0; j < K; j++) tp[j] = mode == 0 ? (double)taps[(int64_t)c * K + j] : (double)taps[(int64_t)j * C + c];
   const int group = mode == 1 ? c / (C / groups) : 0;
@@ -471,8 +474,8 @@ __global__ void ink2g_conv_kernel(int mode, const float* __restrict__ x, float* 
     for (int l = K - 1; l > 1; l--) hist[l] = hist[l - 1];
     hist[1] = cur;
   }
-  if (carry)
-    for (int l = 1; l < K; l++) state[(int64_t)(K - 1 - l) * C + c] = (float)hist[l];
+  if (state_out)
+    for (int l = 1; l < K; l++) state_out[(int64_t)(K - 1 - l) * C + c] = (float)hist[l];
 }
 
 // ---- relative-bias attention with the per-query sink ---------------------------------------------
@@ -482,23 +485,35 @@ __global__ void ink2g_conv_kernel(int mode, const float* __restrict__ x, float* 
 // key at d >= extent is masked or takes a zero bias. The sink is one more logit of the softmax
 // denominator and has no value: p_d = exp(s_d) / (exp(sink) + sum exp(s)). It is never folded into
 // the bias, so every attended key, the zero-bias ones included, sits under it.
-// scratch [rows * heads, scratch_ld] holds the f64 scores of a block: the softmax never sees an
-// f32-rounded score.
+// Scores are f64 and never stored per key: pass 1 takes the maximum, pass 2 the denominator, pass 3
+// recomputes each score of a tile of INK2G_ATTN_TILE keys into shared memory and folds the tile
+// into the output, oldest key first. Every score is the same sequential f64 dot in every pass, so
+// the result is the one a stored-score program computes, with shared memory that does not grow
+// with the context.
+__device__ __forceinline__ double ink2g_attn_score(const float* qs, const float* kc, int64_t cap, int64_t pos,
+                                                   int64_t d, int kvw, int kvh, int dim, int extent,
+                                                   int mask_beyond, const double* bias, double scale) {
+  if (d >= extent && mask_beyond) return -INFINITY;
+  const float* kr = kc + ((pos - d) % cap) * kvw + kvh * dim;
+  double dot = 0.0;
+  for (int i = 0; i < dim; i++) dot += (double)qs[i] * (double)kr[i];
+  return dot * scale + (d < extent ? bias[d] : 0.0);
+}
+
 __global__ void ink2g_attn_kernel(const float* __restrict__ q, const float* __restrict__ rel,
                                   const float* __restrict__ table, const float* __restrict__ sink,
                                   const float* __restrict__ kc, const float* __restrict__ vc, int64_t cap, int64_t pos0,
-                                  int window, int extent, int mask_beyond, double* __restrict__ scratch,
-                                  int64_t scratch_ld, float* __restrict__ out, int heads, int kv_heads, int dim,
-                                  int rank) {
+                                  int window, int extent, int mask_beyond, float* __restrict__ out, int heads,
+                                  int kv_heads, int dim, int rank) {
   __shared__ double sh[8];
   __shared__ double bias[INK2G_MAX_EXTENT];
+  __shared__ double tile[INK2G_ATTN_TILE];
   __shared__ float qs[256];
   const int r = blockIdx.x, h = blockIdx.y, t = threadIdx.x, nt = blockDim.x;
   const int64_t pos = pos0 + r;
   const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
   const int kvh = h / (heads / kv_heads);
   const int kvw = kv_heads * dim;
-  double* sc = scratch + ((int64_t)r * heads + h) * scratch_ld;
   const float* relr = rel + ((int64_t)r * heads + h) * rank;
   for (int d = t; d < extent && d < nkeys; d += nt) {
     double b = 0.0;
@@ -510,32 +525,28 @@ __global__ void ink2g_attn_kernel(const float* __restrict__ q, const float* __re
   const double scale = 1.0 / sqrt((double)dim);
   const double sk = (double)sink[(int64_t)r * heads + h];
   double top = -INFINITY;
-  for (int64_t d = t; d < nkeys; d += nt) {
-    double s = -INFINITY;
-    if (d < extent || !mask_beyond) {
-      const float* kr = kc + ((pos - d) % cap) * kvw + kvh * dim;
-      double dot = 0.0;
-      for (int i = 0; i < dim; i++) dot += (double)qs[i] * (double)kr[i];
-      s = dot * scale + (d < extent ? bias[d] : 0.0);
-    }
-    sc[d] = s;
-    top = fmax(top, s);
-  }
+  for (int64_t d = t; d < nkeys; d += nt)
+    top = fmax(top, ink2g_attn_score(qs, kc, cap, pos, d, kvw, kvh, dim, extent, mask_beyond, bias, scale));
   top = fmax(ink2g_block_max(top, sh), sk);
   double den = 0.0;
-  for (int64_t d = t; d < nkeys; d += nt) {
-    const double e = exp(sc[d] - top);
-    sc[d] = e;
-    den += e;
-  }
+  for (int64_t d = t; d < nkeys; d += nt)
+    den += exp(ink2g_attn_score(qs, kc, cap, pos, d, kvw, kvh, dim, extent, mask_beyond, bias, scale) - top);
   den = ink2g_block_sum(den, sh) + exp(sk - top);
-  if (t < dim) {
-    double a = 0.0;
-    for (int64_t d = nkeys - 1; d >= 0; d--)  // oldest key first, as the reference sums
-      a += sc[d] * (double)vc[((pos - d) % cap) * kvw + kvh * dim + t];
-    out[((int64_t)r * heads + h) * dim + t] = (float)(a / den);
+  double a = 0.0;
+  for (int64_t hi = nkeys - 1; hi >= 0; hi -= INK2G_ATTN_TILE) {
+    const int64_t lo = hi - INK2G_ATTN_TILE + 1 > 0 ? hi - INK2G_ATTN_TILE + 1 : 0;
+    __syncthreads();  // the previous tile is folded
+    for (int64_t d = lo + t; d <= hi; d += nt)
+      tile[d - lo] =
+          exp(ink2g_attn_score(qs, kc, cap, pos, d, kvw, kvh, dim, extent, mask_beyond, bias, scale) - top);
+    __syncthreads();
+    if (t < dim)
+      for (int64_t d = hi; d >= lo; d--)  // oldest key first, as the reference sums
+        a += tile[d - lo] * (double)vc[((pos - d) % cap) * kvw + kvh * dim + t];
   }
+  if (t < dim) out[((int64_t)r * heads + h) * dim + t] = (float)(a / den);
 }
+
 
 // y *= sigmoid(g)
 __global__ void ink2g_gate_kernel(float* __restrict__ y, const float* __restrict__ g, int64_t n) {
@@ -614,13 +625,16 @@ __global__ void ink2g_sum_kernel(const float* __restrict__ dn, const float* __re
 
 // The declared class's combine: the routed bf16 rows summed in fp32 in rank order, rounded once to
 // bf16 (memra_reference::inkling2_actquant::combine).
-__global__ void ink2g_sum_bf16_kernel(const uint16_t* __restrict__ dn, float* __restrict__ out, int64_t n, int top_k,
-                                      int H) {
+__global__ void ink2g_sum_bf16_kernel(const uint16_t* __restrict__ dn, const float* __restrict__ wts,
+                                      float* __restrict__ out, int64_t n, int top_k, int H) {
   const int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= n) return;
   const int64_t r = i / H, j = i % H;
   float a = 0.0f;
-  for (int s = 0; s < top_k; s++) a = __fadd_rn(a, ink2g_bf16(dn[(r * top_k + s) * H + j]));
+  for (int s = 0; s < top_k; s++) {
+    const float v = ink2g_bf16(dn[(r * top_k + s) * H + j]);
+    a = __fadd_rn(a, wts ? __fmul_rn(v, wts[r * top_k + s]) : v);  // wts: the gate's red arm only
+  }
   out[i] = ink2g_bf16_round(a);
 }
 
@@ -786,33 +800,34 @@ int memra_ink2g_heads(int mode, const float* x, const float* scale, double thr, 
   return ink2g_rc();
 }
 
-int memra_ink2g_conv(int mode, const float* x, float* state, const float* taps, const float* dyn, int groups,
-                     const float* add, float* out, int R, int C, int K, int carry, void* stream) {
-  if ((mode != 0 && mode != 1) || !x || !state || !taps || !out || R <= 0 || C <= 0) return 45017;
+// state_in: the history before the call; state_out (nullable): the history after it, a different
+// buffer, so a call that fails later leaves the caller's committed history untouched. A null
+// state_out drops the history (the gate's red arm).
+int memra_ink2g_conv(int mode, const float* x, const float* state_in, float* state_out, const float* taps,
+                     const float* dyn, int groups, const float* add, float* out, int R, int C, int K, void* stream) {
+  if ((mode != 0 && mode != 1) || !x || !state_in || !taps || !out || R <= 0 || C <= 0) return 45017;
+  if (state_out == state_in) return 45041;
   if (K < 2 || K > INK2G_MAX_KERNEL) return 45018;
   if (mode == 1 && (!dyn || groups <= 0 || C % groups != 0)) return 45019;
   if (x == out) return 45020;
-  ink2g_conv_kernel<<<(C + 255) / 256, 256, 0, (cudaStream_t)stream>>>(mode, x, state, taps, dyn, groups, add, out,
-                                                                     R, C, K, carry);
+  ink2g_conv_kernel<<<(C + 255) / 256, 256, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
+                                                                     add, out, R, C, K);
   return ink2g_rc();
 }
 
 int memra_ink2g_attn(const float* q, const float* rel, const float* table, const float* sink, const float* kc,
-                     const float* vc, int64_t cap, int64_t pos0, int window, int extent, int mask_beyond,
-                     double* scratch, int64_t scratch_ld, float* out, int R, int heads, int kv_heads, int dim,
-                     int rank, void* stream) {
-  if (!q || !rel || !table || !sink || !kc || !vc || !scratch || !out) return 45021;
+                     const float* vc, int64_t cap, int64_t pos0, int window, int extent, int mask_beyond, float* out,
+                     int R, int heads, int kv_heads, int dim, int rank, void* stream) {
+  if (!q || !rel || !table || !sink || !kc || !vc || !out) return 45021;
   if (R <= 0 || heads <= 0 || kv_heads <= 0 || heads % kv_heads != 0 || dim <= 0 || dim > 256 || rank <= 0)
     return 45022;
   if (extent <= 0 || extent > INK2G_MAX_EXTENT || heads > 65535) return 45023;
   const int64_t last = pos0 + R - 1;
-  const int64_t reach = window > 0 ? (last + 1 < window ? last + 1 : window) : last + 1;
   // every key a row of this call reads is still in the cache: the ring holds the window of its
   // oldest row and the rows of the call
-  if (reach > scratch_ld || (window > 0 ? (int64_t)window - 1 + R : last + 1) > cap) return 45024;
+  if ((window > 0 ? (int64_t)window - 1 + R : last + 1) > cap) return 45024;
   ink2g_attn_kernel<<<dim3(R, heads), 256, 0, (cudaStream_t)stream>>>(
-      q, rel, table, sink, kc, vc, cap, pos0, window, extent, mask_beyond, scratch, scratch_ld, out, heads,
-      kv_heads, dim, rank);
+      q, rel, table, sink, kc, vc, cap, pos0, window, extent, mask_beyond, out, heads, kv_heads, dim, rank);
   return ink2g_rc();
 }
 
@@ -847,11 +862,13 @@ int memra_ink2g_sum(const float* dn, const float* wts, float* out, int R, int to
   return ink2g_rc();
 }
 
-int memra_ink2g_sum_bf16(const void* dn, float* out, int R, int top_k, int H, void* stream) {
+// wts (nullable): the routing weight applied after the down projection, a red arm of the gate; the
+// declared program folds it into SiTU before the down quantization.
+int memra_ink2g_sum_bf16(const void* dn, const float* wts, float* out, int R, int top_k, int H, void* stream) {
   if (!dn || !out || R <= 0 || top_k <= 0 || H <= 0) return 45035;
   const int64_t n = (int64_t)R * H;
-  ink2g_sum_bf16_kernel<<<(unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream>>>((const uint16_t*)dn, out, n,
-                                                                                      top_k, H);
+  ink2g_sum_bf16_kernel<<<(unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream>>>((const uint16_t*)dn, wts, out,
+                                                                                      n, top_k, H);
   return ink2g_rc();
 }
 

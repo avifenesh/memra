@@ -135,7 +135,8 @@ mod ffi {
         pub fn memra_ink2g_conv(
             mode: i32,
             x: *const f32,
-            state: *mut f32,
+            state_in: *const f32,
+            state_out: *mut f32,
             taps: *const f32,
             dynamic: *const f32,
             groups: i32,
@@ -144,7 +145,6 @@ mod ffi {
             r: i32,
             c: i32,
             k: i32,
-            carry: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_attn(
@@ -159,8 +159,6 @@ mod ffi {
             window: i32,
             extent: i32,
             mask_beyond: i32,
-            scratch: *mut f64,
-            scratch_ld: i64,
             out: *mut f32,
             r: i32,
             heads: i32,
@@ -204,6 +202,7 @@ mod ffi {
         ) -> i32;
         pub fn memra_ink2g_sum_bf16(
             dn: *const c_void,
+            wts: *const f32,
             out: *mut f32,
             r: i32,
             top_k: i32,
@@ -311,6 +310,9 @@ pub struct RedArms {
     pub conv_state_dropped: bool,
     /// The router keeps the higher expert among equal keys.
     pub ties_high: bool,
+    /// A forward that fails part way commits the conv histories it wrote (the program before the
+    /// route's commit rule). Needs `Route::fail_after_slot`.
+    pub commit_on_error: bool,
 }
 
 /// The device, its stream and what the route did on it.
@@ -340,6 +342,15 @@ impl Dev {
     pub fn new(device: usize) -> Result<Self, String> {
         let ctx = CudaContext::new(device).map_err(|e| format!("cuda context: {e:?}"))?;
         Ok(Self::on(ctx.default_stream()))
+    }
+
+    /// The driver's free and total bytes (`cuMemGetInfo`), the only headroom figure that counts
+    /// the CUDA context and fragmentation (LAW:measure-driver-free-not-nvidia-smi).
+    pub fn driver_free(&self) -> Result<(usize, usize), String> {
+        self.st
+            .context()
+            .mem_get_info()
+            .map_err(|e| format!("mem_get_info: {e:?}"))
     }
 
     /// A handle on an existing stream (the kernel-check binary's engine).
@@ -447,6 +458,15 @@ impl Dev {
 /// The checkpoint directory: the shard index plus the pack's auxiliary tensor files.
 pub struct Ckpt {
     pub st: StModel,
+    /// The pack's tensor contract bound against the census of every file (shards and auxiliary
+    /// files) before any upload: missing, unexpected, ambiguous, wrong-shape and wrong-quant
+    /// tensors are refused here, and every name the loader reads must be one it binds.
+    pub binding: memra_gguf::checkpoint_binding::CheckpointBinding,
+    /// The plan the contract was compiled for; `Route::load` refuses another.
+    plan: ModelPlan,
+    /// Every header the census was built from (shards and auxiliary files).
+    headers: BTreeMap<String, memra_gguf::safetensors::StInfo>,
+    pack: &'static memra_gguf::model_packs::ModelPack,
     /// `(prefix, model)` of each auxiliary file the pack names (the drafter's `mtp.safetensors`).
     pub auxiliary: Vec<(&'static str, StModel)>,
     pub bytes_read: Cell<usize>,
@@ -469,21 +489,139 @@ impl Ckpt {
     /// that is missing is an error: the contract owns its tensors.
     pub fn open(
         dir: &std::path::Path,
-        pack: &memra_gguf::model_packs::ModelPack,
+        pack: &'static memra_gguf::model_packs::ModelPack,
+        cfg: &memra_gguf::config::ModelConfig,
+        plan: &ModelPlan,
     ) -> Result<Self, String> {
         let st = StModel::open(dir).map_err(|e| format!("open {}: {e}", dir.display()))?;
+        let mut headers: BTreeMap<String, memra_gguf::safetensors::StInfo> = BTreeMap::new();
+        for name in st.names() {
+            let info = st.info(name).ok_or_else(|| format!("{name}: no header"))?;
+            headers.insert(name.clone(), info.clone());
+        }
         let mut auxiliary = Vec::new();
         for aux in pack.auxiliary_files {
             let path = dir.join(aux.file);
             let model =
                 StModel::open(&path).map_err(|e| format!("open {}: {e}", path.display()))?;
+            for name in model.names() {
+                let info = model
+                    .info(name)
+                    .ok_or_else(|| format!("{name}: no header"))?;
+                let full = format!("{}{name}", aux.prefix);
+                if headers.insert(full.clone(), info.clone()).is_some() {
+                    return Err(format!(
+                        "tensor {full} of {} collides with an indexed tensor",
+                        aux.file
+                    ));
+                }
+            }
             auxiliary.push((aux.prefix, model));
         }
+        let census = memra_gguf::source::census_from_safetensors_headers(&headers)?;
+        let binding = memra_gguf::checkpoint_binding::bind_census(Some(pack), cfg, plan, &census)
+            .map_err(|e| format!("tensor contract: {e}"))?;
         Ok(Self {
             st,
+            binding,
+            plan: plan.clone(),
+            headers,
+            pack,
             auxiliary,
             bytes_read: Cell::new(0),
         })
+    }
+
+    /// The binding's red arms: censuses the contract must refuse (one extra tensor, one missing,
+    /// one shape changed, one dtype substituted) and names the loader must not read. Lines to
+    /// print and the number of arms that were not refused.
+    pub fn contract_red_arms(
+        &self,
+        cfg: &memra_gguf::config::ModelConfig,
+    ) -> Result<(Vec<String>, usize), String> {
+        use memra_gguf::checkpoint_binding::bind_census;
+        use memra_gguf::source::census_from_safetensors_headers;
+        let mut lines = Vec::new();
+        let mut fails = 0;
+        let mut arm = |name: &str, headers: BTreeMap<String, memra_gguf::safetensors::StInfo>| {
+            let verdict = census_from_safetensors_headers(&headers).and_then(|census| {
+                bind_census(Some(self.pack), cfg, &self.plan, &census).map_err(|e| e.to_string())
+            });
+            match verdict {
+                Ok(_) => {
+                    fails += 1;
+                    lines.push(format!("contract red arm {name}: ACCEPTED FAIL"));
+                }
+                Err(e) => lines.push(format!(
+                    "contract red arm {name}: refused ({}) OK",
+                    e.chars().take(160).collect::<String>()
+                )),
+            }
+        };
+        let (first, info) = self
+            .headers
+            .iter()
+            .find(|(n, i)| n.starts_with("model.llm.layers.0.") && i.dtype == "BF16")
+            .map(|(n, i)| (n.clone(), i.clone()))
+            .ok_or("no BF16 tensor in layer 0")?;
+        let mut extra = self.headers.clone();
+        extra.insert("model.llm.layers.0.extra_proj.weight".into(), info.clone());
+        arm("extra tensor", extra);
+        let mut missing = self.headers.clone();
+        missing.remove(&first);
+        arm(&format!("missing {first}"), missing);
+        let mut shaped = self.headers.clone();
+        if let Some(i) = shaped.get_mut(&first) {
+            i.shape[0] += 1;
+        }
+        arm(&format!("shape of {first}"), shaped);
+        let mut typed = self.headers.clone();
+        if let Some(i) = typed.get_mut(&first) {
+            i.dtype = "F16".into();
+        }
+        arm(&format!("dtype of {first}"), typed);
+        for name in [
+            "model.llm.layers.0.extra_proj.weight",
+            "model.llm.embed_tokens.weight",
+        ] {
+            match self.contracted(name) {
+                Ok(()) => {
+                    fails += 1;
+                    lines.push(format!("loader read of {name}: ACCEPTED FAIL"));
+                }
+                Err(_) => lines.push(format!("loader read of {name}: refused OK")),
+            }
+        }
+        match self.contracted(&first) {
+            Ok(()) => lines.push(format!("loader read of {first}: bound OK")),
+            Err(e) => {
+                fails += 1;
+                lines.push(format!("loader read of {first}: {e} FAIL"));
+            }
+        }
+        Ok((lines, fails))
+    }
+
+    /// `name` is a tensor the bound contract owns, or a quantization plane of one.
+    fn contracted(&self, name: &str) -> Result<(), String> {
+        let bound = |n: &str| {
+            self.binding
+                .bound
+                .tensors
+                .get(&memra_gguf::model_packs::inkling2::semantic_tensor_id(n))
+                .is_some_and(|t| t.checkpoint_names.iter().any(|c| c == n))
+        };
+        if bound(name) {
+            return Ok(());
+        }
+        for plane in ["_scale", "_amax", "_outer_scale_denominator"] {
+            if name.strip_suffix(plane).is_some_and(bound) {
+                return Ok(());
+            }
+        }
+        Err(format!(
+            "{name} is not a tensor the bound inkling2 contract owns: the loader reads only what the contract binds"
+        ))
     }
 
     fn shaped(
@@ -492,17 +630,24 @@ impl Ckpt {
         dtypes: &[&str],
         shape: &[usize],
     ) -> Result<(&str, &[u8]), String> {
+        self.contracted(name)?;
         let (info, bytes) = self
             .st
             .raw(name)
             .ok_or_else(|| format!("the checkpoint has no tensor {name}"))?;
-        let got: Vec<usize> = info.shape.iter().map(|v| *v as usize).collect();
-        if !dtypes.contains(&info.dtype.as_str()) || got != shape {
-            return Err(format!(
-                "{name}: {} {:?} in the checkpoint, the plan needs {dtypes:?} {shape:?}",
-                info.dtype, got
-            ));
-        }
+        // The bound contract has checked the storage and shape of every tensor; the loader's own
+        // expectation is an assertion that the two agree.
+        debug_assert!(
+            dtypes.contains(&info.dtype.as_str())
+                && info
+                    .shape
+                    .iter()
+                    .map(|v| *v as usize)
+                    .eq(shape.iter().copied()),
+            "{name}: {} {:?} in the checkpoint, the loader expects {dtypes:?} {shape:?}",
+            info.dtype,
+            info.shape
+        );
         self.bytes_read.set(self.bytes_read.get() + bytes.len());
         Ok((info.dtype.as_str(), bytes))
     }
@@ -523,6 +668,34 @@ impl Ckpt {
 
     fn f32_dev(&self, dev: &Dev, name: &str, shape: &[usize]) -> Result<CudaSlice<f32>, String> {
         dev.up(&self.f32s(name, shape)?)
+    }
+}
+
+/// NVFP4's per-expert amax and outer-scale denominator must be finite and positive: the weight's
+/// global scale is amax / denominator, and anything else is not a weight.
+fn check_nvfp4_globals(name: &str, amax: &[f32], denominator: f32) -> Result<(), String> {
+    if let Some((e, a)) = amax
+        .iter()
+        .enumerate()
+        .find(|(_, a)| !a.is_finite() || **a <= 0.0)
+    {
+        return Err(format!(
+            "{name}_amax[{e}] = {a}: an NVFP4 amax is finite and positive"
+        ));
+    }
+    if !denominator.is_finite() || denominator <= 0.0 {
+        return Err(format!(
+            "{name}_outer_scale_denominator = {denominator}: finite and positive"
+        ));
+    }
+    Ok(())
+}
+
+/// An E8M0 (ue8m0) scale byte of 0xFF is NaN; a scale grid holding one is refused.
+fn check_ue8m0(name: &str, scales: &[u8]) -> Result<(), String> {
+    match scales.iter().position(|s| *s == 0xFF) {
+        Some(at) => Err(format!("{name}_scale byte {at} is 0xFF, the E8M0 NaN code")),
+        None => Ok(()),
     }
 }
 
@@ -567,6 +740,7 @@ impl Bank {
                 }
                 let amax = ck.f32s(&format!("{name}_amax"), &[experts])?;
                 let denom = ck.f32s(&format!("{name}_outer_scale_denominator"), &[1])?[0];
+                check_nvfp4_globals(name, &amax, denom)?;
                 Ok(Self {
                     fmt: FMT_NVFP4,
                     data: dev.up(codes)?,
@@ -588,6 +762,7 @@ impl Bank {
                 let scales = ck
                     .shaped(&format!("{name}_scale"), &["U8"], &[experts, n, k / 32])?
                     .1;
+                check_ue8m0(name, scales)?;
                 Ok(Self {
                     fmt: FMT_MXFP8,
                     data: dev.up(values)?,
@@ -659,8 +834,9 @@ struct SlotState {
     vc: CudaSlice<f32>,
     /// Rows the cache holds: the context for a full slot, a ring for a sliding one.
     cap: usize,
-    /// K, V, attention output, MLP output.
-    conv: [CudaSlice<f32>; 4],
+    /// K, V, attention output, MLP output: two buffers each. `Route::parity` names the committed
+    /// one; a call writes the other and the route swaps only when the whole call succeeded.
+    conv: [[CudaSlice<f32>; 2]; 4],
 }
 
 /// What a caller can read out of a call, per slot.
@@ -746,13 +922,57 @@ struct Work {
     act: CudaSlice<f32>,
     dn: CudaSlice<f32>,
     moe: CudaSlice<f32>,
-    scratch: CudaSlice<f64>,
-    scratch_ld: usize,
     logits: CudaSlice<f32>,
     best: CudaSlice<u32>,
     tok: CudaSlice<u32>,
     /// the declared expert program
     dq: DeclaredWork,
+}
+
+/// The route's memory at load: what it allocated by class, and what the driver reported.
+#[derive(Debug, Clone, Default)]
+pub struct MemoryAccount {
+    pub device_total: usize,
+    /// Driver free before the route allocated anything (the CUDA context is already counted).
+    pub driver_free_at_open: usize,
+    pub weights: usize,
+    pub context: usize,
+    /// Full-attention K and V bytes per context position, over every full slot.
+    pub per_position: usize,
+    pub kv_full: usize,
+    pub kv_rings: usize,
+    /// Both buffers of every conv history.
+    pub conv: usize,
+    /// Activations of one chunk and the head.
+    pub work: usize,
+    /// The declared expert program's buffers.
+    pub declared_work: usize,
+    pub driver_free_before_kv: usize,
+    pub driver_free_after_load: usize,
+    /// Positions the driver's free memory before the full caches holds at this chunk.
+    pub max_context: usize,
+}
+
+impl MemoryAccount {
+    pub fn describe(&self) -> String {
+        let g = |b: usize| b as f64 / (1u64 << 30) as f64;
+        format!(
+            "memory: device {:.3} GiB, driver free at open {:.3}, weights {:.3}, full KV {:.3} ({} positions x {} B), rings {:.3}, conv {:.3}, work {:.3}, declared work {:.3}, driver free before KV {:.3} and after load {:.3}, max context {}",
+            g(self.device_total),
+            g(self.driver_free_at_open),
+            g(self.weights),
+            g(self.kv_full),
+            self.context,
+            self.per_position,
+            g(self.kv_rings),
+            g(self.conv),
+            g(self.work),
+            g(self.declared_work),
+            g(self.driver_free_before_kv),
+            g(self.driver_free_after_load),
+            self.max_context
+        )
+    }
 }
 
 /// Rows of logits one head launch holds.
@@ -774,12 +994,18 @@ pub struct Route {
     /// Positions the full-attention caches hold.
     pub context: usize,
     pub position: u64,
-    pub red: RedArms,
+    /// Which conv-history buffer of every slot is committed (`SlotState::conv`).
+    parity: usize,
+    red: RedArms,
+    /// Fault injection of the atomicity gate: the next forward fails after this slot ran.
+    pub fail_after_slot: Option<u32>,
     softcap: f64,
     keep: usize,
     hidden: usize,
     /// Bytes of resident weights.
     pub weight_bytes: usize,
+    /// Where the card's memory went at load.
+    pub account: MemoryAccount,
 }
 
 fn program(plan: &ModelPlan) -> Result<&Inkling2Plan, String> {
@@ -934,7 +1160,11 @@ impl Route {
         chunk: usize,
     ) -> Result<Self, String> {
         check_plan(plan)?;
+        if ck.plan != *plan {
+            return Err("the checkpoint's tensor contract was bound for another plan".into());
+        }
         dev.bind()?;
+        let (free_at_open, device_total) = dev.driver_free()?;
         let program = program(plan)?;
         let lp = &program.loop_plan;
         let hidden = plan.hidden_size as usize;
@@ -1190,8 +1420,17 @@ impl Route {
         let out_norm = ck.f32_dev(&dev, &format!("{LLM}norm.weight"), &[hidden])?;
         let out_query = ck.f32_dev(&dev, &format!("{LLM}attn_res.output_query"), &[hidden])?;
         let weight_bytes = dev.allocated.get();
+        let mut account = MemoryAccount {
+            device_total,
+            driver_free_at_open: free_at_open,
+            weights: weight_bytes,
+            context,
+            ..MemoryAccount::default()
+        };
 
-        // state
+        // state (the full-attention caches, the only part that grows with the context, are
+        // allocated last, after the admission check)
+        let mut full_kv: Vec<(usize, usize)> = Vec::new();
         let mut slots = Vec::with_capacity(plan.layers.len());
         let (
             mut max_q,
@@ -1205,7 +1444,6 @@ impl Route {
         ) = (
             0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 1usize,
         );
-        let mut reach = 1usize;
         let mut blocks = BTreeMap::new();
         for layer in &plan.layers {
             let a = attention_of(layer)?;
@@ -1216,22 +1454,34 @@ impl Route {
                 Some(window) => (window as usize - 1 + chunk).next_power_of_two(),
                 None => context,
             };
-            reach = reach.max(match a.window {
-                Some(window) => window as usize,
-                None => context,
-            });
             let history = a.key_conv.kernel as usize - 1;
+            let kv_rows = if a.window.is_some() {
+                account.kv_rings += 2 * cap * kvw * 4;
+                cap
+            } else {
+                full_kv.push((slots.len(), cap * kvw));
+                account.per_position += 2 * kvw * 4;
+                1
+            };
+            let before = dev.allocated.get();
             slots.push(SlotState {
-                kc: dev.zeros(cap * kvw)?,
-                vc: dev.zeros(cap * kvw)?,
+                kc: dev.zeros(kv_rows * kvw)?,
+                vc: dev.zeros(kv_rows * kvw)?,
                 cap,
                 conv: [
-                    dev.zeros(history * kvw)?,
-                    dev.zeros(history * kvw)?,
-                    dev.zeros((a.output_conv.kernel as usize - 1) * hidden)?,
-                    dev.zeros((program.mlp_output_conv.kernel as usize - 1) * hidden)?,
+                    [dev.zeros(history * kvw)?, dev.zeros(history * kvw)?],
+                    [dev.zeros(history * kvw)?, dev.zeros(history * kvw)?],
+                    [
+                        dev.zeros((a.output_conv.kernel as usize - 1) * hidden)?,
+                        dev.zeros((a.output_conv.kernel as usize - 1) * hidden)?,
+                    ],
+                    [
+                        dev.zeros((program.mlp_output_conv.kernel as usize - 1) * hidden)?,
+                        dev.zeros((program.mlp_output_conv.kernel as usize - 1) * hidden)?,
+                    ],
                 ],
             });
+            account.conv += dev.allocated.get() - before - 2 * kv_rows * kvw * 4;
             max_q = max_q.max((a.query_heads * a.head_dim) as usize);
             max_kv = max_kv.max(kvw);
             max_r = max_r.max((a.query_heads * a.relative.rank) as usize);
@@ -1249,6 +1499,9 @@ impl Route {
         let pairs = chunk * max_k;
         let tile_words = unsafe { ffi::memra_ink2g_tile_words() } as usize;
         let rh = chunk * hidden;
+        let before_work = dev.allocated.get();
+        let dq = DeclaredWork::alloc(&dev, if declared { pairs } else { 0 }, hidden, max_f)?;
+        account.declared_work = dev.allocated.get() - before_work;
         let w = Work {
             h: dev.zeros(rh)?,
             prelude: dev.zeros(rh)?,
@@ -1281,14 +1534,32 @@ impl Route {
             act: dev.zeros(pairs * max_f)?,
             dn: dev.zeros(pairs * hidden)?,
             moe: dev.zeros(rh)?,
-            scratch: dev.zeros(chunk * max_heads * reach)?,
-            scratch_ld: reach,
             logits: dev.zeros(HEAD_ROWS * keep)?,
             best: dev.zeros(HEAD_ROWS)?,
             tok: dev.zeros(chunk)?,
-            dq: DeclaredWork::alloc(&dev, if declared { pairs } else { 0 }, hidden, max_f)?,
+            dq,
         };
+        account.work = dev.allocated.get() - before_work - account.declared_work;
+        // ---- admission: the full-attention caches against what the driver has free now
         dev.sync()?;
+        let (free_before_kv, _) = dev.driver_free()?;
+        account.driver_free_before_kv = free_before_kv;
+        account.max_context = free_before_kv / account.per_position.max(1);
+        let kv_bytes = context * account.per_position;
+        if kv_bytes > free_before_kv {
+            return Err(format!(
+                "context {context} needs {kv_bytes} bytes of full-attention cache and the driver has {free_before_kv} free; this card holds at most {} positions at chunk {chunk}. {}",
+                account.max_context,
+                account.describe()
+            ));
+        }
+        for (slot, elems) in full_kv {
+            slots[slot].kc = dev.zeros(elems)?;
+            slots[slot].vc = dev.zeros(elems)?;
+        }
+        account.kv_full = kv_bytes;
+        dev.sync()?;
+        account.driver_free_after_load = dev.driver_free()?.0;
         Ok(Self {
             dev,
             plan: plan.clone(),
@@ -1303,11 +1574,14 @@ impl Route {
             chunk,
             context,
             position: 0,
+            parity: 0,
             red: RedArms::default(),
+            fail_after_slot: None,
             softcap,
             keep,
             hidden,
             weight_bytes,
+            account,
         })
     }
 
@@ -1319,13 +1593,41 @@ impl Route {
     /// Forget the request: position 0, empty caches, zero convolution history.
     pub fn reset(&mut self) -> Result<(), String> {
         self.position = 0;
+        self.parity = 0;
         for slot in &mut self.slots {
-            for conv in &mut slot.conv {
-                let zeros = vec![0f32; conv.len()];
-                self.dev.put(&zeros, conv)?;
+            for pair in &mut slot.conv {
+                for conv in pair {
+                    let zeros = vec![0f32; conv.len()];
+                    self.dev.put(&zeros, conv)?;
+                }
             }
         }
         Ok(())
+    }
+
+    /// The red arms of a gate run. Each arm is a wrong program of one class; asking for it on a
+    /// route whose plan runs none of that class is refused, so a receipt never names an arm that
+    /// did not run.
+    pub fn set_red(&mut self, red: RedArms) -> Result<(), String> {
+        let program = program(&self.plan)?;
+        let float_layers = program
+            .numerics
+            .experts
+            .iter()
+            .filter(|e| e.activation == ExpertActivationMode::Float)
+            .count();
+        if red.dequant_bf16 && float_layers == 0 {
+            return Err(
+                "the dequant-bf16 red arm changes the float-class experts and this plan runs none"
+                    .into(),
+            );
+        }
+        self.red = red;
+        Ok(())
+    }
+
+    pub fn red(&self) -> RedArms {
+        self.red
     }
 
     #[allow(clippy::too_many_arguments)] // allow: one GEMM over one stored weight
@@ -1421,6 +1723,12 @@ impl Route {
     ) -> Result<(), String> {
         let st = &dev.st;
         let ptrs: Vec<*const f32> = states.iter().map(|p| *p as *const f32).collect();
+        // the kernel's out is __restrict__: no state may live in it
+        let lo = dptr(out, st);
+        let hi = lo + (out.len() * 4) as u64;
+        if states.iter().any(|p| *p >= lo && *p < hi) {
+            return Err("the depth mix reads a state from its own output".into());
+        }
         dev.launched("memra_ink2g_mix", unsafe {
             ffi::memra_ink2g_mix(
                 ptrs.as_ptr(),
@@ -1476,7 +1784,9 @@ impl Route {
             w,
             chunk,
             position,
+            parity,
             red,
+            fail_after_slot,
             softcap,
             keep,
             hidden,
@@ -1743,21 +2053,29 @@ impl Route {
             )?;
 
             // ---- K and V: short convolution with the slot's history, clip / norm into the cache
-            let carry = i32::from(!red.conv_state_dropped);
+            let cur = *parity;
             let ss = &mut slots[slot as usize];
             let conv = |dev: &Dev,
                         cw: &ConvW,
                         x: u64,
-                        state: &mut CudaSlice<f32>,
+                        state: &mut [CudaSlice<f32>; 2],
                         dynamic: u64,
                         add: u64,
                         out: u64|
              -> Result<(), String> {
+                // read the committed history, write the next one into the other buffer
+                let state_in = dptr(&state[cur], &st);
+                let state_out = if red.conv_state_dropped {
+                    0
+                } else {
+                    dptr_mut(&mut state[1 - cur], &st)
+                };
                 dev.launched("memra_ink2g_conv", unsafe {
                     ffi::memra_ink2g_conv(
                         i32::from(cw.dynamic.is_some()),
                         x as *const f32,
-                        dptr_mut(state, &st) as *mut f32,
+                        state_in as *const f32,
+                        state_out as *mut f32,
                         dptr(&cw.taps, &st) as *const f32,
                         dynamic as *const f32,
                         cw.dynamic.as_ref().map_or(0, |d| d.1 as i32),
@@ -1766,7 +2084,6 @@ impl Route {
                         rows as i32,
                         cw.channels as i32,
                         cw.kernel as i32,
-                        carry,
                         dev.sp(),
                     )
                 })
@@ -1834,8 +2151,6 @@ impl Route {
                     a.window.map_or(0, |v| v as i32),
                     extent as i32,
                     i32::from(a.relative.beyond_extent == BeyondExtent::Masked),
-                    dptr_mut(&mut w.scratch, &st) as *mut f64,
-                    w.scratch_ld as i64,
                     dptr_mut(&mut w.att, &st) as *mut f32,
                     rows as i32,
                     heads as i32,
@@ -1994,6 +2309,14 @@ impl Route {
             {
                 o.floats(slot, Tap::ResidFfn, &dev.down(&w.h, 0, rows * hidden)?);
             }
+            if *fail_after_slot == Some(slot) {
+                *fail_after_slot = None;
+                if red.commit_on_error {
+                    // the red arm: the histories this call wrote become the committed ones
+                    *parity = 1 - *parity;
+                }
+                return Err(format!("injected failure after slot {slot}"));
+            }
         }
 
         // ---- head: output mix, norm, unembed over the kept rows, softcap
@@ -2062,7 +2385,9 @@ impl Route {
             }
             at += n;
         }
+        // the call succeeded: commit the position and the conv histories it wrote
         *position += rows as u64;
+        *parity = 1 - *parity;
         Ok(out)
     }
 
@@ -2236,6 +2561,7 @@ impl Route {
                 &lw.w2,
                 (rows, top_k, hidden, width),
                 (gate_cap, up_cap),
+                DeclaredRed::default(),
                 &mut w.moe,
             ),
         }
@@ -2277,9 +2603,31 @@ struct DeclaredWork {
     aq_a: CudaSlice<f32>,
     gu16: CudaSlice<u8>,
     dn16: CudaSlice<u8>,
+    /// Red-arm buffers (the gate only): the pair -> token row list and unit routing weights.
+    grows: Option<CudaSlice<u32>>,
+    ones: Option<CudaSlice<f32>>,
+}
+
+/// Wrong declared programs the gate must tell apart from the right one (fault injection).
+#[derive(Debug, Clone, Copy, Default)]
+struct DeclaredRed {
+    /// The routing weight multiplies the bf16 down rows instead of the SiTU input of the down
+    /// projection's quantizer.
+    weight_after_down: bool,
+    /// The token row is quantized once, at the token's index, and the GEMM reads the pair's
+    /// index (the route's program before memra#1397's fix).
+    token_rows: bool,
 }
 
 impl DeclaredWork {
+    /// The buffers the red arms read.
+    fn with_red(mut self, dev: &Dev, pairs: usize, top_k: usize) -> Result<Self, String> {
+        let rows: Vec<u32> = (0..pairs).map(|p| (p / top_k) as u32).collect();
+        self.grows = Some(dev.up(&rows)?);
+        self.ones = Some(dev.up(&vec![1f32; pairs])?);
+        Ok(self)
+    }
+
     /// `pairs == 0`: a route with no declared layer holds placeholders.
     fn alloc(dev: &Dev, pairs: usize, hidden: usize, max_f: usize) -> Result<Self, String> {
         let p = pairs.max(1);
@@ -2292,6 +2640,8 @@ impl DeclaredWork {
             aq_a: dev.zeros(p)?,
             gu16: dev.zeros(p * 2 * max_f * 2)?,
             dn16: dev.zeros(p * hidden * 2)?,
+            grows: None,
+            ones: None,
         })
     }
 }
@@ -2314,11 +2664,32 @@ fn declared_experts(
     w2: &Bank,
     shape: (usize, usize, usize, usize),
     caps: (f32, f32),
+    red: DeclaredRed,
     out: &mut CudaSlice<f32>,
 ) -> Result<(), String> {
     let st = dev.st.clone();
     let (rows, top_k, hidden, width) = shape;
     let pairs = rows * top_k;
+    let red_rows = if red.token_rows {
+        dptr(
+            dq.grows
+                .as_ref()
+                .ok_or("the token-rows red arm needs its buffers")?,
+            &st,
+        )
+    } else {
+        0
+    };
+    let gamma_in = if red.weight_after_down {
+        dptr(
+            dq.ones
+                .as_ref()
+                .ok_or("the weight-after-down red arm needs its buffers")?,
+            &st,
+        )
+    } else {
+        dptr(wts, &st)
+    };
     if w13.fmt != w2.fmt || w13.k != hidden || w13.n != 2 * width || w2.k != width || w2.n != hidden
     {
         return Err("declared experts: bank shapes disagree with the layer".into());
@@ -2330,7 +2701,7 @@ fn declared_experts(
             dptr_mut(&mut dq.xb16, &st) as *mut c_void,
             rows as i32,
             hidden as i32,
-            top_k as i32,
+            if red.token_rows { 1 } else { top_k as i32 },
             dev.sp(),
         )
     })?;
@@ -2355,10 +2726,10 @@ fn declared_experts(
     // One block per routed pair: the input holds a row per pair (the token row repeated, or the
     // pair's gate/up row). The quantizer writes the row it reads.
     let quantize = |dq: &mut DeclaredWork, situ: bool, k: usize| -> Result<(), String> {
-        let (x, gamma) = if situ {
-            (dptr(&dq.gu16, &st), dptr(wts, &st))
+        let (x, gamma, sel) = if situ {
+            (dptr(&dq.gu16, &st), gamma_in, 0)
         } else {
-            (dptr(&dq.xb16, &st), 0)
+            (dptr(&dq.xb16, &st), 0, red_rows)
         };
         dev.launched("memra_ink2_actq", unsafe {
             ffi::memra_ink2_actq(
@@ -2366,7 +2737,7 @@ fn declared_experts(
                 i32::from(situ),
                 x as *const c_void,
                 gamma as *const f32,
-                std::ptr::null(),
+                sel as *const u32,
                 pairs as i32,
                 dptr_mut(&mut dq.aq_v, &st) as *mut c_void,
                 dptr_mut(&mut dq.aq_s, &st) as *mut c_void,
@@ -2415,6 +2786,11 @@ fn declared_experts(
     dev.launched("memra_ink2g_sum_bf16", unsafe {
         ffi::memra_ink2g_sum_bf16(
             dptr(&dq.dn16, &st) as *const c_void,
+            if red.weight_after_down {
+                dptr(wts, &st) as *const f32
+            } else {
+                std::ptr::null()
+            },
             dptr_mut(out, &st) as *mut f32,
             rows as i32,
             top_k as i32,
@@ -2931,8 +3307,13 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             dev.up(&taps)?,
             dev.up(&dyn_taps)?,
         );
-        let run = |splits: &[usize], carry: i32| -> Result<Vec<f32>, String> {
-            let mut state = dev.zeros::<f32>((k - 1) * c)?;
+        let run = |splits: &[usize], carry: bool| -> Result<Vec<f32>, String> {
+            // the committed history and the one a call writes, swapped after every call
+            let mut states = [
+                dev.zeros::<f32>((k - 1) * c)?,
+                dev.zeros::<f32>((k - 1) * c)?,
+            ];
+            let mut cur = 0usize;
             let mut out = dev.zeros::<f32>(total * c)?;
             let mut at = 0usize;
             for rows in splits {
@@ -2940,7 +3321,12 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                     ffi::memra_ink2g_conv(
                         i32::from(dynamic),
                         (dptr(&xd, &st) + (at * c * 4) as u64) as *const f32,
-                        dptr_mut(&mut state, &st) as *mut f32,
+                        dptr(&states[cur], &st) as *const f32,
+                        if carry {
+                            dptr_mut(&mut states[1 - cur], &st) as *mut f32
+                        } else {
+                            std::ptr::null_mut()
+                        },
                         dptr(&td, &st) as *const f32,
                         (dptr(&dd, &st) + (at * groups * k * 4) as u64) as *const f32,
                         groups as i32,
@@ -2949,17 +3335,17 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         *rows as i32,
                         c as i32,
                         k as i32,
-                        carry,
                         dev.sp(),
                     )
                 })?;
+                cur = 1 - cur;
                 at += rows;
             }
             dev.down(&out, 0, total * c)
         };
-        let whole = run(&[total], 1)?;
-        let split = run(&[5, 1, 1, 3, 1], 1)?;
-        let dropped = run(&[5, 1, 1, 3, 1], 0)?;
+        let whole = run(&[total], true)?;
+        let split = run(&[5, 1, 1, 3, 1], true)?;
+        let dropped = run(&[5, 1, 1, 3, 1], false)?;
         let e = worst_rel(&whole, &want, 1e-6);
         let carried = bits_differ(&whole, &split);
         let red = bits_differ(&whole, &dropped);
@@ -2973,12 +3359,23 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
     }
 
     // ---- relative-bias attention with the per-query sink
-    for (name, window, extent, mask, cap) in [
-        ("ink2g-attn-sliding", 8usize, 8usize, true, 16usize),
-        ("ink2g-attn-full", 0, 12, false, 64),
-        ("ink2g-attn-full-masked", 0, 12, true, 64),
+    // The long cell crosses several INK2G_ATTN_TILE key tiles.
+    for (name, window, extent, mask, cap, total, heads, kvh) in [
+        (
+            "ink2g-attn-sliding",
+            8usize,
+            8usize,
+            true,
+            16usize,
+            40usize,
+            24usize,
+            8usize,
+        ),
+        ("ink2g-attn-full", 0, 12, false, 64, 40, 24, 8),
+        ("ink2g-attn-full-masked", 0, 12, true, 64, 40, 24, 8),
+        ("ink2g-attn-full-long", 0, 12, false, 2600, 2600, 2, 1),
     ] {
-        let (total, heads, kvh, dim, rank) = (40usize, 24usize, 8usize, 128usize, 16usize);
+        let (dim, rank) = (128usize, 16usize);
         let kvw = kvh * dim;
         let q = rng.vec(total * heads * dim, 1.5);
         let rel = rng.vec(total * heads * rank, 1.0);
@@ -3017,11 +3414,9 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             ));
         }
         let (qd, rd, td, sd) = (dev.up(&q)?, dev.up(&rel)?, dev.up(&table)?, dev.up(&sink)?);
-        let reach = if window > 0 { window } else { total };
         let run = |splits: &[usize]| -> Result<Vec<f32>, String> {
             let mut kc = dev.zeros::<f32>(cap * kvw)?;
             let mut vc = dev.zeros::<f32>(cap * kvw)?;
-            let mut scratch = dev.zeros::<f64>(total * heads * reach)?;
             let mut out = dev.zeros::<f32>(total * heads * dim)?;
             let mut at = 0usize;
             for rows in splits {
@@ -3054,8 +3449,6 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         window as i32,
                         extent as i32,
                         i32::from(mask),
-                        dptr_mut(&mut scratch, &st) as *mut f64,
-                        reach as i64,
                         (dptr_mut(&mut out, &st) + (at * heads * dim * 4) as u64) as *mut f32,
                         *rows as i32,
                         heads as i32,
@@ -3070,7 +3463,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             }
             dev.down(&out, 0, total * heads * dim)
         };
-        let chunked = run(&[8, 8, 8, 8, 8])?;
+        let chunked = run(&vec![8; total / 8])?;
         let ones = run(&vec![1; total])?;
         // against the scale of a value row: an output is a convex mix of values of order 1
         let e = worst_rel(&chunked, &want, 1.0);
@@ -3246,6 +3639,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
         );
     }
 
+    let mut skipped: Vec<String> = Vec::new();
     // ---- the declared expert program end to end (declared_experts) against the reference block
     // (memra_reference::inkling2_actquant::expert_block_*), as one call of several rows (host
     // groups) and as one call per row (device groups): the two must be bit-identical, since each
@@ -3310,7 +3704,8 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 ids.extend(picked);
             }
             let wts: Vec<f32> = (0..pairs).map(|_| 0.25 + rng.unit()).collect();
-            let mut dq = DeclaredWork::alloc(dev, pairs, hidden, width)?;
+            let mut dq =
+                DeclaredWork::alloc(dev, pairs, hidden, width)?.with_red(dev, pairs, top_k)?;
             let (xd, idd, wd) = (dev.up(&x)?, dev.up(&ids)?, dev.up(&wts)?);
             let mut out = dev.zeros::<f32>(rows * hidden)?;
             declared_experts(
@@ -3324,9 +3719,41 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 &w2,
                 (rows, top_k, hidden, width),
                 caps,
+                DeclaredRed::default(),
                 &mut out,
             )?;
             let got = dev.down(&out, 0, rows * hidden)?;
+            // the red arms, each from fresh buffers
+            let mut red_moved = Vec::new();
+            for red in [
+                DeclaredRed {
+                    weight_after_down: true,
+                    ..DeclaredRed::default()
+                },
+                DeclaredRed {
+                    token_rows: true,
+                    ..DeclaredRed::default()
+                },
+            ] {
+                let mut rq =
+                    DeclaredWork::alloc(dev, pairs, hidden, width)?.with_red(dev, pairs, top_k)?;
+                let mut ro = dev.zeros::<f32>(rows * hidden)?;
+                declared_experts(
+                    dev,
+                    &mut rq,
+                    &xd,
+                    &idd,
+                    &wd,
+                    Some(&ids),
+                    &w13,
+                    &w2,
+                    (rows, top_k, hidden, width),
+                    caps,
+                    red,
+                    &mut ro,
+                )?;
+                red_moved.push(bits_differ(&dev.down(&ro, 0, rows * hidden)?, &got));
+            }
             let mut alone = 0usize;
             for r in 0..rows {
                 let (xr, ir, wr) = (
@@ -3346,6 +3773,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                     &w2,
                     (1, top_k, hidden, width),
                     caps,
+                    DeclaredRed::default(),
                     &mut one,
                 )?;
                 alone += bits_differ(
@@ -3406,18 +3834,45 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 }
                 worst = worst.max((num / den.max(1e-300)).sqrt());
             }
-            // The reference sums in index order where the tensor core chains (lane D's
-            // dot_chain_*), so a bf16 output or a quantized code may land one step apart.
-            let bound = 2e-2;
+            // Bit for bit: every bf16 output equals the reference block's. Each red arm must
+            // move outputs.
+            let total = rows * hidden;
             verdict(
-                worst <= bound && alone == 0,
+                equal == total && alone == 0 && red_moved.iter().all(|m| *m > 0),
                 format!(
-                    "{name} [rows={rows} top_k={top_k} hidden={hidden} width={width}] vs the reference block: worst row rel L2={worst:.3e} (bound {bound:.0e}), bf16 outputs equal {equal}/{}; one call per row vs one call bit-differ={alone}",
-                    rows * hidden
+                    "{name} [rows={rows} top_k={top_k} hidden={hidden} width={width}] vs the reference block: bf16 outputs equal {equal}/{total} (worst row rel L2 {worst:.3e}); one call per row vs one call bit-differ={alone}; red arms moved: weight-after-down {}/{total}, token-rows {}/{total}",
+                    red_moved[0], red_moved[1]
                 ),
             );
         }
+    } else {
+        skipped.push(
+            "ink2g-moe-declared-nvfp4 / -mxfp8 SKIP: this build has no block-scaled act-quant target"
+                .to_string(),
+        );
+    }
+    // ---- load-time refusals of the expert scale planes
+    {
+        let refused = [
+            check_ue8m0("mxfp8", &[127, 0xFF, 120]).is_err(),
+            check_nvfp4_globals("nvfp4", &[1.0, f32::NAN], 2688.0).is_err(),
+            check_nvfp4_globals("nvfp4", &[1.0, f32::INFINITY], 2688.0).is_err(),
+            check_nvfp4_globals("nvfp4", &[1.0, 0.0], 2688.0).is_err(),
+            check_nvfp4_globals("nvfp4", &[1.0, -2.0], 2688.0).is_err(),
+            check_nvfp4_globals("nvfp4", &[1.0, 2.0], 0.0).is_err(),
+        ];
+        let accepted = check_ue8m0("mxfp8", &[0, 127, 254]).is_ok()
+            && check_nvfp4_globals("nvfp4", &[0.5, 3.0], 2688.0).is_ok();
+        verdict(
+            refused.iter().all(|r| *r) && accepted,
+            format!(
+                "ink2g-load-refusals E8M0 0xFF, NVFP4 amax NaN / inf / 0 / negative, denominator 0: refused {}/{}; valid planes accepted {accepted}",
+                refused.iter().filter(|r| **r).count(),
+                refused.len()
+            ),
+        );
     }
     dev.sync()?;
+    lines.extend(skipped);
     Ok((lines, fails))
 }

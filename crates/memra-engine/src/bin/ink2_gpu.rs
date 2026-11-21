@@ -19,8 +19,15 @@
 //!   --chunkings A,B --limit N   the first N tape ids as calls of A rows and again as calls of B
 //!                            rows (1 = one token per call); the logits and every slot's output
 //!                            must be bit-identical
-//!   --red ARM                a wrong program for the gate's red arms: dequant-bf16, conv-state,
-//!                            ties-high
+//!   --red ARM                a wrong program for the gate's red arms: dequant-bf16 (float
+//!                            class only), conv-state, ties-high, commit-on-error (with
+//!                            --inject-failure)
+//!   --contract-check         CPU only: bind the tensor contract over the census and check that
+//!                            its red arms (extra, missing, reshaped, retyped tensor; a read of a
+//!                            name it does not bind) are refused
+//!   --inject-failure SLOT    the atomicity gate: the tape's first --limit ids, half as a prefill,
+//!                            then one decode call that fails after SLOT, then one decode call per
+//!                            later id; every slot output and logit row must equal a clean run
 //!   --chunk N                rows one call may hold (default 512)
 
 use memra_engine::inkling2_gpu::{Ckpt, Dev, Head, Observer, RedArms, Route, Tap, numeric_class};
@@ -56,6 +63,8 @@ struct Args {
     device: usize,
     numeric_class: bool,
     score: bool,
+    inject_failure: Option<u32>,
+    contract_check: bool,
 }
 
 fn parse() -> Result<Args, String> {
@@ -82,6 +91,8 @@ fn parse() -> Result<Args, String> {
             "--device" => a.device = num(val()?)?,
             "--out" => a.out = Some(PathBuf::from(val()?)),
             "--numeric-class" => a.numeric_class = true,
+            "--inject-failure" => a.inject_failure = Some(num(val()?)? as u32),
+            "--contract-check" => a.contract_check = true,
             "--chunkings" => {
                 let v = val()?;
                 let (x, y) = v.split_once(',').ok_or("--chunkings A,B")?;
@@ -93,6 +104,7 @@ fn parse() -> Result<Args, String> {
                     "dequant-bf16" => a.red.dequant_bf16 = true,
                     "conv-state" => a.red.conv_state_dropped = true,
                     "ties-high" => a.red.ties_high = true,
+                    "commit-on-error" => a.red.commit_on_error = true,
                     _ => return Err(format!("unknown red arm {v}")),
                 }
                 a.red_names.push(v);
@@ -103,10 +115,22 @@ fn parse() -> Result<Args, String> {
     if a.class != "declared" && a.class != "float" {
         return Err("--class is declared or float".into());
     }
+    if a.red.commit_on_error && a.inject_failure.is_none() {
+        return Err("--red commit-on-error is an arm of --inject-failure".into());
+    }
     Ok(a)
 }
 
-fn compile(a: &Args) -> Result<(ModelPlan, &'static memra_gguf::model_packs::ModelPack), String> {
+fn compile(
+    a: &Args,
+) -> Result<
+    (
+        ModelPlan,
+        &'static memra_gguf::model_packs::ModelPack,
+        ModelConfig,
+    ),
+    String,
+> {
     let read =
         |name: &str| std::fs::read_to_string(a.ckpt.join(name)).map_err(|e| format!("{name}: {e}"));
     let mut config = ModelConfig::from_hf(&HfConfig::try_parse(&read("config.json")?)?);
@@ -124,7 +148,7 @@ fn compile(a: &Args) -> Result<(ModelPlan, &'static memra_gguf::model_packs::Mod
     } else {
         default
     };
-    Ok((plan, pack))
+    Ok((plan, pack, config))
 }
 
 fn clocks() -> String {
@@ -482,11 +506,33 @@ impl Observer for Digest {
 
 fn run() -> Result<(), String> {
     let a = parse()?;
-    let (plan, pack) = compile(&a)?;
+    let (plan, pack, config) = compile(&a)?;
     let class = numeric_class(&plan)?;
     if a.numeric_class {
         println!("{class}");
         return Ok(());
+    }
+    if a.contract_check {
+        let ck = Ckpt::open(&a.ckpt, pack, &config, &plan)?;
+        // CPU only: the binding of the real census passed above; now its red arms
+        let (lines, fails) = ck.contract_red_arms(&config)?;
+        for line in &lines {
+            println!("{line}");
+        }
+        println!(
+            "ink2-gpu: tensor contract bound over {} tensors; red arms {}",
+            ck.binding.bound.tensors.len(),
+            if fails == 0 {
+                "all refused"
+            } else {
+                "NOT all refused"
+            }
+        );
+        return if fails == 0 {
+            Ok(())
+        } else {
+            Err(format!("{fails} contract red arm(s) accepted"))
+        };
     }
     let tape = match &a.tape {
         Some(dir) => Some(Tape::open(dir)?),
@@ -499,11 +545,12 @@ fn run() -> Result<(), String> {
     } else {
         need.next_power_of_two().max(2048)
     };
-    let ck = Ckpt::open(&a.ckpt, pack)?;
+    let ck = Ckpt::open(&a.ckpt, pack, &config, &plan)?;
     let t_load = Instant::now();
     let dev = Dev::new(a.device)?;
     let mut route = Route::load(dev, &ck, &plan, context, a.chunk)?;
-    route.red = a.red;
+    route.set_red(a.red)?;
+    eprintln!("ink2-gpu: {}", route.account.describe());
     let load_s = t_load.elapsed().as_secs_f64();
     eprintln!(
         "ink2-gpu: class {class}; resident weights {:.3} GiB, with state {:.3} GiB, loaded in {load_s:.1}s; context {context}, chunk {}; auxiliary files {:?}",
@@ -525,7 +572,24 @@ fn run() -> Result<(), String> {
     let mut receipt = serde_json::json!({
         "runner": "ink2-gpu",
         "numeric_class": class,
-        "plan_class": format!("{:?}", program.numerics.class),
+        // the experts' activation class from the plan; outside the experts this route runs an f32
+        // stream in both classes (numeric_class names it)
+        "expert_activation_class": format!("{:?}", program.numerics.class),
+        "stream_outside_experts": "f32",
+        "memory": {
+            "device_total": route.account.device_total,
+            "driver_free_at_open": route.account.driver_free_at_open,
+            "weights": route.account.weights,
+            "per_position": route.account.per_position,
+            "kv_full": route.account.kv_full,
+            "kv_rings": route.account.kv_rings,
+            "conv": route.account.conv,
+            "work": route.account.work,
+            "declared_work": route.account.declared_work,
+            "driver_free_before_kv": route.account.driver_free_before_kv,
+            "driver_free_after_load": route.account.driver_free_after_load,
+            "max_context": route.account.max_context,
+        },
         "tape": a.tape.as_ref().map(|p| p.display().to_string()),
         "tape_arm": tape.arm,
         "red_arms": a.red_names,
@@ -814,6 +878,77 @@ fn run() -> Result<(), String> {
         eprintln!(
             "ink2-gpu: chunkings {x} vs {y} over {limit} rows: slot rows differ {slot_rows_differ}/{}, logit rows differ {logit_rows_differ}, argmax differ {argmax_differ}",
             limit * nslots
+        );
+    }
+    if let Some(fail_slot) = a.inject_failure {
+        let limit = if a.limit > 0 {
+            a.limit.min(tape.all_ids.len())
+        } else {
+            tape.all_ids.len()
+        };
+        let tokens = &tape.all_ids[..limit];
+        let split = limit / 2;
+        if split == 0 || split + 1 >= limit {
+            return Err("--inject-failure needs a --limit of at least 4 rows".into());
+        }
+        // the same request twice: clean, and with one failed decode call before the decode
+        let mut runs = Vec::new();
+        for faulted in [false, true] {
+            route.reset()?;
+            route.forward(&tokens[..split], Head::None, None)?;
+            let mut failure = None;
+            if faulted {
+                route.fail_after_slot = Some(fail_slot);
+                match route.forward(&tokens[split..split + 1], Head::All, None) {
+                    Ok(_) => return Err("the injected failure did not fire".into()),
+                    Err(e) => failure = Some(e),
+                }
+                if route.position != split as u64 {
+                    return Err(format!(
+                        "a failed call moved the position to {}",
+                        route.position
+                    ));
+                }
+            }
+            let mut digest = Digest {
+                hidden,
+                ..Digest::default()
+            };
+            let mut logits = Vec::new();
+            for t in &tokens[split..] {
+                let out = route.forward(std::slice::from_ref(t), Head::All, Some(&mut digest))?;
+                logits.push(fnv(out.logits.iter().flat_map(|v| v.to_le_bytes())));
+            }
+            runs.push((digest.rows, logits, failure));
+        }
+        let rows_differ: usize = runs[0]
+            .0
+            .iter()
+            .map(|(slot, rows)| {
+                runs[1].0.get(slot).map_or(rows.len(), |other| {
+                    rows.iter().zip(other).filter(|(p, q)| p != q).count()
+                })
+            })
+            .sum();
+        let logits_differ = runs[0]
+            .1
+            .iter()
+            .zip(&runs[1].1)
+            .filter(|(p, q)| p != q)
+            .count();
+        receipt["atomicity"] = serde_json::json!({
+            "fail_after_slot": fail_slot,
+            "prefix_rows": split,
+            "decode_rows": limit - split,
+            "failure": runs[1].2,
+            "slot_rows_differ": rows_differ,
+            "logit_rows_differ": logits_differ,
+            "bit_identical": rows_differ == 0 && logits_differ == 0,
+        });
+        eprintln!(
+            "ink2-gpu: one failed call after slot {fail_slot} at row {split}, then {} decode rows: slot rows differ {rows_differ}/{}, logit rows differ {logits_differ}",
+            limit - split,
+            (limit - split) * nslots
         );
     }
     receipt["clocks_at_end"] = serde_json::json!(clocks());

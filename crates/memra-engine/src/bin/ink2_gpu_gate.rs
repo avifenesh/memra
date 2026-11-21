@@ -21,6 +21,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if fails != 0 {
         return Err(format!("{fails} ink2 GPU route cell(s) FAILED").into());
     }
-    println!("ink2-gpu-gate: ALL OK ({} cells)", lines.len());
+    let ok = lines.iter().filter(|l| l.ends_with(" OK")).count();
+    let skipped = lines.iter().filter(|l| l.contains(" SKIP")).count();
+    println!("ink2-gpu-gate: ALL OK ({ok} cells, {skipped} skipped)");
     Ok(())
 }
