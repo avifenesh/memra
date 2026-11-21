@@ -2641,8 +2641,11 @@ struct DeclaredWork {
     ones: Option<CudaSlice<f32>>,
     /// SiTU's factor tables (memra_reference::inkling2_actquant::situ_tables) for the caps they
     /// were built for, uploaded on the first declared layer.
-    situ: Option<((u32, u32), CudaSlice<f64>, CudaSlice<f64>)>,
+    situ: Option<SituOnDevice>,
 }
+
+/// SiTU's tables on the device: the caps' bits, then the gate and up factor tables.
+type SituOnDevice = ((u32, u32), CudaSlice<f64>, CudaSlice<f64>);
 
 /// Wrong declared programs the gate must tell apart from the right one (fault injection).
 #[derive(Debug, Clone, Copy, Default)]
