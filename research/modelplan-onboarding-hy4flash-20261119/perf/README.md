@@ -63,6 +63,14 @@ L2.
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
+## Gate
+
+`memra model verify checkpoint --against hy_v4_flash` over the f64 oracle tapes with the tuned
+route as the native runner, then the five red arms (`tools/verify-chain.sh`). On step 13's binary
+(`receipts/gate-step13/verify-chain.log`): `verified=Checkpoint`; Engram off fails at 0.0182 past
+the 0.0058 band, BF16 dequantization at 0.0060, reversed ties are refused, the cache off by one
+fails at 0.0097, the early pool at 0.894 past 0.0224: the points step 8 fails at.
+
 ### 1. Small-row GEMMs (`receipts/s1-gemv/`)
 
 Base profile (`receipts/base/profile-chat-*.txt`): a step was 171.5 ms of wall, 162.3 ms of GPU
