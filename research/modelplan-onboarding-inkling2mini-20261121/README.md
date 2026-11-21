@@ -107,11 +107,20 @@ Code: `crates/memra-gguf/src/config/inkling2.rs`, `quant_groups.rs`, `model_plan
   text, loop, vision, drafter and quantization blocks is required by name, and a topology the
   program cannot run is refused (loop bounds off the residual block, a variable loop, shared
   experts, a second attention geometry for sliding layers, a drafter head other than
-  `rnn_hidden`).
+  `rnn_hidden`, zero sizes, a hidden or expert width that is not whole 32-input scale blocks).
+  The loop is bounded at 1,024 cache slots with checked arithmetic. The drafter's taps must be
+  at least two increasing layer visits ending at the visit count, which names the final hidden,
+  and its projections must carry no bias.
 - **Quantization declaration.** `quant_groups.rs` reads the `parameter_groups` form of
   `hf_quant_config.json`. `required_activation_quantization` is typed and must be present in
   every group (`null` for a float input). A quantized group without a quantizer, an unknown
-  format, rule, rounding or key is refused. The plan does not compile until the file is attached.
+  format, rule, rounding or key is refused. `weight_transform`, `output_dtype` and
+  `weight_block_shape` are typed per compute dtype and anything else is refused. The MXFP8
+  group's `[32, 32]` has one explicit reading, decided from the bytes: the stored scales are one
+  exponent per row per 32 inputs ([`mxfp8-scale-grid.tsv`](mxfp8-scale-grid.tsv), 0 of 73,728
+  aligned 32-row groups uniform; SEMANTICS.md). The plan does not compile until the file is
+  attached, and it refuses a declaration that leaves a checkpoint tensor in no group or names a
+  tensor the config does not derive.
 - **Plan.** 48 layer entries (cache slots) over 24 weight sets, with the slot to physical-layer
   map, the pass and the execution order on `ModelPlan::inkling2.loop_plan`. 8 full-attention
   slots (5, 11, 17, 23, 29, 35, 41, 47) and 40 sliding. New typed parts: relative-bias attention
@@ -127,8 +136,9 @@ Code: `crates/memra-gguf/src/config/inkling2.rs`, `quant_groups.rs`, `model_plan
   ran. The dense tensor classes (attention projections, router, controllers, convolutions, norms,
   residual queries, embedding, output projection) carry their declared dtype per class; the plan
   refuses a declaration that quantizes any of them or declares one class two ways.
-- **Fail closed.** 20 new operations, all with no surface in the registry
-  (`docs/EXECUTION-SURFACES.md`). Every rewrite in `inspect/execution-rewrites.tsv` is
+- **Fail closed.** 20 new operations, all with no tuned surface in the registry
+  (`docs/EXECUTION-SURFACES.md`). One of them, logit truncation, has a tested implementation in
+  the reference executor; the other 19 have none. Every rewrite in `inspect/execution-rewrites.tsv` is
   ineligible and names its blockers. The reference executor refuses the attention, the residual
   and the activation by name. The drafter is declared (`DsparkRnnDrafter`), owned by the contract
   and executed by nothing. No pipeline cut is declared, so the placement files read `failed`.
@@ -156,8 +166,8 @@ Both forms write the same lock values:
 - `census_sha256=c6a9b0a9e34961ba754937c6ad40c02e392e9373633b1536bbb4b195c6fec0be`
 - `plan_sha256=b66d8356c1cacd7751c14935f6d3fbafca04549df203032c6e177496435daf7a`
 - `binding=passed`, `tokenizer=passed`, `dialect=artifact`
-- `hf_quant_config.json` sha256 `7c656207d3ce37879c7be209a036b0dde43bf01f78159bff06880b868ed57143`
-  (in the plan text, so the plan hash moves with it)
+- `quant_config_sha256=7c656207d3ce37879c7be209a036b0dde43bf01f78159bff06880b868ed57143`
+  (`hf_quant_config.json`; the plan text carries the same hash, so the plan hash moves with it)
 
 [`inspect/`](inspect/) is the full bundle. [`inspect-remote/`](inspect-remote/) keeps its lock
 and gates; its other files were byte-identical to the local ones
@@ -167,7 +177,9 @@ What the three passed gates mean here:
 
 - Config: the plan compiles from the config and the quantization declaration.
 - TensorCensus: every header tensor binds, with nothing missing, extra, reshaped or in another
-  quant layout.
+  quant layout. A plane-suffixed tensor (`_amax`, `_outer_scale_denominator`) beside a
+  `*_weight` tensor that has no `_scale` is not folded away: it stays a census row and the
+  contract refuses it.
 - TokenizerTemplate: the artifact carries `tokenizer.json` and a chat template, with their
   hashes in the lock. It is not token-id or rendered-byte parity: memra has no pre-tokenizer or
   renderer for this family yet, and that work is its own step.
