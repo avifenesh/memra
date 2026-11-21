@@ -1162,8 +1162,10 @@ fn run() -> Result<(), String> {
             .zip(&runs[1].1)
             .filter(|(p, q)| p != q)
             .count();
+        let compared: usize = runs[0].0.values().map(Vec::len).sum();
         receipt["atomicity"] = serde_json::json!({
             "fail_after_slot": fail_slot,
+            "slot_rows_compared": compared,
             "prefix_rows": split,
             "decode_rows": limit - split,
             "failure": runs[1].2,
@@ -1172,9 +1174,8 @@ fn run() -> Result<(), String> {
             "bit_identical": rows_differ == 0 && logits_differ == 0,
         });
         eprintln!(
-            "ink2-gpu: one failed call after slot {fail_slot} at row {split}, then {} decode rows: slot rows differ {rows_differ}/{}, logit rows differ {logits_differ}",
-            limit - split,
-            (limit - split) * nslots
+            "ink2-gpu: one failed call after slot {fail_slot} at row {split}, then {} decode rows: slot rows differ {rows_differ}/{compared}, logit rows differ {logits_differ}",
+            limit - split
         );
     }
     receipt["clocks_at_end"] = serde_json::json!(clocks());
