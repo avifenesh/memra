@@ -479,6 +479,31 @@ fn median(mut v: Vec<f64>) -> f64 {
     v[v.len() / 2]
 }
 
+/// Run `reps` verify calls of `rows` rows at one request's state (for a profiler).
+pub fn profile_verify(
+    route: &mut Route,
+    prompt: &[u32],
+    rows: usize,
+    reps: usize,
+) -> Result<(), String> {
+    let slots = tap_slots(route, SpecArms::default())?;
+    route.set_capture(&slots)?;
+    route.keep_row_history(rows)?;
+    route.reset()?;
+    let out = route.call(prompt, Head::LastArgmax, None)?;
+    let anchor = *out.argmax.last().ok_or("argmax")?;
+    let mut carry = route.carry()?;
+    route.save_carry(&mut carry)?;
+    let toks = vec![anchor; rows];
+    for _ in 0..reps {
+        route.forward(&toks, Head::AllArgmax, None)?;
+        route.restore_carry(&carry)?;
+    }
+    route.dev.sync()?;
+    route.keep_row_history(0)?;
+    route.set_capture(&[])
+}
+
 pub fn bench_costs(
     route: &mut Route,
     drafter: &mut DraftGpu,
