@@ -25,13 +25,14 @@ use crate::config::Inkling2Config;
 use crate::dsv4::TensorSpec;
 use crate::model_plan::{
     ActivationPlan, AttentionInputs, AttentionPlan, BeyondExtent, BlockAttentionPlan, ClipScale,
-    DenseNumericsPlan, DenseTensorClass, DraftSourcePlan, DrafterHead, DrafterTap,
+    DenseNumericsPlan, DenseTensorClass, DraftAttentionPlan, DraftBlockPlan, DraftFusePlan,
+    DraftRnnHeadPlan, DraftRopePlan, DraftRowInput, DraftSourcePlan, DrafterHead, DrafterTap,
     ExpertActivationMode, ExpertNumericsPlan, ExpertWeightFormat, Inkling2DrafterPlan,
     Inkling2NumericClass, Inkling2Numerics, Inkling2Plan, Inkling2WeightClass, KvCacheFormat,
     L2ClipPlan, LayerPlan, LogPositionScalePlan, LogitsTransform, LoopMessageTarget, LoopPlan,
     LoopSlotPlan, MlpPlan, MoeMlpPlan, NormKind, NormPlan, OutputGatePlan, QuerySinkPlan,
-    RelativeBiasAttentionPlan, RelativeBiasPlan, RelativeBiasStatePlan, ResidualTopology,
-    RouterPlan, ShortConvPlan, ShortConvTaps, StatePlan, ValueNorm, WeightTransform,
+    RelativeBiasAttentionPlan, RelativeBiasPlan, RelativeBiasStatePlan, ResidualTopology, RnnChunk,
+    RnnInput, RouterPlan, ShortConvPlan, ShortConvTaps, StatePlan, ValueNorm, WeightTransform,
 };
 use crate::quant_groups::ComputeDtype;
 use crate::tensor_contract::{
@@ -399,7 +400,43 @@ pub fn plan_with_classes(
                     rank: drafter.markov_rank,
                 },
                 target_visit_ids: drafter.target_layer_ids.clone(),
+                fuse: DraftFusePlan {
+                    rows: drafter.num_hidden_layers + 1,
+                    taps: drafter.target_layer_ids.len() as u32,
+                },
                 taps,
+                hidden_size: drafter.hidden_size,
+                epsilon: drafter.rms_norm_eps,
+                block: DraftBlockPlan {
+                    rows: drafter.block_size,
+                    anchor: DraftRowInput::TrunkEmbeddingNormed,
+                    mask: DraftRowInput::LearnedMask,
+                    proposals: drafter.block_size - 1,
+                },
+                attention: DraftAttentionPlan {
+                    scale: (drafter.head_dim as f32).powf(-0.5),
+                    qk_norm: true,
+                    rope: DraftRopePlan {
+                        theta: drafter.rope_theta,
+                    },
+                    context_key_norm: true,
+                    bidirectional_block: true,
+                    local_layers: drafter.local_layer_ids.clone(),
+                    local_context: drafter.sliding_window_size,
+                },
+                mlp_swiglu: true,
+                rnn: DraftRnnHeadPlan {
+                    rank: drafter.markov_rank,
+                    inputs: [
+                        RnnInput::State,
+                        RnnInput::PreviousToken,
+                        RnnInput::RowHidden,
+                        RnnInput::Feature,
+                    ],
+                    chunks: [RnnChunk::Gate, RnnChunk::Candidate, RnnChunk::Out],
+                    folded_through_output: true,
+                    softcap: ink.final_logit_softcapping,
+                },
             },
             vision_executed: false,
         }),
