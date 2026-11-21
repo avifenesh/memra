@@ -26,7 +26,7 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use cudarc::driver::{CudaContext, CudaSlice, CudaStream, DevicePtr, DevicePtrMut};
+use cudarc::driver::{CudaContext, CudaGraph, CudaSlice, CudaStream, DevicePtr, DevicePtrMut, sys};
 use memra_gguf::model_plan::{
     ActivationPlan, AttentionInputs, AttentionPlan, BeyondExtent, ClipScale, ExpertActivationMode,
     ExpertWeightFormat, Inkling2Plan, LayerPlan, LogitsTransform, LoopMessageTarget, MlpPlan,
@@ -403,7 +403,13 @@ fn dptr_mut<T>(s: &mut CudaSlice<T>, st: &CudaStream) -> u64 {
 impl Dev {
     pub fn new(device: usize) -> Result<Self, String> {
         let ctx = CudaContext::new(device).map_err(|e| format!("cuda context: {e:?}"))?;
-        Ok(Self::on(ctx.default_stream()))
+        // the route runs on one stream: no cross-stream events, which a graph capture refuses
+        unsafe { ctx.disable_event_tracking() };
+        // a created stream: the legacy default stream cannot be captured into a graph
+        let st = ctx
+            .new_stream()
+            .map_err(|e| format!("cuda stream: {e:?}"))?;
+        Ok(Self::on(st))
     }
 
     /// The driver's free and total bytes (`cuMemGetInfo`), the only headroom figure that counts
@@ -1084,6 +1090,15 @@ pub struct Route {
     red: RedArms,
     /// Fault injection of the atomicity gate: the next forward fails after this slot ran.
     pub fail_after_slot: Option<u32>,
+    /// The decode step as a CUDA graph, one per conv-history parity (the step reads the history
+    /// of one parity and writes the other), captured after one eager step at that parity. A graph
+    /// reads its position and token from the device, so it replays at every position.
+    graphs: [Option<CudaGraph>; 2],
+    warm: [bool; 2],
+    /// Decode steps served by a graph replay since the last counter reset.
+    pub graph_steps: Cell<u64>,
+    /// A check seam: every step runs eager (the graph's bits are checked against it).
+    pub graph_off: bool,
     softcap: f64,
     keep: usize,
     hidden: usize,
@@ -1672,6 +1687,10 @@ impl Route {
             parity: 0,
             red: RedArms::default(),
             fail_after_slot: None,
+            graphs: [None, None],
+            warm: [false, false],
+            graph_steps: Cell::new(0),
+            graph_off: false,
             softcap,
             keep,
             hidden,
@@ -1848,7 +1867,71 @@ impl Route {
         &mut self,
         tokens: &[u32],
         head: Head,
+        obs: Option<&mut (dyn Observer + '_)>,
+    ) -> Result<CallOut, String> {
+        let graphable = !self.graph_off
+            && tokens.len() == 1
+            && head == Head::LastArgmax
+            && obs.is_none()
+            && self.red == RedArms::default()
+            && self.fail_after_slot.is_none()
+            && self.position < self.context as u64
+            && tokens[0] < self.plan.vocab_size;
+        if !graphable {
+            return self.forward_body(tokens, head, obs, false);
+        }
+        let p = self.parity;
+        if self.graphs[p].is_none() {
+            if !self.warm[p] {
+                let out = self.forward_body(tokens, head, None, false)?;
+                self.warm[p] = true;
+                return Ok(out);
+            }
+            // capture one step: the token and the position go up first, outside the graph
+            self.dev.bind()?;
+            self.dev.put(tokens, &mut self.w.tok)?;
+            self.dev.put(&[self.position as i64], &mut self.w.posd)?;
+            self.dev
+                .st
+                .begin_capture(sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
+                .map_err(|e| format!("begin_capture: {e:?}"))?;
+            let body = self.forward_body(tokens, head, None, true);
+            let graph = self
+                .dev
+                .st
+                .end_capture(
+                    sys::CUgraphInstantiate_flags::CUDA_GRAPH_INSTANTIATE_FLAG_AUTO_FREE_ON_LAUNCH,
+                )
+                .map_err(|e| format!("end_capture: {e:?}"))?;
+            body?;
+            self.graphs[p] = Some(graph.ok_or("an empty decode graph")?);
+        } else {
+            self.dev.bind()?;
+            self.dev.put(tokens, &mut self.w.tok)?;
+            self.dev.put(&[self.position as i64], &mut self.w.posd)?;
+        }
+        let graph = self.graphs[p].as_ref().ok_or("no decode graph")?;
+        graph.launch().map_err(|e| format!("graph launch: {e:?}"))?;
+        self.dev.launches.set(self.dev.launches.get() + 1);
+        self.graph_steps.set(self.graph_steps.get() + 1);
+        let argmax = self.dev.down(&self.w.best, 0, 1)?;
+        // the step succeeded: commit the position and the conv histories it wrote
+        self.position += 1;
+        self.parity = 1 - p;
+        Ok(CallOut {
+            argmax,
+            logits: Vec::new(),
+        })
+    }
+
+    /// One chunk of rows through every slot. capture: the stream is capturing a decode graph; the
+    /// token and position are already on the device, nothing is read back and nothing commits.
+    fn forward_body(
+        &mut self,
+        tokens: &[u32],
+        head: Head,
         mut obs: Option<&mut (dyn Observer + '_)>,
+        capture: bool,
     ) -> Result<CallOut, String> {
         let rows = tokens.len();
         if rows == 0 || rows > self.chunk {
@@ -1896,8 +1979,10 @@ impl Route {
         let program = program(plan)?;
         let lp = &program.loop_plan;
         let rh = chunk * hidden;
-        dev.put(tokens, &mut w.tok)?;
-        dev.put(&[pos0 as i64], &mut w.posd)?;
+        if !capture {
+            dev.put(tokens, &mut w.tok)?;
+            dev.put(&[pos0 as i64], &mut w.posd)?;
+        }
         let posd = dptr(&w.posd, &st);
         dev.launched("memra_ink2g_embed", unsafe {
             ffi::memra_ink2g_embed(
@@ -2561,15 +2646,19 @@ impl Route {
                     dev.sp(),
                 )
             })?;
-            out.argmax.extend(dev.down(&w.best, 0, n)?);
+            if !capture {
+                out.argmax.extend(dev.down(&w.best, 0, n)?);
+            }
             if head == Head::All {
                 out.logits.extend(dev.down(&w.logits, 0, n * keep)?);
             }
             at += n;
         }
         // the call succeeded: commit the position and the conv histories it wrote
-        *position += rows as u64;
-        *parity = 1 - *parity;
+        if !capture {
+            *position += rows as u64;
+            *parity = 1 - *parity;
+        }
         Ok(out)
     }
 
@@ -2747,6 +2836,11 @@ impl Route {
                 &mut w.moe,
             ),
         }
+    }
+
+    /// The logits row of the last call's last head row (after the softcap), read back for checks.
+    pub fn last_logits(&self) -> Result<Vec<f32>, String> {
+        self.dev.down(&self.w.logits, 0, self.keep)
     }
 
     /// A request in chunks of at most `self.chunk` rows.

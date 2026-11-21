@@ -16,6 +16,8 @@
 //!                            per-slot gate of a class that is not continuous)
 //!   --gen N                  greedy: the tape's prompt, then N - 1 decode calls on the argmax,
 //!                            scored against the tape's greedy ids; timed, launches counted
+//!   --eager                  no decode graph: every step eager (the graph's check arm)
+//!   --gen-digest             with --gen: an FNV digest of every step's logits row (untimed check)
 //!   --prompt-len N           with --gen: the prompt is the tape's ids repeated to N tokens (a
 //!                            context length for timing; no oracle ids past the tape's)
 //!   --chunkings A,B --limit N   the first N tape ids as calls of A rows and again as calls of B
@@ -60,6 +62,10 @@ struct Args {
     gen_tokens: usize,
     /// --prompt-len N: the gen prompt is the tape's tokens repeated to N (a context length for timing)
     prompt_len: usize,
+    /// --gen-digest: fold every decode step's logits row into a digest (an untimed check)
+    gen_digest: bool,
+    /// --eager: no decode graph (the check arm of a graph's bits)
+    eager: bool,
     chunkings: Option<(usize, usize)>,
     limit: usize,
     red: RedArms,
@@ -94,6 +100,8 @@ fn parse() -> Result<Args, String> {
             "--force-moe-in" => a.force_moe_in = true,
             "--gen" => a.gen_tokens = num(val()?)?,
             "--prompt-len" => a.prompt_len = num(val()?)?,
+            "--gen-digest" => a.gen_digest = true,
+            "--eager" => a.eager = true,
             "--limit" => a.limit = num(val()?)?,
             "--chunk" => a.chunk = num(val()?)?,
             "--context" => a.context = num(val()?)?,
@@ -1013,6 +1021,7 @@ fn run() -> Result<(), String> {
 
     if a.gen_tokens > 0 {
         route.reset()?;
+        route.graph_off = a.eager;
         route.dev.sync()?;
         let prompt: Vec<u32> = if a.prompt_len > 0 {
             (0..a.prompt_len)
@@ -1031,13 +1040,21 @@ fn run() -> Result<(), String> {
         let prefill_s = tp.elapsed().as_secs_f64();
         let mut ids = vec![next];
         let mut steps = Vec::new();
+        let mut digest = FNV0;
+        if a.gen_digest {
+            digest = fnv_fold(digest, &route.last_logits()?);
+        }
         route.dev.reset_counters();
+        route.graph_steps.set(0);
         let before = clocks();
         for _ in 1..a.gen_tokens {
             let ts = Instant::now();
             next = route.forward(&[next], Head::LastArgmax, None)?.argmax[0];
             steps.push(ts.elapsed().as_secs_f64());
             ids.push(next);
+            if a.gen_digest {
+                digest = fnv_fold(digest, &route.last_logits()?);
+            }
         }
         let after = clocks();
         let n = steps.len().max(1) as f64;
@@ -1056,6 +1073,8 @@ fn run() -> Result<(), String> {
             "prefill_s": prefill_s,
             "prefill_tok_s": prompt.len() as f64 / prefill_s,
             "decode_calls": steps.len(),
+            "logits_digest": if a.gen_digest { serde_json::json!(format!("{digest:016x}")) } else { serde_json::Value::Null },
+            "graph_steps": route.graph_steps.get(),
             "decode_step_p50_ms": sorted.get(sorted.len() / 2).map(|s| s * 1e3),
             "decode_tok_s": n / steps.iter().sum::<f64>().max(1e-12),
             "launches_per_token": route.dev.launches.get() as f64 / n,
