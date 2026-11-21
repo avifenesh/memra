@@ -132,7 +132,10 @@ fn pairwise_error16(error: &[f32; 16]) -> f32 {
 /// `x` is one row of bf16 values widened to fp32, its length a multiple of 16. There is no amax
 /// epsilon: a zero row gives encoder scale `FP32_MAX`, zero block scales and zero codes.
 pub fn nvfp4_act_quant(x: &[f32]) -> Nvfp4Row {
-    assert!(x.len() % 16 == 0, "NVFP4 rows are whole blocks of 16");
+    assert!(
+        x.len().is_multiple_of(16),
+        "NVFP4 rows are whole blocks of 16"
+    );
     let amax = x.iter().fold(0f32, |m, v| m.max(v.abs()));
     let encoder = (1536.0f32 / amax).min(FP32_MAX);
     let decoder = 1.0f32 / encoder;
@@ -190,7 +193,10 @@ pub fn nvfp4_dequant(codes: &[u8], scales: &[u8]) -> Vec<f32> {
 /// MXFP8 activation quantization: e4m3 values with one round-up power-of-two (ue8m0) scale per 32.
 /// Returns the e4m3 bytes `[K]` and the biased exponents `[K / 32]`.
 pub fn mxfp8_act_quant(x: &[f32]) -> (Vec<u8>, Vec<u8>) {
-    assert!(x.len() % 32 == 0, "MXFP8 rows are whole blocks of 32");
+    assert!(
+        x.len().is_multiple_of(32),
+        "MXFP8 rows are whole blocks of 32"
+    );
     let min_scale = 2f32.powi(-127);
     let mut values = Vec::with_capacity(x.len());
     let mut exponents = Vec::with_capacity(x.len() / 32);
