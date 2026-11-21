@@ -2927,7 +2927,8 @@ impl DeclaredWork {
         let widest = hidden.max(max_f);
         Ok(Self {
             xb16: dev.zeros(p * hidden * 2)?,
-            groups: dev.zeros(p * GROUP_WORDS)?,
+            // one-row groups (decode) or up to 32 rows a group plus one partial group an expert
+            groups: dev.zeros((p * GROUP_WORDS).max((p + 129) * 34))?,
             aq_v: dev.zeros(p * widest)?,
             aq_s: dev.zeros(p * widest / 16)?,
             aq_a: dev.zeros(p)?,
@@ -3008,9 +3009,16 @@ fn declared_experts(
             dev.sp(),
         )
     })?;
+    // a chunk of several rows groups up to 32 (W4A4) or 16 (W8A8) routed rows of one expert, so the
+    // expert's weights stream once per group; each output's MMA sequence is the same at any width
+    let nb: usize = if host_ids.is_some() && rows > 1 {
+        if kind == 0 { 4 } else { 2 }
+    } else {
+        1
+    };
     let ngroups = match host_ids {
         Some(ids) if rows > 1 => {
-            let (table, n) = tiles_table(ids, GROUP_WORDS);
+            let (table, n) = tiles_table(ids, 2 + 8 * nb);
             dev.put(&table, &mut dq.groups)?;
             n
         }
@@ -3065,7 +3073,7 @@ fn declared_experts(
         dev.launched("memra_ink2_expert_gemm", unsafe {
             ffi::memra_ink2_expert_gemm_x(
                 kind,
-                1,
+                nb as i32,
                 dptr(&dq.aq_v, &st) as *const c_void,
                 dptr(&dq.aq_s, &st) as *const c_void,
                 dptr(&dq.aq_a, &st) as *const f32,
