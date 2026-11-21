@@ -31,6 +31,10 @@ void if any loaded sample (over 60 W) reads P2 or memory 11,001 MHz. Base and ne
 | 2 | expert GEMM reads input row pair / top_k: the MoE input is quantized once a token, not once a routed pair | 53.06 (vs 53.03, flat) | 18.85 | 1381 | 34% | `s2/` |
 | rebase | onto #1397's review fixes (atomic forward, three-pass attention): base 5.36, steps 1+2 | 51.21 | 19.55 | 1381 | 33% | `s3/` arm1 |
 | 3 | expert GEMM: ring issued before the activation stage, one warp a decode block | 51.79 | 19.33 | 1381 | 33% | `s3/` arm3 |
+| rebase 2 | onto d789cb6f1c (exact SiTU, review fixes): base 5.34, steps 1-3 | 50.47 | 19.86 | 1381 | 33% | `s4-s7/` arm1 |
+| 4 | decode attention split over blocks | 51.80 | 19.29 | 1381 | 33% | `s4-s7/` arm2 |
+| 5 | CUDA graph of the decode step | 51.07 (p50 52.3) | 19.11 | 179 | 34% | `s4-s7/` arm3 |
+| 6+7 | prefill GEMM and expert prefill groups (decode unchanged) | 51.06 | 19.08 | 179 | 34% | `s4-s7/` arm4 |
 
 ## Step 1: GEMV, controller and depth mix
 
@@ -74,6 +78,67 @@ weight ring's first stages before the block stages the activations (the weight s
 Digests equal at each arm, gate ALL OK (`s3/`). Timed at c=1 against step 2: (a) 51.21 -> 51.49 tok/s (+0.5%),
 (a)+(b) 51.79 tok/s (+1.1%). Small: the decode expert GEMM is already at 48-81% of the read roofline (lane D's
 full-clock measurement), and its cost is spread over 80 short kernels a token.
+
+## Rebase onto the #1397 review round (d789cb6f1c, with #1396 at e6f9dc4e40)
+
+The new base carries the exact SiTU (f64 tables), so the declared class's bits moved relative to the
+first base; every step below is re-verified on the new base (`base3` = d789cb6f1c plus the digest runner).
+Base3 decodes at 5.343 tok/s; steps 1 to 3 on it at 50.47 tok/s (`s4-s7/` arm1).
+
+## Steps 4 to 7 (`s4-s7/`: base3, then arm1 = steps 1-3, arm2 = 4, arm3 = 5, arm4 = 6+7, arm5 and arm6 = rejected)
+
+Digests equal at every link of the chain (base3 -> 1-3 -> 4 -> 5 -> 6+7 -> the two rejected arms), both
+classes, p1 one token a call and p2 at chunk 512; gate ALL OK (28 cells) on the last arm; greedy ids equal in all
+21 timed takes; no void take. Timed at c=1, 32 tokens from p1, three takes each in rotating order:
+
+| Step | Change | tok/s (median) | p50 ms a token | launches a token |
+|---|---|---|---|---|
+| 1-3 on base3 | | 50.47 | 19.86 | 1381 |
+| 4 | decode attention split over blocks (scores of 256 keys a block into f64 scratch, one block a head for the max, the denominator and the oldest-first value sum); the position read from the device | 51.80 | 19.29 | 1381 |
+| 5 | the decode step as a CUDA graph, one per conv-history parity, captured after one eager step | 51.07 (mean over 31 steps, with one eager step and the capture) | 19.11 | 179 (1 a replayed step) |
+| 6+7 | prefill only: BF16 tile GEMM 128 x 128 x 8 x 8 a thread; expert prefill groups of 32 (W4A4) or 16 (W8A8) rows | 51.06 | 19.08 | 179 |
+
+Step 5: graph replay equals eager bit for bit (`graph-check/`: logits digests of every step and the ids equal for
+declared p1 32 tokens, float p1 32 tokens and declared p2 64 tokens; 29, 29 and 61 replayed steps). The gain is
+small (p50 -0.9%) because the step is GPU-bound: 1381 kernels in 19 ms hide their launches.
+
+Steps 6 and 7, prefill (`pf-s6s7/`, measured on the first base, the same kernels): tokens/s at 512 / 2048 / 8192:
+before 272 / 150 / 97, step 6 291 / 158 / 101, steps 6+7 335 / 171 / 107 (median of 3, rotating order, no void take).
+
+Rejected, deleted (receipts kept in `s4-s7/` arm5 and arm6, digests equal, slower):
+- the controller with the RMS factors and normalized rows formed once a row (one more kernel): p50 19.08 -> 19.24 ms.
+- f32 and bf16 widened to f64 by moving the fields instead of the conversion instruction (bits equal): p50 19.24 ->
+  19.99 ms. The f64 conversions are not what bounds these kernels.
+- a prefill form of the split attention, rows in groups under a 64 MiB score scratch: 4x faster attention at 2048
+  (`prof-n11/pf2048-grouped-split_cuda_gpu_kern_sum.csv`: 4.1 s of attention against 13.8 s for the tiled kernel)
+  and bit-equal to the tiled kernel in the gate cells, but its digests on p2 differed from step 7 on 7 (declared) and 21
+  (float) slots. Not shipped; the cause is open.
+
+## Where a decode token goes now (`prof-n11/dec_cuda_gpu_kern_sum.csv`, graph replay, 16 tokens; per token)
+
+| Kernels | ms a token | bytes or work | against the roofline |
+|---|---|---|---|
+| BF16 GEMV (trunk projections, router, unembed) | 4.7 | about 3.5 GB | 745 GB/s, 86% of 865 |
+| W4A4 expert GEMM (40 slots x 2) | 3.7 | 1.43 GB | 385 GB/s, 45% |
+| W8A8 expert GEMM (8 slots x 2) | about 0.6 | 0.51 GB | about 85% |
+| controller, depth mix, norms, convs, router, head epilogues | about 8 | under 0.1 GB | f64-issue bound: one to nine blocks, the f64 pipe at 1/64 of f32 (ncu: 44-64% f64 pipe busy on the active SMs, 1-7% of the GPU) |
+| attention (short context) | 1.9 | small | f64 scores and value sums |
+
+At 4096 tokens of context the decode step is 54.5 ms (18.1 tok/s, `ctx4k-n11/`, measured on the rejected arm 6,
+3.9% slower): the full-attention slots' f64 scores and value chains grow with the context. Prefill at 2048 spends
+80% of its time in the tiled attention kernel (`prof-n11/pf2048_cuda_gpu_kern_sum.csv`).
+
+## Open
+
+- The f64 program is the ceiling of this route: about 10 of 19 ms a token are f64 reductions and epilogues the #1397
+  program defines (norms, mixes, controllers, convs, router, attention), on a card whose f64 rate is 1/64 of f32.
+  Bit-identity to that program allows spreading the work over more SMs, not removing it. An f32 program for these
+  operations is a new numeric program: it needs the coordinator's call and a per-layer KL receipt.
+- Long-context decode and prefill: attention. The grouped prefill split is 4x faster but differs on p2; find the
+  cause, then ship it.
+- W4A4 expert GEMM at 45% of the read roofline in decode.
+- The prefill BF16 GEMM reaches about 12% of the f32 FMA peak at 26 rows (128-row tiles); prefill at the MMA peak needs
+  bf16 activations, a new numeric program.
 
 ## Step 2: one quantized MoE input a token
 
