@@ -871,11 +871,13 @@ struct Ink2gConv2 {
   const float* taps;
   const float* dyn;
   float* out;
+  float* rows_out;
 };
 
 template <typename T, bool KC>
 __global__ void ink2g_conv_kernel(int mode, const float* __restrict__ x, const float* __restrict__ state_in,
-                                  float* __restrict__ state_out, const float* __restrict__ taps,
+                                  float* __restrict__ state_out, float* __restrict__ rows_out,
+                                  const float* __restrict__ taps,
                                   const float* __restrict__ dyn, int groups, const float* add, float* out, int R,
                                   int C, int K, Ink2gConv2 j2) {
   // blockIdx.y 1: the second convolution of a pair launch (the same shape, its own tensors)
@@ -886,6 +888,7 @@ __global__ void ink2g_conv_kernel(int mode, const float* __restrict__ x, const f
     taps = j2.taps;
     dyn = j2.dyn;
     out = j2.out;
+    rows_out = j2.rows_out;
   }
   const int c = blockIdx.x * blockDim.x + threadIdx.x;
   if (c >= C) return;
@@ -912,6 +915,9 @@ __global__ void ink2g_conv_kernel(int mode, const float* __restrict__ x, const f
     out[(int64_t)r * C + c] = (float)o;
     for (int l = K - 1; l > 1; l--) hist[l] = hist[l - 1];
     hist[1] = cur;
+    // the history after row r, in state_out's layout (a verify call keeps it to commit a prefix)
+    if (rows_out)
+      for (int l = 1; l < K; l++) rows_out[((int64_t)r * (K - 1) + (K - 1 - l)) * C + c] = (float)hist[l];
   }
   if (state_out)
     for (int l = 1; l < K; l++) state_out[(int64_t)(K - 1 - l) * C + c] = (float)hist[l];
@@ -2423,11 +2429,32 @@ int memra_ink2g_conv(int mode, const float* x, const float* state_in, float* sta
   if (mode == 1 && (!dyn || groups <= 0 || C % groups != 0)) return 45019;
   if (x == out) return 45020;
   switch (prec) {
-    case 1: ink2g_conv_kernel<float, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
+    case 1: ink2g_conv_kernel<float, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, nullptr, taps, dyn, groups,
                                                                      add, out, R, C, K, Ink2gConv2{}); break;
-    case 2: ink2g_conv_kernel<float, true><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
+    case 2: ink2g_conv_kernel<float, true><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, nullptr, taps, dyn, groups,
                                                                      add, out, R, C, K, Ink2gConv2{}); break;
-    default: ink2g_conv_kernel<double, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
+    default: ink2g_conv_kernel<double, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, nullptr, taps, dyn, groups,
+                                                                     add, out, R, C, K, Ink2gConv2{}); break;
+  }
+  return ink2g_rc();
+}
+
+// memra_ink2g_conv, and rows_out (nullable): the history after each row of the call,
+// [R][K - 1][C] in state_out's layout, so a caller can commit the first rows of a call.
+int memra_ink2g_conv_rows(int mode, const float* x, const float* state_in, float* state_out, float* rows_out,
+                          const float* taps, const float* dyn, int groups, const float* add, float* out, int R, int C,
+                          int K, int prec, void* stream) {
+  if ((mode != 0 && mode != 1) || !x || !state_in || !taps || !out || R <= 0 || C <= 0) return 45017;
+  if (state_out == state_in) return 45041;
+  if (K < 2 || K > INK2G_MAX_KERNEL) return 45018;
+  if (mode == 1 && (!dyn || groups <= 0 || C % groups != 0)) return 45019;
+  if (x == out) return 45020;
+  switch (prec) {
+    case 1: ink2g_conv_kernel<float, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, rows_out, taps, dyn, groups,
+                                                                     add, out, R, C, K, Ink2gConv2{}); break;
+    case 2: ink2g_conv_kernel<float, true><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, rows_out, taps, dyn, groups,
+                                                                     add, out, R, C, K, Ink2gConv2{}); break;
+    default: ink2g_conv_kernel<double, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, rows_out, taps, dyn, groups,
                                                                      add, out, R, C, K, Ink2gConv2{}); break;
   }
   return ink2g_rc();
@@ -2472,12 +2499,12 @@ int memra_ink2g_conv2(int mode, const float* x, const float* state_in, float* st
   if (K < 2 || K > INK2G_MAX_KERNEL) return 45018;
   if (mode == 1 && (!dyn || !dyn2 || groups <= 0 || C % groups != 0)) return 45019;
   if (x == out || x2 == out2) return 45020;
-  const Ink2gConv2 j2{x2, state_in2, state_out2, taps2, dyn2, out2};
+  const Ink2gConv2 j2{x2, state_in2, state_out2, taps2, dyn2, out2, nullptr};
   const dim3 g((C + 63) / 64, 2);
   switch (prec) {
-    case 1: ink2g_conv_kernel<float, false><<<g, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups, nullptr, out, R, C, K, j2); break;
-    case 2: ink2g_conv_kernel<float, true><<<g, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups, nullptr, out, R, C, K, j2); break;
-    default: ink2g_conv_kernel<double, false><<<g, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups, nullptr, out, R, C, K, j2); break;
+    case 1: ink2g_conv_kernel<float, false><<<g, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, nullptr, taps, dyn, groups, nullptr, out, R, C, K, j2); break;
+    case 2: ink2g_conv_kernel<float, true><<<g, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, nullptr, taps, dyn, groups, nullptr, out, R, C, K, j2); break;
+    default: ink2g_conv_kernel<double, false><<<g, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, nullptr, taps, dyn, groups, nullptr, out, R, C, K, j2); break;
   }
   return ink2g_rc();
 }

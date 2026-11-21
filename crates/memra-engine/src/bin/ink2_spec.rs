@@ -13,10 +13,14 @@
 //!   --crosscheck   the first prompt's first block against the f64 reference drafter on CPU
 //!   --red-no-restore  the gate's red arm: a partial accept keeps the rejected rows' history
 //!   --red-tap-slot I:S  red arm: drafter tap I reads the input of slot S (the plan's: 5, 29, 47)
+//!   --bench N      component costs (median of N): plain step, verify per row count, draft per k,
+//!                  prefix commit
 
 use memra_engine::inkling2_dspark::{CkptDraft, DraftGpu, Shared};
 use memra_engine::inkling2_gpu::{Ckpt, Dev, Head, Route};
-use memra_engine::inkling2_spec::{Sampling, SpecArms, generate_arm, plain_greedy, tap_slots};
+use memra_engine::inkling2_spec::{
+    Sampling, SpecArms, bench_costs, generate_arm, plain_greedy, plain_greedy_timed, tap_slots,
+};
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_plan::{ExpertActivationMode, ModelPlan};
 use memra_reference::inkling2_drafter as refd;
@@ -42,6 +46,7 @@ struct Args {
     seed: u64,
     crosscheck: bool,
     per_position: Option<PathBuf>,
+    bench: usize,
     class: String,
     chunk: usize,
     context: usize,
@@ -82,6 +87,7 @@ fn parse() -> Result<Args, String> {
             "--seed" => a.seed = num(val()?)? as u64,
             "--crosscheck" => a.crosscheck = true,
             "--per-position" => a.per_position = Some(PathBuf::from(val()?)),
+            "--bench" => a.bench = num(val()?)?,
             "--red-no-restore" => a.red_no_restore = true,
             "--red-tap-slot" => {
                 let v = val()?;
@@ -199,6 +205,25 @@ fn run() -> Result<(), String> {
     if a.crosscheck {
         crosscheck(&mut route, &mut drafter, &aux.1, &ck, &g, &prompts[0].2)?;
     }
+    if a.bench > 0 {
+        for (id, kind, ids) in &prompts {
+            let c = bench_costs(&mut route, &mut drafter, ids, g.rows, a.bench)?;
+            writeln!(
+                out,
+                "{}",
+                serde_json::json!({"id": id, "kind": kind, "bench": {"reps": a.bench,
+                    "prompt_tokens": ids.len(), "plain_step_ms": c.plain_step_ms,
+                    "verify_ms_by_rows": c.verify_ms, "draft_ms_by_k": c.draft_ms,
+                    "commit_rows_ms": c.commit_rows_ms}})
+            )
+            .map_err(|e| e.to_string())?;
+            eprintln!(
+                "bench {id}: plain {:.2} ms, verify {:?} ms, draft {:?} ms, commit {:.3} ms",
+                c.plain_step_ms, c.verify_ms, c.draft_ms, c.commit_rows_ms
+            );
+        }
+        return Ok(());
+    }
     if let Some(dir) = &a.per_position {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         for (id, kind, ids) in &prompts {
@@ -223,14 +248,14 @@ fn run() -> Result<(), String> {
     let mut failed = 0;
     for (id, kind, ids) in &prompts {
         let plain = if a.check_plain {
-            let t = std::time::Instant::now();
-            let p = plain_greedy(&mut route, ids, a.gen_tokens, &stop)?;
-            let s = t.elapsed().as_secs_f64();
+            let (p, prefill_s, decode_s) =
+                plain_greedy_timed(&mut route, ids, a.gen_tokens, &stop)?;
             writeln!(
                 out,
                 "{}",
                 serde_json::json!({"id": id, "kind": kind, "mode": "plain", "prompt_tokens": ids.len(),
-                    "generated": p.len(), "seconds": s, "tokens": p})
+                    "generated": p.len(), "prefill_s": prefill_s, "decode_s": decode_s,
+                    "decode_tok_s": (p.len() - 1) as f64 / decode_s, "tokens": p})
             )
             .map_err(|e| e.to_string())?;
             Some(p)
@@ -279,7 +304,8 @@ fn run() -> Result<(), String> {
                     "temperature": a.sample, "k": k, "prompt_tokens": ids.len(), "generated": st.generated,
                     "steps": st.steps, "proposed": st.proposed, "accepted": st.accepted,
                     "acceptance_length": st.acceptance_length(), "tokens_per_step": st.tokens_per_step(),
-                    "hist": st.hist, "replays": st.replays, "prefill_s": st.prefill_s, "decode_s": st.decode_s,
+                    "hist": st.hist, "partial_commits": st.partial_commits, "plain_steps": st.plain_steps, "prefill_s": st.prefill_s, "decode_s": st.decode_s,
+                    "decode_tok_s": (st.generated.max(1) - 1) as f64 / st.decode_s,
                     "equal_plain": equal, "first_diff": first_diff, "tokens": toks})
             )
             .map_err(|e| e.to_string())?;
