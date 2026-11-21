@@ -11203,8 +11203,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Inkling 2 Mini routed experts, the act-quant class (cu/inkling2_actq.cu): the quantizers bit
     // for bit against the committed golden vectors, the hardware fp32 -> e4m3 / e2m1 conversions
-    // against the same goldens, SiTU fused with the quantizer, and the W4A4 / W8A8 expert GEMMs
-    // against the index-order reference under the summation bound.
+    // against the same goldens, SiTU fused with the quantizer bit for bit against the f64 reference,
+    // the W4A4 / W8A8 expert GEMMs under the summation bound and, on the devices where the tensor-core
+    // chain was measured (INK2_CHAIN_MEASURED), bit for bit against the reference's chain models,
+    // and the whole expert block end to end.
     {
         let (lines, failed) = memra_engine::inkling2_actq::ink2_actq_gate(&e)?;
         for line in &lines {

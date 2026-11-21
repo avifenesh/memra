@@ -14,7 +14,12 @@
 //!   does not: [`dot_chain_rz`] (W4A4) and [`dot_chain_trunc`] (W8A8) are what the card computes,
 //!   measured there and pinned by a committed device capture. Every model stays inside
 //!   `(K - 1) * 2^-23 * sum |a_i w_i|` of the exact sum.
-//! - SiTU evaluates `exp2` and `tanh` in f64 and rounds once to fp32.
+//!
+//! SiTU is not the serving image's approx fp32 sequence: it is the mathematical value rounded once
+//! to bf16 ([`situ_value`]), the program the kernels compute bit for bit. Non-finite inputs follow
+//! the source's operations: maxNum / minNum reductions and clamps (a NaN operand is dropped), the
+//! NaN-propagating MXFP8 clamp and its exponent-255 NaN scale, NaN codes as the sm_120 casts give
+//! them.
 
 /// Largest finite fp32, the clamp of every reciprocal in the NVFP4 quantizer.
 pub const FP32_MAX: f32 = f32::MAX;
@@ -28,9 +33,13 @@ pub fn bf16(x: f32) -> f32 {
 }
 
 /// fp32 -> e2m1 nibble: round to nearest, ties to the even code, saturating at 6; bit 3 is the
-/// fp32 sign bit, so -0 and negative values that round to zero encode as 0x8.
+/// fp32 sign bit, so -0 and negative values that round to zero encode as 0x8. NaN of either sign
+/// encodes as 0x7, what `cvt.rn.satfinite.e2m1x2.f32` gives on sm_120 (the gate's `ink2-cvt-hw`).
 #[inline]
 pub fn e2m1_encode(x: f32) -> u8 {
+    if x.is_nan() {
+        return 7;
+    }
     let a = x.abs();
     let code = if a <= 0.25 {
         0
@@ -63,9 +72,12 @@ pub fn e2m1_decode(nibble: u8) -> f32 {
     }
 }
 
-/// e4m3 byte -> fp32 (`float8_e4m3fn`; the NaN codes never occur in this program).
+/// e4m3 byte -> fp32 (`float8_e4m3fn`: `0x7f` and `0xff` are NaN).
 #[inline]
 pub fn e4m3_decode(byte: u8) -> f32 {
+    if byte & 0x7f == 0x7f {
+        return f32::NAN;
+    }
     let exponent = i32::from((byte >> 3) & 0xf);
     let mantissa = f32::from(byte & 7);
     let magnitude = if exponent == 0 {
@@ -81,10 +93,14 @@ pub fn e4m3_decode(byte: u8) -> f32 {
 }
 
 /// fp32 -> e4m3 byte: round to nearest, ties to even, subnormals kept, saturating at 448, the sign
-/// bit carried from the fp32 sign bit (`cvt.rn.satfinite`). NaN is not part of this program.
+/// bit carried from the fp32 sign bit (`cvt.rn.satfinite`); NaN of either sign encodes as `0x7f`,
+/// what the sm_120 conversion gives (the gate's `ink2-cvt-hw`).
 #[inline]
 pub fn e4m3_encode(x: f32) -> u8 {
     let sign = ((x.to_bits() >> 31) as u8) << 7;
+    if x.is_nan() {
+        return 0x7f;
+    }
     let a = f64::from(x.abs()).min(448.0);
     let code = if a < 2f64.powi(-6) {
         (a * 512.0).round_ties_even() as u8
@@ -135,11 +151,19 @@ fn pairwise_error16(error: &[f32; 16]) -> f32 {
 /// `x` is one row of bf16 values widened to fp32, its length a multiple of 16. There is no amax
 /// epsilon: a zero row gives encoder scale `FP32_MAX`, zero block scales and zero codes.
 pub fn nvfp4_act_quant(x: &[f32]) -> Nvfp4Row {
+    let canonical = |v: f32| {
+        if v.is_nan() {
+            f32::from_bits(0x7fc0_0000)
+        } else {
+            v
+        }
+    };
     assert!(
         x.len().is_multiple_of(16),
         "NVFP4 rows are whole blocks of 16"
     );
-    let amax = x.iter().fold(0f32, |m, v| m.max(v.abs()));
+    // maxNum over the row (a NaN element is dropped); an all-NaN row gives the quiet NaN 0x7fc00000
+    let amax = canonical(x.iter().fold(f32::NAN, |m, v| m.max(v.abs())));
     let encoder = (1536.0f32 / amax).min(FP32_MAX);
     let decoder = 1.0f32 / encoder;
     let outer = amax * (1.0f32 / 1536.0f32);
@@ -148,7 +172,7 @@ pub fn nvfp4_act_quant(x: &[f32]) -> Nvfp4Row {
     let mut codes = vec![0u8; x.len() / 2];
     let mut scales = vec![0u8; x.len() / 16];
     for (b, block) in x.chunks_exact(16).enumerate() {
-        let block_max = block.iter().fold(0f32, |m, v| m.max(v.abs()));
+        let block_max = block.iter().fold(f32::NAN, |m, v| m.max(v.abs()));
         let candidate = |enc: f32| {
             let byte = e4m3_encode((block_max * enc).min(448.0));
             let scale = e4m3_decode(byte);
@@ -204,22 +228,37 @@ pub fn mxfp8_act_quant(x: &[f32]) -> (Vec<u8>, Vec<u8>) {
     let mut values = Vec::with_capacity(x.len());
     let mut exponents = Vec::with_capacity(x.len() / 32);
     for block in x.chunks_exact(32) {
-        let amax = block.iter().fold(0f32, |m, v| m.max(v.abs()));
+        let amax = block.iter().fold(f32::NAN, |m, v| m.max(v.abs()));
         let raw = amax * (1.0f32 / 448.0f32);
         let rounded = ((raw.to_bits() as i32).wrapping_add(0x007f_ffff) & 0x7f80_0000) >> 23;
-        let exponent = if raw <= min_scale {
+        let exponent = if raw.is_nan() {
+            255
+        } else if raw <= min_scale {
             0
         } else {
             rounded.min(254)
         };
-        let scale = f32::from_bits((exponent as u32) << 23).max(min_scale);
+        // exponent 255 (a block whose amax is NaN): NaN scale, zero inverse (mxfp8.py:23,25)
+        let scale = if exponent == 255 {
+            f32::NAN
+        } else {
+            f32::from_bits((exponent as u32) << 23).max(min_scale)
+        };
         let inverse = if exponent == 0 {
             2f32.powi(127)
+        } else if exponent == 255 {
+            0.0
         } else {
             1.0f32 / scale
         };
         for v in block {
-            values.push(e4m3_encode((v * inverse).clamp(-448.0, 448.0)));
+            // the clamp propagates NaN (propagate_nan=ALL in the source)
+            let q = v * inverse;
+            values.push(e4m3_encode(if q.is_nan() {
+                q
+            } else {
+                q.clamp(-448.0, 448.0)
+            }));
         }
         exponents.push(exponent as u8);
     }
@@ -274,25 +313,51 @@ pub fn dot_chain_rz(a: &[f32], w: &[f32], step: usize) -> f32 {
     acc
 }
 
+/// The exponent the `kind::mxf8f6f4` tensor core gives each MXFP8 operand: the e4m3 field
+/// exponent (`E - 7`; a subnormal or zero code counts as `-6`, not renormalised) plus its ue8m0
+/// block exponent (`byte - 127`, byte 0 read as `-127`). One per element.
+pub fn mxfp8_operand_exponents(values: &[u8], exponents: &[u8]) -> Vec<i32> {
+    assert_eq!(values.len(), exponents.len() * 32);
+    values
+        .iter()
+        .enumerate()
+        .map(|(i, byte)| {
+            let field = i32::from((byte >> 3) & 0xf);
+            let e = i32::from(exponents[i / 32]);
+            (if field == 0 { -6 } else { field - 7 }) + if e == 0 { -127 } else { e - 127 }
+        })
+        .collect()
+}
+
 /// The sm_120 `kind::mxf8f6f4` e4m3 chain as measured on the card (K step 32, `guard` 25): within
 /// a step every product and the accumulator are truncated toward zero to the quantum
-/// `2^(emax - guard)`, where `emax` is the largest of the accumulator's exponent and the products'
-/// operand-exponent sums (`exponent(a) + exponent(w)`, not renormalised); the truncated terms are
-/// summed exactly and the sum is truncated to fp32. Bit-identical to the device on the committed
-/// capture and on every element the gate runs. A model of that hardware, not of the checkpoint.
-pub fn dot_chain_trunc(a: &[f32], w: &[f32], step: usize, guard: i32) -> f32 {
-    assert_eq!(a.len(), w.len());
-    let exponent = |x: f32| ((f64::from(x).to_bits() >> 52) & 0x7ff) as i32 - 1023;
+/// `2^(emax - guard)`, where `emax` is the largest of the accumulator's fp32 exponent and the
+/// products' operand-exponent sums over the products whose operands are both nonzero. The operand
+/// exponents are the hardware's ([`mxfp8_operand_exponents`]): the e4m3 field exponent, so a
+/// subnormal code sits at `-6`. The truncated terms are summed exactly and the sum is truncated to
+/// fp32. Bit-identical to the device on the committed capture (subnormal-heavy records included)
+/// and on every element the gate runs. A model of that hardware, not of the checkpoint.
+pub fn dot_chain_trunc(
+    a: &[f32],
+    a_exp: &[i32],
+    w: &[f32],
+    w_exp: &[i32],
+    step: usize,
+    guard: i32,
+) -> f32 {
+    assert!(a.len() == w.len() && a.len() == a_exp.len() && w.len() == w_exp.len());
+    let fp32_exponent = |x: f32| ((f64::from(x).to_bits() >> 52) & 0x7ff) as i32 - 1023;
     let mut acc = 0f32;
-    for (ca, cw) in a.chunks(step).zip(w.chunks(step)) {
+    for s0 in (0..a.len()).step_by(step) {
+        let s1 = (s0 + step).min(a.len());
         let mut emax = i32::MIN;
-        for (x, y) in ca.iter().zip(cw) {
-            if *x != 0.0 && *y != 0.0 {
-                emax = emax.max(exponent(*x) + exponent(*y));
+        for i in s0..s1 {
+            if a[i] != 0.0 && w[i] != 0.0 {
+                emax = emax.max(a_exp[i] + w_exp[i]);
             }
         }
         if acc != 0.0 {
-            emax = emax.max(exponent(acc));
+            emax = emax.max(fp32_exponent(acc));
         }
         if emax == i32::MIN {
             continue;
@@ -301,8 +366,8 @@ pub fn dot_chain_trunc(a: &[f32], w: &[f32], step: usize, guard: i32) -> f32 {
         let q = 2f64.powi(shift);
         // every term is below 2^(guard + 2) quanta: the integer sum is exact
         let mut sum = (f64::from(acc) / q).trunc() as i64;
-        for (x, y) in ca.iter().zip(cw) {
-            sum += ((f64::from(*x) * f64::from(*y)) / q).trunc() as i64;
+        for i in s0..s1 {
+            sum += ((f64::from(a[i]) * f64::from(w[i])) / q).trunc() as i64;
         }
         let mut magnitude = sum.unsigned_abs();
         let mut scale = shift;
@@ -404,11 +469,33 @@ pub fn w4a4_accumulate_chain(row: &Nvfp4Row, w: &Nvfp4Experts<'_>, expert: usize
         .collect()
 }
 
+/// How an expert GEMM's fp32 accumulator is formed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Accumulation {
+    /// Products then additions in ascending index order (the goldens' software model).
+    IndexOrder,
+    /// What the sm_120a kernels compute: [`dot_chain_rz`] (W4A4) or [`dot_chain_trunc`] (W8A8).
+    Sm120,
+}
+
 /// One quantized row through one NVFP4 expert: accumulate, expert scale 1.0, row scale, bf16.
 pub fn w4a4_gemm_row(row: &Nvfp4Row, w: &Nvfp4Experts<'_>, expert: usize) -> Vec<f32> {
+    w4a4_gemm_row_with(row, w, expert, Accumulation::IndexOrder)
+}
+
+/// [`w4a4_gemm_row`] with the accumulator of [`Accumulation`].
+pub fn w4a4_gemm_row_with(
+    row: &Nvfp4Row,
+    w: &Nvfp4Experts<'_>,
+    expert: usize,
+    accumulation: Accumulation,
+) -> Vec<f32> {
     let scale = nvfp4_row_scale(row.amax, w.amax[expert], w.denominator);
-    w4a4_accumulate(row, w, expert)
-        .into_iter()
+    let acc = match accumulation {
+        Accumulation::IndexOrder => w4a4_accumulate(row, w, expert),
+        Accumulation::Sm120 => w4a4_accumulate_chain(row, w, expert),
+    };
+    acc.into_iter()
         .map(|acc| bf16((acc * 1.0f32) * scale))
         .collect()
 }
@@ -420,16 +507,34 @@ pub fn w8a8_accumulate(
     w: &Mxfp8Experts<'_>,
     expert: usize,
 ) -> Vec<f32> {
+    w8a8_accumulate_with(values, exponents, w, expert, Accumulation::IndexOrder)
+}
+
+/// [`w8a8_accumulate`] with the accumulator of [`Accumulation`].
+pub fn w8a8_accumulate_with(
+    values: &[u8],
+    exponents: &[u8],
+    w: &Mxfp8Experts<'_>,
+    expert: usize,
+    accumulation: Accumulation,
+) -> Vec<f32> {
     let a = mxfp8_dequant(values, exponents);
+    let a_exp = mxfp8_operand_exponents(values, exponents);
     assert_eq!(a.len(), w.k);
     (0..w.n)
         .map(|n| {
             let r = expert * w.n + n;
-            let wr = mxfp8_dequant(
+            let (wv, we) = (
                 &w.values[r * w.k..(r + 1) * w.k],
                 &w.exponents[r * w.k / 32..(r + 1) * w.k / 32],
             );
-            dot_index_order(&a, &wr)
+            let wr = mxfp8_dequant(wv, we);
+            match accumulation {
+                Accumulation::IndexOrder => dot_index_order(&a, &wr),
+                Accumulation::Sm120 => {
+                    dot_chain_trunc(&a, &a_exp, &wr, &mxfp8_operand_exponents(wv, we), 32, 25)
+                }
+            }
         })
         .collect()
 }
@@ -441,31 +546,103 @@ pub fn w8a8_gemm_row(
     w: &Mxfp8Experts<'_>,
     expert: usize,
 ) -> Vec<f32> {
-    w8a8_accumulate(values, exponents, w, expert)
+    w8a8_gemm_row_with(values, exponents, w, expert, Accumulation::IndexOrder)
+}
+
+/// [`w8a8_gemm_row`] with the accumulator of [`Accumulation`].
+pub fn w8a8_gemm_row_with(
+    values: &[u8],
+    exponents: &[u8],
+    w: &Mxfp8Experts<'_>,
+    expert: usize,
+    accumulation: Accumulation,
+) -> Vec<f32> {
+    w8a8_accumulate_with(values, exponents, w, expert, accumulation)
         .into_iter()
         .map(bf16)
         .collect()
 }
 
-/// `cap * tanh(x / cap)`, tanh in f64 rounded once.
-#[inline]
-fn softcap(x: f32, cap: f32) -> f32 {
-    cap * (f64::from(x / cap).tanh() as f32)
+/// The gate factor of SiTU as a real function of the bf16 gate, evaluated in f64:
+/// `cap * tanh(g / cap) * sigmoid(g)`, `sigmoid(g) = 1 / (1 + exp(-g))`.
+pub fn situ_gate_factor(gate: f32, cap: f32) -> f64 {
+    let (g, c) = (f64::from(gate), f64::from(cap));
+    c * (g / c).tanh() * (1.0 / (1.0 + (-g).exp()))
 }
 
-/// Softcapped SwiGLU with the routing weight folded in, rounded once to bf16:
-/// `bf16(((softcap(gate) * sigmoid(gate)) * softcap(up)) * gamma)` over interleaved `(gate, up)`
-/// columns (column `2j` is gate `j`, `2j + 1` is up `j`). The routing weight is multiplied in here,
-/// before the down projection and before its quantization.
-pub fn situ_row(gate_up: &[f32], gamma: f32, gate_cap: f32, up_cap: f32) -> Vec<f32> {
+/// The up factor of SiTU as a real function of the bf16 up value, in f64: `cap * tanh(u / cap)`.
+pub fn situ_up_factor(up: f32, cap: f32) -> f64 {
+    let (u, c) = (f64::from(up), f64::from(cap));
+    c * (u / c).tanh()
+}
+
+/// SiTU's two one-input factors for every bf16 bit pattern (65,536 entries each, f64), indexed by
+/// the bf16 bits of the gate and of the up value. The kernels read the same tables.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SituTables {
+    pub gate_cap: f32,
+    pub up_cap: f32,
+    pub gate: Vec<f64>,
+    pub up: Vec<f64>,
+}
+
+/// Builds [`SituTables`] for the given caps (the checkpoint's are 4 and 25).
+pub fn situ_tables(gate_cap: f32, up_cap: f32) -> SituTables {
+    let value = |bits: u32| f32::from_bits(bits << 16);
+    SituTables {
+        gate_cap,
+        up_cap,
+        gate: (0..=0xffffu32)
+            .map(|b| situ_gate_factor(value(b), gate_cap))
+            .collect(),
+        up: (0..=0xffffu32)
+            .map(|b| situ_up_factor(value(b), up_cap))
+            .collect(),
+    }
+}
+
+/// f64 -> bf16 (held as fp32), rounded once to nearest even: the f64 value is first rounded to
+/// fp32 by round-to-odd (toward zero, the last bit set when inexact), which keeps the one bf16
+/// rounding exact. NaN gives the quiet NaN `0x7fc0`.
+pub fn bf16_from_f64(x: f64) -> f32 {
+    if x.is_nan() {
+        return f32::from_bits(0x7fc0_0000);
+    }
+    let r = x as f32;
+    if r.is_infinite() {
+        return r;
+    }
+    let mut b = r.to_bits();
+    if f64::from(r) != x {
+        if f64::from(r).abs() > x.abs() {
+            b -= 1;
+        }
+        b |= 1;
+    }
+    bf16(f32::from_bits(b))
+}
+
+/// One SiTU output: `bf16(gate_factor(g) * up_factor(u) * gamma)`, the products in f64 (in this
+/// order) and the only rounding the one to bf16. `g` and `u` are bf16 values held as fp32.
+#[inline]
+pub fn situ_value(gate: f32, up: f32, gamma: f32, t: &SituTables) -> f32 {
+    let (g, u) = (
+        (gate.to_bits() >> 16) as usize,
+        (up.to_bits() >> 16) as usize,
+    );
+    bf16_from_f64((t.gate[g] * t.up[u]) * f64::from(gamma))
+}
+
+/// Softcapped SwiGLU with the routing weight folded in, over interleaved `(gate, up)` columns
+/// (column `2j` is gate `j`, `2j + 1` is up `j`): `bf16(cap_g tanh(g / cap_g) sigmoid(g) *
+/// cap_u tanh(u / cap_u) * gamma)`, the mathematical value rounded once to bf16 (see
+/// [`situ_value`]). The routing weight is multiplied in here, before the down projection and
+/// before its quantization. The serving image's fp32 sequence of approximate instructions is a
+/// different, less accurate program and is not reproduced.
+pub fn situ_row(gate_up: &[f32], gamma: f32, tables: &SituTables) -> Vec<f32> {
     gate_up
         .chunks_exact(2)
-        .map(|pair| {
-            let (gate, up) = (pair[0], pair[1]);
-            let t = gate * f32::from_bits(0xbfb8_aa3b); // -log2(e)
-            let sigmoid = 1.0f32 / (((f64::from(t)).exp2() as f32) + 1.0f32);
-            bf16(((softcap(gate, gate_cap) * sigmoid) * softcap(up, up_cap)) * gamma)
-        })
+        .map(|pair| situ_value(pair[0], pair[1], gamma, tables))
         .collect()
 }
 
@@ -501,14 +678,20 @@ pub fn expert_block_w4a4(
     gamma: &[f32],
     w13: &Nvfp4Experts<'_>,
     w2: &Nvfp4Experts<'_>,
-    caps: (f32, f32),
+    tables: &SituTables,
+    accumulation: Accumulation,
 ) -> ExpertBlockOut {
     let xq = nvfp4_act_quant(x);
     let (mut gate_up, mut ys, mut down) = (Vec::new(), Vec::new(), Vec::new());
     for (&expert, &g) in selected.iter().zip(gamma) {
-        let gu = w4a4_gemm_row(&xq, w13, expert);
-        let y = situ_row(&gu, g, caps.0, caps.1);
-        down.push(w4a4_gemm_row(&nvfp4_act_quant(&y), w2, expert));
+        let gu = w4a4_gemm_row_with(&xq, w13, expert, accumulation);
+        let y = situ_row(&gu, g, tables);
+        down.push(w4a4_gemm_row_with(
+            &nvfp4_act_quant(&y),
+            w2,
+            expert,
+            accumulation,
+        ));
         gate_up.push(gu);
         ys.push(y);
     }
@@ -528,15 +711,16 @@ pub fn expert_block_w8a8(
     gamma: &[f32],
     w13: &Mxfp8Experts<'_>,
     w2: &Mxfp8Experts<'_>,
-    caps: (f32, f32),
+    tables: &SituTables,
+    accumulation: Accumulation,
 ) -> ExpertBlockOut {
     let (xv, xe) = mxfp8_act_quant(x);
     let (mut gate_up, mut ys, mut down) = (Vec::new(), Vec::new(), Vec::new());
     for (&expert, &g) in selected.iter().zip(gamma) {
-        let gu = w8a8_gemm_row(&xv, &xe, w13, expert);
-        let y = situ_row(&gu, g, caps.0, caps.1);
+        let gu = w8a8_gemm_row_with(&xv, &xe, w13, expert, accumulation);
+        let y = situ_row(&gu, g, tables);
         let (yv, ye) = mxfp8_act_quant(&y);
-        down.push(w8a8_gemm_row(&yv, &ye, w2, expert));
+        down.push(w8a8_gemm_row_with(&yv, &ye, w2, expert, accumulation));
         gate_up.push(gu);
         ys.push(y);
     }
@@ -799,6 +983,7 @@ mod tests {
     #[test]
     fn expert_block_matches_the_chain_goldens() {
         let g = parse(goldens::BYTES).unwrap();
+        let tables = situ_tables(4.0, 25.0);
         for kind in ["nvfp4", "mxfp8"] {
             let r = &g[&format!("chain/{kind}")];
             let d = u32s(&r["dims"]);
@@ -837,7 +1022,7 @@ mod tests {
                         n: h,
                         k: f,
                     };
-                    expert_block_w4a4(xt, &s, gm, &w13, &w2, (4.0, 25.0))
+                    expert_block_w4a4(xt, &s, gm, &w13, &w2, &tables, Accumulation::IndexOrder)
                 } else {
                     let w13 = Mxfp8Experts {
                         values: &r["w13"],
@@ -851,7 +1036,7 @@ mod tests {
                         n: h,
                         k: f,
                     };
-                    expert_block_w8a8(xt, &s, gm, &w13, &w2, (4.0, 25.0))
+                    expert_block_w8a8(xt, &s, gm, &w13, &w2, &tables, Accumulation::IndexOrder)
                 };
                 for slot in 0..topk {
                     let row = t * topk + slot;
@@ -900,13 +1085,13 @@ mod tests {
             for i in 0..rows {
                 let e = expert[i] as usize;
                 let xr = &x[i * k..(i + 1) * k];
-                let (a, scale) = if name.starts_with("w4a4/") {
+                let (a, a_exp, scale) = if name.starts_with("w4a4/") {
                     let q = nvfp4_act_quant(xr);
                     let scale = nvfp4_row_scale(q.amax, f32s(&r["wamax"])[e], f32s(&r["denom"])[0]);
-                    (nvfp4_dequant(&q.codes, &q.scales), Some(scale))
+                    (nvfp4_dequant(&q.codes, &q.scales), Vec::new(), Some(scale))
                 } else {
                     let (v, s) = mxfp8_act_quant(xr);
-                    (mxfp8_dequant(&v, &s), None)
+                    (mxfp8_dequant(&v, &s), mxfp8_operand_exponents(&v, &s), None)
                 };
                 for col in 0..n {
                     let row = e * n + col;
@@ -918,11 +1103,13 @@ mod tests {
                         let model = dot_chain_rz(&a, &w, 64);
                         (w, model)
                     } else {
-                        let w = mxfp8_dequant(
+                        let (wv, we) = (
                             &r["w"][row * k..(row + 1) * k],
                             &r["wexps"][row * k / 32..(row + 1) * k / 32],
                         );
-                        let model = dot_chain_trunc(&a, &w, 32, 25);
+                        let w = mxfp8_dequant(wv, we);
+                        let w_exp = mxfp8_operand_exponents(wv, we);
+                        let model = dot_chain_trunc(&a, &a_exp, &w, &w_exp, 32, 25);
                         (w, model)
                     };
                     let got = acc[i * n + col];
@@ -962,5 +1149,171 @@ mod tests {
         assert!(q.scales.iter().all(|s| *s == 0) && q.codes.iter().all(|c| *c == 0));
         let q = nvfp4_act_quant(&[-0.0; 32]);
         assert!(q.codes.iter().all(|c| *c == 0x88), "-0 keeps its sign bit");
+    }
+
+    /// The one rounding of SiTU: round-to-odd to fp32 then nearest-even to bf16 equals the
+    /// nearest bf16 of the f64 value (ties to even), on values that sit on, beside and between
+    /// bf16 midpoints, across the normal and subnormal ranges.
+    #[test]
+    fn bf16_from_f64_rounds_once() {
+        let nearest = |x: f64| -> f32 {
+            // the two bf16 neighbours of x by search over bit patterns
+            let lo = {
+                let mut b = bf16(x as f32).to_bits() >> 16;
+                let v = |b: u32| f64::from(f32::from_bits(b << 16));
+                while v(b) > x {
+                    b = if x > 0.0 { b - 1 } else { b + 1 };
+                }
+                while v(if x >= 0.0 { b + 1 } else { b.wrapping_sub(1) }) <= x && b != 0x8000 {
+                    b = if x >= 0.0 { b + 1 } else { b - 1 };
+                }
+                b
+            };
+            let v = |b: u32| f64::from(f32::from_bits(b << 16));
+            let hi = if x >= 0.0 { lo + 1 } else { lo - 1 };
+            let (dl, dh) = ((x - v(lo)).abs(), (v(hi) - x).abs());
+            let pick = if dl < dh || (dl == dh && lo & 1 == 0) {
+                lo
+            } else {
+                hi
+            };
+            f32::from_bits(pick << 16)
+        };
+        let mut checked = 0;
+        for bits in (0x0001u32..0x7f00).step_by(7) {
+            for sign in [1.0f64, -1.0] {
+                let a = f64::from(f32::from_bits(bits << 16));
+                let b = f64::from(f32::from_bits((bits + 1) << 16));
+                let mid = (a + b) / 2.0;
+                for x in [
+                    mid,
+                    mid * (1.0 + 2f64.powi(-40)),
+                    mid * (1.0 - 2f64.powi(-40)),
+                    a * (1.0 + 2f64.powi(-30)),
+                ] {
+                    let x = x * sign;
+                    let got = bf16_from_f64(x);
+                    assert_eq!(got.to_bits(), nearest(x).to_bits(), "{x:e}");
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 10_000);
+        assert_eq!(bf16_from_f64(f64::NAN).to_bits(), 0x7fc0_0000);
+        assert_eq!(bf16_from_f64(-0.0).to_bits(), 0x8000_0000);
+    }
+
+    /// SiTU is the mathematical function rounded once: no fp32 rounding of a factor, and the
+    /// tables cover every bf16 input including the non-finite ones.
+    #[test]
+    fn situ_is_rounded_once() {
+        let t = situ_tables(4.0, 25.0);
+        assert_eq!(t.gate.len(), 65536);
+        let pos_inf = 0x7f80usize;
+        assert_eq!(t.gate[pos_inf], 4.0);
+        assert_eq!(t.up[pos_inf], 25.0);
+        assert!(t.gate[0xff80] == 0.0 && t.gate[0xff80].is_sign_negative());
+        // a case where rounding the factors to fp32 first moves the bf16 result: the program
+        // keeps them in f64
+        let mut moved = 0;
+        for gb in (0x3c00u32..0x4100).step_by(3) {
+            for ub in (0x3c00u32..0x4100).step_by(5) {
+                let (g, u) = (f32::from_bits(gb << 16), f32::from_bits(ub << 16));
+                let once = situ_value(g, u, 1.0, &t);
+                let staged = bf16((t.gate[gb as usize] as f32) * (t.up[ub as usize] as f32));
+                moved += usize::from(once.to_bits() != staged.to_bits());
+                let exact = situ_gate_factor(g, 4.0) * situ_up_factor(u, 25.0);
+                assert_eq!(once.to_bits(), bf16_from_f64(exact).to_bits());
+            }
+        }
+        assert!(
+            moved > 0,
+            "the staged fp32 rounding never differed: the sample is too narrow"
+        );
+    }
+
+    /// dot_chain_trunc takes the e4m3 field exponent: a subnormal code counts as -6. Step 1 leaves an
+    /// accumulator with its last bit set at exponent e; step 2 subtracts 2^e as 0x08 under a block
+    /// scale times the negative smallest subnormal (-2^-9): field exponent sum e + 3, normalised e.
+    /// The hardware's quantum 2^(e - 22) drops the accumulator's last bit; the normalised reading's
+    /// 2^(e - 25) keeps it.
+    #[test]
+    fn chain_trunc_reads_the_field_exponent() {
+        let k = 64;
+        let mut found = false;
+        for seed in 1u32..5000 {
+            let mut x = seed.wrapping_mul(2654435761);
+            let mut next = || {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                x
+            };
+            let mut av: Vec<u8> = (0..32).map(|_| 1 + (next() % 0x7d) as u8).collect();
+            let mut wv: Vec<u8> = (0..32).map(|_| 1 + (next() % 0x7d) as u8).collect();
+            let mut e = vec![127u8; k / 32];
+            let (a1, w1) = (mxfp8_dequant(&av, &e[..1]), mxfp8_dequant(&wv, &e[..1]));
+            let (ae1, we1) = (
+                mxfp8_operand_exponents(&av, &e[..1]),
+                mxfp8_operand_exponents(&wv, &e[..1]),
+            );
+            let step1 = dot_chain_trunc(&a1, &ae1, &w1, &we1, 32, 25);
+            let e_acc = ((step1.to_bits() >> 23) & 0xff) as i32 - 127;
+            // step 2: the code 0x08 (field exponent -6) under the block exponent that puts the field
+            // sum with the subnormal 2^-9 at e_acc + 3; the normalised sum is e_acc
+            let block = e_acc + 15 + 127;
+            if step1.to_bits() & 1 == 0 || !(1..=254).contains(&block) {
+                continue;
+            }
+            e[1] = block as u8;
+            av.push(0x08);
+            av.extend([0u8; 31]);
+            wv.push(0x81); // -2^-9: the result falls a binade, so the dropped bit stays visible
+            wv.extend([0u8; 31]);
+            let ew = vec![127u8; k / 32];
+            let (a, w) = (mxfp8_dequant(&av, &e), mxfp8_dequant(&wv, &ew));
+            let (a_exp, w_exp) = (
+                mxfp8_operand_exponents(&av, &e),
+                mxfp8_operand_exponents(&wv, &ew),
+            );
+            // the weights' exponents read from the normalised value instead
+            let normalised: Vec<i32> = w
+                .iter()
+                .zip(&w_exp)
+                .map(|(v, e)| {
+                    if *v == 0.0 {
+                        *e
+                    } else {
+                        ((f64::from(*v).to_bits() >> 52) & 0x7ff) as i32 - 1023
+                    }
+                })
+                .collect();
+            assert_eq!(w_exp[32], -6);
+            assert_eq!(normalised[32], -9);
+            assert_eq!(a_exp[32] + w_exp[32], e_acc + 3);
+            let hw = dot_chain_trunc(&a, &a_exp, &w, &w_exp, 32, 25);
+            let other = dot_chain_trunc(&a, &a_exp, &w, &normalised, 32, 25);
+            let exact: f64 = a
+                .iter()
+                .zip(&w)
+                .map(|(x, y)| f64::from(*x) * f64::from(*y))
+                .sum();
+            assert!((f64::from(hw) - exact).abs() <= sum_magnitude(&a, &w) * 64.0 * 2f64.powi(-23));
+            assert_ne!(
+                hw.to_bits(),
+                other.to_bits(),
+                "seed {seed}: the two exponent readings agree"
+            );
+            found = true;
+            break;
+        }
+        assert!(found, "no seed built the case");
+    }
+
+    fn sum_magnitude(a: &[f32], w: &[f32]) -> f64 {
+        a.iter()
+            .zip(w)
+            .map(|(x, y)| (f64::from(*x) * f64::from(*y)).abs())
+            .sum()
     }
 }
