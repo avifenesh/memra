@@ -410,3 +410,26 @@ Serve = "pending"
 [record.evidence]
 Config = ["ci:verify-tiny"]
 TinyParity = ["ci:verify-tiny"]
+
+[[record]]
+id = "inkling2-reference"
+pack = "inkling2"
+state = "NativeReference"
+artifact = "tiny fixture (a seeded checkpoint image in the family's layout, sha256 db3bcf55117349fada275aa5e1261e13f5a703ad5b99c608ab88076326567953); census over thinkingmachines/Inkling-2-Mini@ed40e7da625f594fc9c4990f5f66be24873c22d7"
+numeric_program = "f64 reference executor from the stored values: BF16 and F32 tensors widened, NVFP4 and MXFP8 expert banks dequantized exactly. The expert input is set per physical layer: float inputs (the float-activation class, a bring-up and oracle class), or the declared activation quantizer in fp32 on bf16 rows (NVFP4 four-over-six W4A4, MXFP8 W8A8; the default class)"
+topology = "cpu"
+route = "memra model inspect + verify tiny"
+notes = "The tiny gate's main plan is the float-activation class, because that class has an independent oracle: the transformers PR 51050 model code in f64 over the fixture's checkpoint image. The reference matches it to the bit after rounding to f32 on the main fixture and on three schedule variants (prefill chunks ending at 8, 12, 24; at 7, 11, 23; a prefill of 5 then one token per call), which cross the tiny config's sliding window, relative extent and log-scale floor. A fourth variant runs the family's default class (every layer on its declared quantizer) and is pinned to a CPU simulation of the activation-quant expert program on an f32 stream, written apart from the reference: max abs 2.3e-6 inside the 1e-5 band. That simulation is not a capture of a serving binary, so the default class has no vendor oracle here and its checkpoint gate stays pending; a float-activation pass is never evidence for the default class. The drafter and the vision tower are contract-owned and refused by the executor. No tuned surface implements any operation of the plan and every rewrite is ineligible. Receipts: research/modelplan-onboarding-inkling2mini-20261121/tiny and reference/README.md. TokenizerTemplate and TensorCensus passed at inspect on the pinned checkpoint."
+[record.gates]
+Config = "passed"
+TokenizerTemplate = "passed"
+TensorCensus = "passed"
+TinyParity = "passed"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["research/modelplan-onboarding-inkling2mini-20261121/inspect/gates.txt", "ci:verify-tiny"]
+TokenizerTemplate = ["research/modelplan-onboarding-inkling2mini-20261121/inspect/gates.txt"]
+TensorCensus = ["research/modelplan-onboarding-inkling2mini-20261121/inspect/gates.txt"]
+TinyParity = ["research/modelplan-onboarding-inkling2mini-20261121/tiny/gates.txt", "ci:verify-tiny"]

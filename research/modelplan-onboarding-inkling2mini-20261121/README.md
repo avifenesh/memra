@@ -3,8 +3,10 @@
 Status: open. Step 1 is in: the `inkling2` pack parses the config and the quantization
 declaration, compiles a typed 48-slot plan and binds every one of the 1,298 header tensors.
 Config, TokenizerTemplate and TensorCensus pass at inspect ([Step 1](#step-1-config-plan-and-census)).
-The pack's support is none: no executor runs the plan, every execution surface refuses it, and
-TinyParity, CheckpointParity, RewriteParity and Serve are pending. No GPU was used.
+Steps 3 to 5 are in: the reference executor runs the plan on CPU and TinyParity passes
+([Steps 3 to 5](#steps-3-to-5-reference-executor-and-tinyparity)), so the pack is at the
+reference state (record `inkling2-reference`). Every tuned execution surface still refuses the
+plan, and CheckpointParity, RewriteParity and Serve are pending. No GPU was used.
 
 ## Scope
 
@@ -185,7 +187,39 @@ What the three passed gates mean here:
   renderer for this family yet, and that work is its own step.
 
 
+## Steps 3 to 5: reference executor and TinyParity
+
+Detail, oracles, the table of proven facts and the list of where the references differ:
+[`reference/README.md`](reference/README.md). Receipts of the tiny gate: [`tiny/`](tiny/).
+
+- `crates/memra-reference/src/inkling2.rs` and `inkling2/ops.rs` run every operation of the plan
+  except the drafter, unfused, in f64, from the stored values. A layer's experts run on float
+  inputs or on the declared activation quantizer (`inkling2_actquant.rs`), per physical layer,
+  as the plan says.
+- 16 operations are each pinned to one module of the float-activation implementation run alone
+  in f64, at 1e-12, with a red arm for each fact that was open: the gate/up interleave, the
+  window edge, the sink form, both convolution tap orders, the log-scale floor, the message
+  query slots, the NVFP4 nibble order.
+- `memra model verify tiny --against inkling2` runs a 40-token request on a tiny checkpoint in
+  the real layout (hidden 64, 8 layers in 4 blocks, 3 loop passes, 16 slots, window 8, extent
+  12, floor 24). The float-activation plan equals the PR code in f64 to the bit after rounding
+  to f32, as one chunk and under three schedules that split at and around the window, the extent
+  and the floor. The default-class plan is within 2.3e-6 of a separate simulation of the
+  activation-quant program; the band is 1e-5.
+- On that fixture the two classes are 5.4 apart in logits and agree on the argmax at 5 of 40
+  positions.
+
+```bash
+memra model verify tiny --against inkling2 --out tiny-out
+# family=inkling2 verified=Tiny
+cargo test -p memra-reference inkling2
+cargo test -p memra-cli supported_packs_write_deterministic_native_oracles
+```
+
+The inspect bundles were written again on this tree: only `artifact.lock` moved (the support
+state and the tiny gate's band).
+
 ## Next
 
-The tokenizer and chat dialect; reference implementations of the new operations with a tiny
-fixture; the checkpoint runner for the declared numeric class.
+The tokenizer and chat dialect; the checkpoint runner for the declared numeric class, with an
+oracle of that class from a serving binary; the drafter.
