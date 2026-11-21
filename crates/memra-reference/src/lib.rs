@@ -5,6 +5,7 @@
 
 pub mod deepseek_v41;
 pub mod hidden_trace;
+pub mod inkling2_actquant;
 pub mod mimo_audio;
 pub mod mimo_audio_attn;
 pub mod mimo_audio_codec_frontend;
