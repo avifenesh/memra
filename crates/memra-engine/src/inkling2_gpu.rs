@@ -205,6 +205,23 @@ mod ffi {
             prec: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_ink2g_conv_rows(
+            mode: i32,
+            x: *const f32,
+            state_in: *const f32,
+            state_out: *mut f32,
+            rows_out: *mut f32,
+            taps: *const f32,
+            dynamic: *const f32,
+            groups: i32,
+            add: *const f32,
+            out: *mut f32,
+            r: i32,
+            c: i32,
+            k: i32,
+            prec: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_ink2g_conv(
             mode: i32,
             x: *const f32,
@@ -1316,6 +1333,9 @@ struct SlotState {
     /// K, V, attention output, MLP output: two buffers each. `Route::parity` names the committed
     /// one; a call writes the other and the route swaps only when the whole call succeeded.
     conv: [[CudaSlice<f32>; 2]; 4],
+    /// The history after each row of the last call, `[row][kernel - 1][channels]` per conv, for
+    /// up to the second field's rows (allocated by [`Route::keep_row_history`]).
+    row_hist: Option<([CudaSlice<f32>; 4], usize)>,
 }
 
 /// What a caller can read out of a call, per slot.
@@ -1513,6 +1533,8 @@ pub struct Route {
     red: RedArms,
     /// Fault injection of the atomicity gate: the next forward fails after this slot ran.
     pub fail_after_slot: Option<u32>,
+    /// Rows of the last eager call (the rows whose history `row_hist` holds, when kept).
+    last_call_rows: usize,
     /// The decode step as a CUDA graph, one per conv-history parity (the step reads the history
     /// of one parity and writes the other), captured after one eager step at that parity. A graph
     /// reads its position and token from the device, so it replays at every position.
@@ -1530,7 +1552,7 @@ pub struct Route {
     /// Where the card's memory went at load.
     pub account: MemoryAccount,
     /// Rows of the drafter's taps, when a caller asked for them ([`Route::set_capture`]).
-    capture: Option<Capture>,
+    tap_capture: Option<Capture>,
 }
 
 /// The drafter's taps of one call: the stream on entry to each named slot (the running partial
@@ -2038,6 +2060,7 @@ impl Route {
                         dev.zeros((program.mlp_output_conv.kernel as usize - 1) * hidden)?,
                     ],
                 ],
+                row_hist: None,
             });
             account.conv += dev.allocated.get()
                 - before
@@ -2155,6 +2178,7 @@ impl Route {
             parity: 0,
             red: RedArms::default(),
             fail_after_slot: None,
+            last_call_rows: 0,
             graphs: [None, None],
             warm: [false, false],
             graph_steps: Cell::new(0),
@@ -2164,7 +2188,7 @@ impl Route {
             hidden,
             weight_bytes,
             account,
-            capture: None,
+            tap_capture: None,
         })
     }
 
@@ -2172,7 +2196,7 @@ impl Route {
     /// call. Their order is the tap order; an empty list turns capture off.
     pub fn set_capture(&mut self, slots: &[u32]) -> Result<(), String> {
         if slots.is_empty() {
-            self.capture = None;
+            self.tap_capture = None;
             return Ok(());
         }
         if let Some(bad) = slots.iter().find(|s| **s as usize >= self.slots.len()) {
@@ -2184,7 +2208,7 @@ impl Route {
         let buf = self
             .dev
             .zeros::<f32>((slots.len() + 1) * self.chunk * self.hidden)?;
-        self.capture = Some(Capture {
+        self.tap_capture = Some(Capture {
             slots: slots.to_vec(),
             buf,
         });
@@ -2194,7 +2218,7 @@ impl Route {
     /// The last call's taps, `[taps, chunk, hidden]` (row `r` of tap `t` at
     /// `(t * chunk + r) * hidden`).
     pub fn captured(&self) -> Option<&CudaSlice<f32>> {
-        self.capture.as_ref().map(|c| &c.buf)
+        self.tap_capture.as_ref().map(|c| &c.buf)
     }
 
     /// The trunk's token embedding `[vocab, hidden]` (BF16 bytes), its norm weight and epsilon,
@@ -2209,6 +2233,71 @@ impl Route {
     }
 
     /// Buffers for [`Route::save_carry`].
+    /// Keep the convolution history after every row of each call of up to `max_rows` rows, so
+    /// [`Route::commit_rows`] can commit the first rows of the last call without running them
+    /// again. `0` frees it.
+    pub fn keep_row_history(&mut self, max_rows: usize) -> Result<(), String> {
+        if max_rows == 0 {
+            for s in &mut self.slots {
+                s.row_hist = None;
+            }
+            return Ok(());
+        }
+        if max_rows > self.chunk {
+            return Err(format!(
+                "row history for {max_rows} rows; a call holds {}",
+                self.chunk
+            ));
+        }
+        for s in &mut self.slots {
+            let n = |c: &[CudaSlice<f32>; 2]| c[0].len() * max_rows;
+            let bufs = [
+                self.dev.zeros::<f32>(n(&s.conv[0]))?,
+                self.dev.zeros::<f32>(n(&s.conv[1]))?,
+                self.dev.zeros::<f32>(n(&s.conv[2]))?,
+                self.dev.zeros::<f32>(n(&s.conv[3]))?,
+            ];
+            s.row_hist = Some((bufs, max_rows));
+        }
+        Ok(())
+    }
+
+    /// Keep only the first `n` rows of the last call: its convolution history after row
+    /// `n - 1` becomes the committed one and the position goes back to after that row. The
+    /// last call must have been an eager call with row history kept; its later rows' K and V sit
+    /// past the position and are written again before any row reads them.
+    pub fn commit_rows(&mut self, n: usize) -> Result<(), String> {
+        let rows = self.last_call_rows;
+        if n == 0 || n > rows {
+            return Err(format!("commit of {n} rows of a call of {rows}"));
+        }
+        if n == rows {
+            return Ok(());
+        }
+        let st = self.dev.st.clone();
+        let q = self.parity; // the buffers the last call wrote
+        for s in &mut self.slots {
+            let (hist, max) = s
+                .row_hist
+                .as_ref()
+                .ok_or("commit_rows without a kept row history")?;
+            if rows > *max {
+                return Err(format!(
+                    "the last call had {rows} rows; the history holds {max}"
+                ));
+            }
+            for (h, conv) in hist.iter().zip(s.conv.iter_mut()) {
+                let width = conv[q].len();
+                let src = dptr(h, &st) + ((n - 1) * width * 4) as u64;
+                let dst = dptr_mut(&mut conv[q], &st);
+                self.dev.copy_raw(dst, src, width * 4)?;
+            }
+        }
+        self.position = self.position - rows as u64 + n as u64;
+        self.last_call_rows = n;
+        Ok(())
+    }
+
     pub fn carry(&self) -> Result<Carry, String> {
         Ok(Carry {
             parity: self.parity,
@@ -2410,10 +2499,13 @@ impl Route {
             && obs.is_none()
             && self.red == RedArms::default()
             && self.fail_after_slot.is_none()
+            && self.tap_capture.is_none()
             && self.position < self.context as u64
             && tokens[0] < self.plan.vocab_size;
         if !graphable {
-            return self.forward_body(tokens, head, obs, false);
+            let out = self.forward_body(tokens, head, obs, false)?;
+            self.last_call_rows = tokens.len();
+            return Ok(out);
         }
         let p = self.parity;
         if self.graphs[p].is_none() {
@@ -2453,6 +2545,7 @@ impl Route {
         // the step succeeded: commit the position and the conv histories it wrote
         self.position += 1;
         self.parity = 1 - p;
+        self.last_call_rows = 1;
         Ok(CallOut {
             argmax,
             logits: Vec::new(),
@@ -2506,7 +2599,7 @@ impl Route {
             softcap,
             keep,
             hidden,
-            capture,
+            tap_capture,
             ..
         } = self;
         let (hidden, chunk, red, softcap, keep) = (*hidden, *chunk, *red, *softcap, *keep);
@@ -2562,7 +2655,7 @@ impl Route {
                 }
                 pass = info.pass;
             }
-            if let Some(c) = capture.as_mut()
+            if let Some(c) = tap_capture.as_mut()
                 && let Some(tap) = c.slots.iter().position(|s| *s == slot)
             {
                 let dst = dptr_mut(&mut c.buf, &st) + ((tap * chunk * hidden) * 4) as u64;
@@ -2850,10 +2943,15 @@ impl Route {
             // ---- K and V: short convolution with the slot's history, clip / norm into the cache
             let cur = *parity;
             let ss = &mut slots[slot as usize];
+            // the history after every row of the call, when the caller keeps it (a verify call)
+            let hp: [u64; 4] = match ss.row_hist.as_mut() {
+                Some((h, max)) if rows <= *max => [0, 1, 2, 3].map(|i| dptr_mut(&mut h[i], &st)),
+                _ => [0; 4],
+            };
             let conv = |dev: &Dev,
                         cw: &ConvW,
                         x: u64,
-                        state: &mut [CudaSlice<f32>; 2],
+                        (state, hist): (&mut [CudaSlice<f32>; 2], u64),
                         dynamic: u64,
                         add: u64,
                         out: u64|
@@ -2866,11 +2964,12 @@ impl Route {
                     dptr_mut(&mut state[1 - cur], &st)
                 };
                 dev.launched("memra_ink2g_conv", unsafe {
-                    ffi::memra_ink2g_conv(
+                    ffi::memra_ink2g_conv_rows(
                         i32::from(cw.dynamic.is_some()),
                         x as *const f32,
                         state_in as *const f32,
                         state_out as *mut f32,
+                        hist as *mut f32,
                         dptr(&cw.taps, &st) as *const f32,
                         dynamic as *const f32,
                         cw.dynamic.as_ref().map_or(0, |d| d.1 as i32),
@@ -2890,7 +2989,7 @@ impl Route {
                 dev,
                 &lw.kconv,
                 dptr(&w.kp, &st),
-                &mut ss.conv[0],
+                (&mut ss.conv[0], hp[0]),
                 dptr(&w.dynk, &st),
                 0,
                 kcv,
@@ -2899,7 +2998,7 @@ impl Route {
                 dev,
                 &lw.vconv,
                 dptr(&w.vp, &st),
-                &mut ss.conv[1],
+                (&mut ss.conv[1], hp[1]),
                 dptr(&w.dynv, &st),
                 0,
                 vcv,
@@ -3073,7 +3172,7 @@ impl Route {
                     dev,
                     &lw.oconv,
                     dptr(&w.proj, &st),
-                    &mut ss.conv[2],
+                    (&mut ss.conv[2], hp[2]),
                     0,
                     0,
                     h_mut,
@@ -3083,7 +3182,7 @@ impl Route {
                     dev,
                     &lw.oconv,
                     dptr(&w.proj, &st),
-                    &mut ss.conv[2],
+                    (&mut ss.conv[2], hp[2]),
                     0,
                     h_mut,
                     h_mut,
@@ -3170,7 +3269,7 @@ impl Route {
                 dev,
                 &lw.mconv,
                 dptr(&w.moe, &st),
-                &mut ss.conv[3],
+                (&mut ss.conv[3], hp[3]),
                 0,
                 h_mut,
                 h_mut,
@@ -3225,7 +3324,7 @@ impl Route {
             let n = plan.layers.len() as u32;
             o.floats(n, Tap::FinalHidden, &dev.down(&w.mn, 0, rows * hidden)?);
         }
-        if let Some(c) = capture.as_mut() {
+        if let Some(c) = tap_capture.as_mut() {
             let tap = c.slots.len();
             let dst = dptr_mut(&mut c.buf, &st) + ((tap * chunk * hidden) * 4) as u64;
             dev.copy_raw(dst, dptr(&w.mn, &st), rows * hidden * 4)?;
