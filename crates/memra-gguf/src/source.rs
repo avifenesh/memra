@@ -457,7 +457,108 @@ fn is_quant_auxiliary(name: &str, headers: &BTreeMap<String, StInfo>) -> bool {
             headers.contains_key(&format!("{stem}.weight"))
                 || headers.contains_key(&format!("{stem}.weight_packed"))
         })
+    }) || STACKED_BANK_AUXILIARIES.into_iter().any(|suffix| {
+        name.strip_suffix(suffix)
+            .is_some_and(|bank| is_stacked_bank(bank, headers))
     })
+}
+
+/// Quantization planes of a stacked expert bank whose own name ends in `_weight` (Inkling 2:
+/// `mlp.experts.w13_weight` with `w13_weight_scale`, `w13_weight_amax` and
+/// `w13_weight_outer_scale_denominator`). The planes are spelled as suffixes of the bank's whole
+/// name, not of a `.weight` stem.
+const STACKED_BANK_AUXILIARIES: [&str; 3] = ["_scale", "_amax", "_outer_scale_denominator"];
+
+/// A bank name of the stacked-suffix spelling: it ends in `_weight` and is not a `.weight`.
+fn is_stacked_bank_name(name: &str) -> bool {
+    name.ends_with("_weight") && !name.ends_with(".weight")
+}
+
+/// A stacked bank with suffix-spelled planes: the name has the spelling, the tensor exists and
+/// so does its `_scale`. This one predicate decides both which tensor folds planes and which
+/// tensors are planes, so a plane-suffixed tensor beside a `*_weight` tensor with no `_scale`
+/// (a controller weight, say) is never hidden: it stays a census row of its own.
+fn is_stacked_bank(name: &str, headers: &BTreeMap<String, StInfo>) -> bool {
+    is_stacked_bank_name(name)
+        && headers.contains_key(name)
+        && headers.contains_key(&format!("{name}_scale"))
+}
+
+/// Storage of a stacked expert bank with suffix-spelled planes. Two layouts exist:
+/// - U8 codes with an e4m3 `_scale` per 16 inputs, a per-expert F32 `_amax` and a one-element
+///   F32 `_outer_scale_denominator`: NVFP4 whose per-expert factor is `amax / denominator`.
+/// - e4m3 values with a U8 `_scale` per 32 inputs of each row: MXFP8 (the byte is a ue8m0
+///   exponent).
+///
+/// Anything else is refused: a label the planes do not have would let a loader read them wrong.
+fn stacked_bank_storage(
+    name: &str,
+    info: &StInfo,
+    auxiliaries: &[String],
+    headers: &BTreeMap<String, StInfo>,
+) -> Result<(Vec<u64>, StorageLayout), String> {
+    let plane = |suffix: &str| {
+        let plane = format!("{name}{suffix}");
+        auxiliaries
+            .contains(&plane)
+            .then(|| headers.get(&plane))
+            .flatten()
+    };
+    let scale =
+        plane("_scale").ok_or_else(|| format!("stacked bank {name} has no _scale plane"))?;
+    let [experts, rows, stored] = info.shape[..] else {
+        return Err(format!(
+            "stacked bank {name} has shape {:?}; expected [experts, out, in]",
+            info.shape
+        ));
+    };
+    let (format, block_shape, inputs) = match (info.dtype.as_str(), scale.dtype.as_str()) {
+        ("U8", "F8_E4M3") => {
+            let inputs = stored
+                .checked_mul(2)
+                .ok_or("packed U8 logical shape overflows")?;
+            let amax = plane("_amax");
+            let denominator = plane("_outer_scale_denominator");
+            let planes_ok = auxiliaries.len() == 3
+                && amax.is_some_and(|amax| amax.dtype == "F32" && amax.shape == [experts])
+                && denominator.is_some_and(|d| d.dtype == "F32" && d.shape == [1]);
+            if !planes_ok
+                || !inputs.is_multiple_of(16)
+                || scale.shape != [experts, rows, inputs / 16]
+            {
+                return Err(format!(
+                    "NVFP4 stacked bank {name} {:?} needs an e4m3 _scale [experts, out, in/16], an F32 _amax [experts] and an F32 _outer_scale_denominator [1]; found planes {auxiliaries:?} with scale shape {:?}",
+                    info.shape, scale.shape
+                ));
+            }
+            ("NVFP4_AMAX", vec![16], inputs)
+        }
+        ("F8_E4M3", "U8") => {
+            if auxiliaries.len() != 1
+                || !stored.is_multiple_of(32)
+                || scale.shape != [experts, rows, stored / 32]
+            {
+                return Err(format!(
+                    "MXFP8 stacked bank {name} {:?} needs exactly one U8 _scale [experts, out, in/32]; found planes {auxiliaries:?} with scale shape {:?}",
+                    info.shape, scale.shape
+                ));
+            }
+            ("MXFP8_E4M3", vec![1, 32], stored)
+        }
+        (weight, scale) => {
+            return Err(format!(
+                "stacked bank {name} pairs weight dtype {weight} with scale dtype {scale}; no known layout"
+            ));
+        }
+    };
+    Ok((
+        vec![experts, rows, inputs],
+        StorageLayout::Quantized(QuantLayout {
+            format: format.to_string(),
+            block_shape,
+            auxiliaries: Vec::new(),
+        }),
+    ))
 }
 
 fn safetensors_storage(
@@ -595,8 +696,20 @@ pub fn census_from_safetensors_headers(
             Some(stem) => (format!("{stem}.weight"), Some(stem)),
             None => (physical_name.clone(), physical_name.strip_suffix(".weight")),
         };
-        let auxiliaries: Vec<String> = stem
-            .map(|stem| {
+        let stacked_bank = is_stacked_bank(physical_name, headers);
+        let auxiliaries: Vec<String> = if stacked_bank {
+            Some(
+                STACKED_BANK_AUXILIARIES
+                    .into_iter()
+                    .map(|suffix| format!("{physical_name}{suffix}"))
+                    .filter(|name| headers.contains_key(name))
+                    .collect(),
+            )
+        } else {
+            None
+        }
+        .or_else(|| {
+            stem.map(|stem| {
                 [
                     format!("{stem}.weight_scale"),
                     format!("{stem}.weight_scale_inv"),
@@ -613,9 +726,14 @@ pub fn census_from_safetensors_headers(
                 .filter(|name| headers.contains_key(name))
                 .collect()
             })
-            .unwrap_or_default();
+        })
+        .unwrap_or_default();
         auxiliary_names.extend(auxiliaries.iter().cloned());
-        let (shape, mut storage) = safetensors_storage(info, &auxiliaries, headers)?;
+        let (shape, mut storage) = if stacked_bank {
+            stacked_bank_storage(physical_name, info, &auxiliaries, headers)?
+        } else {
+            safetensors_storage(info, &auxiliaries, headers)?
+        };
         if let StorageLayout::Quantized(layout) = &mut storage {
             layout.auxiliaries = auxiliaries
                 .iter()

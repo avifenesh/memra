@@ -10,6 +10,7 @@ pub static PACK: ModelPack = ModelPack {
     // tensors once the by-design-unread `.input_scale` planes are excluded
     // (research/loader-census-20260922/raw/serve-9b-boot-refuse.log).
     tensor_consumption: TensorConsumption::Refuse,
+    auxiliary_files: &[],
     aliases: &[
         "qwen3_5",
         "qwen3_5_text",

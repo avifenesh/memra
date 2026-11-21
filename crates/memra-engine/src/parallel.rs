@@ -1611,6 +1611,7 @@ mod tests {
             mla: None,
             dsv4: None,
             dsv41: None,
+            inkling2: None,
             mimo: None,
             qwen4exp: None,
             qwen35_vision: None,

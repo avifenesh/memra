@@ -348,6 +348,12 @@ pub enum QuantConstraint {
     Fp8Block32,
     /// FP8 e4m3 with one scale per 32 elements of each row (DeepSeek-V4.1 Engram tables).
     Fp8Row32,
+    /// Stacked NVFP4 bank whose per-expert factor is `amax / outer_scale_denominator`
+    /// (Inkling 2 experts, layers 0-19).
+    Nvfp4Amax,
+    /// Stacked MXFP8 bank: e4m3 values, one ue8m0 exponent byte per 32 inputs of each row
+    /// (Inkling 2 experts, layers 20-23).
+    Mxfp8Row32,
     I64,
 }
 
@@ -787,9 +793,11 @@ pub(crate) fn rope_factor_width(plan: &ModelPlan) -> Option<u32> {
                 .then_some(rope.dimensions / 2),
             },
             // CSA2 rotates with YaRN factors derived from config, never checkpoint factors.
+            // Relative-bias attention has no rotary factors at all.
             AttentionPlan::GatedDeltaNet(_)
             | AttentionPlan::KimiDeltaNet(_)
-            | AttentionPlan::Csa2(_) => None,
+            | AttentionPlan::Csa2(_)
+            | AttentionPlan::RelativeBias(_) => None,
         })
         .max()
 }
@@ -826,6 +834,16 @@ impl QuantConstraint {
                 storage,
                 StorageLayout::Quantized(layout)
                     if layout.format == "FP8_E4M3" && layout.block_shape == [1, 32]
+            ),
+            Self::Nvfp4Amax => matches!(
+                storage,
+                StorageLayout::Quantized(layout)
+                    if layout.format == "NVFP4_AMAX" && layout.block_shape == [16]
+            ),
+            Self::Mxfp8Row32 => matches!(
+                storage,
+                StorageLayout::Quantized(layout)
+                    if layout.format == "MXFP8_E4M3" && layout.block_shape == [1, 32]
             ),
             Self::I64 => matches!(storage, StorageLayout::Integer(IntegerType::I64)),
         }
@@ -1107,6 +1125,12 @@ fn add_layer(
         AttentionPlan::Csa2(_) => {
             return Err(TensorContractError::UnsupportedPlanOperation {
                 operation: "CSA2 attention in the canonical tensor schema",
+            });
+        }
+        // Pack-owned names too (`model_packs::inkling2`).
+        AttentionPlan::RelativeBias(_) => {
+            return Err(TensorContractError::UnsupportedPlanOperation {
+                operation: "relative-bias attention in the canonical tensor schema",
             });
         }
     }

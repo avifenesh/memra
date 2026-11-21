@@ -18,6 +18,9 @@ pub mod gemma4_moe;
 pub mod glm5_next;
 pub mod glm_dsa;
 pub mod hy3;
+/// Inkling 2: its own config, looped plan and census; the declared activation-quantized program
+/// is the default numeric class.
+pub mod inkling2;
 pub mod llama_dense;
 pub mod mimo_v2;
 pub mod minimax_m3;
@@ -128,12 +131,24 @@ pub enum TensorConsumption {
     Refuse,
 }
 
+/// A safetensors file outside the shard index (a drafter shipped beside the model, say). Its
+/// tensors enter the census as `prefix` + their name in the file, which keeps them apart from the
+/// indexed names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuxiliaryTensorFile {
+    pub file: &'static str,
+    pub prefix: &'static str,
+}
+
 pub struct ModelPack {
     pub family: &'static str,
     /// Output-head ownership when the head tensor is absent.
     pub output_head: OutputHeadContract,
     /// Loader policy for bound tensors that were never consumed.
     pub tensor_consumption: TensorConsumption,
+    /// Weight files of the checkpoint that its shard index does not list. A source reads their
+    /// headers too, so the census and the contract cover them.
+    pub auxiliary_files: &'static [AuxiliaryTensorFile],
     pub aliases: &'static [&'static str],
     pub config_layout: ConfigLayout,
     pub tokenizer_sources: &'static [TokenizerSource],
@@ -220,6 +235,7 @@ pub const PACKS: &[&ModelPack] = &[
     &deepseek_v4::PACK,
     &deepseek_v4::DSPARK_PACK,
     &deepseek_v41::PACK,
+    &inkling2::PACK,
     &qwen4_exp::PACK,
     &step35::PACK,
     &hy3::PACK,
