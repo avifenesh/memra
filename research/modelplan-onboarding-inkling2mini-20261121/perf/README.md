@@ -164,3 +164,19 @@ writes and reads of the input; the prefill quantizer runs rows / top_k as many b
 | `ink2g_attn_kernel` (short context) | 1.4 ms | f64 scores and the value sum, one block per head |
 | `ink2g_conv_kernel` | 1.3 ms | one thread a channel, f64, 4 to 9 blocks |
 | `ink2g_norm_kernel`, `ink2g_route_kernel`, `ink2g_heads_kernel`, the rest | 2 ms | one block a row, f64 |
+
+## Step 8: the NVFP4 decode GEMV, multi-row calls, expert groups on the device (2026-11-21)
+
+- The NVFP4 GEMV read e2m1 codes through a local-memory table and the e4m3 scales from global memory in
+  the fold. The e2m1 decode is now exact bit arithmetic and the scales sit in shared memory, and the
+  decode projections of a step run as one jobs launch with each warp's rows in flight together.
+  nvfp4-rig c=1 (32 tokens, p1, three interleaved takes, no voids): 11.2 tok/s (p50 88.7 ms, merged
+  #1401) to 47.3 (p50 20.1 ms, bitwise e2m1 and smem scales; s8/gi-rig) to 54.0 tok/s (p50 17.7 ms, jobs
+  launch; s8/gl-rig, base 44.2 tok/s on the same window). Greedy ids equal across all takes.
+- Calls of 2..8 rows (spec verify, batched decode) go through a GEMV that reads each weight once for
+  up to four rows, and calls of up to 256 routed pairs group their experts on the device (no host round
+  trip; empty records are skipped).
+- Bit identity: the kernel cells (ink2g-gemv-rows, m 2, 3, 5, 8, BF16 and NVFP4) differ from the #1397
+  tile kernel in 0 outputs; slot and logit digests equal on all 48 slots for shipped, float and
+  nvfp4-rig at chunk 1, 4 and 512 against the previous binary (s8/gl-id), and at chunk 4 all-f64 against
+  the merged route (s8/gk-rows). Gate ALL OK, 36 cells.

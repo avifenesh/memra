@@ -110,6 +110,18 @@ mod ffi {
             k: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_ink2g_gemv_nvfp4_jobs(
+            xs: *const *const f32,
+            ws: *const *const c_void,
+            scs: *const *const c_void,
+            amaxs: *const *const f32,
+            denoms: *const f32,
+            ys: *const *mut f32,
+            ns: *const i32,
+            count: i32,
+            k: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_ink2g_gemv_jobs(
             xs: *const *const f32,
             ws: *const *const c_void,
@@ -355,6 +367,14 @@ mod ffi {
             pairs: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_ink2g_groups_dev(
+            ids: *const u32,
+            recs: *mut u32,
+            pairs: i32,
+            words: i32,
+            cap: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_ink2g_copy(
             dst: *mut c_void,
             src: *const c_void,
@@ -429,6 +449,36 @@ fn gemv_jobs(dev: &Dev, jobs: &[(u64, u64, u64, usize)], k: usize) -> Result<(),
     })
 }
 
+/// Dense NVFP4 decode GEMVs over one input row each, all of input width k, in one launch: jobs of
+/// (x, the weight's parts, y) and the output width. The denominator of a dense NVFP4 weight is 1.
+fn gemv_nvfp4_jobs(
+    dev: &Dev,
+    jobs: &[(u64, WeightParts, u64, usize)],
+    k: usize,
+) -> Result<(), String> {
+    let xs: Vec<*const f32> = jobs.iter().map(|j| j.0 as *const f32).collect();
+    let ws: Vec<*const c_void> = jobs.iter().map(|j| j.1.1 as *const c_void).collect();
+    let scs: Vec<*const c_void> = jobs.iter().map(|j| j.1.2 as *const c_void).collect();
+    let amaxs: Vec<*const f32> = jobs.iter().map(|j| j.1.3 as *const f32).collect();
+    let denoms: Vec<f32> = vec![1.0; jobs.len()];
+    let ys: Vec<*mut f32> = jobs.iter().map(|j| j.2 as *mut f32).collect();
+    let ns: Vec<i32> = jobs.iter().map(|j| j.3 as i32).collect();
+    dev.launched("memra_ink2g_gemv_nvfp4_jobs", unsafe {
+        ffi::memra_ink2g_gemv_nvfp4_jobs(
+            xs.as_ptr(),
+            ws.as_ptr(),
+            scs.as_ptr(),
+            amaxs.as_ptr(),
+            denoms.as_ptr(),
+            ys.as_ptr(),
+            ns.as_ptr(),
+            ns.len() as i32,
+            k as i32,
+            dev.sp(),
+        )
+    })
+}
+
 fn ck(name: &str, rc: i32) -> Result<(), String> {
     match rc {
         0 => Ok(()),
@@ -490,8 +540,9 @@ pub struct Prec {
 
 impl Default for Prec {
     /// The route's program: the arms adopted by docs/decisions/INKLING2-PRECISION-ARMS.md (the
-    /// controller, the norms and clips and the epilogues in f32; attention f64 with a chunk's scores
-    /// split over blocks); every other group f64.
+    /// controller and the norms and clips in f32; attention f64 with a chunk's scores split over
+    /// blocks); every other group f64 (the epilogue in f32 was backed off: with the norms it moves
+    /// p3 into the 1e-2 flip cluster).
     fn default() -> Self {
         Self {
             controller: 1,
@@ -499,7 +550,7 @@ impl Default for Prec {
             norm: 1,
             conv: 0,
             router: 0,
-            epilogue: 1,
+            epilogue: 0,
             attn: 3,
         }
     }
@@ -2921,15 +2972,21 @@ impl Route {
                     l
                 };
                 let mut jobs: Vec<(u64, u64, u64, usize)> = Vec::new();
+                let mut jobs4: Vec<(u64, WeightParts, u64, usize)> = Vec::new();
                 for (x, parts, y, n) in list {
                     if parts.0 == FMT_BF16 {
                         jobs.push((x, parts.1, y, n));
+                    } else if parts.0 == FMT_NVFP4 {
+                        jobs4.push((x, parts, y, n));
                     } else {
                         DenseW::gemm_parts(dev, parts, x, hidden, y, n, 1, n, hidden)?;
                     }
                 }
                 if !jobs.is_empty() {
                     gemv_jobs(dev, &jobs, hidden)?;
+                }
+                if !jobs4.is_empty() {
+                    gemv_nvfp4_jobs(dev, &jobs4, hidden)?;
                 }
             } else {
                 proj(dev, xq, lw.wq.parts(&st), &mut w.qb, qw)?;
@@ -3574,7 +3631,8 @@ impl Route {
                 host_ids = Some(ids);
             }
         }
-        if rows > 1 && host_ids.is_none() {
+        // a call of up to 32 rows groups its routed pairs on the device; a longer chunk on the host
+        if rows > 1 && host_ids.is_none() && pairs > 256 {
             dev.round_trips.set(dev.round_trips.get() + 1);
             host_ids = Some(dev.down(&w.ids, 0, pairs)?);
         }
@@ -3587,6 +3645,20 @@ impl Route {
                         let (table, n) = tiles_table(ids, words);
                         dev.put(&table, &mut w.tiles)?;
                         n
+                    }
+                    (None, r) if r > 1 => {
+                        let words = unsafe { ffi::memra_ink2g_tile_words() } as usize;
+                        dev.launched("memra_ink2g_groups_dev", unsafe {
+                            ffi::memra_ink2g_groups_dev(
+                                dptr(&w.ids, &st) as *const u32,
+                                dptr_mut(&mut w.tiles, &st) as *mut u32,
+                                pairs as i32,
+                                words as i32,
+                                (words - 2) as i32,
+                                dev.sp(),
+                            )
+                        })?;
+                        pairs
                     }
                     _ => {
                         dev.launched("memra_ink2g_tiles", unsafe {
@@ -3845,6 +3917,20 @@ fn declared_experts(
             dev.put(&table, &mut dq.groups)?;
             n
         }
+        None if rows > 1 => {
+            // several rows, grouped on the device: records of up to 8 pairs of one expert
+            dev.launched("memra_ink2g_groups_dev", unsafe {
+                ffi::memra_ink2g_groups_dev(
+                    dptr(ids, &st) as *const u32,
+                    dptr_mut(&mut dq.groups, &st) as *mut u32,
+                    pairs as i32,
+                    GROUP_WORDS as i32,
+                    (GROUP_WORDS - 2) as i32,
+                    dev.sp(),
+                )
+            })?;
+            pairs
+        }
         _ => {
             dev.launched("memra_ink2g_groups", unsafe {
                 ffi::memra_ink2g_groups(
@@ -3857,11 +3943,14 @@ fn declared_experts(
             pairs
         }
     };
-    // device-built groups hold one routed row each: the GEMM stages only that column (nb 0)
-    let gemm_nb = if host_ids.is_some() && rows > 1 {
+    // one-row groups (a decode step): the GEMM stages only the live column (nb 0); device-built
+    // groups of several rows use the nb 1 layout
+    let gemm_nb = if rows == 1 {
+        0
+    } else if host_ids.is_some() {
         nb
     } else {
-        0
+        1
     };
     // The MoE input is quantized once per token (one block a row); the gate/up GEMM reads row
     // pair / top_k for each routed pair. The SiTU input holds a row per pair (the pair's gate/up row),
@@ -4122,6 +4211,64 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             differ == 0,
             format!(
                 "ink2g-sgemm-bf16 [m={m} n={n} k={k}] the prefill GEMM vs the #1397 tile GEMM bit-differ={differ}"
+            ),
+        );
+    }
+
+    // ---- the multi-row GEMV (2..8 input rows) against the #1397 tile kernel, BF16 and dense NVFP4
+    for (m, n, k) in [
+        (2usize, 520usize, 2304usize),
+        (3, 384, 2304),
+        (5, 2304, 3072),
+        (8, 1030, 2304),
+    ] {
+        let mut differ = 0usize;
+        for fmt in [FMT_BF16, FMT_NVFP4] {
+            let x = rng.vec(m * k, 1.0);
+            let xd = dev.up(&x)?;
+            let (wd, sd, td) = if fmt == FMT_BF16 {
+                (dev.up(&bf16_bytes(&rng.bf16(n * k, 0.05)))?, None, None)
+            } else {
+                let mut sc = rng.bytes(n * k / 16);
+                sc.iter_mut().for_each(|s| *s = 0x20 + (*s % 0x50));
+                (
+                    dev.up(&rng.bytes(n * k / 2))?,
+                    Some(dev.up(&sc)?),
+                    Some(dev.up(&[0.37f32])?),
+                )
+            };
+            let dw = DenseW {
+                fmt,
+                data: wd,
+                scales: sd,
+                t: td,
+            };
+            let mut y = dev.zeros::<f32>(m * n)?;
+            dw.gemm(dev, dptr(&xd, &st), k, dptr_mut(&mut y, &st), n, m, n, k)?;
+            let mut v0 = dev.zeros::<f32>(m * n)?;
+            dev.launched("memra_ink2g_gemm_tile_v0", unsafe {
+                ffi::memra_ink2g_gemm_tile_v0(
+                    dptr(&xd, &st) as *const c_void,
+                    k as i64,
+                    dptr(&dw.data, &st) as *const c_void,
+                    dw.scales.as_ref().map_or(0, |s| dptr(s, &st)) as *const c_void,
+                    dw.t.as_ref().map_or(0, |t| dptr(t, &st)) as *const f32,
+                    1.0,
+                    fmt,
+                    dptr_mut(&mut v0, &st) as *mut c_void,
+                    n as i64,
+                    m as i32,
+                    n as i32,
+                    k as i32,
+                    dev.sp(),
+                )
+            })?;
+            differ += bits_differ(&dev.down(&y, 0, m * n)?, &dev.down(&v0, 0, m * n)?);
+        }
+        verdict(
+            differ == 0,
+            format!(
+                "ink2g-gemv-rows [m={m} n={n} k={k}] BF16 and dense NVFP4, the multi-row GEMV vs the #1397 tile kernel bit-differ={differ}"
             ),
         );
     }
@@ -5539,7 +5686,8 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 )
             })
             .collect();
-        let e_ctrl = worst_rel(&dev.down(&out, 0, rows * h)?, &want, 1e-6);
+        // against the scale of an output (order 1): a row's small outputs cancel two products
+        let e_ctrl = worst_rel(&dev.down(&out, 0, rows * h)?, &want, 1.0);
         let mut y = dev.up(&x)?;
         dev.launched("memra_ink2g_gate", unsafe {
             ffi::memra_ink2g_gate(
@@ -5563,10 +5711,10 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 && e_gate <= F32
                 && p.norm == 1
                 && p.controller == 1
-                && p.epilogue == 1
+                && p.epilogue == 0
                 && p.attn == 3,
             format!(
-                "ink2g-prec-adopted [{p:?}] f32 norm max rel={e_norm:.3e}, f32 controller max rel={e_ctrl:.3e}, f32 output gate max rel={e_gate:.3e} (bound {F32:.0e})"
+                "ink2g-prec-adopted [{p:?}] f32 norm max rel={e_norm:.3e}, f32 controller max rel={e_ctrl:.3e}, output gate (f64) max rel={e_gate:.3e} (bound {F32:.0e})"
             ),
         );
     }

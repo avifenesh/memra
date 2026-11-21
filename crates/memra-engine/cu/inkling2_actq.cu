@@ -351,6 +351,7 @@ __global__ void ink2_expert_gemm_kernel(const uint32_t* __restrict__ Act, const 
     const int tid = threadIdx.x, nthr = blockDim.x, lane = tid & 31, warp = tid >> 5;
     const uint32_t* grp = Groups + (long)blockIdx.x * (2 + COLS);
     const uint32_t expert = grp[0], count = grp[1];
+    if (count == 0u) return;  // an empty record of a device-built table
     const int n0 = (blockIdx.y * (nthr >> 5) + warp) * 16;
     // The weights are the bytes of this kernel. Each warp keeps RING stages in flight in its own
     // shared-memory ring: a stage is one K step of its 16 weight rows, 16 x 32 B of codes copied as 32
