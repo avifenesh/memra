@@ -7,7 +7,9 @@
 //!
 //! 1. a six-piece vocabulary in which the lookup and the merge table disagree, through both
 //!    paths and both values;
-//! 2. GLM-5.3-Flash//! 3. GLM-5.3-Flash, where the flag decides 893 pieces: its pinned `tokenizer.json` is not in
+//! 2. the Inkling 2 artifact's vocabulary as a GGUF (built here from its `tokenizer.json`, `pre`
+//!    `inkling2`), against the reference ids of the whole raw corpus;
+//! 3. GLM-5.3-Flash, where the flag decides 893 pieces: its pinned `tokenizer.json` is not in
 //!    this repository, so this one runs when `MEMRA_GLM53_TOKENIZER_DIR` names a directory
 //!    holding it (research/glm53-flash-bringup-20260827/parity-evidence/ignore-merges-20261121/
 //!    has the corpus, the reference ids and the receipts of both paths).
@@ -220,6 +222,13 @@ fn both_load_paths_take_the_whole_word_lookup_from_the_family() {
     let glm4 = gguf("glm4").unwrap();
     assert_eq!(glm4.split(), PreSplit::Glm4);
     assert_eq!(glm4.encode("abc", false), whole, "glm4 declares the lookup");
+    let inkling2 = gguf("inkling2").unwrap();
+    assert_eq!(inkling2.split(), PreSplit::Gpt4o);
+    assert_eq!(
+        inkling2.encode("abc", false),
+        whole,
+        "inkling2 declares the lookup"
+    );
     for pre in ["qwen2", "qwen35", "deepseek-v3"] {
         assert_eq!(
             gguf(pre).unwrap().encode("abc", false),
@@ -236,6 +245,29 @@ fn both_load_paths_take_the_whole_word_lookup_from_the_family() {
             .collect::<Vec<_>>()
     );
     assert_eq!(glm4.encode("ab", false), vec![3]);
+    // the gpt-4o id names other tokenizers of the o200k split, none gated here: refused
+    let error = gguf("gpt-4o").err().expect("gpt-4o is not a gated family");
+    assert!(error.contains("gpt-4o"), "{error}");
+}
+
+/// The Inkling 2 vocabulary through the GGUF path gives the checkpoint's ids on the whole raw
+/// corpus, the 337 words only the lookup reaches included.
+#[test]
+fn the_inkling2_vocabulary_as_a_gguf_gives_the_checkpoint_ids() {
+    let lane = research().join("modelplan-onboarding-inkling2mini-20261121/chat");
+    let tokenizer_json = read(&lane.join("artifact/tokenizer.json"));
+    let bytes = gguf_from_tokenizer_json(&tokenizer_json, "inkling2", 200006);
+    let tok = load_gguf("inkling2-artifact", &bytes).unwrap();
+    assert_eq!(tok.split(), PreSplit::Gpt4o);
+    assert_eq!(tok.eos_id(), 200006);
+    assert_eq!(tok.encode("kwargs", false), vec![87550]);
+    let (cases, failed) = corpus_failures(&tok, &lane);
+    assert!(cases >= 1013, "corpus shrank: {cases}");
+    assert!(
+        failed.is_empty(),
+        "{} of {cases} differ: {failed:?}",
+        failed.len()
+    );
 }
 
 /// GLM-5.3-Flash (zai-org/GLM-5.3-Flash @ 04c4e9e9, `tokenizer.json` sha256 19e77364...): the

@@ -367,15 +367,16 @@ jobs:
           MEMRA_GGUF_SKIP_BUDGET=20 python3 tools/skip-census.py run \
             --budget-var MEMRA_GGUF_SKIP_BUDGET --min-passed 400 \
             -- cargo test -p memra-gguf -p memra-reference -p memra-tokenizer -p memra-validate -p memra-sampling --lib
-      # The --lib run above does not build tests/. This file gates the whole-word lookup on both
-      # tokenizer load paths. Its one skip is GLM-5.3-Flash, whose pinned 20 MB tokenizer.json is
-      # not in the repository.
-      - name: Whole-word lookup on both tokenizer load paths
+      # The --lib run above does not build tests/. These two files gate the Inkling 2 tokenizer,
+      # chat template and both load paths' whole-word lookup against the artifact committed under
+      # research/modelplan-onboarding-inkling2mini-20261121/chat/. The one skip is GLM-5.3-Flash,
+      # whose pinned 20 MB tokenizer.json is not in the repository.
+      - name: Inkling 2 tokenizer and template gates, whole-word lookup on both load paths
         if: ${{ needs.changes.result != 'success' || needs.changes.outputs.core != 'false' }}
         run: |
           MEMRA_TOKENIZER_ARTIFACT_SKIP_BUDGET=1 python3 tools/skip-census.py run \
-            --budget-var MEMRA_TOKENIZER_ARTIFACT_SKIP_BUDGET --min-passed 2 \
-            -- cargo test -p memra-tokenizer --test whole_word_lookup
+            --budget-var MEMRA_TOKENIZER_ARTIFACT_SKIP_BUDGET --min-passed 12 \
+            -- cargo test -p memra-tokenizer --test inkling2_chat --test whole_word_lookup
       - name: Canonical config and shared JSON feature-unification contracts
         if: ${{ needs.changes.result != 'success' || needs.changes.outputs.core != 'false' }}
         run: |

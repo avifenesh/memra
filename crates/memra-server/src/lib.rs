@@ -9971,6 +9971,9 @@ fn build_chat_request_with_trace(
             // dsv4.1-only fields: content parts (above), and neither a per-message
             // response_format nor an unterminated assistant prefill exists on this surface.
             parts,
+            // inkling2-only: its template writes no message for a null or missing content,
+            // and an empty one for "".
+            no_content: msg.content.is_null(),
             response_format: None,
             wo_eos: false,
         });

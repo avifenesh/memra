@@ -4,7 +4,7 @@
 //! `src/unicode.cpp`), Rust glue hand-rolled. Built from the model's own GGUF
 //! tokenizer metadata (`tokenizer.ggml.*`) so it is integer-exact for that model.
 //!
-//! Scope: the `gpt2` vocab model with the `qwen35`/`qwen2`/`deepseek-v3`/`glm4` pre-tokenizers,
+//! Scope: the `gpt2` vocab model with the `qwen35`/`qwen2`/`deepseek-v3`/`glm4`/`inkling2` pre-tokenizers,
 //! plus the `gemma4` SPM-style path — see `SUPPORTED_PRETOKENIZERS`. A model declaring anything else
 //! is REFUSED at load (`UnknownPretokenizer`), because an unported pre-tokenizer produces
 //! fluent output with wrong token ids and nothing downstream can see it.
@@ -16,6 +16,7 @@ pub mod json;
 pub mod normalizer;
 mod unicode;
 mod unicode_data;
+mod unicode_gpt4o_data;
 
 #[cfg(test)]
 mod normalizer_tests;
@@ -64,9 +65,37 @@ const DEEPSEEK_V3_SPLIT_REGEXES: [&str; 3] = [
 /// two disagree on any text carrying combining marks.
 const GLM4_PRETOKENIZE_REGEX: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
 
+/// The gpt-4o / o200k_base `Split` regex (tiktoken `o200k_base` `pat_str`), as Inkling 2 Mini's
+/// `tokenizer.json` carries it (thinkingmachines/Inkling-2-Mini@ed40e7da). Letter runs split on
+/// a lower-to-upper case change, digits group by three, and a punctuation run takes its
+/// trailing `/` and line breaks. `unicode::split_gpt4o` is its scan.
+///
+/// llama.cpp at 29b52d398b29 quotes the same regex under `LLAMA_VOCAB_PRE_TYPE_GPT4O`
+/// (src/llama-vocab.cpp:455-459) and maps several `tokenizer.ggml.pre` ids to it: `gpt-4o`
+/// with three other families (line 2665), and `inkling2` (line 2672, the id its converter
+/// writes for this tokenizer, conversion/base.py:2472). The regex names a family of
+/// tokenizers, not a tokenizer: memra has gated one member, Inkling 2, so that is the one id
+/// it takes. A `tokenizer.json` with this regex loads as `inkling2` when it carries Inkling 2's
+/// own control tokens ([`INKLING2_FAMILY_TOKENS`]) and is refused otherwise; the `gpt-4o` id
+/// of a GGUF is refused like any other unported family.
+const GPT4O_PRETOKENIZE_REGEX: &str = r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+";
+/// Added tokens only an Inkling 2 vocabulary has: the end-of-generation marker and the
+/// tool-call content marker of its chat dialect. They tell an Inkling 2 `tokenizer.json` from
+/// another tokenizer of the same Split regex.
+const INKLING2_FAMILY_TOKENS: [&str; 2] = [
+    "<|content_model_end_sampling|>",
+    "<|content_invoke_tool_json|>",
+];
 /// Every `tokenizer.ggml.pre` id memra implements an EXACT split for. This is the allowlist a
 /// load is checked against and the list quoted in the load error, so the two can never drift.
-pub const SUPPORTED_PRETOKENIZERS: &[&str] = &["qwen35", "qwen2", "deepseek-v3", "gemma4", "glm4"];
+pub const SUPPORTED_PRETOKENIZERS: &[&str] = &[
+    "qwen35",
+    "qwen2",
+    "deepseek-v3",
+    "gemma4",
+    "glm4",
+    "inkling2",
+];
 
 /// Optional, versioned JSON input program for lossless HF normalization/added-token imports.
 /// This is a Memra extension, not an implicit GGUF or model-family convention.
@@ -152,6 +181,8 @@ pub enum PreSplit {
     /// `unicode::split_glm4` — the zai-org GLM-4.x / GLM-5.x line (llama.cpp
     /// `LLAMA_VOCAB_PRE_TYPE_CHATGLM4`). qwen2's pattern with `\p{N}{1,3}` digit grouping.
     Glm4,
+    /// `unicode::split_gpt4o`: the gpt-4o / o200k_base split (Inkling 2).
+    Gpt4o,
     /// gemma4 SPM-style BPE: `bpe_tokenize` splits whole lines itself and the `pre` id is never
     /// consulted. Requires the `gemma4` vocab model, not just the `pre` string.
     Spm,
@@ -182,6 +213,9 @@ impl PreSplit {
             ("qwen2", false) => Ok(PreSplit::Qwen2),
             ("deepseek-v3", false) => Ok(PreSplit::DeepseekV3),
             ("glm4", false) => Ok(PreSplit::Glm4),
+            // llama.cpp gives the Inkling 2 tokenizer its own `pre` id and the gpt-4o split.
+            // `gpt-4o` itself names other families of that split, none gated here.
+            ("inkling2", false) => Ok(PreSplit::Gpt4o),
             ("gemma4", true) => Ok(PreSplit::Spm),
             _ => {
                 let err = UnknownPretokenizer {
@@ -215,13 +249,18 @@ impl PreSplit {
     ///   declares it, and 893 of its pieces, a space and a CJK word, encode as one id only
     ///   through the lookup. llama.cpp sets it for `glm4` too (src/llama-vocab.cpp:2600-2604
     ///   at 29b52d398b29).
+    /// - `inkling2`: true. thinkingmachines/Inkling-2-Mini @ ed40e7da declares it, 337 pieces
+    ///   depend on it, and tiktoken over the vocabulary the artifact also ships in that
+    ///   format gives the same ids (research/modelplan-onboarding-inkling2mini-20261121/chat/
+    ///   verify-tiktoken.txt). llama.cpp leaves it off for this id; this is the checkpoint's
+    ///   program, not llama.cpp's.
     /// - `qwen35`, `qwen2`, `deepseek-v3`: false, as the Qwen3.8, Hy3 and Step-3.7-Flash
     ///   checkpoints declare.
     ///
     /// A new split must name its family's value here; the match has no default arm.
     fn gguf_ignore_merges(self) -> bool {
         match self {
-            PreSplit::Glm4 => true,
+            PreSplit::Glm4 | PreSplit::Gpt4o => true,
             PreSplit::Qwen35 | PreSplit::Qwen2 | PreSplit::DeepseekV3 => false,
             // SPM-style BPE has its own whole-word rule; the unknown fallback is inexact anyway
             PreSplit::Spm | PreSplit::UnknownFallbackQwen35 => false,
@@ -968,6 +1007,16 @@ impl Tokenizer {
             .and_then(|r| pre_from_split_regexes(std::slice::from_ref(&r.to_string())))
             .or_else(|| pre_from_split_regexes(&tj_regexes))
             .unwrap_or("default");
+        // The o200k regex names a family of tokenizers; the one gated here is Inkling 2.
+        let pre = if pre == "gpt-4o"
+            && INKLING2_FAMILY_TOKENS.iter().all(|token| {
+                attrs.get(token_to_id.get(*token).copied().unwrap_or(u32::MAX) as usize)
+                    == Some(&TokAttr::Control)
+            }) {
+            "inkling2"
+        } else {
+            pre
+        };
         let split = PreSplit::resolve(pre, false).map_err(|e| {
             if pre == "default" {
                 format!(
@@ -977,6 +1026,14 @@ impl Tokenizer {
                     dir.display(),
                     cfg_regex,
                     tj_regexes,
+                )
+            } else if pre == "gpt-4o" {
+                format!(
+                    "{e}\n  (HF checkpoint {}: its tokenizer.json carries the o200k (gpt-4o) Split \
+                     regex, which several families share. The one gated here is Inkling 2, \
+                     recognised by its control tokens {INKLING2_FAMILY_TOKENS:?}; this vocabulary \
+                     does not have them)",
+                    dir.display(),
                 )
             } else {
                 e.to_string()
@@ -1242,6 +1299,9 @@ impl Tokenizer {
             // pattern with `\p{N}{1,3}` digit grouping, and literal `\p{L}` letter runs that
             // do NOT fold combining marks the way the qwen35 machine does.
             PreSplit::Glm4 => unicode::split_glm4(text),
+            // gpt-4o / o200k_base (llama.cpp LLAMA_VOCAB_PRE_TYPE_GPT4O): case-aware letter
+            // runs, `\p{N}{1,3}`, punctuation runs that keep a trailing `/`.
+            PreSplit::Gpt4o => unicode::split_gpt4o(text),
             // MEMRA_ALLOW_UNKNOWN_PRETOKENIZER=1 — the operator asked for wrong ids. The WARN
             // was printed at load; do not repeat it once per fragment.
             PreSplit::UnknownFallbackQwen35 => unicode::split_qwen35(text),
@@ -1656,6 +1716,7 @@ fn pre_from_split_regexes(regexes: &[String]) -> Option<&'static str> {
         // identifies it, and the one-atom `{1,3}` delta from qwen2 is why the comparison has
         // to stay byte-exact.
         [one] if one == GLM4_PRETOKENIZE_REGEX => Some("glm4"),
+        [one] if one == GPT4O_PRETOKENIZE_REGEX => Some("gpt-4o"),
         [a, b, c]
             if a == DEEPSEEK_V3_SPLIT_REGEXES[0]
                 && b == DEEPSEEK_V3_SPLIT_REGEXES[1]
@@ -1707,6 +1768,12 @@ mod pretokenizer_tests {
             Ok(PreSplit::Glm4)
         );
         assert_eq!(
+            PreSplit::resolve_with("inkling2", false, false),
+            Ok(PreSplit::Gpt4o)
+        );
+        // the family's own id only: `gpt-4o` names other tokenizers of the same split
+        assert!(PreSplit::resolve_with("gpt-4o", false, false).is_err());
+        assert_eq!(
             PreSplit::resolve_with("gemma4", true, false),
             Ok(PreSplit::Spm)
         );
@@ -1714,7 +1781,14 @@ mod pretokenizer_tests {
         // what the code accepts
         assert_eq!(
             SUPPORTED_PRETOKENIZERS,
-            &["qwen35", "qwen2", "deepseek-v3", "gemma4", "glm4"]
+            &[
+                "qwen35",
+                "qwen2",
+                "deepseek-v3",
+                "gemma4",
+                "glm4",
+                "inkling2"
+            ]
         );
     }
 
@@ -2291,6 +2365,66 @@ mod hf_tests {
     /// tokenizer.json Split regex is the ONLY identifier. It differs from qwen2 by the single
     /// `\p{N}` -> `\p{N}{1,3}` atom, so the byte-exact comparison is the whole gate: a fuzzy
     /// match here would route GLM through qwen2's split and every id downstream would be wrong.
+    #[test]
+    fn hf_dir_takes_the_o200k_regex_only_for_a_family_it_knows() {
+        let o200k = GPT4O_PRETOKENIZE_REGEX.replace('\\', "\\\\");
+        let json = TOKENIZER_JSON.replace(
+            r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+",
+            &o200k,
+        );
+        assert_ne!(json, TOKENIZER_JSON, "the o200k substitution must apply");
+        let load = |name: &str, json: &str| {
+            let dir =
+                std::env::temp_dir().join(format!("memra-tok-hf-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("tokenizer.json"), json).unwrap();
+            std::fs::write(
+                dir.join("generation_config.json"),
+                r#"{"eos_token_id": 15}"#,
+            )
+            .unwrap();
+            let loaded = Tokenizer::from_hf_dir(&dir);
+            let _ = std::fs::remove_dir_all(&dir);
+            loaded
+        };
+        // the regex alone: some o200k tokenizer, of no family gated here
+        let _env = pretokenizer_env_lock();
+        // SAFETY: serialized by PRETOKENIZER_ENV_LOCK, as every test touching this variable is.
+        unsafe { std::env::remove_var(ALLOW_UNKNOWN_PRETOKENIZER_ENV) };
+        let error = load("o200k-unknown", &json)
+            .err()
+            .expect("an unknown family is refused");
+        assert!(
+            error.contains("gpt-4o") && error.contains("Inkling 2"),
+            "{error}"
+        );
+        // the same vocabulary with Inkling 2's control tokens is that family
+        let inkling = json
+            .replace(
+                r#""content": "<|end|>""#,
+                r#""content": "<|content_model_end_sampling|>""#,
+            )
+            .replace(
+                r#"{"id": 16, "content": "<think>", "special": false}"#,
+                r#"{"id": 16, "content": "<|content_invoke_tool_json|>", "special": true}"#,
+            );
+        assert_eq!(
+            inkling.matches("<|content_").count(),
+            2,
+            "both tokens substituted"
+        );
+        let tok = load("o200k-inkling2", &inkling).expect("Inkling 2 loads");
+        assert_eq!(tok.pre(), "inkling2");
+        assert_eq!(tok.split(), PreSplit::Gpt4o);
+        // one of the two is not enough
+        let half = json.replace(
+            r#""content": "<|end|>""#,
+            r#""content": "<|content_model_end_sampling|>""#,
+        );
+        assert!(load("o200k-half", &half).is_err());
+    }
+
     #[test]
     fn hf_dir_identifies_glm4_regex() {
         let json = TOKENIZER_JSON.replace(
