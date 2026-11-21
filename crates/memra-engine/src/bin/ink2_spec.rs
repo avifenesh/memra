@@ -545,6 +545,7 @@ fn tiny_gate(a: &Args) -> Result<(), String> {
         embed: ptr(&embed),
         embed_norm: ptrf(&embed_norm),
         head: ptr(&head),
+        head_nv: None,
     };
     let total = 13;
     let taps = image.bf16("taps", &[total, g.taps * h])?;

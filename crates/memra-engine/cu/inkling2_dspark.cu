@@ -418,6 +418,100 @@ int memra_ink2d_gemv(const float* x, int64_t ldx, const void* w, int64_t ldw, co
   return dk_rc();
 }
 
+// y[r, n] = (bias ? bias[n] : 0) + t * sum_k x[r, k] * code(w[n, k]) * e4m3(s[n, k / 16]) for up to
+// DK_MR rows a pass: NVFP4 weights (e2m1 codes, the even element in the low nibble; one e4m3 scale
+// per 16 inputs; one f32 tensor scale t), the class's dense layout. A lane takes 16 inputs a step.
+__global__ void dk_gemv_nvfp4_kernel(const float* __restrict__ x, int64_t ldx, const uint8_t* __restrict__ codes,
+                                     const uint8_t* __restrict__ scales, int64_t ldc, int64_t lds, float t,
+                                     const float* __restrict__ bias, float* __restrict__ y, int64_t ldy, int m, int n,
+                                     int k) {
+  const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+  const int col = blockIdx.x * 8 + warp;
+  if (col >= n) return;
+  const uint8_t* cr = codes + (int64_t)col * ldc;
+  const uint8_t* sr = scales + (int64_t)col * lds;
+  const float lut[16] = {0.f, 0.5f, 1.f, 1.5f, 2.f, 3.f, 4.f, 6.f, -0.f, -0.5f, -1.f, -1.5f, -2.f, -3.f, -4.f, -6.f};
+  for (int r0 = blockIdx.y * DK_MR; r0 < m; r0 += gridDim.y * DK_MR) {
+    float s[DK_MR];
+#pragma unroll
+    for (int i = 0; i < DK_MR; i++) s[i] = 0.f;
+    for (int g = lane; g < k / 16; g += 32) {
+      const uint2 pk = *reinterpret_cast<const uint2*>(cr + (int64_t)g * 8);
+      const uint32_t words[2] = {pk.x, pk.y};
+      const uint8_t sb = sr[g];
+      const uint32_t e = (sb >> 3) & 15u, mm = sb & 7u;
+      const float sc = e == 0 ? (float)mm * 0x1p-9f : (float)(8u + mm) * __uint_as_float((e + 117u) << 23);
+      float wv[16];
+#pragma unroll
+      for (int j = 0; j < 8; j++) {
+        const uint32_t byte = (words[j >> 2] >> ((j & 3) * 8)) & 0xffu;
+        wv[2 * j] = lut[byte & 15u] * sc;
+        wv[2 * j + 1] = lut[byte >> 4] * sc;
+      }
+#pragma unroll
+      for (int i = 0; i < DK_MR; i++) {
+        if (r0 + i < m) {
+          const float4* xp = reinterpret_cast<const float4*>(x + (int64_t)(r0 + i) * ldx + g * 16);
+          float acc = 0.f;
+#pragma unroll
+          for (int q = 0; q < 4; q++) {
+            const float4 a = xp[q];
+            acc = fmaf(wv[4 * q], a.x, acc);
+            acc = fmaf(wv[4 * q + 1], a.y, acc);
+            acc = fmaf(wv[4 * q + 2], a.z, acc);
+            acc = fmaf(wv[4 * q + 3], a.w, acc);
+          }
+          s[i] += acc;
+        }
+      }
+    }
+#pragma unroll
+    for (int i = 0; i < DK_MR; i++) {
+      const float v = dk_warp_sum(s[i]);
+      if (lane == 0 && r0 + i < m) y[(int64_t)(r0 + i) * ldy + col] = (bias ? bias[col] : 0.f) + t * v;
+    }
+  }
+}
+
+// The NVFP4 GEMV: codes [n, k / 2], scales [n, k / 16] (e4m3 bytes), tensor scale t.
+int memra_ink2d_gemv_nvfp4(const float* x, int64_t ldx, const void* codes, const void* scales, int64_t ldc,
+                           int64_t lds, float t, const float* bias, float* y, int64_t ldy, int m, int n, int k,
+                           void* stream) {
+  if (!x || !codes || !scales || !y || m <= 0 || n <= 0 || k <= 0 || k % 16 || ldx % 4 || ((uintptr_t)x & 15) ||
+      ((uintptr_t)codes & 7) || ldc % 8 || ldc < k / 2 || lds < k / 16)
+    return 46015;
+  const int groups = (m + DK_MR - 1) / DK_MR;
+  dim3 grid((n + 7) / 8, groups < 64 ? groups : 64);
+  dk_gemv_nvfp4_kernel<<<grid, 256, 0, (cudaStream_t)stream>>>(x, ldx, (const uint8_t*)codes, (const uint8_t*)scales,
+                                                                ldc, lds, t, bias, y, ldy, m, n, k);
+  return dk_rc();
+}
+
+// [state | dequant(w1[prev])] from an NVFP4 markov_w1 ([vocab, rank]).
+__global__ void dk_markov_in_nvfp4_kernel(const float* __restrict__ state, const uint8_t* __restrict__ codes,
+                                          const uint8_t* __restrict__ scales, float t, const uint32_t* __restrict__ prev,
+                                          float* __restrict__ out, int rank) {
+  const int i = threadIdx.x;
+  if (i >= rank) return;
+  const int64_t row = *prev;
+  const uint8_t b = codes[row * (rank / 2) + i / 2];
+  const uint8_t nib = (i & 1) ? (b >> 4) : (b & 15);
+  const float lut[16] = {0.f, 0.5f, 1.f, 1.5f, 2.f, 3.f, 4.f, 6.f, -0.f, -0.5f, -1.f, -1.5f, -2.f, -3.f, -4.f, -6.f};
+  const uint8_t sb = scales[row * (rank / 16) + i / 16];
+  const uint32_t e = (sb >> 3) & 15u, mm = sb & 7u;
+  const float sc = e == 0 ? (float)mm * 0x1p-9f : (float)(8u + mm) * __uint_as_float((e + 117u) << 23);
+  out[i] = state[i];
+  out[rank + i] = lut[nib] * sc * t;
+}
+
+int memra_ink2d_markov_in_nvfp4(const float* state, const void* codes, const void* scales, float t,
+                                const uint32_t* prev, float* out, int rank, void* stream) {
+  if (!state || !codes || !scales || !prev || !out || rank <= 0 || rank > 1024 || rank % 16) return 46016;
+  dk_markov_in_nvfp4_kernel<<<1, rank, 0, (cudaStream_t)stream>>>(state, (const uint8_t*)codes,
+                                                                  (const uint8_t*)scales, t, prev, out, rank);
+  return dk_rc();
+}
+
 // y[n] = bias[n] + sum_k x[k] * w[n, k], f32 weights, one row.
 int memra_ink2d_gemv_f32w(const float* x, const float* w, int64_t ldw, const float* bias, float* y, int n, int k,
                           void* stream) {
