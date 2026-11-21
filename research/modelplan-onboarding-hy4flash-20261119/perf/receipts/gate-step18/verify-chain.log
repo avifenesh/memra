@@ -19,3 +19,7 @@ START 2026-11-22 00:23:55 tag=S38-red-kv red=kv-off-by-one runner=/home/avifenes
 memra: request chat call 1 layer 1 query 36 expert 5: the native selection score 0.17551607 is 0.009664580225944519 from the oracle's 0.16585149, past the selection band 0.0058
 EXIT rc=2 2026-11-22 00:25:27
 RUN red-pool pool-early 2026-11-22 00:25:27
+START 2026-11-22 00:25:27 tag=S38-red-pool red=pool-early runner=/home/avifenesh/hy4flash/perf/red-runner.sh sha=d18b64c51b490c19
+memra: request long call 5 layer 0 query 2108 group 526: the native group logit 9.632511 is 0.8941831588745117 from the oracle's 10.526694, past the selection band 0.0224
+EXIT rc=2 2026-11-22 00:28:46
+VERIFY_CHAIN_DONE 2026-11-22 00:28:46
