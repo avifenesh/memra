@@ -99,6 +99,10 @@ mod ffi {
             x: *const c_void,
             ldx: i64,
             w: *const c_void,
+            scales: *const c_void,
+            amax: *const f32,
+            denom: f32,
+            fmt: i32,
             y: *mut c_void,
             ldy: i64,
             m: i32,
@@ -3661,6 +3665,10 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 dptr(&xd, &st) as *const c_void,
                 k as i64,
                 dptr(&wd, &st) as *const c_void,
+                std::ptr::null(),
+                std::ptr::null(),
+                1.0,
+                FMT_BF16,
                 dptr_mut(&mut v0, &st) as *mut c_void,
                 n as i64,
                 m as i32,
@@ -3778,11 +3786,31 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             )?;
             alone += bits_differ(&dev.down(&one, 0, n)?, &got[r * n..(r + 1) * n]);
         }
+        // the #1397 tile kernel on the same weights: the prefill GEMM and the GEMV keep its bits
+        let mut v0 = dev.zeros::<f32>(m * n)?;
+        dev.launched("memra_ink2g_gemm_tile_v0", unsafe {
+            ffi::memra_ink2g_gemm_tile_v0(
+                dptr(&xd, &st) as *const c_void,
+                k as i64,
+                dptr(&dw.data, &st) as *const c_void,
+                dw.scales.as_ref().map_or(0, |s| dptr(s, &st)) as *const c_void,
+                dw.t.as_ref().map_or(0, |t| dptr(t, &st)) as *const f32,
+                1.0,
+                FMT_NVFP4,
+                dptr_mut(&mut v0, &st) as *mut c_void,
+                n as i64,
+                m as i32,
+                n as i32,
+                k as i32,
+                dev.sp(),
+            )
+        })?;
+        alone += bits_differ(&dev.down(&v0, 0, m * n)?, &got);
         let bound = k as f64 * 2f64.powi(-23);
         verdict(
             ratio <= bound && ref_ratio <= 2.0 * 2f64.powi(-24) && alone == 0,
             format!(
-                "ink2g-gemm-nvfp4-dense [m={m} n={n} k={k}] minted by the class's quantizer: max|err|/sum|p| vs c*s*t = {ratio:.3e} (bound {bound:.3e}); the reference's fl32(c*fl32(s*t)) weights {ref_ratio:.3e} (bound 2^-23); rows alone (decode GEMV) vs in the call bit-differ={alone}"
+                "ink2g-gemm-nvfp4-dense [m={m} n={n} k={k}] minted by the class's quantizer: max|err|/sum|p| vs c*s*t = {ratio:.3e} (bound {bound:.3e}); the reference's fl32(c*fl32(s*t)) weights {ref_ratio:.3e} (bound 2^-23); rows alone (decode GEMV) and the #1397 tile kernel vs in the call (prefill GEMM) bit-differ={alone}"
             ),
         );
     }

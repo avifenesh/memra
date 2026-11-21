@@ -321,18 +321,24 @@ __global__ void ink2g_gemv_kernel(const float* __restrict__ x, int64_t ldx, cons
 #define INK2G_SG_BM 128
 #define INK2G_SG_BN 128
 #define INK2G_SG_BK 16
+template <bool FP4>
 __global__ void __launch_bounds__(256) ink2g_sgemm_bf16_kernel(const float* __restrict__ x, int64_t ldx,
-                                                              const uint16_t* __restrict__ w, float* __restrict__ y,
-                                                              int64_t ldy, int m, int n, int k) {
+                                                              const void* __restrict__ wv0, const uint8_t* __restrict__ sc,
+                                                              const float* __restrict__ amax, float denom,
+                                                              float* __restrict__ y, int64_t ldy, int m, int n, int k) {
   __shared__ __align__(16) float as[2][INK2G_SG_BK][INK2G_SG_BM];
   __shared__ __align__(16) float bs[2][INK2G_SG_BK][INK2G_SG_BN];
+  __shared__ float ss[2][INK2G_SG_BN];  // FP4: the e4m3 block scale of each weight row for the step
   const int tid = threadIdx.x, tx = tid & 15, ty = tid >> 4;
   const int m0 = blockIdx.y * INK2G_SG_BM, n0 = blockIdx.x * INK2G_SG_BN;
   // loader: row (or weight row) tid / 2, inputs (tid & 1) * 8 .. + 8 of the step
   const int lr = tid >> 1, lk = (tid & 1) * 8;
   const bool xin = m0 + lr < m, win = n0 + lr < n;
   const float* xp = x + (int64_t)(m0 + lr) * ldx + lk;
-  const uint16_t* wp = w + (int64_t)(n0 + lr) * k + lk;
+  const uint16_t* wp = (const uint16_t*)wv0 + (int64_t)(n0 + lr) * k + lk;
+  const uint8_t* cp = (const uint8_t*)wv0 + (int64_t)(n0 + lr) * (k / 2) + lk / 2;
+  uint32_t cw = 0u;
+  uint8_t sb = 0;
   float4 xa = make_float4(0.f, 0.f, 0.f, 0.f), xb = xa;
   uint4 wv = make_uint4(0u, 0u, 0u, 0u);
   auto fetch = [&](int k0) {
@@ -340,17 +346,33 @@ __global__ void __launch_bounds__(256) ink2g_sgemm_bf16_kernel(const float* __re
       xa = *reinterpret_cast<const float4*>(xp + k0);
       xb = *reinterpret_cast<const float4*>(xp + k0 + 4);
     }
-    if (win) wv = __ldcs(reinterpret_cast<const uint4*>(wp + k0));
+    if constexpr (FP4) {
+      if (win) {
+        cw = __ldcs(reinterpret_cast<const uint32_t*>(cp + k0 / 2));
+        sb = sc[(int64_t)(n0 + lr) * (k / 16) + k0 / 16];
+      }
+    } else {
+      if (win) wv = __ldcs(reinterpret_cast<const uint4*>(wp + k0));
+    }
   };
   auto stash = [&](int buf) {
     const float xv[8] = {xa.x, xa.y, xa.z, xa.w, xb.x, xb.y, xb.z, xb.w};
     const uint32_t ww[4] = {wv.x, wv.y, wv.z, wv.w};
 #pragma unroll
     for (int i = 0; i < 8; i++) as[buf][lk + i][lr] = xv[i];
+    if constexpr (FP4) {
 #pragma unroll
-    for (int i = 0; i < 4; i++) {
-      bs[buf][lk + 2 * i][lr] = __uint_as_float(ww[i] << 16);
-      bs[buf][lk + 2 * i + 1][lr] = __uint_as_float(ww[i] & 0xffff0000u);
+      for (int i = 0; i < 8; i++) {
+        const uint8_t b = (uint8_t)((cw >> (8 * (i >> 1))) & 0xffu);
+        bs[buf][lk + i][lr] = win ? ink2g_e2m1((i & 1) ? (uint8_t)(b >> 4) : b) : 0.0f;
+      }
+      if (lk == 0) ss[buf][lr] = win ? ink2g_e4m3(sb) : 1.0f;
+    } else {
+#pragma unroll
+      for (int i = 0; i < 4; i++) {
+        bs[buf][lk + 2 * i][lr] = __uint_as_float(ww[i] << 16);
+        bs[buf][lk + 2 * i + 1][lr] = __uint_as_float(ww[i] & 0xffff0000u);
+      }
     }
   };
   float acc[8][8], part[8][8];
@@ -382,7 +404,11 @@ __global__ void __launch_bounds__(256) ink2g_sgemm_bf16_kernel(const float* __re
     for (int i = 0; i < 8; i++)
 #pragma unroll
       for (int j = 0; j < 8; j++) {
-        acc[i][j] = __fadd_rn(acc[i][j], part[i][j]);
+        if constexpr (FP4) {
+          acc[i][j] = fmaf(part[i][j], ss[buf][j < 4 ? tx * 4 + j : 64 + tx * 4 + j - 4], acc[i][j]);
+        } else {
+          acc[i][j] = __fadd_rn(acc[i][j], part[i][j]);
+        }
         part[i][j] = 0.0f;
       }
     if (s + 1 < steps) {
@@ -397,7 +423,11 @@ __global__ void __launch_bounds__(256) ink2g_sgemm_bf16_kernel(const float* __re
 #pragma unroll
     for (int j = 0; j < 8; j++) {
       const int gn = n0 + (j < 4 ? tx * 4 + j : 64 + tx * 4 + j - 4);
-      if (gn < n) y[(int64_t)gm * ldy + gn] = acc[i][j];
+      if (gn < n) {
+        float v = acc[i][j];
+        if constexpr (FP4) v = (float)((double)v * (double)amax[0] / (double)denom);
+        y[(int64_t)gm * ldy + gn] = v;
+      }
     }
   }
 }
@@ -1347,12 +1377,16 @@ int memra_ink2g_gemm(const void* x, int64_t ldx, const void* w, const void* scal
         round_bf16, tiles, xdiv, (float*)y, ldy, n, k);
     return ink2g_rc();
   }
-  if (!tiles && fmt == INK2G_W_BF16 && !round_bf16 && (k % 16) == 0 && (ldx % 4) == 0 && ((uintptr_t)x & 15) == 0 &&
-      ((uintptr_t)w & 15) == 0 && (m + INK2G_SG_BM - 1) / INK2G_SG_BM <= 65535) {
-    // the prefill GEMM over BF16 weights (the same bits, see the kernel)
+  if (!tiles && (fmt == INK2G_W_BF16 || fmt == INK2G_W_NVFP4) && !round_bf16 && (k % 16) == 0 && (ldx % 4) == 0 &&
+      ((uintptr_t)x & 15) == 0 && ((uintptr_t)w & 15) == 0 && (m + INK2G_SG_BM - 1) / INK2G_SG_BM <= 65535) {
+    // the prefill GEMM over BF16 or dense NVFP4 weights (the same bits, see the kernel)
     const dim3 g((n + INK2G_SG_BN - 1) / INK2G_SG_BN, (m + INK2G_SG_BM - 1) / INK2G_SG_BM);
-    ink2g_sgemm_bf16_kernel<<<g, 256, 0, (cudaStream_t)stream>>>((const float*)x, ldx, (const uint16_t*)w, (float*)y,
-                                                                 ldy, m, n, k);
+    if (fmt == INK2G_W_NVFP4)
+      ink2g_sgemm_bf16_kernel<true><<<g, 256, 0, (cudaStream_t)stream>>>((const float*)x, ldx, w, (const uint8_t*)scales,
+                                                                      amax, denom, (float*)y, ldy, m, n, k);
+    else
+      ink2g_sgemm_bf16_kernel<false><<<g, 256, 0, (cudaStream_t)stream>>>((const float*)x, ldx, w, nullptr, nullptr, 1.0f,
+                                                                       (float*)y, ldy, m, n, k);
     return ink2g_rc();
   }
   const dim3 block(16, 16);
@@ -1374,14 +1408,14 @@ int memra_ink2g_gemv_jobs(const float* const* xs, const void* const* ws, float* 
 }
 
 // The #1397 tile GEMM over BF16 weights, rows 0..m: the gate's oracle for the prefill GEMM's bits.
-int memra_ink2g_gemm_tile_v0(const void* x, int64_t ldx, const void* w, void* y, int64_t ldy, int m, int n, int k,
-                             void* stream) {
+int memra_ink2g_gemm_tile_v0(const void* x, int64_t ldx, const void* w, const void* scales, const float* amax,
+                             float denom, int fmt, void* y, int64_t ldy, int m, int n, int k, void* stream) {
   if (!x || !w || !y || m <= 0 || n <= 0 || k <= 0) return 45045;
   const dim3 block(16, 16);
   const dim3 grid((n + TILE_N - 1) / TILE_N, (m + TILE_M - 1) / TILE_M);
-  ink2g_gemm_kernel<<<grid, block, 0, (cudaStream_t)stream>>>((const float*)x, ldx, (const uint8_t*)w, nullptr, 0, 0,
-                                                              nullptr, 1.0f, INK2G_W_BF16, 0, nullptr, 1, (float*)y,
-                                                              ldy, m, n, k);
+  ink2g_gemm_kernel<<<grid, block, 0, (cudaStream_t)stream>>>((const float*)x, ldx, (const uint8_t*)w,
+                                                              (const uint8_t*)scales, 0, 0, amax, denom, fmt, 0, nullptr,
+                                                              1, (float*)y, ldy, m, n, k);
   return ink2g_rc();
 }
 
