@@ -163,3 +163,103 @@ No activation, KV-cache or input scales exist: activations stay BF16 (W4A16).
 PR 1: `Arch::HyV4Flash`, its config and the `hy_v4_flash` pack: typed plan, tensor contract over
 all 2,429 tensors (FP8 per-row Engram tables included) and the per-layer `hf_quant_config.json`
 reader, with the Config and TensorCensus gates on the real headers.
+
+# Step 1: config, pack and census (2026-11-20)
+
+Verdict: the new `hy_v4_flash` pack parses the pinned config by name, compiles a typed plan for
+it and binds every one of the 2,429 header tensors. Config, TokenizerTemplate and TensorCensus pass
+at inspect on the pinned revision, read over HTTP with no weights downloaded. The pack's support
+stays none: no executor runs the Hy4-flash operations, so TinyParity, CheckpointParity,
+RewriteParity and Serve are pending. No GPU was used.
+
+## Inspect
+
+```bash
+memra model inspect Avifenesh/Hy4-flash-NVFP4@f9eac06cf022cfd3dc2e8ed423922466b2adcd87 \
+  --against hy_v4_flash --out inspect
+# family=hy_v4_flash tensors=2005 artifacts=inspect
+```
+
+`inspect/artifact.lock`: `config_sha256=c88f950d8050...` (the `config.json` bytes, also the pack
+fixture), `census_sha256=406b097584513b88...` (`inspect/tensor-census.tsv.gz` unpacks to the
+hashed text), `plan_sha256=a5c4fdf4264eb087...`, `binding=passed`, `tokenizer=passed`
+(`dialect=artifact`: the template hash only; the hy_v4 dialect and its parity are the next step).
+
+The census has 2,005 rows: each quantized weight row carries its scale planes (424 of the 2,429
+header tensors).
+
+| rows | bytes | storage |
+|---:|---:|---|
+| 141 | 83,841,374,280 | NVFP4: U8 e2m1 pairs, F8_E4M3 `weight_scale` per 16, F32 `weight_scale_2` |
+| 4 | 66,000,641,600 | FP8 e4m3 with one F32 `weight_scale` per row: the Engram tables |
+| 1,332 | 6,735,494,946 | BF16 |
+| 138 | 4,463,828,992 | FP8 e4m3 with F32 `weight_scale_inv` per 128x128 block |
+| 386 | 34,926,900 | F32: hyper-connection parameters, router biases, trunk sinks, indexer pooling |
+| 4 | 1,933,088 | I32: the Engram lookup tables |
+
+## What the pack does
+
+- `config::hy_v4_flash` reads every `text_config` field the transformers program reads, by name,
+  and refuses a switch that selects another program (Sinkhorn hyper-connections, a softmax router,
+  a fine indexer pass, an output or gate LoRA, an isolated U+FFFD namespace, a window other than
+  `sliding_window - 1` back) or a missing field. `layer_types` and `swa_pattern` must agree, the
+  indexer aliases must equal the canonical `index_*` fields, and the drafter's target layers must
+  be indexed layers. `engram_lookup_table_size` is read when declared; the artifact's config does
+  not declare it, so the configuration class default (120818) applies and the census checks the
+  tensor's shape against it. `o_lora_rank: null` and `gate_lora_rank: null` read as absent for
+  this family only.
+- `modelopt_quant` reads the per-layer ModelOpt map from `hf_quant_config.json` and from
+  `config.json`'s `quantization_config`, both through the strict JSON decoder (a key listed twice
+  refuses). The pack compiles from the `config.json` copy; `memra model inspect` (local and remote
+  sources) refuses unless the artifact's `hf_quant_config.json` is present and is the same map.
+  Only `W4A16_NVFP4` (group 16) and `FP8_PB_WO` (group 128) are accepted. The census is derived
+  from the map: a quantizable module the map neither quantizes nor excludes, a map entry no module
+  consumes, or a module the plan keeps BF16 (layer 0's dense MLP included) that the map quantizes
+  refuses the config.
+- The plan: `AttentionPlan::HyV4` (gated MLA, indexed with an `IndexPoolPlan` or sliding with its
+  window, head geometry per layer type), `MlpPlan::LatentMoe` (dense SwiGLU on layer 0),
+  whose routed experts run pre-clamped SwiGLU and whose shared expert runs plain SwiGLU,
+  `ResidualTopology::HyV4` (independent hyper-connections, the MLP output norm, Engram on the
+  layer `id - 1`, seeded with the 1-based id, multipliers bounded by `max(lookup_table) + 1`, norm
+  epsilon from the input dtype), `StatePlan::HyV4`, and `ModelPlan::hy_v4_flash`
+  (stream copy, `hc_head` exit, F32 head). Nine new `OperationKind`s, all registry rows with no
+  surface; `ModelPlan::compile`, the reference executor, the hybrid engine and the generic
+  parallel loader refuse the family by name.
+- The census: the safetensors reader now labels an FP8 weight with one F32 `weight_scale` per row
+  as block `[1, in]` (`QuantConstraint::Fp8RowF32`) instead of the 128x128 default, and reads a
+  standalone I32 tensor (`QuantConstraint::I32`), which binds only through an explicit `I32`
+  requirement, never as a canonical weight. Every other family's census is unchanged.
+- The DFly2 drafter and the vision tower are contract-owned and not in the text plan. The DFly2
+  MLP width (9,216) is not in the config; the vendor runtime takes it from the checkpoint, so the
+  pack pins it as a constant that the census checks.
+
+## Tests
+
+`crates/memra-gguf/src/model_packs/hy_v4_flash/tests.rs`, on the pinned `config.json`,
+`hf_quant_config.json` and a header-only census fixture (`fixtures/census-classes.tsv`, generated
+by `census_classes.py` from `census/header-census.tsv`, which it must expand back to exactly):
+
+- geometry of the pinned config; both ModelOpt maps agree (141 + 138 modules);
+- the typed plan per layer and its operation list;
+- the census gate: all 2,429 tensors derived with names, dtypes and shapes, every header byte in
+  one census row, the contract binds, the loader boundary (`bind_census`) accepts it;
+- negative: up's `weight_scale_2` removed (auxiliary mismatch), one fused `gate_up_proj` bank
+  (missing tensors), a map that adds a fused bank beside gate and up (names a module the program
+  lacks) or replaces them by it (gate unlisted);
+- negative: the Engram ids read 0-based (refused at the plan through layer 0's exclusion
+  wildcard, and, with that wildcard narrowed, refused by the real headers while the narrowed map
+  alone binds) or one layer late (the real headers refuse it), and shifted ids against the true
+  size table (refused by name);
+- negative: an FP8 group other than 128, a quantized layer-0 dense MLP, an `hf_quant_config.json`
+  that is absent, differs on one module or repeats a key;
+- negative: one head count for both layer types (shape mismatch on the real headers), and a
+  `swa_pattern` that contradicts `layer_types`;
+- every program switch above refuses by name.
+
+# Open questions
+
+| question | owner step |
+|---|---|
+| DFly2 dense MLP width: 9,216 in the checkpoint, not in the config. The vLLM derivation defaults `dfly_intermediate_size` to `intermediate_size` (13,824) and then materializes the width from the checkpoint. Confirm against the DFly2 program before pinning it beyond the census. | PR 10 (DFly2) |
+| Whether transformers' per-row FP8 round trip of a BF16 Engram row equals this checkpoint's stored `q * weight_scale` bit for bit. | CheckpointParity |
+| The Engram norm epsilon is `finfo(input dtype).eps` in transformers (2^-7 on BF16); vLLM uses the F32 epsilon. The oracle must run BF16 activations for the band to mean anything. | CheckpointParity |

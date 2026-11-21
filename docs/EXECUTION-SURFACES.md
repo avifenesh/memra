@@ -119,6 +119,15 @@ pre-existing allowlists for every operation, pinned by
 | `Csa2State` | — | — | — | — | — | — | — | — | — | — |
 | `SinglePassHyperConnections` | — | — | — | — | — | — | — | — | — | — |
 | `EngramLookup` | — | — | — | — | — | — | — | — | — | — |
+| `HyV4GatedMlaAttention` | — | — | — | — | — | — | — | — | — | — |
+| `IndexPool` | — | — | — | — | — | — | — | — | — | — |
+| `HyV4State` | — | — | — | — | — | — | — | — | — | — |
+| `LatentMoeMlp` | — | — | — | — | — | — | — | — | — | — |
+| `IndependentHyperConnections` | — | — | — | — | — | — | — | — | — | — |
+| `HyV4Engram` | — | — | — | — | — | — | — | — | — | — |
+| `Fp8BlockWeightOnlyLinear` | — | — | — | — | — | — | — | — | — | — |
+| `Nvfp4W4A16Linear` | — | — | — | — | — | — | — | — | — | — |
+| `HyV4StreamExit` | — | — | — | — | — | — | — | — | — | — |
 | `Mtp` | — | — | — | — | yes | — | yes | — | yes | — |
 | `DraftPlan` | — | — | — | — | — | — | — | — | — | — |
 | `MtpFusion` | — | — | — | — | yes | — | yes | — | yes | — |

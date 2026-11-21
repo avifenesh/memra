@@ -634,6 +634,11 @@ fn glm5_layer_weights(
                 put(&mut weights, tensor, shape)?;
             }
         }
+        MlpPlan::LatentMoe(_) => {
+            return Err(
+                format!("layer {index}: a latent MoE is not part of the glm5_next trunk").into(),
+            );
+        }
         MlpPlan::Moe(moe) => {
             if matches!(moe.router, RouterPlan::TokenIdHash { .. }) {
                 return Err(format!(

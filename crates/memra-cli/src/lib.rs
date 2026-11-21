@@ -1640,6 +1640,14 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
     let config_bytes = std::fs::read(path.join("config.json"))?;
     let config_text = std::str::from_utf8(&config_bytes)?;
     let config = ModelConfig::from_hf(&HfConfig::try_parse(config_text)?);
+    if let Some(map) = config.per_layer_quant_map() {
+        let file = match std::fs::read_to_string(path.join("hf_quant_config.json")) {
+            Ok(text) => Some(text),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
+        };
+        map.check_hf_quant_config(file.as_deref())?;
+    }
     let tokenizer = inspect_hf_tokenizer_dir(path);
     let model = StModel::open(path)?;
     let shards = local_shards(path)?;
@@ -1669,6 +1677,11 @@ fn load_remote(repo: &str, revision: &str) -> Result<SourceData, Box<dyn std::er
         .ok_or("pinned model has no config.json")?
         .into_bytes();
     let config = ModelConfig::from_hf(&HfConfig::try_parse(std::str::from_utf8(&config_bytes)?)?);
+    // A config that carries a per-layer ModelOpt map must agree with the artifact's
+    // hf_quant_config.json, the second copy of the same map.
+    if let Some(map) = config.per_layer_quant_map() {
+        map.check_hf_quant_config(http_text(&format!("{base}/hf_quant_config.json"))?.as_deref())?;
+    }
     let tokenizer = inspect_remote_hf_tokenizer(&base);
     let index = http_text(&format!("{base}/model.safetensors.index.json"))?;
     let shards: Vec<String> = if let Some(index) = index {
