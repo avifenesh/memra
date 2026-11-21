@@ -215,6 +215,34 @@ struct EngineCfg {
     chunk: usize,
     /// DFly2 drafts a round (0: no drafter)
     drafts: usize,
+    /// `MEMRA_HY4F_DRAFT_FAULT`: the draft-fault gate's injection
+    draft_fault: Option<DraftFault>,
+}
+
+/// The draft-fault gate's injection, per request, counted in the request's verified rounds: the
+/// draft round after `Draft(n)` rounds, or the ring backup of the verify call after `Backup(n)`,
+/// runs and is then refused, as a refusal by the route would be.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DraftFault {
+    Draft(u64),
+    Backup(u64),
+}
+
+const INJECTED: &str = "refused by MEMRA_HY4F_DRAFT_FAULT";
+
+/// `MEMRA_HY4F_DRAFT_FAULT`: `draft:N` or `backup:N` (gates only), unset for none.
+fn resolve_draft_fault(raw: Option<&str>) -> Result<Option<DraftFault>, String> {
+    let Some(x) = raw.map(str::trim).filter(|x| !x.is_empty()) else {
+        return Ok(None);
+    };
+    let fault = match x.split_once(':') {
+        Some(("draft", n)) => n.parse().ok().map(DraftFault::Draft),
+        Some(("backup", n)) => n.parse().ok().map(DraftFault::Backup),
+        _ => None,
+    };
+    fault
+        .map(Some)
+        .ok_or_else(|| format!("MEMRA_HY4F_DRAFT_FAULT {x:?} is not draft:N or backup:N"))
 }
 
 /// `MEMRA_HY4F_DRAFT`: the DFly2 drafts a round (1 to 16), `0` to serve without the drafter, or
@@ -304,6 +332,14 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Hy4fModel, St
             }
         );
     }
+    let draft_fault = resolve_draft_fault(std::env::var("MEMRA_HY4F_DRAFT_FAULT").ok().as_deref())
+        .map_err(|e| format!("hy_v4_flash model {name:?}: {e}"))?;
+    if let Some(f) = draft_fault {
+        eprintln!(
+            "[hy4f-serve] {name}: MEMRA_HY4F_DRAFT_FAULT: {f:?} is refused in every request (a \
+             gate's injection, not a serving setting)"
+        );
+    }
     let sessions = crate::route_contract::hybrid_interactive_cap();
     if sessions == 0 {
         return Err("MEMRA_MAX_SESSIONS=0 leaves the hy_v4_flash route no session".into());
@@ -318,6 +354,7 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Hy4fModel, St
         sessions,
         chunk,
         drafts,
+        draft_fault,
     };
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<Ready, String>>();
     let (start_tx, start_rx) = std::sync::mpsc::channel::<Start>();
@@ -1317,12 +1354,22 @@ fn serve_loop(
             let from = a.sess.positions();
             let called = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let backup = if verify {
-                    match route.ring_backup_in(&a.sess, from, tokens.len()) {
+                    let taken = route
+                        .ring_backup_in(&a.sess, from, tokens.len())
+                        .and_then(|b| {
+                            if cfg.draft_fault == Some(DraftFault::Backup(a.spec.rounds)) {
+                                Err(INJECTED.to_string())
+                            } else {
+                                Ok(b)
+                            }
+                        });
+                    match taken {
                         Ok(b) => Some(b),
                         Err(e) => {
                             // a refused backup costs the round, never the request: the anchor
-                            // alone is the undrafted route's call (a device fault fails that call
-                            // and is probed below)
+                            // alone is the undrafted route's call. No probe here: the call reads
+                            // its rows back, so a device fault fails it and is probed below. The
+                            // round's dropped drafts are in no usage count.
                             eprintln!(
                                 "[hy4f-serve] request_id={:?}: ring backup of {} rows at {from}: \
                                  {e}; serving it without drafts",
@@ -1469,7 +1516,15 @@ fn serve_loop(
                 };
                 let route = &mut up.route;
                 let drafted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    route.draft_in(&mut a.sess, src, t, k, None, false)
+                    route
+                        .draft_in(&mut a.sess, src, t, k, None, false)
+                        .and_then(|d| {
+                            if cfg.draft_fault == Some(DraftFault::Draft(a.spec.rounds)) {
+                                Err(INJECTED.to_string())
+                            } else {
+                                Ok(d)
+                            }
+                        })
                 }));
                 match drafted {
                     Ok(Ok(d)) => a.drafts = d.ids,
@@ -1732,6 +1787,17 @@ mod tests {
         assert_eq!(resolve_drafts(Some("3"), Some(5)).unwrap(), 3);
         assert!(resolve_drafts(Some("17"), Some(5)).is_err());
         assert!(resolve_drafts(Some("x"), Some(5)).is_err());
+        assert_eq!(resolve_draft_fault(None).unwrap(), None);
+        assert_eq!(
+            resolve_draft_fault(Some("draft:3")).unwrap(),
+            Some(DraftFault::Draft(3))
+        );
+        assert_eq!(
+            resolve_draft_fault(Some("backup:0")).unwrap(),
+            Some(DraftFault::Backup(0))
+        );
+        assert!(resolve_draft_fault(Some("3")).is_err());
+        assert!(resolve_draft_fault(Some("draft:x")).is_err());
     }
 
     #[test]
