@@ -24,7 +24,7 @@ Onboard `thinkingmachines/Inkling-2-Mini` as a native memra family (`inkling2`, 
 | Checkpoint | `thinkingmachines/Inkling-2-Mini@ed40e7da625f594fc9c4990f5f66be24873c22d7`, 12 files with sha256 and size | the semantic source |
 | llama.cpp | `29b52d398b294509746ec0a3f28948a3107c0213` (`src/models/inkling2.cpp`, `inkling2-loop.cpp`) | second implementation of the float-activation trunk, for triage |
 | transformers | PR 51050 at head `6173a2f679ff4ed393afc499aefc569da7e68bc1` (open at capture) | oracle source for the float-activation bring-up class |
-| vLLM image | `vllm/vllm-openai:inkling-2-mini`, index digest `sha256:c2dc759f...` | only public source of the drafter and of the declared activation-quantized class, the default |
+| vLLM image | `vllm/vllm-openai:inkling-2-mini`, index digest `sha256:c2dc759f...`, with the 30 files read and their sha256 | only public source of the drafter and of the declared activation-quantized class, the default |
 
 External engines are oracles and baselines. Their results are never memra support evidence.
 
@@ -43,6 +43,12 @@ python3 research/modelplan-onboarding-inkling2mini-20261121/census.py <checkpoin
   quant group). Rows sha256 `3752c60c4d5facbc9cbd089e76b710c2f1523c794ffc3776c2628dde9f3aa41c`.
 - [`census-classes.tsv`](census-classes.tsv): the same census as 109 name classes. The script
   expands the classes and refuses to write unless they reproduce every row.
+- [`census-groups.tsv`](census-groups.tsv): the 6 parameter groups of `hf_quant_config.json`
+  with every declared field (`compute_dtype`, `output_dtype`, `fwd_output_dtype`,
+  `weight_transform`, `weight_block_shape`, `weight_scale_format`,
+  `required_activation_quantization`) beside what the headers store for the group. The script
+  refuses a group key it does not know. One row shows a declaration that differs from storage:
+  the MXFP8 group declares `[32, 32]` and stores one scale per row per 32 inputs.
 
 | File | Tensors | Data bytes |
 |---|---:|---:|

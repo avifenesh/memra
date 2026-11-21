@@ -94,7 +94,103 @@
       "index_digest": "sha256:c2dc759f5984f69c1e2418c6af7c26eb756f5ed2a8934c768ae1253645d1449e",
       "linux_amd64_digest": "sha256:a485440c62099c39659a7b723636073ed726dcb41f94cf6326e16af3a1d6f6bc",
       "linux_arm64_digest": "sha256:ecdf0ccc663d86332459f5a50a38c30861a5079bc3924aa08fdc657ef10dd648",
-      "role": "only public source of the drafter program and of the declared activation-quantized class, the default numeric class"
+      "role": "only public source of the drafter program and of the declared activation-quantized class, the default numeric class",
+      "image_config_digest": "sha256:7cc4b52e4ff0bbd3588f25b7954abb865d9240756400f6d4c04a11926ec8556d",
+      "vllm_version": "0.1.dev25855+g7cb5dae22.cu130",
+      "files_root": "the image's Python site-packages",
+      "files_read": {
+        "vllm/models/inkling2/configs.py": {
+          "sha256": "ed9a063b12c6cb0aeb35a74e74ea8656c6ca9220d18fccec2369b15014abb231"
+        },
+        "vllm/models/inkling2/quant_config.py": {
+          "sha256": "be02955071d5a2cf07bd61294b582f2d9584b2cc97601c73a56684a23a9c91e9"
+        },
+        "vllm/models/inkling2/speculator.py": {
+          "sha256": "c2a536adfc6e349bcdbbe5622f26a8b88b7440fc243c2db5d3ea0f21b3ae86b5"
+        },
+        "vllm/models/inkling2/speculator_config.py": {
+          "sha256": "3a61c82dfb35c386e125dd96354b8ee600df7788cf9874e7af8169cb8764c018"
+        },
+        "vllm/models/inkling2/nvidia/model.py": {
+          "sha256": "d5a4b105fd4dcf15619b8fd4ff783e6b9b056ae0076d72ba8aafc752c76b797d"
+        },
+        "vllm/models/inkling2/nvidia/loop.py": {
+          "sha256": "93983ff9e2ef2e2cdd7569c18408214c8091dc0bc476b1d541636d84cf1efb9d"
+        },
+        "vllm/models/inkling2/nvidia/attention.py": {
+          "sha256": "6ca5999f5f6254b88e0b6d55840c255603e80a03b004bee16f681bc3bd9a27b5"
+        },
+        "vllm/models/inkling2/nvidia/moe.py": {
+          "sha256": "d9cd5aafd3608837604e779e82fb3104ce2561efa7522da4bd5dfbc8dd384835"
+        },
+        "vllm/models/inkling2/nvidia/dspark.py": {
+          "sha256": "4f015dc1efe9d3df9a9d4a1a3143e264d6304c788beb444a563910064e26f7f9"
+        },
+        "vllm/models/inkling2/nvidia/sconv.py": {
+          "sha256": "2ed04fc8945781fa40b4f35dcb422d8e71eadbb5dbd39c2aec5106b1bda9f058"
+        },
+        "vllm/models/inkling2/nvidia/ops/nvfp4.py": {
+          "sha256": "7830385a15c4b57f12aaf4b84103724de0b4a0ba3cf3bafef16bb1e42c9151bd"
+        },
+        "vllm/models/inkling2/nvidia/ops/mxfp8.py": {
+          "sha256": "58431169170558babc59b193eecfa94ddc57d4bfd89d02c5fab20698decc7799"
+        },
+        "vllm/models/inkling2/nvidia/ops/moe.py": {
+          "sha256": "f8bb5812bad5ca737afc30f01f4b834f34c1f474ad5b0e4c5ad65cb65aa1ab26"
+        },
+        "vllm/models/inkling2/nvidia/ops/moe_sm120.py": {
+          "sha256": "9ce1e2ed3929d97ece30e7b0dbe5bdb672968bfbca70fbb51cc45cd88e514998"
+        },
+        "vllm/models/inkling2/nvidia/ops/moe_sm90.py": {
+          "sha256": "09c338cfd5970fb92b0d47af6cb42fec4250f9faa61f77ff632a794e82e75108"
+        },
+        "vllm/models/inkling2/nvidia/ops/moe_humming.py": {
+          "sha256": "6078fc9abea9ea9597d09cd19b8588ad2ed2356a93864e939c54fe54696ce8e3"
+        },
+        "vllm/models/inkling2/nvidia/ops/activation.py": {
+          "sha256": "eca8ba55662d6ec25e14d0bdf943efd6b4a8d623e20e92db971723050a8993e7"
+        },
+        "vllm/models/inkling2/nvidia/ops/linear.py": {
+          "sha256": "8ea1850d8e4c82e10576ec57b672d4c317c38f7936f6e61513a7541b6208e3ca"
+        },
+        "vllm/models/inkling2/nvidia/ops/norm.py": {
+          "sha256": "d33252d3d8da0cad09e599c162fe9d1fadd569005bfc34dc39cd77a6df5ed370"
+        },
+        "vllm/models/inkling2/nvidia/ops/attn_res.py": {
+          "sha256": "39f8392a06c76980ebf7b1981894451ecf74501fa5b43791c1e46cf185589981"
+        },
+        "vllm/models/inkling2/nvidia/ops/attention.py": {
+          "sha256": "2c18a3c6697a10dd0702c2563ef0eb12d7e3f6232d5369848ae9c13c004896c4"
+        },
+        "vllm/models/inkling2/nvidia/ops/sconv.py": {
+          "sha256": "982ece524f9efde091793f3128376f4690a35347cf6d12a7daf89c3d1b70e3a4"
+        },
+        "vllm/models/inkling2/nvidia/ops/dspark.py": {
+          "sha256": "11eab54c16b7e67ca2a35d75c311e207a2f4a9fe9e6e2233206fa912dd915c0a"
+        },
+        "vllm/models/inkling2/nvidia/ops/block_scales.py": {
+          "sha256": "db4f0eff580e40072c3e5533a903fb5c5727cfb4fbc0499425522947248b6dc8"
+        },
+        "vllm/models/inkling2/nvidia/ops/loop.py": {
+          "sha256": "0c4f5382f65f2776402aa2396d6bf554c42bee85c6a24e6d0259549c1e11c4c8"
+        },
+        "vllm/v1/worker/gpu/spec_decode/dflash/speculator.py": {
+          "sha256": "a7a0dbf0ee7c288d272442613ca91af2fa12f1916990614be083cd7a5542928b"
+        },
+        "vllm/v1/worker/gpu/spec_decode/dspark/speculator.py": {
+          "sha256": "3cae81503c36fa99dff7b8aeb76bb022216125a3bddd83d9e5e9809529c666d3"
+        },
+        "vllm/v1/worker/gpu/spec_decode/rejection_sampler.py": {
+          "sha256": "feed4269ecfb348f05d99c28205966f61022ecade6cd74069745af0826691bef"
+        },
+        "vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py": {
+          "sha256": "5059fa1d31b875a4b225a33a96c1357981b9882063ebd1da757ef5107deb3717"
+        },
+        "vllm/config/speculative.py": {
+          "sha256": "9271ec9838eec7c72eb5750f8ec2248a9d916ce1da03513722326eba8bb2b9cd"
+        }
+      },
+      "files_read_note": "Read on CPU from the linux/amd64 image; nothing was run. The declared numeric class (activation quantizers, expert GEMM scales, routing-weight placement) and the drafter program were read from these files."
     }
   }
 }
