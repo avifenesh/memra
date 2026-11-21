@@ -380,6 +380,7 @@ fn stop_end(text: &str, full: &str, stops: &[String]) -> Option<usize> {
 struct Active {
     req: Box<Request>,
     run: Option<RouteRun>,
+    class: usize,
     prompt: Vec<u32>,
     /// prompt rows already prefilled
     prefilled: usize,
@@ -397,6 +398,8 @@ struct Active {
 struct Prepared {
     req: Box<Request>,
     run: RouteRun,
+    /// the class the request runs (index into `Up::classes`)
+    class: usize,
     prompt: Vec<u32>,
     budget: usize,
     sample: Option<Dsv4SampleCfg>,
@@ -541,9 +544,33 @@ impl Book {
     }
 }
 
-struct Up {
+/// One numeric class the route serves: its plan's route (weights and kernels) and its book.
+/// Requests name a class (`Request::numeric_class`, the default when omitted); every sequence
+/// belongs to one class and a batched call holds one class's rows only, so no request ever runs
+/// two programs.
+struct Class {
+    name: String,
     route: Route,
     book: Book,
+}
+
+struct Up {
+    /// The classes this boot serves; the first is the default.
+    classes: Vec<Class>,
+}
+
+/// The name a request uses for a plan's class on this route. The declared program on the
+/// checkpoint's shipped weights and f32 KV is `shipped` (BRIEF decision 8 keeps it a named
+/// class); the float-activation class is a bring-up class and is not served.
+fn class_name(plan: &memra_gguf::model_plan::ModelPlan) -> Result<&'static str, String> {
+    use memra_gguf::model_plan::Inkling2NumericClass as C;
+    let program = plan.inkling2.as_ref().ok_or("not an inkling2 plan")?;
+    match program.numerics.class {
+        C::DeclaredActivationQuant => Ok("shipped"),
+        other => Err(format!(
+            "the {other:?} class is not served (bring-up and measurement classes only)"
+        )),
+    }
 }
 
 fn bring_up(cfg: &EngineCfg) -> Result<Up, String> {
@@ -553,13 +580,14 @@ fn bring_up(cfg: &EngineCfg) -> Result<Up, String> {
         .compile_plan(&config)
         .map_err(|e| format!("plan: {e:?}"))?;
     let class = memra_engine::inkling2_gpu::numeric_class(&plan)?;
+    let name = class_name(&plan)?;
     let ck = Ckpt::open(&cfg.dir, pack, &config, &plan)?;
     let dev = Dev::new(0)?;
     // the route's own sequence is never served: the smallest it can hold, then dropped
     let mut route = Route::load(dev, &ck, &plan, 1, CHUNK)?;
     route.drop_default_seq()?;
     eprintln!(
-        "[inkling2-serve] {}: class {class}; {}",
+        "[inkling2-serve] {}: class {name} ({class}); {}",
         cfg.name,
         route.account.describe()
     );
@@ -586,8 +614,11 @@ fn bring_up(cfg: &EngineCfg) -> Result<Up, String> {
         route.seq_bytes(cap)
     );
     Ok(Up {
-        route,
-        book: Book { overhead },
+        classes: vec![Class {
+            name: name.to_string(),
+            route,
+            book: Book { overhead },
+        }],
     })
 }
 
@@ -619,9 +650,10 @@ fn engine_thread(cfg: EngineCfg, ready: Sender<Result<Ready, String>>, start: Re
     let (ptx, prx) = std::sync::mpsc::channel::<Prepared>();
     let (tok, max_seq) = (cfg.tok.clone(), cfg.max_seq);
     let (rload, rhealth) = (load.clone(), health.clone());
+    let names: Vec<String> = up.classes.iter().map(|c| c.name.clone()).collect();
     let renderer = std::thread::Builder::new()
         .name("inkling2-render".into())
-        .spawn(move || render_loop(tok, max_seq, rx, rload, rhealth, ptx));
+        .spawn(move || render_loop(tok, max_seq, names, rx, rload, rhealth, ptx));
     if let Err(e) = renderer {
         latch.1 = Some(format!("inkling2: start the renderer: {e}"));
         return;
@@ -685,8 +717,9 @@ fn serve_loop(
             && let Some(head) = pending.front()
         {
             let cap = head.prompt.len() + head.budget;
-            let need = up.book.need(&up.route, cap);
-            let free = match up.route.dev.driver_free() {
+            let cls = &mut up.classes[head.class];
+            let need = cls.book.need(&cls.route, cap);
+            let free = match cls.route.dev.driver_free() {
                 Ok((f, _)) => f,
                 Err(e) => {
                     let why = format!("inkling2: driver free: {e}");
@@ -706,7 +739,7 @@ fn serve_loop(
                         ceiling: free as u64,
                     };
                     let (answer, _) = admission_answer(&outcome, cap, pr.prompt.len(), || {
-                        up.book.largest_fit(&up.route, free)
+                        cls.book.largest_fit(&cls.route, free)
                     });
                     eprintln!(
                         "[admit-mem] route=inkling2-thread model={:?} request_id={:?} capacity={cap} \
@@ -724,7 +757,7 @@ fn serve_loop(
                 // the running requests' ends give memory back: the head waits
                 break;
             }
-            let state = match up.route.new_seq(cap) {
+            let state = match cls.route.new_seq(cap) {
                 Ok(s) => s,
                 Err(e) => {
                     if !act.is_empty() {
@@ -744,6 +777,12 @@ fn serve_loop(
                 }
             };
             let mut pr = pending.pop_front().expect("the head exists");
+            eprintln!(
+                "[inkling2-serve] admit request_id={:?} class={} prompt={} capacity={cap} driver_free={free}",
+                pr.req.request_id,
+                up.classes[pr.class].name,
+                pr.prompt.len()
+            );
             let _ = pr.req.tx.send(Event::PromptUsage {
                 n_prompt: pr.prompt.len(),
                 n_cached: 0,
@@ -772,6 +811,7 @@ fn serve_loop(
             act.push(Active {
                 req: pr.req,
                 run: Some(pr.run),
+                class: pr.class,
                 prompt: pr.prompt,
                 prefilled: 0,
                 stream,
@@ -790,7 +830,7 @@ fn serve_loop(
         // the step: one prefill chunk of the oldest prefilling request, then one batched decode
         // call of every request past its prefill
         let ts = Instant::now();
-        let route = &mut up.route;
+        let classes = &mut up.classes;
         let stepped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut rows: Vec<(usize, u32, Option<Vec<f32>>)> = Vec::new();
             let mut prefill_rows = 0usize;
@@ -799,6 +839,7 @@ fn serve_loop(
                 let end = (a.prefilled + CHUNK).min(a.prompt.len());
                 let last = end == a.prompt.len();
                 let head = if last { Head::Last } else { Head::None };
+                let route = &mut classes[a.class].route;
                 let out =
                     route.forward_seq(&mut seqs[i], &a.prompt[a.prefilled..end], head, None)?;
                 prefill_rows = end - a.prefilled;
@@ -808,33 +849,44 @@ fn serve_loop(
                     rows.push((i, argmax, Some(out.logits)));
                 }
             }
-            let ready: Vec<usize> = (0..act.len())
-                .filter(|&i| act[i].next.is_some() && act[i].prefilled == act[i].prompt.len())
-                .collect();
-            let decode_rows = ready.len();
-            if !ready.is_empty() {
-                let toks: Vec<u32> = ready.iter().map(|&i| act[i].next.expect("ready")).collect();
-                let want_logits = ready
-                    .iter()
-                    .any(|&i| act[i].sample.is_some() || act[i].pen.is_some());
-                // a greedy step needs only every row's argmax; a sampled one its logits too
-                let head = if want_logits { Head::All } else { Head::Argmax };
-                // every ready sequence, in `ready` order, borrowed for the one call
-                let mut refs: Vec<&mut Seq> = Vec::with_capacity(ready.len());
-                let mut rest: &mut [Seq] = &mut seqs[..];
-                let mut base = 0usize;
-                for &i in &ready {
-                    let (_, tail) = rest.split_at_mut(i - base);
-                    let (one, after) = tail.split_at_mut(1);
-                    refs.push(&mut one[0]);
-                    rest = after;
-                    base = i + 1;
-                }
-                let out = route.decode_batch(&mut refs, &toks, head)?;
-                let vocab = route.vocab();
-                for (r, &i) in ready.iter().enumerate() {
-                    let row = want_logits.then(|| out.logits[r * vocab..(r + 1) * vocab].to_vec());
-                    rows.push((i, out.argmax[r], row));
+            let mut decode_rows = 0usize;
+            // one batched call per class: a call never holds two classes' rows
+            for (c, class) in classes.iter_mut().enumerate() {
+                let route = &mut class.route;
+                let ready: Vec<usize> = (0..act.len())
+                    .filter(|&i| {
+                        act[i].class == c
+                            && act[i].next.is_some()
+                            && act[i].prefilled == act[i].prompt.len()
+                    })
+                    .collect();
+                decode_rows += ready.len();
+                if !ready.is_empty() {
+                    let toks: Vec<u32> =
+                        ready.iter().map(|&i| act[i].next.expect("ready")).collect();
+                    let want_logits = ready
+                        .iter()
+                        .any(|&i| act[i].sample.is_some() || act[i].pen.is_some());
+                    // a greedy step needs only every row's argmax; a sampled one its logits too
+                    let head = if want_logits { Head::All } else { Head::Argmax };
+                    // every ready sequence, in `ready` order, borrowed for the one call
+                    let mut refs: Vec<&mut Seq> = Vec::with_capacity(ready.len());
+                    let mut rest: &mut [Seq] = &mut seqs[..];
+                    let mut base = 0usize;
+                    for &i in &ready {
+                        let (_, tail) = rest.split_at_mut(i - base);
+                        let (one, after) = tail.split_at_mut(1);
+                        refs.push(&mut one[0]);
+                        rest = after;
+                        base = i + 1;
+                    }
+                    let out = route.decode_batch(&mut refs, &toks, head)?;
+                    let vocab = route.vocab();
+                    for (r, &i) in ready.iter().enumerate() {
+                        let row =
+                            want_logits.then(|| out.logits[r * vocab..(r + 1) * vocab].to_vec());
+                        rows.push((i, out.argmax[r], row));
+                    }
                 }
             }
             Ok::<_, String>((rows, prefill_rows, decode_rows))
@@ -916,13 +968,14 @@ fn serve_loop(
 fn render_loop(
     tok: Arc<Tokenizer>,
     max_seq: usize,
+    names: Vec<String>,
     rx: Receiver<Box<Request>>,
     load: Arc<RouteLoad>,
     health: Arc<RouteHealth>,
     out: Sender<Prepared>,
 ) {
     while let Ok(req) = rx.recv() {
-        let Some(pr) = intake(&tok, max_seq, req, &load, &health) else {
+        let Some(pr) = intake(&tok, max_seq, &names, req, &load, &health) else {
             continue;
         };
         if let Err(std::sync::mpsc::SendError(mut pr)) = out.send(pr) {
@@ -937,9 +990,26 @@ fn render_loop(
     }
 }
 
+/// The class a request names, by index into the route's classes (the first when it names none).
+fn pick_class(names: &[String], asked: Option<&str>) -> Result<usize, EngineError> {
+    match asked {
+        None => Ok(0),
+        Some(want) => names.iter().position(|n| n == want).ok_or_else(|| {
+            EngineError::invalid_param(
+                format!(
+                    "numeric_class {want:?} is not served by this route; it serves {}",
+                    names.join(", ")
+                ),
+                "numeric_class",
+            )
+        }),
+    }
+}
+
 fn intake(
     tok: &Arc<Tokenizer>,
     max_seq: usize,
+    names: &[String],
     mut req: Box<Request>,
     load: &Arc<RouteLoad>,
     health: &Arc<RouteHealth>,
@@ -954,6 +1024,14 @@ fn intake(
         return None;
     }
     health.begin_request();
+    let class = match pick_class(names, req.numeric_class.as_deref()) {
+        Ok(c) => c,
+        Err(e) => {
+            settle(run, &mut req, Err(e));
+            health.end_request();
+            return None;
+        }
+    };
     match render(tok, max_seq, &mut req) {
         Ok(Rendered {
             prompt,
@@ -963,6 +1041,7 @@ fn intake(
         }) => Some(Prepared {
             req,
             run,
+            class,
             prompt,
             budget,
             sample,
@@ -1065,6 +1144,14 @@ mod tests {
             1
         );
         assert!(choose(None, 0, 0, None, Some(&pen), &[]).is_err());
+    }
+
+    #[test]
+    fn a_request_runs_the_class_it_names_or_the_default() {
+        let names = vec!["shipped".to_string(), "nvfp4-rig".to_string()];
+        assert_eq!(pick_class(&names, None).unwrap(), 0);
+        assert_eq!(pick_class(&names, Some("nvfp4-rig")).unwrap(), 1);
+        assert!(pick_class(&names, Some("float")).is_err());
     }
 
     #[test]

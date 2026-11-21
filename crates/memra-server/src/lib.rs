@@ -3799,6 +3799,10 @@ struct CompletionReq {
     /// completion_tokens, including inside speculative bursts; finish_reason is "stop".
     #[serde(default)]
     stop_token_ids: Vec<u32>,
+    /// The numeric class to run (`ModelCaps::inkling2` routes, which serve several); refused
+    /// on every other model. Omitted = the route's default class.
+    #[serde(default)]
+    numeric_class: Option<String>,
     /// Do not stop at the model's end-of-sentence token (the vLLM/SGLang benchmark field): the
     /// request decodes until `max_tokens`, a stop string or a stop id. Served by the
     /// deepseek-v4.1 route; any other model answers `true` with a 400 naming the field. An
@@ -4039,6 +4043,10 @@ struct ChatCompletionReq {
     /// completion_tokens, including inside speculative bursts; finish_reason is "stop".
     #[serde(default)]
     stop_token_ids: Vec<u32>,
+    /// The numeric class to run (`ModelCaps::inkling2` routes, which serve several); refused
+    /// on every other model. Omitted = the route's default class.
+    #[serde(default)]
+    numeric_class: Option<String>,
     /// Do not stop at the model's end-of-sentence token: the same field, with the same meaning, as
     /// on `/v1/completions` (`CompletionReq::ignore_eos`). It used to be dropped here: the type has
     /// no `deny_unknown_fields`, so `ignore_eos: true` answered 200 and stopped at the end id
@@ -5866,6 +5874,18 @@ struct ReasoningObject {
     enabled: Option<bool>,
     effort: Option<String>,
     exclude: Option<bool>,
+}
+
+/// `numeric_class` is read only by a route that serves several classes (`ModelCaps::inkling2`);
+/// on any other model it would be accepted and ignored, so it is refused. The route itself
+/// refuses a class it has not loaded.
+fn validate_numeric_class(class: Option<&str>, caps: Option<&ModelCaps>) -> Result<(), String> {
+    match class {
+        Some(c) if !caps.is_some_and(|m| m.inkling2.is_some()) => Err(format!(
+            "numeric_class {c:?}: this model serves one numeric program; the field is read only by routes that serve several (inkling2)"
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// `reasoning_effort` as a string, or a JSON number in the inkling2 renderer's typed form
@@ -9609,6 +9629,7 @@ fn build_request_with_trace(
         oom_retries: 0, // step-OOM park budget: fresh from the HTTP layer (lane/admit-oom)
         spec_k_replay: None,
         drafter_refused: false,
+        numeric_class: req.numeric_class.clone(),
         drafter_funded: false,
         prepared_prompt: None,
         capture: None,      // set only by the embeddings/rerank routes
@@ -9774,6 +9795,7 @@ fn build_chat_request_with_trace(
 ) -> Result<ChatPlan, String> {
     req.stop.validate()?;
     validate_stop_token_ids(&req.stop_token_ids, caps)?;
+    validate_numeric_class(req.numeric_class.as_deref(), caps)?;
     // The client's own expression is snapshotted here; the omitted fields resolve to a
     // vendor arm only once the thinking mode is final (see `sampler_cfg` below).
     let client_sampling: ClientSampling = (&req).into();
@@ -10238,6 +10260,7 @@ fn build_chat_request_with_trace(
             oom_retries: 0, // step-OOM park budget: fresh from the HTTP layer (lane/admit-oom)
             spec_k_replay: None,
             drafter_refused: false,
+            numeric_class: req.numeric_class.clone(),
             drafter_funded: false,
             prepared_prompt: None,
             // Filled by decode_pending_vision AFTER budget admission (hermes
@@ -11491,6 +11514,10 @@ async fn completions_with_admission(
     }
     if let Err(msg) = validate_ignore_eos(req.ignore_eos, st.caps.get(&req.model)) {
         return with_request_id(&env.id, bad_request(msg, Some("ignore_eos")));
+    }
+    if let Err(msg) = validate_numeric_class(req.numeric_class.as_deref(), st.caps.get(&req.model))
+    {
+        return with_request_id(&env.id, bad_request(&msg, Some("numeric_class")));
     }
     // Request deadline (lane/deadline-billing): validated with the other request params
     // (a named 400 costs no slot and opens no receipt), armed from this point on.

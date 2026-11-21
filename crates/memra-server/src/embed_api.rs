@@ -164,6 +164,7 @@ async fn run_capture(
         oom_retries: 0,
         spec_k_replay: None,
         drafter_refused: false,
+        numeric_class: None,
         drafter_funded: false,
         prepared_prompt: None,
         images: Vec::new(),

@@ -2507,6 +2507,11 @@ pub struct Request {
     /// cold-drafter conversion), so no plane is allocated. Sticky for the request's life, a
     /// step-OOM park replay included. Always false from the HTTP layer.
     pub drafter_refused: bool,
+    /// The numeric class the request names (`numeric_class`, an extension field of the
+    /// completions and chat surfaces). Only a route that serves several classes reads it (the
+    /// inkling2 route); the HTTP layer refuses it for every other model. None = the route's
+    /// default class.
+    pub numeric_class: Option<String>,
     /// Whether the VRAM gate's last pricing of this request charged a DFlash draft plane
     /// (memra#1173). `admit` builds a drafter session only for a funded request, so a request
     /// the gate priced plain can never allocate a plane: a refused request, and a step-OOM
@@ -2646,6 +2651,7 @@ pub(crate) fn choice_requests(
             oom_retries: 0,
             spec_k_replay: leader.spec_k_replay,
             drafter_refused: leader.drafter_refused,
+            numeric_class: leader.numeric_class.clone(),
             drafter_funded: false,
             grammar: leader.grammar.clone(),
             prepared_constraint: None,
@@ -31301,6 +31307,7 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         route_ticket: None,
         spec_k_replay: Some(s.spec_k),
         drafter_refused: s.drafter_refused,
+        numeric_class: None,
         drafter_funded: false,
         prepared_prompt: None,
         images: Vec::new(),
@@ -42355,6 +42362,7 @@ mod tests {
             oom_retries: 0,
             spec_k_replay: None,
             drafter_refused: false,
+            numeric_class: None,
             drafter_funded: false,
             grammar: None,
             prepared_constraint: None,
@@ -42980,6 +42988,7 @@ mod tests {
             oom_retries: 0,
             spec_k_replay: None,
             drafter_refused: false,
+            numeric_class: None,
             drafter_funded: false,
             grammar: None, // moved into the compiler job above
             prepared_constraint: None,
@@ -61861,6 +61870,7 @@ mod tests {
             oom_retries: 0,
             spec_k_replay: None,
             drafter_refused: false,
+            numeric_class: None,
             drafter_funded: false,
             grammar: None,
             prepared_constraint: None,
