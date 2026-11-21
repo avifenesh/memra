@@ -219,6 +219,8 @@ assert type(num_layers) is int and num_layers >= 1
 assert top.get("dfly_mtp_fusion", "slot0") == "slot0" and top.get("dfly_enable_hidden_correction", True) is True
 assert top.get("dfly_mlp_type", "dense") == "dense" and top.get("dfly_enable_ihc", False) is False
 assert top.get("dfly_attn_causal", True) is True
+# `HYV4DFlyModel`: null or true keeps the attention's post_proj_norm (the checkpoint carries it)
+assert top.get("dfly_attn_post_proj_norm") in (None, True)
 mask_token = top["dfly_mask_token_id"]
 assert 0 <= mask_token < text["vocab_size"]
 target_topk = top.get("dfly_target_index_topk", text["index_topk"])

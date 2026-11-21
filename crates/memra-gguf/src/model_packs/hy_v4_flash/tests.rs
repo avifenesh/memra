@@ -1099,6 +1099,7 @@ fn drafter_switches_of_another_program_refuse_by_name() {
         ("dfly_mlp_type", serde_json::json!("moe")),
         ("dfly_enable_ihc", serde_json::json!(true)),
         ("dfly_attn_causal", serde_json::json!(false)),
+        ("dfly_attn_post_proj_norm", serde_json::json!(false)),
         ("dfly_enable_hidden_correction", serde_json::json!(false)),
         ("dfly_target_index_topk", serde_json::json!(1024)),
         ("dfly_mask_token_id", serde_json::json!(120832)),

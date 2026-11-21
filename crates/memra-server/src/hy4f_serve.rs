@@ -1346,6 +1346,9 @@ fn serve_loop(
             let v = up.route.vocab_size();
             let nrows = if verify { tokens.len() } else { 1 };
             let mut kept = 0usize;
+            // drafts the route's own choices equal (each one an emitted token), counted before a
+            // stop ends the round
+            let mut matched = 0usize;
             let mut finished = false;
             let mut failed = None;
             let mut last = None;
@@ -1364,6 +1367,8 @@ fn serve_loop(
                     }
                 };
                 kept = r + 1;
+                let matches = verify && r + 1 < tokens.len() && tokens[r + 1] == t;
+                matched += usize::from(matches);
                 if !a.stream.push(t) {
                     finished = true;
                     break;
@@ -1372,7 +1377,7 @@ fn serve_loop(
                     a.window.push(t);
                 }
                 last = Some(t);
-                if !(verify && r + 1 < tokens.len() && tokens[r + 1] == t) {
+                if !matches {
                     break;
                 }
             }
@@ -1380,7 +1385,7 @@ fn serve_loop(
                 let drafted = tokens.len() - 1;
                 a.spec.rounds += 1;
                 a.spec.drafted += drafted as u64;
-                a.spec.accepted += kept.saturating_sub(1) as u64;
+                a.spec.accepted += matched as u64;
                 // keep the anchor and the accepted drafts: the positions `from .. from + kept`
                 let keep = from + kept.max(1);
                 if let Some(b) = &backup
