@@ -280,6 +280,95 @@ __global__ void ink2g_gemv_kernel(const float* __restrict__ x, int64_t ldx, cons
   y[(int64_t)yrow * ldy + gn] = acc;
 }
 
+// ---- prefill GEMM, BF16 weights --------------------------------------------------------------------
+// The same function as ink2g_gemm_kernel for BF16 weights and no expert tiles: each output is a
+// fused multiply-add chain from 0 over each 16-input group in input order, the group partials added
+// from 0 in group order, so its bits equal it. What changes is the tiling: 128 x 128 outputs a block,
+// 8 x 8 a thread, the next K step staged in registers while the current one computes.
+#define INK2G_SG_BM 128
+#define INK2G_SG_BN 128
+#define INK2G_SG_BK 16
+__global__ void __launch_bounds__(256) ink2g_sgemm_bf16_kernel(const float* __restrict__ x, int64_t ldx,
+                                                              const uint16_t* __restrict__ w, float* __restrict__ y,
+                                                              int64_t ldy, int m, int n, int k) {
+  __shared__ __align__(16) float as[2][INK2G_SG_BK][INK2G_SG_BM];
+  __shared__ __align__(16) float bs[2][INK2G_SG_BK][INK2G_SG_BN];
+  const int tid = threadIdx.x, tx = tid & 15, ty = tid >> 4;
+  const int m0 = blockIdx.y * INK2G_SG_BM, n0 = blockIdx.x * INK2G_SG_BN;
+  // loader: row (or weight row) tid / 2, inputs (tid & 1) * 8 .. + 8 of the step
+  const int lr = tid >> 1, lk = (tid & 1) * 8;
+  const bool xin = m0 + lr < m, win = n0 + lr < n;
+  const float* xp = x + (int64_t)(m0 + lr) * ldx + lk;
+  const uint16_t* wp = w + (int64_t)(n0 + lr) * k + lk;
+  float4 xa = make_float4(0.f, 0.f, 0.f, 0.f), xb = xa;
+  uint4 wv = make_uint4(0u, 0u, 0u, 0u);
+  auto fetch = [&](int k0) {
+    if (xin) {
+      xa = *reinterpret_cast<const float4*>(xp + k0);
+      xb = *reinterpret_cast<const float4*>(xp + k0 + 4);
+    }
+    if (win) wv = __ldcs(reinterpret_cast<const uint4*>(wp + k0));
+  };
+  auto stash = [&](int buf) {
+    const float xv[8] = {xa.x, xa.y, xa.z, xa.w, xb.x, xb.y, xb.z, xb.w};
+    const uint32_t ww[4] = {wv.x, wv.y, wv.z, wv.w};
+#pragma unroll
+    for (int i = 0; i < 8; i++) as[buf][lk + i][lr] = xv[i];
+#pragma unroll
+    for (int i = 0; i < 4; i++) {
+      bs[buf][lk + 2 * i][lr] = __uint_as_float(ww[i] << 16);
+      bs[buf][lk + 2 * i + 1][lr] = __uint_as_float(ww[i] & 0xffff0000u);
+    }
+  };
+  float acc[8][8], part[8][8];
+#pragma unroll
+  for (int i = 0; i < 8; i++)
+#pragma unroll
+    for (int j = 0; j < 8; j++) acc[i][j] = part[i][j] = 0.0f;
+  const int steps = k / INK2G_SG_BK;
+  fetch(0);
+  stash(0);
+  __syncthreads();
+  for (int s = 0; s < steps; s++) {
+    const int buf = s & 1;
+    if (s + 1 < steps) fetch((s + 1) * INK2G_SG_BK);
+#pragma unroll
+    for (int kk = 0; kk < INK2G_SG_BK; kk++) {
+      const float4 a0 = *reinterpret_cast<const float4*>(&as[buf][kk][ty * 4]);
+      const float4 a1 = *reinterpret_cast<const float4*>(&as[buf][kk][64 + ty * 4]);
+      const float4 b0 = *reinterpret_cast<const float4*>(&bs[buf][kk][tx * 4]);
+      const float4 b1 = *reinterpret_cast<const float4*>(&bs[buf][kk][64 + tx * 4]);
+      const float a[8] = {a0.x, a0.y, a0.z, a0.w, a1.x, a1.y, a1.z, a1.w};
+      const float b[8] = {b0.x, b0.y, b0.z, b0.w, b1.x, b1.y, b1.z, b1.w};
+#pragma unroll
+      for (int i = 0; i < 8; i++)
+#pragma unroll
+        for (int j = 0; j < 8; j++) part[i][j] = fmaf(a[i], b[j], part[i][j]);
+    }
+#pragma unroll
+    for (int i = 0; i < 8; i++)
+#pragma unroll
+      for (int j = 0; j < 8; j++) {
+        acc[i][j] = __fadd_rn(acc[i][j], part[i][j]);
+        part[i][j] = 0.0f;
+      }
+    if (s + 1 < steps) {
+      stash(buf ^ 1);
+      __syncthreads();
+    }
+  }
+#pragma unroll
+  for (int i = 0; i < 8; i++) {
+    const int gm = m0 + (i < 4 ? ty * 4 + i : 64 + ty * 4 + i - 4);
+    if (gm >= m) continue;
+#pragma unroll
+    for (int j = 0; j < 8; j++) {
+      const int gn = n0 + (j < 4 ? tx * 4 + j : 64 + tx * 4 + j - 4);
+      if (gn < n) y[(int64_t)gm * ldy + gn] = acc[i][j];
+    }
+  }
+}
+
 // ---- decode GEMV, BF16, at the read bandwidth --------------------------------------------------
 // The same function as ink2g_gemv_kernel (and the tile GEMM) for BF16 weights: for each output,
 // per 16-input group, a fused multiply-add chain from 0 in input order, and the groups' partials
@@ -1046,6 +1135,14 @@ int memra_ink2g_gemm(const void* x, int64_t ldx, const void* w, const void* scal
         round_bf16, tiles, xdiv, (float*)y, ldy, n, k);
     return ink2g_rc();
   }
+  if (!tiles && fmt == INK2G_W_BF16 && !round_bf16 && (k % 16) == 0 && (ldx % 4) == 0 && ((uintptr_t)x & 15) == 0 &&
+      ((uintptr_t)w & 15) == 0 && (m + INK2G_SG_BM - 1) / INK2G_SG_BM <= 65535) {
+    // the prefill GEMM over BF16 weights (the same bits, see the kernel)
+    const dim3 g((n + INK2G_SG_BN - 1) / INK2G_SG_BN, (m + INK2G_SG_BM - 1) / INK2G_SG_BM);
+    ink2g_sgemm_bf16_kernel<<<g, 256, 0, (cudaStream_t)stream>>>((const float*)x, ldx, (const uint16_t*)w, (float*)y,
+                                                                 ldy, m, n, k);
+    return ink2g_rc();
+  }
   const dim3 block(16, 16);
   const dim3 grid((n + TILE_N - 1) / TILE_N, tiles ? ntiles : (m + TILE_M - 1) / TILE_M);
   if (grid.y > 65535) return 45005;
@@ -1062,6 +1159,18 @@ int memra_ink2g_gemv_jobs(const float* const* xs, const void* const* ws, float* 
   if (!xs || !ws || !ys || !ns) return 45041;
   const int rc = ink2g_gemv_jobs(xs, ws, ys, ns, count, k, (cudaStream_t)stream);
   return rc == -1 ? 45042 : rc;
+}
+
+// The #1397 tile GEMM over BF16 weights, rows 0..m: the gate's oracle for the prefill GEMM's bits.
+int memra_ink2g_gemm_tile_v0(const void* x, int64_t ldx, const void* w, void* y, int64_t ldy, int m, int n, int k,
+                             void* stream) {
+  if (!x || !w || !y || m <= 0 || n <= 0 || k <= 0) return 45045;
+  const dim3 block(16, 16);
+  const dim3 grid((n + TILE_N - 1) / TILE_N, (m + TILE_M - 1) / TILE_M);
+  ink2g_gemm_kernel<<<grid, block, 0, (cudaStream_t)stream>>>((const float*)x, ldx, (const uint8_t*)w, nullptr, 0, 0,
+                                                              nullptr, 1.0f, INK2G_W_BF16, 0, nullptr, 1, (float*)y,
+                                                              ldy, m, n, k);
+  return ink2g_rc();
 }
 
 int memra_ink2g_embed(const void* table, const uint32_t* ids, const float* norm_w, double eps, float* out, int R,

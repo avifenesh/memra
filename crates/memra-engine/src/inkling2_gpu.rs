@@ -91,6 +91,17 @@ mod ffi {
             h: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_ink2g_gemm_tile_v0(
+            x: *const c_void,
+            ldx: i64,
+            w: *const c_void,
+            y: *mut c_void,
+            ldy: i64,
+            m: i32,
+            n: i32,
+            k: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_ink2g_gemv_jobs(
             xs: *const *const f32,
             ws: *const *const c_void,
@@ -3232,6 +3243,42 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             ratio <= bound && alone == 0,
             format!(
                 "ink2g-gemm-bf16 [m={m} n={n} k={k}] max|err|/sum|p|={ratio:.3e} (bound {bound:.3e}); rows alone (decode GEMV) vs in the call (tile GEMM) bit-differ={alone}"
+            ),
+        );
+    }
+
+    // ---- the prefill GEMM over BF16 weights against the #1397 tile GEMM, at route shapes and tails
+    for (m, n, k) in [
+        (70usize, 200usize, 320usize),
+        (300, 520, 2304),
+        (512, 3072, 2304),
+        (129, 2304, 3072),
+        (26, 384, 2304),
+    ] {
+        let wv = rng.bf16(n * k, 0.05);
+        let x = rng.vec(m * k, 1.0);
+        let (wd, xd) = (dev.up(&bf16_bytes(&wv))?, dev.up(&x)?);
+        let mut y = dev.zeros::<f32>(m * n)?;
+        Route::gemm_bf16(dev, &xd, 0, &wd, &mut y, m, n, k)?;
+        let mut v0 = dev.zeros::<f32>(m * n)?;
+        dev.launched("memra_ink2g_gemm_tile_v0", unsafe {
+            ffi::memra_ink2g_gemm_tile_v0(
+                dptr(&xd, &st) as *const c_void,
+                k as i64,
+                dptr(&wd, &st) as *const c_void,
+                dptr_mut(&mut v0, &st) as *mut c_void,
+                n as i64,
+                m as i32,
+                n as i32,
+                k as i32,
+                dev.sp(),
+            )
+        })?;
+        let differ = bits_differ(&dev.down(&y, 0, m * n)?, &dev.down(&v0, 0, m * n)?);
+        verdict(
+            differ == 0,
+            format!(
+                "ink2g-sgemm-bf16 [m={m} n={n} k={k}] the prefill GEMM vs the #1397 tile GEMM bit-differ={differ}"
             ),
         );
     }
