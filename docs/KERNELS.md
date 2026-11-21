@@ -71,6 +71,7 @@ replaces three of them on some targets.
 | Tensor-parallel collectives | `cu/tp_ar.cu` |
 | Inkling 2 Mini routed experts | `cu/inkling2_actq.cu` (the act-quant quantizers on every target; the block-scaled expert GEMMs on the `120a` family, a refusal elsewhere) |
 | Inkling 2 Mini native GPU route | `cu/inkling2_gpu.cu` |
+| Inkling 2 Mini DSpark drafter | `cu/inkling2_dspark.cu` |
 
 ### Optional CUTLASS archives
 
@@ -491,6 +492,21 @@ independent) with this program's formats and epilogue.
 | `memra_ink2g_swiglu`, `memra_ink2g_sum`, `memra_ink2g_sum_bf16`, `memra_ink2g_to_bf16`; kernels `ink2g_swiglu_kernel`, `ink2g_sum_kernel`, `ink2g_sum_bf16_kernel`, `ink2g_to_bf16_kernel` | float class: softcapped SwiGLU over interleaved gate/up times the routing weight, and the routed rows summed in rank order. Declared class: the layer input rounded to bf16, one copy per routed pair (the act-quant GEMM reads and writes a pair's row at one index), and the bf16 routed rows summed in fp32 in rank order, rounded once to bf16 (`wts` non-null applies the routing weight after down: the gate's red arm) | f32 or bf16 | any | the plan's expert mode per layer | `Route::experts` | `kernel-check` cells `ink2g-swiglu-sum-head`, `ink2g-moe-declared-nvfp4`, `ink2g-moe-declared-mxfp8` |
 | `memra_ink2g_head`; kernels `ink2g_softcap_kernel`, `ink2g_argmax_kernel` | logit softcap `cap * tanh(x / cap)` over the kept vocabulary rows (the padded rows are never computed) and the first of the equal maxima of each row | f32 | any | the plan's logits transforms | `Route::forward` | `kernel-check` cell `ink2g-swiglu-sum-head` |
 | `memra_ink2g_copy` | device-to-device copy of a stream (a block's start, the loop's restart) | bytes | any | always | `Route::forward` | `ink2-gpu --score` |
+
+### cu/inkling2_dspark.cu
+
+The DSpark drafter of Inkling 2 Mini (`src/inkling2_dspark.rs`, driven by `src/inkling2_spec.rs`
+and the binary `ink2-spec`): the plan's `Inkling2DrafterPlan`, BF16 weights as stored, f32
+activations, norm reductions and RoPE angles in f64. The reference is
+`memra_reference::inkling2_drafter` (f64). A proposal never commits a token: the trunk's route
+verifies it, so this program decides acceptance only. Portable CUDA C.
+
+| Symbol | Computes | Types | Arch | Selected by | Caller | Gate |
+| --- | --- | --- | --- | --- | --- | --- |
+| `memra_ink2d_gemv`, `memra_ink2d_gemv_f32w`; kernels `dk_gemv_kernel`, `dk_gemv_f32w_kernel` | `y[r, n] = bias[n] + sum_k x[r, k] * w[n, k]`, one warp per output, up to 8 rows per weight pass; the f32-weight form runs the folded recurrent head | BF16 or f32 weights, f32 in and out, fp32 accumulate | any | always | `DraftGpu::commit`, `DraftGpu::propose` | `ink2-spec --tiny-gate`, `ink2-spec --crosscheck` |
+| `memra_ink2d_mix_norm`, `memra_ink2d_norm`, `memra_ink2d_embed`; kernels `dk_mix_norm_kernel`, `dk_norm_kernel`, `dk_embed_kernel` | the fuse mix `rms(sum_t alpha[t] * tap_t) * w`; residual add then RMS norm; the anchor's BF16 embedding row with the trunk's embedding norm | f32 (BF16 table), f64 reduction | any | always | `DraftGpu` | `ink2-spec --tiny-gate` |
+| `memra_ink2d_head_rope`, `memra_ink2d_attn`, `memra_ink2d_scatter`; kernels `dk_head_rope_kernel`, `dk_attn_kernel`, `dk_scatter_kernel` | per-head RMS norm and NeoX RoPE (angle `position * theta^(-2i/d)` in f64); block attention: every block row sees every block row and the committed context keys (local layers: the last `local_context` positions, from a ring), online softmax over 4 warps; context K/V rows into their cache | f32, f64 norm and angles | any | the plan's local layers | `DraftGpu` | `ink2-spec --tiny-gate` (commit splits of 3 rows, a window of 5 crossed) |
+| `memra_ink2d_silu_mul`, `memra_ink2d_markov_in`, `memra_ink2d_markov_gate`, `memra_ink2d_cap_pick`, `memra_ink2d_fold`, `memra_ink2d_bf16_to_f32`; kernels `dk_silu_mul_kernel`, `dk_markov_in_kernel`, `dk_markov_gate_kernel`, `dk_cap_kernel`, `dk_pick_kernel`, `dk_fold_kernel`, `dk_bf16_to_f32_kernel` | SwiGLU; the recurrent head's `[state, markov_w1[prev]]` and its gate `g = sigmoid, state = g * state + (1 - g) * tanh(cand), latent = tanh(out)`; `softcap * tanh((base + bias) / softcap)` with the first maximum; the fold `head @ hidden_out` in f64 at load | f32, f64 fold | any | always | `DraftGpu::load`, `DraftGpu::propose` | `ink2-spec --tiny-gate`, `--crosscheck` |
 
 ### MiMo V2.6 native components
 
