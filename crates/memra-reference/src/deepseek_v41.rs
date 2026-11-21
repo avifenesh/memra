@@ -1120,6 +1120,7 @@ pub fn fixture_split(
         vision: None,
         multimodal_token_ids: None,
         decode_from: Some(prefill),
+        chunk_ends: Vec::new(),
         checkpoint_files: vec![
             ("model.safetensors".into(), safetensors_bytes(&entries)),
             (

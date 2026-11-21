@@ -174,9 +174,8 @@ fn the_pack_selects_by_config_and_alias_and_only_it_compiles_the_family() {
     for alias in ["inkling2", "inkling2_loop", "inkling-2-mini"] {
         assert_eq!(by_alias(alias).unwrap().family, "inkling2");
     }
-    assert_eq!(PACK.support, None);
+    assert_eq!(PACK.support, Some(NativeSupport::NativeReference));
     assert_eq!(PACK.gates.len(), 7);
-    assert!(PACK.compile_tiny_plan().is_err());
     assert_eq!(
         ModelPlan::compile(&config),
         Err(PlanCompileError::UnsupportedSemantics {

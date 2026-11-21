@@ -14,7 +14,7 @@ use memra_gguf::source::{
     census_from_safetensors_headers,
 };
 use memra_gguf::tensor_contract::{BoundTensorContract, CheckpointDialect, TensorId, TensorOwner};
-use memra_reference::{deterministic_fixture, execute_multimodal, execute_tokens, execute_vision};
+use memra_reference::{deterministic_fixture, execute_fixture, execute_multimodal, execute_vision};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -194,14 +194,7 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
             let out_dir = request.out_dir.ok_or("verify tiny requires --out")?;
             let plan = pack.compile_tiny_plan()?;
             let fixture = deterministic_fixture(&plan)?;
-            let run = || {
-                execute_tokens(
-                    &plan,
-                    &fixture.weights,
-                    &fixture.token_ids,
-                    fixture.decode_from,
-                )
-            };
+            let run = || execute_fixture(&plan, &fixture);
             let first = run()?;
             let second = run()?;
             if first != second {
@@ -262,14 +255,7 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
             // fixture, checkpoint image and oracle written first and pinned the same way.
             let mut variant_texts = Vec::new();
             for variant in memra_reference::tiny_variants(&plan)? {
-                let run = || {
-                    execute_tokens(
-                        &variant.plan,
-                        &variant.fixture.weights,
-                        &variant.fixture.token_ids,
-                        variant.fixture.decode_from,
-                    )
-                };
+                let run = || execute_fixture(&variant.plan, &variant.fixture);
                 let output = run()?;
                 if output != run()? {
                     return Err(format!(
@@ -313,9 +299,11 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                     )
                     .into());
                 }
+                // Two hashes: a run inside the band need not be the pinned bytes.
                 writeln!(
                     variant_receipts,
-                    "pinned_oracle_sha256_{name}\t{}",
+                    "pinned_oracle_sha256_{name}\t{}\nreference_oracle_sha256_{name}\t{}",
+                    hex_sha256(pinned.as_bytes()),
                     hex_sha256(text.as_bytes())
                 )
                 .unwrap();
@@ -426,8 +414,13 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
             write_atomic(
                 &out_dir.join("tiny-gate.tsv"),
                 format!(
-                    "status\tpassed\nfamily\t{}\npinned_oracle_sha256\t{}\n{variant_receipts}",
+                    "status\tpassed\nfamily\t{}\npinned_oracle_sha256\t{}\nreference_oracle_sha256\t{}\n{variant_receipts}",
                     pack.family,
+                    hex_sha256(
+                        pinned_tiny_oracle(pack.family)
+                            .expect("the pinned comparison above passed")
+                            .as_bytes()
+                    ),
                     hex_sha256(oracle_text.as_bytes())
                 )
                 .as_bytes(),
@@ -2763,6 +2756,9 @@ fn format_tiny_fixture(
     if let Some(token_ids) = fixture.multimodal_token_ids.as_ref() {
         writeln!(output, "multimodal_tokens={token_ids:?}").unwrap();
     }
+    if !fixture.chunk_ends.is_empty() {
+        writeln!(output, "chunk_ends={:?}", fixture.chunk_ends).unwrap();
+    }
     if let Some(decode_from) = fixture.decode_from {
         writeln!(output, "decode_from={decode_from}").unwrap();
     }
@@ -2811,6 +2807,10 @@ fn pinned_tiny_oracle(family: &str) -> Option<&'static str> {
         "deepseek_v41" => Some(include_str!(
             "../tests/fixtures/tiny-oracle/deepseek_v41.tsv"
         )),
+        // Produced by the float-activation implementation in f64 over the fixture's checkpoint
+        // image, not by memra:
+        // research/modelplan-onboarding-inkling2mini-20261121/reference/tiny_oracle.py.
+        "inkling2" => Some(include_str!("../tests/fixtures/tiny-oracle/inkling2.tsv")),
         _ => None,
     }
 }
@@ -2831,6 +2831,23 @@ fn pinned_tiny_variant_oracle(family: &str, variant: &str) -> Option<&'static st
         )),
         ("deepseek_v41", "window128") => Some(include_str!(
             "../tests/fixtures/tiny-oracle/deepseek_v41-window128.tsv"
+        )),
+        // The same f64 float-activation oracle under each variant's schedule
+        // (research/modelplan-onboarding-inkling2mini-20261121/reference/tiny_oracle.py).
+        ("inkling2", "splits") => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/inkling2-splits.tsv"
+        )),
+        ("inkling2", "offsplits") => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/inkling2-offsplits.tsv"
+        )),
+        ("inkling2", "steps") => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/inkling2-steps.tsv"
+        )),
+        // The declared class: a CPU simulation of the activation-quant expert program on an
+        // f32 stream (tiny_oracle.py --arm actq). It is not the float-activation oracle and not
+        // a capture of a serving binary.
+        ("inkling2", "declared") => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/inkling2-declared.tsv"
         )),
         _ => None,
     }

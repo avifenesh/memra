@@ -5,6 +5,7 @@
 
 pub mod deepseek_v41;
 pub mod hidden_trace;
+pub mod inkling2;
 pub mod inkling2_actquant;
 pub mod mimo_audio;
 pub mod mimo_audio_attn;
@@ -87,6 +88,11 @@ pub struct ReferenceFixture {
     /// Prefill `token_ids[..k]` as one chunk, then decode each later token one step at a time
     /// (teacher-forced; [`execute_tokens`]). `None`: one prefill chunk.
     pub decode_from: Option<usize>,
+    /// Ends of the prefill chunks before the last one: `token_ids[..chunk_ends[0]]`,
+    /// `token_ids[chunk_ends[0]..chunk_ends[1]]` and so on are each one prefill call
+    /// ([`execute_fixture`]). Empty: the prefill is one chunk. Only Inkling 2 plans have a chunked
+    /// reference prefill.
+    pub chunk_ends: Vec<usize>,
     /// The fixture as checkpoint-format files (file name, bytes) an external oracle loads to
     /// run the source program on the same weights. Empty when the weights were generated
     /// directly in f32.
@@ -172,6 +178,18 @@ pub enum ReferenceLayerState {
         head_dim: usize,
         compressed: Vec<f32>,
         index_keys: Vec<f32>,
+    },
+    /// Inkling 2 slot: the cached K and V rows (`[rows, kv_heads * head_dim]`; a sliding slot
+    /// keeps the last `window - 1`), the position of each row, and the last `kernel - 1` inputs
+    /// of its four short convolutions (K, V, attention output, MLP output), oldest first.
+    RelativeBias {
+        key: Vec<f32>,
+        value: Vec<f32>,
+        positions: Vec<u64>,
+        kv_heads: usize,
+        head_dim: usize,
+        window: Option<usize>,
+        conv: Vec<Vec<f32>>,
     },
 }
 
@@ -299,9 +317,24 @@ fn refuse_deepseek_v41(plan: &ModelPlan, operation: &'static str) -> Result<(), 
     Ok(())
 }
 
+/// Inkling 2 plans run only through [`inkling2`] (text, no drafter); the generic entry points
+/// that have no Inkling 2 program refuse them.
+fn refuse_inkling2(plan: &ModelPlan, operation: &'static str) -> Result<(), ReferenceError> {
+    if plan.inkling2.is_some() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation,
+        });
+    }
+    Ok(())
+}
+
 pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, ReferenceError> {
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::fixture(plan);
+    }
+    if plan.inkling2.is_some() {
+        return inkling2::fixture(plan);
     }
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
@@ -516,7 +549,7 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
             AttentionPlan::KimiDeltaNet(kda) => {
                 add_kda_fixture(&mut weights, layer.index, kda, hidden)?;
             }
-            // Inkling 2 relative-bias attention has no reference implementation yet.
+            // Inkling 2 plans run only through `inkling2::execute`; this generic walker has no program for them.
             AttentionPlan::RelativeBias(_) => {
                 return Err(ReferenceError::UnsupportedOperation {
                     layer: Some(layer.index),
@@ -650,6 +683,7 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
         vision,
         multimodal_token_ids,
         decode_from: None,
+        chunk_ends: Vec::new(),
         checkpoint_files: Vec::new(),
     })
 }
@@ -2129,10 +2163,14 @@ pub struct TinyVariant {
 }
 
 /// The tiny-gate variants of `plan`'s family (DeepSeek-V4.1: below-window splits and a
-/// two-block window). Every other family has none.
+/// two-block window; Inkling 2: prefill and decode schedules across its window, relative
+/// extent and log-scale floor). Every other family has none.
 pub fn tiny_variants(plan: &ModelPlan) -> Result<Vec<TinyVariant>, ReferenceError> {
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::tiny_variants(plan);
+    }
+    if plan.inkling2.is_some() {
+        return inkling2::tiny_variants(plan);
     }
     Ok(Vec::new())
 }
@@ -2149,6 +2187,9 @@ pub fn execute_tokens(
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::execute(plan, weights, token_ids, decode_from);
     }
+    if plan.inkling2.is_some() {
+        return inkling2::execute(plan, weights, token_ids, decode_from);
+    }
     match decode_from {
         None => execute(plan, weights, token_ids),
         Some(_) => Err(ReferenceError::UnsupportedOperation {
@@ -2158,6 +2199,36 @@ pub fn execute_tokens(
     }
 }
 
+/// Runs a fixture's request under its own schedule: [`execute_tokens`] with the fixture's
+/// `decode_from`, after the prefill chunks its `chunk_ends` name. Only Inkling 2 plans have a
+/// chunked reference prefill; any other plan refuses a fixture that asks for one.
+pub fn execute_fixture(
+    plan: &ModelPlan,
+    fixture: &ReferenceFixture,
+) -> Result<ReferenceOutput, ReferenceError> {
+    if plan.inkling2.is_some() {
+        return inkling2::execute_schedule(
+            plan,
+            &fixture.weights,
+            &fixture.token_ids,
+            &fixture.chunk_ends,
+            fixture.decode_from,
+        );
+    }
+    if !fixture.chunk_ends.is_empty() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation: "chunked reference prefill",
+        });
+    }
+    execute_tokens(
+        plan,
+        &fixture.weights,
+        &fixture.token_ids,
+        fixture.decode_from,
+    )
+}
+
 pub fn execute(
     plan: &ModelPlan,
     weights: &ReferenceWeights,
@@ -2165,6 +2236,9 @@ pub fn execute(
 ) -> Result<ReferenceOutput, ReferenceError> {
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::execute(plan, weights, token_ids, None);
+    }
+    if plan.inkling2.is_some() {
+        return inkling2::execute(plan, weights, token_ids, None);
     }
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
@@ -2189,6 +2263,7 @@ pub fn execute_multimodal(
     vision_input: &ReferenceVisionInput,
 ) -> Result<ReferenceMultimodalOutput, ReferenceError> {
     refuse_deepseek_v41(plan, "DeepSeek-V4.1 multimodal reference execution")?;
+    refuse_inkling2(plan, "Inkling 2 multimodal reference execution (text only)")?;
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
             layer: None,
@@ -4470,7 +4545,7 @@ fn execute_layer(
             tokens,
             hidden,
         )?,
-        // Inkling 2 relative-bias attention has no reference implementation yet.
+        // Inkling 2 plans run only through `inkling2::execute`; this generic walker has no program for them.
         AttentionPlan::RelativeBias(_) => {
             return Err(ReferenceError::UnsupportedOperation {
                 layer: Some(layer.index),
@@ -4891,7 +4966,7 @@ fn execute_hyper_layer(
             tokens,
             hidden,
         )?,
-        // Inkling 2 relative-bias attention has no reference implementation yet.
+        // Inkling 2 plans run only through `inkling2::execute`; this generic walker has no program for them.
         AttentionPlan::RelativeBias(_) => {
             return Err(ReferenceError::UnsupportedOperation {
                 layer: Some(layer.index),
@@ -6013,6 +6088,7 @@ pub fn execute_mtp_standalone(
     trunk_hidden: &[f32],
 ) -> Result<Vec<ReferenceMtpOutput>, ReferenceError> {
     refuse_deepseek_v41(plan, "DeepSeek-V4.1 standalone MTP reference execution")?;
+    refuse_inkling2(plan, "Inkling 2 drafter reference execution")?;
     let hidden = plan.hidden_size as usize;
     let vocab = plan.vocab_size as usize;
     let tokens = token_ids.len();
@@ -8384,6 +8460,7 @@ fn activate_pair(
         ActivationPlan::SwiGluPreClamped { limit } => {
             silu(gate.min(*limit)) * up.clamp(-*limit, *limit)
         }
+        // Inkling 2's activation; its plans run through `inkling2::execute`.
         ActivationPlan::SwiGluSoftcapped { .. } => {
             return Err(ReferenceError::UnsupportedOperation {
                 layer: Some(layer),

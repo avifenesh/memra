@@ -451,13 +451,14 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
         | OperationKind::Csa2State
         | OperationKind::SinglePassHyperConnections
         | OperationKind::EngramLookup
-        // Logit truncation: the reference executor implements it (memra-reference
+        // Logit truncation: the generic walker implements it (memra-reference
         // `apply_logits_transforms`, pinned by
-        // `logits_truncate_keeps_the_head_bits_and_makes_the_padded_tail_unselectable`); no
-        // tuned surface does.
+        // `logits_truncate_keeps_the_head_bits_and_makes_the_padded_tail_unselectable`) and the
+        // Inkling 2 executor never computes the dropped rows; no tuned surface does either.
         | OperationKind::LogitsTruncate
-        // Inkling 2: typed and contract-owned; no reference executor or tuned surface implements
-        // these yet, so every surface refuses a plan that names one.
+        // Inkling 2: the reference executor (memra-reference `inkling2`) runs these, except
+        // `DsparkRnnDrafter`, which nothing executes. No tuned surface implements any of them, so
+        // every surface refuses a plan that names one.
         | OperationKind::Nvfp4FloatInputExperts
         | OperationKind::Mxfp8FloatInputExperts
         | OperationKind::EmbeddingNorm
