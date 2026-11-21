@@ -243,8 +243,12 @@ retained ids.
 deterministic fixture twice in the reference executor (it must be bit-identical), writes
 `tiny-fixture.txt`, any `tiny-checkpoint/` image and `reference-oracle.tsv`, and compares the run
 against a reviewed oracle pinned at `crates/memra-cli/tests/fixtures/tiny-oracle/<family>.tsv`
-(registered in `pinned_tiny_oracle` in `crates/memra-cli/src/lib.rs`) within the pack's
-`checkpoint_parity` tolerance. A family without a pinned oracle cannot pass. A divergence is
+(registered in `pinned_tiny_oracle` in `crates/memra-cli/src/lib.rs`). The fixture says how
+(`TinyGate` in memra-reference): within the pack's `checkpoint_parity` tolerance, by bit
+equality with the pinned bytes, or within a band stated for that run alone. A band that
+requires the argmax refuses a run whose pick differs at any position, even inside the band. A
+tiny band is never a checkpoint band, so a pack can pass tiny parity while declaring no
+`checkpoint_parity`. A family without a pinned oracle cannot pass. A divergence is
 reviewed and the oracle re-pinned on purpose, never regenerated silently. Hosted CI runs `verify
 tiny` for every supported pack (`ci:verify-tiny` in the records).
 
