@@ -1540,10 +1540,6 @@ __global__ void __launch_bounds__(256) r_topk_kernel(const float* vals, long ldv
 // with `reverse_ties`), then the picks written in ascending index order.
 #define TK_K 32
 #define TK_N 1024
-struct RBest {
-  uint32_t key;
-  int idx;
-};
 static __device__ __forceinline__ bool r_better(uint32_t ka, int ia, uint32_t kb, int ib, int rev) {
   return ka > kb || (ka == kb && (rev ? ia > ib : ia < ib));
 }
@@ -1695,6 +1691,136 @@ extern "C" int memra_hy4r_router_weights(const float* scores, int rows, int e, c
   return r_rc();
 }
 
+// The router of a row in one block (a decode call's three launches, and with one row the
+// experts' plan): scores = sigmoid(logits), choice = scores + bias, the k best choices in
+// ascending index order (the rounds of `r_topk_best_kernel`), the picks' weights
+// (`r_router_w_kernel`'s sum in pick order). `plan` (one row): every pick is one expert with one
+// row, so tile i is (pick i, row i, 1 row), the rest of the `max_tiles` tiles empty, and slot
+// i's row is i: the table `memra_hy4r_moe_group` builds for these picks.
+struct RRoute {
+  const float* logits;
+  const float* bias;
+  float* scores;
+  float* choice;
+  int* picks;
+  float* w;
+  int* tiles;
+  int* rowmap;
+  int e, k, normalize, plan, max_tiles;
+  float scaling;
+};
+__global__ void __launch_bounds__(256) r_route_kernel(RRoute a) {
+  r_pdl_trigger();
+  r_pdl_wait();
+  __shared__ uint32_t wkey[8];
+  __shared__ int widx[8];
+  __shared__ int sel[TK_K];
+  __shared__ int spick[TK_K];
+  __shared__ float ssc[TK_N];
+  __shared__ float zs;
+  const int r = blockIdx.x, e = a.e;
+  const int tid = threadIdx.x, lane = tid & 31, warp = tid >> 5;
+  const int kk = a.k < e ? a.k : e;
+  uint32_t key[TK_N / 256];
+  int live[TK_N / 256];
+#pragma unroll
+  for (int c = 0; c < TK_N / 256; c++) {
+    const int i = tid + c * 256;
+    live[c] = i < e;
+    key[c] = 0u;
+    if (i < e) {
+      const float s = 1.0f / (1.0f + expf(-a.logits[(long)r * e + i]));
+      const float ch = s + (a.bias ? a.bias[i] : 0.0f);
+      a.scores[(long)r * e + i] = s;
+      a.choice[(long)r * e + i] = ch;
+      ssc[i] = s;
+      key[c] = r_key(ch);
+    }
+  }
+  for (int round = 0; round < kk; round++) {
+    uint32_t bk = 0u;
+    int bi = -1;
+#pragma unroll
+    for (int c = 0; c < TK_N / 256; c++) {
+      const int i = tid + c * 256;
+      if (live[c] && (bi < 0 || r_better(key[c], i, bk, bi, 0))) {
+        bk = key[c];
+        bi = i;
+      }
+    }
+#pragma unroll
+    for (int off = 16; off > 0; off >>= 1) {
+      const uint32_t ok = __shfl_xor_sync(0xffffffffu, bk, off);
+      const int oi = __shfl_xor_sync(0xffffffffu, bi, off);
+      if (oi >= 0 && (bi < 0 || r_better(ok, oi, bk, bi, 0))) {
+        bk = ok;
+        bi = oi;
+      }
+    }
+    if (lane == 0) {
+      wkey[warp] = bk;
+      widx[warp] = bi;
+    }
+    __syncthreads();
+    bk = 0u;
+    bi = -1;
+#pragma unroll
+    for (int w2 = 0; w2 < 8; w2++) {
+      const uint32_t ok = wkey[w2];
+      const int oi = widx[w2];
+      if (oi >= 0 && (bi < 0 || r_better(ok, oi, bk, bi, 0))) {
+        bk = ok;
+        bi = oi;
+      }
+    }
+    if (tid == 0) sel[round] = bi;
+#pragma unroll
+    for (int c = 0; c < TK_N / 256; c++)
+      if (tid + c * 256 == bi) live[c] = 0;
+    __syncthreads();
+  }
+  if (tid < kk) {
+    const int mine = sel[tid];
+    int pos = 0;
+    for (int j = 0; j < kk; j++) pos += sel[j] < mine;
+    a.picks[r * a.k + pos] = mine;
+    spick[pos] = mine;
+  }
+  __syncthreads();
+  if (tid == 0) {
+    float z = 0.0f;
+    for (int i = 0; i < kk; i++) z += ssc[spick[i]];
+    zs = z;
+  }
+  __syncthreads();
+  if (tid < kk) {
+    float v = ssc[spick[tid]];
+    if (a.normalize) v = v / (zs + 1e-20f);
+    a.w[r * a.k + tid] = v * a.scaling;
+    if (a.plan) a.rowmap[tid] = tid;
+  }
+  if (a.plan) {
+    for (int t = tid; t < a.max_tiles; t += 256) {
+      const bool used = t < kk;
+      a.tiles[t * 3] = used ? spick[t] : 0;
+      a.tiles[t * 3 + 1] = used ? t : 0;
+      a.tiles[t * 3 + 2] = used ? 1 : 0;
+    }
+  }
+}
+
+// 45305: more picks or experts than the one-block router takes (the caller runs the separate
+// kernels)
+extern "C" int memra_hy4r_route(const float* logits, const float* bias, float* scores, float* choice, int rows, int e,
+                                int k, int* picks, int normalize, float scaling, float* w, int plan, int* tiles,
+                                int* rowmap, int max_tiles, void* stream) {
+  if (rows == 0) return 0;
+  if (k > TK_K || e > TK_N || k > e || (plan && rows != 1)) return 45305;
+  RRoute a{logits, bias, scores, choice, picks, w, tiles, rowmap, e, k, normalize, plan, max_tiles, scaling};
+  r_launch(r_route_kernel, rows, 256, 0, (cudaStream_t)stream, a);
+  return r_rc();
+}
+
 // ---- MoE grouping ------------------------------------------------------------------------------
 
 // counts[e] over the picks; then one block: offsets, tiles (expert, row0, rows) of `bm` rows,
@@ -1776,6 +1902,13 @@ __global__ void r_moe_gather_kernel(const float* x, int d, const int* rowmap, in
   const float* src = x + (long)(i / k) * d;
   float* dst = xg + (long)rowmap[i] * d;
   for (int c = threadIdx.x; c < d; c += blockDim.x) dst[c] = src[c];
+}
+
+// the rows of the planned slots alone (the plan came from `memra_hy4r_route`)
+extern "C" int memra_hy4r_moe_gather(const float* x, int d, const int* rowmap, int n, int k, float* xg, void* stream) {
+  if (n == 0) return 0;
+  r_launch(r_moe_gather_kernel, n, 256, 0, (cudaStream_t)stream, x, d, rowmap, k, xg);
+  return r_rc();
 }
 
 extern "C" int memra_hy4r_moe_group(const int* picks, int rows, int k, int ne, int bm, int max_tiles, const float* x,

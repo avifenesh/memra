@@ -62,6 +62,7 @@ L2.
 | 13: the hyper-connection mix writes the row's RMS norm; indexer chains side by side | 16.98 [16.96-16.99] | 58.7 | 15.92 [15.91-15.94] | 62.6 | 102.9 | 320.9 |
 | 14: a small-row stage loads its operands first; a BF16 stage is two tiles | 17.30 [17.30-17.31] | 57.7 | 16.17 [16.16-16.19] | 61.7 | 102.3 | 320.0 |
 | 15: the router's top-k as k rounds of the block's best | 17.37 [17.36-17.37] | 57.5 | 16.22 [16.20-16.23] | 61.5 | 102.6 | 320.0 |
+| 16: the router's scores, picks, weights and one-row plan in one block | 17.51 [17.50-17.54] | 57.1 | 16.33 [16.33-16.35] | 61.0 | 106.1 | 319.6 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -261,6 +262,19 @@ results), under the same order (larger value; equal values the lower index, or t
 reversed ties), and writes the picks in ascending index order: 11.6 us. Decode step 57.7 -> 57.5
 ms on `chat`, 61.7 -> 61.5 ms on `long`; 3 of 3 tapes bit-equal (the router's picks are in the
 tapes).
+
+### 16. The router in one block (`receipts/s16-route/`)
+
+After the router's logits a decode call launched seven small kernels: scores, top-k, weights, a
+memset, the expert counts, the tile plan and the row placement, each about 2 us of launch on
+top of its work. `r_route_kernel` runs the scores, the top-k rounds and the weights of a row in
+one block, and for a single row also writes the experts' tile table and rows directly: every
+pick is one expert with one row, so tile i is (pick i, row i, 1 row) and slot i's row is i, the
+table the count, plan and place kernels build for those picks. The input gather then runs alone
+(`memra_hy4r_moe_gather`). Forced picks (the gate's forcing tapes) keep the separate kernels.
+Decode step 57.5 -> 57.1 ms on `chat`, 61.5 -> 61.0 ms on `long`; `chat`'s prefill 103 -> 106
+tokens/s. 3 of 3 tapes bit-equal (`long` and `long-split` run the new kernel and record its
+picks; `chat` forced runs the old path).
 
 Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct

@@ -247,6 +247,33 @@ mod ffi {
             e: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_hy4r_route(
+            logits: *const f32,
+            bias: *const f32,
+            scores: *mut f32,
+            choice: *mut f32,
+            rows: i32,
+            e: i32,
+            k: i32,
+            picks: *mut i32,
+            normalize: i32,
+            scaling: f32,
+            w: *mut f32,
+            plan: i32,
+            tiles: *mut i32,
+            rowmap: *mut i32,
+            max_tiles: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_hy4r_moe_gather(
+            x: *const f32,
+            d: i32,
+            rowmap: *const i32,
+            n: i32,
+            k: i32,
+            xg: *mut f32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_hy4r_router_weights(
             scores: *const f32,
             rows: i32,
@@ -2892,57 +2919,96 @@ impl<'a> Route<'a> {
                 route.gemm_f32(xn, router, rl, t)?;
                 let rsc = sc.rsc.get(dev, t * e * 4)?.f();
                 let rch = sc.rch.get(dev, t * e * 4)?.f();
-                cu!(memra_hy4r_router_scores(
-                    rl,
-                    bias.as_ref().map_or(std::ptr::null(), |b| b.f()),
-                    rsc,
-                    rch,
-                    t as i32,
-                    e as i32,
-                    sp
-                ))?;
                 let rpick = sc.rpick.get(dev, t * k * 4)?.i();
-                cu!(memra_hy4r_topk(
-                    rch, e as i64, t as i32, e as i32, k as i32, 0, rpick, k as i64, sp
-                ))?;
-                if self.recording || forced.is_some() {
-                    rec.routes = Some((
-                        k,
-                        e,
-                        dev.down::<i32>(rpick as *const _, t * k)?,
-                        dev.down::<f32>(rch as *const _, t * e)?,
-                    ));
-                }
-                if let Some(f) = forced {
-                    let fp = f
-                        .router
-                        .get(&il)
-                        .ok_or(format!("layer {il}: the forcing tape has no router record"))?;
-                    // each query's forced experts: `k` of this layer, sorted, unique, in range
-                    if fp.len() != t * k
-                        || fp.chunks(k).any(|row| {
-                            row.windows(2).any(|w| w[0] >= w[1])
-                                || row.iter().any(|x| *x < 0 || *x as usize >= e)
-                        })
-                    {
-                        return Err(format!(
-                            "layer {il}: the forced experts are not {k} sorted unique experts of {e} a query"
+                let rw = sc.rw.get(dev, t * k * 4)?.f();
+                let rows = t * k;
+                let small = rows <= 16;
+                let bm = if small { 16 } else { 64 };
+                let max_tiles = rows.div_ceil(bm) + e.min(rows);
+                let tiles = sc.tiles.get(dev, max_tiles * 3 * 4)?.i();
+                let rowmap = sc.rowmap.get(dev, rows * 4)?.i();
+                // free picks of a small router: one block a row scores, picks and weighs, and
+                // with one row plans the experts' tiles; forced picks keep the separate kernels
+                let one_block = forced.is_none() && k <= 32 && e <= 1024 && k <= e;
+                let planned = one_block && t == 1;
+                if one_block {
+                    cu!(memra_hy4r_route(
+                        rl,
+                        bias.as_ref().map_or(std::ptr::null(), |b| b.f()),
+                        rsc,
+                        rch,
+                        t as i32,
+                        e as i32,
+                        k as i32,
+                        rpick,
+                        i32::from(*normalize),
+                        *scaling,
+                        rw,
+                        i32::from(planned),
+                        tiles,
+                        rowmap,
+                        max_tiles as i32,
+                        sp
+                    ))?;
+                    if self.recording {
+                        rec.routes = Some((
+                            k,
+                            e,
+                            dev.down::<i32>(rpick as *const _, t * k)?,
+                            dev.down::<f32>(rch as *const _, t * e)?,
                         ));
                     }
-                    dev.put(rpick as *mut _, fp)?;
+                } else {
+                    cu!(memra_hy4r_router_scores(
+                        rl,
+                        bias.as_ref().map_or(std::ptr::null(), |b| b.f()),
+                        rsc,
+                        rch,
+                        t as i32,
+                        e as i32,
+                        sp
+                    ))?;
+                    cu!(memra_hy4r_topk(
+                        rch, e as i64, t as i32, e as i32, k as i32, 0, rpick, k as i64, sp
+                    ))?;
+                    if self.recording || forced.is_some() {
+                        rec.routes = Some((
+                            k,
+                            e,
+                            dev.down::<i32>(rpick as *const _, t * k)?,
+                            dev.down::<f32>(rch as *const _, t * e)?,
+                        ));
+                    }
+                    if let Some(f) = forced {
+                        let fp = f
+                            .router
+                            .get(&il)
+                            .ok_or(format!("layer {il}: the forcing tape has no router record"))?;
+                        // each query's forced experts: `k` of this layer, sorted, unique, in range
+                        if fp.len() != t * k
+                            || fp.chunks(k).any(|row| {
+                                row.windows(2).any(|w| w[0] >= w[1])
+                                    || row.iter().any(|x| *x < 0 || *x as usize >= e)
+                            })
+                        {
+                            return Err(format!(
+                                "layer {il}: the forced experts are not {k} sorted unique experts of {e} a query"
+                            ));
+                        }
+                        dev.put(rpick as *mut _, fp)?;
+                    }
+                    cu!(memra_hy4r_router_weights(
+                        rsc,
+                        t as i32,
+                        e as i32,
+                        rpick,
+                        k as i32,
+                        i32::from(*normalize),
+                        *scaling,
+                        rw,
+                        sp
+                    ))?;
                 }
-                let rw = sc.rw.get(dev, t * k * 4)?.f();
-                cu!(memra_hy4r_router_weights(
-                    rsc,
-                    t as i32,
-                    e as i32,
-                    rpick,
-                    k as i32,
-                    i32::from(*normalize),
-                    *scaling,
-                    rw,
-                    sp
-                ))?;
                 let rin = sc.rin.get(dev, t * lat * 4)?.f();
                 let sg = sc.sg.get(dev, t * sh * 4)?.f();
                 let su = sc.su.get(dev, t * sh * 4)?.f();
@@ -2957,31 +3023,37 @@ impl<'a> Route<'a> {
                     t,
                 )?;
                 cu!(memra_hy4r_act(sg, su, sa, (t * sh) as i64, -1.0, 0, sp))?;
-                let rows = t * k;
-                let small = rows <= 16;
-                let bm = if small { 16 } else { 64 };
-                let max_tiles = rows.div_ceil(bm) + e.min(rows);
-                let counts = sc.counts.get(dev, e * 4)?.i();
-                let cursor = sc.cursor.get(dev, e * 4)?.i();
-                let tiles = sc.tiles.get(dev, max_tiles * 3 * 4)?.i();
-                let rowmap = sc.rowmap.get(dev, rows * 4)?.i();
                 let xg = sc.xg.get(dev, rows * lat * 4)?.f();
-                cu!(memra_hy4r_moe_group(
-                    rpick,
-                    t as i32,
-                    k as i32,
-                    e as i32,
-                    bm as i32,
-                    max_tiles as i32,
-                    rin,
-                    lat as i32,
-                    counts,
-                    cursor,
-                    tiles,
-                    rowmap,
-                    xg,
-                    sp
-                ))?;
+                if planned {
+                    cu!(memra_hy4r_moe_gather(
+                        rin,
+                        lat as i32,
+                        rowmap,
+                        rows as i32,
+                        k as i32,
+                        xg,
+                        sp
+                    ))?;
+                } else {
+                    let counts = sc.counts.get(dev, e * 4)?.i();
+                    let cursor = sc.cursor.get(dev, e * 4)?.i();
+                    cu!(memra_hy4r_moe_group(
+                        rpick,
+                        t as i32,
+                        k as i32,
+                        e as i32,
+                        bm as i32,
+                        max_tiles as i32,
+                        rin,
+                        lat as i32,
+                        counts,
+                        cursor,
+                        tiles,
+                        rowmap,
+                        xg,
+                        sp
+                    ))?;
+                }
                 let mg = sc.mg.get(dev, rows * lat * 4)?.f();
                 let mu = sc.mu.get(dev, rows * lat * 4)?.f();
                 let ma = sc.ma.get(dev, rows * lat * 4)?.f();
