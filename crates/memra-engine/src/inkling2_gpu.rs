@@ -300,7 +300,7 @@ mod ffi {
             tu: *const f64,
             stream: *mut c_void,
         ) -> i32;
-        pub fn memra_ink2_expert_gemm(
+        pub fn memra_ink2_expert_gemm_x(
             kind: i32,
             nb: i32,
             act: *const c_void,
@@ -312,6 +312,7 @@ mod ffi {
             denominator: f32,
             groups: *const u32,
             ngroups: i32,
+            xdiv: i32,
             out: *mut c_void,
             acc: *mut f32,
             n: i32,
@@ -2873,7 +2874,7 @@ fn declared_experts(
             dptr_mut(&mut dq.xb16, &st) as *mut c_void,
             rows as i32,
             hidden as i32,
-            if red.token_rows { 1 } else { top_k as i32 },
+            1,
             dev.sp(),
         )
     })?;
@@ -2895,8 +2896,11 @@ fn declared_experts(
             pairs
         }
     };
-    // One block per routed pair: the input holds a row per pair (the token row repeated, or the
-    // pair's gate/up row). The quantizer writes the row it reads.
+    // The MoE input is quantized once per token (one block a row); the gate/up GEMM reads row
+    // pair / top_k for each routed pair. The SiTU input holds a row per pair (the pair's gate/up row),
+    // one block a pair. The quantizer writes the row it reads.
+    // The token-rows red arm keeps the #1397 bug's shape: one block a pair selecting token rows, and
+    // the gate/up GEMM reading pair rows.
     let quantize = |dq: &mut DeclaredWork, situ: bool, k: usize| -> Result<(), String> {
         let (x, gamma, sel) = if situ {
             (dptr(&dq.gu16, &st), gamma_in, 0)
@@ -2910,7 +2914,7 @@ fn declared_experts(
                 x as *const c_void,
                 gamma as *const f32,
                 sel as *const u32,
-                pairs as i32,
+                (if situ || red.token_rows { pairs } else { rows }) as i32,
                 dptr_mut(&mut dq.aq_v, &st) as *mut c_void,
                 dptr_mut(&mut dq.aq_s, &st) as *mut c_void,
                 dptr_mut(&mut dq.aq_a, &st) as *mut f32,
@@ -2929,7 +2933,7 @@ fn declared_experts(
             dptr_mut(&mut dq.dn16, &st)
         };
         dev.launched("memra_ink2_expert_gemm", unsafe {
-            ffi::memra_ink2_expert_gemm(
+            ffi::memra_ink2_expert_gemm_x(
                 kind,
                 1,
                 dptr(&dq.aq_v, &st) as *const c_void,
@@ -2941,6 +2945,7 @@ fn declared_experts(
                 bank.denom,
                 dptr(&dq.groups, &st) as *const u32,
                 ngroups as i32,
+                (if to_gu && !red.token_rows { top_k } else { 1 }) as i32,
                 out as *mut c_void,
                 std::ptr::null_mut(),
                 bank.n as i32,

@@ -331,7 +331,8 @@ template <bool FP4, int NB>
 __global__ void ink2_expert_gemm_kernel(const uint32_t* __restrict__ Act, const uint8_t* __restrict__ ActSc,
                                         const float* __restrict__ ActAmax, const uint32_t* __restrict__ W,
                                         const uint8_t* __restrict__ WSc, const float* __restrict__ WAmax, float denominator,
-                                        const uint32_t* __restrict__ Groups, uint16_t* __restrict__ Out, float* __restrict__ Acc, int N, int K) {
+                                        const uint32_t* __restrict__ Groups, uint16_t* __restrict__ Out, float* __restrict__ Acc, int N, int K,
+                                        int xdiv) {
     constexpr int KS = FP4 ? 64 : 32;        // K per MMA
     constexpr int WPS = 8;                    // u32 words of one operand row per step (both halves)
     constexpr int COLS = 8 * NB;
@@ -347,16 +348,16 @@ __global__ void ink2_expert_gemm_kernel(const uint32_t* __restrict__ Act, const 
     const uint32_t expert = grp[0], count = grp[1];
     for (int i = tid; i < COLS * words; i += nthr) {
         const int j = i / words, w = i - j * words;
-        sact[j * stride + w] = (uint32_t)j < count ? Act[(long)grp[2 + j] * words + w] : 0u;
+        sact[j * stride + w] = (uint32_t)j < count ? Act[(long)(grp[2 + j] / xdiv) * words + w] : 0u;
     }
     for (int i = tid; i < COLS * scw; i += nthr) {
         const int j = i / scw, w = i - j * scw;
         uint32_t v = 0;
         if ((uint32_t)j < count) {
             if constexpr (FP4) {
-                v = reinterpret_cast<const uint32_t*>(ActSc)[(long)grp[2 + j] * scw + w];
+                v = reinterpret_cast<const uint32_t*>(ActSc)[(long)(grp[2 + j] / xdiv) * scw + w];
             } else {
-                const uint8_t* p = ActSc + (long)grp[2 + j] * steps + 4 * w;
+                const uint8_t* p = ActSc + (long)(grp[2 + j] / xdiv) * steps + 4 * w;
                 for (int q = 0; q < 4 && 4 * w + q < steps; ++q) v |= static_cast<uint32_t>(p[q]) << (8 * q);
             }
         }
@@ -456,7 +457,7 @@ __global__ void ink2_expert_gemm_kernel(const uint32_t* __restrict__ Act, const 
                     Acc[(long)row * N + n0 + g + 8] = v1;
                 }
                 if constexpr (FP4) {
-                    const float rs = __fmul_rn(__fmul_rn(ActAmax[row], wamax), rcp);
+                    const float rs = __fmul_rn(__fmul_rn(ActAmax[row / xdiv], wamax), rcp);
                     v0 = __fmul_rn(v0, rs);
                     v1 = __fmul_rn(v1, rs);
                 }
@@ -532,11 +533,26 @@ int memra_ink2_group_words(int nb) { return 2 + 8 * nb; }
 // for the grouped rows only; acc (nullable) receives the fp32 accumulators [R][N] before the row scale.
 // wpb warps per block (0 = default: 2 for a decode group, 8 with several B tiles). N % 16 == 0;
 // K % 64 == 0 (W4A4) or K % 128 == 0 (W8A8).
+int memra_ink2_expert_gemm_x(int kind, int nb, const void* act, const void* act_scales, const float* act_amax,
+                             const void* w, const void* w_scales, const float* w_amax, float denominator,
+                             const uint32_t* groups, int ngroups, int xdiv, void* out, float* acc, int N, int K,
+                             int wpb, cudaStream_t stream);
 int memra_ink2_expert_gemm(int kind, int nb, const void* act, const void* act_scales, const float* act_amax,
                            const void* w, const void* w_scales, const float* w_amax, float denominator,
                            const uint32_t* groups, int ngroups, void* out, float* acc, int N, int K, int wpb,
                            cudaStream_t stream) {
+    return memra_ink2_expert_gemm_x(kind, nb, act, act_scales, act_amax, w, w_scales, w_amax, denominator, groups,
+                                    ngroups, 1, out, acc, N, K, wpb, stream);
+}
+
+// The same GEMM with separate input and output rows: a group's row r reads act row r / xdiv and
+// writes out row r (xdiv = top_k: the routed pairs of a token read the token's one quantized row).
+int memra_ink2_expert_gemm_x(int kind, int nb, const void* act, const void* act_scales, const float* act_amax,
+                             const void* w, const void* w_scales, const float* w_amax, float denominator,
+                             const uint32_t* groups, int ngroups, int xdiv, void* out, float* acc, int N, int K,
+                             int wpb, cudaStream_t stream) {
 #if INK2_BLOCK_SCALED_MMA
+    if (xdiv <= 0) return 7;
     if (!act || !act_scales || !w || !w_scales || !groups || !out || ngroups <= 0) return 1;
     if (kind != 0 && kind != 1) return 2;
     if (N <= 0 || N % 16 != 0 || K <= 0 || K % (kind == 0 ? 64 : 128) != 0) return 3;
@@ -549,7 +565,7 @@ int memra_ink2_expert_gemm(int kind, int nb, const void* act, const void* act_sc
     const uint32_t* wp = static_cast<const uint32_t*>(w);
     const uint8_t* wsp = static_cast<const uint8_t*>(w_scales);
     uint16_t* op = static_cast<uint16_t*>(out);
-    void* args[] = {&ap, &asp, &act_amax, &wp, &wsp, &w_amax, &denominator, &groups, &op, &acc, &N, &K};
+    void* args[] = {&ap, &asp, &act_amax, &wp, &wsp, &w_amax, &denominator, &groups, &op, &acc, &N, &K, &xdiv};
     const int ks = kind == 0 ? 64 : 32;
     const int words = K / ks * 8, steps = K / ks;
     const int scw = kind == 0 ? steps : (steps + 3) / 4;
@@ -568,7 +584,7 @@ int memra_ink2_expert_gemm(int kind, int nb, const void* act, const void* act_sc
     return ink2_launch(ink2_expert_gemm_kernel<false, 2>, grid, block, args, smem, stream);
 #else
     (void)kind; (void)nb; (void)act; (void)act_scales; (void)act_amax; (void)w; (void)w_scales; (void)w_amax;
-    (void)denominator; (void)groups; (void)ngroups; (void)out; (void)acc; (void)N; (void)K; (void)wpb; (void)stream;
+    (void)denominator; (void)groups; (void)ngroups; (void)xdiv; (void)out; (void)acc; (void)N; (void)K; (void)wpb; (void)stream;
     return 9;  // fail closed: no block-scaled MMA on this target
 #endif
 }

@@ -28,6 +28,7 @@ void if any loaded sample (over 60 W) reads P2 or memory 11,001 MHz. Base and ne
 |---|---|---|---|---|---|---|
 | base | #1397 at 0c88a56ca9 plus the digest runner | 5.38 | 185.9 | 1637 | 3.5% | `s1/summary.json` |
 | 1 | BF16 decode GEMV at the read bandwidth, projections batched; controller and depth mix split over blocks | 53.0 | 18.9 | 1381 | 34% | `s1/` |
+| 2 | expert GEMM reads input row pair / top_k: the MoE input is quantized once a token, not once a routed pair | 53.06 (vs 53.03, flat) | 18.85 | 1381 | 34% | `s2/` |
 
 ## Step 1: GEMV, controller and depth mix
 
@@ -53,3 +54,28 @@ and the logits for declared p1 one token a call, declared p2, float p1 one token
 
 Timed (`s1/summary.json`): base 5.378 / 5.379 / 5.379 tok/s, new 53.02 / 53.01 / 53.00 tok/s; no void take
 (no loaded sample at P2 or 11,001 MHz). Host load 12.9 at the start.
+
+## Step 2: one quantized MoE input a token
+
+The declared program quantizes the bf16 MoE input of a token once; the route held one copy a routed pair
+(8 bit-identical copies) because the act-quant GEMM read and wrote one row index. `memra_ink2_expert_gemm_x`
+takes `xdiv`: a group row r reads act row r / xdiv and writes out row r. The gate/up GEMM runs with xdiv = top_k
+on one quantized row a token; the down GEMM keeps xdiv = 1 on the per-pair SiTU rows. The `ink2g-moe-declared-*`
+cells now run this path and stay bit-equal to `memra_reference::inkling2_actquant::expert_block_*` (2304/2304).
+
+Digests equal to step 1 on all slots and the logits, both classes (`s2/id-*.json`). Timed against step 1:
+52.99 / 53.03 / 53.03 vs 53.06 / 53.02 / 53.07 tok/s, flat: a decode step's 8 quantizer blocks ran in parallel
+before, so one block saves bytes, not time. Kept because it is the declared program's shape and removes 7 of 8
+writes and reads of the input; the prefill quantizer runs rows / top_k as many blocks.
+
+## Where a decode token goes after step 1 (`prof-s1/kern_sum.csv`, 8 decode tokens and the 26-token prefill)
+
+| Kernel | per decode token (approx.) | what bounds it |
+|---|---|---|
+| `ink2_expert_gemm_kernel` (W4A4, 40 slots x 2) | 5.2 ms | 35.8 MB a slot, 41 us at 865 GB/s against 130 us measured: 32% of the read roofline |
+| `ink2g_ctrl_down_kernel` + `ink2g_ctrl_up_kernel` (26 message slots x 4) | 4.7 ms | f64 chains on 64 blocks; 1.2 MB of weights a controller |
+| `ink2g_gemv_bf16_kernel` | 4.0 ms | the trunk and the head, about 3.5 GB: near the read roofline |
+| `ink2g_mix_*` | 1.5 ms | f64, small |
+| `ink2g_attn_kernel` (short context) | 1.4 ms | f64 scores and the value sum, one block per head |
+| `ink2g_conv_kernel` | 1.3 ms | one thread a channel, f64, 4 to 9 blocks |
+| `ink2g_norm_kernel`, `ink2g_route_kernel`, `ink2g_heads_kernel`, the rest | 2 ms | one block a row, f64 |
