@@ -154,9 +154,91 @@ thinking text past 16 tokens, at 1.20. There the target writes terse notes ("Nee
 likely"), and the drafter proposes fluent paraphrases ("The user asks" for "The user wants"). Copied spans
 from the prompt accept at 5 to 7.
 
+## Partial accepts without a replay, timed speculative decode, and the serve attach (on lane P's route, #1399)
+
+The branch is rebased onto lane P's `perf/inkling2mini-decode-20261121` (#1399, 53 tok/s decode with a CUDA graph
+per conv-history parity). The PR is stacked on #1399.
+
+### Per-row conv history
+
+`memra_ink2g_conv_rows` writes the history after each row of a call. The existing `memra_ink2g_conv` passes none,
+so lane P's decode graph and every other call are unchanged. `Route::keep_row_history(max_rows)` allocates it per
+slot. `Route::commit_rows(n)` makes the history after row `n - 1` of the last call the committed buffer and moves
+the position back. A partial accept now keeps rows `0..=accepted` of the verify call itself, at 0.44-0.46 ms a
+commit, where it used to cost a second route call. The decode graph is not taken while taps are captured. Gates on
+the commit_rows head: tiny gate PASS (with commits of 3 rows), run-spec K = 1..7 28/28, a 3273-token prompt and a
+context-end request equal plain greedy, and the no-restore red arm diverges ([`timed-perf-route/`](timed-perf-route/)).
+
+### Verify cost, and the decode-shaped program for 2..8 rows
+
+On #1399 as pushed, a verify of 2..8 rows costs 126-168 ms against 20-27 ms for one row. The reason: a call of more
+than one row takes the prefill program (the 128 x 128 BF16 GEMM, a host round trip per MoE layer for expert grouping),
+so speculative decode was slower at every K ([`timed-perf-route/timed-summary.txt`](timed-perf-route/timed-summary.txt):
+best 17.9 tok/s against 41.9 plain). A call of up to `SMALL_CALL_ROWS = 8` rows now runs each BF16 projection and
+the router as the one-row decode GEMV of each row, and keeps the routed picks on the device (one pair a group). Each
+row therefore runs the one-row kernels. run-spec stays 28/28 ([`small-call/`](small-call/)).
+
+Median of 20, at full clocks (`small-call/bench.jsonl`, [`timed-small-call/bench.jsonl`](timed-small-call/bench.jsonl)),
+in ms:
+
+| | chat-email | code-rust-fix | agent-ci |
+|---|---:|---:|---:|
+| plain step (graph) | 20.6 | 21.9 | 27.5 |
+| verify, 1 row | 19.9 | 22.0 | 28.2 |
+| verify, 2 / 4 / 8 rows | 31.0 / 45.3 / 71.0 | 34.8 / 49.4 / 76.8 | 44.4 / 62.3 / 95.3 |
+| draft, k = 1 / 4 / 7 | 3.1 / 4.2 / 5.7 | 3.1 / 4.5 / 6.1 | 3.3 / 4.5 / 6.1 |
+| prefix commit | 0.45 | 0.45 | 0.45 |
+
+Each verify row after the first costs 6-9 ms, about a third of a plain step. The projections still read their BF16
+weights once per row, and each row's routed pairs stream their experts separately. A multi-row GEMV that reads a
+weight once for all rows, and expert groups merged on the device, are the next lever (lane P's kernels).
+
+### Timed tok/s, K = 1..7 and adaptive (12 prompts, 128 tokens, declared class, full clocks)
+
+Telemetry at 250 ms: no loaded sample at P2 or 11001 MHz in any timed cell (`*/smi-check.txt`). Every run equals
+plain greedy (12/12 per K). [`timed-small-call/timed-summary.txt`](timed-small-call/timed-summary.txt), decode tok/s
+(vs plain):
+
+| K | chat | code | agentic | all |
+|---|---:|---:|---:|---:|
+| plain | 44.2 | 42.5 | 34.2 | 40.8 |
+| 1 | 36.8 (0.83) | 40.3 (0.95) | 36.6 (1.07) | 38.0 (0.93) |
+| 2 | 37.1 (0.84) | 46.8 (1.10) | 45.2 (1.32) | 42.2 (1.04) |
+| 3 | 34.0 | 44.9 | 48.7 | 40.6 |
+| 4 | 32.3 | 46.0 | 53.5 (1.56) | 40.7 |
+| 5 | 29.5 | 44.3 | 55.7 (1.63) | 38.7 |
+| 7 | 24.1 | 38.1 | 52.0 | 32.8 (0.80) |
+
+The best fixed K differs by kind: none for chat (every K loses), 2 for code, 5 for agentic. So no fixed K serves the
+mix: the best overall, K = 2, gives 1.04. `AdaptiveK` (`ink2-spec --ks 0`) picks the length per request to maximize
+expected tokens per second. Expected tokens come from the request's acceptance under a geometric model, and the
+seconds from the request's own measured step time per length (a plain one-row step included). It re-probes with
+K = 2 every 16 plain steps. Two repetitions ([`timed-adaptive/timed-summary.txt`](timed-adaptive/timed-summary.txt)):
+
+| | chat | code | agentic | all |
+|---|---:|---:|---:|---:|
+| adaptive, rep 1 | 0.90 | 1.09 | 1.44 | **1.087** (44.9 vs 41.3 tok/s) |
+| adaptive, rep 2 | 0.88 | 1.16 | 1.41 | **1.092** (44.1 vs 40.4) |
+| K = 2, rep 1 / 2 | 0.87 / 0.85 | 1.12 / 1.11 | 1.32 / 1.31 | 1.056 / 1.041 |
+| 3273-token prompt, adaptive | | | | 1.25 (24.3 vs 19.4) |
+
+Default chosen from the data: the adaptive length. It beats every fixed K on the mix and on code and agentic. It
+still loses about 10% on chat: a plain step inside a speculative request runs eager (taps captured, the drafter
+committed) and its probes cost verifies, while plain decode runs the graph. Probabilistic drafting at T 1.0,
+adaptive vs K = 5: 39.9 / 42.9 vs 35.0 / 35.2 tok/s (two seeds, no sampled plain baseline in this run).
+
+### Serve attach (prepared, not attached)
+
+Lane H's serve route (#1400) has not landed. `DraftGpu::new_state` / `swap_state` give each request its own drafter
+state, as `Route::forward_seq` swaps a sequence. The tiny gate checks two request states on one drafter (PASS). On
+nvfp4-rig the route's unembed is NVFP4 (lane M, #1401). The drafter's base logits and fold read the shipped BF16 head
+it was trained against, so the attach will load its own BF16 head (0.92 GB) when the route's is not BF16 (not built yet). Acceptance on
+nvfp4-rig is re-measured once #1401 is in this stack.
+
 ## Open
 
-- Cost of a partial accept: one extra route call over the accepted rows (replay). Committing the verify's own
-  conv history at row n would remove it; that needs a per-row history from the route (coordinate with lane P).
+- Resolved: a partial accept commits the verify's own rows (per-row conv history), no replay.
+- Verify rows after the first cost 6-9 ms each: a multi-row BF16 GEMV and device-merged expert groups (lane P).
+- Chat loses about 10% under the adaptive length: plain steps inside a speculative request run eager.
 - The bf16-points arm is measured above (slightly lower acceptance); it is not ported to the GPU.
-- No timed numbers: decode speed belongs with the perf lane's kernels.
+- Timed numbers are in the section above (full clocks, telemetry checked).
