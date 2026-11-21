@@ -392,10 +392,10 @@ pub fn draft_round(
             k_rope.extend(r);
         }
         let latent = rms(&latent, &lw.kv_a_norm, eps);
-        for t in 0..rows {
+        for (t, &pos) in positions.iter().enumerate().take(rows) {
             for hd in 0..heads {
                 let at = t * heads * qk + hd * qk + nope;
-                rope_in_place(&mut q[at..at + rope], positions[t], g.rope_base);
+                rope_in_place(&mut q[at..at + rope], pos, g.rope_base);
             }
         }
         // the history: the target index layer's top-k row of `p`, the first `target_index_topk`

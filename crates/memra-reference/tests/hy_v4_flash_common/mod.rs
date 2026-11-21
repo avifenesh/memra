@@ -189,6 +189,11 @@ pub fn config(index: Index) -> HyV4FlashConfig {
             target_kv_layers: Vec::new(),
             target_index_layers: Vec::new(),
             hidden_correction: false,
+            intermediate_size: None,
+            hidden_correction_intermediate_size: 0,
+            target_index_topk: 0,
+            context_local_window: 0,
+            num_speculative_tokens: None,
         },
     }
 }

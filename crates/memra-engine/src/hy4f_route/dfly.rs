@@ -270,7 +270,7 @@ impl<'a> Route<'a> {
             g.v_head_dim as usize,
         );
         let (ql, kvl) = (hy.q_lora_rank as usize, hy.kv_lora_rank as usize);
-        if (nope, rd, kvl, vd) != (192, 64, 512, 256) || heads % 8 != 0 {
+        if (nope, rd, kvl, vd) != (192, 64, 512, 256) || !heads.is_multiple_of(8) {
             return Err("the drafter's heads are not the route's geometry".into());
         }
         let ffn = memra_gguf::model_packs::hy_v4_flash::dfly_ffn_width(hy) as usize;
@@ -640,7 +640,7 @@ impl<'a> Route<'a> {
             let keys: Vec<i32> = match &s.lists {
                 None => (0..=p as i32).collect(),
                 Some((lists, lens, ldl)) => {
-                    let n = self.dev.down::<i32>(lens.at(r * 4), 1)?[0] as usize;
+                    let n = (self.dev.down::<i32>(lens.at(r * 4), 1)?[0].max(0) as usize).min(*ldl);
                     let mut v = self.dev.down::<i32>(lists.at(r * ldl * 4), n)?;
                     v.retain(|s| *s >= 0 && (*s as usize) <= p);
                     v.sort_unstable();

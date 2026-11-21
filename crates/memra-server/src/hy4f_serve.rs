@@ -47,7 +47,9 @@
 //! by row as a decode call chooses them (greedy, or the position-keyed draw with the penalty
 //! window grown token by token), and the drafts are kept while they equal those choices; the
 //! rest roll back (`Route::rollback_in` restores the sliding rings' rows). The tokens are the
-//! undrafted route's; drafts change only the number of calls. Each session books one round's cache
+//! undrafted route's; drafts change only the number of calls. A draft round or a verify call's ring
+//! backup that is refused (not a device fault) costs that request its drafts, never its answer:
+//! it is served on by the undrafted route's calls. Each session books one round's cache
 //! positions beside its own (the per-session draft state); the drafter's weights and call scratch
 //! are the route's, resident and grown in the warm-up before the book's ceiling is read.
 //!
@@ -286,6 +288,22 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Hy4fModel, St
         declared_k,
     )
     .map_err(|e| format!("hy_v4_flash model {name:?}: {e}"))?;
+    if drafts == 0
+        && mc
+            .hy_v4_flash
+            .as_ref()
+            .is_some_and(|hy| hy.dfly.num_hidden_layers > 0)
+    {
+        eprintln!(
+            "[hy4f-serve] {name}: the artifact's DFly2 drafter is not run ({})",
+            if declared_k.is_none() {
+                "the config declares no speculative_config.num_speculative_tokens; \
+                 MEMRA_HY4F_DRAFT=N sets the drafts a round"
+            } else {
+                "MEMRA_HY4F_DRAFT=0"
+            }
+        );
+    }
     let sessions = crate::route_contract::hybrid_interactive_cap();
     if sessions == 0 {
         return Err("MEMRA_MAX_SESSIONS=0 leaves the hy_v4_flash route no session".into());
@@ -555,6 +573,9 @@ struct Active {
     fault: bool,
     /// DFly2: the drafts the next verify call scores after `next` (empty: a plain decode call)
     drafts: Vec<u32>,
+    /// DFly2: a draft round or a verify call's ring backup was refused for this request; it is
+    /// served without drafts from there on, as the undrafted route serves it
+    draft_off: bool,
     /// DFly2 rounds, drafts and accepted drafts
     spec: SpecUsage,
 }
@@ -1041,6 +1062,8 @@ fn bring_up<'a>(
         ceiling: avail.saturating_sub(HEADROOM_BYTES),
         chunk: cfg.chunk,
         state: SessionShape::of(&route),
+        // a reservation: the serve loop keeps a round's block and verify rows inside the
+        // request's own positions (`room`), so these rows are booked and never written
         draft_rows: if cfg.drafts > 0 { cfg.drafts + 1 } else { 0 },
     };
     if book.draft_rows > 0 {
@@ -1199,6 +1222,7 @@ fn serve_loop(
                         steps: 0,
                         fault: false,
                         drafts: Vec::new(),
+                        draft_off: false,
                         spec: SpecUsage::default(),
                     });
                 }
@@ -1272,7 +1296,7 @@ fn serve_loop(
         let mut device_fault: Option<String> = None;
         let (mut prefill_rows, mut decode_rows) = (0usize, 0usize);
         for w in work {
-            let (i, tokens, is_prefill_end) = match w {
+            let (i, mut tokens, is_prefill_end) = match w {
                 Work::Prefill { i, s0, s1 } => {
                     prefill_rows += s1 - s0;
                     let end = s1 == act[i].prompt.len();
@@ -1289,11 +1313,28 @@ fn serve_loop(
             };
             let route = &mut up.route;
             let a = &mut act[i];
-            let verify = is_prefill_end.is_none() && tokens.len() > 1;
+            let mut verify = is_prefill_end.is_none() && tokens.len() > 1;
             let from = a.sess.positions();
             let called = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let backup = if verify {
-                    Some(route.ring_backup_in(&a.sess, from, tokens.len())?)
+                    match route.ring_backup_in(&a.sess, from, tokens.len()) {
+                        Ok(b) => Some(b),
+                        Err(e) => {
+                            // a refused backup costs the round, never the request: the anchor
+                            // alone is the undrafted route's call (a device fault fails that call
+                            // and is probed below)
+                            eprintln!(
+                                "[hy4f-serve] request_id={:?}: ring backup of {} rows at {from}: \
+                                 {e}; serving it without drafts",
+                                a.req.request_id,
+                                tokens.len(),
+                            );
+                            a.draft_off = true;
+                            tokens.truncate(1);
+                            verify = false;
+                            None
+                        }
+                    }
                 } else {
                     None
                 };
@@ -1346,8 +1387,8 @@ fn serve_loop(
             let v = up.route.vocab_size();
             let nrows = if verify { tokens.len() } else { 1 };
             let mut kept = 0usize;
-            // drafts the route's own choices equal (each one an emitted token), counted before a
-            // stop ends the round
+            // drafts the route's own choices equal, counted before a stop ends the round (a
+            // matched end token or stop id counts and is not emitted)
             let mut matched = 0usize;
             let mut finished = false;
             let mut failed = None;
@@ -1362,7 +1403,7 @@ fn serve_loop(
                 let t = match choose(row, pos, a.sample.as_ref(), a.pen.as_ref(), &a.window) {
                     Ok(t) => t,
                     Err(e) => {
-                        failed = Some(e);
+                        failed = Some(format!("hy_v4_flash sampler: {e}"));
                         break;
                     }
                 };
@@ -1391,13 +1432,11 @@ fn serve_loop(
                 if let Some(b) = &backup
                     && let Err(e) = up.route.rollback_in(&mut a.sess, keep, b)
                 {
-                    failed = Some(format!("rollback: {e}"));
+                    failed = Some(format!("hy_v4_flash route: rollback: {e}"));
                 }
             }
             if let Some(e) = failed {
-                let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
-                    "hy_v4_flash sampler: {e}"
-                ))));
+                let _ = a.req.tx.send(Event::Error(EngineError::engine(e)));
                 a.stream.client_gone = true;
                 a.fault = true;
                 done.push(i);
@@ -1422,7 +1461,7 @@ fn serve_loop(
             let room = (a.cap - a.sess.positions())
                 .min(a.stream.budget.saturating_sub(a.stream.ids.len()));
             let k = cfg.drafts.min(room.saturating_sub(1));
-            if k > 0 {
+            if k > 0 && !a.draft_off {
                 let src = if verify {
                     kept.max(1) - 1
                 } else {
@@ -1435,17 +1474,17 @@ fn serve_loop(
                 match drafted {
                     Ok(Ok(d)) => a.drafts = d.ids,
                     Ok(Err(e)) => {
+                        // a drafter fault costs speed, never the answer: the request goes on
+                        // without drafts, on the calls the undrafted route makes. The round wrote
+                        // only block rows past the session's positions, which the next call
+                        // writes again before any query reads them. A device fault stops the route.
                         eprintln!(
-                            "[hy4f-serve] request_id={:?}: draft round at {}: {e}; failing it",
+                            "[hy4f-serve] request_id={:?}: draft round at {}: {e}; serving it \
+                             without drafts",
                             a.req.request_id,
                             a.sess.positions()
                         );
-                        let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
-                            "hy_v4_flash drafter: {e}"
-                        ))));
-                        a.stream.client_gone = true;
-                        a.fault = true;
-                        done.push(i);
+                        a.draft_off = true;
                         if let Err(probe) = up.route.dev.sync() {
                             device_fault = Some(format!(
                                 "hy_v4_flash route stopped: the device probe after a failed draft \
