@@ -154,6 +154,9 @@ mod ffi {
             post: *mut f32,
             x: *mut f32,
             dots: *mut f32,
+            norm_w: *const f32,
+            norm_eps: f32,
+            xn: *mut f32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_hy4r_gemm_f32(
@@ -2176,6 +2179,7 @@ impl<'a> Route<'a> {
         let hx = sc.hx.get(dev, t * h * 4)?.f();
         let hcd = sc.hcd.get(dev, t * 17 * 256 * 4)?.f();
         let numerics = self.plan.hy_v4_flash.unwrap();
+        let hn = sc.hn.get(dev, t * h * 4)?.f();
         cu!(memra_hy4r_hc(
             s,
             self.hc_head.fun.f(),
@@ -2191,18 +2195,9 @@ impl<'a> Route<'a> {
             std::ptr::null_mut(),
             hx,
             hcd,
-            dev.sp
-        ))?;
-        let hn = sc.hn.get(dev, t * h * 4)?.f();
-        cu!(memra_hy4r_rms(
-            hx,
-            h as i64,
             self.final_norm.f(),
-            hn,
-            h as i64,
-            t as i32,
-            h as i32,
             self.final_eps,
+            hn,
             dev.sp
         ))?;
         let (r0, rows) = if all_logits { (0, t) } else { (t - 1, 1) };
@@ -2263,17 +2258,9 @@ impl<'a> Route<'a> {
             post,
             x,
             hcd,
-            dev.sp
-        ))?;
-        cu!(memra_hy4r_rms(
-            x,
-            h as i64,
             l.in_norm.f(),
-            xn,
-            h as i64,
-            t as i32,
-            h as i32,
             l.in_eps,
+            xn,
             dev.sp
         ))?;
         let a = self.attention(il, p0, t, xn, rec, forced)?;
@@ -2297,17 +2284,9 @@ impl<'a> Route<'a> {
             post,
             x,
             hcd,
-            dev.sp
-        ))?;
-        cu!(memra_hy4r_rms(
-            x,
-            h as i64,
             l.post_attn_norm.f(),
-            xn,
-            h as i64,
-            t as i32,
-            h as i32,
             l.mlp_eps,
+            xn,
             dev.sp
         ))?;
         let m = self.mlp(il, t, xn, rec, forced)?;

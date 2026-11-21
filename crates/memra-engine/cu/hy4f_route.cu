@@ -1203,15 +1203,19 @@ __global__ void __launch_bounds__(HC_T / HC_SPLIT) r_hc_dots_kernel(const float*
   parts[((long)r * (fns + 1) + j) * HC_T + t] = d;
 }
 
+// `xn` (when set): the row's RMS norm of x with weight `nw` in the same block, `r_rms_kernel`'s
+// chain (a thread's elements in order, the block tree) over the values just written.
 __global__ void __launch_bounds__(HC_T) r_hc_mix_kernel(const float* s, const float* parts, const float* base,
                                                         const float* scale, int nstream, int h, int fns, float mix_eps,
-                                                        float eps, float mag, float* post, float* x) {
+                                                        float eps, float mag, float* post, float* x, const float* nw,
+                                                        float neps, float* xn) {
   r_pdl_trigger();
   r_pdl_wait();
   __shared__ float red[17][HC_T / 32];
   __shared__ float dot[17];
   __shared__ float mix[16];
   __shared__ float pre[8];
+  __shared__ float nred[32];
   const int r = blockIdx.x;
   const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
   const int width = nstream * h;
@@ -1247,6 +1251,7 @@ __global__ void __launch_bounds__(HC_T) r_hc_mix_kernel(const float* s, const fl
   // the streams' values of 4 outputs as independent loads, then each output's chain in stream order
   const int cnt = (int)threadIdx.x < h ? (h - (int)threadIdx.x + HC_T - 1) / HC_T : 0;
   float fv[4][8];
+  float sq = 0.0f;
   for (int c0 = 0; c0 < cnt; c0 += 4) {
 #pragma unroll
     for (int u = 0; u < 4; u++) {
@@ -1262,19 +1267,36 @@ __global__ void __launch_bounds__(HC_T) r_hc_mix_kernel(const float* s, const fl
       for (int j = 0; j < 8; j++)
         if (j < nstream) v += pre[j] * fv[u][j];
       x[(long)r * h + threadIdx.x + (c0 + u) * HC_T] = v;
+      sq += v * v;
     }
+  }
+  if (!xn) return;
+  sq = r_block_sum(sq, nred);
+  const float ninv = rsqrtf(sq / h + neps);
+  float xv[RL_U], wv[RL_U];
+  for (int c0 = 0; c0 < cnt; c0 += RL_U) {
+#pragma unroll
+    for (int u = 0; u < RL_U; u++) {
+      const int i = min((int)threadIdx.x + (c0 + u) * HC_T, h - 1);
+      xv[u] = x[(long)r * h + i];
+      wv[u] = nw ? nw[i] : 1.0f;
+    }
+#pragma unroll
+    for (int u = 0; u < RL_U; u++)
+      if (c0 + u < cnt) xn[(long)r * h + threadIdx.x + (c0 + u) * HC_T] = wv[u] * (xv[u] * ninv);
   }
 }
 
 // `parts` scratch: rows * (fns + 1) * 256 floats
 extern "C" int memra_hy4r_hc(const float* s, const float* fn, const float* base, const float* scale, int rows,
                              int nstream, int h, int fns, float mix_eps, float eps, float mag, float* post, float* x,
-                             float* parts, void* stream) {
+                             float* parts, const float* nw, float neps, float* xn, void* stream) {
   if (rows == 0) return 0;
   if (nstream > 8 || fns > 16) return 45101;
   cudaStream_t st = (cudaStream_t)stream;
   r_launch(r_hc_dots_kernel, dim3(rows, fns + 1, HC_SPLIT), HC_T / HC_SPLIT, 0, st, s, fn, nstream * h, fns, parts);
-  r_launch(r_hc_mix_kernel, rows, HC_T, 0, st, s, parts, base, scale, nstream, h, fns, mix_eps, eps, mag, post, x);
+  r_launch(r_hc_mix_kernel, rows, HC_T, 0, st, s, parts, base, scale, nstream, h, fns, mix_eps, eps, mag, post, x, nw,
+           neps, xn);
   return r_rc();
 }
 
@@ -1930,13 +1952,23 @@ __global__ void r_pool_kernel(const float* tk, int dim, int pool, const float* k
   float a[8], b[8];
 #pragma unroll
   for (int s = 0; s < 8; s++) a[s] = b[s] = 0.0f;
-  for (int i = 0; i < dim; i++) {
-    const float kg = kgp[(long)d * dim + i], kv = kvp[(long)d * dim + i];
+  // the two weight rows RL_U inputs at a time as independent loads
+  float kgv[RL_U], kvv[RL_U];
+  for (int i0 = 0; i0 < dim; i0 += RL_U) {
 #pragma unroll
-    for (int s = 0; s < 8; s++) {
-      if (s < pool) {
-        a[s] += kg * keys[s][i];
-        b[s] += kv * keys[s][i];
+    for (int u = 0; u < RL_U; u++) {
+      kgv[u] = kgp[(long)d * dim + i0 + u];
+      kvv[u] = kvp[(long)d * dim + i0 + u];
+    }
+#pragma unroll
+    for (int u = 0; u < RL_U; u++) {
+      const int i = i0 + u;
+#pragma unroll
+      for (int s = 0; s < 8; s++) {
+        if (s < pool) {
+          a[s] += kgv[u] * keys[s][i];
+          b[s] += kvv[u] * keys[s][i];
+        }
       }
     }
   }
@@ -2006,11 +2038,19 @@ __global__ void __launch_bounds__(IL_G) r_index_logits_kernel(const float* qi, c
   if (g < own) {
     v = 0.0f;
     const float* k = ks + threadIdx.x * 129;
-    for (int h = 0; h < heads; h++) {
-      float dot = 0.0f;
-      for (int i = 0; i < dim; i++) dot += qs[h * dim + i] * k[i];
-      v += ws[h] * fmaxf(dot, 0.0f);
+    // the heads' dot chains side by side, each in input order; then the heads in order
+    float dot[16];
+#pragma unroll
+    for (int h = 0; h < 16; h++) dot[h] = 0.0f;
+    for (int i = 0; i < dim; i++) {
+      const float ki = k[i];
+#pragma unroll
+      for (int h = 0; h < 16; h++)
+        if (h < heads) dot[h] += qs[min(h, heads - 1) * dim + i] * ki;
     }
+#pragma unroll
+    for (int h = 0; h < 16; h++)
+      if (h < heads) v += ws[h] * fmaxf(dot[h], 0.0f);
   }
   out[(long)r * ng + g] = v;
 }

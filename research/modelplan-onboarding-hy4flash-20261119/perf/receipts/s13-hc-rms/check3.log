@@ -1,0 +1,25 @@
+EQUAL logits.f32
+EQUAL router_scores.f32
+EQUAL router_sel.i32
+EQUAL indexer_logits.f32
+EQUAL indexer_sel.i32
+engram equal argmax equal
+seconds 88.3 ref 92.0
+BITWISE_EQUAL
+EQUAL logits.f32
+EQUAL router_scores.f32
+EQUAL router_sel.i32
+EQUAL indexer_logits.f32
+EQUAL indexer_sel.i32
+engram equal argmax equal
+seconds 107.4 ref 113.1
+BITWISE_EQUAL
+EQUAL logits.f32
+EQUAL router_scores.f32
+EQUAL router_sel.i32
+EQUAL indexer_logits.f32
+EQUAL indexer_sel.i32
+engram equal argmax equal
+seconds 108.5 ref 111.1
+BITWISE_EQUAL
+CHECK3_DONE 3/3 equal

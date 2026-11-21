@@ -59,6 +59,7 @@ L2.
 | 10: a small-row stage's weight tile as one bulk copy | 16.53 [16.52-16.54] | 60.4 | 15.43 [15.40-15.46] | 64.6 | 107.1 | 319.5 |
 | 11: the per-row kernels' strided loads issued together | 16.79 [16.76-16.82] | 59.5 | 15.71 [15.66-15.72] | 63.5 | 107.4 | 318.1 |
 | 12: the small kernels let their dependent launch before they wait | 16.94 [16.93-16.99] | 58.9 | 15.87 [15.84-15.88] | 62.9 | 102.7 | 319.2 |
+| 13: the hyper-connection mix writes the row's RMS norm; indexer chains side by side | 16.98 [16.96-16.99] | 58.7 | 15.92 [15.91-15.94] | 62.6 | 102.9 | 320.9 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -215,6 +216,15 @@ With steps 11 and 12 the profile with programmatic launch on
 the later of its start and its predecessor's end) has the RMS norms at 0.92 ms a step (2.56),
 the expert combine 0.23 (0.68), the router weights 0.10 (0.51). A top-k by rank instead of the
 radix select was tried with them and dropped: the same 0.60 ms a step.
+
+### 13. Hyper-connection mix with its RMS norm (`receipts/s13-hc-rms/`)
+
+Each hyper-connection mix was followed by the RMS norm of the row it wrote (82 launches a step).
+`r_hc_mix_kernel` now runs that norm in the same block: `r_rms_kernel`'s chain over the values it
+just wrote (a thread's elements in order, the block tree). The indexer's group logits run a
+group's 16 head dots side by side (each in input order) instead of one after the other, and
+the pooled keys' two weight rows load 16 inputs at a time. Decode step 58.9 -> 58.7 ms on `chat`,
+62.9 -> 62.6 ms on `long`; 3 of 3 tapes bit-equal.
 
 Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct
