@@ -47,6 +47,7 @@ struct Args {
     crosscheck: bool,
     per_position: Option<PathBuf>,
     bench: usize,
+    profile_rows: usize,
     class: String,
     chunk: usize,
     context: usize,
@@ -88,6 +89,7 @@ fn parse() -> Result<Args, String> {
             "--crosscheck" => a.crosscheck = true,
             "--per-position" => a.per_position = Some(PathBuf::from(val()?)),
             "--bench" => a.bench = num(val()?)?,
+            "--profile-rows" => a.profile_rows = num(val()?)?,
             "--red-no-restore" => a.red_no_restore = true,
             "--red-tap-slot" => {
                 let v = val()?;
@@ -204,6 +206,10 @@ fn run() -> Result<(), String> {
     };
     if a.crosscheck {
         crosscheck(&mut route, &mut drafter, &aux.1, &ck, &g, &prompts[0].2)?;
+    }
+    if a.profile_rows > 0 {
+        memra_engine::inkling2_spec::profile_verify(&mut route, &prompts[0].2, a.profile_rows, 10)?;
+        return Ok(());
     }
     if a.bench > 0 {
         for (id, kind, ids) in &prompts {
@@ -591,6 +597,28 @@ fn tiny_gate(a: &Args) -> Result<(), String> {
                 if pass { "PASS" } else { "FAIL" }
             );
         }
+        // two requests on one drafter: scenario 2's state stays committed while scenario 0 runs
+        // in a second state; each one's proposals are unchanged
+        let mut other = drafter.new_state(&dev)?;
+        drafter.swap_state(&mut other)?;
+        drafter.commit(&dev, &taps_dev, total, 0, 1)?;
+        let t0 = drafter.propose(&dev, shared, anchors[0] as u32, g.rows - 1, None)?;
+        drafter.swap_state(&mut other)?;
+        let t2 = drafter.propose(&dev, shared, anchors[2] as u32, g.rows - 1, None)?;
+        let w0: Vec<u32> = oracle_i64(&oracle, "s0.tokens")?
+            .iter()
+            .map(|v| *v as u32)
+            .collect();
+        let w2: Vec<u32> = oracle_i64(&oracle, "s2.tokens")?
+            .iter()
+            .map(|v| *v as u32)
+            .collect();
+        let two = t0 == w0 && t2 == w2;
+        ok &= two;
+        println!(
+            "ink2-dspark-tiny chunk {chunk} two request states: {t0:?} / {t2:?} {}",
+            if two { "PASS" } else { "FAIL" }
+        );
     }
     if !ok {
         return Err("the GPU drafter does not match the oracle".into());

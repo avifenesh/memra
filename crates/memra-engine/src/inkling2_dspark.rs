@@ -485,6 +485,36 @@ impl DraftGpu {
         account.drafter_kv = self.kv;
     }
 
+    /// A request's own drafter state (context K/V, committed length, the head's feature), for a
+    /// route that serves several requests: swap it in around the request's calls
+    /// ([`DraftGpu::swap_state`]), as `Route::forward_seq` swaps a sequence.
+    pub fn new_state(&self, dev: &Dev) -> Result<DraftState, String> {
+        let kvw = self.g.kv_heads * self.g.head_dim;
+        let mut kv = Vec::with_capacity(self.layers.len());
+        for lw in &self.layers {
+            kv.push((dev.zeros(lw.cap * kvw)?, dev.zeros(lw.cap * kvw)?));
+        }
+        Ok(DraftState {
+            kv,
+            len: 0,
+            feature: dev.zeros(self.g.hidden)?,
+        })
+    }
+
+    /// Exchange the drafter's current request state with `state`.
+    pub fn swap_state(&mut self, state: &mut DraftState) -> Result<(), String> {
+        if state.kv.len() != self.layers.len() {
+            return Err("a drafter state of another drafter".into());
+        }
+        for (lw, (k, v)) in self.layers.iter_mut().zip(state.kv.iter_mut()) {
+            std::mem::swap(&mut lw.kc, k);
+            std::mem::swap(&mut lw.vc, v);
+        }
+        std::mem::swap(&mut self.len, &mut state.len);
+        std::mem::swap(&mut self.feature, &mut state.feature);
+        Ok(())
+    }
+
     /// Forget the request.
     pub fn reset(&mut self) {
         self.len = 0;
@@ -1027,6 +1057,14 @@ impl DraftGpu {
             dev.down(&self.feature, 0, self.g.hidden)?,
         ))
     }
+}
+
+/// One request's drafter state: per layer its context K/V (`[cap, kv_width]` f32), the committed
+/// length and the head's feature.
+pub struct DraftState {
+    kv: Vec<(CudaSlice<f32>, CudaSlice<f32>)>,
+    pub len: usize,
+    feature: CudaSlice<f32>,
 }
 
 /// The drafter tensors of a checkpoint's auxiliary file (`mtp.safetensors`), as f32 values.
