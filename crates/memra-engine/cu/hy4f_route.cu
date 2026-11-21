@@ -1077,6 +1077,8 @@ static __device__ float r_block_sum(float v, float* red) {
 
 // ---- elementwise and per-row kernels ----------------------------------------------------------
 
+#define RL_U 16  // independent loads in flight a thread in the per-row kernels' strided loops
+
 // y = w * (x * rsqrt(mean(x^2) + eps)), one block (256) per row
 __global__ void r_rms_kernel(const float* x, long ldx, const float* w, float* y, long ldy, int d, float eps) {
   r_pdl_wait();
@@ -1084,11 +1086,32 @@ __global__ void r_rms_kernel(const float* x, long ldx, const float* w, float* y,
   __shared__ float red[32];
   const float* xr = x + (long)blockIdx.x * ldx;
   float* yr = y + (long)blockIdx.x * ldy;
+  // a thread's elements tid, tid + 256, ...: RL_U at a time as independent loads, then the same
+  // chain in element order
+  const int tid = threadIdx.x, bd = blockDim.x;
+  const int cnt = tid < d ? (d - tid + bd - 1) / bd : 0;
   float s = 0.0f;
-  for (int i = threadIdx.x; i < d; i += blockDim.x) s += xr[i] * xr[i];
+  float v[RL_U], wv[RL_U];
+  for (int c0 = 0; c0 < cnt; c0 += RL_U) {
+#pragma unroll
+    for (int u = 0; u < RL_U; u++) v[u] = xr[min(tid + (c0 + u) * bd, d - 1)];
+#pragma unroll
+    for (int u = 0; u < RL_U; u++)
+      if (c0 + u < cnt) s += v[u] * v[u];
+  }
   s = r_block_sum(s, red);
   const float inv = rsqrtf(s / d + eps);
-  for (int i = threadIdx.x; i < d; i += blockDim.x) yr[i] = (w ? w[i] : 1.0f) * (xr[i] * inv);
+  for (int c0 = 0; c0 < cnt; c0 += RL_U) {
+#pragma unroll
+    for (int u = 0; u < RL_U; u++) {
+      const int i = min(tid + (c0 + u) * bd, d - 1);
+      v[u] = xr[i];
+      wv[u] = w ? w[i] : 1.0f;
+    }
+#pragma unroll
+    for (int u = 0; u < RL_U; u++)
+      if (c0 + u < cnt) yr[tid + (c0 + u) * bd] = wv[u] * (v[u] * inv);
+  }
 }
 
 extern "C" int memra_hy4r_rms(const float* x, long ldx, const float* w, float* y, long ldy, int rows, int d, float eps,
@@ -1106,20 +1129,20 @@ __global__ void r_rope_kernel(float* x, long ldrow, long ldhead, int heads, int 
   r_pdl_trigger();
   const int r = blockIdx.x;
   const float2* c = cs + (long)posrow[r] * half;
-  for (int e = threadIdx.x; e < heads * half; e += blockDim.x) {
-    const int h = e / half, i = e % half;
-    float* p = x + (long)r * ldrow + (long)h * ldhead + off + 2 * i;
-    const float x0 = p[0], x1 = p[1];
-    const float co = c[i].x, si = c[i].y;
-    p[0] = x0 * co - x1 * si;
-    p[1] = x1 * co + x0 * si;
-  }
+  const int e = blockIdx.y * blockDim.x + threadIdx.x;  // a thread a pair
+  if (e >= heads * half) return;
+  const int h = e / half, i = e % half;
+  float* p = x + (long)r * ldrow + (long)h * ldhead + off + 2 * i;
+  const float x0 = p[0], x1 = p[1];
+  const float co = c[i].x, si = c[i].y;
+  p[0] = x0 * co - x1 * si;
+  p[1] = x1 * co + x0 * si;
 }
 
 extern "C" int memra_hy4r_rope(float* x, long ldrow, long ldhead, int rows, int heads, int off, int half,
                                const void* cs, const int* posrow, void* stream) {
   if (rows == 0) return 0;
-  r_launch(r_rope_kernel, rows, 128, 0, (cudaStream_t)stream, x, ldrow, ldhead, heads, off, half, (const float2*)cs, posrow);
+  r_launch(r_rope_kernel, dim3(rows, (heads * half + 127) / 128), 128, 0, (cudaStream_t)stream, x, ldrow, ldhead, heads, off, half, (const float2*)cs, posrow);
   return r_rc();
 }
 
@@ -1162,12 +1185,20 @@ __global__ void __launch_bounds__(HC_T / HC_SPLIT) r_hc_dots_kernel(const float*
   const int r = blockIdx.x, j = blockIdx.y;
   const int t = blockIdx.z * (HC_T / HC_SPLIT) + threadIdx.x;
   const float* flat = s + (long)r * width;
+  const float* f = j == 0 ? flat : fn + (long)(j - 1) * width;
+  const int cnt = t < width ? (width - t + HC_T - 1) / HC_T : 0;
   float d = 0.0f;
-  if (j == 0) {
-    for (int i = t; i < width; i += HC_T) d += flat[i] * flat[i];
-  } else {
-    const float* f = fn + (long)(j - 1) * width;
-    for (int i = t; i < width; i += HC_T) d += flat[i] * f[i];
+  float a[RL_U], b[RL_U];
+  for (int c0 = 0; c0 < cnt; c0 += RL_U) {
+#pragma unroll
+    for (int u = 0; u < RL_U; u++) {
+      const int i = min(t + (c0 + u) * HC_T, width - 1);
+      a[u] = flat[i];
+      b[u] = f[i];
+    }
+#pragma unroll
+    for (int u = 0; u < RL_U; u++)
+      if (c0 + u < cnt) d += a[u] * b[u];
   }
   parts[((long)r * (fns + 1) + j) * HC_T + t] = d;
 }
@@ -1186,8 +1217,13 @@ __global__ void __launch_bounds__(HC_T) r_hc_mix_kernel(const float* s, const fl
   const int width = nstream * h;
   const float* flat = s + (long)r * width;
   // r_block_sum's tree for every reduction at once
-  for (int j = 0; j <= fns; j++) {
-    const float v = r_warp_sum(parts[((long)r * (fns + 1) + j) * HC_T + threadIdx.x]);
+  float pv[17];
+#pragma unroll
+  for (int j = 0; j < 17; j++) pv[j] = parts[((long)r * (fns + 1) + min(j, fns)) * HC_T + threadIdx.x];
+#pragma unroll
+  for (int j = 0; j < 17; j++) {
+    if (j > fns) break;
+    const float v = r_warp_sum(pv[j]);
     if (lane == 0) red[j][warp] = v;
   }
   __syncthreads();
@@ -1208,10 +1244,25 @@ __global__ void __launch_bounds__(HC_T) r_hc_mix_kernel(const float* s, const fl
     if (post) post[r * nstream + j] = mag * (1.0f / (1.0f + expf(-(mix[nstream + j] * scale[1] + base[nstream + j])))) + eps;
   }
   __syncthreads();
-  for (int d = threadIdx.x; d < h; d += blockDim.x) {
-    float v = 0.0f;
-    for (int j = 0; j < nstream; j++) v += pre[j] * flat[(long)j * h + d];
-    x[(long)r * h + d] = v;
+  // the streams' values of 4 outputs as independent loads, then each output's chain in stream order
+  const int cnt = (int)threadIdx.x < h ? (h - (int)threadIdx.x + HC_T - 1) / HC_T : 0;
+  float fv[4][8];
+  for (int c0 = 0; c0 < cnt; c0 += 4) {
+#pragma unroll
+    for (int u = 0; u < 4; u++) {
+      const int d = min((int)threadIdx.x + (c0 + u) * HC_T, h - 1);
+#pragma unroll
+      for (int j = 0; j < 8; j++) fv[u][j] = flat[(long)min(j, nstream - 1) * h + d];
+    }
+#pragma unroll
+    for (int u = 0; u < 4; u++) {
+      if (c0 + u >= cnt) break;
+      float v = 0.0f;
+#pragma unroll
+      for (int j = 0; j < 8; j++)
+        if (j < nstream) v += pre[j] * fv[u][j];
+      x[(long)r * h + threadIdx.x + (c0 + u) * HC_T] = v;
+    }
   }
 }
 
@@ -1481,6 +1532,26 @@ __global__ void r_router_w_kernel(const float* scores, int e, const int* picks, 
   const int r = blockIdx.x * blockDim.x + threadIdx.x;
   if (r >= rows) return;
   float z = 0.0f;
+  if (k <= 16) {
+    // the picks, then their scores, as independent loads; the same sum in pick order
+    int p[16];
+    float sv[16];
+#pragma unroll
+    for (int i = 0; i < 16; i++) p[i] = picks[r * k + min(i, k - 1)];
+#pragma unroll
+    for (int i = 0; i < 16; i++) sv[i] = scores[(long)r * e + p[i]];
+#pragma unroll
+    for (int i = 0; i < 16; i++)
+      if (i < k) z += sv[i];
+#pragma unroll
+    for (int i = 0; i < 16; i++) {
+      if (i >= k) break;
+      float v = sv[i];
+      if (normalize) v = v / (z + 1e-20f);
+      w[r * k + i] = v * scaling;
+    }
+    return;
+  }
   for (int i = 0; i < k; i++) z += scores[(long)r * e + picks[r * k + i]];
   for (int i = 0; i < k; i++) {
     float v = scores[(long)r * e + picks[r * k + i]];
@@ -1598,6 +1669,27 @@ __global__ void r_moe_combine_kernel(const float* y, int d, const int* rowmap, c
   r_pdl_wait();
   r_pdl_trigger();
   const int t = blockIdx.x;
+  if (k <= 16) {
+    // the slots' rows and weights once, then an output's k values as independent loads and the
+    // same chain in slot order
+    long ro[16];
+    float ws[16], yv[16];
+#pragma unroll
+    for (int s = 0; s < 16; s++) {
+      ro[s] = (long)rowmap[t * k + min(s, k - 1)] * d;
+      ws[s] = w[t * k + min(s, k - 1)];
+    }
+    for (int c = threadIdx.x; c < d; c += blockDim.x) {
+#pragma unroll
+      for (int s = 0; s < 16; s++) yv[s] = y[ro[s] + c];
+      float acc = 0.0f;
+#pragma unroll
+      for (int s = 0; s < 16; s++)
+        if (s < k) acc += ws[s] * yv[s];
+      out[(long)t * d + c] = acc;
+    }
+    return;
+  }
   for (int c = threadIdx.x; c < d; c += blockDim.x) {
     float acc = 0.0f;
     for (int s = 0; s < k; s++) acc += w[t * k + s] * y[(long)rowmap[t * k + s] * d + c];

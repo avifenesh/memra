@@ -57,6 +57,7 @@ L2.
 | 8: hyper-connection reductions as partials, tree in the mix | 14.46 [14.44-14.46] | 69.2 | 13.23 [13.22-13.25] | 75.3 | 107.1 | 298.2 |
 | 9: attention tiles prefetched, heads a block by SM count | 14.69 [14.69-14.71] | 67.9 | 13.81 [13.79-13.83] | 72.2 | 106.6 | 318.0 |
 | 10: a small-row stage's weight tile as one bulk copy | 16.53 [16.52-16.54] | 60.4 | 15.43 [15.40-15.46] | 64.6 | 107.1 | 319.5 |
+| 11: the per-row kernels' strided loads issued together | 16.79 [16.76-16.82] | 59.5 | 15.71 [15.66-15.72] | 63.5 | 107.4 | 318.1 |
 
 Greedy ids equal in every run of every arm (`ids_fnv1a`).
 
@@ -188,6 +189,18 @@ the banks distinct `memra_hy4r_tile` stores row r's 16-byte pieces XOR-swizzled 
 the prefill kernel reads the same layout). The bytes a product reads are the same, so no value
 moves: 3 of 3 tapes bit-equal. Decode step 67.9 -> 60.4 ms on `chat` (16.53 tokens/s), 72.2 ->
 64.6 ms on `long` (15.43); prefill unchanged.
+
+### 11. Per-row kernels: loads issued together (`receipts/s11-loads/`)
+
+With the GEMMs at the bus (the profile of step 10 with programmatic launch off: 50.3 ms a step
+for 11.5 GB, 229 GB/s), about 6 ms of a step was 1,443 small launches. In the per-row kernels a
+thread walked its strided elements one load after the other, each waiting for the last:
+`r_rms_kernel` 8.5 us for 4,096 values, the hyper-connection reductions and mix, the expert
+combine (16 slots x 16 outputs a thread), the router weights. Each thread now issues up to 16 of
+its loads together and then runs the same chain in the same order; RoPE takes a thread a pair.
+In the profile with programmatic launch on, the RMS norms went 2.56 -> 0.92 ms a step, the combine
+0.68 -> 0.23, the router weights 0.51 -> 0.10. Decode step 60.4 -> 59.5 ms on `chat`, 64.6 -> 63.5
+ms on `long`; 3 of 3 tapes bit-equal.
 
 Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct
