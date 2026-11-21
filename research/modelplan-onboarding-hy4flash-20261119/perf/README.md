@@ -39,7 +39,7 @@ the request's prefill and 63 decode calls; medians with the range of the three. 
 decodes as the checkpoint's `generation_config.json` says: sampled, temperature 0.9, no top-k
 or top-p cut, every run from seed 20261121, so two builds of the class draw the same ids
 (`ids_fnv1a`). Up to step 17 the reading ran on the argmax (`--greedy` now); those rows are
-marked greedy below and are not comparable with the sampled ones (a sampled step is about 0.5 to
+marked greedy below and are not comparable with the sampled ones (a sampled step is about 0.4 to
 0.9 ms longer). The correctness checks (`check3`, the checkpoint gate) are unchanged: forced
 and greedy tapes. Profiles:
 `nsys` over `--gen 24` (`chat`), the decode calls after the first two summarized by
@@ -56,6 +56,7 @@ L2.
 |---|---:|---:|---:|---:|---:|---:|
 | step 9 (87b68fd76c, this session's start) | 14.50 [14.50-14.52] | 68.8 | 13.67 [13.67-13.69] | 72.9 | 106.0 | 317.4 |
 | step 17 (abb019d9d2) | 17.33 [17.30-17.37] | 57.6 | 16.19 [16.13-16.20] | 61.5 | 105.8 | 389.4 |
+| step 18: prefill hyper-connection reductions over one read | 17.35 [17.29-17.35] | 57.5 | 16.20 [16.17-16.20] | 61.5 | 105.8 | 403.8 |
 
 `receipts/sampled-step9-step17/`: both builds run the same runner and draw the same ids. On `chat`
 the first sampled token is the end token (as the argmax was), so its 63 calls decode past the
@@ -318,6 +319,14 @@ order) is unchanged; a decode call keeps `r_attn_kernel`.
 heads a block -> 8.4 ms with all the heads a block and a warp a head -> 6.8 ms with two heads a
 warp -> 5.4 ms with four; the 33.5 MB of outputs equal byte for byte in each. `long`'s prefill
 319.6 -> 388.3 tokens/s; decode unchanged. 3 of 3 tapes bit-equal.
+
+### 18. Prefill hyper-connection reductions over one read (`receipts/s18-hc-prefill/`, sampled)
+
+A hyper-connection's nine reductions of a row ran as nine sets of blocks, each reading the row's
+16,384 values again: fine for a decode call's one row, 1.2 GB of reads a launch for a 2,104-row
+prefill. With 16 rows and up `r_hc_dots_all_kernel` runs every reduction of a row in the block
+that reads its values once; a (row, reduction, thread) partial is the same chain. `long`'s
+prefill 389.4 -> 403.8 tokens/s (sampled reading); decode unchanged. 3 of 3 tapes bit-equal.
 
 Tried and dropped (kernels kept bit-equal, so only their speed decided): a persistent small-row
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct

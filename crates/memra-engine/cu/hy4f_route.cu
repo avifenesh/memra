@@ -1221,6 +1221,44 @@ __global__ void __launch_bounds__(HC_T / HC_SPLIT) r_hc_dots_kernel(const float*
   parts[((long)r * (fns + 1) + j) * HC_T + t] = d;
 }
 
+// A prefill call: one block a (row, quarter of the 256 partials) runs every reduction of the row
+// over one read of its values (before, each reduction read them again). A (row, reduction,
+// thread) partial is the same chain.
+__global__ void __launch_bounds__(HC_T / HC_SPLIT) r_hc_dots_all_kernel(const float* s, const float* fn, int width,
+                                                                       int fns, float* parts) {
+  r_pdl_trigger();
+  r_pdl_wait();
+  const int r = blockIdx.x;
+  const int t = blockIdx.z * (HC_T / HC_SPLIT) + threadIdx.x;
+  const float* flat = s + (long)r * width;
+  const int cnt = t < width ? (width - t + HC_T - 1) / HC_T : 0;
+  float d[17];
+#pragma unroll
+  for (int j = 0; j < 17; j++) d[j] = 0.0f;
+  float a[RL_U], b[RL_U];
+  for (int c0 = 0; c0 < cnt; c0 += RL_U) {
+#pragma unroll
+    for (int u = 0; u < RL_U; u++) a[u] = flat[min(t + (c0 + u) * HC_T, width - 1)];
+#pragma unroll
+    for (int u = 0; u < RL_U; u++)
+      if (c0 + u < cnt) d[0] += a[u] * a[u];
+#pragma unroll
+    for (int j = 1; j < 17; j++) {
+      if (j <= fns) {
+        const float* f = fn + (long)(j - 1) * width;
+#pragma unroll
+        for (int u = 0; u < RL_U; u++) b[u] = f[min(t + (c0 + u) * HC_T, width - 1)];
+#pragma unroll
+        for (int u = 0; u < RL_U; u++)
+          if (c0 + u < cnt) d[j] += a[u] * b[u];
+      }
+    }
+  }
+#pragma unroll
+  for (int j = 0; j < 17; j++)
+    if (j <= fns) parts[((long)r * (fns + 1) + j) * HC_T + t] = d[j];
+}
+
 // `xn` (when set): the row's RMS norm of x with weight `nw` in the same block, `r_rms_kernel`'s
 // chain (a thread's elements in order, the block tree) over the values just written.
 __global__ void __launch_bounds__(HC_T) r_hc_mix_kernel(const float* s, const float* parts, const float* base,
@@ -1312,7 +1350,10 @@ extern "C" int memra_hy4r_hc(const float* s, const float* fn, const float* base,
   if (rows == 0) return 0;
   if (nstream > 8 || fns > 16) return 45101;
   cudaStream_t st = (cudaStream_t)stream;
-  r_launch(r_hc_dots_kernel, dim3(rows, fns + 1, HC_SPLIT), HC_T / HC_SPLIT, 0, st, s, fn, nstream * h, fns, parts);
+  if (rows >= 16)
+    r_launch(r_hc_dots_all_kernel, dim3(rows, 1, HC_SPLIT), HC_T / HC_SPLIT, 0, st, s, fn, nstream * h, fns, parts);
+  else
+    r_launch(r_hc_dots_kernel, dim3(rows, fns + 1, HC_SPLIT), HC_T / HC_SPLIT, 0, st, s, fn, nstream * h, fns, parts);
   r_launch(r_hc_mix_kernel, rows, HC_T, 0, st, s, parts, base, scale, nstream, h, fns, mix_eps, eps, mag, post, x, nw,
            neps, xn);
   return r_rc();
