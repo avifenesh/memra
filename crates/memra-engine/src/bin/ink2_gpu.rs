@@ -16,6 +16,10 @@
 //!                            per-slot gate of a class that is not continuous)
 //!   --gen N                  greedy: the tape's prompt, then N - 1 decode calls on the argmax,
 //!                            scored against the tape's greedy ids; timed, launches counted
+//!   --eager                  no decode graph: every step eager (the graph's check arm)
+//!   --gen-digest             with --gen: an FNV digest of every step's logits row (untimed check)
+//!   --prompt-len N           with --gen: the prompt is the tape's ids repeated to N tokens (a
+//!                            context length for timing; no oracle ids past the tape's)
 //!   --chunkings A,B --limit N   the first N tape ids as calls of A rows and again as calls of B
 //!                            rows (1 = one token per call); the logits and every slot's output
 //!                            must be bit-identical
@@ -56,6 +60,12 @@ struct Args {
     force_router: bool,
     force_moe_in: bool,
     gen_tokens: usize,
+    /// --prompt-len N: the gen prompt is the tape's tokens repeated to N (a context length for timing)
+    prompt_len: usize,
+    /// --gen-digest: fold every decode step's logits row into a digest (an untimed check)
+    gen_digest: bool,
+    /// --eager: no decode graph (the check arm of a graph's bits)
+    eager: bool,
     chunkings: Option<(usize, usize)>,
     limit: usize,
     red: RedArms,
@@ -89,6 +99,9 @@ fn parse() -> Result<Args, String> {
             "--force-router" => a.force_router = true,
             "--force-moe-in" => a.force_moe_in = true,
             "--gen" => a.gen_tokens = num(val()?)?,
+            "--prompt-len" => a.prompt_len = num(val()?)?,
+            "--gen-digest" => a.gen_digest = true,
+            "--eager" => a.eager = true,
             "--limit" => a.limit = num(val()?)?,
             "--chunk" => a.chunk = num(val()?)?,
             "--context" => a.context = num(val()?)?,
@@ -331,7 +344,22 @@ struct Compare<'a> {
     route_rows: Vec<(usize, usize)>,
     min_margin: f64,
     error: Option<String>,
+    /// FNV-1a 64 of the bits of every tap row a slot emitted, in call order: two runs of the
+    /// same program on the same tokens and chunking hold equal digests
+    digest_attn: Vec<u64>,
+    digest_ffn: Vec<u64>,
 }
+
+fn fnv_fold(mut h: u64, data: &[f32]) -> u64 {
+    for v in data {
+        for b in v.to_bits().to_le_bytes() {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    h
+}
+const FNV0: u64 = 0xcbf2_9ce4_8422_2325;
 
 impl Compare<'_> {
     fn rows_of(&mut self, shard: &StShard, name: &str, slot: u32, data: &[f32], into: usize) {
@@ -367,6 +395,15 @@ impl Observer for Compare<'_> {
     }
     fn floats(&mut self, slot: u32, tap: Tap, data: &[f32]) {
         let tape = self.tape;
+        match tap {
+            Tap::ResidAttn => {
+                self.digest_attn[slot as usize] = fnv_fold(self.digest_attn[slot as usize], data)
+            }
+            Tap::ResidFfn => {
+                self.digest_ffn[slot as usize] = fnv_fold(self.digest_ffn[slot as usize], data)
+            }
+            _ => {}
+        }
         match tap {
             Tap::ResidAttn => self.rows_of(&tape.resid_attn, "resid_attn", slot, data, 0),
             Tap::ResidFfn => self.rows_of(&tape.resid_ffn, "resid_ffn", slot, data, 1),
@@ -761,7 +798,11 @@ fn run() -> Result<(), String> {
         None => None,
     };
     let tape = tape.as_ref().ok_or("a mode needs --tape DIR")?;
-    let need = tape.all_ids.len().max(tape.prompt + a.gen_tokens) + 8;
+    let need = tape
+        .all_ids
+        .len()
+        .max(tape.prompt.max(a.prompt_len) + a.gen_tokens)
+        + 8;
     let context = if a.context > 0 {
         a.context
     } else {
@@ -863,7 +904,10 @@ fn run() -> Result<(), String> {
             route_rows: vec![(0, 0); nslots],
             min_margin: f64::INFINITY,
             error: None,
+            digest_attn: vec![FNV0; nslots],
+            digest_ffn: vec![FNV0; nslots],
         };
+        let mut digest_logits = FNV0;
         let lt = tensor(&tape.logits, "logits_post", "F32")?;
         if lt.shape[1] != vocab {
             return Err(format!(
@@ -884,6 +928,7 @@ fn run() -> Result<(), String> {
         for (s0, s1) in calls {
             cmp.base = s0;
             let out = route.forward(&tape.all_ids[s0..s1], Head::All, Some(&mut cmp))?;
+            digest_logits = fnv_fold(digest_logits, &out.logits);
             for (row, got) in out.logits.chunks_exact(vocab).enumerate() {
                 let pos = s0 + row;
                 if let Some(&tr) = tape.logit_rows.get(&pos) {
@@ -926,6 +971,13 @@ fn run() -> Result<(), String> {
             .route_rows
             .iter()
             .fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+        let hex = |d: &[u64]| d.iter().map(|v| format!("{v:016x}")).collect::<Vec<_>>();
+        receipt["digest"] = serde_json::json!({
+            "chunk": a.chunk,
+            "resid_attn_per_slot": hex(&cmp.digest_attn),
+            "resid_ffn_per_slot": hex(&cmp.digest_ffn),
+            "logits": format!("{digest_logits:016x}"),
+        });
         receipt["score"] = serde_json::json!({
             "positions": total,
             "seconds": t0.elapsed().as_secs_f64(),
@@ -969,8 +1021,16 @@ fn run() -> Result<(), String> {
 
     if a.gen_tokens > 0 {
         route.reset()?;
+        route.graph_off = a.eager;
         route.dev.sync()?;
-        let prompt = &tape.all_ids[..tape.prompt];
+        let prompt: Vec<u32> = if a.prompt_len > 0 {
+            (0..a.prompt_len)
+                .map(|i| tape.all_ids[i % tape.all_ids.len()])
+                .collect()
+        } else {
+            tape.all_ids[..tape.prompt].to_vec()
+        };
+        let prompt = &prompt[..];
         let tp = Instant::now();
         let mut next = *route
             .call(prompt, Head::LastArgmax, None)?
@@ -980,13 +1040,21 @@ fn run() -> Result<(), String> {
         let prefill_s = tp.elapsed().as_secs_f64();
         let mut ids = vec![next];
         let mut steps = Vec::new();
+        let mut digest = FNV0;
+        if a.gen_digest {
+            digest = fnv_fold(digest, &route.last_logits()?);
+        }
         route.dev.reset_counters();
+        route.graph_steps.set(0);
         let before = clocks();
         for _ in 1..a.gen_tokens {
             let ts = Instant::now();
             next = route.forward(&[next], Head::LastArgmax, None)?.argmax[0];
             steps.push(ts.elapsed().as_secs_f64());
             ids.push(next);
+            if a.gen_digest {
+                digest = fnv_fold(digest, &route.last_logits()?);
+            }
         }
         let after = clocks();
         let n = steps.len().max(1) as f64;
@@ -1005,6 +1073,8 @@ fn run() -> Result<(), String> {
             "prefill_s": prefill_s,
             "prefill_tok_s": prompt.len() as f64 / prefill_s,
             "decode_calls": steps.len(),
+            "logits_digest": if a.gen_digest { serde_json::json!(format!("{digest:016x}")) } else { serde_json::Value::Null },
+            "graph_steps": route.graph_steps.get(),
             "decode_step_p50_ms": sorted.get(sorted.len() / 2).map(|s| s * 1e3),
             "decode_tok_s": n / steps.iter().sum::<f64>().max(1e-12),
             "launches_per_token": route.dev.launches.get() as f64 / n,
