@@ -1,0 +1,12 @@
+17:02:10 jobs 4 pending 4
+Loading weights:   0%|          | 0/645 [00:00<?, ?it/s]Loading weights:   8%|▊         | 49/645 [00:00<00:02, 243.34it/s]Loading weights:  42%|████▏     | 271/645 [00:00<00:00, 1063.09it/s]Loading weights:  72%|███████▏  | 467/645 [00:00<00:00, 1384.57it/s]Loading weights:  98%|█████████▊| 633/645 [00:00<00:00, 1479.11it/s]Loading weights: 100%|██████████| 645/645 [00:00<00:00, 810.69it/s] 
+/home/avifenesh/.cache/inkling2mini/klsens/klh.py:209: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:208.)
+  d = {"w": torch.from_numpy(np.ascontiguousarray(st.raw(p + nm + "_weight"))).to(DEV),
+17:02:53 harness loaded in 42.0s, gpu mem 16.84 GiB
+[transformers] `causal_conv1d_fn` is falling back to its reference PyTorch implementation because `causal_conv1d` is not installed. This is correct but much slower; install `causal_conv1d` for the optimized kernel.
+17:04:06 ARM rawdoc actq:all+kv:all+mx2nv:mx+w:unembed+w:attn:L0,L1,L2,L3,L4,L5,L18,L19,L2 n=15360 flips 0.5013 KL mean 1.962e-02 p50 5.58e-03 p99 1.817e-01 max 1.467e+00 top1 0.95358 dNLL +1.02e-02 wall 73s
+17:05:20 ARM rawdoc actq:all+kv:all+mx2nv:mx+w:unembed+w:attn:all n=15360 flips 0.5621 KL mean 2.669e-02 p50 7.48e-03 p99 2.409e-01 max 3.036e+00 top1 0.94473 dNLL +1.50e-02 wall 74s
+17:06:33 ARM chatwrap actq:all+kv:all+mx2nv:mx+w:unembed+w:attn:L0,L1,L2,L3,L4,L5,L18,L19,L2 n=15360 flips 0.5109 KL mean 2.622e-02 p50 5.78e-03 p99 2.883e-01 max 2.833e+00 top1 0.94701 dNLL +4.48e-04 wall 73s
+17:07:50 ARM chatwrap actq:all+kv:all+mx2nv:mx+w:unembed+w:attn:all n=15360 flips 0.5692 KL mean 3.435e-02 p50 7.87e-03 p99 4.024e-01 max 3.876e+00 top1 0.93542 dNLL +1.62e-03 wall 77s
+ALL_DONE
+RUN_EXIT

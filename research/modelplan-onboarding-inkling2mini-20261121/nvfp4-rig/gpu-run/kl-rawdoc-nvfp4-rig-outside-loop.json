@@ -1,0 +1,46 @@
+{
+ "set": "rawdoc",
+ "class": "nvfp4-rig-outside-loop",
+ "hidden": "/home/avifenesh/.cache/inkling2mini/wt-mint/research/modelplan-onboarding-inkling2mini-20261121/nvfp4-rig/gpu-run/hidden-rawdoc-nvfp4-rig-outside-loop.safetensors",
+ "sequences": 15,
+ "stats": {
+  "kl_all": {
+   "mean": 0.021139581998872174,
+   "ci95": [
+    0.017715221860258094,
+    0.024978045050101358
+   ],
+   "n_tok": 15360,
+   "n_seq": 15
+  },
+  "kl_real": {
+   "mean": 0.02115244215640319,
+   "ci95": [
+    0.017622252125549118,
+    0.02486140934362573
+   ],
+   "n_tok": 15345,
+   "n_seq": 15,
+   "p50": 0.005950310733169317,
+   "p99": 0.19930134773254382,
+   "max": 2.618393898010254
+  },
+  "kl_model": {
+   "mean": 0.0,
+   "ci95": null,
+   "n_tok": 0,
+   "n_seq": 0
+  },
+  "dnll_real": {
+   "mean": 0.009703334487981583,
+   "ci95": [
+    0.004341644131266481,
+    0.015774066755622353
+   ],
+   "n_tok": 15345,
+   "n_seq": 15
+  },
+  "top1_real": 0.9505376344086022,
+  "nll_ref_real": 1.2434545024827046
+ }
+}

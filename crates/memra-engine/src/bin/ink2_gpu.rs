@@ -1,12 +1,23 @@
 //! Inkling 2 Mini on one GPU (`memra_engine::inkling2_gpu`): the checkpoint runner of the native
 //! sm_120a route. Weights resident as stored, a carried cache per slot.
 //!
-//! usage: ink2-gpu CKPT_DIR [--class declared|float] MODE... [--red ARM]... [--chunk N]
-//!                 [--context N] [--out FILE] [--device D]
+//! usage: ink2-gpu CKPT_DIR [--class nvfp4-rig|shipped|float] [--overlay DIR] MODE... [--red ARM]...
+//!                 [--chunk N] [--context N] [--out FILE] [--device D]
 //!        ink2-gpu CKPT_DIR --numeric-class [--class ...]
-//!   --class declared|float   the plan: every layer on its declared activation quantizer (the
-//!                            family's default class), or every layer on float expert inputs (the
+//!   --class nvfp4-rig        the family's default class: every layer on its declared activation
+//!                            quantizer, the minted NVFP4 overlay (MXFP8 banks, unembed, attention
+//!                            of every layer) and e4m3 KV on every slot
+//!   --class nvfp4-rig-outside-loop   a measurement class: nvfp4-rig with the loop core's
+//!                            attention read as stored (BF16)
+//!   --class shipped          (alias: declared) the checkpoint as stored, the declared quantizers,
+//!                            an f32 KV cache
+//!   --class float            every layer on float expert inputs, the checkpoint as stored (the
 //!                            bring-up class, which has an independent oracle)
+//!   --overlay DIR            the nvfp4-rig overlay (default: CKPT_DIR's sibling <name>.nvfp4-rig)
+//!   --corpus FILE --hidden-out OUT   a JSON list of {name, ids} sequences (the KL study's corpus
+//!                            format), each run alone as prefill calls of --chunk rows; OUT gets
+//!                            the final-norm hidden rows of every position, one F32 tensor
+//!                            [positions, hidden] per sequence name (safetensors)
 //!   --tape DIR               score against an oracle tape directory (tokens, per-slot residuals,
 //!                            router picks, logits, greedy ids): the tape's prefill, then one
 //!                            teacher-forced decode call per later position
@@ -61,6 +72,9 @@ fn main() {
 struct Args {
     ckpt: PathBuf,
     class: String,
+    overlay: Option<PathBuf>,
+    hidden_out: Option<PathBuf>,
+    corpus: Option<PathBuf>,
     tape: Option<PathBuf>,
     force_router: bool,
     force_moe_in: bool,
@@ -74,7 +88,6 @@ struct Args {
     /// --prec SPEC: precision arms (group=f32|f32c|f64,...; see Prec)
     prec: String,
     /// --corpus FILE --arms SPEC;SPEC: teacher-forced KL / NLL of each arm against all-f64
-    corpus: Option<PathBuf>,
     arms: String,
     chunkings: Option<(usize, usize)>,
     limit: usize,
@@ -95,7 +108,7 @@ fn parse() -> Result<Args, String> {
     let mut it = std::env::args().skip(1);
     let mut a = Args {
         ckpt: PathBuf::from(it.next().ok_or("usage: ink2-gpu CKPT_DIR ...")?),
-        class: "declared".into(),
+        class: "nvfp4-rig".into(),
         chunk: 512,
         ..Args::default()
     };
@@ -104,6 +117,9 @@ fn parse() -> Result<Args, String> {
         let num = |v: String| v.parse::<usize>().map_err(|e| format!("{e}"));
         match arg.as_str() {
             "--class" => a.class = val()?,
+            "--overlay" => a.overlay = Some(PathBuf::from(val()?)),
+            "--hidden-out" => a.hidden_out = Some(PathBuf::from(val()?)),
+            "--corpus" => a.corpus = Some(PathBuf::from(val()?)),
             "--tape" => a.tape = Some(PathBuf::from(val()?)),
             "--score" => a.score = true,
             "--force-router" => a.force_router = true,
@@ -113,7 +129,6 @@ fn parse() -> Result<Args, String> {
             "--gen-digest" => a.gen_digest = true,
             "--eager" => a.eager = true,
             "--prec" => a.prec = val()?,
-            "--corpus" => a.corpus = Some(PathBuf::from(val()?)),
             "--arms" => a.arms = val()?,
             "--limit" => a.limit = num(val()?)?,
             "--chunk" => a.chunk = num(val()?)?,
@@ -147,8 +162,19 @@ fn parse() -> Result<Args, String> {
             _ => return Err(format!("unknown argument {arg}")),
         }
     }
-    if a.class != "declared" && a.class != "float" {
-        return Err("--class is declared or float".into());
+    if a.class == "declared" {
+        a.class = "shipped".into();
+    }
+    if !matches!(
+        a.class.as_str(),
+        "nvfp4-rig" | "nvfp4-rig-outside-loop" | "shipped" | "float"
+    ) {
+        return Err(
+            "--class is nvfp4-rig, nvfp4-rig-outside-loop, shipped (declared) or float".into(),
+        );
+    }
+    if a.overlay.is_some() && !a.class.starts_with("nvfp4-rig") {
+        return Err("--overlay belongs to the nvfp4-rig classes".into());
     }
     if a.red.commit_on_error && a.inject_failure.is_none() {
         return Err("--red commit-on-error is an arm of --inject-failure".into());
@@ -176,7 +202,13 @@ fn compile(
         .compile_plan(&config)
         .map_err(|e| format!("plan: {e:?}"))?;
     let program = default.inkling2.as_ref().ok_or("not an inkling2 plan")?;
-    let plan = if a.class == "float" {
+    let plan = if a.class == "nvfp4-rig" {
+        memra_gguf::model_packs::inkling2::nvfp4_rig_plan(&config)
+            .map_err(|e| format!("plan: {e:?}"))?
+    } else if a.class == "nvfp4-rig-outside-loop" {
+        memra_gguf::model_packs::inkling2::nvfp4_rig_outside_loop_plan(&config)
+            .map_err(|e| format!("plan: {e:?}"))?
+    } else if a.class == "float" {
         let modes = vec![ExpertActivationMode::Float; program.numerics.experts.len()];
         memra_gguf::model_packs::inkling2::plan_with_expert_activation(&config, &modes)
             .map_err(|e| format!("plan: {e:?}"))?
@@ -922,6 +954,102 @@ impl Observer for Digest {
     }
 }
 
+/// Collects the final hidden rows of a call.
+struct Hidden {
+    rows: Vec<f32>,
+}
+
+impl Observer for Hidden {
+    fn wants(&self, tap: Tap) -> bool {
+        tap == Tap::FinalHidden
+    }
+    fn floats(&mut self, _slot: u32, _tap: Tap, data: &[f32]) {
+        self.rows.extend_from_slice(data);
+    }
+    fn picks(&mut self, _slot: u32, _ids: &[u32]) {}
+    fn forced(&mut self, _slot: u32, _rows: usize) -> Option<(Vec<u32>, Vec<f32>)> {
+        None
+    }
+}
+
+/// `--corpus FILE --hidden-out OUT`: every sequence alone, its final hidden rows saved.
+fn run_corpus(
+    a: &Args,
+    corpus: &Path,
+    pack: &'static memra_gguf::model_packs::ModelPack,
+    config: &ModelConfig,
+    plan: &ModelPlan,
+    class: &str,
+) -> Result<(), String> {
+    let out = a
+        .hidden_out
+        .as_ref()
+        .ok_or("--corpus needs --hidden-out FILE")?;
+    let text = std::fs::read_to_string(corpus).map_err(|e| format!("{}: {e}", corpus.display()))?;
+    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("corpus: {e}"))?;
+    let mut seqs = Vec::new();
+    for s in v.as_array().ok_or("the corpus is a JSON list")? {
+        let name = s["name"]
+            .as_str()
+            .ok_or("a corpus entry has a name")?
+            .to_string();
+        let ids: Vec<u32> = s["ids"]
+            .as_array()
+            .ok_or("a corpus entry has ids")?
+            .iter()
+            .map(|x| x.as_u64().map(|v| v as u32).ok_or("an id is an integer"))
+            .collect::<Result<_, _>>()?;
+        seqs.push((name, ids));
+    }
+    let longest = seqs
+        .iter()
+        .map(|s| s.1.len())
+        .max()
+        .ok_or("an empty corpus")?;
+    let context = if a.context > 0 {
+        a.context
+    } else {
+        (longest + 8).next_power_of_two().max(2048)
+    };
+    let ck = Ckpt::open_with_overlay(&a.ckpt, pack, config, plan, a.overlay.as_deref())?;
+    let dev = Dev::new(a.device)?;
+    let mut route = Route::load(dev, &ck, plan, context, a.chunk)?;
+    eprintln!("ink2-gpu: class {class}; {}", route.account.describe());
+    let hidden = plan.hidden_size as usize;
+    let t0 = Instant::now();
+    let mut tensors = BTreeMap::new();
+    for (name, ids) in &seqs {
+        route.reset()?;
+        let mut h = Hidden { rows: Vec::new() };
+        for chunk in ids.chunks(a.chunk) {
+            route.forward(chunk, Head::None, Some(&mut h))?;
+        }
+        if h.rows.len() != ids.len() * hidden {
+            return Err(format!(
+                "{name}: {} hidden values for {} positions",
+                h.rows.len(),
+                ids.len()
+            ));
+        }
+        let bytes: Vec<u8> = h.rows.iter().flat_map(|v| v.to_le_bytes()).collect();
+        tensors.insert(name.clone(), ("F32", vec![ids.len(), hidden], bytes));
+    }
+    let meta = BTreeMap::from([
+        ("class".to_string(), class.to_string()),
+        ("chunk".to_string(), a.chunk.to_string()),
+        ("corpus".to_string(), corpus.display().to_string()),
+    ]);
+    memra_gguf::model_packs::inkling2::nvfp4_rig::write_safetensors(out, &tensors, &meta)?;
+    eprintln!(
+        "ink2-gpu: corpus {} sequences, {} positions in {:.1}s -> {}",
+        seqs.len(),
+        seqs.iter().map(|s| s.1.len()).sum::<usize>(),
+        t0.elapsed().as_secs_f64(),
+        out.display()
+    );
+    Ok(())
+}
+
 fn run() -> Result<(), String> {
     let a = parse()?;
     let (plan, pack, config) = compile(&a)?;
@@ -931,7 +1059,7 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
     if a.contract_check {
-        let ck = Ckpt::open(&a.ckpt, pack, &config, &plan)?;
+        let ck = Ckpt::open_with_overlay(&a.ckpt, pack, &config, &plan, a.overlay.as_deref())?;
         // CPU only: the binding of the real census passed above; now its red arms
         let (lines, fails) = ck.contract_red_arms(&config)?;
         for line in &lines {
@@ -952,6 +1080,11 @@ fn run() -> Result<(), String> {
             Err(format!("{fails} contract red arm(s) accepted"))
         };
     }
+    if let Some(corpus) = &a.corpus
+        && a.arms.is_empty()
+    {
+        return run_corpus(&a, corpus, pack, &config, &plan, &class);
+    }
     let tape = match &a.tape {
         Some(dir) => Some(Tape::open(dir)?),
         None => None,
@@ -967,13 +1100,15 @@ fn run() -> Result<(), String> {
     } else {
         need.next_power_of_two().max(2048)
     };
-    let ck = Ckpt::open(&a.ckpt, pack, &config, &plan)?;
+    let ck = Ckpt::open_with_overlay(&a.ckpt, pack, &config, &plan, a.overlay.as_deref())?;
     let t_load = Instant::now();
     let dev = Dev::new(a.device)?;
     let mut route = Route::load(dev, &ck, &plan, context, a.chunk)?;
     route.set_red(a.red)?;
     route.dev.prec.set(Prec::parse(&a.prec)?);
-    if let Some(cp) = &a.corpus {
+    if let Some(cp) = &a.corpus
+        && !a.arms.is_empty()
+    {
         return corpus_run(&mut route, cp, &a.arms, a.out.as_ref());
     }
     eprintln!("ink2-gpu: {}", route.account.describe());
