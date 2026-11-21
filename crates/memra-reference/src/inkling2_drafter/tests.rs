@@ -197,36 +197,73 @@ fn tiny_drafter_red_arms_fail_the_oracle() {
 /// anchor or mask row input, or another attention scale is refused, not run as the shipped one.
 #[test]
 fn plan_fields_the_executor_does_not_run_are_refused() {
-    use memra_gguf::model_plan::{DraftRowInput, RnnChunk, RnnInput};
+    use memra_gguf::model_plan::{
+        DraftRnnHeadPlan, DraftRowInput, DrafterPlan, DsparkConfidence, DsparkMarkov, DsparkPlan,
+        DsparkRows, RnnChunk, RnnInput,
+    };
     let plan = checkpoint_plan();
     assert!(DraftGeometry::of_plan(&plan).is_ok());
-    let mutate = |f: &dyn Fn(&mut memra_gguf::model_plan::Inkling2DrafterPlan)| {
+    let mutate = |f: &dyn Fn(&mut DsparkPlan)| {
         let mut p = plan.clone();
-        f(&mut p.inkling2.as_mut().unwrap().drafter);
+        let Some(DrafterPlan::Dspark(d)) = p.drafter.as_mut() else {
+            unreachable!()
+        };
+        f(d);
         DraftGeometry::of_plan(&p)
     };
+    fn rnn(d: &mut DsparkPlan) -> &mut DraftRnnHeadPlan {
+        let DsparkMarkov::RnnHidden(r) = &mut d.markov else {
+            unreachable!()
+        };
+        r
+    }
+    fn rows(d: &mut DsparkPlan) -> &mut memra_gguf::model_plan::DraftBlockPlan {
+        let DsparkRows::Block(b) = &mut d.rows else {
+            unreachable!()
+        };
+        b
+    }
+    fn layers(d: &mut DsparkPlan) -> &mut memra_gguf::model_plan::DsparkContextLayers {
+        let memra_gguf::model_plan::DsparkLayers::Context(c) = &mut d.layers else {
+            unreachable!()
+        };
+        c
+    }
     assert!(
-        mutate(&|d| d.rnn.inputs.swap(0, 1))
+        mutate(&|d| rnn(d).inputs.swap(0, 1))
             .unwrap_err()
             .contains("inputs")
     );
-    assert!(mutate(&|d| d.rnn.inputs[3] = RnnInput::RowHidden).is_err());
+    assert!(mutate(&|d| rnn(d).inputs[3] = RnnInput::RowHidden).is_err());
     assert!(
-        mutate(&|d| d.rnn.chunks = [RnnChunk::Candidate, RnnChunk::Gate, RnnChunk::Out])
+        mutate(&|d| rnn(d).chunks = [RnnChunk::Candidate, RnnChunk::Gate, RnnChunk::Out])
             .unwrap_err()
             .contains("chunks")
     );
     assert!(
-        mutate(&|d| d.block.anchor = DraftRowInput::LearnedMask)
+        mutate(&|d| rows(d).anchor = DraftRowInput::LearnedMask)
             .unwrap_err()
             .contains("anchor")
     );
-    assert!(mutate(&|d| d.block.mask = DraftRowInput::TrunkEmbeddingNormed).is_err());
+    assert!(mutate(&|d| rows(d).mask = DraftRowInput::TrunkEmbeddingNormed).is_err());
     assert!(
-        mutate(&|d| d.attention.scale = 1.0)
+        mutate(&|d| layers(d).attention.scale = 1.0)
             .unwrap_err()
             .contains("scale")
     );
+    // the DeepSeek-V4 variants are another program: a bigram head, a confidence head and
+    // noise-token rows each refuse
+    assert!(
+        mutate(&|d| d.markov = DsparkMarkov::Bigram)
+            .unwrap_err()
+            .contains("variants")
+    );
+    assert!(
+        mutate(&|d| d.confidence = Some(DsparkConfidence::HiddenAndMarkovEmbedding))
+            .unwrap_err()
+            .contains("variants")
+    );
+    assert!(mutate(&|d| d.rows = DsparkRows::NoiseToken).is_err());
 }
 
 fn checkpoint_plan() -> memra_gguf::model_plan::ModelPlan {

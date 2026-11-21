@@ -426,21 +426,7 @@ fn crosscheck(
     g: &refd::DraftGeometry,
     prompt: &[u32],
 ) -> Result<(), String> {
-    let taps = route
-        .plan()
-        .inkling2
-        .as_ref()
-        .ok_or("inkling2")?
-        .drafter
-        .taps
-        .clone();
-    let slots: Vec<u32> = taps
-        .iter()
-        .filter_map(|t| match t {
-            memra_gguf::model_plan::DrafterTap::SlotInput { slot } => Some(*slot),
-            _ => None,
-        })
-        .collect();
+    let slots = tap_slots(route, SpecArms::default())?;
     route.set_capture(&slots)?;
     route.reset()?;
     drafter.reset();
