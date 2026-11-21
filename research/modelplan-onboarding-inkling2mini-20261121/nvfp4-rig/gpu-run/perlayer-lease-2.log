@@ -1,0 +1,15 @@
+gpulock: 5090 leased as claude-code-20261121T181659-3312740 for 32m
+19:52:23 jobs 48 pending 6
+Loading weights:   0%|          | 0/645 [00:00<?, ?it/s]Loading weights:   8%|▊         | 49/645 [00:00<00:02, 207.36it/s]Loading weights:  48%|████▊     | 308/645 [00:00<00:00, 1096.72it/s]Loading weights:  74%|███████▎  | 475/645 [00:00<00:00, 1285.24it/s]Loading weights:  99%|█████████▊| 636/645 [00:00<00:00, 1368.60it/s]Loading weights: 100%|██████████| 645/645 [00:00<00:00, 899.38it/s] 
+/home/avifenesh/.cache/inkling2mini/klsens/klh.py:209: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:208.)
+  d = {"w": torch.from_numpy(np.ascontiguousarray(st.raw(p + nm + "_weight"))).to(DEV),
+19:52:54 harness loaded in 31.7s, gpu mem 16.84 GiB
+[transformers] `causal_conv1d_fn` is falling back to its reference PyTorch implementation because `causal_conv1d` is not installed. This is correct but much slower; install `causal_conv1d` for the optimized kernel.
+19:53:29 ARM chatwrap w:attn:L18 n=15360 flips 0.0221 KL mean 1.230e-03 p50 1.11e-04 p99 1.390e-02 max 1.172e+00 top1 0.99160 dNLL -1.35e-03 wall 35s
+19:54:02 ARM chatwrap w:attn:L19 n=15360 flips 0.0095 KL mean 5.062e-04 p50 3.00e-05 p99 5.898e-03 max 5.213e-01 top1 0.99499 dNLL +1.10e-03 wall 33s
+19:54:36 ARM chatwrap w:attn:L20 n=15360 flips 0.0076 KL mean 5.467e-04 p50 4.37e-05 p99 4.177e-03 max 2.743e+00 top1 0.99447 dNLL -5.29e-04 wall 34s
+19:55:10 ARM chatwrap w:attn:L21 n=15360 flips 0.0059 KL mean 5.070e-04 p50 6.42e-05 p99 4.435e-03 max 1.045e+00 top1 0.99499 dNLL +6.24e-04 wall 34s
+19:55:45 ARM chatwrap w:attn:L22 n=15360 flips 0.0037 KL mean 5.413e-04 p50 4.21e-05 p99 3.849e-03 max 2.497e+00 top1 0.99596 dNLL -3.89e-05 wall 35s
+19:56:19 ARM chatwrap w:attn:L23 n=15360 flips 0.0022 KL mean 5.261e-04 p50 9.14e-05 p99 6.229e-03 max 3.952e-02 top1 0.99303 dNLL +2.63e-03 wall 35s
+ALL_DONE
+RUN_EXIT
