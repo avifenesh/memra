@@ -570,7 +570,8 @@ fn generate_inner(
             };
             let o = route.forward(&[anchor], head, None)?;
             let cap = route.captured().ok_or("capture is off")?;
-            drafter.commit(&route.dev, cap, chunk, 0, 1)?;
+            // held, and committed with the next proposal's batch: a plain step stays a plain step
+            drafter.stage(&route.dev, cap, chunk, 0, 1)?;
             anchor = match sampling {
                 Sampling::Greedy => o.argmax[0],
                 Sampling::Sample { temperature, .. } => {
