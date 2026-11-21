@@ -165,6 +165,9 @@ mod ffi {
     }
 }
 
+/// Picks a proposal from its softcapped logits: `(step, logits) -> token`.
+pub type Chooser<'a> = dyn FnMut(usize, &[f32]) -> u32 + 'a;
+
 fn p<T>(s: &CudaSlice<T>, st: &CudaStream) -> u64 {
     let (ptr, _g) = s.device_ptr(st);
     ptr
@@ -824,7 +827,7 @@ impl DraftGpu {
         shared: Shared,
         anchor: u32,
         k: usize,
-        mut choose: Option<&mut dyn FnMut(usize, &[f32]) -> u32>,
+        mut choose: Option<&mut Chooser<'_>>,
     ) -> Result<Vec<u32>, String> {
         let g = self.g.clone();
         if k == 0 || k > g.rows - 1 {
