@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# b23d: c=1 throughput reading: chat (36) and long (2104) prefill + 64 greedy decode calls, 1 warm-up + N runs
+# b23d: c=1 throughput reading: chat (36) and long (2104) prefill + 64 decode calls sampled as generation_config.json says (seeded), 1 warm-up + N runs
 # usage: bench.sh TAG [N]   (BIN= overrides the binary)
 set -u
 tag=$1; n=${2:-3}

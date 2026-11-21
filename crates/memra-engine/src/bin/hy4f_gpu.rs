@@ -4,7 +4,8 @@
 //! greedy runner with a throughput reading.
 //!
 //! usage: hy4f-gpu CKPT_DIR --request FILE [--tape DIR] [--force-selections TAPE_DIR]
-//!                 [--red ARM]... [--bench N] [--gen N] [--prefill-chunk N] [--device D]
+//!                 [--red ARM]... [--bench N] [--seed S] [--greedy] [--gen N] [--prefill-chunk N]
+//!                 [--device D]
 //!        hy4f-gpu --numeric-class   print the class (the checkpoint gate asks)
 //!   --request FILE           `{"name", "token_ids", "decode_from"}`: the prefill call
 //!                            `token_ids[..decode_from]`, then one teacher-forced decode call per
@@ -21,7 +22,13 @@
 //!   --gen N                  greedy: prefill `token_ids[..decode_from]`, then N decode calls on
 //!                            the argmax; print the ids
 //!   --bench N                the throughput reading: one warm-up, then N runs of a prefill of
-//!                            `token_ids[..decode_from]` and 64 greedy decode calls, timed
+//!                            `token_ids[..decode_from]` and 64 decode calls, timed. The calls
+//!                            decode as the checkpoint's `generation_config.json` says (sampled
+//!                            at its temperature, top-k and top-p), every run from `--seed`, so
+//!                            the runs and two builds of the same class draw the same ids; the
+//!                            reading runs its 64 calls whether or not an end token is drawn
+//!   --seed S                 the sampler's seed for `--bench` (default 20261121)
+//!   --greedy                 `--bench` on the argmax instead
 //!   --prefill-chunk N        split the prefill into calls of at most N tokens (the serve
 //!                            route's chunked prefill); the tape then records one call a chunk
 
@@ -52,6 +59,8 @@ struct Args {
     red_names: Vec<String>,
     gen_tokens: usize,
     bench: usize,
+    seed: u64,
+    greedy: bool,
     device: usize,
     /// prefill calls of at most this many tokens (0: one call)
     chunk: usize,
@@ -74,6 +83,8 @@ fn parse() -> Result<Args, String> {
         red_names: Vec::new(),
         gen_tokens: 0,
         bench: 0,
+        seed: 20_261_121,
+        greedy: false,
         device: 0,
         chunk: 0,
     };
@@ -86,6 +97,8 @@ fn parse() -> Result<Args, String> {
             "--force-selections" => a.force = Some(PathBuf::from(val()?)),
             "--gen" => a.gen_tokens = val()?.parse().map_err(|e| format!("--gen: {e}"))?,
             "--bench" => a.bench = val()?.parse().map_err(|e| format!("--bench: {e}"))?,
+            "--seed" => a.seed = val()?.parse().map_err(|e| format!("--seed: {e}"))?,
+            "--greedy" => a.greedy = true,
             "--device" => a.device = val()?.parse().map_err(|e| format!("--device: {e}"))?,
             "--prefill-chunk" => {
                 a.chunk = val()?
@@ -382,7 +395,102 @@ fn prefill_calls(n: usize, chunk: usize) -> Vec<(usize, usize)> {
         .collect()
 }
 
+/// The checkpoint's decoding for the throughput reading: `generation_config.json`'s sampling
+/// (temperature, top-k, top-p) on a seeded generator, or the argmax when it does not sample.
+struct Sampler {
+    sample: bool,
+    temperature: f64,
+    top_k: usize,
+    top_p: f64,
+    eos: Option<u32>,
+    state: u64,
+}
+
+impl Sampler {
+    fn open(ckpt: &Path, greedy: bool) -> Result<Self, String> {
+        let path = ckpt.join("generation_config.json");
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let v: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        let temperature = v["temperature"].as_f64().unwrap_or(1.0);
+        if temperature.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+            return Err(format!("{}: temperature {temperature}", path.display()));
+        }
+        Ok(Self {
+            sample: !greedy && v["do_sample"].as_bool().unwrap_or(false),
+            temperature,
+            top_k: v["top_k"]
+                .as_i64()
+                .filter(|k| *k > 0)
+                .map_or(0, |k| k as usize),
+            top_p: v["top_p"].as_f64().unwrap_or(1.0),
+            eos: v["eos_token_id"]
+                .as_u64()
+                .and_then(|t| u32::try_from(t).ok()),
+            state: 0,
+        })
+    }
+
+    /// splitmix64, a uniform in [0, 1)
+    fn uniform(&mut self) -> f64 {
+        self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^= z >> 31;
+        (z >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    fn pick(&mut self, logits: &[f32]) -> u32 {
+        if !self.sample {
+            return argmax(logits) as u32;
+        }
+        let top = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max) as f64;
+        // a token 60 nats under the best weighs under 1e-26 of it: below what an f64 sum of the
+        // vocabulary can hold, so it is left out
+        let mut cand: Vec<(u32, f64)> = logits
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &l)| {
+                let z = (l as f64 - top) / self.temperature;
+                (z > -60.0).then(|| (i as u32, z.exp()))
+            })
+            .collect();
+        if (self.top_k > 0 && self.top_k < cand.len()) || self.top_p < 1.0 {
+            cand.sort_by(|x, y| y.1.total_cmp(&x.1).then(x.0.cmp(&y.0)));
+            if self.top_k > 0 {
+                cand.truncate(self.top_k);
+            }
+            if self.top_p < 1.0 {
+                let total: f64 = cand.iter().map(|c| c.1).sum();
+                let mut acc = 0.0;
+                let mut keep = cand.len();
+                for (n, c) in cand.iter().enumerate() {
+                    acc += c.1;
+                    if acc >= self.top_p * total {
+                        keep = n + 1;
+                        break;
+                    }
+                }
+                cand.truncate(keep);
+            }
+        }
+        let total: f64 = cand.iter().map(|c| c.1).sum();
+        let u = self.uniform() * total;
+        let mut acc = 0.0;
+        for c in &cand {
+            acc += c.1;
+            if acc > u {
+                return c.0;
+            }
+        }
+        cand.last().map_or(0, |c| c.0)
+    }
+}
+
 fn bench(route: &mut Route, a: &Args, vocab: usize, load_s: f64) -> Result<(), String> {
+    let mut sampler = Sampler::open(&a.ckpt, a.greedy)?;
     let prompt = &a.tokens[..a.decode_from];
     let decode = 64usize;
     let mut rows = Vec::new();
@@ -396,14 +504,15 @@ fn bench(route: &mut Route, a: &Args, vocab: usize, load_s: f64) -> Result<(), S
         }
         route.dev.sync()?;
         let prefill_s = tp.elapsed().as_secs_f64();
-        let mut next = argmax(&logits[..vocab]) as u32;
+        sampler.state = a.seed;
+        let mut next = sampler.pick(&logits[..vocab]);
         let mut ids = vec![next];
         let mut steps = Vec::with_capacity(decode);
         let td = Instant::now();
         for _ in 1..decode {
             let ts = Instant::now();
             let logits = route.call(&[next], false, None, None)?;
-            next = argmax(&logits) as u32;
+            next = sampler.pick(&logits);
             ids.push(next);
             steps.push(ts.elapsed().as_secs_f64());
         }
@@ -422,6 +531,12 @@ fn bench(route: &mut Route, a: &Args, vocab: usize, load_s: f64) -> Result<(), S
             "decode_tok_s": steps.len() as f64 / decode_s,
             "decode_step_p50_ms": sorted[sorted.len() / 2] * 1e3,
             "decode_step_p99_ms": sorted[(sorted.len() * 99 / 100).min(sorted.len() - 1)] * 1e3,
+            "decoding": if sampler.sample { "sampled" } else { "greedy" },
+            "temperature": sampler.temperature,
+            "top_k": sampler.top_k,
+            "top_p": sampler.top_p,
+            "seed": a.seed,
+            "first_end_token": sampler.eos.and_then(|e| ids.iter().position(|t| *t == e)),
             "ids_fnv1a": fnv1a(&ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")),
             "first_ids": ids.iter().take(16).collect::<Vec<_>>(),
             "steps_ms": steps.iter().map(|s| (s * 1e5).round() / 100.0).collect::<Vec<_>>(),

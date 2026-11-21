@@ -35,7 +35,13 @@ costs 51.7 ms: **the c=1 decode roofline is 19.4 tokens/s** (19.2 at 2.1k contex
 
 One GB10 (`sm_121a`), the same build flags for every arm, the GPU otherwise idle (`memwait.sh`:
 no other compute process, 108 GiB free). `hy4f-gpu --bench 3`: a warm-up, then three timed runs of
-the request's prefill and 63 greedy decode calls; medians with the range of the three. Profiles:
+the request's prefill and 63 decode calls; medians with the range of the three. The reading
+decodes as the checkpoint's `generation_config.json` says: sampled, temperature 0.9, no top-k
+or top-p cut, every run from seed 20261121, so two builds of the class draw the same ids
+(`ids_fnv1a`). Up to step 17 the reading ran on the argmax (`--greedy` now); those rows are
+marked greedy below and are not comparable with the sampled ones (a sampled step is about 0.5 to
+0.9 ms longer). The correctness checks (`check3`, the checkpoint gate) are unchanged: forced
+and greedy tapes. Profiles:
 `nsys` over `--gen 24` (`chat`), the decode calls after the first two summarized by
 `tools/trace_steps.py` (per kernel ms a step), `tools/gemm_grid.py` (per GEMM shape) and
 `tools/gaps.py` (GPU idle between kernels). `kbench/` builds the route's `.cu` alone and checks
@@ -43,6 +49,19 @@ every small-row kernel bit for bit against the tiled kernel it replaces, then ti
 L2.
 
 ## Steps
+
+### Sampled readings (the checkpoint's generation settings)
+
+| build | chat decode tok/s | step p50 ms | long (2.1k) decode tok/s | step p50 ms | chat prefill tok/s | long prefill tok/s |
+|---|---:|---:|---:|---:|---:|---:|
+| step 9 (87b68fd76c, this session's start) | 14.50 [14.50-14.52] | 68.8 | 13.67 [13.67-13.69] | 72.9 | 106.0 | 317.4 |
+| step 17 (abb019d9d2) | 17.33 [17.30-17.37] | 57.6 | 16.19 [16.13-16.20] | 61.5 | 105.8 | 389.4 |
+
+`receipts/sampled-step9-step17/`: both builds run the same runner and draw the same ids. On `chat`
+the first sampled token is the end token (as the argmax was), so its 63 calls decode past the
+end; on `long` the end token comes at call 33. The reading times the calls either way.
+
+### Greedy readings, steps 0 to 17 (argmax decode; kept as measured)
 
 | step | chat decode tok/s | step p50 ms | long (2.1k) decode tok/s | step p50 ms | chat prefill tok/s | long prefill tok/s |
 |---|---:|---:|---:|---:|---:|---:|
@@ -65,7 +84,8 @@ L2.
 | 16: the router's scores, picks, weights and one-row plan in one block | 17.51 [17.50-17.54] | 57.1 | 16.33 [16.33-16.35] | 61.0 | 106.1 | 319.6 |
 | 17: prefill attention: a block a (query, chunk) scores every head, four heads a warp | 17.47 [17.45-17.49] | 57.1 | 16.32 [16.29-16.35] | 61.0 | 105.3 | 388.3 |
 
-Greedy ids equal in every run of every arm (`ids_fnv1a`).
+Greedy ids equal in every run of every arm (`ids_fnv1a`). Each step's section below quotes its
+greedy reading.
 
 ## Gate
 
