@@ -401,7 +401,7 @@ impl RouteContract {
         .implemented(PolicySurface::FaultOwnership, "std::panic::catch_unwind(")
         .implemented(PolicySurface::ShutdownOwnership, "closing = true;")
         // a sequence's measured cost against what the driver reports free, at every admission
-        .implemented(PolicySurface::MemoryCost, "up.book.need(")
+        .implemented(PolicySurface::MemoryCost, "cls.book.need(")
         // the bundle must name this checkpoint and plan; the route runs the plan's own program
         .implemented(
             PolicySurface::RewriteQualification,
