@@ -1,0 +1,5 @@
+memory: device 23.511 GiB, driver free at open 23.051, weights 17.594, full KV 0.125 (2048 positions x 65728 B), rings 0.625, conv 0.007, work 0.228, declared work 0.063, driver free before KV 4.489 and after load 4.364, max context 73331, drafter 0.852 (context K/V 0.047)
+loaded: route 17.594 GiB weights, drafter 0.852 GiB; class inkling2-gpu-f32-stream/DeclaredActivationQuant
+bench chat-email: plain 20.61 ms, verify [20.844841, 31.347487, 37.604483, 42.986084, 46.593846, 51.883286, 58.325485, 64.62902299999999] ms, draft [2.819146, 3.139961, 3.4611389999999997, 3.812841, 4.247183, 4.708038999999999, 5.1337839999999995] ms, commit 0.460 ms
+bench code-rust-fix: plain 21.87 ms, verify [21.742722999999998, 33.094058000000004, 40.085744, 46.685434, 50.050352, 55.630498, 64.295965, 71.232241] ms, draft [2.947618, 3.257766, 3.699324, 4.055016, 4.553953, 5.007573000000001, 5.449624999999999] ms, commit 0.460 ms
+bench agent-ci: plain 29.07 ms, verify [28.733745000000003, 43.834141, 50.878891, 61.581268, 66.292432, 73.922856, 84.258357, 95.156693] ms, draft [3.2759, 3.611107, 3.931723, 4.420255, 5.008495, 5.501909, 5.9923709999999994] ms, commit 0.438 ms
