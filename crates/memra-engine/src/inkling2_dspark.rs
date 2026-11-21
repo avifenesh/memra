@@ -18,6 +18,32 @@ use crate::inkling2_gpu::Dev;
 mod ffi {
     use core::ffi::c_void;
     unsafe extern "C" {
+        pub fn memra_ink2d_gemv_nvfp4(
+            x: *const f32,
+            ldx: i64,
+            codes: *const c_void,
+            scales: *const c_void,
+            ldc: i64,
+            lds: i64,
+            t: f32,
+            bias: *const f32,
+            y: *mut f32,
+            ldy: i64,
+            m: i32,
+            n: i32,
+            k: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_ink2d_markov_in_nvfp4(
+            state: *const f32,
+            codes: *const c_void,
+            scales: *const c_void,
+            t: f32,
+            prev: *const u32,
+            out: *mut f32,
+            rank: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_ink2d_gemv(
             x: *const f32,
             ldx: i64,
@@ -186,9 +212,119 @@ pub struct Shared {
     pub embed: u64,
     pub embed_norm: u64,
     pub head: u64,
+    /// The output projection in NVFP4 (codes, scales, tensor scale), when the drafter reads that
+    /// instead of the BF16 one (a class's shared NVFP4 unembed).
+    pub head_nv: Option<(u64, u64, f32)>,
+}
+
+/// A weight a GEMV reads: BF16 rows, f32 rows, or NVFP4 rows (codes, e4m3 scales, tensor scale),
+/// each with its row stride in elements (BF16, f32) or bytes (codes, scales); a stride of 0 means
+/// the input width.
+#[derive(Clone, Copy, Debug)]
+pub enum WRef {
+    Bf16 {
+        w: u64,
+        ldw: usize,
+    },
+    F32 {
+        w: u64,
+        ldw: usize,
+    },
+    Nv {
+        codes: u64,
+        scales: u64,
+        ldc: usize,
+        lds: usize,
+        t: f32,
+    },
+}
+
+/// A drafter matrix `[n, k]` on the device: BF16 as stored, or NVFP4 from a drafter overlay.
+pub enum Mat {
+    Bf16(CudaSlice<u8>, usize),
+    Nv(CudaSlice<u8>, CudaSlice<u8>, f32, usize),
+}
+
+impl Mat {
+    /// The weight from input column `col` on (a multiple of 16 for NVFP4).
+    fn at(&self, st: &CudaStream, col: usize) -> WRef {
+        match self {
+            Mat::Bf16(w, k) => WRef::Bf16 {
+                w: p(w, st) + (col * 2) as u64,
+                ldw: *k,
+            },
+            Mat::Nv(c, s, t, k) => WRef::Nv {
+                codes: p(c, st) + (col / 2) as u64,
+                scales: p(s, st) + (col / 16) as u64,
+                ldc: k / 2,
+                lds: k / 16,
+                t: *t,
+            },
+        }
+    }
+
+    pub fn is_nvfp4(&self) -> bool {
+        matches!(self, Mat::Nv(..))
+    }
+}
+
+/// NVFP4 values of drafter tensors (a drafter overlay): `(codes [n, k / 2], scales [n, k / 16],
+/// tensor scale)` by name, or `None` for a tensor kept in BF16.
+/// One NVFP4 tensor on the host: codes, e4m3 scale bytes, tensor scale.
+pub type NvHost = (Vec<u8>, Vec<u8>, f32);
+
+pub trait NvSource {
+    fn nv(&self, name: &str, n: usize, k: usize) -> Result<Option<NvHost>, String>;
+}
+
+/// A drafter overlay file: `NAME` U8 codes, `NAME_scale` U8 (e4m3 bytes), `NAME_scale_2` F32,
+/// for the names in `only` (every name the file has when empty).
+pub struct NvOverlay<'a> {
+    pub st: &'a memra_gguf::safetensors::StModel,
+    pub only: Vec<String>,
+}
+
+impl NvSource for NvOverlay<'_> {
+    fn nv(&self, name: &str, n: usize, k: usize) -> Result<Option<NvHost>, String> {
+        if !self.only.is_empty() && !self.only.iter().any(|o| o == name) {
+            return Ok(None);
+        }
+        let Some((ci, cb)) = self.st.raw(name) else {
+            return Ok(None);
+        };
+        let (_, sb) = self
+            .st
+            .raw(&format!("{name}_scale"))
+            .ok_or_else(|| format!("{name}_scale missing from the drafter overlay"))?;
+        let (_, tb) = self
+            .st
+            .raw(&format!("{name}_scale_2"))
+            .ok_or_else(|| format!("{name}_scale_2 missing from the drafter overlay"))?;
+        if ci.dtype != "U8" || cb.len() != n * k / 2 || sb.len() != n * k / 16 || tb.len() != 4 {
+            return Err(format!("{name}: an overlay tensor of the wrong shape"));
+        }
+        let t = f32::from_le_bytes([tb[0], tb[1], tb[2], tb[3]]);
+        Ok(Some((cb.to_vec(), sb.to_vec(), t)))
+    }
 }
 
 impl Shared {
+    fn head_ref(&self, k: usize) -> WRef {
+        match self.head_nv {
+            Some((codes, scales, t)) => WRef::Nv {
+                codes,
+                scales,
+                ldc: k / 2,
+                lds: k / 16,
+                t,
+            },
+            None => WRef::Bf16 {
+                w: self.head,
+                ldw: k,
+            },
+        }
+    }
+
     pub fn of_route(route: &crate::inkling2_gpu::Route) -> Self {
         let st = route.dev.stream();
         let (embed, norm, head) = route.shared_weights();
@@ -196,6 +332,7 @@ impl Shared {
             embed: p(embed, st),
             embed_norm: p(norm, st),
             head: p(head, st),
+            head_nv: None,
         }
     }
 }
@@ -210,18 +347,18 @@ struct LayerW {
     in_norm: CudaSlice<f32>,
     post_norm: CudaSlice<f32>,
     fuse_norm: CudaSlice<f32>,
-    q: CudaSlice<u8>,
-    k: CudaSlice<u8>,
-    v: CudaSlice<u8>,
-    o: CudaSlice<u8>,
-    k_ctx: CudaSlice<u8>,
-    v_ctx: CudaSlice<u8>,
+    q: Mat,
+    k: Mat,
+    v: Mat,
+    o: Mat,
+    k_ctx: Mat,
+    v_ctx: Mat,
     q_norm: CudaSlice<f32>,
     k_norm: CudaSlice<f32>,
     k_ctx_norm: CudaSlice<f32>,
-    gate: CudaSlice<u8>,
-    up: CudaSlice<u8>,
-    down: CudaSlice<u8>,
+    gate: Mat,
+    up: Mat,
+    down: Mat,
     kc: CudaSlice<f32>,
     vc: CudaSlice<f32>,
     cap: usize,
@@ -239,7 +376,11 @@ pub struct DraftGpu {
     alpha: CudaSlice<f32>,
     head_norm: CudaSlice<f32>,
     w1: CudaSlice<u8>,
-    rnn_w: CudaSlice<u8>,
+    rnn_w: Mat,
+    /// `markov_w1` in NVFP4, when the overlay has it (gathered a row a step).
+    w1_nv: Option<(CudaSlice<u8>, CudaSlice<u8>, f32)>,
+    /// The fold in NVFP4, when the overlay has it.
+    fold_nv: Option<Mat>,
     rnn_b: CudaSlice<f32>,
     fold: CudaSlice<f32>,
     fold_b: CudaSlice<f32>,
@@ -303,6 +444,21 @@ impl DraftGpu {
         context: usize,
         chunk: usize,
     ) -> Result<Self, String> {
+        Self::load_nv(dev, g, src, None, shared, context, chunk)
+    }
+
+    /// [`DraftGpu::load`] with NVFP4 weights for the tensors `nv` has (a drafter overlay): the
+    /// layers' projections, `markov_head.rnn_proj.weight`, `markov_head.markov_w1.weight` and the
+    /// fold (`fold`, `[vocab, rank]`). Every other tensor is the checkpoint's BF16.
+    pub fn load_nv(
+        dev: &Dev,
+        g: DraftGeometry,
+        src: &dyn DraftSource,
+        nv: Option<&dyn NvSource>,
+        shared: Shared,
+        context: usize,
+        chunk: usize,
+    ) -> Result<Self, String> {
         let before = dev.allocated.get();
         let st = dev.stream().clone();
         let (h, d, kvw, qw, f, r, rows) = (
@@ -341,6 +497,18 @@ impl DraftGpu {
         let f32d = |name: String, shape: &[usize]| -> Result<CudaSlice<f32>, String> {
             dev.up(&src.tensor(&name, shape)?)
         };
+        let nvt = |name: &str, n: usize, k: usize| -> Result<Option<NvHost>, String> {
+            match nv {
+                Some(s) => s.nv(name, n, k),
+                None => Ok(None),
+            }
+        };
+        let mat = |name: String, n: usize, k: usize| -> Result<Mat, String> {
+            Ok(match nvt(&name, n, k)? {
+                Some((c, s, t)) => Mat::Nv(dev.up(&c)?, dev.up(&s)?, t, k),
+                None => Mat::Bf16(b16(name, &[n, k])?, k),
+            })
+        };
         let mut layers = Vec::new();
         for i in 0..g.layers {
             let n = |s: &str| format!("layers.{i}.{s}");
@@ -356,18 +524,18 @@ impl DraftGpu {
                 in_norm: f32d(n("input_layernorm.weight"), &[h])?,
                 post_norm: f32d(n("post_attention_layernorm.weight"), &[h])?,
                 fuse_norm: f32d(n("dflare_norm.weight"), &[h])?,
-                q: b16(n("self_attn.q_proj.weight"), &[qw, h])?,
-                k: b16(n("self_attn.k_proj.weight"), &[kvw, h])?,
-                v: b16(n("self_attn.v_proj.weight"), &[kvw, h])?,
-                o: b16(n("self_attn.o_proj.weight"), &[h, qw])?,
-                k_ctx: b16(n("self_attn.k_proj_ctx.weight"), &[kvw, h])?,
-                v_ctx: b16(n("self_attn.v_proj_ctx.weight"), &[kvw, h])?,
+                q: mat(n("self_attn.q_proj.weight"), qw, h)?,
+                k: mat(n("self_attn.k_proj.weight"), kvw, h)?,
+                v: mat(n("self_attn.v_proj.weight"), kvw, h)?,
+                o: mat(n("self_attn.o_proj.weight"), h, qw)?,
+                k_ctx: mat(n("self_attn.k_proj_ctx.weight"), kvw, h)?,
+                v_ctx: mat(n("self_attn.v_proj_ctx.weight"), kvw, h)?,
                 q_norm: f32d(n("self_attn.q_norm.weight"), &[d])?,
                 k_norm: f32d(n("self_attn.k_norm.weight"), &[d])?,
                 k_ctx_norm: f32d(n("self_attn.k_norm_ctx.weight"), &[d])?,
-                gate: b16(n("mlp.gate_proj.weight"), &[f, h])?,
-                up: b16(n("mlp.up_proj.weight"), &[f, h])?,
-                down: b16(n("mlp.down_proj.weight"), &[h, f])?,
+                gate: mat(n("mlp.gate_proj.weight"), f, h)?,
+                up: mat(n("mlp.up_proj.weight"), f, h)?,
+                down: mat(n("mlp.down_proj.weight"), h, f)?,
                 kc: dev.zeros(cap * kvw)?,
                 vc: dev.zeros(cap * kvw)?,
                 cap,
@@ -417,7 +585,15 @@ impl DraftGpu {
             alpha: dev.up(&alpha)?,
             head_norm: f32d(m("dflare_norm.weight"), &[h])?,
             w1: b16(m("markov_w1.weight"), &[g.padded_vocab, r])?,
-            rnn_w: b16(m("rnn_proj.weight"), &[3 * r, 2 * r + 2 * h])?,
+            rnn_w: mat(m("rnn_proj.weight"), 3 * r, 2 * r + 2 * h)?,
+            w1_nv: match nvt(&m("markov_w1.weight"), g.padded_vocab, r)? {
+                Some((c, s, t)) => Some((dev.up(&c)?, dev.up(&s)?, t)),
+                None => None,
+            },
+            fold_nv: match nvt("fold", g.vocab, r)? {
+                Some((c, s, t)) => Some(Mat::Nv(dev.up(&c)?, dev.up(&s)?, t, r)),
+                None => None,
+            },
             rnn_b: f32d(m("rnn_proj.bias"), &[3 * r])?,
             fold,
             fold_b,
@@ -525,8 +701,7 @@ impl DraftGpu {
         dev: &Dev,
         x: u64,
         ldx: usize,
-        w: u64,
-        ldw: usize,
+        w: WRef,
         bias: u64,
         y: u64,
         ldy: usize,
@@ -534,22 +709,65 @@ impl DraftGpu {
         n: usize,
         k: usize,
     ) -> Result<(), String> {
-        dev.launched("memra_ink2d_gemv", unsafe {
-            ffi::memra_ink2d_gemv(
-                x as *const f32,
-                ldx as i64,
-                w as *const _,
-                ldw as i64,
-                bias as *const f32,
-                y as *mut f32,
-                ldy as i64,
-                m as i32,
-                n as i32,
-                k as i32,
-                0,
-                dev.sp(),
-            )
-        })
+        match w {
+            WRef::Bf16 { w, ldw } => dev.launched("memra_ink2d_gemv", unsafe {
+                ffi::memra_ink2d_gemv(
+                    x as *const f32,
+                    ldx as i64,
+                    w as *const _,
+                    ldw as i64,
+                    bias as *const f32,
+                    y as *mut f32,
+                    ldy as i64,
+                    m as i32,
+                    n as i32,
+                    k as i32,
+                    0,
+                    dev.sp(),
+                )
+            }),
+            WRef::F32 { w, ldw } => {
+                if m != 1 {
+                    return Err("an f32-weight GEMV of more than one row".into());
+                }
+                dev.launched("memra_ink2d_gemv_f32w", unsafe {
+                    ffi::memra_ink2d_gemv_f32w(
+                        x as *const f32,
+                        w as *const f32,
+                        ldw as i64,
+                        bias as *const f32,
+                        y as *mut f32,
+                        n as i32,
+                        k as i32,
+                        dev.sp(),
+                    )
+                })
+            }
+            WRef::Nv {
+                codes,
+                scales,
+                ldc,
+                lds,
+                t,
+            } => dev.launched("memra_ink2d_gemv_nvfp4", unsafe {
+                ffi::memra_ink2d_gemv_nvfp4(
+                    x as *const f32,
+                    ldx as i64,
+                    codes as *const _,
+                    scales as *const _,
+                    ldc as i64,
+                    lds as i64,
+                    t,
+                    bias as *const f32,
+                    y as *mut f32,
+                    ldy as i64,
+                    m as i32,
+                    n as i32,
+                    k as i32,
+                    dev.sp(),
+                )
+            }),
+        }
     }
 
     /// Commit `rows` positions (`len..len + rows`) from rows `row0..` of a tap buffer laid out
@@ -599,8 +817,7 @@ impl DraftGpu {
                 dev,
                 ctx,
                 h,
-                p(&lw.k_ctx, &st),
-                h,
+                lw.k_ctx.at(&st, 0),
                 0,
                 pm(&mut self.kt, &st),
                 kvw,
@@ -612,8 +829,7 @@ impl DraftGpu {
                 dev,
                 ctx,
                 h,
-                p(&lw.v_ctx, &st),
-                h,
+                lw.v_ctx.at(&st, 0),
                 0,
                 pm(&mut self.vt, &st),
                 kvw,
@@ -722,8 +938,7 @@ impl DraftGpu {
                 dev,
                 xn,
                 h,
-                p(&lw.q, &st),
-                h,
+                lw.q.at(&st, 0),
                 0,
                 pm(&mut self.q, &st),
                 qw,
@@ -735,8 +950,7 @@ impl DraftGpu {
                 dev,
                 xn,
                 h,
-                p(&lw.k, &st),
-                h,
+                lw.k.at(&st, 0),
                 0,
                 pm(&mut self.kb, &st),
                 kvw,
@@ -748,8 +962,7 @@ impl DraftGpu {
                 dev,
                 xn,
                 h,
-                p(&lw.v, &st),
-                h,
+                lw.v.at(&st, 0),
                 0,
                 pm(&mut self.vb, &st),
                 kvw,
@@ -806,8 +1019,7 @@ impl DraftGpu {
                 dev,
                 p(&self.att, &st),
                 qw,
-                p(&lw.o, &st),
-                qw,
+                lw.o.at(&st, 0),
                 0,
                 pm(&mut self.o, &st),
                 h,
@@ -832,8 +1044,7 @@ impl DraftGpu {
                 dev,
                 xn,
                 h,
-                p(&lw.gate, &st),
-                h,
+                lw.gate.at(&st, 0),
                 0,
                 pm(&mut self.gt, &st),
                 f,
@@ -845,8 +1056,7 @@ impl DraftGpu {
                 dev,
                 xn,
                 h,
-                p(&lw.up, &st),
-                h,
+                lw.up.at(&st, 0),
                 0,
                 pm(&mut self.upb, &st),
                 f,
@@ -867,8 +1077,7 @@ impl DraftGpu {
                 dev,
                 p(&self.act, &st),
                 f,
-                p(&lw.down, &st),
-                f,
+                lw.down.at(&st, 0),
                 0,
                 pm(&mut self.dn, &st),
                 h,
@@ -918,15 +1127,13 @@ impl DraftGpu {
         self.block(dev, shared, anchor)?;
         let st = self.st.clone();
         let (h, r, vocab) = (g.hidden, g.rank, g.vocab);
-        let width = 2 * r + 2 * h;
         let rows1 = p(&self.hidden, &st) + (h * 4) as u64;
         // base logits of the k proposal rows: one pass over the output projection
         Self::gemv(
             dev,
             rows1,
             h,
-            shared.head,
-            h,
+            shared.head_ref(h),
             0,
             pm(&mut self.base, &st),
             vocab,
@@ -935,13 +1142,11 @@ impl DraftGpu {
             h,
         )?;
         // the projection of [row hidden] per row, and of [feature] plus the bias once
-        let rw = p(&self.rnn_w, &st);
         Self::gemv(
             dev,
             rows1,
             h,
-            rw + (2 * r * 2) as u64,
-            width,
+            self.rnn_w.at(&st, 2 * r),
             0,
             pm(&mut self.ctxr, &st),
             3 * r,
@@ -953,8 +1158,7 @@ impl DraftGpu {
             dev,
             p(&self.feature, &st),
             h,
-            rw + ((2 * r + h) * 2) as u64,
-            width,
+            self.rnn_w.at(&st, 2 * r + h),
             p(&self.rnn_b, &st),
             pm(&mut self.fctx, &st),
             3 * r,
@@ -966,22 +1170,35 @@ impl DraftGpu {
         dev.put(&zeros, &mut self.state)?;
         let mut out = Vec::with_capacity(k);
         for i in 0..k {
-            dev.launched("memra_ink2d_markov_in", unsafe {
-                ffi::memra_ink2d_markov_in(
-                    p(&self.state, &st) as *const f32,
-                    p(&self.w1, &st) as *const _,
-                    p(&self.prev, &st) as *const u32,
-                    pm(&mut self.minp, &st) as *mut f32,
-                    r as i32,
-                    dev.sp(),
-                )
-            })?;
+            match &self.w1_nv {
+                Some((c, s, t)) => dev.launched("memra_ink2d_markov_in_nvfp4", unsafe {
+                    ffi::memra_ink2d_markov_in_nvfp4(
+                        p(&self.state, &st) as *const f32,
+                        p(c, &st) as *const _,
+                        p(s, &st) as *const _,
+                        *t,
+                        p(&self.prev, &st) as *const u32,
+                        pm(&mut self.minp, &st) as *mut f32,
+                        r as i32,
+                        dev.sp(),
+                    )
+                })?,
+                None => dev.launched("memra_ink2d_markov_in", unsafe {
+                    ffi::memra_ink2d_markov_in(
+                        p(&self.state, &st) as *const f32,
+                        p(&self.w1, &st) as *const _,
+                        p(&self.prev, &st) as *const u32,
+                        pm(&mut self.minp, &st) as *mut f32,
+                        r as i32,
+                        dev.sp(),
+                    )
+                })?,
+            }
             Self::gemv(
                 dev,
                 p(&self.minp, &st),
                 2 * r,
-                rw,
-                width,
+                self.rnn_w.at(&st, 0),
                 0,
                 pm(&mut self.raw, &st),
                 3 * r,
@@ -1000,18 +1217,25 @@ impl DraftGpu {
                     dev.sp(),
                 )
             })?;
-            dev.launched("memra_ink2d_gemv_f32w", unsafe {
-                ffi::memra_ink2d_gemv_f32w(
-                    p(&self.latent, &st) as *const f32,
-                    p(&self.fold, &st) as *const f32,
-                    r as i64,
-                    p(&self.fold_b, &st) as *const f32,
-                    pm(&mut self.bias, &st) as *mut f32,
-                    vocab as i32,
-                    r as i32,
-                    dev.sp(),
-                )
-            })?;
+            let fold = match &self.fold_nv {
+                Some(m) => m.at(&st, 0),
+                None => WRef::F32 {
+                    w: p(&self.fold, &st),
+                    ldw: r,
+                },
+            };
+            Self::gemv(
+                dev,
+                p(&self.latent, &st),
+                r,
+                fold,
+                p(&self.fold_b, &st),
+                pm(&mut self.bias, &st),
+                vocab,
+                1,
+                vocab,
+                r,
+            )?;
             let logits_i = pm(&mut self.logits, &st) + (i * vocab * 4) as u64;
             let token_i = pm(&mut self.tokens, &st) + (i * 4) as u64;
             dev.launched("memra_ink2d_cap_pick", unsafe {
