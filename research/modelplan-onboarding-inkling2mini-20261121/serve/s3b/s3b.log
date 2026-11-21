@@ -1,0 +1,65 @@
+gpulock: 5090 leased as claude-code-20261121T223926-345670 for 40m
+d89cae8409724b25b8656724b18aad114364d55c77403f8cf445e49e8586ec5e  ink2-gpu
+d8bf24f23117a59119d3befcf1f15fe2dbf5a150c5d40e89c0ad99ce241becb4  memra-server
+dd2149c380da326585b5c46a84368e97ad8c78cc3e2480d2936c786e86526424  memra
+b948b9f57a71623ae79f418a46b9961d0c8edc4e
+loadavg 9.56 11.53 15.14 5/6196 751833
+samples=8 clamp_hits=0 P5, 562 MHz, 810 MHz, 26.98 W, 175.00 W, 0x0000000000000400
+OK
+CLAMPCHECK_RC=0
+MARK batch-declared 22:54:54.254822692
+RC batch-declared=0
+ink2-gpu: batch check b=4: 45 decode rows over 17 batched calls (up to 4 rows) and 9 interleaved prefill chunks of 7; rows differing from solo: 0
+MARK batch-long-declared 22:55:05.041607099
+RC batch-long-declared=0
+ink2-gpu: batch check b=4: 61 decode rows over 20 batched calls (up to 4 rows) and 19 interleaved prefill chunks of 256; rows differing from solo: 0
+MARK probe-native 22:56:04.221323179
+RC probe-native=0
+PROBE_TAPE_BIT_EQUAL_TO_PRE_MERGE
+MARK dump-oracle 22:56:09.596567590
+RC dump-oracle=0
+ink2-gpu: dumped 2 documents in 9.1s
+HEAD_ROWS oracle: 2 of 2 documents bit-equal to the pre-merge dump
+MARK dump-rawdoc 22:56:23.831615444
+RC dump-rawdoc=0
+ink2-gpu: dumped 15 documents in 78.4s
+HEAD_ROWS rawdoc: 15 of 15 documents bit-equal to the pre-merge dump
+MARK dump-chatwrap 22:57:47.675666680
+RC dump-chatwrap=0
+ink2-gpu: dumped 15 documents in 79.7s
+HEAD_ROWS chatwrap: 15 of 15 documents bit-equal to the pre-merge dump
+MARK server-boot 22:59:12.819745726
+waitfor: http http://127.0.0.1:18341/readyz (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+MARK serve-check 22:59:27.843748814
+RC serve-check=0
+PASS chat non-stream: status 200 finish length
+PASS chat stream: 64 frames
+PASS stream text equals non-stream: 0 chars
+PASS greedy determinism
+PASS completions: {"object":"text_completion","model":"ink2","choices":[{"index":0,"text":" Paris.\n\nA. Noun clause","finish_reason":"length"}],"usage":{"prompt_tokens":5,"compl
+PASS tool call parsed: [{"id": "call_0acaa39fa4e08df2", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\":\"Paris\"}"}}]
+PASS reasoning_effort 0.5 accepted
+PASS reasoning_effort 'high' accepted
+PASS reasoning_effort 0.0 accepted
+PASS reasoning_effort 'none' accepted
+PASS reasoning_effort '0.5' refused: status 400: {"error":{"message":"bad reasoning_effort \"0.5\": Unknown reasoning_effort: 0.5 (none|minimal|low|medium|high|xhigh|max, or a number in [0.0, 0.99])","type":"i
+PASS reasoning_effort 1.5 refused: status 400: {"error":{"message":"bad reasoning_effort 1.5: reasoning_effort must be in [0.0, 0.99]","type":"invalid_request_error","param":null,"code":null}}
+PASS reasoning_effort 'ultra' refused: status 400: {"error":{"message":"bad reasoning_effort \"ultra\": Unknown reasoning_effort: ultra (none|minimal|low|medium|high|xhigh|max, or a number in [0.0, 0.99])","type
+PASS image part refused: status 400: {"error":{"message":"user message: image input is not enabled on this deployment","type":"invalid_request_error","param":null,"code":null}}
+PASS forced tool_choice refused: status 400: {"error":{"message":"tool_choice required/named and parallel_tool_calls=false are not available on the inkling2 route (its calls are framed by control tokens no
+PASS numeric_class shipped (the default) equals the unnamed answer
+PASS numeric_class this boot does not serve refused: status 400: {"error":{"message":"numeric_class \"nvfp4-rig\" is not served by this route; it serves shipped","type":"invalid_request_error","param":"numeric_class","code":null}}
+PASS c=1: every request equals its c=1 answer: 8/8 equal
+c=1: {"requests": 8, "wall_s": 24.947921587969176, "ttft_ms": {"p50": 41.43718001432717, "p95": 42.00695402105339, "p99": 42.02082351432182}, "tpot_ms": {"p50": 24.174150047864117, "p95": 25.25872568632879, "p99": 25.652145294685237}, "itl_ms": {"p50": 22.60435145581141, "p95": 24.64474163716659, "p99": 25.02293197205289}, "e2e_ms": {"p50": 3111.898628529161, "p95": 3249.0989821089897, "p99": 3298.725777195068}, "req_per_s": 0.3206679951991632, "out_tok_per_s": 41.04550338549289, "output_tokens": 1024, "failures": 0}
+PASS c=2: every request equals its c=1 answer: 8/8 equal
+c=2: {"requests": 8, "wall_s": 71.96344490000047, "ttft_ms": {"p50": 315.4338464955799, "p95": 362.61189486831427, "p99": 363.2400549761951}, "tpot_ms": {"p50": 138.94020811073466, "p95": 140.3600942752302, "p99": 140.603610729894}, "itl_ms": {"p50": 138.56573746306822, "p95": 142.95948052895255, "p99": 145.20971608697437}, "e2e_ms": {"p50": 17954.417669971008, "p95": 18131.58111657831, "p99": 18138.873270548647}, "req_per_s": 0.11116755195803513, "out_tok_per_s": 14.229446650628496, "output_tokens": 1024, "failures": 0}
+PASS c=4: every request equals its c=1 answer: 8/8 equal
+c=4: {"requests": 8, "wall_s": 41.68054910900537, "ttft_ms": {"p50": 532.6517404755577, "p95": 700.6940851453692, "p99": 702.2361490037292}, "tpot_ms": {"p50": 161.59629112193875, "p95": 162.2733216379828, "p99": 162.34854269682938}, "itl_ms": {"p50": 154.0744780213572, "p95": 164.6544017654378, "p99": 335.8898341783788}, "e2e_ms": {"p50": 20839.892090531066, "p95": 21285.67292317166, "p99": 21286.544611043064}, "req_per_s": 0.19193605101213854, "out_tok_per_s": 24.567814529553733, "output_tokens": 1024, "failures": 0}
+serve_check: ALL PASS
+MARK serve-check-end 23:01:56.741914032
+waitfor: gone 847869 (deadline 2m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s
+S3_DONE

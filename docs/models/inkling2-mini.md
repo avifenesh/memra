@@ -6,8 +6,8 @@ weights as stored, on one 24 GB RTX 5090 Laptop GPU.
 
 | | |
 |---|---|
-| **Serving route** | memra-server's inkling2 route (`inkling2_serve` over `inkling2_gpu`) on one RTX 5090 Laptop GPU (sm_120a, 24 GB): every request in the checkpoint's declared numeric class, several requests at once in batched decode calls whose rows equal their solo runs bit for bit. A correctness route, not a fast one: 5.2 tok/s for one request and 15.3 tok/s over four at once, on the GPU route before its decode tuning (2026-11-21) |
-| **Pack** | `inkling2`, **NativeReference** (record `inkling2-reference`) <!-- support: inkling2-reference -->. CheckpointParity and Serve are pending: the pack declares no checkpoint band for its default class, so `verify checkpoint`, and `verify serve` after it, refuse |
+| **Serving route** | memra-server's inkling2 route (`inkling2_serve` over `inkling2_gpu`) on one RTX 5090 Laptop GPU (sm_120a, 24 GB): every request in the checkpoint's declared numeric class, several requests at once in batched decode calls whose rows equal their solo runs bit for bit. 41 tok/s for one request (TPOT 24 ms) and 24.6 tok/s over four at once, the one-row decode tuned and the batched decode not yet (2026-11-21) |
+| **Pack** | `inkling2`, **NativeReference** (record `inkling2-reference`) <!-- support: inkling2-reference -->. CheckpointParity and Serve pass on the declared class's band (`docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md`); RewriteParity is pending, so the state stays NativeReference |
 | **Artifact** | `thinkingmachines/Inkling-2-Mini@ed40e7da625f594fc9c4990f5f66be24873c22d7`: one indexed safetensors shard and the drafter's `mtp.safetensors`, 1,170 census tensors bound before upload |
 | **Hardware** | one 24 GB card of the 120a family: the weights take 17.6 GiB as stored, and the rest holds the requests' state |
 | **Builds** | `sm_120a` (the routed experts' act-quant GEMMs are the 120a family's block-scaled MMA); a build without them refuses to load the declared class, by name |
@@ -59,11 +59,12 @@ telemetry rule (P0, 14001 MHz) with thermal slowdown on part of the window:
 
 | Concurrency | TTFT p50 | TPOT p50 | Output tok/s |
 |---|---|---|---|
-| 1 | 379 ms | 190 ms | 5.2 |
-| 2 | 591 ms | 243 ms | 8.1 |
-| 4 | 881 ms | 255 ms | 15.3 |
+| 1 | 41 ms | 24 ms | 41.0 |
+| 2 | 315 ms | 139 ms | 14.2 |
+| 4 | 533 ms | 162 ms | 24.6 |
 
-Every request's answer at concurrency 2 and 4 equals its answer alone. p95, p99, ITL, E2E and
+Every request's answer at concurrency 2 and 4 equals its answer alone. One request alone is the
+fastest case today: the one-row decode is tuned, the batched decode is not yet. p95, p99, ITL, E2E and
 the conditions: `research/modelplan-onboarding-inkling2mini-20261121/serve/README.md`.
 
 ## Deeper sources

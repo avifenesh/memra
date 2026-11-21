@@ -56,8 +56,36 @@ the rule, and SW thermal slowdown (0x20) on 827 of 1864 loaded samples at 77 to 
 | 4 | 881 / 1,047 / 1,048 | 255 / 264 / 265 | 250 / 257 / 266 | 33,309 | 0.119 | 15.3 |
 
 A batched decode call of 4 rows costs 1.3 times a call of one, so throughput grows 2.9 times
-from c=1 to c=4. These are the route this PR adds on the GPU route of #1397; lane P's decode work
-replaces its kernels.
+from c=1 to c=4. These are the route this PR adds on the GPU route of #1397.
+
+### Timings after lane P's decode (memra#1399 merged, `s3b/`)
+
+The same workload on the merged route (`s3b/s3b.sh`, binaries `serve-frozen4`, commit in the
+receipt). Clamp check exit 0 at the start; over the window 1456 loaded samples, every one at P0 and
+14001 MHz, SW thermal slowdown (0x20) on 1360 at 79 to 90 C, SM 1680 to 2737 MHz. N=8 requests per
+level, one run, one boot. `serve_check`: all pass, every request at c=2 and c=4 equal to its c=1
+answer (8/8).
+
+| c | TTFT p50 / p95 / p99 ms | TPOT p50 / p95 / p99 ms | ITL p50 / p95 / p99 ms | E2E p50 ms | req/s | output tok/s |
+|---|---|---|---|---|---|---|
+| 1 | 41 / 42 / 42 | 24.2 / 25.3 / 25.7 | 22.6 / 24.6 / 25.0 | 3,112 | 0.321 | 41.0 |
+| 2 | 315 / 363 / 363 | 138.9 / 140.4 / 140.6 | 138.6 / 143.0 / 145.2 | 17,954 | 0.111 | 14.2 |
+| 4 | 533 / 701 / 702 | 161.6 / 162.3 / 162.3 | 154.1 / 164.7 / 335.9 | 20,840 | 0.192 | 24.6 |
+
+Lane P's work makes a one-row decode call 7.9 times faster (TPOT 190 to 24 ms); a call of 2 rows
+gets 1.7 times faster (243 to 139 ms) and a call of 4 rows 1.6 times (255 to 162 ms). One request
+alone now outruns two or four together (41 against 14 and 25 output tok/s): the fast decode GEMV
+and the decode graph are one-row programs, and a batched call still runs the multi-row tiles. The
+batched decode GEMV is the next piece of lane P's work; until then the route's batching costs
+throughput below c=4 on this card.
+
+The merge kept every number the route produces: the batching gates hold (0 rows differing from
+solo, p1 B=4 both classes, p2 B=6, prompts of 1000 to 1180 tokens past the window; the red arm
+moves 43 of 45, `s3/`), the probe tape and the head rows of every corpus document are bit-equal to
+the pre-merge run (`s3/`, `s3b/`), and p1's MoE holds 2736 of 2736 rows against the reference.
+`s3/` stopped at the server boot: the split attention's scratch is sized from the load context,
+and the serve route's sequences outgrow it (`memra_ink2g_attn` 45025). The fix runs those slots in
+the tiled form, the same bits.
 
 ## Memory
 
@@ -69,9 +97,14 @@ free; a request no idle card could hold is refused with the largest session that
 
 ## verify serve
 
-`memra model inspect` writes the bundle (`verify-serve/`). `memra model verify serve` refuses
-(`verify-serve/verify-serve.log`): it needs a passed `checkpoint-parity.tsv`, and the inkling2 pack
-declares no checkpoint band, by its own rule: a band for the default class has to come from that
-class's source program measured on two backends, and a float-activation oracle cannot write the
-default class's pass. The route evidence is above; the CLI gate waits for a declared-class
-oracle.
+The first attempt (`verify-serve/verify-serve.log`) refused for want of a checkpoint band. With the
+declared class's band (`../checkpoint-parity/`, decision record
+`docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md`), `verify checkpoint` and `verify serve`
+both pass (`../checkpoint-parity/verify/`).
+
+## serve-smoke
+
+`tools/serve-smoke.sh ~/models/inkling2-mini` runs the plain checks 1 to 7 of the pack's row in
+`tools/serve-smoke-packs.tsv`: 7 of 7 (`smoke/inkling2.txt`). The default GGUF battery with the
+script before and after the change, same binary: the same check lines, 0 failed each
+(`smoke/gguf-base.txt`, `smoke/gguf-new.txt`).

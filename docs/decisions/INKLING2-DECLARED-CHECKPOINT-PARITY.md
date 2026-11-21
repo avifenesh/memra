@@ -39,7 +39,17 @@ Three layers, each against a source that is not the route:
 | p1_chat (57 positions, every one) | 2736 | 2736 |
 | p2_window (1531 positions, every 16th) | 4608 | 4608 |
 
-The red arm (the reference's index-order accumulator): see `p1-moe-ref-red.json`.
+The red arm (the reference's index-order accumulator) moves 42 of the 2736 p1 rows (2169 bf16
+outputs), so the check sees the accumulator. After the merge of lane P's decode (memra#1399) p1 holds
+2736 of 2736 again (`../serve/s3/p1-moe-ref.json`).
+
+### `memra model verify`
+
+`verify checkpoint` against lane E's tape on the probe: passed, max abs 1.737 under the 3.7 band,
+argmax 200001 on both sides (`verify/checkpoint-parity.tsv`). `verify serve` on that receipt:
+passed (`verify/serve-gate.tsv`). Gates: Config, TokenizerTemplate, TensorCensus, CheckpointParity
+and Serve passed; TinyParity is carried by CI (`ci:verify-tiny`), RewriteParity is pending (no tuned
+rewrite is eligible).
 
 ### Float trunk against the f64 oracle
 

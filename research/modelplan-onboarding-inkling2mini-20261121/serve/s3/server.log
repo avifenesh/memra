@@ -1,0 +1,10 @@
+[server] build: memra-0.141.1-0a7b0faafb76 (id: source-tree, git: e0527898838e)
+[server] starting; models config = [("ink2", "/home/avifenesh/models/inkling2-mini", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "ink2" <- /home/avifenesh/models/inkling2-mini
+[inkling2-serve] ink2: rewrite bundle /home/avifenesh/.cache/inkling2mini/wt-serve/research/modelplan-onboarding-inkling2mini-20261121/serve/verify-serve installed for plan b66d8356c1cacd7751c14935f6d3fbafca04549df203032c6e177496435daf7a; the route runs the plan's own native program, no rewrite
+[inkling2-serve] ink2: class shipped (inkling2-gpu-f32-stream/DeclaredActivationQuant); memory: device 23.511 GiB, driver free at open 23.016, weights 17.594, full KV 0.000 (1 positions x 65536 B), rings 0.625, conv 0.007, work 0.230, declared work 0.063, driver free before KV 4.454 and after load 4.454, max context 72974
+[server] FATAL: worker init failed: load ink2: inkling2 model "ink2": memra_ink2g_attn: CUDA error 35025

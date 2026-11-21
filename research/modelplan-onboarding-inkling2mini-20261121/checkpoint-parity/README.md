@@ -16,7 +16,7 @@ Card: RTX 5090 Laptop (sm_120a, 24 GB); the harness's CPU runs on a 32-thread x8
 | `kl-harness.json` | `parity_kl.py` on the GPU: per-token KL of the route and of the sum-order twin against the harness on the oracle prompts, rawdoc and chatwrap, and lane E's tapes against both (`tape_cross`) |
 | `kl-peer.json` | the same with the harness's CPU run as the peer backend on every document |
 | `cross-cpu.json` | `tape_cross` with the harness on CPU |
-| `verify/` | `memra model verify checkpoint` and `verify serve` on the band |
+| `verify/` | `memra model verify checkpoint` (passed: max abs 1.737, argmax equal) and `verify serve` (passed) on the band; the native tape is gzipped |
 | `logs/` | raw logs of every step |
 | `run_gpu.sh`, `run_gpu_b.sh`, `run_gpu_c.sh`, `run_gpu_d.sh` | the GPU leases, in order |
 | `summ_kl.py`, `cross_table.py` | the tables of the decision record |
