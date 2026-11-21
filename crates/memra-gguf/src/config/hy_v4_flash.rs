@@ -721,6 +721,17 @@ impl HyV4FlashConfig {
                     ));
                 }
             }
+            // vLLM `HYV4DFlyModel`: an explicit false drops the attention's `post_proj_norm`
+            // (and its loader then refuses the checkpoint's norm tensors); null or true keeps it
+            if !top.is_null("dfly_attn_post_proj_norm")
+                && top.boolean("dfly_attn_post_proj_norm")? == Some(false)
+            {
+                return Err(refuse(
+                    "dfly_attn_post_proj_norm",
+                    &false,
+                    "the drafter's attention keeps its post_proj_norm",
+                ));
+            }
             for (key, want) in [("dfly_enable_ihc", false), ("dfly_attn_causal", true)] {
                 if let Some(got) = top.boolean(key)?
                     && got != want
