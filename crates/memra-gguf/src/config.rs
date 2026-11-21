@@ -4,6 +4,11 @@
 
 use crate::{GgufFile, MetaValue};
 
+pub mod inkling2;
+pub use inkling2::{
+    Inkling2Config, Inkling2DrafterConfig, Inkling2ExpertQuant, Inkling2VisionConfig,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Arch {
     Qwen3, // vanilla dense transformer
@@ -34,6 +39,12 @@ pub enum Arch {
     // indexer), single-pass mHC, Engram n-gram memory, 384-expert sqrtsoftplus MoE with FP4
     // experts and 32x32 FP8 dense blocks, 3 DSpark blocks, DeepSeek-ViT tower. Its own pack
     // (`deepseek_v41`); no DSv4 code path accepts it.
+    Inkling2Loop, // Inkling 2 Mini (HF `inkling2_loop`): 24 physical layers whose core (6..18)
+    // runs 3 passes over shared weights (48 cache slots) with rank-64 message controllers; GQA
+    // without RoPE (relative-position bias, per-query sink, L2-clipped Q/K, log position scale on
+    // the 4 full layers), short convolutions with per-slot state, block attention residuals,
+    // 128-expert sigmoid MoE with softcapped SwiGLU, NVFP4 and MXFP8 experts whose inputs the
+    // checkpoint requires quantized, a DSpark drafter and a ViT tower. Its own pack (`inkling2`).
     Qwen4Exp, // Qwen3.8-Flash-Next (HF `qwen4_exp`): hybrid GDN 3:1 QSA (micro-block sparse
     // attention, MQA indexer 4Q/1K over 4-token blocks, budget 512 blocks), 512-expert
     // softmax top-k renormalized router (Qwen3NextTopKRouter — NOT sigmoid; the sigmoid
@@ -73,6 +84,9 @@ impl Arch {
             "deepseek-v4" => Arch::DeepSeekV4,
             // No public GGUF writes this arch; the name is memra's own (safetensors-first).
             "deepseek-v41" => Arch::DeepSeekV41,
+            // memra's own name (safetensors-first). Upstream GGUFs of this model exist, but GGUF
+            // quant formats are not part of this family's path.
+            "inkling2-loop" => Arch::Inkling2Loop,
             // Qwen3.8-Flash-Next. Upstream llama.cpp has GGUFs for it, but memra's lane is
             // safetensors-first; the GGUF arch string is adopted when that entry lands.
             "qwen4exp" => Arch::Qwen4Exp,
@@ -107,6 +121,9 @@ impl Arch {
             // DeepSeek-V4.1-Flash (HF `DeepseekV41ForCausalLM`): the multimodal wrapper is
             // `deepseek_v41`, its text_config `deepseek_v41_text`.
             "deepseek_v41" | "deepseek_v41_text" => "deepseek-v41",
+            // Inkling 2 Mini (HF `Inkling2LoopForConditionalGeneration`): the wrapper is
+            // `inkling2_loop`, its text_config `inkling2_loop_text`.
+            "inkling2_loop" | "inkling2_loop_text" => "inkling2-loop",
             // Qwen3.8-Flash-Next (HF `Qwen4ExpForConditionalGeneration`, model_type
             // `qwen4_exp`; the text_config carries `qwen4_exp_text`)
             "qwen4_exp" | "qwen4_exp_text" => "qwen4exp",
@@ -182,6 +199,9 @@ impl Arch {
             Arch::DeepSeekV4 => Some(AttentionGateKind::None),
             // CSA2 `wq_b` out-features are exactly n_head*head_dim: no output gate.
             Arch::DeepSeekV41 => Some(AttentionGateKind::None),
+            // `wq_du` out-features are exactly n_head*head_dim; the gate is its own tensor
+            // `gate_attn [n_head*head_dim, hidden]`, one sigmoid per head and channel.
+            Arch::Inkling2Loop => Some(AttentionGateKind::SeparatePerDim),
             // GLM-5.3-Flash MLA layers carry no fused q gate; KDA layers gate inside the mixer
             // via separate g_a_proj/g_b_proj tensors, not the attention q layout.
             Arch::Glm5Next => Some(AttentionGateKind::None),
@@ -201,6 +221,12 @@ impl Arch {
     /// compiled only by the `deepseek_v41` pack. Never `is_dsv4`.
     pub fn is_dsv41(&self) -> bool {
         matches!(self, Arch::DeepSeekV41)
+    }
+
+    /// Inkling 2 Mini (HF `inkling2_loop` / `inkling2_loop_text`): safetensors-first, compiled
+    /// only by the `inkling2` pack.
+    pub fn is_inkling2(&self) -> bool {
+        matches!(self, Arch::Inkling2Loop)
     }
 
     /// Qwen3.8-Flash-Next (HF `qwen4_exp`) — safetensors-first; runs on its dedicated
@@ -230,6 +256,8 @@ pub enum AttentionGateKind {
     FusedQ,
     /// Step35 projects one sigmoid scalar per head through `attn_gate.weight`.
     SeparateHead,
+    /// Inkling 2 projects one sigmoid per head and channel through its own `gate_attn` tensor.
+    SeparatePerDim,
 }
 
 /// A model's architecture declares no attention output-gate layout, so no layout may be assumed.
@@ -1785,6 +1813,8 @@ pub struct ModelConfig {
     pub dsv4: Option<DeepSeekV4Config>,
     // DeepSeek-V4.1-Flash extras: `deepseek_v41` only (None for every other arch)
     pub dsv41: Option<DeepSeekV41Config>,
+    // Inkling 2 extras: `inkling2_loop` only (None for every other arch)
+    pub inkling2: Option<Inkling2Config>,
     // MiMo-V2.6 extras — exact hybrid geometry and source-specific attention math.
     pub mimo: Option<MiMoV2Config>,
     // Qwen3.8-Flash-Next extras — `qwen4_exp` only (None for every other arch)
@@ -2287,6 +2317,7 @@ impl ModelConfig {
             step35,
             dsv4: None,  // safetensors-first arch: no GGUF artifact exists (loader lane)
             dsv41: None, // safetensors-first arch: no GGUF artifact exists
+            inkling2: None, // safetensors-first arch; GGUF quant formats are not its path
             mimo: None,  // MiMo-V2.6 is safetensors-first and has no GGUF pack.
             qwen4exp: None, // safetensors-first arch: no GGUF artifact exists (loader lane)
             qwen35_vision: None, // GGUF qwen35 trunks carry no tower
@@ -3166,7 +3197,13 @@ impl ModelConfig {
             head_dim_v,
             n_ff: c.intermediate_size,
             n_vocab: c.vocab_size,
-            context_length: c.max_position_embeddings,
+            // Inkling 2 names its context `model_max_length`.
+            context_length: c
+                .inkling2
+                .as_ref()
+                .map_or(c.max_position_embeddings, |inkling| {
+                    inkling.model_max_length
+                }),
             rms_eps,
             rope_freq_base: c.rope_theta,
             // partial RoPE: M3 spells it `rotary_dim` (64 of head_dim 128), the Qwen3.5 family
@@ -3225,7 +3262,8 @@ impl ModelConfig {
             // fabricate a wrong tower geometry from this file's vision_config. The faithful
             // geometry lives in qwen4exp.vision; the tower itself side-loads at serving
             // (MEMRA_VISION_DIR, the qwen3_5 pattern) — never a plan-level encoder here.
-            vision: if qwen4exp.is_some() {
+            // Inkling 2's ViT geometry is typed in `inkling2.vision` for the same reason.
+            vision: if qwen4exp.is_some() || c.inkling2.is_some() {
                 None
             } else {
                 c.vision.clone()
@@ -3244,6 +3282,7 @@ impl ModelConfig {
             step35,
             dsv4,
             dsv41,
+            inkling2: c.inkling2.clone(),
             mimo,
             qwen4exp,
             qwen35_vision: c.qwen35_vision.clone(),
@@ -3258,12 +3297,39 @@ impl ModelConfig {
         }
     }
 
+    /// True when the plan of this config cannot compile until the checkpoint's
+    /// `hf_quant_config.json` is attached with [`Self::attach_quant_groups`].
+    pub fn needs_quant_groups(&self) -> bool {
+        self.inkling2
+            .as_ref()
+            .is_some_and(|inkling| inkling.quant.is_none())
+    }
+
+    /// Attach the checkpoint's `hf_quant_config.json` (`parameter_groups` form). The family
+    /// reads its expert formats and required activation quantizers from it.
+    pub fn attach_quant_groups(&mut self, text: &str) -> Result<(), String> {
+        let Some(inkling) = self.inkling2.as_mut() else {
+            return Err(format!(
+                "architecture {:?} declares no parameter-group quantization",
+                self.arch
+            ));
+        };
+        inkling.attach_quant(crate::quant_groups::QuantGroups::parse(text)?)
+    }
+
     /// Read + parse an HF `config.json` directly from disk and build a ModelConfig.
     pub fn from_config_json(path: &std::path::Path) -> std::io::Result<Self> {
         let txt = std::fs::read_to_string(path)?;
         let cfg = HfConfig::try_parse(&txt)
             .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-        Ok(Self::from_hf(&cfg))
+        let mut config = Self::from_hf(&cfg);
+        if config.needs_quant_groups() {
+            let quant = std::fs::read_to_string(path.with_file_name("hf_quant_config.json"))?;
+            config
+                .attach_quant_groups(&quant)
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+        }
+        Ok(config)
     }
 
     /// Classify a layer index. For hybrid models, layer il is full-attention when
@@ -3754,6 +3820,9 @@ pub struct HfConfig {
     pub quant_expert_dtype: Option<String>,
     /// `vision_config` of model_type `deepseek_v41_vision` (DeepSeek-ViT).
     pub dsv41_vision: Option<DeepSeekV41VisionConfig>,
+    /// The whole `inkling2_loop` declaration (text, loop, vision, drafter, quantization keys),
+    /// parsed by `config::inkling2` with every field required.
+    pub inkling2: Option<Inkling2Config>,
     // ---- GLM-5.3-Flash (`glm5_next` text_config) ----
     pub kv_lora_rank: Option<u32>,
     pub qk_head_dim: Option<u32>,
@@ -3973,6 +4042,7 @@ impl Default for HfConfig {
             quant_scale_fmt: None,
             quant_expert_dtype: None,
             dsv41_vision: None,
+            inkling2: None,
             kv_lora_rank: None,
             qk_head_dim: None,
             qk_nope_head_dim: None,
@@ -4120,6 +4190,12 @@ impl HfConfig {
             .as_deref()
             .is_some_and(|kind| Arch::from_hf_model_type(kind) == Arch::MiMoV2);
         let mut cfg = HfConfig::default();
+        if effective_type
+            .as_deref()
+            .is_some_and(|kind| Arch::from_hf_model_type(kind).is_inkling2())
+        {
+            cfg.inkling2 = Some(Inkling2Config::from_config(&top)?);
+        }
         cfg.apply(&top, glm_dsa)?;
         if let Some(q) = top.object("quantization_config")? {
             cfg.quant_algo = q.string("quant_algo")?;

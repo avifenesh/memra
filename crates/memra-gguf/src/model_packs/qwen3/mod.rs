@@ -5,6 +5,7 @@ pub static PACK: ModelPack = ModelPack {
     family: "qwen3",
     output_head: OutputHeadContract::TiedHeadAllowed,
     tensor_consumption: TensorConsumption::Report,
+    auxiliary_files: &[],
     aliases: &["qwen3"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[

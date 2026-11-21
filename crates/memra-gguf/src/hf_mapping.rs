@@ -1306,6 +1306,7 @@ mod tests {
             per_layer_input: None,
             partition_boundaries: Vec::new(),
             deepseek_v41: None,
+            inkling2: None,
         };
         let gguf = TensorContract::for_plan(
             &plan,

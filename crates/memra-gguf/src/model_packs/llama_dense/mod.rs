@@ -13,6 +13,7 @@ pub static PACK: ModelPack = ModelPack {
     family: "llama_dense",
     output_head: OutputHeadContract::TiedHeadAllowed,
     tensor_consumption: TensorConsumption::Report,
+    auxiliary_files: &[],
     aliases: &["llama", "mistral"],
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[

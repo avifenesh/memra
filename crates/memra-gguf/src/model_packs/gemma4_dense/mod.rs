@@ -9,6 +9,7 @@ pub static PACK: ModelPack = ModelPack {
     family: "gemma4_dense",
     output_head: OutputHeadContract::TiedHeadAllowed,
     tensor_consumption: TensorConsumption::Report,
+    auxiliary_files: &[],
     aliases: &[
         "gemma4",
         "gemma4_text",

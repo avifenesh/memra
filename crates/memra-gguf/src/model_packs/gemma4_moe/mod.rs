@@ -5,6 +5,7 @@ pub static PACK: ModelPack = ModelPack {
     family: "gemma4_moe",
     output_head: OutputHeadContract::TiedHeadAllowed,
     tensor_consumption: TensorConsumption::Report,
+    auxiliary_files: &[],
     aliases: &["gemma4_moe", "gemma4_a4b", "gemma4-26b-a4b"],
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[

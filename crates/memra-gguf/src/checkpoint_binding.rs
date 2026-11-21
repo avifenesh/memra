@@ -125,7 +125,13 @@ impl std::error::Error for CheckpointBindError {}
 
 /// Checkpoint spellings of a separate output projection: GGUF, HF, and the DeepSeek reference
 /// naming (`head.weight`) that DeepSeek-V4 and V4.1 safetensors ship.
-const HEAD_NAMES: [&str; 3] = ["output.weight", "lm_head.weight", "head.weight"];
+/// `model.llm.unembed.weight` is the Inkling 2 spelling.
+const HEAD_NAMES: [&str; 4] = [
+    "output.weight",
+    "lm_head.weight",
+    "head.weight",
+    "model.llm.unembed.weight",
+];
 
 fn family_of(pack: Option<&'static ModelPack>) -> &'static str {
     pack.map(|pack| pack.family).unwrap_or("canonical")

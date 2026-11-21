@@ -42,6 +42,7 @@ pub static PACK: ModelPack = ModelPack {
     family: "deepseek_v41",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
+    auxiliary_files: &[],
     aliases: &["deepseek_v41", "deepseek-v41", "deepseek_v41_text"],
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
@@ -199,6 +200,7 @@ fn plan_builder(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
         draft_source: DraftSourcePlan::Embedded,
         sampling_defaults: None,
         partition_boundaries: (1..trunk as usize).collect(),
+        inkling2: None,
         deepseek_v41: Some(DeepSeekV41Numerics {
             dense_weight_block: v41.quant_weight_block_size[0],
             expert_weight: BlockQuant::FP4_32_UE8M0,

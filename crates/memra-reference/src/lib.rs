@@ -453,6 +453,12 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
                     hidden,
                 )?;
             }
+            ResidualTopology::BlockAttention(_) => {
+                return Err(ReferenceError::UnsupportedOperation {
+                    layer: Some(layer.index),
+                    operation: "block attention residual",
+                });
+            }
             ResidualTopology::SinglePassHyperConnections(_) => {
                 return Err(ReferenceError::UnsupportedOperation {
                     layer: Some(layer.index),
@@ -508,6 +514,13 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
             }
             AttentionPlan::KimiDeltaNet(kda) => {
                 add_kda_fixture(&mut weights, layer.index, kda, hidden)?;
+            }
+            // Inkling 2 relative-bias attention has no reference implementation yet.
+            AttentionPlan::RelativeBias(_) => {
+                return Err(ReferenceError::UnsupportedOperation {
+                    layer: Some(layer.index),
+                    operation: "relative-bias attention",
+                });
             }
             AttentionPlan::Csa2(_) => {
                 return Err(ReferenceError::UnsupportedOperation {
@@ -4289,6 +4302,14 @@ fn apply_logits_transforms(logits: &mut [f32], vocab: usize, transforms: &[Logit
                     *value = *cap * (*value / *cap).tanh();
                 }
             }
+            // The reference keeps the row width, so a dropped id becomes unselectable.
+            LogitsTransform::Truncate(keep) => {
+                for row in logits.chunks_exact_mut(vocab) {
+                    for value in row.iter_mut().skip(*keep as usize) {
+                        *value = f32::NEG_INFINITY;
+                    }
+                }
+            }
             LogitsTransform::SuppressTokens(ids) => {
                 for row in logits.chunks_exact_mut(vocab) {
                     for &id in ids {
@@ -4448,6 +4469,13 @@ fn execute_layer(
             tokens,
             hidden,
         )?,
+        // Inkling 2 relative-bias attention has no reference implementation yet.
+        AttentionPlan::RelativeBias(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "relative-bias attention",
+            });
+        }
         AttentionPlan::Csa2(_) => {
             return Err(ReferenceError::UnsupportedOperation {
                 layer: Some(layer.index),
@@ -4862,6 +4890,13 @@ fn execute_hyper_layer(
             tokens,
             hidden,
         )?,
+        // Inkling 2 relative-bias attention has no reference implementation yet.
+        AttentionPlan::RelativeBias(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "relative-bias attention",
+            });
+        }
         AttentionPlan::Csa2(_) => {
             return Err(ReferenceError::UnsupportedOperation {
                 layer: Some(layer.index),
@@ -8347,6 +8382,12 @@ fn activate_pair(
         // glm5_next: the gate clamp is PRE-silu and one-sided (no lower bound).
         ActivationPlan::SwiGluPreClamped { limit } => {
             silu(gate.min(*limit)) * up.clamp(-*limit, *limit)
+        }
+        ActivationPlan::SwiGluSoftcapped { .. } => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer),
+                operation: "softcapped SwiGLU activation",
+            });
         }
         ActivationPlan::Named(_) => {
             return Err(ReferenceError::UnsupportedOperation {

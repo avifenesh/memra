@@ -8,11 +8,20 @@ use crate::config::{Arch, AttentionGateKind, LayerKind, ModelConfig};
 use crate::model_packs::mimo_v2::audio::MiMoAudioPatchPlan;
 
 pub mod deepseek_v41;
+pub mod inkling2;
 pub mod speech;
 pub use deepseek_v41::{
     BlockElement, BlockQuant, BlockScale, Csa2AttentionPlan, Csa2Candidates, Csa2CompressedState,
     Csa2CompressorPlan, Csa2IndexerPlan, Csa2Mode, Csa2Pooling, Csa2StatePlan, DeepSeekV41Numerics,
     EngramPlan, SinglePassHcPlan,
+};
+pub use inkling2::{
+    AttentionInputs, BeyondExtent, BlockAttentionPlan, ClipScale, DenseNumericsPlan,
+    DenseTensorClass, DrafterHead, DrafterTap, ExpertActivationMode, ExpertNumericsPlan,
+    ExpertWeightFormat, Inkling2DrafterPlan, Inkling2NumericClass, Inkling2Numerics, Inkling2Plan,
+    L2ClipPlan, LogPositionScalePlan, LoopMessageTarget, LoopPlan, LoopSlotPlan, OutputGatePlan,
+    QuerySinkPlan, RelativeBiasAttentionPlan, RelativeBiasPlan, RelativeBiasStatePlan,
+    ShortConvPlan, ShortConvTaps,
 };
 use speech::WhisperPlan;
 
@@ -53,6 +62,9 @@ pub struct ModelPlan {
     /// DeepSeek-V4.1 checkpoint numerics (32x32 FP8 dense blocks, per-32 activation
     /// quantization). `None` for every other family.
     pub deepseek_v41: Option<DeepSeekV41Numerics>,
+    /// Inkling 2 model-level program (embedding norm, the loop, numerics, the declared drafter).
+    /// `None` for every other family.
+    pub inkling2: Option<Inkling2Plan>,
 }
 
 // Plan hashes use Debug serialization. Keep the pre-speech representation unchanged
@@ -88,6 +100,9 @@ impl std::fmt::Debug for ModelPlan {
         // Omitted when absent so every other family's serialized plan is unchanged.
         if let Some(numerics) = &self.deepseek_v41 {
             d.field("deepseek_v41", numerics);
+        }
+        if let Some(inkling) = &self.inkling2 {
+            d.field("inkling2", inkling);
         }
         d.finish()
     }
@@ -358,6 +373,8 @@ pub enum AttentionPlan {
     KimiDeltaNet(KimiDeltaNetPlan),
     /// DeepSeek-V4.1 compressed sparse attention 2 (Full / Reindex / Reuse / window-only).
     Csa2(Csa2AttentionPlan),
+    /// Inkling 2 relative-position-bias attention (full or sliding window).
+    RelativeBias(RelativeBiasAttentionPlan),
 }
 
 #[derive(Clone, PartialEq)]
@@ -749,6 +766,12 @@ pub enum ActivationPlan {
     SwiGluPreClamped {
         limit: f32,
     },
+    /// Inkling 2: `softcap(g, gate_cap) * sigmoid(g) * softcap(u, up_cap)` with
+    /// `softcap(x, c) = c * tanh(x / c)`. The sigmoid reads the raw gate.
+    SwiGluSoftcapped {
+        gate_cap: f32,
+        up_cap: f32,
+    },
     Named(String),
 }
 
@@ -783,6 +806,8 @@ pub enum ResidualTopology {
     /// mix, and the exit collapses with the last one. Not the per-sublayer `HyperConnections`
     /// program, which collapses each sublayer with its own mix.
     SinglePassHyperConnections(SinglePassHcPlan),
+    /// Inkling 2 block attention residual: depth mixes over block outputs, a new stream per block.
+    BlockAttention(BlockAttentionPlan),
 }
 
 /// qwen4_exp trunk/MTP exit downmix: `hyper_connection_mixer` (same tensor shapes as one
@@ -856,12 +881,16 @@ pub enum StatePlan {
     /// DeepSeek-V4.1 CSA2: a window ring per layer plus a compressed KV and index-key plane
     /// owned by the group's Full-mode layer.
     Csa2(Csa2StatePlan),
+    /// Inkling 2: per-slot KV rows plus short-conv history.
+    RelativeBias(RelativeBiasStatePlan),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LogitsTransform {
     Softcap(f32),
     SuppressTokens(Vec<u32>),
+    /// Keep the first `n` logits: the output projection is padded past the vocabulary.
+    Truncate(u32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1056,6 +1085,13 @@ impl ModelPlan {
             return Err(PlanCompileError::UnsupportedSemantics {
                 field: "deepseek_v41",
                 value: "compiled only by the deepseek_v41 model pack".into(),
+            });
+        }
+        // The canonical compiler has no loop, relative-bias attention or block residual arm.
+        if cfg.inkling2.is_some() {
+            return Err(PlanCompileError::UnsupportedSemantics {
+                field: "inkling2",
+                value: "compiled only by the inkling2 model pack".into(),
             });
         }
         const MAX_MODEL_LAYERS: u32 = 1_024;
@@ -1366,6 +1402,7 @@ impl ModelPlan {
             },
             sampling_defaults: None,
             deepseek_v41: None,
+            inkling2: None,
         })
     }
 
@@ -1404,6 +1441,12 @@ impl ModelPlan {
 
     pub fn draft_operations(&self) -> Option<Vec<OperationKind>> {
         let mut operations = vec![OperationKind::Embedding];
+        if self.inkling2.is_some() {
+            // The declared drafter is a program of its own; naming it here keeps every drafting
+            // surface closed on an operation with no implementation.
+            operations.push(OperationKind::EmbeddingNorm);
+            operations.push(OperationKind::DsparkRnnDrafter);
+        }
         if self.deepseek_v41.is_some() {
             operations.push(OperationKind::Fp8Block32Linear);
         }
@@ -1424,7 +1467,7 @@ impl ModelPlan {
         if matches!(self.drafter.as_ref(), Some(DrafterPlan::MiMoMtp3(_))) {
             operations.push(OperationKind::MiMoMtp3Draft);
         }
-        if self.mtp_blocks.is_empty() && self.drafter.is_none() {
+        if self.mtp_blocks.is_empty() && self.drafter.is_none() && self.inkling2.is_none() {
             return None;
         }
         // qwen4_exp draft exit runs the MTP's OWN hyper_connection_mixer, not a final norm.
@@ -1437,6 +1480,7 @@ impl ModelPlan {
             operations.push(match transform {
                 LogitsTransform::Softcap(_) => OperationKind::LogitsSoftcap,
                 LogitsTransform::SuppressTokens(_) => OperationKind::LogitsMask,
+                LogitsTransform::Truncate(_) => OperationKind::LogitsTruncate,
             });
         }
         operations.push(OperationKind::OutputProjection);
@@ -1483,6 +1527,43 @@ impl ModelPlan {
         if self.deepseek_v41.is_some() {
             operations.push(OperationKind::Fp8Block32Linear);
         }
+        if let Some(inkling) = &self.inkling2 {
+            operations.push(OperationKind::EmbeddingNorm);
+            operations.push(OperationKind::LoopWeightSharing);
+            operations.push(OperationKind::LoopMessageMix);
+            operations.push(OperationKind::LoopController);
+            for (format, mode, operation) in [
+                (
+                    ExpertWeightFormat::Nvfp4Amax,
+                    ExpertActivationMode::Declared,
+                    OperationKind::Nvfp4W4A4Experts,
+                ),
+                (
+                    ExpertWeightFormat::Mxfp8Row32,
+                    ExpertActivationMode::Declared,
+                    OperationKind::Mxfp8W8A8Experts,
+                ),
+                (
+                    ExpertWeightFormat::Nvfp4Amax,
+                    ExpertActivationMode::Float,
+                    OperationKind::Nvfp4FloatInputExperts,
+                ),
+                (
+                    ExpertWeightFormat::Mxfp8Row32,
+                    ExpertActivationMode::Float,
+                    OperationKind::Mxfp8FloatInputExperts,
+                ),
+            ] {
+                if inkling
+                    .numerics
+                    .experts
+                    .iter()
+                    .any(|expert| expert.weight == format && expert.activation == mode)
+                {
+                    operations.push(operation);
+                }
+            }
+        }
         if self.per_layer_input.is_some() {
             operations.push(OperationKind::PerLayerInputEmbedding);
         }
@@ -1510,6 +1591,9 @@ impl ModelPlan {
             if matches!(self.drafter.as_ref(), Some(DrafterPlan::MiMoMtp3(_))) {
                 operations.push(OperationKind::MiMoMtp3Draft);
             }
+            if self.inkling2.is_some() {
+                operations.push(OperationKind::DsparkRnnDrafter);
+            }
         }
         // qwen4_exp exits through the global mixer (grouped hc_norm inside); every other
         // arch keeps the final RmsNorm.
@@ -1522,6 +1606,7 @@ impl ModelPlan {
             operations.push(match transform {
                 LogitsTransform::Softcap(_) => OperationKind::LogitsSoftcap,
                 LogitsTransform::SuppressTokens(_) => OperationKind::LogitsMask,
+                LogitsTransform::Truncate(_) => OperationKind::LogitsTruncate,
             });
         }
         operations.push(OperationKind::OutputProjection);
@@ -1882,7 +1967,7 @@ impl ModelConfig {
                 }
                 ActivationPlan::GeluTanh => matches!(kind, "gelu_pytorch_tanh" | "gelu_tanh"),
                 ActivationPlan::SwiGluOai { .. } => kind == "swigluoai",
-                ActivationPlan::Named(_) => false,
+                ActivationPlan::SwiGluSoftcapped { .. } | ActivationPlan::Named(_) => false,
             };
             if !represented {
                 return Err(unsupported("hidden_act", kind.to_owned()));
@@ -1993,6 +2078,22 @@ impl LayerPlan {
             }
             AttentionPlan::GatedDeltaNet(_) => operations.push(OperationKind::GatedDeltaNet),
             AttentionPlan::KimiDeltaNet(_) => operations.push(OperationKind::KimiDeltaNet),
+            AttentionPlan::RelativeBias(attention) => {
+                operations.push(OperationKind::RelativeBiasAttention);
+                operations.push(OperationKind::AttentionL2Clip);
+                if attention.log_scale.is_some() {
+                    operations.push(OperationKind::AttentionLogScale);
+                }
+                operations.push(OperationKind::PerQuerySink);
+                push_gate(AttentionGateKind::SeparatePerDim, operations);
+                operations.push(OperationKind::ShortConv);
+                if [attention.key_conv, attention.value_conv]
+                    .iter()
+                    .any(|conv| matches!(conv.taps, ShortConvTaps::StaticPlusDynamic { .. }))
+                {
+                    operations.push(OperationKind::DynamicShortConv);
+                }
+            }
             AttentionPlan::Csa2(csa2) => {
                 operations.push(OperationKind::Csa2Attention);
                 let candidates = match csa2.mode {
@@ -2026,6 +2127,7 @@ impl LayerPlan {
             StatePlan::CompressedAttention { .. } => OperationKind::CompressedAttentionState,
             StatePlan::SharedKvCache { .. } => OperationKind::SharedKvState,
             StatePlan::Csa2(_) => OperationKind::Csa2State,
+            StatePlan::RelativeBias(_) => OperationKind::RelativeBiasState,
         });
         operations.push(OperationKind::RmsNorm);
         match &self.mlp {
@@ -2061,6 +2163,7 @@ impl LayerPlan {
             ResidualTopology::SinglePassHyperConnections(_) => {
                 OperationKind::SinglePassHyperConnections
             }
+            ResidualTopology::BlockAttention(_) => OperationKind::BlockAttentionResidual,
         });
     }
 }
@@ -2072,6 +2175,7 @@ fn push_activation(activation: &ActivationPlan, operations: &mut Vec<OperationKi
         ActivationPlan::SwiGluOai { .. } => OperationKind::SwiGluOaiActivation,
         ActivationPlan::SwiGluClamped { .. } => OperationKind::SwiGluClampedActivation,
         ActivationPlan::SwiGluPreClamped { .. } => OperationKind::SwiGluPreClampedActivation,
+        ActivationPlan::SwiGluSoftcapped { .. } => OperationKind::SoftcappedSwiGluActivation,
         ActivationPlan::Named(_) => OperationKind::NamedActivation,
     });
 }
@@ -2091,6 +2195,7 @@ fn push_gate(gate: AttentionGateKind, operations: &mut Vec<OperationKind>) {
         AttentionGateKind::None => {}
         AttentionGateKind::FusedQ => operations.push(OperationKind::FusedAttentionGate),
         AttentionGateKind::SeparateHead => operations.push(OperationKind::SeparateAttentionGate),
+        AttentionGateKind::SeparatePerDim => operations.push(OperationKind::PerDimOutputGate),
     }
 }
 
@@ -2997,6 +3102,52 @@ pub enum OperationKind {
     SinglePassHyperConnections,
     /// DeepSeek-V4.1 Engram n-gram hash memory gated into the residual streams.
     EngramLookup,
+    /// Inkling 2 bring-up numerics: NVFP4 expert weights dequantized exactly, float inputs.
+    Nvfp4FloatInputExperts,
+    /// Inkling 2 bring-up numerics: MXFP8 expert weights dequantized exactly, float inputs.
+    Mxfp8FloatInputExperts,
+    /// Inkling 2: RMS norm on token embeddings before the first layer.
+    EmbeddingNorm,
+    /// Inkling 2 loop: core layers run several passes over shared weights, each pass in its own
+    /// cache slots.
+    LoopWeightSharing,
+    /// Inkling 2 loop: the depth mix that reads a message from the previous pass.
+    LoopMessageMix,
+    /// Inkling 2 loop: the low-rank forget/gain controller that mixes a message into a layer input.
+    LoopController,
+    /// Inkling 2 declared numerics: NVFP4 expert weights (per-expert amax) with NVFP4-quantized
+    /// inputs (per-token amax, four-over-six block scales).
+    Nvfp4W4A4Experts,
+    /// Inkling 2 declared numerics: MXFP8 expert weights (ue8m0 per 32 inputs) with
+    /// MXFP8-quantized inputs.
+    Mxfp8W8A8Experts,
+    /// Inkling 2 attention core: GQA without RoPE over a learned relative-position bias.
+    RelativeBiasAttention,
+    /// Inkling 2: L2 norm clips on Q, K and the relative-position vector.
+    AttentionL2Clip,
+    /// Inkling 2 full layers: the log position scale on Q and the relative-position vector.
+    AttentionLogScale,
+    /// Inkling 2: a per-query projected sink logit in the softmax denominator.
+    PerQuerySink,
+    /// Inkling 2: a per-head-and-channel sigmoid output gate from its own tensor.
+    PerDimOutputGate,
+    /// Inkling 2: causal depthwise short convolutions with a residual (K, V, attention and MLP
+    /// outputs).
+    ShortConv,
+    /// Inkling 2 full layers: input-dependent taps added to the K and V short convolutions.
+    DynamicShortConv,
+    /// Inkling 2 per-slot state: KV rows (a ring on sliding layers) plus short-conv history.
+    RelativeBiasState,
+    /// Inkling 2: block attention residual (depth mixes over block outputs, a new stream per
+    /// block).
+    BlockAttentionResidual,
+    /// Inkling 2: `softcap(gate) * sigmoid(gate) * softcap(up)`.
+    SoftcappedSwiGluActivation,
+    /// Inkling 2 DSpark drafter (mask embedding, tap fuse, context K/V, recurrent Markov head).
+    /// Declared and owned by the contract; no executor implements it.
+    DsparkRnnDrafter,
+    /// Drop the logits past the unpadded vocabulary.
+    LogitsTruncate,
     Mtp,
     DraftPlan,
     MtpFusion,
