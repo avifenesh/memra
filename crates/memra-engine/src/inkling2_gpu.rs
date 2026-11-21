@@ -2756,6 +2756,15 @@ impl Route {
             )?;
 
             // ---- attention, output gate, output projection, short convolution, residual
+            // The split form's scratch holds the keys of the load's context; a sequence made with
+            // new_seq can hold more (the serve route loads at one position), and its full slots
+            // then run the tiled form, the same bits.
+            let most = a.window.map_or(ss.cap, |v| v as usize);
+            let (scr, scr_ld) = if most <= w.asc_ld {
+                (dptr_mut(&mut w.asc, &st), w.asc_ld as i64)
+            } else {
+                (0, 0)
+            };
             dev.launched("memra_ink2g_attn", unsafe {
                 ffi::memra_ink2g_attn(
                     qb as *const f32,
@@ -2776,8 +2785,8 @@ impl Route {
                     kvh as i32,
                     dim as i32,
                     rank as i32,
-                    dptr_mut(&mut w.asc, &st) as *mut f64,
-                    w.asc_ld as i64,
+                    scr as *mut f64,
+                    scr_ld,
                     desc_slot as *const c_void,
                     dev.sp(),
                 )
