@@ -28,12 +28,18 @@
 //!   --attn-probe S,S..       the tape's prompt, then the last 4 query rows of the last call of
 //!                            each full-attention slot S recomputed on the host from the route's
 //!                            own queries and caches, in f64 and as an f32 eager program
+//!   --batch-check B,N,P[,L0,LS]  the batching gate (prompt i is L0 + LS * i ids, default 6,5): B sequences at different positions, each N
+//!                            teacher-forced decode tokens alone, then joined one a step with
+//!                            prefill chunks of P rows interleaved with the peers' batched decode;
+//!                            every decode row's logits must equal the solo run bit for bit
 //!   --inject-failure SLOT    the atomicity gate: the tape's first --limit ids, half as a prefill,
 //!                            then one decode call that fails after SLOT, then one decode call per
 //!                            later id; every slot output and logit row must equal a clean run
 //!   --chunk N                rows one call may hold (default 512)
 
-use memra_engine::inkling2_gpu::{Ckpt, Dev, Head, Observer, RedArms, Route, Tap, numeric_class};
+use memra_engine::inkling2_gpu::{
+    Ckpt, Dev, Head, Observer, RedArms, Route, Seq, Tap, numeric_class,
+};
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_plan::{ExpertActivationMode, ModelPlan};
 use memra_gguf::safetensors::StShard;
@@ -69,6 +75,7 @@ struct Args {
     inject_failure: Option<u32>,
     contract_check: bool,
     attn_probe: Vec<u32>,
+    batch_check: Option<(usize, usize, usize, usize, usize)>,
 }
 
 fn parse() -> Result<Args, String> {
@@ -97,6 +104,18 @@ fn parse() -> Result<Args, String> {
             "--numeric-class" => a.numeric_class = true,
             "--inject-failure" => a.inject_failure = Some(num(val()?)? as u32),
             "--contract-check" => a.contract_check = true,
+            "--batch-check" => {
+                let v = val()?;
+                let p: Vec<usize> = v
+                    .split(',')
+                    .map(|x| num(x.into()))
+                    .collect::<Result<_, _>>()?;
+                if p.len() != 3 && p.len() != 5 {
+                    return Err("--batch-check B,STEPS,PREFILL_CHUNK[,LEN0,LENSTEP]".into());
+                }
+                let (len0, step) = if p.len() == 5 { (p[3], p[4]) } else { (6, 5) };
+                a.batch_check = Some((p[0], p[1], p[2], len0, step));
+            }
             "--attn-probe" => {
                 for v in val()?.split(',') {
                     a.attn_probe.push(num(v.into())? as u32);
@@ -114,6 +133,7 @@ fn parse() -> Result<Args, String> {
                     "conv-state" => a.red.conv_state_dropped = true,
                     "ties-high" => a.red.ties_high = true,
                     "commit-on-error" => a.red.commit_on_error = true,
+                    "batch-rows-rotated" => a.red.batch_rows_rotated = true,
                     _ => return Err(format!("unknown red arm {v}")),
                 }
                 a.red_names.push(v);
@@ -648,6 +668,146 @@ fn attn_probe(
     Ok(serde_json::Value::Object(out))
 }
 
+/// The batching gate: `b` sequences at different positions, each decoded `steps` teacher-forced
+/// tokens alone (`forward_seq`), then again as a schedule where sequence i joins at step i with
+/// its prefill in chunks of `pchunk` rows interleaved with its peers' batched decode
+/// (`decode_batch`), and leaves after its own tokens. Every decode row's logits must equal its
+/// solo run bit for bit.
+fn batch_check(
+    route: &mut Route,
+    tape: &Tape,
+    b: usize,
+    steps: usize,
+    pchunk: usize,
+    len0: usize,
+    lenstep: usize,
+) -> Result<serde_json::Value, String> {
+    let ids = &tape.all_ids;
+    let vocab = route.vocab();
+    // the solo runs never take a red arm's batched program
+    let red = route.red();
+    // sequence i: a prompt of len_i ids from offset off_i of the tape, then steps_i decode ids
+    let plan: Vec<(usize, usize, usize)> = (0..b)
+        .map(|i| {
+            let len = len0 + lenstep * i;
+            let off = (3 * i) % 8;
+            let n = steps - (i % 3);
+            (off, len, n)
+        })
+        .collect();
+    for (off, len, n) in &plan {
+        if off + len + n > ids.len() {
+            return Err("the tape is too short for the batch schedule".into());
+        }
+    }
+    let context = plan.iter().map(|(_, l, n)| l + n).max().unwrap_or(1) + 8;
+    let row_digest = |row: &[f32]| fnv(row.iter().flat_map(|v| v.to_le_bytes()));
+    // solo
+    let mut solo: Vec<Vec<u64>> = Vec::new();
+    for (off, len, n) in &plan {
+        let mut seq = route.new_seq(context)?;
+        for chunk in ids[*off..off + len].chunks(pchunk) {
+            route.forward_seq(&mut seq, chunk, Head::None, None)?;
+        }
+        let mut d = Vec::new();
+        for t in 0..*n {
+            let tok = ids[off + len + t];
+            let out = route.forward_seq(&mut seq, &[tok], Head::All, None)?;
+            d.push(row_digest(&out.logits[..vocab]));
+        }
+        solo.push(d);
+    }
+    // batched schedule
+    let mut seqs: Vec<Option<Seq>> = (0..b).map(|_| None).collect();
+    let mut prefilled = vec![0usize; b];
+    let mut done = vec![0usize; b];
+    let mut got: Vec<Vec<u64>> = vec![Vec::new(); b];
+    let mut step = 0usize;
+    let (mut batched_calls, mut max_rows, mut prefill_calls) = (0usize, 0usize, 0usize);
+    while done.iter().zip(&plan).any(|(d, p)| *d < p.2) {
+        // join: sequence `step` starts; every joining sequence advances one prefill chunk a step
+        if step < b {
+            seqs[step] = Some(route.new_seq(context)?);
+        }
+        for i in 0..b {
+            let (off, len, _) = plan[i];
+            if let Some(seq) = seqs[i].as_mut()
+                && prefilled[i] < len
+            {
+                let take = pchunk.min(len - prefilled[i]);
+                route.forward_seq(
+                    seq,
+                    &ids[off + prefilled[i]..off + prefilled[i] + take],
+                    Head::None,
+                    None,
+                )?;
+                prefilled[i] += take;
+                prefill_calls += 1;
+            }
+        }
+        // the decode rows of every prefilled sequence with tokens left
+        let mut idx = Vec::new();
+        let mut toks = Vec::new();
+        for i in 0..b {
+            let (off, len, n) = plan[i];
+            if seqs[i].is_some() && prefilled[i] == len && done[i] < n {
+                idx.push(i);
+                toks.push(ids[off + len + done[i]]);
+            }
+        }
+        if !idx.is_empty() {
+            let mut taken: Vec<Seq> = idx
+                .iter()
+                .map(|i| seqs[*i].take().expect("active"))
+                .collect();
+            let out = {
+                let mut refs: Vec<&mut Seq> = taken.iter_mut().collect();
+                route.decode_batch(&mut refs, &toks, Head::All)
+            };
+            for (k, i) in idx.iter().enumerate() {
+                seqs[*i] = Some(taken.remove(0));
+                let _ = k;
+            }
+            let out = out?;
+            for (k, i) in idx.iter().enumerate() {
+                got[*i].push(row_digest(&out.logits[k * vocab..(k + 1) * vocab]));
+                done[*i] += 1;
+            }
+            batched_calls += 1;
+            max_rows = max_rows.max(idx.len());
+        }
+        // leave: a finished sequence frees its state
+        for i in 0..b {
+            if seqs[i].is_some() && done[i] == plan[i].2 {
+                seqs[i] = None;
+            }
+        }
+        step += 1;
+    }
+    let mut differ = 0usize;
+    let mut compared = 0usize;
+    for i in 0..b {
+        compared += solo[i].len();
+        differ += solo[i].iter().zip(&got[i]).filter(|(p, q)| p != q).count()
+            + solo[i].len().abs_diff(got[i].len());
+    }
+    eprintln!(
+        "ink2-gpu: batch check b={b}: {compared} decode rows over {batched_calls} batched calls (up to {max_rows} rows) and {prefill_calls} interleaved prefill chunks of {pchunk}; rows differing from solo: {differ}"
+    );
+    Ok(serde_json::json!({
+        "sequences": b,
+        "red_batch_rows_rotated": red.batch_rows_rotated,
+        "schedule": plan.iter().map(|(o, l, n)| serde_json::json!({"offset": o, "prompt": l, "decode": n})).collect::<Vec<_>>(),
+        "prefill_chunk": pchunk,
+        "batched_calls": batched_calls,
+        "max_rows": max_rows,
+        "prefill_calls": prefill_calls,
+        "decode_rows_compared": compared,
+        "decode_rows_differ": differ,
+        "bit_identical": differ == 0,
+    }))
+}
+
 fn argmax(row: &[f32]) -> u32 {
     let mut best = 0;
     for (i, v) in row.iter().enumerate() {
@@ -1101,6 +1261,9 @@ fn run() -> Result<(), String> {
             "ink2-gpu: chunkings {x} vs {y} over {limit} rows: slot rows differ {slot_rows_differ}/{}, logit rows differ {logit_rows_differ}, argmax differ {argmax_differ}",
             limit * nslots
         );
+    }
+    if let Some((b, steps, pchunk, len0, step)) = a.batch_check {
+        receipt["batch_check"] = batch_check(&mut route, tape, b, steps, pchunk, len0, step)?;
     }
     if !a.attn_probe.is_empty() {
         let tokens = &tape.all_ids[..tape.prompt];
