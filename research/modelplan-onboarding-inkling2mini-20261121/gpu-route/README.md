@@ -131,6 +131,14 @@ for bit (the declared expert block 2304/2304 against `expert_block_*` with the s
 act-quant gate is ALL OK (48 lines), chunking invariance and atomicity hold, and the float receipts are
 unchanged (`b8/p1-float.json` equals `b6/`).
 
+## Routing
+
+A router-scale anomaly (scaling the router weights by 0.85 lowered NLL by 0.28 nats a token) was
+traced by lane F to scoring a corpus pasted into the user turn, text the model was not trained to
+predict. In distribution (raw text, and the model turn of the chat template) the reference router is at
+its optimum and the float reference is calibrated. The route's routing is the reference's, gated on bit
+identity to it, and stays as it is.
+
 ## Change impact
 
 `tools/change-impact.toml` routes `cu/inkling2_gpu.cu`, `cu/inkling2_actq.cu`, `src/inkling2_gpu.rs` and
@@ -142,7 +150,6 @@ cell records.
 
 ## Open
 
-- Routing semantics are not settled. Lane F measures that scaling the router weights by 0.85 lowers held-out NLL by 0.28 nats a token on real text, mostly through expert selection: a semantics error shared by the PR and vLLM readings, or compensation for an error elsewhere. This route implements the current reference's routing and is gated on bit-identity to it; no routing math changes until lane F places the anomaly.
 
 - Multi-sequence batching (several requests in one call) is not built; batched-vs-solo equality is
   pending with it. Single-request chunked prefill vs per-token decode is bit-identical.
