@@ -92,7 +92,8 @@ greedy reading.
 
 `memra model verify checkpoint --against hy_v4_flash` over the f64 oracle tapes with the tuned
 route as the native runner, then the five red arms (`tools/verify-chain.sh`). On step 13's binary
-(`receipts/gate-step13/verify-chain.log`) and on step 17's (`receipts/gate-step17/`):
+(`receipts/gate-step13/verify-chain.log`), step 17's and step 18's (`receipts/gate-step17/`,
+`receipts/gate-step18/`):
 `verified=Checkpoint`; Engram off fails at 0.0182 past the 0.0058 band, BF16 dequantization at
 0.0060, reversed ties are refused, the cache off by one fails at 0.0097, the early pool at 0.894
 past 0.0224: the points step 8 fails at.
