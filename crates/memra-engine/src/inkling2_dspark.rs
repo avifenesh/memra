@@ -386,6 +386,9 @@ pub struct DraftGpu {
     fold_b: CudaSlice<f32>,
     /// Committed positions the context holds.
     pub len: usize,
+    /// Taps of positions held for the next commit (`[taps, chunk, hidden]`), and how many.
+    stage_buf: CudaSlice<f32>,
+    staged: usize,
     pub context: usize,
     pub chunk: usize,
     x: CudaSlice<f32>,
@@ -598,6 +601,8 @@ impl DraftGpu {
             fold,
             fold_b,
             len: 0,
+            stage_buf: dev.zeros(g.taps * chunk * g.hidden)?,
+            staged: 0,
             context,
             chunk,
             x: dev.zeros(rows * h)?,
@@ -679,6 +684,9 @@ impl DraftGpu {
 
     /// Exchange the drafter's current request state with `state`.
     pub fn swap_state(&mut self, state: &mut DraftState) -> Result<(), String> {
+        if self.staged > 0 {
+            return Err("swap of a drafter state with held rows (flush first)".into());
+        }
         if state.kv.len() != self.layers.len() {
             return Err("a drafter state of another drafter".into());
         }
@@ -694,6 +702,7 @@ impl DraftGpu {
     /// Forget the request.
     pub fn reset(&mut self) {
         self.len = 0;
+        self.staged = 0;
     }
 
     #[allow(clippy::too_many_arguments)] // allow: one GEMV over one stored weight
@@ -781,6 +790,56 @@ impl DraftGpu {
         row0: usize,
         rows: usize,
     ) -> Result<(), String> {
+        self.flush(dev)?;
+        let base = p(taps, &self.st) + (row0 * self.g.hidden * 4) as u64;
+        self.commit_at(dev, base, tap_rows, rows)
+    }
+
+    /// Hold the taps of `rows` positions for a later commit (a plain step of a speculative
+    /// request: the next proposal commits every held row in one pass). Taps are copied out of
+    /// the capture buffer, which the next call overwrites.
+    pub fn stage(
+        &mut self,
+        dev: &Dev,
+        taps: &CudaSlice<f32>,
+        tap_rows: usize,
+        row0: usize,
+        rows: usize,
+    ) -> Result<(), String> {
+        if self.staged + rows > self.chunk {
+            self.flush(dev)?;
+        }
+        let st = self.st.clone();
+        let h = self.g.hidden;
+        let dst0 = pm(&mut self.stage_buf, &st);
+        for t in 0..self.g.taps {
+            let src = p(taps, &st) + (((t * tap_rows) + row0) * h * 4) as u64;
+            let dst = dst0 + (((t * self.chunk) + self.staged) * h * 4) as u64;
+            dev.copy_raw(dst, src, rows * h * 4)?;
+        }
+        self.staged += rows;
+        Ok(())
+    }
+
+    /// Commit the held rows.
+    pub fn flush(&mut self, dev: &Dev) -> Result<(), String> {
+        if self.staged == 0 {
+            return Ok(());
+        }
+        let rows = self.staged;
+        self.staged = 0;
+        let base = p(&self.stage_buf, &self.st);
+        let chunk = self.chunk;
+        self.commit_at(dev, base, chunk, rows)
+    }
+
+    fn commit_at(
+        &mut self,
+        dev: &Dev,
+        base: u64,
+        tap_rows: usize,
+        rows: usize,
+    ) -> Result<(), String> {
         if rows == 0 {
             return Ok(());
         }
@@ -794,7 +853,6 @@ impl DraftGpu {
         let st = self.st.clone();
         let g = &self.g;
         let (h, kvw, d) = (g.hidden, g.kv_heads * g.head_dim, g.head_dim);
-        let base = p(taps, &st) + (row0 * h * 4) as u64;
         for l in 0..g.layers {
             let lw = &mut self.layers[l];
             dev.launched("memra_ink2d_mix_norm", unsafe {
@@ -1124,6 +1182,7 @@ impl DraftGpu {
             return Err("the drafter's context is full".into());
         }
         dev.bind()?;
+        self.flush(dev)?;
         self.block(dev, shared, anchor)?;
         let st = self.st.clone();
         let (h, r, vocab) = (g.hidden, g.rank, g.vocab);
