@@ -91,7 +91,30 @@ mod ffi {
             h: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_ink2g_gemv_jobs(
+            xs: *const *const f32,
+            ws: *const *const c_void,
+            ys: *const *mut f32,
+            ns: *const i32,
+            count: i32,
+            k: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_ink2g_mix(
+            states: *const *const f32,
+            ns: i32,
+            queries: *const f32,
+            nq: i32,
+            eps: f64,
+            out: *mut f32,
+            out_stride: i64,
+            r: i32,
+            h: i32,
+            scratch: *mut f64,
+            scratch_len: i64,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_ink2g_mix_v0(
             states: *const *const f32,
             ns: i32,
             queries: *const f32,
@@ -104,6 +127,21 @@ mod ffi {
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_controller(
+            x: *const f32,
+            msg: *const f32,
+            down: *const c_void,
+            forget: *const c_void,
+            gain: *const c_void,
+            eps: f64,
+            out: *mut f32,
+            r: i32,
+            h: i32,
+            rank: i32,
+            scratch: *mut f64,
+            scratch_len: i64,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_ink2g_controller_v0(
             x: *const f32,
             msg: *const f32,
             down: *const c_void,
@@ -289,6 +327,26 @@ const FMT_NVFP4: i32 = 1;
 const FMT_MXFP8: i32 = 2;
 /// Words of one act-quant group record at `nb = 1` (`memra_ink2_group_words(1)`).
 const GROUP_WORDS: usize = 10;
+
+/// BF16 decode GEMVs over one input row each, all of input width k, in one launch: jobs of
+/// (x, w, y) device pointers and the output width.
+fn gemv_jobs(dev: &Dev, jobs: &[(u64, u64, u64, usize)], k: usize) -> Result<(), String> {
+    let xs: Vec<*const f32> = jobs.iter().map(|j| j.0 as *const f32).collect();
+    let ws: Vec<*const c_void> = jobs.iter().map(|j| j.1 as *const c_void).collect();
+    let ys: Vec<*mut f32> = jobs.iter().map(|j| j.2 as *mut f32).collect();
+    let ns: Vec<i32> = jobs.iter().map(|j| j.3 as i32).collect();
+    dev.launched("memra_ink2g_gemv_jobs", unsafe {
+        ffi::memra_ink2g_gemv_jobs(
+            xs.as_ptr(),
+            ws.as_ptr(),
+            ys.as_ptr(),
+            ns.as_ptr(),
+            ns.len() as i32,
+            k as i32,
+            dev.sp(),
+        )
+    })
+}
 
 fn ck(name: &str, rc: i32) -> Result<(), String> {
     match rc {
@@ -936,6 +994,8 @@ struct Work {
     act: CudaSlice<f32>,
     dn: CudaSlice<f32>,
     moe: CudaSlice<f32>,
+    /// f64 scratch of the split mix and controller (rows x 128)
+    dscr: CudaSlice<f64>,
     logits: CudaSlice<f32>,
     best: CudaSlice<u32>,
     tok: CudaSlice<u32>,
@@ -1548,6 +1608,7 @@ impl Route {
             act: dev.zeros(pairs * max_f)?,
             dn: dev.zeros(pairs * hidden)?,
             moe: dev.zeros(rh)?,
+            dscr: dev.zeros(chunk * 128)?,
             logits: dev.zeros(HEAD_ROWS * keep)?,
             best: dev.zeros(HEAD_ROWS)?,
             tok: dev.zeros(chunk)?,
@@ -1734,6 +1795,7 @@ impl Route {
         out_stride: usize,
         rows: usize,
         hidden: usize,
+        scr: &mut CudaSlice<f64>,
     ) -> Result<(), String> {
         let st = &dev.st;
         let ptrs: Vec<*const f32> = states.iter().map(|p| *p as *const f32).collect();
@@ -1754,6 +1816,8 @@ impl Route {
                 out_stride as i64,
                 rows as i32,
                 hidden as i32,
+                dptr_mut(scr, st) as *mut f64,
+                scr.len() as i64,
                 dev.sp(),
             )
         })
@@ -1872,7 +1936,16 @@ impl Route {
                 let mut states: Vec<u64> = list.iter().map(|b| dptr(&w.blocks[b], &st)).collect();
                 states.push(dptr(&w.bank_h, &st));
                 Self::mix(
-                    dev, &states, queries, 4, mix_eps, &mut w.msg, rh, rows, hidden,
+                    dev,
+                    &states,
+                    queries,
+                    4,
+                    mix_eps,
+                    &mut w.msg,
+                    rh,
+                    rows,
+                    hidden,
+                    &mut w.dscr,
                 )?;
             }
             let (heads, kvh, dim, rank, extent) = (
@@ -1895,7 +1968,16 @@ impl Route {
             if let Some((queries, count)) = &lw.attn_queries {
                 let states = state_ptrs(w, &blocks);
                 Self::mix(
-                    dev, &states, queries, *count, mix_eps, &mut w.xin, rh, rows, hidden,
+                    dev,
+                    &states,
+                    queries,
+                    *count,
+                    mix_eps,
+                    &mut w.xin,
+                    rh,
+                    rows,
+                    hidden,
+                    &mut w.dscr,
                 )?;
                 let base = dptr(&w.xin, &st);
                 for (i, s) in src.iter_mut().enumerate() {
@@ -1923,6 +2005,8 @@ impl Route {
                             rows as i32,
                             hidden as i32,
                             lp.gate_rank as i32,
+                            dptr_mut(&mut w.dscr, &st) as *mut f64,
+                            w.dscr.len() as i64,
                             dev.sp(),
                         )
                     })?;
@@ -1988,17 +2072,52 @@ impl Route {
                     )
                 })
             };
-            proj(dev, xq, &lw.wq, &mut w.qb, qw)?;
-            proj(dev, xq, &lw.wr, &mut w.rb, heads * rank)?;
-            proj(dev, xq, &lw.sink, &mut w.sinkb, heads)?;
-            proj(dev, xq, &lw.gate, &mut w.gateb, qw)?;
-            proj(dev, xk, &lw.wk, &mut w.kp, kvw)?;
-            proj(dev, xv, &lw.wv, &mut w.vp, kvw)?;
-            if let Some((wp, groups)) = &lw.kconv.dynamic {
-                proj(dev, xk, wp, &mut w.dynk, groups * lw.kconv.kernel)?;
-            }
-            if let Some((wp, groups)) = &lw.vconv.dynamic {
-                proj(dev, xv, wp, &mut w.dynv, groups * lw.vconv.kernel)?;
+            if rows == 1 {
+                // a decode step: the projections that read the three normed inputs in one launch
+                // (the same bits as one GEMV each)
+                let mut jobs: Vec<(u64, u64, u64, usize)> = vec![
+                    (xq, dptr(&lw.wq, &st), dptr_mut(&mut w.qb, &st), qw),
+                    (
+                        xq,
+                        dptr(&lw.wr, &st),
+                        dptr_mut(&mut w.rb, &st),
+                        heads * rank,
+                    ),
+                    (xq, dptr(&lw.sink, &st), dptr_mut(&mut w.sinkb, &st), heads),
+                    (xq, dptr(&lw.gate, &st), dptr_mut(&mut w.gateb, &st), qw),
+                    (xk, dptr(&lw.wk, &st), dptr_mut(&mut w.kp, &st), kvw),
+                    (xv, dptr(&lw.wv, &st), dptr_mut(&mut w.vp, &st), kvw),
+                ];
+                if let Some((wp, groups)) = &lw.kconv.dynamic {
+                    jobs.push((
+                        xk,
+                        dptr(wp, &st),
+                        dptr_mut(&mut w.dynk, &st),
+                        groups * lw.kconv.kernel,
+                    ));
+                }
+                if let Some((wp, groups)) = &lw.vconv.dynamic {
+                    jobs.push((
+                        xv,
+                        dptr(wp, &st),
+                        dptr_mut(&mut w.dynv, &st),
+                        groups * lw.vconv.kernel,
+                    ));
+                }
+                gemv_jobs(dev, &jobs, hidden)?;
+            } else {
+                proj(dev, xq, &lw.wq, &mut w.qb, qw)?;
+                proj(dev, xq, &lw.wr, &mut w.rb, heads * rank)?;
+                proj(dev, xq, &lw.sink, &mut w.sinkb, heads)?;
+                proj(dev, xq, &lw.gate, &mut w.gateb, qw)?;
+                proj(dev, xk, &lw.wk, &mut w.kp, kvw)?;
+                proj(dev, xv, &lw.wv, &mut w.vp, kvw)?;
+                if let Some((wp, groups)) = &lw.kconv.dynamic {
+                    proj(dev, xk, wp, &mut w.dynk, groups * lw.kconv.kernel)?;
+                }
+                if let Some((wp, groups)) = &lw.vconv.dynamic {
+                    proj(dev, xv, wp, &mut w.dynv, groups * lw.vconv.kernel)?;
+                }
             }
 
             // ---- clip / tau epilogues on Q and R
@@ -2274,6 +2393,7 @@ impl Route {
                 rh,
                 rows,
                 hidden,
+                &mut w.dscr,
             )?;
             if has_msg {
                 let (ctrls, _) = lw
@@ -2293,6 +2413,8 @@ impl Route {
                         rows as i32,
                         hidden as i32,
                         lp.gate_rank as i32,
+                        dptr_mut(&mut w.dscr, &st) as *mut f64,
+                        w.dscr.len() as i64,
                         dev.sp(),
                     )
                 })?;
@@ -2367,6 +2489,7 @@ impl Route {
             rh,
             rows,
             hidden,
+            &mut w.dscr,
         )?;
         dev.launched("memra_ink2g_norm", unsafe {
             ffi::memra_ink2g_norm(
@@ -2989,6 +3112,52 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
         );
     }
 
+    // ---- the decode GEMV at the route's shapes, several jobs a launch, against the tile GEMM
+    for (k, ns) in [
+        (
+            2304usize,
+            vec![3072usize, 384, 24, 3072, 1024, 1024, 64, 64],
+        ),
+        (3072, vec![2304]),
+        (2304, vec![128, 77]),
+        (4096, vec![130]),
+        (320, vec![200, 33]),
+    ] {
+        let mut differ = 0usize;
+        let mut keep = Vec::new();
+        for (i, &n) in ns.iter().enumerate() {
+            let wv = rng.bf16(n * k, 0.05);
+            // two rows: the tile GEMM runs rows 0..2, the job reads row 0 (row 1 for odd jobs)
+            let x = rng.vec(2 * k, 1.0 + i as f32);
+            let (wd, xd) = (dev.up(&bf16_bytes(&wv))?, dev.up(&x)?);
+            let mut tile = dev.zeros::<f32>(2 * n)?;
+            Route::gemm_bf16(dev, &xd, 0, &wd, &mut tile, 2, n, k)?;
+            let y = dev.zeros::<f32>(n)?;
+            keep.push((wd, xd, tile, y, n, i % 2));
+        }
+        let mut jobs = Vec::new();
+        for (wd, xd, _, y, n, r) in keep.iter_mut() {
+            jobs.push((
+                dptr(xd, &st) + (*r * k * 4) as u64,
+                dptr(wd, &st),
+                dptr_mut(y, &st),
+                *n,
+            ));
+        }
+        gemv_jobs(dev, &jobs, k)?;
+        for (_, _, tile, y, n, r) in keep.iter() {
+            let t = dev.down(tile, *r * *n, *n)?;
+            differ += bits_differ(&dev.down(y, 0, *n)?, &t);
+        }
+        verdict(
+            differ == 0,
+            format!(
+                "ink2g-gemv-jobs [k={k} jobs={} n={ns:?}] one launch vs the tile GEMM bit-differ={differ}",
+                ns.len()
+            ),
+        );
+    }
+
     // ---- expert banks as stored: NVFP4 and MXFP8, expert tiles, the dequant-bf16 red arm
     for (name, fmt) in [
         ("ink2g-gemm-nvfp4", FMT_NVFP4),
@@ -3178,8 +3347,37 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
         let qd = dev.up(&queries)?;
         let mut out = dev.zeros::<f32>(nq * rows * h)?;
         let ptrs: Vec<u64> = sd.iter().map(|s| dptr(s, &st)).collect();
-        Route::mix(dev, &ptrs, &qd, nq, 1e-6, &mut out, rows * h, rows, h)?;
+        let mut scr = dev.zeros::<f64>(rows * nq * ns * 2)?;
+        Route::mix(
+            dev,
+            &ptrs,
+            &qd,
+            nq,
+            1e-6,
+            &mut out,
+            rows * h,
+            rows,
+            h,
+            &mut scr,
+        )?;
         let got = dev.down(&out, 0, nq * rows * h)?;
+        // the #1397 form (one block per row) on the same inputs: the split form's bits must equal it
+        let raw: Vec<*const f32> = ptrs.iter().map(|p| *p as *const f32).collect();
+        dev.launched("memra_ink2g_mix_v0", unsafe {
+            ffi::memra_ink2g_mix_v0(
+                raw.as_ptr(),
+                ns as i32,
+                dptr(&qd, &st) as *const f32,
+                nq as i32,
+                1e-6,
+                dptr_mut(&mut out, &st) as *mut f32,
+                (rows * h) as i64,
+                rows as i32,
+                h as i32,
+                dev.sp(),
+            )
+        })?;
+        let v0_differ = bits_differ(&dev.down(&out, 0, nq * rows * h)?, &got);
         let mut worst = 0f64;
         for r in 0..rows {
             let wides: Vec<Vec<f64>> = states
@@ -3193,8 +3391,10 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             }
         }
         verdict(
-            worst <= 4.0 * ROUND,
-            format!("ink2g-mix [rows={rows} states={ns} queries={nq}] max rel={worst:.3e}"),
+            worst <= 4.0 * ROUND && v0_differ == 0,
+            format!(
+                "ink2g-mix [rows={rows} states={ns} queries={nq}] max rel={worst:.3e}; split form vs the #1397 form bit-differ={v0_differ}"
+            ),
         );
     }
 
@@ -3214,6 +3414,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             dev.up(&bf16_bytes(&gain))?,
         );
         let mut out = dev.zeros::<f32>(rows * h)?;
+        let mut scr = dev.zeros::<f64>(rows * rank)?;
         dev.launched("memra_ink2g_controller", unsafe {
             ffi::memra_ink2g_controller(
                 dptr(&xd, &st) as *const f32,
@@ -3226,10 +3427,50 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 rows as i32,
                 h as i32,
                 rank as i32,
+                dptr_mut(&mut scr, &st) as *mut f64,
+                (rows * rank) as i64,
                 dev.sp(),
             )
         })?;
         let got = dev.down(&out, 0, rows * h)?;
+        // the #1397 form (one block per row), and in place (out = x) as the route runs it
+        let mut v0 = dev.zeros::<f32>(rows * h)?;
+        dev.launched("memra_ink2g_controller_v0", unsafe {
+            ffi::memra_ink2g_controller_v0(
+                dptr(&xd, &st) as *const f32,
+                dptr(&md, &st) as *const f32,
+                dptr(&dd, &st) as *const c_void,
+                dptr(&fd, &st) as *const c_void,
+                dptr(&gd, &st) as *const c_void,
+                1e-6,
+                dptr_mut(&mut v0, &st) as *mut f32,
+                rows as i32,
+                h as i32,
+                rank as i32,
+                dev.sp(),
+            )
+        })?;
+        let mut inplace = dev.up(&x)?;
+        let ip = dptr_mut(&mut inplace, &st);
+        dev.launched("memra_ink2g_controller", unsafe {
+            ffi::memra_ink2g_controller(
+                ip as *const f32,
+                dptr(&md, &st) as *const f32,
+                dptr(&dd, &st) as *const c_void,
+                dptr(&fd, &st) as *const c_void,
+                dptr(&gd, &st) as *const c_void,
+                1e-6,
+                ip as *mut f32,
+                rows as i32,
+                h as i32,
+                rank as i32,
+                dptr_mut(&mut scr, &st) as *mut f64,
+                (rows * rank) as i64,
+                dev.sp(),
+            )
+        })?;
+        let v0_differ = bits_differ(&dev.down(&v0, 0, rows * h)?, &got)
+            + bits_differ(&dev.down(&inplace, 0, rows * h)?, &got);
         let want: Vec<f64> = (0..rows)
             .flat_map(|r| {
                 ops::controller(
@@ -3244,8 +3485,10 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             .collect();
         let worst = worst_rel(&got, &want, 1e-6);
         verdict(
-            worst <= 4.0 * ROUND,
-            format!("ink2g-controller [rows={rows} rank={rank}] max rel={worst:.3e}"),
+            worst <= 4.0 * ROUND && v0_differ == 0,
+            format!(
+                "ink2g-controller [rows={rows} rank={rank}] max rel={worst:.3e}; split form (and in place) vs the #1397 form bit-differ={v0_differ}"
+            ),
         );
     }
 
