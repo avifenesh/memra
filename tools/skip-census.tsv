@@ -84,6 +84,7 @@ memra-server	handoff_io::tests::both_writers_produce_identical_bytes_and_the_imp
 memra-server	worker::host_handoff_tests::host_handoff_file_writers_are_byte_identical_and_the_import_reads_both	crates/memra-server/src/worker.rs	SKIP[O_DIRECT filesystem]: direct handoff writer not run: {e}
 memra-tokenizer	detokenize::tests::the_real_sentencepiece_model_decodes_the_pinned_hebrew_tokens	crates/memra-tokenizer/src/detokenize/tests.rs	SKIP[{NEMO}]: real SentencePiece decode not run
 memra-tokenizer	detokenize::tests::the_real_whisper_vocabulary_decodes_hebrew_when_the_checkpoint_is_present	crates/memra-tokenizer/src/detokenize/tests.rs	SKIP[{}]: real Whisper vocabulary decode not run
+memra-tokenizer	glm53_flash_gives_the_checkpoint_ids_on_both_load_paths	crates/memra-tokenizer/tests/whole_word_lookup.rs	SKIP[MEMRA_GLM53_TOKENIZER_DIR unset]: GLM-5.3-Flash whole-word-lookup parity not run
 memra-tokenizer	golden_pairs	crates/memra-tokenizer/tests/llama_parity.rs	SKIP[{model}]: tokenizer assertions on the real GGUF not run
 memra-tokenizer	hf_tests::staged_checkpoints_resolve_their_own_pretokenizer	crates/memra-tokenizer/src/lib.rs	SKIP[{path}/tokenizer.json]: pretokenizer resolution case not run
 memra-tokenizer	parity_with_llama_tokenize	crates/memra-tokenizer/tests/llama_parity.rs	SKIP[{bin}]: llama-tokenize parity not run (set MEMRA_LLAMA_TOKENIZE)

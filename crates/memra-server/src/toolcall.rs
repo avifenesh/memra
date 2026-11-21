@@ -31,6 +31,10 @@
 
 use std::collections::HashMap;
 
+mod inkling2;
+#[allow(unused_imports)] // no serve route yet; see the `inkling2` module
+pub use inkling2::{Inkling2Markers, inkling2_schema_types};
+
 /// One parsed call, OpenAI-shape: `arguments` is a compact JSON object STRING.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedToolCall {
@@ -242,6 +246,8 @@ pub struct ToolStreamParser {
     /// The request log's entry (`crate::request_log`): each emitted call is noted there. None
     /// unless `MEMRA_REQUEST_LOG` is set; the pieces themselves are never changed.
     log: Option<crate::request_log::Entry>,
+    /// Inkling 2 dialect: the whole stream goes through this machine (the `inkling2` module).
+    ink2: Option<inkling2::Machine>,
 }
 
 /// AGENT-PAUSE TAIL PREDICATE (lane/kv-pause-demote-20260831, tiering spec Arc E): does a
@@ -322,6 +328,7 @@ impl ToolStreamParser {
             opening_uncapped: false,
             opening_scanned: 0,
             log: None,
+            ink2: None,
         }
     }
 
@@ -405,6 +412,7 @@ impl ToolStreamParser {
         parser.json_arguments = self.json_arguments;
         parser.stream = self.stream;
         parser.opening_uncapped = self.opening_uncapped;
+        parser.ink2 = self.ink2.as_ref().map(inkling2::Machine::fresh);
         if parser.gemma || parser.gemma_tools {
             parser.state = State::GemmaOpening;
         }
@@ -461,6 +469,46 @@ impl ToolStreamParser {
         p
     }
 
+    /// Inkling 2 response parser (`chat::INKLING2_DIALECT`): the `inkling2` module's machine, which
+    /// follows the `response_template` of the artifact's `tokenizer_config.json`. Thinking
+    /// bodies go to `reasoning`, text bodies to content, each `<|content_invoke_tool_json|>`
+    /// body is one call; text outside a message is dropped. The template writes no generation
+    /// prompt, so the parser starts outside a message whatever the request's thinking mode.
+    ///
+    /// Feed it by token id with [`Self::push_token`]: a marker is then a marker only when its
+    /// own control token arrives, and text that spells one stays text. [`Self::push`] finds
+    /// markers by spelling, which is how the vendor parser reads and what its fixtures gate; it
+    /// cannot tell a control token from its spelling.
+    ///
+    /// `types` (from [`inkling2_schema_types`]) cast string arguments to their declared types,
+    /// as the vendor parser does when it is given the tools; typed JSON arguments pass through
+    /// with their numbers as the model wrote them.
+    ///
+    /// A call body that is not `{"name": string, "args": object}` surfaces verbatim as content
+    /// with its header and markers (house policy; the vendor raises, or passes a non-string
+    /// name and non-object arguments through). [`tail_ends_with_tool_call`] does not know this
+    /// dialect: every message ends with the same marker.
+    #[allow(dead_code)] // no serve route yet; see the `inkling2` module
+    pub fn inkling2(types: HashMap<String, HashMap<String, Vec<String>>>) -> Self {
+        let mut p = Self::new(HashMap::new(), false);
+        p.scan_tools = false;
+        p.ink2 = Some(inkling2::Machine::new(types));
+        p
+    }
+
+    /// One generated token, by id, with its text (control tokens rendered). The Inkling 2
+    /// parser reads its framing from the ids in `markers` and never searches the text; every
+    /// other dialect reads text, so for those this is [`Self::push`].
+    #[allow(dead_code)] // no serve route yet; see the `inkling2` module
+    pub fn push_token(&mut self, markers: &Inkling2Markers, id: u32, text: &str) -> Vec<Piece> {
+        let out = match &mut self.ink2 {
+            Some(machine) => machine.push_token(markers, id, text),
+            None => self.push_pieces(text),
+        };
+        self.note_calls(&out);
+        out
+    }
+
     /// gemma4 tooluse parser (lane/gemma4-tools): splits `<|channel>thought…<channel|>` to
     /// `reasoning` and `<|tool_call>call:NAME{…}<tool_call|>` to OpenAI `tool_calls`; everything
     /// else is content. Channels/calls may open at any stream position (the template's own
@@ -501,7 +549,10 @@ impl ToolStreamParser {
     }
 
     pub fn push(&mut self, text: &str) -> Vec<Piece> {
-        let out = self.push_pieces(text);
+        let out = match &mut self.ink2 {
+            Some(machine) => machine.push_text(text),
+            None => self.push_pieces(text),
+        };
         self.note_calls(&out);
         out
     }
@@ -853,7 +904,10 @@ impl ToolStreamParser {
     /// surfaced raw (opening tag restored) — same malformed policy. A generation that ended
     /// still inside the think segment flushes the tail as reasoning (never-closed `</think>`).
     pub fn finish(&mut self) -> Vec<Piece> {
-        let out = self.finish_pieces();
+        let out = match &mut self.ink2 {
+            Some(machine) => machine.finish(),
+            None => self.finish_pieces(),
+        };
         self.note_calls(&out);
         out
     }
@@ -889,7 +943,10 @@ impl ToolStreamParser {
     }
 
     pub fn n_calls(&self) -> usize {
-        self.n_calls
+        match &self.ink2 {
+            Some(machine) => machine.n_calls(),
+            None => self.n_calls,
+        }
     }
 
     /// Think-segment text -> a Reasoning piece. ALWAYS delivered.

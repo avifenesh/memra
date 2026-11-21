@@ -1,0 +1,10 @@
+$ MEMRA_GLM53_TOKENIZER_DIR=<zai-org/GLM-5.3-Flash @ 04c4e9e9> cargo test -p memra-tokenizer --test whole_word_lookup -- --nocapture --test-threads=1
+(cargo's build lines left out)
+running 3 tests
+test both_load_paths_take_the_whole_word_lookup_from_the_family ... ok
+test glm53_flash_gives_the_checkpoint_ids_on_both_load_paths ... glm53 tokenizer.json: ignore-merges corpus 1786 cases, 0 differ
+glm53 tokenizer.json: pre-tokenizer corpus 526 cases, 0 differ
+glm53 gguf: ignore-merges corpus 1786 cases, 0 differ
+glm53 gguf: pre-tokenizer corpus 526 cases, 0 differ
+test the_inkling2_vocabulary_as_a_gguf_gives_the_checkpoint_ids ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.46s
