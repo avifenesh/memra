@@ -202,10 +202,17 @@ Detail, oracles, the table of proven facts and the list of where the references 
   query slots, the NVFP4 nibble order.
 - `memra model verify tiny --against inkling2` runs a 40-token request on a tiny checkpoint in
   the real layout (hidden 64, 8 layers in 4 blocks, 3 loop passes, 16 slots, window 8, extent
-  12, floor 24). The float-activation plan equals the PR code in f64 to the bit after rounding
-  to f32, as one chunk and under three schedules that split at and around the window, the extent
-  and the floor. The default-class plan is within 2.3e-6 of a separate simulation of the
-  activation-quant program; the band is 1e-5.
+  12, floor 24). The float-activation plan equals the f64 oracle to the bit after rounding to
+  f32, as one chunk and under three schedules that split at and around the window, the extent
+  and the floor, and the gate requires that bit equality. The oracle is the PR's trunk in f64
+  with a lane-written expert module; the PR program with nothing replaced is 4.8e-5 from it in
+  f64 with the same argmax at all 40 positions. The default-class plan is within 2.3e-6 of a
+  separate simulation of the activation-quant program, under a tiny-gate band of 1e-5 that also
+  requires every argmax.
+- The pack declares no checkpoint band for any class, so `verify checkpoint` refuses it: a
+  float-activation oracle cannot pass for the declared class.
+- The tiny checkpoint and its token ids regenerate byte-identically from the tracked generator
+  (`reference/ink2_tiny.py`, seed 20261121).
 - On that fixture the two classes are 5.4 apart in logits and agree on the argmax at 5 of 40
   positions.
 
@@ -217,7 +224,7 @@ cargo test -p memra-cli supported_packs_write_deterministic_native_oracles
 ```
 
 The inspect bundles were written again on this tree: only `artifact.lock` moved (the support
-state and the tiny gate's band).
+state).
 
 ## Next
 

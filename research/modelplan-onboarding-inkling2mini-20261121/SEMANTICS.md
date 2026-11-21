@@ -179,9 +179,12 @@ record as a red arm. The table of tests, records and red arms is in
   f32. MXFP8: `e4m3(value) * 2^(scale - 127)`.
 - On float inputs the routing weight before or after the down projection is one function up to
   rounding.
-- The whole trunk: on a tiny checkpoint in the real layout the executor's logits equal the PR
-  code's in f64 to the bit after rounding to f32, as one prefill chunk and under three schedules
-  that split the request at and around the window, the extent and the floor
+- The whole trunk: on a tiny checkpoint in the real layout the executor's logits equal the f64
+  oracle's (the PR's trunk in f64 with a lane-written expert module; the PR program with
+  nothing replaced is 4.8e-5 from it) to the bit after rounding to f32, as one prefill chunk and
+  under three schedules that split the request at and around the window, the extent and the
+  floor. That run also pins the message bank, the Q-side sink and the place of the MLP
+  controller, which no module record sees
   ([`reference/README.md`](reference/README.md#what-the-tiny-gate-runs)).
 
 Router ties are not provable against the PR, whose `torch.topk` leaves the order unspecified.
