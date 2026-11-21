@@ -19,8 +19,9 @@ layers), 4-stream hyper-connections, a latent MoE of 512 experts and the Engram 
 MEMRA_MODELS=hy4=/path/Hy4-flash-NVFP4 memra-server
 ```
 
-- The served context is the largest session the memory book holds with the route idle: 531,000
-  positions on a GB10 (the config declares 1,048,576). A request that cannot fit is refused by
+- The served context is the largest session the memory book holds with the route idle: 509,886
+  positions on a GB10 with the drafter resident, 532,944 without it (the config declares
+  1,048,576). A request that cannot fit is refused by
   name; one that fits alone waits for running requests to finish.
 - Long prompts are prefilled in chunks of `MEMRA_HY4F_PREFILL_CHUNK` tokens (default 2,048), one
   chunk a step beside the other requests' decode; the chunk size never changes a value.
@@ -47,11 +48,19 @@ MEMRA_MODELS=hy4=/path/Hy4-flash-NVFP4 memra-server
   to the verified tapes, chunked prefills bit-equal to whole ones, concurrent requests equal to
   solo, streaming, efforts, a tool call round trip, sampling, stops, cancellation, admission and a
   30,934-token needle.
+- Drafts: the DFly2 drafter against the pinned vendor program in f64 (`memra-reference hy4f_dfly`
+  on the tiny fixture and the artifact; `hy4f-spec gate-route` for the route's class, band 0.0398);
+  `hy4f-spec gen` (drafted greedy equal to plain greedy, ids and every logits row); the served
+  gates above with drafts on; every answer of that gate equal to a drafts-off server's
+  (`draft_identity.py`); and the chat turns with a refused draft round and a refused ring backup
+  equal to the drafts-off answers (`MEMRA_HY4F_DRAFT_FAULT`, `turns_identity.py`).
 
 ## Limits
 
-- Untuned: about 6 tok/s decode and 205 tok/s prefill on a 2,104-token prompt for one request;
-  requests run one call at a time, so throughput does not grow with concurrency.
+- Untuned: about 6 tok/s decode without drafts and 205 tok/s prefill on a 2,104-token prompt for
+  one request; with drafts, six chat turns read 1.2 to 2.2 times the undrafted speed (the
+  drafter keeps 0.22 to 0.62 of its drafts). Requests run one call at a time, so throughput does
+  not grow with concurrency.
 - No prefix reuse, constrained decoding or vision; drafts are greedy for sampled requests too.
 - One GB10 only; the record covers no other device.
 

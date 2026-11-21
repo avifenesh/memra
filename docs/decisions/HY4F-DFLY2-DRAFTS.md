@@ -18,20 +18,37 @@ decode rows bit for bit. `hy4f-spec gen` measured that: plain and drafted greedy
 bit-equal logits on every emitted row, 128 tokens of `chat` and 64 of `long`. With drafts on, the
 step 9 served-answer gates pass: served greedy equals `hy4f-gpu --gen`, 23 teacher-forced positions
 equal the verified tapes, concurrent requests answer as alone, and seeded sampling answers as
-alone (research/modelplan-onboarding-hy4flash-20261119/, step 10).
+alone. Every answer of that gate equals the same binary's with `MEMRA_HY4F_DRAFT=0`, 51 answers:
+greedy, seeded sampled, penalized, stopped, streamed, tool calls
+(research/modelplan-onboarding-hy4flash-20261119/, step 10, `dfly/receipts/`).
 
 Speed, one GB10, through the server (`serve/scripts/bench.py`, N = 3 a cell, drafts on and off in
 the same window):
 
-@@TABLE@@
+| workload | drafts off | drafts on |
+|---|---:|---:|
+| chat, one request, 36-token prompt, 128 tokens (`ignore_eos`) | 5.95 tok/s | 15.6 tok/s |
+| long, one request, 2,104-token prompt, 64 tokens | 5.40 tok/s | 8.2 tok/s |
+| chat, four requests at once, aggregate | 5.88 tok/s | 14.9 tok/s |
+| long, four requests at once, aggregate | 2.00 tok/s | 2.25 tok/s |
+| six real chat turns, greedy, each to its own end, total wall | 169.8 s | 113.8 s |
+
+One GB10, the binaries of `ef45222ac6`, 2026-11-21; decode tokens a second of a request, medians of
+N = 3 after a warm-up; the second drafts-on run of the window read 15.7 and 8.2. Each of the six
+turns is faster with drafts on, from 46.5 s to 39.5 s on a list (0.22 of its drafts kept) to 36.8 s
+to 16.8 s on code (0.62 kept). The `chat` bench row decodes past its answer into a repeated token
+and overstates a chat turn; the turns are the fair reading.
 
 ## Decision
 
 Drafts are on by default at the artifact's 5. The tokens are the undrafted route's, greedy or
 sampled, because a draft is kept only when it equals the route's own choice for its row. Each
 session books one round's cache positions, and the drafter's 0.70 GiB of weights and 7.3 MiB of
-scratch are resident before the memory book's ceiling is read. The served context goes from
-531,000 positions to 510,402.
+scratch are resident before the memory book's ceiling is read. A draft round or a verify call's
+ring backup that is refused turns drafting off for that request, which is then served by the
+undrafted route's calls; a device fault stops the route as it does without drafts. The served context, read from
+the free memory at boot, goes from 532,944 positions without the drafter to 509,886 with it in
+the same window.
 
 ## Rejected
 
