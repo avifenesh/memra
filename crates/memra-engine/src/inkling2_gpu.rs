@@ -1533,6 +1533,13 @@ struct Capture {
     buf: CudaSlice<f32>,
 }
 
+impl Carry {
+    /// The position saved with the history.
+    pub fn position(&self) -> u64 {
+        self.position
+    }
+}
+
 /// The committed convolution history (which of the two buffers, see `SlotState::conv`) and the
 /// position of a request, noted before a call whose last rows may be rejected. Nothing is
 /// copied: the call writes the other buffers. The K/V caches need no copy either: a rejected row's keys sit at

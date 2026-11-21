@@ -130,6 +130,22 @@ pub fn generate(
     sampling: Sampling,
     stop: &[u32],
 ) -> Result<(Vec<u32>, SpecStats), String> {
+    generate_arm(route, drafter, prompt, n, k, sampling, stop, false)
+}
+
+/// [`generate`], or with `skip_restore` its red arm: on a partial accept the rejected rows stay
+/// in the convolution history and only the position goes back. The gate must catch it.
+#[allow(clippy::too_many_arguments)] // allow: one request's whole configuration
+pub fn generate_arm(
+    route: &mut Route,
+    drafter: &mut DraftGpu,
+    prompt: &[u32],
+    n: usize,
+    k: usize,
+    sampling: Sampling,
+    stop: &[u32],
+    skip_restore: bool,
+) -> Result<(Vec<u32>, SpecStats), String> {
     let taps = route
         .plan()
         .inkling2
@@ -277,7 +293,9 @@ pub fn generate(
                 (a, next)
             }
         };
-        if accepted < kk {
+        if accepted < kk && skip_restore {
+            route.position = carry.position() + accepted as u64 + 1;
+        } else if accepted < kk {
             // back to the history before the verify, and run the committed rows again
             route.restore_carry(&carry)?;
             route.forward(&rows[..accepted + 1], Head::None, None)?;
