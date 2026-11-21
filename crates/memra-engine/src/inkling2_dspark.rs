@@ -325,15 +325,24 @@ impl Shared {
         }
     }
 
-    pub fn of_route(route: &crate::inkling2_gpu::Route) -> Self {
+    pub fn of_route(route: &crate::inkling2_gpu::Route) -> Result<Self, String> {
+        use crate::inkling2_gpu::SharedHead;
         let st = route.dev.stream();
-        let (embed, norm, head) = route.shared_weights();
-        Self {
+        let (embed, norm, head) = route.shared_weights()?;
+        let (head, head_nv) = match head {
+            SharedHead::Bf16(w) => (p(w, st), None),
+            SharedHead::Nvfp4 {
+                codes,
+                scales,
+                global,
+            } => (p(codes, st), Some((p(codes, st), p(scales, st), global))),
+        };
+        Ok(Self {
             embed: p(embed, st),
             embed_norm: p(norm, st),
-            head: p(head, st),
-            head_nv: None,
-        }
+            head,
+            head_nv,
+        })
     }
 }
 
