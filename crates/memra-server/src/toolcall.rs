@@ -32,7 +32,6 @@
 use std::collections::HashMap;
 
 mod inkling2;
-#[allow(unused_imports)] // no serve route yet; see the `inkling2` module
 pub use inkling2::{Inkling2Markers, inkling2_schema_types};
 
 /// One parsed call, OpenAI-shape: `arguments` is a compact JSON object STRING.
@@ -248,6 +247,8 @@ pub struct ToolStreamParser {
     log: Option<crate::request_log::Entry>,
     /// Inkling 2 dialect: the whole stream goes through this machine (the `inkling2` module).
     ink2: Option<inkling2::Machine>,
+    /// The checkpoint's marker ids: with them [`Self::push_id`] feeds the machine by token id.
+    ink2_markers: Option<Inkling2Markers>,
 }
 
 /// AGENT-PAUSE TAIL PREDICATE (lane/kv-pause-demote-20260831, tiering spec Arc E): does a
@@ -329,6 +330,7 @@ impl ToolStreamParser {
             opening_scanned: 0,
             log: None,
             ink2: None,
+            ink2_markers: None,
         }
     }
 
@@ -413,6 +415,7 @@ impl ToolStreamParser {
         parser.stream = self.stream;
         parser.opening_uncapped = self.opening_uncapped;
         parser.ink2 = self.ink2.as_ref().map(inkling2::Machine::fresh);
+        parser.ink2_markers = self.ink2_markers;
         if parser.gemma || parser.gemma_tools {
             parser.state = State::GemmaOpening;
         }
@@ -488,7 +491,6 @@ impl ToolStreamParser {
     /// with its header and markers (house policy; the vendor raises, or passes a non-string
     /// name and non-object arguments through). [`tail_ends_with_tool_call`] does not know this
     /// dialect: every message ends with the same marker.
-    #[allow(dead_code)] // no serve route yet; see the `inkling2` module
     pub fn inkling2(types: HashMap<String, HashMap<String, Vec<String>>>) -> Self {
         let mut p = Self::new(HashMap::new(), false);
         p.scan_tools = false;
@@ -499,7 +501,6 @@ impl ToolStreamParser {
     /// One generated token, by id, with its text (control tokens rendered). The Inkling 2
     /// parser reads its framing from the ids in `markers` and never searches the text; every
     /// other dialect reads text, so for those this is [`Self::push`].
-    #[allow(dead_code)] // no serve route yet; see the `inkling2` module
     pub fn push_token(&mut self, markers: &Inkling2Markers, id: u32, text: &str) -> Vec<Piece> {
         let out = match &mut self.ink2 {
             Some(machine) => machine.push_token(markers, id, text),
@@ -546,6 +547,26 @@ impl ToolStreamParser {
         p.gemma = true;
         p.state = State::GemmaOpening;
         p
+    }
+
+    /// The serve path's parser of the inkling2 route: [`Self::inkling2`] fed by token id through
+    /// the checkpoint's own markers ([`Self::push_id`]).
+    pub fn inkling2_serving(
+        types: HashMap<String, HashMap<String, Vec<String>>>,
+        markers: Inkling2Markers,
+    ) -> Self {
+        let mut p = Self::inkling2(types);
+        p.ink2_markers = Some(markers);
+        p
+    }
+
+    /// One generated token as the stream delivers it: by id through the markers when the parser
+    /// carries them (the inkling2 serve path), else by text, as [`Self::push`].
+    pub fn push_id(&mut self, id: u32, text: &str) -> Vec<Piece> {
+        match self.ink2_markers {
+            Some(markers) if self.ink2.is_some() => self.push_token(&markers, id, text),
+            _ => self.push(text),
+        }
     }
 
     pub fn push(&mut self, text: &str) -> Vec<Piece> {

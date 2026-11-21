@@ -1077,7 +1077,7 @@ fn messages_sse(
                     terminal = true;
                     break;
                 }
-                Event::Token { id: _, text } => {
+                Event::Token { id, text } => {
                     if let Some(receipt) = receipt.as_mut()
                         && let Err(err) = receipt.record_completion_token()
                     {
@@ -1099,7 +1099,7 @@ fn messages_sse(
                     ensure_started!();
                     match parser.as_mut() {
                         Some(p) => {
-                            for piece in p.push(&text) {
+                            for piece in p.push_id(id, &text) {
                                 piece_frames!(piece);
                             }
                         }

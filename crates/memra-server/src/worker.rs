@@ -2818,6 +2818,11 @@ pub struct ModelCaps {
     /// program). The renderer itself keys on the tokenizer's census (`Dsv4Encoding::V41`), so
     /// whoever builds these caps for a V4.1 checkpoint sets this from the same census.
     pub dsv41: bool,
+    /// inkling2 (`chat::INKLING2_DIALECT`): the checkpoint's framing marker ids. When set, chat
+    /// requests arm the inkling2 response parser fed by token id (`ToolStreamParser::inkling2`,
+    /// `push_token`), `reasoning_effort` passes through to the template (a level name of its
+    /// map or a number in [0.0, 0.99]), and the surfaces without that parser refuse the model.
+    pub inkling2: Option<crate::toolcall::Inkling2Markers>,
     /// GLM-5.3-Flash (`glm5_next`) dialect (lane/glm53-flash-bringup, 2026-08-27): the
     /// `[gMASK]<sop>` + `<|user|>`/`<|assistant|>`/`<|observation|>` turn dialect, an
     /// always-open `<think>` tail, an always-rendered `Reasoning Effort:` system line with a
@@ -21259,6 +21264,9 @@ pub fn run(
     // deepseek-v4.1 checkpoints serve on their own thread too (`dsv41_serve`); their senders
     // share `dsv4_routes` (the dedicated-thread dispatch map) and their contracts are their own.
     let mut dsv41_sessions: HashMap<String, usize> = HashMap::new();
+    // inkling2 checkpoints serve on their own thread too (`inkling2_serve`), through the same
+    // dedicated-thread dispatch map
+    let mut inkling2_sessions: HashMap<String, usize> = HashMap::new();
     // REMOVED-DOORS REFUSAL (2026-08-29). Env-only, so it runs BEFORE any model load: the
     // old step37-scoped refusal needed the loaded model's class and therefore paid a full
     // multi-minute checkpoint load before refusing; this one needs nothing but the
@@ -21284,6 +21292,11 @@ pub fn run(
             let p = std::path::Path::new(path);
             if p.is_dir() && crate::dsv41_serve::is_dsv41_dir(p) {
                 planned.register(crate::dsv41_serve::contract(
+                    name,
+                    crate::route_contract::hybrid_interactive_cap().max(1),
+                ));
+            } else if p.is_dir() && crate::inkling2_serve::is_inkling2_dir(p) {
+                planned.register(crate::inkling2_serve::contract(
                     name,
                     crate::route_contract::hybrid_interactive_cap().max(1),
                 ));
@@ -21341,6 +21354,43 @@ pub fn run(
             dsv4_routes.insert(
                 name.clone(),
                 crate::dsv41_serve::spawn(dm, route_health, load),
+            );
+            order.push(name.clone());
+            continue;
+        }
+        if from_dir && crate::inkling2_serve::is_inkling2_dir(std::path::Path::new(path)) {
+            if draft.is_some() {
+                let _ = ready_tx.send(Err(format!(
+                    "model {name:?}: '+draft' is a GGUF-family attach; the inkling2 route serves \
+                     the trunk only (its drafter ships inside the checkpoint)"
+                )));
+                return;
+            }
+            let dir = std::path::Path::new(path);
+            let tok = match tokenizer_snapshots.load(name, path, || Tokenizer::from_hf_dir(dir)) {
+                Ok(t) => t,
+                Err(err) => {
+                    let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
+                    return;
+                }
+            };
+            let im = match crate::inkling2_serve::load(name, dir, tok) {
+                Ok(m) => m,
+                Err(err) => {
+                    let _ = ready_tx.send(Err(format!("load {name}: {err}")));
+                    return;
+                }
+            };
+            dsv4_caps.insert(name.clone(), crate::inkling2_serve::caps(&im));
+            inkling2_sessions.insert(name.clone(), im.sessions);
+            let cap = crate::inkling2_serve::contract(name, im.sessions)
+                .capacity
+                .concurrency();
+            let load = crate::route_telemetry::register(name, cap);
+            let route_health = health.register_route(name, load.clone());
+            dsv4_routes.insert(
+                name.clone(),
+                crate::inkling2_serve::spawn(im, route_health, load),
             );
             order.push(name.clone());
             continue;
@@ -21735,6 +21785,7 @@ pub fn run(
                 // V4.1 checkpoints serve on their own route (`dsv41_serve::caps`); this loader
                 // runs no V4.1 program, so no model it loads speaks V4.1's dialect.
                 dsv41: false,
+                inkling2: None,
                 // GLM-5.3-Flash: `[gMASK]<sop>` + `<|observation|>`. Template-keyed like every
                 // other cap — a glm5 checkpoint that shipped without its template would fall
                 // back to ChatML rendering, where arming this dialect would be guessing.
@@ -21787,6 +21838,8 @@ pub fn run(
     for name in &order {
         if let Some(&sessions) = dsv41_sessions.get(name) {
             route_registry.register(crate::dsv41_serve::contract(name, sessions));
+        } else if let Some(&sessions) = inkling2_sessions.get(name) {
+            route_registry.register(crate::inkling2_serve::contract(name, sessions));
         } else if dsv4_routes.contains_key(name) {
             route_registry.register(crate::dsv4_serve::contract(
                 name,

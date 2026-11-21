@@ -117,6 +117,7 @@ mod histogram;
 mod http_metrics;
 mod hybrid_telemetry;
 mod image_fetch;
+mod inkling2_serve;
 mod job_publication;
 /// In-memory reference implementation of `metering::JobStore` (memra#550,
 /// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`): the bounded, TTL'd buffer a background
@@ -4082,8 +4083,9 @@ struct ChatCompletionReq {
     /// table): low|medium|high = thinking ON at that budget, none|minimal = thinking OFF,
     /// absent = the model's own default. Binary-switch templates (qwen enable_thinking,
     /// gemma4) take the on/off half; level-consuming templates (step35 `Reasoning:`,
-    /// hy3 `reasoning_effort:`) also receive the level.
-    #[serde(default)]
+    /// hy3 `reasoning_effort:`) also receive the level. A JSON number arrives in its typed form
+    /// (`effort_string_or_number`): the inkling2 template reads a number in [0.0, 0.99].
+    #[serde(default, deserialize_with = "effort_string_or_number")]
     reasoning_effort: Option<String>,
     /// OpenRouter object form. Exactly THREE keys are understood — `effort`, `enabled`,
     /// `exclude` — and every other key is a named 400 (`parse_reasoning_object`), including
@@ -5742,7 +5744,12 @@ fn parse_think(
     max_tier: bool,
     numeric_budget: bool,
 ) -> Result<(ThinkMode, Option<String>, bool), String> {
-    let mut effort = reasoning_effort.clone();
+    // a number's typed form (`effort_string_or_number`) reads as its text on every other template
+    let mut effort = reasoning_effort.as_deref().map(|e| {
+        e.strip_prefix(chat::INKLING2_EFFORT_NUMBER)
+            .unwrap_or(e)
+            .to_string()
+    });
     let ReasoningObject {
         mut enabled,
         effort: object_effort,
@@ -5859,6 +5866,49 @@ struct ReasoningObject {
     enabled: Option<bool>,
     effort: Option<String>,
     exclude: Option<bool>,
+}
+
+/// `reasoning_effort` as a string, or a JSON number in the inkling2 renderer's typed form
+/// (`chat::INKLING2_EFFORT_NUMBER` and the number's JSON text), so a number stays a number on
+/// its way to a template that reads one and a numeric string stays a string.
+fn effort_string_or_number<'de, D>(d: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    match Option::<serde_json::Value>::deserialize(d)? {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(s)) => Ok(Some(s)),
+        Some(serde_json::Value::Number(n)) => {
+            Ok(Some(format!("{}{n}", chat::INKLING2_EFFORT_NUMBER)))
+        }
+        Some(other) => Err(serde::de::Error::custom(format!(
+            "reasoning_effort must be a string or a number, not {other}"
+        ))),
+    }
+}
+
+/// The inkling2 template's `reasoning_effort`: a name of its effort map or a number in
+/// [0.0, 0.99], validated here so a bad one is a 400 before the GPU; passed on as sent.
+fn inkling2_effort_field(raw: Option<&str>, think: ThinkMode) -> Result<Option<String>, String> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    match raw.strip_prefix(chat::INKLING2_EFFORT_NUMBER) {
+        Some(number) => {
+            let level = number
+                .parse::<f64>()
+                .map_err(|_| format!("bad reasoning_effort {number}: not a number"))?;
+            chat::inkling2_effort_number(level)
+                .map_err(|e| format!("bad reasoning_effort {number}: {e}"))?;
+        }
+        None => {
+            chat::inkling2_effort(think, Some(raw)).map_err(|e| {
+                format!("bad reasoning_effort {raw:?}: {e} (none|minimal|low|medium|high|xhigh|max, or a number in [0.0, 0.99])")
+            })?;
+        }
+    }
+    Ok(Some(raw.to_string()))
 }
 
 /// Parse the OpenRouter `reasoning` object STRICTLY — every key named, every unknown key a 400.
@@ -7093,6 +7143,12 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         eprintln!(
             "[server] {live} deepseek-v4.1 serving thread(s) still in a step; exiting anyway"
         );
+    }
+    let live = crate::inkling2_serve::join_threads(
+        deadline.saturating_duration_since(std::time::Instant::now()),
+    );
+    if live > 0 {
+        eprintln!("[server] {live} inkling2 serving thread(s) still in a step; exiting anyway");
     }
     Ok(())
 }
@@ -9726,6 +9782,21 @@ fn build_chat_request_with_trace(
     validate_parallel_tool_calls(req.parallel_tool_calls, caps, active_tools)?;
     let forcing = matches!(tool_choice, ToolChoice::Required | ToolChoice::Named(_));
     let constrained_tools = forcing || (active_tools && req.parallel_tool_calls == Some(false));
+    // inkling2: its calls are framed by control tokens the constrained tool grammars do not
+    // write, so a forced or single-call request is refused by name instead of constrained wrong
+    let inkling2_markers = caps.and_then(|c| c.inkling2);
+    if inkling2_markers.is_some() && constrained_tools {
+        return Err(
+            "tool_choice required/named and parallel_tool_calls=false are not available on the \
+             inkling2 route (its calls are framed by control tokens no tool grammar writes yet)"
+                .into(),
+        );
+    }
+    let inkling2_types = if inkling2_markers.is_some() && active_tools {
+        toolcall::inkling2_schema_types(&req.tools)
+    } else {
+        HashMap::new()
+    };
     let tool_language = if constrained_tools {
         let param = if forcing {
             "tool_choice"
@@ -9766,8 +9837,15 @@ fn build_chat_request_with_trace(
         ));
     }
     let vllm_switch = resolve_vllm_think_switch(req.enable_thinking, &req.chat_template_kwargs)?;
+    // inkling2: the template's own effort ladder and numbers (`inkling2_effort_field` below); the
+    // switches still decide the thinking mode
+    let inkling2 = caps.is_some_and(|c| c.inkling2.is_some());
     let (mut think, effort_level, think_client_explicit) = parse_think(
-        &req.reasoning_effort,
+        if inkling2 {
+            &None
+        } else {
+            &req.reasoning_effort
+        },
         &req.reasoning,
         vllm_switch,
         req.include_reasoning,
@@ -9851,7 +9929,13 @@ fn build_chat_request_with_trace(
     // REAL prefix; the preview treats "high" as its documented no-op and "medium" renders
     // as the default level under both, the never-corrupt clamp). Gate on the capability so
     // every other model's prompt stays byte-identical.
-    let reasoning_effort = if level_template { effort_level } else { None };
+    let reasoning_effort = if inkling2 {
+        inkling2_effort_field(req.reasoning_effort.as_deref(), think)?
+    } else if level_template {
+        effort_level
+    } else {
+        None
+    };
     // response_format -> grammar spec (constrained decoding). None/text = unconstrained,
     // the exact legacy path; unknown/malformed forms are loud 400s.
     let response_grammar = constrained::parse_response_format(req.response_format.as_ref())?;
@@ -10043,7 +10127,11 @@ fn build_chat_request_with_trace(
             p
         }
     };
-    let parser = if glm5 {
+    let parser = if let Some(markers) = inkling2_markers {
+        // inkling2: every chat request through its own response parser, fed by token id (the
+        // template writes no generation prompt, so the parser starts outside a message)
+        Some(ToolStreamParser::inkling2_serving(inkling2_types, markers))
+    } else if glm5 {
         Some(ToolStreamParser::glm5(think_open, schemas))
     } else if is_hy3 && (hy3_tools || hy3_think_open) {
         Some(ToolStreamParser::hy3(schemas, hy3_think_open))
@@ -12688,7 +12776,7 @@ fn sse_response_for_format(
                         receipt.capture_completion_delta(&text);
                     }
                     if let Some(p) = parser.as_mut() {
-                        for piece in p.push(&text) {
+                        for piece in p.push_id(id, &text) {
                             for payload in piece_chunks!(piece) {
                                 yield Ok(SseEvent::default().data(payload));
                             }
@@ -13419,7 +13507,9 @@ pub(crate) async fn collect_blocking_response(
                 tokens.push(id);
                 seen_tokens += 1;
                 match parser.as_mut() {
-                    Some(p) => consume(p.push(&delta), &mut text, &mut reasoning, &mut calls),
+                    Some(p) => {
+                        consume(p.push_id(id, &delta), &mut text, &mut reasoning, &mut calls)
+                    }
                     None => text.push_str(&delta),
                 }
             }
@@ -31757,6 +31847,7 @@ temperature = 0.6
             gemma_unopened_thought: false,
             dsv4: false,
             dsv41: false,
+            inkling2: None,
             glm5: false,
             chat_temperature_default: None,
             chat_top_p_default: None,

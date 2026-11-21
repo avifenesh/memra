@@ -646,3 +646,32 @@ fn the_detector_does_not_capture_other_templates() {
         "<|im_start|>user\n{{ content }}<|im_end|>\n<think>\n"
     ));
 }
+
+#[test]
+fn a_typed_numeric_effort_renders_as_the_template_writes_a_number() {
+    use memra_tokenizer::chat::{INKLING2_EFFORT_NUMBER, Turn};
+    let template = "<|content_invoke_tool_json|> Thinking effort level: ";
+    let turns = vec![Turn {
+        role: "user".into(),
+        content: "hi".into(),
+        ..Default::default()
+    }];
+    let render = |effort: Option<&str>, think| {
+        apply_chat_template_tools_ex(Some(template), &turns, true, &[], &[], think, effort, None)
+    };
+    let typed = format!("{INKLING2_EFFORT_NUMBER}0.5");
+    let number = render(Some(&typed), ThinkMode::Default).unwrap();
+    assert_eq!(number, apply_inkling2_template(&turns, &[], 0.5).unwrap());
+    // a numeric string stays a level name the template does not know
+    assert!(render(Some("0.5"), ThinkMode::Default).is_err());
+    // out of range and thinking off
+    assert!(
+        render(
+            Some(&format!("{INKLING2_EFFORT_NUMBER}1.5")),
+            ThinkMode::Default
+        )
+        .is_err()
+    );
+    let off = render(Some(&typed), ThinkMode::NoThink).unwrap();
+    assert_eq!(off, apply_inkling2_template(&turns, &[], 0.0).unwrap());
+}

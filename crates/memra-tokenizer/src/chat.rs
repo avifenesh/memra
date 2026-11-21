@@ -579,7 +579,21 @@ pub fn apply_chat_template_tools_ex(
                     .into(),
             );
         }
-        let effort = inkling2_effort(think, reasoning_effort)?;
+        let effort = match reasoning_effort.and_then(|e| e.strip_prefix(INKLING2_EFFORT_NUMBER)) {
+            // a number the request sent as a number (the serve path's typed form)
+            Some(number) => {
+                let level = number
+                    .parse::<f64>()
+                    .map_err(|_| format!("reasoning_effort {number:?} is not a number"))?;
+                let level = inkling2_effort_number(level)?;
+                if think == ThinkMode::NoThink {
+                    0.0
+                } else {
+                    level
+                }
+            }
+            None => inkling2_effort(think, reasoning_effort)?,
+        };
         return apply_inkling2_template(turns, tools_struct, effort);
     }
     let has_tool_features = !tools_json.is_empty()
@@ -1406,6 +1420,12 @@ pub const INKLING2_DIALECT: &str = "inkling2";
 pub fn template_is_inkling2(t: &str) -> bool {
     t.contains("<|content_invoke_tool_json|>") && t.contains("Thinking effort level: ")
 }
+
+/// The typed form of a numeric `reasoning_effort` on its way to the inkling2 renderer: the serve
+/// path writes a request's JSON number as `num:<number>` in the effort string, so the renderer
+/// can tell it from a string, which the template reads as a level name (and a numeric string
+/// as an unknown one).
+pub const INKLING2_EFFORT_NUMBER: &str = "num:";
 
 /// The effort the template writes when the request names none.
 pub const INKLING2_DEFAULT_EFFORT: f64 = 0.9;
