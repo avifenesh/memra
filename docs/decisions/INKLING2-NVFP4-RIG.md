@@ -53,8 +53,7 @@ The route reproduces the harness. Its increment over its own shipped class is +0
 and +0.0085 (outside loop) of KL on rawdoc, against the harness's +0.0146 and +0.0075 over actq
 alone. Converting the loop core's attention roughly doubles the class's KL and dNLL over the
 declared program. Per layer (lane F's harness, one layer's six projections in NVFP4 and nothing else, unpinned
-routing; KL real and dNLL real with their 95% intervals). Six chatwrap coda arms were still queued
-when this was written; they land in `gpu-run/perlayer-stats.txt`. The pinned, in-distribution
+routing; KL real and dNLL real with their 95% intervals). All 48 arms. The pinned, in-distribution
 per-layer figures are in lane F's screen table: loop core 5e-4 to 1.4e-3, elsewhere 1e-4 to 3e-4.
 
 | L | rawdoc KL real [95% CI] | rawdoc dNLL [95% CI] | chatwrap KL real [95% CI] | chatwrap dNLL [95% CI] |
@@ -77,12 +76,12 @@ per-layer figures are in lane F's screen table: loop core 5e-4 to 1.4e-3, elsewh
 | 15 | 0.00272 [+0.0023, +0.0031] | +0.00026 [-0.0007, +0.0014] | 0.00312 [+0.0025, +0.0037] | +0.00123 [+0.0001, +0.0024] |
 | 16 | 0.00298 [+0.0024, +0.0035] | -0.00028 [-0.0019, +0.0014] | 0.00323 [+0.0027, +0.0038] | +0.00091 [-0.0003, +0.0022] |
 | 17 | 0.00283 [+0.0023, +0.0034] | +0.00030 [-0.0010, +0.0015] | 0.00306 [+0.0025, +0.0037] | -0.00077 [-0.0019, +0.0003] |
-| 18 | 0.00066 [+0.0005, +0.0008] | +0.00082 [+0.0002, +0.0015] | pending | pending |
-| 19 | 0.00026 [+0.0002, +0.0003] | +0.00017 [-0.0002, +0.0006] | pending | pending |
-| 20 | 0.00024 [+0.0002, +0.0003] | +0.00044 [-0.0000, +0.0010] | pending | pending |
-| 21 | 0.00023 [+0.0002, +0.0003] | +0.00046 [-0.0000, +0.0009] | pending | pending |
-| 22 | 0.00020 [+0.0002, +0.0003] | +0.00043 [+0.0001, +0.0008] | pending | pending |
-| 23 | 0.00043 [+0.0003, +0.0005] | +0.00040 [-0.0000, +0.0008] | pending | pending |
+| 18 | 0.00066 [+0.0005, +0.0008] | +0.00082 [+0.0002, +0.0015] | 0.00075 [+0.0006, +0.0009] | +0.00022 [-0.0005, +0.0010] |
+| 19 | 0.00026 [+0.0002, +0.0003] | +0.00017 [-0.0002, +0.0006] | 0.00033 [+0.0002, +0.0004] | +0.00035 [-0.0000, +0.0007] |
+| 20 | 0.00024 [+0.0002, +0.0003] | +0.00044 [-0.0000, +0.0010] | 0.00027 [+0.0002, +0.0003] | +0.00004 [-0.0004, +0.0005] |
+| 21 | 0.00023 [+0.0002, +0.0003] | +0.00046 [-0.0000, +0.0009] | 0.00025 [+0.0002, +0.0003] | +0.00007 [-0.0004, +0.0006] |
+| 22 | 0.00020 [+0.0002, +0.0003] | +0.00043 [+0.0000, +0.0008] | 0.00022 [+0.0002, +0.0003] | +0.00000 [-0.0004, +0.0005] |
+| 23 | 0.00043 [+0.0003, +0.0005] | +0.00040 [-0.0000, +0.0008] | 0.00042 [+0.0003, +0.0005] | +0.00032 [-0.0001, +0.0008] |
 
 Unpinned, a single prelude or core layer moves the routing of 16-34% of the rows, which is most of
 its KL. The coda layers (18-23) move under 2.2%. No single layer's dNLL interval excludes zero by
