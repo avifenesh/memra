@@ -336,10 +336,121 @@ pub enum DrafterHead {
     RnnHidden { rank: u32 },
 }
 
-/// The drafter shipped in `mtp.safetensors`, as declared. It is not the `DsparkPlan` program
-/// (learned mask embedding, a fuse matrix over the taps, context K/V projections, a recurrent
-/// head, no confidence head), and no executor implements it: the plan names it so the contract
-/// can own its tensors and every drafting surface refuses it.
+/// What a draft block row is built from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DraftRowInput {
+    /// The trunk's token embedding of the row's token, through the trunk's embedding norm.
+    TrunkEmbeddingNormed,
+    /// The learned `mask_embed` vector; no token id is embedded.
+    LearnedMask,
+}
+
+/// One draft block: `rows` query rows at consecutive positions `P..P + rows`, `P` the position
+/// of the anchor (the last committed token, which the trunk has not run yet).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DraftBlockPlan {
+    pub rows: u32,
+    /// Row 0.
+    pub anchor: DraftRowInput,
+    /// Rows 1..rows.
+    pub mask: DraftRowInput,
+    /// Rows that propose, each the token at its own position: rows 1..rows, so `rows - 1`
+    /// proposals per block. The anchor row never proposes.
+    pub proposals: u32,
+}
+
+/// The fuse matrix: `alpha = softmax(fuse_weight, over the taps)`, one row per draft layer and
+/// a last row for the recurrent head. Each mix `sum_t alpha[row][t] * tap_t` is RMS-normalized
+/// with its own weight (`dflare_norm`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DraftFusePlan {
+    /// `layers + 1`.
+    pub rows: u32,
+    /// `taps.len()`.
+    pub taps: u32,
+}
+
+/// Rotary embedding of the draft: NeoX halves (dims `i` and `i + head_dim / 2` rotate
+/// together), frequency `theta^(-2i / head_dim)`, angle `position * frequency` at the row's
+/// absolute position.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DraftRopePlan {
+    pub theta: f32,
+}
+
+/// The draft layers' attention.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DraftAttentionPlan {
+    /// Softmax scale `head_dim^-0.5`; no relative bias, output gate or sink.
+    pub scale: f32,
+    /// Per-head RMS norm (weight `q_norm`, `k_norm`) on the block's queries and keys, then
+    /// RoPE; values are used raw.
+    pub qk_norm: bool,
+    pub rope: DraftRopePlan,
+    /// Context keys and values: `k = rope(rms_head(k_proj_ctx(ctx)), k_norm_ctx)`,
+    /// `v = v_proj_ctx(ctx)`, with `ctx` the layer's fuse mix of the committed token's taps.
+    /// Written once per committed position; the block's own keys at `P..P + rows` are
+    /// temporary.
+    pub context_key_norm: bool,
+    /// Every block row sees every block row (bidirectional) and every committed position
+    /// before `P`, except on the local layers.
+    pub bidirectional_block: bool,
+    /// Layers that see only the `local_context` committed positions before `P` (plus the
+    /// block): the keys at `P + rows - 1 - (local_context + rows - 1) ..= P + rows - 1`.
+    pub local_layers: Vec<u32>,
+    pub local_context: u32,
+}
+
+/// Inputs of the recurrent head's projection `rnn_proj`, in its column order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RnnInput {
+    /// The recurrent state, `rank` wide, zero before the first proposal.
+    State,
+    /// `markov_w1[prev]`, `rank` wide: `prev` is the anchor for the first proposal, then
+    /// the previous proposal.
+    PreviousToken,
+    /// The proposal row's head hidden (the final draft norm output), `hidden` wide.
+    RowHidden,
+    /// The head's fuse mix of the last committed token's taps (`f_rnn`), `hidden` wide.
+    Feature,
+}
+
+/// Output chunks of `rnn_proj`, `rank` rows each, in row order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RnnChunk {
+    /// `g = sigmoid(gate)`.
+    Gate,
+    /// `c = tanh(candidate)`; `state' = g * state + (1 - g) * c`.
+    Candidate,
+    /// `latent = tanh(out)`, from the projection itself, not from the new state.
+    Out,
+}
+
+/// The `rnn_hidden` recurrent Markov head, run once per proposal in order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DraftRnnHeadPlan {
+    pub rank: u32,
+    pub inputs: [RnnInput; 4],
+    pub chunks: [RnnChunk; 3],
+    /// `bias = head @ hidden_out(latent)`, computed through the fold
+    /// `fold_weight = head @ hidden_out.weight` (`[vocab, rank]`) and
+    /// `fold_bias = head @ hidden_out.bias`, with `head` the trunk's output projection.
+    pub folded_through_output: bool,
+    /// `logits = softcap * tanh((base + bias) / softcap)` with `base = head @ row_hidden`;
+    /// the trunk's final softcap, applied after the bias.
+    pub softcap: f32,
+}
+
+/// The drafter shipped in `mtp.safetensors`. It is not the `DsparkPlan` program (learned mask
+/// embedding, a fuse matrix over the taps, context K/V projections, a recurrent head, no
+/// confidence head). The reference executor (memra-reference `inkling2_drafter`) runs it; its
+/// numeric program is BF16 weights with f32 or f64 activations, and the proposals it makes
+/// never change a committed token: verification runs the trunk's own program.
+///
+/// Per block: `x = rows inputs`; per layer `l`: `h = norm_in(x)`, `q, k, v = proj(h)`,
+/// `q, k = rope(rms_head(q)), rope(rms_head(k))`, attention over context and block keys,
+/// `x += o_proj(att)`, `x += down(silu(gate(norm_post(x))) * up(norm_post(x)))`; then
+/// `hidden = norm(x)` and the recurrent head over rows `1..rows`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Inkling2DrafterPlan {
     pub blocks: u32,
@@ -358,6 +469,15 @@ pub struct Inkling2DrafterPlan {
     pub target_visit_ids: Vec<u32>,
     /// The same taps typed: the input of the cache slot each visit runs, then the final hidden.
     pub taps: Vec<DrafterTap>,
+    pub hidden_size: u32,
+    /// RMS epsilon of every draft norm.
+    pub epsilon: f32,
+    pub block: DraftBlockPlan,
+    pub fuse: DraftFusePlan,
+    pub attention: DraftAttentionPlan,
+    /// Dense SwiGLU of `intermediate_size`: `down(silu(gate(x)) * up(x))`, no softcap.
+    pub mlp_swiglu: bool,
+    pub rnn: DraftRnnHeadPlan,
 }
 
 impl Inkling2Numerics {

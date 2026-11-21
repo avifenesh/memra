@@ -673,6 +673,9 @@ fn main() {
             // short convolutions with carried state, depth mix, loop controller, router.
             // Portable CUDA C.
             "cu/inkling2_gpu.cu",
+            // Inkling 2 Mini DSpark drafter: BF16 GEMV, fuse mix and norms, per-head RoPE, block
+            // attention over the context K/V, the recurrent head, softcap and argmax. Portable.
+            "cu/inkling2_dspark.cu",
         ] {
             println!("cargo:rerun-if-changed={mmq_src}");
             let compile_src =
