@@ -2690,6 +2690,32 @@ So the four-rank remainders at 4, 9 and 10 rows against the base are gone, and t
 keeps served calls at 8 rows on four ranks (`docs/decisions/DSV41-ROWS-ABOVE-8-FOUR-RANKS.md`) is not changed by
 this lane. Record: `docs/decisions/DSV41-MOE-BLOCK-RING-PRO6000.md`.
 
+#### Retaken on the landing head (2026-11-22)
+
+The change rebased onto main `91e01a7dcc` (head `2df9c40b39`, every file it touches byte-identical to the reviewed
+head) and both arms rebuilt the same day on the four-card box (nvcc 13.4, sm_120a). One window,
+`receipts/moe1324/w14_l30.sh`, all four box locks held and no other GPU process, 02:16 to 02:27 IST. The power limits were
+270 / 267 / 283 / 278 W and the box CPU load at the start was 2.4 (`moe1324-l30-ab/window-summary.txt`).
+
+- `dsv41-gate kernels`: 1,091 of 1,091 (main's binary 1,027 of 1,027, `moe1324-l30-kgate-main`).
+- `dsv41-gate tp`, four ranks, the same command as above: 1,056 of 1,056 (default), 1,054 of 1,054 (peer-pull) and
+  1,054 of 1,054 (host-canonical). The counts are main's added checks over the 916 / 914 / 914 above.
+- Four cards, 40 layers, device-push, A B B A B A A B, four runs an arm, steady calls past 0.5 s, ms
+  (`moe1324-l30-ab/per_run.md`; B / A over the four adjacent pairs):
+
+| call | main `91e01a7dcc` | B `2df9c40b39` | B / main |
+|---|---|---|---|
+| one-row decode | 9.624 | 9.227 | 0.959 (0.957-0.959) |
+| 4 rows | 13.078 | 11.903 | 0.910 (0.909-0.911) |
+| 8 rows | 16.630 | 14.555 | 0.875 (0.874-0.876) |
+| 9 rows | 18.902 | 16.804 | 0.889 (0.887-0.890) |
+| 10 rows | 19.608 | 17.508 | 0.893 (0.892-0.896) |
+| 12 rows | 20.613 | 18.530 | 0.899 (0.897-0.900) |
+| 16 rows | 23.592 | 21.221 | 0.899 (0.897-0.901) |
+
+The decode token tape is one hash over all 8 runs, `cd38e1b772b75d5a`, the same as the 2026-11-18 runs. No card
+showed a thermal reason in any run: SM clocks 2,250 to 2,321 MHz, power 204 to 244 W, at most 73 C.
+
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
 Every change in this lane keeps the bytes of the one-card route. At one row on four ranks three
