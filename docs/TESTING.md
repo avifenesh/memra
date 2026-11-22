@@ -199,7 +199,7 @@ verify-graph replay, pooled verify and device-token verify are covered by the to
 
 | gate | command | passes when | runs in |
 |---|---|---|---|
-| serve smoke | `tools/serve-smoke.sh [model.gguf [draft.gguf]]` | chat (stream and not), completions, concurrency, greedy determinism and spec-vs-plain identity all pass | local-ci, the `serving` cell kind |
+| serve smoke | `tools/serve-smoke.sh [model.gguf\|checkpoint-dir [draft.gguf]]` | chat (stream and not), completions, concurrency, greedy determinism and spec-vs-plain identity all pass; a safetensors checkpoint directory runs the arms of its pack's row in `tools/serve-smoke-packs.tsv` | local-ci, the `serving` cell kind |
 | health and lifecycle | `tools/health-fault-gate.sh [model.gguf]` (`HFG_ARMS` picks arms, `HFG_OUT` the receipt dir) | `/readyz`, `/health` and requests hold across warmup, a worker panic and respawn, a latched GPU fault and a SIGTERM drain | local-ci; any change to `health.rs`, the supervisor, the boot probe or drain |
 | concurrency | `tools/serve-stress-gate.sh [--teeth] [model [draft [n_clients]]]` | 64 staggered streams finish well formed with a live worker and no OOM line; `--teeth` must invert | local-ci, fast-gate `sstress` |
 | request fault | `tools/request-fault-gate.py --model <gguf> --bin <memra-server> --out <new-dir>` | an injected per-request panic ends only that stream (`worker_fault`); peers finish byte-equal to control | local-ci |

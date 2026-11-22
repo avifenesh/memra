@@ -46,13 +46,17 @@
 //!   --attn-probe S,S..       the tape's prompt, then the last 4 query rows of the last call of
 //!                            each full-attention slot S recomputed on the host from the route's
 //!                            own queries and caches, in f64 and as an f32 eager program
+//!   --batch-check B,N,P[,L0,LS]  the batching gate (prompt i is L0 + LS * i ids, default 6,5): B sequences at different positions, each N
+//!                            teacher-forced decode tokens alone, then joined one a step with
+//!                            prefill chunks of P rows interleaved with the peers' batched decode;
+//!                            every decode row's logits must equal the solo run bit for bit
 //!   --inject-failure SLOT    the atomicity gate: the tape's first --limit ids, half as a prefill,
 //!                            then one decode call that fails after SLOT, then one decode call per
 //!                            later id; every slot output and logit row must equal a clean run
 //!   --chunk N                rows one call may hold (default 512)
 
 use memra_engine::inkling2_gpu::{
-    Ckpt, Dev, Head, Observer, Prec, RedArms, Route, Tap, numeric_class,
+    Ckpt, Dev, Head, Observer, Prec, RedArms, Route, Seq, Tap, numeric_class,
 };
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_plan::{ExpertActivationMode, ModelPlan};
@@ -102,6 +106,12 @@ struct Args {
     inject_failure: Option<u32>,
     contract_check: bool,
     attn_probe: Vec<u32>,
+    batch_check: Option<(usize, usize, usize, usize, usize)>,
+    /// `--moe-ref STRIDE`: hold the route's MoE output of every slot against the host reference
+    /// (lane D's `inkling2_actquant`) bit for bit at every STRIDE-th position.
+    moe_ref: usize,
+    dump_hidden: Option<(PathBuf, PathBuf)>,
+    moe_ref_red: u8,
 }
 
 fn parse() -> Result<Args, String> {
@@ -124,6 +134,11 @@ fn parse() -> Result<Args, String> {
             "--score" => a.score = true,
             "--force-router" => a.force_router = true,
             "--force-moe-in" => a.force_moe_in = true,
+            "--moe-ref" => a.moe_ref = num(val()?)?,
+            "--dump-hidden" => {
+                let corpus = PathBuf::from(val()?);
+                a.dump_hidden = Some((corpus, PathBuf::from(val()?)));
+            }
             "--gen" => a.gen_tokens = num(val()?)?,
             "--prompt-len" => a.prompt_len = num(val()?)?,
             "--gen-digest" => a.gen_digest = true,
@@ -138,6 +153,18 @@ fn parse() -> Result<Args, String> {
             "--numeric-class" => a.numeric_class = true,
             "--inject-failure" => a.inject_failure = Some(num(val()?)? as u32),
             "--contract-check" => a.contract_check = true,
+            "--batch-check" => {
+                let v = val()?;
+                let p: Vec<usize> = v
+                    .split(',')
+                    .map(|x| num(x.into()))
+                    .collect::<Result<_, _>>()?;
+                if p.len() != 3 && p.len() != 5 {
+                    return Err("--batch-check B,STEPS,PREFILL_CHUNK[,LEN0,LENSTEP]".into());
+                }
+                let (len0, step) = if p.len() == 5 { (p[3], p[4]) } else { (6, 5) };
+                a.batch_check = Some((p[0], p[1], p[2], len0, step));
+            }
             "--attn-probe" => {
                 for v in val()?.split(',') {
                     a.attn_probe.push(num(v.into())? as u32);
@@ -155,6 +182,11 @@ fn parse() -> Result<Args, String> {
                     "conv-state" => a.red.conv_state_dropped = true,
                     "ties-high" => a.red.ties_high = true,
                     "commit-on-error" => a.red.commit_on_error = true,
+                    "batch-rows-rotated" => a.red.batch_rows_rotated = true,
+                    // the --moe-ref check's own red arm: the reference accumulates in index order
+                    "moe-ref-index-order" => a.moe_ref_red = 1,
+                    // the routing weight after the down projection: a near miss the check must see
+                    "moe-ref-weight-after-down" => a.moe_ref_red = 2,
                     _ => return Err(format!("unknown red arm {v}")),
                 }
                 a.red_names.push(v);
@@ -393,6 +425,79 @@ struct Compare<'a> {
     /// same program on the same tokens and chunking hold equal digests
     digest_attn: Vec<u64>,
     digest_ffn: Vec<u64>,
+    moe_ref: Option<MoeRef>,
+}
+
+/// The rows of one call the reference check holds: per slot the MoE input, picks, routing
+/// weights and the route's MoE output of every kept row.
+#[derive(Default)]
+struct MoeRefSlot {
+    rows: Vec<usize>,
+    x: Vec<f32>,
+    ids: Vec<u32>,
+    wts: Vec<f32>,
+    out: Vec<f32>,
+}
+
+struct MoeRef {
+    stride: usize,
+    /// 0 the reference, 1 its index-order accumulator, 2 the weight after the down projection
+    red: u8,
+    cur: BTreeMap<u32, MoeRefSlot>,
+    /// per slot: rows checked, rows bit-equal, bf16 outputs differing, worst row rel L2
+    per_slot: Vec<(usize, usize, usize, f64)>,
+}
+
+impl MoeRef {
+    fn keep(&self, base: usize, row: usize) -> bool {
+        (base + row).is_multiple_of(self.stride)
+    }
+    fn take<T: Copy>(&self, base: usize, data: &[T], width: usize) -> (Vec<usize>, Vec<T>) {
+        let mut rows = Vec::new();
+        let mut out = Vec::new();
+        for (r, chunk) in data.chunks_exact(width).enumerate() {
+            if self.keep(base, r) {
+                rows.push(base + r);
+                out.extend_from_slice(chunk);
+            }
+        }
+        (rows, out)
+    }
+    /// Checks the kept rows against the host reference and clears them.
+    fn drain(&mut self, route: &Route, hidden: usize) -> Result<(), String> {
+        let threads = std::thread::available_parallelism()
+            .map_or(8, |n| n.get() / 2)
+            .max(1);
+        for (slot, s) in std::mem::take(&mut self.cur) {
+            if s.rows.is_empty() {
+                continue;
+            }
+            let want = route.reference_moe(slot, &s.x, &s.ids, &s.wts, threads, self.red)?;
+            if want.len() != s.out.len() {
+                return Err(format!(
+                    "slot {slot}: the reference and the route disagree on rows"
+                ));
+            }
+            let e = &mut self.per_slot[slot as usize];
+            for (g, w) in s.out.chunks_exact(hidden).zip(want.chunks_exact(hidden)) {
+                let differ = g
+                    .iter()
+                    .zip(w)
+                    .filter(|(a, b)| a.to_bits() != b.to_bits())
+                    .count();
+                let (mut num, mut den) = (0f64, 0f64);
+                for (a, b) in g.iter().zip(w) {
+                    num += (f64::from(*a) - f64::from(*b)).powi(2);
+                    den += f64::from(*b).powi(2);
+                }
+                e.0 += 1;
+                e.1 += usize::from(differ == 0);
+                e.2 += differ;
+                e.3 = e.3.max((num / den.max(1e-300)).sqrt());
+            }
+        }
+        Ok(())
+    }
 }
 
 fn fnv_fold(mut h: u64, data: &[f32]) -> u64 {
@@ -434,7 +539,8 @@ impl Observer for Compare<'_> {
     fn wants(&self, tap: Tap) -> bool {
         match tap {
             Tap::ResidAttn | Tap::ResidFfn | Tap::RouteMargin => true,
-            Tap::MoeOut => self.tape.moe_out.is_some(),
+            Tap::MoeIn | Tap::RouteWeights => self.moe_ref.is_some(),
+            Tap::MoeOut => self.tape.moe_out.is_some() || self.moe_ref.is_some(),
             _ => false,
         }
     }
@@ -456,6 +562,27 @@ impl Observer for Compare<'_> {
                 if let Some(shard) = &tape.moe_out {
                     self.rows_of(shard, "moe_out", slot, data, 2);
                 }
+                let (base, hidden) = (self.base, self.hidden);
+                if let Some(mr) = self.moe_ref.as_mut() {
+                    let (_, out) = mr.take(base, data, hidden);
+                    mr.cur.entry(slot).or_default().out.extend(out);
+                }
+            }
+            Tap::MoeIn => {
+                let (base, hidden) = (self.base, self.hidden);
+                if let Some(mr) = self.moe_ref.as_mut() {
+                    let (rows, x) = mr.take(base, data, hidden);
+                    let e = mr.cur.entry(slot).or_default();
+                    e.rows.extend(rows);
+                    e.x.extend(x);
+                }
+            }
+            Tap::RouteWeights => {
+                let (base, top_k) = (self.base, self.top_k);
+                if let Some(mr) = self.moe_ref.as_mut() {
+                    let (_, w) = mr.take(base, data, top_k);
+                    mr.cur.entry(slot).or_default().wts.extend(w);
+                }
             }
             Tap::RouteMargin => {
                 for m in data {
@@ -466,6 +593,11 @@ impl Observer for Compare<'_> {
         }
     }
     fn picks(&mut self, slot: u32, ids: &[u32]) {
+        let (base, top_k) = (self.base, self.top_k);
+        if let Some(mr) = self.moe_ref.as_mut() {
+            let (_, p) = mr.take(base, ids, top_k);
+            mr.cur.entry(slot).or_default().ids.extend(p);
+        }
         let Ok(t) = tensor(&self.tape.router, "route_ids", "I32") else {
             self.error.get_or_insert("the tape has no route_ids".into());
             return;
@@ -730,6 +862,146 @@ fn attn_probe(
     Ok(serde_json::Value::Object(out))
 }
 
+/// The batching gate: `b` sequences at different positions, each decoded `steps` teacher-forced
+/// tokens alone (`forward_seq`), then again as a schedule where sequence i joins at step i with
+/// its prefill in chunks of `pchunk` rows interleaved with its peers' batched decode
+/// (`decode_batch`), and leaves after its own tokens. Every decode row's logits must equal its
+/// solo run bit for bit.
+fn batch_check(
+    route: &mut Route,
+    tape: &Tape,
+    b: usize,
+    steps: usize,
+    pchunk: usize,
+    len0: usize,
+    lenstep: usize,
+) -> Result<serde_json::Value, String> {
+    let ids = &tape.all_ids;
+    let vocab = route.vocab();
+    // the solo runs never take a red arm's batched program
+    let red = route.red();
+    // sequence i: a prompt of len_i ids from offset off_i of the tape, then steps_i decode ids
+    let plan: Vec<(usize, usize, usize)> = (0..b)
+        .map(|i| {
+            let len = len0 + lenstep * i;
+            let off = (3 * i) % 8;
+            let n = steps - (i % 3);
+            (off, len, n)
+        })
+        .collect();
+    for (off, len, n) in &plan {
+        if off + len + n > ids.len() {
+            return Err("the tape is too short for the batch schedule".into());
+        }
+    }
+    let context = plan.iter().map(|(_, l, n)| l + n).max().unwrap_or(1) + 8;
+    let row_digest = |row: &[f32]| fnv(row.iter().flat_map(|v| v.to_le_bytes()));
+    // solo
+    let mut solo: Vec<Vec<u64>> = Vec::new();
+    for (off, len, n) in &plan {
+        let mut seq = route.new_seq(context)?;
+        for chunk in ids[*off..off + len].chunks(pchunk) {
+            route.forward_seq(&mut seq, chunk, Head::None, None)?;
+        }
+        let mut d = Vec::new();
+        for t in 0..*n {
+            let tok = ids[off + len + t];
+            let out = route.forward_seq(&mut seq, &[tok], Head::All, None)?;
+            d.push(row_digest(&out.logits[..vocab]));
+        }
+        solo.push(d);
+    }
+    // batched schedule
+    let mut seqs: Vec<Option<Seq>> = (0..b).map(|_| None).collect();
+    let mut prefilled = vec![0usize; b];
+    let mut done = vec![0usize; b];
+    let mut got: Vec<Vec<u64>> = vec![Vec::new(); b];
+    let mut step = 0usize;
+    let (mut batched_calls, mut max_rows, mut prefill_calls) = (0usize, 0usize, 0usize);
+    while done.iter().zip(&plan).any(|(d, p)| *d < p.2) {
+        // join: sequence `step` starts; every joining sequence advances one prefill chunk a step
+        if step < b {
+            seqs[step] = Some(route.new_seq(context)?);
+        }
+        for i in 0..b {
+            let (off, len, _) = plan[i];
+            if let Some(seq) = seqs[i].as_mut()
+                && prefilled[i] < len
+            {
+                let take = pchunk.min(len - prefilled[i]);
+                route.forward_seq(
+                    seq,
+                    &ids[off + prefilled[i]..off + prefilled[i] + take],
+                    Head::None,
+                    None,
+                )?;
+                prefilled[i] += take;
+                prefill_calls += 1;
+            }
+        }
+        // the decode rows of every prefilled sequence with tokens left
+        let mut idx = Vec::new();
+        let mut toks = Vec::new();
+        for i in 0..b {
+            let (off, len, n) = plan[i];
+            if seqs[i].is_some() && prefilled[i] == len && done[i] < n {
+                idx.push(i);
+                toks.push(ids[off + len + done[i]]);
+            }
+        }
+        if !idx.is_empty() {
+            let mut taken: Vec<Seq> = idx
+                .iter()
+                .map(|i| seqs[*i].take().expect("active"))
+                .collect();
+            let out = {
+                let mut refs: Vec<&mut Seq> = taken.iter_mut().collect();
+                route.decode_batch(&mut refs, &toks, Head::All)
+            };
+            for (k, i) in idx.iter().enumerate() {
+                seqs[*i] = Some(taken.remove(0));
+                let _ = k;
+            }
+            let out = out?;
+            for (k, i) in idx.iter().enumerate() {
+                got[*i].push(row_digest(&out.logits[k * vocab..(k + 1) * vocab]));
+                done[*i] += 1;
+            }
+            batched_calls += 1;
+            max_rows = max_rows.max(idx.len());
+        }
+        // leave: a finished sequence frees its state
+        for i in 0..b {
+            if seqs[i].is_some() && done[i] == plan[i].2 {
+                seqs[i] = None;
+            }
+        }
+        step += 1;
+    }
+    let mut differ = 0usize;
+    let mut compared = 0usize;
+    for i in 0..b {
+        compared += solo[i].len();
+        differ += solo[i].iter().zip(&got[i]).filter(|(p, q)| p != q).count()
+            + solo[i].len().abs_diff(got[i].len());
+    }
+    eprintln!(
+        "ink2-gpu: batch check b={b}: {compared} decode rows over {batched_calls} batched calls (up to {max_rows} rows) and {prefill_calls} interleaved prefill chunks of {pchunk}; rows differing from solo: {differ}"
+    );
+    Ok(serde_json::json!({
+        "sequences": b,
+        "red_batch_rows_rotated": red.batch_rows_rotated,
+        "schedule": plan.iter().map(|(o, l, n)| serde_json::json!({"offset": o, "prompt": l, "decode": n})).collect::<Vec<_>>(),
+        "prefill_chunk": pchunk,
+        "batched_calls": batched_calls,
+        "max_rows": max_rows,
+        "prefill_calls": prefill_calls,
+        "decode_rows_compared": compared,
+        "decode_rows_differ": differ,
+        "bit_identical": differ == 0,
+    }))
+}
+
 /// --corpus: teacher-forced runs of every document of a corpus (lane F's rawdoc / chatwrap JSON:
 /// ids, sampled) under the reference precision (all f64) and each arm. Per position: KL(ref || arm)
 /// over the full vocabulary in f64, the NLL of the next token under both, top-1 agreement.
@@ -954,6 +1226,183 @@ impl Observer for Digest {
     }
 }
 
+/// The `memra model verify checkpoint` runner contract: `ink2-gpu CKPT_DIR TOKEN...` with
+/// `MEMRA_ORACLE_OUT=FILE` runs the checkpoint's declared class over the tokens and writes the
+/// last token's logits as a `memra-checkpoint-oracle-v1` tape. The class name is the pack's
+/// declared parity class, the one its band is keyed on.
+fn oracle_runner(out: PathBuf) -> Result<(), String> {
+    // [--class C] [--overlay DIR] before CKPT_DIR: a class other than the shipped one (a wrapper
+    // script passes them; the onboarding CLI calls the runner with the directory and the tokens)
+    let mut it = std::env::args().skip(1).peekable();
+    let (mut class, mut overlay, mut prec) = ("shipped".to_string(), None, String::new());
+    while let Some(flag) = it.peek().filter(|f| f.starts_with("--")).cloned() {
+        it.next();
+        let v = it.next().ok_or(format!("{flag} needs a value"))?;
+        match flag.as_str() {
+            "--class" => class = if v == "declared" { "shipped".into() } else { v },
+            "--overlay" => overlay = Some(PathBuf::from(v)),
+            // a precision arm (lane P's Prec::parse), for the measurement of the program's spread
+            "--prec" => prec = v,
+            _ => {
+                return Err(format!(
+                    "the oracle runner takes --class, --overlay and --prec, not {flag}"
+                ));
+            }
+        }
+    }
+    let ckpt = PathBuf::from(it.next().ok_or(
+        "usage: MEMRA_ORACLE_OUT=FILE ink2-gpu [--class C] [--overlay DIR] CKPT_DIR TOKEN...",
+    )?);
+    let parity_class = match class.as_str() {
+        "shipped" => memra_gguf::model_packs::inkling2::DECLARED_PARITY_CLASS,
+        "nvfp4-rig" => memra_gguf::model_packs::inkling2::NVFP4_RIG_PARITY_CLASS,
+        c => return Err(format!("the oracle runner has no parity class for {c}")),
+    };
+    let tokens = it
+        .map(|t| t.parse::<u32>().map_err(|e| format!("token {t}: {e}")))
+        .collect::<Result<Vec<_>, _>>()?;
+    if tokens.is_empty() {
+        return Err("the oracle runner needs at least one token".into());
+    }
+    // the shipped (declared) class unless named, whatever the runner's default class is
+    let a = Args {
+        ckpt,
+        class,
+        overlay,
+        chunk: 512,
+        ..Args::default()
+    };
+    let (plan, pack, config) = compile(&a)?;
+    let program = plan.inkling2.as_ref().ok_or("not an inkling2 plan")?;
+    if program.numerics.class
+        != memra_gguf::model_plan::Inkling2NumericClass::DeclaredActivationQuant
+    {
+        return Err(format!(
+            "the oracle runner runs a class with the declared expert program, the plan is {:?}",
+            program.numerics.class
+        ));
+    }
+    let ck = Ckpt::open_with_overlay(&a.ckpt, pack, &config, &plan, a.overlay.as_deref())?;
+    let dev = Dev::new(0)?;
+    let context = (tokens.len() + 8).next_power_of_two().max(2048);
+    let mut route = Route::load(dev, &ck, &plan, context, a.chunk)?;
+    if !prec.is_empty() {
+        route.dev.prec.set(Prec::parse(&prec)?);
+    }
+    let vocab = route.vocab();
+    let mut logits = Vec::new();
+    for s0 in (0..tokens.len()).step_by(a.chunk) {
+        let s1 = (s0 + a.chunk).min(tokens.len());
+        logits = route.forward(&tokens[s0..s1], Head::Last, None)?.logits;
+    }
+    if logits.len() != vocab {
+        return Err(format!(
+            "{} logits for the last token, vocab {vocab}",
+            logits.len()
+        ));
+    }
+    let mut tsv = format!(
+        "format\tmemra-checkpoint-oracle-v1\nengine\tmemra-inkling2-gpu\nnumeric_class\t{}\ntokens\t{}\nvocab\t{vocab}\n",
+        parity_class,
+        tokens
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    for (i, v) in logits.iter().enumerate() {
+        tsv.push_str(&format!("logit\t{i}\t{:08x}\n", v.to_bits()));
+    }
+    std::fs::write(&out, tsv).map_err(|e| format!("{}: {e}", out.display()))
+}
+
+/// `--dump-hidden CORPUS.json OUT_DIR`: each document (`[{"name", "ids"}]`) teacher-forced from a
+/// fresh state, its head-normalized rows written as `OUT_DIR/<index>.f32` (`[T, hidden]`), so an
+/// independent harness scores this route's distributions with its own head.
+struct FinalRows {
+    rows: Vec<f32>,
+}
+
+impl Observer for FinalRows {
+    fn wants(&self, tap: Tap) -> bool {
+        tap == Tap::FinalHidden
+    }
+    fn floats(&mut self, _slot: u32, tap: Tap, data: &[f32]) {
+        if tap == Tap::FinalHidden {
+            self.rows.extend_from_slice(data);
+        }
+    }
+    fn picks(&mut self, _slot: u32, _ids: &[u32]) {}
+    fn forced(&mut self, _slot: u32, _rows: usize) -> Option<(Vec<u32>, Vec<f32>)> {
+        None
+    }
+}
+
+fn dump_hidden(a: &Args, corpus: &Path, out: &Path) -> Result<(), String> {
+    let docs: Vec<serde_json::Value> = serde_json::from_str(
+        &std::fs::read_to_string(corpus).map_err(|e| format!("{}: {e}", corpus.display()))?,
+    )
+    .map_err(|e| format!("{}: {e}", corpus.display()))?;
+    let docs: Vec<(String, Vec<u32>)> = docs
+        .iter()
+        .map(|d| {
+            let ids = d["ids"]
+                .as_array()
+                .ok_or("a document without ids")?
+                .iter()
+                .map(|v| v.as_u64().map(|x| x as u32).ok_or("a non-integer id"))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((d["name"].as_str().unwrap_or("").to_string(), ids))
+        })
+        .collect::<Result<_, &str>>()?;
+    let longest = docs.iter().map(|d| d.1.len()).max().unwrap_or(1);
+    let (plan, pack, config) = compile(a)?;
+    let class = numeric_class(&plan)?;
+    let ck = Ckpt::open_with_overlay(&a.ckpt, pack, &config, &plan, a.overlay.as_deref())?;
+    let dev = Dev::new(a.device)?;
+    let context = (longest + 8).next_power_of_two().max(2048);
+    let mut route = Route::load(dev, &ck, &plan, context, a.chunk)?;
+    std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
+    let t0 = Instant::now();
+    let mut index = Vec::new();
+    for (i, (name, ids)) in docs.iter().enumerate() {
+        route.reset()?;
+        let mut obs = FinalRows {
+            rows: Vec::with_capacity(ids.len() * route.hidden_size()),
+        };
+        for s0 in (0..ids.len()).step_by(a.chunk) {
+            let s1 = (s0 + a.chunk).min(ids.len());
+            route.forward(&ids[s0..s1], Head::None, Some(&mut obs))?;
+        }
+        let bytes: Vec<u8> = obs.rows.iter().flat_map(|v| v.to_le_bytes()).collect();
+        std::fs::write(out.join(format!("{i}.f32")), bytes).map_err(|e| format!("{e}"))?;
+        index.push(serde_json::json!({"index": i, "name": name, "tokens": ids.len()}));
+    }
+    let meta = serde_json::json!({
+        "runner": "ink2-gpu --dump-hidden",
+        "numeric_class": class,
+        "corpus": corpus.display().to_string(),
+        "chunk": a.chunk,
+        "context": context,
+        "hidden": route.hidden_size(),
+        "docs": index,
+        "seconds": t0.elapsed().as_secs_f64(),
+        "clocks_at_end": clocks(),
+        "loadavg_at_end": loadavg(),
+    });
+    std::fs::write(
+        out.join("meta.json"),
+        serde_json::to_string_pretty(&meta).unwrap(),
+    )
+    .map_err(|e| format!("{e}"))?;
+    eprintln!(
+        "ink2-gpu: dumped {} documents in {:.1}s",
+        docs.len(),
+        t0.elapsed().as_secs_f64()
+    );
+    Ok(())
+}
+
 /// Collects the final hidden rows of a call.
 struct Hidden {
     rows: Vec<f32>,
@@ -1051,7 +1500,13 @@ fn run_corpus(
 }
 
 fn run() -> Result<(), String> {
+    if let Some(out) = std::env::var_os("MEMRA_ORACLE_OUT") {
+        return oracle_runner(PathBuf::from(out));
+    }
     let a = parse()?;
+    if let Some((corpus, out)) = &a.dump_hidden {
+        return dump_hidden(&a, corpus, out);
+    }
     let (plan, pack, config) = compile(&a)?;
     let class = numeric_class(&plan)?;
     if a.numeric_class {
@@ -1204,6 +1659,12 @@ fn run() -> Result<(), String> {
             error: None,
             digest_attn: vec![FNV0; nslots],
             digest_ffn: vec![FNV0; nslots],
+            moe_ref: (a.moe_ref > 0).then(|| MoeRef {
+                stride: a.moe_ref,
+                red: a.moe_ref_red,
+                cur: BTreeMap::new(),
+                per_slot: vec![(0, 0, 0, 0f64); nslots],
+            }),
         };
         let mut digest_logits = FNV0;
         let lt = tensor(&tape.logits, "logits_post", "F32")?;
@@ -1259,6 +1720,11 @@ fn run() -> Result<(), String> {
                 return Err(e);
             }
         }
+        // every kept row of a slot at once: one download of the slot's expert bank, and the rows
+        // spread over the host threads
+        if let Some(mr) = cmp.moe_ref.as_mut() {
+            mr.drain(&route, hidden)?;
+        }
         let rel = |d: &[Dist]| {
             d.iter()
                 .map(|x| (x.rel() * 1e9).round() / 1e9)
@@ -1303,6 +1769,23 @@ fn run() -> Result<(), String> {
             "greedy_tokens": tape.greedy.len(),
             "greedy_first_miss": greedy_first_miss,
         });
+        if let Some(mr) = &cmp.moe_ref {
+            let rows: usize = mr.per_slot.iter().map(|s| s.0).sum();
+            let equal: usize = mr.per_slot.iter().map(|s| s.1).sum();
+            let differ: usize = mr.per_slot.iter().map(|s| s.2).sum();
+            receipt["moe_reference"] = serde_json::json!({
+                "reference": "memra_reference::inkling2_actquant expert_block_w4a4 / expert_block_w8a8, Accumulation::Sm120, from the route's resident expert bytes",
+                "stride": mr.stride,
+                "red_arm": (["none", "moe-ref-index-order", "moe-ref-weight-after-down"])[mr.red as usize],
+                "rows_checked": rows,
+                "rows_bit_equal": equal,
+                "bf16_outputs_differing": differ,
+                "per_slot": mr.per_slot.iter().enumerate().map(|(s, e)| serde_json::json!({"slot": s, "rows": e.0, "rows_bit_equal": e.1, "outputs_differing": e.2, "worst_row_rel_l2": e.3})).collect::<Vec<_>>(),
+            });
+            eprintln!(
+                "ink2-gpu: moe reference: {equal}/{rows} rows bit-equal over {nslots} slots ({differ} bf16 outputs differ)"
+            );
+        }
         eprintln!(
             "ink2-gpu: score {} positions in {:.1}s: resid attn worst slot {:.3e}, ffn worst slot {:.3e}, router rows {eq}/{all}, logits max abs {:.3e} KL mean {:.3e}, argmax {}/{}, greedy {greedy_equal}/{}",
             total,
@@ -1469,6 +1952,9 @@ fn run() -> Result<(), String> {
             "ink2-gpu: chunkings {x} vs {y} over {limit} rows: slot rows differ {slot_rows_differ}/{}, logit rows differ {logit_rows_differ}, argmax differ {argmax_differ}",
             limit * nslots
         );
+    }
+    if let Some((b, steps, pchunk, len0, step)) = a.batch_check {
+        receipt["batch_check"] = batch_check(&mut route, tape, b, steps, pchunk, len0, step)?;
     }
     if !a.attn_probe.is_empty() {
         let tokens = &tape.all_ids[..tape.prompt];

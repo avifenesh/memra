@@ -378,6 +378,39 @@ impl RouteContract {
         )
         .implemented(PolicySurface::ServiceMetrics, "run.finish(stats)")
     }
+
+    /// The inkling2 serving thread (`inkling2_serve.rs`): `sessions` requests at once, each step
+    /// one prefill chunk of the oldest prefilling request and one batched decode call of the
+    /// running ones. Declared here for the same wiring-test reason as the DSv4 threads.
+    pub fn inkling2_thread(model: impl Into<String>, sessions: usize) -> Self {
+        Self::new(
+            model,
+            "inkling2-thread",
+            "inkling2_serve.rs",
+            RouteCapacity::Sessions(sessions),
+        )
+        .implemented(
+            PolicySurface::Capacity,
+            "std::sync::mpsc::channel::<Box<Request>>()",
+        )
+        .implemented(PolicySurface::Occupancy, "load.begin()")
+        .implemented(
+            PolicySurface::Progress,
+            "memra_engine::progress::ProgressSinkScope::install(",
+        )
+        .implemented(PolicySurface::FaultOwnership, "std::panic::catch_unwind(")
+        .implemented(PolicySurface::ShutdownOwnership, "closing = true;")
+        // a sequence's measured cost against what the driver reports free, at every admission
+        .implemented(PolicySurface::MemoryCost, "cls.book.need(")
+        // the bundle must name this checkpoint and plan; the route runs the plan's own program
+        .implemented(
+            PolicySurface::RewriteQualification,
+            "install_inkling2_rewrite_bundle(",
+        )
+        // a prompt's prefill runs one chunk a step, between its peers' batched decode calls
+        .implemented(PolicySurface::PrimeFairness, "a.prefilled + CHUNK")
+        .implemented(PolicySurface::ServiceMetrics, "run.finish(stats)")
+    }
 }
 
 impl RouteContract {
@@ -737,6 +770,7 @@ mod tests {
             ("dsv4_serve.rs", include_str!("dsv4_serve.rs")),
             ("dsv41_serve.rs", include_str!("dsv41_serve.rs")),
             ("hy4f_serve.rs", include_str!("hy4f_serve.rs")),
+            ("inkling2_serve.rs", include_str!("inkling2_serve.rs")),
         ];
         // The declarations live in THIS file, never in a route's source, so a grep of the route's
         // file cannot be satisfied by the declaration text (revuto round 1 on the dsv4 contract).
@@ -745,6 +779,7 @@ mod tests {
             RouteContract::dsv4_thread("ds"),
             RouteContract::dsv41_thread("ds41", 4),
             RouteContract::hy4f_thread("hy4f", 4),
+            RouteContract::inkling2_thread("ink2", 4),
         ] {
             assert!(
                 !sources.iter().any(|(name, _)| *name == "route_contract.rs"),
@@ -757,6 +792,7 @@ mod tests {
         reg.register(RouteContract::dsv4_thread("ds"));
         reg.register(RouteContract::dsv41_thread("ds41", 4));
         reg.register(RouteContract::hy4f_thread("hy4f", 4));
+        reg.register(RouteContract::inkling2_thread("ink2", 4));
         for route in reg.routes() {
             let (_, src) = sources
                 .iter()

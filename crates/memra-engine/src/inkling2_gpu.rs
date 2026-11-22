@@ -203,6 +203,8 @@ mod ffi {
             heads: i32,
             width: i32,
             prec: i32,
+            desc: *const c_void,
+            which: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_conv_rows(
@@ -236,6 +238,8 @@ mod ffi {
             c: i32,
             k: i32,
             prec: i32,
+            desc: *const c_void,
+            which: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_attn(
@@ -262,6 +266,7 @@ mod ffi {
             scr_ld: i64,
             scr_rows: i32,
             prec: i32,
+            desc: *const c_void,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_gate(
@@ -304,6 +309,8 @@ mod ffi {
             heads: i32,
             width: i32,
             prec: i32,
+            desc: *const c_void,
+            which: i32,
             stream: *mut c_void,
         ) -> i32;
         pub fn memra_ink2g_route(
@@ -511,6 +518,9 @@ pub struct RedArms {
     /// A forward that fails part way commits the conv histories it wrote (the program before the
     /// route's commit rule). Needs `Route::fail_after_slot`.
     pub commit_on_error: bool,
+    /// A batched decode call hands every row the next row's caches (a descriptor table that
+    /// mixes up its sequences), the batching gate's red arm.
+    pub batch_rows_rotated: bool,
 }
 
 /// The device, its stream and what the route did on it.
@@ -1350,6 +1360,34 @@ struct SlotState {
     row_hist: Option<([CudaSlice<f32>; 4], usize)>,
 }
 
+/// One request's state on a route: the caches and conv histories of every slot, its position and
+/// which conv-history buffer is committed. `Route::new_seq` makes one; `Route::forward_seq` runs a
+/// call of it (a prefill chunk or a decode token) and `Route::decode_batch` runs one token of
+/// several in shared launches, each row its own sequence's one-token call.
+pub struct Seq {
+    slots: Vec<SlotState>,
+    pub position: u64,
+    parity: usize,
+    /// Positions the full-attention caches hold.
+    pub context: usize,
+    /// Device bytes the sequence holds.
+    pub bytes: usize,
+}
+
+/// One row of a batched call, as `Ink2gRow` in cu/inkling2_gpu.cu.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct RowDesc {
+    pos: i64,
+    cap: i64,
+    kc: u64,
+    vc: u64,
+    cin: [u64; 4],
+    cout: [u64; 4],
+}
+
+const ROW_DESC_BYTES: usize = std::mem::size_of::<RowDesc>();
+
 /// What a caller can read out of a call, per slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tap {
@@ -1409,6 +1447,10 @@ pub enum Head {
     LastArgmax,
     /// Every row: logits and argmax.
     All,
+    /// The last row: logits and argmax (a prompt's last chunk before sampling).
+    Last,
+    /// Every row: argmax only (a batched greedy decode call).
+    Argmax,
     /// Every row: argmax only (a verify call that needs no distribution).
     AllArgmax,
 }
@@ -1467,6 +1509,8 @@ struct Work {
     tok: CudaSlice<u32>,
     /// the declared expert program
     dq: DeclaredWork,
+    /// Row descriptors of a batched decode call, `[slot][row]` (`RowDesc`).
+    desc: CudaSlice<u8>,
 }
 
 /// The route's memory at load: what it allocated by class, and what the driver reported.
@@ -2149,6 +2193,7 @@ impl Route {
             best: dev.zeros(HEAD_ROWS)?,
             tok: dev.zeros(chunk)?,
             dq,
+            desc: dev.zeros(plan.layers.len() * chunk * ROW_DESC_BYTES)?,
         };
         account.work = dev.allocated.get() - before_work - account.declared_work;
         // ---- admission: the full-attention caches against what the driver has free now
@@ -2380,6 +2425,11 @@ impl Route {
     }
 
     /// Kept vocabulary rows (the padded ids are never computed).
+    /// The stream width.
+    pub fn hidden_size(&self) -> usize {
+        self.hidden
+    }
+
     pub fn vocab(&self) -> usize {
         self.keep
     }
@@ -2559,7 +2609,7 @@ impl Route {
             && self.position < self.context as u64
             && tokens[0] < self.plan.vocab_size;
         if !graphable {
-            let out = self.forward_body(tokens, head, obs, false)?;
+            let out = self.forward_body(tokens, head, obs, false, None)?;
             self.last_call_rows = tokens.len();
             return Ok(out);
         }
@@ -2567,7 +2617,7 @@ impl Route {
         let tap = usize::from(self.tap_capture.is_some());
         if self.graphs[tap][p].is_none() {
             if !self.warm[tap][p] {
-                let out = self.forward_body(tokens, head, None, false)?;
+                let out = self.forward_body(tokens, head, None, false, None)?;
                 self.warm[tap][p] = true;
                 self.last_call_rows = 1;
                 return Ok(out);
@@ -2580,7 +2630,7 @@ impl Route {
                 .st
                 .begin_capture(sys::CUstreamCaptureMode::CU_STREAM_CAPTURE_MODE_RELAXED)
                 .map_err(|e| format!("begin_capture: {e:?}"))?;
-            let body = self.forward_body(tokens, head, None, true);
+            let body = self.forward_body(tokens, head, None, true, None);
             let graph = self
                 .dev
                 .st
@@ -2610,14 +2660,260 @@ impl Route {
         })
     }
 
+    /// The declared program's MoE output of `slot` for host rows `x` (`[rows, hidden]`) and their
+    /// picks and routing weights (`[rows, top_k]`), computed on the host by the reference
+    /// (`memra_reference::inkling2_actquant`, the sm_120 accumulator model) from this route's
+    /// resident expert bytes. The checkpoint-parity gate holds the route's MoE output against it
+    /// bit for bit. Rows run on `threads` host threads. `index_order` is the check's red arm: the
+    /// reference's ascending-index accumulator instead of the sm_120 model.
+    pub fn reference_moe(
+        &self,
+        slot: u32,
+        x: &[f32],
+        ids: &[u32],
+        wts: &[f32],
+        threads: usize,
+        red: u8,
+    ) -> Result<Vec<f32>, String> {
+        use memra_reference::inkling2_actquant as aq;
+        // the check's red arms: 1, the reference's ascending-index accumulator, not the card's;
+        // 2, the routing weight applied after the down projection instead of before its
+        // quantization (a near miss of the declared program)
+        let acc = if red == 1 {
+            aq::Accumulation::IndexOrder
+        } else {
+            aq::Accumulation::Sm120
+        };
+        let program = program(&self.plan)?;
+        let info = *program
+            .loop_plan
+            .slots
+            .get(slot as usize)
+            .ok_or_else(|| format!("slot {slot}: not in the plan"))?;
+        let m = moe_of(&self.plan.layers[slot as usize])?;
+        let ActivationPlan::SwiGluSoftcapped { gate_cap, up_cap } = m.activation else {
+            return Err("an activation other than softcapped SwiGLU".into());
+        };
+        let lw = &self.layers[info.physical_layer as usize];
+        let (hidden, top_k) = (self.hidden, m.experts_per_token as usize);
+        let rows = x.len() / hidden;
+        if x.len() != rows * hidden || ids.len() != rows * top_k || wts.len() != rows * top_k {
+            return Err("reference_moe: row shapes disagree".into());
+        }
+        type HostBank = (Vec<u8>, Vec<u8>, Vec<f32>);
+        let host = |b: &Bank| -> Result<HostBank, String> {
+            let (dn, sn) = b.strides();
+            let e = m.expert_count as usize;
+            Ok((
+                self.dev.down(&b.data, 0, dn as usize * e)?,
+                self.dev.down(&b.scales, 0, sn as usize * e)?,
+                if b.fmt == FMT_NVFP4 {
+                    self.dev.down(&b.amax, 0, e)?
+                } else {
+                    Vec::new()
+                },
+            ))
+        };
+        let (d13, s13, a13) = host(&lw.w13)?;
+        let (d2, s2, a2) = host(&lw.w2)?;
+        let (b13, b2) = (&lw.w13, &lw.w2);
+        let situ = aq::situ_tables(decimal(gate_cap) as f32, decimal(up_cap) as f32);
+        let one = |r: usize| -> Vec<f32> {
+            let row: Vec<f32> = x[r * hidden..(r + 1) * hidden]
+                .iter()
+                .map(|v| aq::bf16(*v))
+                .collect();
+            let sel: Vec<usize> = ids[r * top_k..(r + 1) * top_k]
+                .iter()
+                .map(|e| *e as usize)
+                .collect();
+            let routed = &wts[r * top_k..(r + 1) * top_k];
+            let ones = vec![1f32; top_k];
+            let gamma: &[f32] = if red == 2 { &ones } else { routed };
+            let after = |blk: aq::ExpertBlockOut| -> Vec<f32> {
+                if red != 2 {
+                    return blk.out;
+                }
+                let mut acc = vec![0f32; hidden];
+                for (row, g) in blk.down.iter().zip(routed) {
+                    for (a, v) in acc.iter_mut().zip(row) {
+                        *a += aq::bf16(v * g);
+                    }
+                }
+                acc.into_iter().map(aq::bf16).collect()
+            };
+            if b13.fmt == FMT_NVFP4 {
+                let up = aq::Nvfp4Experts {
+                    codes: &d13,
+                    scales: &s13,
+                    amax: &a13,
+                    denominator: b13.denom,
+                    n: b13.n,
+                    k: b13.k,
+                };
+                let down = aq::Nvfp4Experts {
+                    codes: &d2,
+                    scales: &s2,
+                    amax: &a2,
+                    denominator: b2.denom,
+                    n: b2.n,
+                    k: b2.k,
+                };
+                after(aq::expert_block_w4a4(
+                    &row, &sel, gamma, &up, &down, &situ, acc,
+                ))
+            } else {
+                let up = aq::Mxfp8Experts {
+                    values: &d13,
+                    exponents: &s13,
+                    n: b13.n,
+                    k: b13.k,
+                };
+                let down = aq::Mxfp8Experts {
+                    values: &d2,
+                    exponents: &s2,
+                    n: b2.n,
+                    k: b2.k,
+                };
+                after(aq::expert_block_w8a8(
+                    &row, &sel, gamma, &up, &down, &situ, acc,
+                ))
+            }
+        };
+        let mut out = vec![0f32; rows * hidden];
+        let per = rows.div_ceil(threads.max(1)).max(1);
+        std::thread::scope(|s| {
+            for (c, chunk) in out.chunks_mut(per * hidden).enumerate() {
+                let one = &one;
+                s.spawn(move || {
+                    for (i, dst) in chunk.chunks_mut(hidden).enumerate() {
+                        dst.copy_from_slice(&one(c * per + i));
+                    }
+                });
+            }
+        });
+        Ok(out)
+    }
+
+    /// Device bytes one sequence of `context` positions holds (rings, conv histories and the
+    /// full-attention caches), from the load's accounting.
+    pub fn seq_bytes(&self, context: usize) -> usize {
+        self.account.kv_rings + self.account.conv + context * self.account.per_position
+    }
+
+    /// A new, empty sequence of `context` positions, refused when the driver has less free than it
+    /// holds (`cuMemGetInfo`).
+    pub fn new_seq(&mut self, context: usize) -> Result<Seq, String> {
+        if context == 0 {
+            return Err("a sequence of 0 positions".into());
+        }
+        let need = self.seq_bytes(context);
+        let (free, _) = self.dev.driver_free()?;
+        if need > free {
+            return Err(format!(
+                "a sequence of {context} positions needs {need} bytes and the driver has {free} free"
+            ));
+        }
+        let dev = &self.dev;
+        let program = program(&self.plan)?;
+        let hidden = self.hidden;
+        let before = dev.allocated.get();
+        let mut slots = Vec::with_capacity(self.plan.layers.len());
+        for layer in &self.plan.layers {
+            let a = attention_of(layer)?;
+            let kvw = (a.kv_heads * a.head_dim) as usize;
+            let cap = match a.window {
+                Some(window) => (window as usize - 1 + self.chunk).next_power_of_two(),
+                None => context,
+            };
+            let history = a.key_conv.kernel as usize - 1;
+            let pair = |n: usize| -> Result<[CudaSlice<f32>; 2], String> {
+                Ok([dev.zeros(n)?, dev.zeros(n)?])
+            };
+            // the slot's cache in the plan's format, as Route::load lays it out
+            let fp8 = program.numerics.kv[layer.index as usize] == KvCacheFormat::E4m3Unit;
+            let (f32_rows, u8_rows) = if fp8 { (1, cap * kvw) } else { (cap * kvw, 1) };
+            slots.push(SlotState {
+                kc: dev.zeros(f32_rows)?,
+                vc: dev.zeros(f32_rows)?,
+                kc8: dev.zeros(u8_rows)?,
+                vc8: dev.zeros(u8_rows)?,
+                fp8,
+                row_hist: None,
+                cap,
+                conv: [
+                    pair(history * kvw)?,
+                    pair(history * kvw)?,
+                    pair((a.output_conv.kernel as usize - 1) * hidden)?,
+                    pair((program.mlp_output_conv.kernel as usize - 1) * hidden)?,
+                ],
+            });
+        }
+        dev.sync()?;
+        Ok(Seq {
+            slots,
+            position: 0,
+            parity: 0,
+            context,
+            bytes: dev.allocated.get() - before,
+        })
+    }
+
+    /// A call of `seq`: a prefill chunk or a decode token, the same program as `forward` on the
+    /// route's own sequence (the sequence's state is swapped in for the call).
+    pub fn forward_seq(
+        &mut self,
+        seq: &mut Seq,
+        tokens: &[u32],
+        head: Head,
+        obs: Option<&mut (dyn Observer + '_)>,
+    ) -> Result<CallOut, String> {
+        if seq.slots.len() != self.plan.layers.len() {
+            return Err("a sequence of another route".into());
+        }
+        self.swap_seq(seq);
+        let out = self.forward_body(tokens, head, obs, false, None);
+        self.swap_seq(seq);
+        out
+    }
+
+    /// Free the route's own sequence (`forward`'s state): a serving route runs only the
+    /// sequences it makes with `new_seq`. `forward` refuses afterwards.
+    pub fn drop_default_seq(&mut self) -> Result<(), String> {
+        self.slots = Vec::new();
+        self.context = 0;
+        self.dev.sync()
+    }
+
+    fn swap_seq(&mut self, seq: &mut Seq) {
+        std::mem::swap(&mut self.slots, &mut seq.slots);
+        std::mem::swap(&mut self.position, &mut seq.position);
+        std::mem::swap(&mut self.parity, &mut seq.parity);
+        std::mem::swap(&mut self.context, &mut seq.context);
+    }
+
+    /// One decode token of each sequence (`tokens[i]` for `seqs[i]`) in shared launches. Each row is
+    /// its sequence's one-token call at its own position against its own state, so its bits are
+    /// those of `forward_seq` of that token alone. Commits every sequence or none.
+    pub fn decode_batch(
+        &mut self,
+        seqs: &mut [&mut Seq],
+        tokens: &[u32],
+        head: Head,
+    ) -> Result<CallOut, String> {
+        self.forward_body(tokens, head, None, false, Some(seqs))
+    }
+
     /// One chunk of rows through every slot. capture: the stream is capturing a decode graph; the
-    /// token and position are already on the device, nothing is read back and nothing commits.
+    /// token and position are already on the device, nothing is read back and nothing commits. batch: one decode row
+    /// of each sequence (`decode_batch`); a batched call never captures.
     fn forward_body(
         &mut self,
         tokens: &[u32],
         head: Head,
         mut obs: Option<&mut (dyn Observer + '_)>,
         capture: bool,
+        mut batch: Option<&mut [&mut Seq]>,
     ) -> Result<CallOut, String> {
         let rows = tokens.len();
         if rows == 0 || rows > self.chunk {
@@ -2627,12 +2923,39 @@ impl Route {
             ));
         }
         let pos0 = self.position;
-        if pos0 as usize + rows > self.context {
-            return Err(format!(
-                "position {} is past the route's context of {}",
-                pos0 as usize + rows,
-                self.context
-            ));
+        match batch.as_deref() {
+            None => {
+                if pos0 as usize + rows > self.context {
+                    return Err(format!(
+                        "position {} is past the route's context of {}",
+                        pos0 as usize + rows,
+                        self.context
+                    ));
+                }
+            }
+            Some(seqs) => {
+                if seqs.len() != rows {
+                    return Err(format!(
+                        "a batched call of {rows} tokens for {} sequences",
+                        seqs.len()
+                    ));
+                }
+                if obs.is_some() {
+                    return Err("a batched call takes no observer".into());
+                }
+                for s in seqs {
+                    if s.slots.len() != self.plan.layers.len() {
+                        return Err("a sequence of another route".into());
+                    }
+                    if s.position as usize + 1 > s.context {
+                        return Err(format!(
+                            "position {} is past the sequence's context of {}",
+                            s.position + 1,
+                            s.context
+                        ));
+                    }
+                }
+            }
         }
         let vocab = self.plan.vocab_size;
         if let Some(bad) = tokens.iter().find(|t| **t >= vocab) {
@@ -2666,6 +2989,61 @@ impl Route {
         let program = program(plan)?;
         let lp = &program.loop_plan;
         let rh = chunk * hidden;
+        // a batched call: every row's own position, caches and conv histories, per slot
+        let desc_base: u64 = match batch.as_deref_mut() {
+            None => 0,
+            Some(seqs) => {
+                let nslots = plan.layers.len();
+                let mut table = vec![RowDesc::default(); nslots * rows];
+                for (r, s) in seqs.iter_mut().enumerate() {
+                    let (cur, pos) = (s.parity, s.position as i64);
+                    for (i, ss) in s.slots.iter_mut().enumerate() {
+                        let mut d = RowDesc {
+                            pos,
+                            cap: ss.cap as i64,
+                            kc: if ss.fp8 {
+                                dptr_mut(&mut ss.kc8, &st)
+                            } else {
+                                dptr_mut(&mut ss.kc, &st)
+                            },
+                            vc: if ss.fp8 {
+                                dptr_mut(&mut ss.vc8, &st)
+                            } else {
+                                dptr_mut(&mut ss.vc, &st)
+                            },
+                            ..RowDesc::default()
+                        };
+                        for j in 0..4 {
+                            d.cin[j] = dptr(&ss.conv[j][cur], &st);
+                            d.cout[j] = if red.conv_state_dropped {
+                                0
+                            } else {
+                                dptr_mut(&mut ss.conv[j][1 - cur], &st)
+                            };
+                        }
+                        table[i * rows + r] = d;
+                    }
+                }
+                if red.batch_rows_rotated && rows > 1 {
+                    for i in 0..nslots {
+                        let row = &mut table[i * rows..(i + 1) * rows];
+                        let caches: Vec<(u64, u64)> = row.iter().map(|d| (d.kc, d.vc)).collect();
+                        for (r, d) in row.iter_mut().enumerate() {
+                            (d.kc, d.vc) = caches[(r + 1) % rows];
+                        }
+                    }
+                }
+                // SAFETY: RowDesc is repr(C) plain data
+                let bytes = unsafe {
+                    std::slice::from_raw_parts(
+                        table.as_ptr() as *const u8,
+                        table.len() * ROW_DESC_BYTES,
+                    )
+                };
+                dev.put(bytes, &mut w.desc)?;
+                dptr(&w.desc, &st)
+            }
+        };
         if !capture {
             dev.put(tokens, &mut w.tok)?;
             dev.put(&[pos0 as i64], &mut w.posd)?;
@@ -2691,6 +3069,11 @@ impl Route {
         let mut pass = None;
         for &slot in &lp.execution_order {
             let info = lp.slots[slot as usize];
+            let desc_slot: u64 = if desc_base == 0 {
+                0
+            } else {
+                desc_base + (slot as usize * rows * ROW_DESC_BYTES) as u64
+            };
             if info.pass != pass {
                 match info.pass {
                     Some(0) => {
@@ -2946,7 +3329,8 @@ impl Route {
                            dst: u64,
                            cap: usize,
                            nheads: usize,
-                           width: usize|
+                           width: usize,
+                           which: i32|
              -> Result<(), String> {
                 dev.launched("memra_ink2g_heads", unsafe {
                     ffi::memra_ink2g_heads(
@@ -2965,6 +3349,8 @@ impl Route {
                         nheads as i32,
                         width as i32,
                         dev.prec.get().norm as i32,
+                        desc_slot as *const c_void,
+                        which,
                         dev.sp(),
                     )
                 })
@@ -2982,6 +3368,7 @@ impl Route {
                 0,
                 heads,
                 dim,
+                0,
             )?;
             let rb = dptr_mut(&mut w.rb, &st);
             heads_k(
@@ -2996,11 +3383,17 @@ impl Route {
                 0,
                 heads,
                 rank,
+                0,
             )?;
 
             // ---- K and V: short convolution with the slot's history, clip / norm into the cache
             let cur = *parity;
-            let ss = &mut slots[slot as usize];
+            // a batched call's kernels read every row's state from its descriptor; the first
+            // row's slot only fills the unused pointer arguments
+            let ss = match batch.as_deref_mut() {
+                Some(seqs) => &mut seqs[0].slots[slot as usize],
+                None => &mut slots[slot as usize],
+            };
             // the history after every row of the call, when the caller keeps it (a verify call)
             let hp: [u64; 4] = match ss.row_hist.as_mut() {
                 // a one-row call commits whole, so it needs none (and a decode graph holds no
@@ -3016,7 +3409,8 @@ impl Route {
                         (state, hist): (&mut [CudaSlice<f32>; 2], u64),
                         dynamic: u64,
                         add: u64,
-                        out: u64|
+                        out: u64,
+                        which: i32|
              -> Result<(), String> {
                 // read the committed history, write the next one into the other buffer
                 let state_in = dptr(&state[cur], &st);
@@ -3025,6 +3419,30 @@ impl Route {
                 } else {
                     dptr_mut(&mut state[1 - cur], &st)
                 };
+                if desc_slot != 0 {
+                    // a batched call: every row's histories come from its descriptor (no row
+                    // history is kept: a batched decode row commits whole)
+                    return dev.launched("memra_ink2g_conv", unsafe {
+                        ffi::memra_ink2g_conv(
+                            i32::from(cw.dynamic.is_some()),
+                            x as *const f32,
+                            state_in as *const f32,
+                            state_out as *mut f32,
+                            dptr(&cw.taps, &st) as *const f32,
+                            dynamic as *const f32,
+                            cw.dynamic.as_ref().map_or(0, |d| d.1 as i32),
+                            add as *const f32,
+                            out as *mut f32,
+                            rows as i32,
+                            cw.channels as i32,
+                            cw.kernel as i32,
+                            dev.prec.get().conv as i32,
+                            desc_slot as *const c_void,
+                            which,
+                            dev.sp(),
+                        )
+                    });
+                }
                 dev.launched("memra_ink2g_conv", unsafe {
                     ffi::memra_ink2g_conv_rows(
                         i32::from(cw.dynamic.is_some()),
@@ -3055,6 +3473,7 @@ impl Route {
                 dptr(&w.dynk, &st),
                 0,
                 kcv,
+                0,
             )?;
             conv(
                 dev,
@@ -3064,6 +3483,7 @@ impl Route {
                 dptr(&w.dynv, &st),
                 0,
                 vcv,
+                1,
             )?;
             let (kc, vc) = if ss.fp8 {
                 (dptr_mut(&mut ss.kc8, &st), dptr_mut(&mut ss.vc8, &st))
@@ -3082,6 +3502,7 @@ impl Route {
                     ),
                     (1, vcv, 0.0, decimal(a.value_norm_epsilon), vc),
                 ] {
+                    let which = mode + 1;
                     dev.launched("memra_ink2g_heads_e4m3", unsafe {
                         ffi::memra_ink2g_heads_e4m3(
                             mode,
@@ -3096,6 +3517,8 @@ impl Route {
                             kvh as i32,
                             dim as i32,
                             dev.prec.get().norm as i32,
+                            desc_slot as *const c_void,
+                            which,
                             dev.sp(),
                         )
                     })?;
@@ -3113,6 +3536,7 @@ impl Route {
                     ss.cap,
                     kvh,
                     dim,
+                    1,
                 )?;
                 heads_k(
                     dev,
@@ -3126,6 +3550,7 @@ impl Route {
                     ss.cap,
                     kvh,
                     dim,
+                    2,
                 )?;
             }
 
@@ -3133,6 +3558,15 @@ impl Route {
             let window = a.window.map_or(0, |v| v as i32);
             let mask = i32::from(a.relative.beyond_extent == BeyondExtent::Masked);
             let att = dptr_mut(&mut w.att, &st);
+            // The split form's scratch holds the keys of the load's context; a sequence made with
+            // new_seq can hold more (the serve route loads at one position), and its full slots
+            // then run the tiled form, the same bits.
+            let most = a.window.map_or(ss.cap, |v| v as usize);
+            let (scr, scr_ld) = if most <= w.asc_ld {
+                (dptr_mut(&mut w.asc, &st), w.asc_ld as i64)
+            } else {
+                (0, 0)
+            };
             dev.launched("memra_ink2g_attn", unsafe {
                 ffi::memra_ink2g_attn(
                     qb as *const f32,
@@ -3154,8 +3588,8 @@ impl Route {
                     kvh as i32,
                     dim as i32,
                     rank as i32,
-                    dptr_mut(&mut w.asc, &st) as *mut f64,
-                    w.asc_ld as i64,
+                    scr as *mut f64,
+                    scr_ld,
                     // attn arm 3: the f64 program with a chunk's scores split over blocks in groups of
                     // asc_rows rows (the decode form, per row); a different f64 evaluation order
                     // attn arm 4: f32 tiles over keys with f64 merges, in the same groups
@@ -3168,6 +3602,7 @@ impl Route {
                         3 => 0,
                         a => a as i32,
                     },
+                    desc_slot as *const c_void,
                     dev.sp(),
                 )
             })?;
@@ -3238,6 +3673,7 @@ impl Route {
                     0,
                     0,
                     h_mut,
+                    2,
                 )?;
             } else {
                 conv(
@@ -3248,6 +3684,7 @@ impl Route {
                     0,
                     h_mut,
                     h_mut,
+                    2,
                 )?;
             }
             if let Some(o) = obs.as_deref_mut()
@@ -3335,6 +3772,7 @@ impl Route {
                 0,
                 h_mut,
                 h_mut,
+                3,
             )?;
             if let Some(o) = obs.as_deref_mut()
                 && o.wants(Tap::ResidFfn)
@@ -3345,7 +3783,10 @@ impl Route {
                 *fail_after_slot = None;
                 if red.commit_on_error {
                     // the red arm: the histories this call wrote become the committed ones
-                    *parity = 1 - *parity;
+                    match batch.as_deref_mut() {
+                        None => *parity = 1 - *parity,
+                        Some(seqs) => seqs.iter_mut().for_each(|s| s.parity = 1 - s.parity),
+                    }
                 }
                 return Err(format!("injected failure after slot {slot}"));
             }
@@ -3397,8 +3838,8 @@ impl Route {
         };
         let first = match head {
             Head::None => rows,
-            Head::LastArgmax => rows - 1,
-            Head::All | Head::AllArgmax => 0,
+            Head::LastArgmax | Head::Last => rows - 1,
+            Head::All | Head::AllArgmax | Head::Argmax => 0,
         };
         let mut at = first;
         while at < rows {
@@ -3428,15 +3869,25 @@ impl Route {
             if !capture {
                 out.argmax.extend(dev.down(&w.best, 0, n)?);
             }
-            if head == Head::All {
+            if head == Head::All || head == Head::Last {
                 out.logits.extend(dev.down(&w.logits, 0, n * keep)?);
             }
             at += n;
         }
-        // the call succeeded: commit the position and the conv histories it wrote
+        // the call succeeded: commit the positions and the conv histories it wrote
         if !capture {
-            *position += rows as u64;
-            *parity = 1 - *parity;
+            match batch {
+                None => {
+                    *position += rows as u64;
+                    *parity = 1 - *parity;
+                }
+                Some(seqs) => {
+                    for s in seqs.iter_mut() {
+                        s.position += 1;
+                        s.parity = 1 - s.parity;
+                    }
+                }
+            }
         }
         Ok(out)
     }
@@ -3653,7 +4104,7 @@ impl Route {
         let count = chunks.len();
         for (i, chunk) in chunks.into_iter().enumerate() {
             let last = i + 1 == count;
-            if head == Head::LastArgmax && !last {
+            if (head == Head::LastArgmax || head == Head::Last) && !last {
                 self.forward(chunk, Head::None, obs.as_deref_mut())?;
                 continue;
             }
@@ -4328,6 +4779,8 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                     kvh as i32,
                     dim as i32,
                     0,
+                    std::ptr::null(),
+                    0,
                     dev.sp(),
                 )
             })?;
@@ -4344,6 +4797,8 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                     rows as i32,
                     kvh as i32,
                     dim as i32,
+                    0,
+                    std::ptr::null(),
                     0,
                     dev.sp(),
                 )
@@ -4435,6 +4890,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 0,
                 0,
                 0,
+                std::ptr::null(),
                 dev.sp(),
             )
         })?;
@@ -4826,6 +5282,8 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                     heads as i32,
                     width as i32,
                     dev.prec.get().norm as i32,
+                    std::ptr::null(),
+                    0,
                     dev.sp(),
                 )
             })
@@ -4926,6 +5384,8 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         c as i32,
                         k as i32,
                         dev.prec.get().conv as i32,
+                        std::ptr::null(),
+                        0,
                         dev.sp(),
                     )
                 })?;
@@ -5057,6 +5517,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         ld as i64,
                         scr_rows,
                         dev.prec.get().attn as i32,
+                        std::ptr::null(),
                         dev.sp(),
                     )
                 })?;

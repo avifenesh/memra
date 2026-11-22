@@ -46,6 +46,15 @@ const FAMILY: &str = "inkling2";
 /// Census prefix of the drafter file's tensors.
 pub const DRAFTER_PREFIX: &str = "mtp.";
 
+/// The oracle numeric class of the checkpoint's declared program (NVFP4 W4A4 on layers 0..19,
+/// MXFP8 W8A8 on 20..23, everything outside the experts in f32): the class name a
+/// `memra-checkpoint-oracle-v1` tape of that program carries, and the key of its parity band.
+pub const DECLARED_PARITY_CLASS: &str = "inkling2-declared-activation-quant";
+
+/// The oracle numeric class of the nvfp4-rig program (the declared experts, the minted NVFP4
+/// overlay, e4m3 K/V): the class name its tapes carry and the key of its parity band.
+pub const NVFP4_RIG_PARITY_CLASS: &str = "inkling2-nvfp4-rig";
+
 /// Epsilon of the L2 clips, the residual mixes and the controller norms. It is a constant of the
 /// program, not a config key.
 const PROGRAM_EPSILON: f32 = 1e-6;
@@ -73,8 +82,10 @@ pub static PACK: ModelPack = ModelPack {
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
     // The artifact ships `chat_template.jinja`.
     template: TemplateContract::ArtifactRequired,
-    // The reference executor runs the plan (memra-reference `inkling2`); no tuned surface does.
-    support: Some(NativeSupport::NativeReference),
+    // The shipped class is qualified on its GPU route (record inkling2-shipped-gpu-1x-5090:
+    // CheckpointParity on the declared class's band and Serve, on the pinned artifact); no tuned
+    // rewrite is qualified.
+    support: Some(NativeSupport::NativeQualified),
     gates: &[
         Gate::Config,
         Gate::TokenizerTemplate,
@@ -84,15 +95,35 @@ pub static PACK: ModelPack = ModelPack {
         Gate::RewriteParity,
         Gate::Serve,
     ],
-    // No band is declared, for any class, so `verify checkpoint` cannot pass: a band of the
-    // declared class has to come from that class's source program measured on two backends, and
-    // none has been. With no fallback band, a float-activation oracle cannot write a
-    // CheckpointParity pass for a pack whose default class is the declared one. The tiny gate
-    // does not read this field: its fixtures carry their own comparison (memra-reference
-    // `TinyGate`).
+    // No default band: an oracle of another class (a float-activation one, say) cannot write a
+    // CheckpointParity pass for a pack whose default class is the declared one. The tiny gate does
+    // not read this field: its fixtures carry their own comparison (memra-reference `TinyGate`).
     checkpoint_parity: None,
-    checkpoint_parity_classes: &[],
-    checkpoint_probe: None,
+    // The declared class: its band is twice the largest spread between independent backends of
+    // the source program on the probe below. Lane E's CPU oracle and lane F's harness (the
+    // transformers model with the act-quant experts) on CPU and on the GPU differ pairwise by
+    // 1.76 to 1.84 logits at most (far-tail logits; KL under 1e-9, the same argmax), so a native
+    // run may sit 3.7 from the oracle and must give its argmax. The route's per-MoE bits, its
+    // float trunk and its end-to-end KL on longer text are held separately
+    // (docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md,
+    // research/modelplan-onboarding-inkling2mini-20261121/checkpoint-parity/).
+    checkpoint_parity_classes: &[ClassParityGate {
+        numeric_class: DECLARED_PARITY_CLASS,
+        gate: CheckpointParityGate {
+            max_abs: 3.7,
+            max_rel: 0.0,
+            require_argmax: true,
+        },
+        tape: None,
+    }],
+    // The probe is a real chat turn: the system turn "Thinking effort level: 0.9" and the user turn
+    // "Explain in one sentence why the sky is usually blue." rendered by the checkpoint's template
+    // (lane E's p1_chat prompt, 26 tokens), whose next token every backend picks by a margin of
+    // 20.3 logits or more. The default 1,2,3,4 is not a sequence the model ever sees.
+    checkpoint_probe: Some(&[
+        200002, 200004, 34182, 279, 154554, 150628, 25, 220, 15, 13, 24, 200010, 200000, 200004,
+        100887, 149881, 150011, 156021, 151661, 149876, 158808, 149884, 152978, 152778, 13, 200010,
+    ]),
     checkpoint_requests: &[],
     matches_config: |config| matches!(config.arch, Arch::Inkling2Loop) && config.inkling2.is_some(),
     plan_builder,

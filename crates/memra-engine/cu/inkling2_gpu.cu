@@ -42,6 +42,18 @@
 // keys the split fold stages at a time, and the widest head it stages
 #define INK2G_FOLD_TILE 32
 #define INK2G_FOLD_DIM 128
+
+// One row of a batched decode call (`Route::decode_batch`): the row is a one-token call of its own
+// sequence, so its position, its slot's K / V caches and its four conv histories come from here
+// instead of the call's (pos0 + r, the call's cache). Laid out as the host's `RowDesc`.
+struct Ink2gRow {
+  int64_t pos;
+  int64_t cap;
+  void* kc;  // float* or uint8_t* (e4m3), the slot's cache element type
+  void* vc;
+  const float* cin[4];
+  float* cout[4];
+};
 #define INK2G_MAX_KERNEL 8
 
 namespace {
@@ -778,10 +790,17 @@ __device__ __forceinline__ float ink2g_kv_get(const uint8_t* p, int64_t i) { ret
 template <typename T, bool KC, typename OUT = float>
 __global__ void ink2g_heads_kernel(int mode, const float* x, const float* __restrict__ scale, T thr,
                                    T eps, const int64_t* __restrict__ posd, int64_t pos0, int log_floor,
-                                   T alpha, OUT* dst, int64_t cap, int heads, int width) {
+                                   T alpha, OUT* dst, int64_t cap, int heads, int width,
+                                   const Ink2gRow* __restrict__ desc, int which) {
   __shared__ T sh[8];
   const int r = blockIdx.x, h = blockIdx.y, t = threadIdx.x;
-  const int64_t pos = (posd ? *posd : pos0) + r;
+  // desc (batched rows): the row's own position, and for which = 1 / 2 its own K / V cache; else
+  // posd (nullable) is the device copy of pos0 (a replayed graph step)
+  const int64_t pos = desc ? desc[r].pos : (posd ? *posd : pos0) + r;
+  if (desc && which != 0) {
+    dst = (OUT*)(which == 1 ? desc[r].kc : desc[r].vc);
+    cap = desc[r].cap;
+  }
   const int64_t drow = cap > 0 ? pos % cap : (int64_t)r;
   T v = T(0.0);
   if (t < width) {
@@ -811,16 +830,24 @@ __global__ void ink2g_conv_kernel(int mode, const float* __restrict__ x, const f
                                   float* __restrict__ state_out, float* __restrict__ rows_out,
                                   const float* __restrict__ taps,
                                   const float* __restrict__ dyn, int groups, const float* add, float* out, int R,
-                                  int C, int K) {
+                                  int C, int K, const Ink2gRow* __restrict__ desc, int which) {
   const int c = blockIdx.x * blockDim.x + threadIdx.x;
   if (c >= C) return;
+  // desc (batched rows): block row y is a one-row call of its own sequence with its own history
+  int r0 = 0;
+  if (desc) {
+    r0 = blockIdx.y;
+    R = r0 + 1;
+    state_in = desc[r0].cin[which];
+    state_out = desc[r0].cout[which];
+  }
   T hist[INK2G_MAX_KERNEL];  // hist[l] = input l steps back, l in 1..K-1
   for (int l = 1; l < K; l++) hist[l] = (T)state_in[(int64_t)(K - 1 - l) * C + c];
   T tp[INK2G_MAX_KERNEL];
   for (int j = 0; j < K; j++) tp[j] = mode == 0 ? (T)taps[(int64_t)c * K + j] : (T)taps[(int64_t)j * C + c];
   const int group = mode == 1 ? c / (C / groups) : 0;
   const T div = sqrt(mode == 0 ? (T)(K + 1) : (T)(2 * K + 1));
-  for (int r = 0; r < R; r++) {
+  for (int r = r0; r < R; r++) {
     const T cur = (T)x[(int64_t)r * C + c];
     INK2G_ACC sum = T(0.0);
     if (mode == 0) {
@@ -873,13 +900,19 @@ __global__ void ink2g_attn_kernel(const float* __restrict__ q, const float* __re
                                   const float* __restrict__ table, const float* __restrict__ sink,
                                   const KV* __restrict__ kc, const KV* __restrict__ vc, int64_t cap, int64_t pos0,
                                   int window, int extent, int mask_beyond, float* __restrict__ out, int heads,
-                                  int kv_heads, int dim, int rank) {
+                                  int kv_heads, int dim, int rank, const Ink2gRow* __restrict__ desc) {
   __shared__ T sh[8];
   __shared__ T bias[INK2G_MAX_EXTENT];
   __shared__ T tile[INK2G_ATTN_TILE];
   __shared__ float qs[256];
   const int r = blockIdx.x, h = blockIdx.y, t = threadIdx.x, nt = blockDim.x;
-  const int64_t pos = pos0 + r;
+  // desc (batched rows): the row's own position and its own sequence's caches
+  if (desc) {
+    kc = (const KV*)desc[r].kc;
+    vc = (const KV*)desc[r].vc;
+    cap = desc[r].cap;
+  }
+  const int64_t pos = desc ? desc[r].pos : pos0 + r;
   const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
   const int kvh = h / (heads / kv_heads);
   const int kvw = kv_heads * dim;
@@ -1662,16 +1695,18 @@ template <typename KV>
 static int ink2g_attn_any(const float* q, const float* rel, const float* table, const float* sink, const KV* kc,
                           const KV* vc, int64_t cap, const int64_t* posd, int64_t pos0, int window, int extent,
                      int mask_beyond, float* out, int R, int heads, int kv_heads, int dim, int rank, double* scr,
-                     int64_t scr_ld, int scr_rows, int prec, void* stream) {
-  if (!q || !rel || !table || !sink || !kc || !vc || !out) return 45021;
+                     int64_t scr_ld, int scr_rows, int prec, const Ink2gRow* desc, void* stream) {
+  if (!q || !rel || !table || !sink || ((!kc || !vc) && !desc) || !out) return 45021;
   if (R <= 0 || heads <= 0 || kv_heads <= 0 || heads % kv_heads != 0 || dim <= 0 || dim > 256 || rank <= 0)
     return 45022;
   if (extent <= 0 || extent > INK2G_MAX_EXTENT || heads > 65535) return 45023;
   const int64_t last = pos0 + R - 1;
   // every key a row of this call reads is still in the cache: the ring holds the window of its
   // oldest row and the rows of the call
-  if ((window > 0 ? (int64_t)window - 1 + R : last + 1) > cap) return 45024;
-  if (scr && (R == 1 || scr_rows > 0)) {
+  // (a batched call's rows are checked on the host: each row's own cache holds its keys)
+  if (!desc && (window > 0 ? (int64_t)window - 1 + R : last + 1) > cap) return 45024;
+  // a batched call never takes the split form: its rows are different sequences
+  if (scr && !desc && (R == 1 || scr_rows > 0)) {
     // the split form, scr_rows rows a launch pair (scratch [scr_rows][heads][scr_ld]); the most keys a
     // row can attend: a replayed step reads its position on the device
     const int64_t most = window > 0 ? (int64_t)window : (R == 1 ? cap : pos0 + R);
@@ -1721,11 +1756,11 @@ static int ink2g_attn_any(const float* q, const float* rel, const float* table, 
   }
   switch (prec) {
     case 1: ink2g_attn_kernel<float, false, KV><<<dim3(R, heads), 256, 0, (cudaStream_t)stream>>>(
-      q, rel, table, sink, kc, vc, cap, pos0, window, extent, mask_beyond, out, heads, kv_heads, dim, rank); break;
+      q, rel, table, sink, kc, vc, cap, pos0, window, extent, mask_beyond, out, heads, kv_heads, dim, rank, desc); break;
     case 2: ink2g_attn_kernel<float, true, KV><<<dim3(R, heads), 256, 0, (cudaStream_t)stream>>>(
-      q, rel, table, sink, kc, vc, cap, pos0, window, extent, mask_beyond, out, heads, kv_heads, dim, rank); break;
+      q, rel, table, sink, kc, vc, cap, pos0, window, extent, mask_beyond, out, heads, kv_heads, dim, rank, desc); break;
     default: ink2g_attn_kernel<double, false, KV><<<dim3(R, heads), 256, 0, (cudaStream_t)stream>>>(
-      q, rel, table, sink, kc, vc, cap, pos0, window, extent, mask_beyond, out, heads, kv_heads, dim, rank); break;
+      q, rel, table, sink, kc, vc, cap, pos0, window, extent, mask_beyond, out, heads, kv_heads, dim, rank, desc); break;
   }
   return ink2g_rc();
 }
@@ -1922,20 +1957,23 @@ int memra_ink2g_controller_v0(const float* x, const float* msg, const void* down
 }
 
 // posd (nullable): the device copy of pos0, read by the kernel (a graph replays one step at every
-// position); pos0 must still be the call's position.
+// position); pos0 must still be the call's position. desc (nullable): R rows of a batched decode
+// call (each row's position; which 1 / 2 writes the row's K / V cache, which 0 writes dst).
 int memra_ink2g_heads(int mode, const float* x, const float* scale, double thr, double eps, const int64_t* posd,
                       int64_t pos0, int log_floor, double alpha, float* dst, int64_t cap, int R, int heads,
-                      int width, int prec, void* stream) {
-  if ((mode != 0 && mode != 1) || !x || !dst || R <= 0 || heads <= 0 || width <= 0 || width > 256) return 45015;
+                      int width, int prec, const void* desc, int which, void* stream) {
+  if ((mode != 0 && mode != 1) || !x || (!dst && !(desc && which != 0)) || R <= 0 || heads <= 0 || width <= 0 ||
+      width > 256)
+    return 45015;
   if (heads > 65535) return 45016;
   const int threads = ((width + 31) / 32) * 32;
   switch (prec) {
     case 1: ink2g_heads_kernel<float, false><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(mode, x, scale, thr, eps, posd, pos0,
-                                                                         log_floor, alpha, dst, cap, heads, width); break;
+                                                                         log_floor, alpha, dst, cap, heads, width, (const Ink2gRow*)desc, which); break;
     case 2: ink2g_heads_kernel<float, true><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(mode, x, scale, thr, eps, posd, pos0,
-                                                                         log_floor, alpha, dst, cap, heads, width); break;
+                                                                         log_floor, alpha, dst, cap, heads, width, (const Ink2gRow*)desc, which); break;
     default: ink2g_heads_kernel<double, false><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(mode, x, scale, thr, eps, posd, pos0,
-                                                                         log_floor, alpha, dst, cap, heads, width); break;
+                                                                         log_floor, alpha, dst, cap, heads, width, (const Ink2gRow*)desc, which); break;
   }
   return ink2g_rc();
 }
@@ -1943,20 +1981,24 @@ int memra_ink2g_heads(int mode, const float* x, const float* scale, double thr, 
 // state_in: the history before the call; state_out (nullable): the history after it, a different
 // buffer, so a call that fails later leaves the caller's committed history untouched. A null
 // state_out drops the history (the gate's red arm).
+// desc (nullable): R rows of a batched decode call, each its own sequence's one-row call; which
+// names the history (0 K, 1 V, 2 attention output, 3 MLP output) and state_in / state_out are unused.
 int memra_ink2g_conv(int mode, const float* x, const float* state_in, float* state_out, const float* taps,
-                     const float* dyn, int groups, const float* add, float* out, int R, int C, int K, int prec, void* stream) {
-  if ((mode != 0 && mode != 1) || !x || !state_in || !taps || !out || R <= 0 || C <= 0) return 45017;
-  if (state_out == state_in) return 45041;
+                     const float* dyn, int groups, const float* add, float* out, int R, int C, int K, int prec,
+                     const void* desc, int which, void* stream) {
+  if ((mode != 0 && mode != 1) || !x || (!state_in && !desc) || !taps || !out || R <= 0 || C <= 0) return 45017;
+  if (!desc && state_out == state_in) return 45041;
+  if (desc && (which < 0 || which > 3 || R > 65535)) return 45042;
   if (K < 2 || K > INK2G_MAX_KERNEL) return 45018;
   if (mode == 1 && (!dyn || groups <= 0 || C % groups != 0)) return 45019;
   if (x == out) return 45020;
   switch (prec) {
-    case 1: ink2g_conv_kernel<float, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, nullptr, taps, dyn, groups,
-                                                                     add, out, R, C, K); break;
-    case 2: ink2g_conv_kernel<float, true><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, nullptr, taps, dyn, groups,
-                                                                     add, out, R, C, K); break;
-    default: ink2g_conv_kernel<double, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, nullptr, taps, dyn, groups,
-                                                                     add, out, R, C, K); break;
+    case 1: ink2g_conv_kernel<float, false><<<dim3((C + 63) / 64, desc ? R : 1), 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, nullptr, taps, dyn, groups,
+                                                                     add, out, R, C, K, (const Ink2gRow*)desc, which); break;
+    case 2: ink2g_conv_kernel<float, true><<<dim3((C + 63) / 64, desc ? R : 1), 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, nullptr, taps, dyn, groups,
+                                                                     add, out, R, C, K, (const Ink2gRow*)desc, which); break;
+    default: ink2g_conv_kernel<double, false><<<dim3((C + 63) / 64, desc ? R : 1), 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, nullptr, taps, dyn, groups,
+                                                                     add, out, R, C, K, (const Ink2gRow*)desc, which); break;
   }
   return ink2g_rc();
 }
@@ -1973,11 +2015,11 @@ int memra_ink2g_conv_rows(int mode, const float* x, const float* state_in, float
   if (x == out) return 45020;
   switch (prec) {
     case 1: ink2g_conv_kernel<float, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, rows_out, taps, dyn, groups,
-                                                                     add, out, R, C, K); break;
+                                                                     add, out, R, C, K, nullptr, 0); break;
     case 2: ink2g_conv_kernel<float, true><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, rows_out, taps, dyn, groups,
-                                                                     add, out, R, C, K); break;
+                                                                     add, out, R, C, K, nullptr, 0); break;
     default: ink2g_conv_kernel<double, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, rows_out, taps, dyn, groups,
-                                                                     add, out, R, C, K); break;
+                                                                     add, out, R, C, K, nullptr, 0); break;
   }
   return ink2g_rc();
 }
@@ -1990,13 +2032,14 @@ int memra_ink2g_conv_rows(int mode, const float* x, const float* state_in, float
 int memra_ink2g_attn(const float* q, const float* rel, const float* table, const float* sink, const void* kc,
                      const void* vc, int kv_e4m3, int64_t cap, const int64_t* posd, int64_t pos0, int window,
                      int extent, int mask_beyond, float* out, int R, int heads, int kv_heads, int dim, int rank,
-                     double* scr, int64_t scr_ld, int scr_rows, int prec, void* stream) {
+                     double* scr, int64_t scr_ld, int scr_rows, int prec, const void* desc, void* stream) {
+  const Ink2gRow* rows = (const Ink2gRow*)desc;
   if (kv_e4m3)
     return ink2g_attn_any<uint8_t>(q, rel, table, sink, (const uint8_t*)kc, (const uint8_t*)vc, cap, posd, pos0, window,
                                    extent, mask_beyond, out, R, heads, kv_heads, dim, rank, scr, scr_ld, scr_rows, prec,
-                                   stream);
+                                   rows, stream);
   return ink2g_attn_any<float>(q, rel, table, sink, (const float*)kc, (const float*)vc, cap, posd, pos0, window, extent,
-                               mask_beyond, out, R, heads, kv_heads, dim, rank, scr, scr_ld, scr_rows, prec, stream);
+                               mask_beyond, out, R, heads, kv_heads, dim, rank, scr, scr_ld, scr_rows, prec, rows, stream);
 }
 
 // The tiled f64 attention over an e4m3 cache (the gate's cell).
@@ -2005,28 +2048,32 @@ int memra_ink2g_attn_e4m3(const float* q, const float* rel, const float* table, 
                           int mask_beyond, float* out, int R, int heads, int kv_heads, int dim, int rank,
                           void* stream) {
   return ink2g_attn_any<uint8_t>(q, rel, table, sink, kc, vc, cap, nullptr, pos0, window, extent, mask_beyond, out, R,
-                                 heads, kv_heads, dim, rank, nullptr, 0, 0, 0, stream);
+                                 heads, kv_heads, dim, rank, nullptr, 0, 0, 0, nullptr, stream);
 }
 
 // The K / V epilogue into an e4m3 cache (nvfp4-rig): K (mode 0, no scale, no log scale) and V (mode 1).
 int memra_ink2g_heads_e4m3(int mode, const float* x, double thr, double eps, const int64_t* posd, int64_t pos0,
-                           uint8_t* dst, int64_t cap, int R, int heads, int width, int prec, void* stream) {
-  if ((mode != 0 && mode != 1) || !x || !dst || R <= 0 || heads <= 0 || width <= 0 || width > 256) return 45017;
-  if (heads > 65535 || cap <= 0) return 45018;
+                           uint8_t* dst, int64_t cap, int R, int heads, int width, int prec, const void* desc,
+                           int which, void* stream) {
+  if ((mode != 0 && mode != 1) || !x || (!dst && !(desc && which != 0)) || R <= 0 || heads <= 0 || width <= 0 ||
+      width > 256)
+    return 45017;
+  if (heads > 65535 || (cap <= 0 && !desc)) return 45018;
   const int threads = ((width + 31) / 32) * 32;
   switch (prec) {
     case 1:
       ink2g_heads_kernel<float, false, uint8_t><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(
-          mode, x, nullptr, (float)thr, (float)eps, posd, pos0, 0, 0.0f, dst, cap, heads, width);
+          mode, x, nullptr, (float)thr, (float)eps, posd, pos0, 0, 0.0f, dst, cap, heads, width, (const Ink2gRow*)desc, which);
       break;
     case 2:
       ink2g_heads_kernel<float, true, uint8_t><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(
-          mode, x, nullptr, (float)thr, (float)eps, posd, pos0, 0, 0.0f, dst, cap, heads, width);
+          mode, x, nullptr, (float)thr, (float)eps, posd, pos0, 0, 0.0f, dst, cap, heads, width, (const Ink2gRow*)desc, which);
       break;
     default:
       ink2g_heads_kernel<double, false, uint8_t><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(
-          mode, x, nullptr, thr, eps, posd, pos0, 0, 0.0, dst, cap, heads, width);
+          mode, x, nullptr, thr, eps, posd, pos0, 0, 0.0, dst, cap, heads, width, (const Ink2gRow*)desc, which);
   }
+
   return ink2g_rc();
 }
 

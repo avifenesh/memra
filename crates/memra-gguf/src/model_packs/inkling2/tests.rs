@@ -174,7 +174,7 @@ fn the_pack_selects_by_config_and_alias_and_only_it_compiles_the_family() {
     for alias in ["inkling2", "inkling2_loop", "inkling-2-mini"] {
         assert_eq!(by_alias(alias).unwrap().family, "inkling2");
     }
-    assert_eq!(PACK.support, Some(NativeSupport::NativeReference));
+    assert_eq!(PACK.support, Some(NativeSupport::NativeQualified));
     assert_eq!(PACK.gates.len(), 7);
     assert_eq!(
         ModelPlan::compile(&config),
@@ -1122,18 +1122,23 @@ fn review_every_census_tensor_is_declared_and_every_declared_tensor_exists() {
 }
 
 #[test]
-fn no_checkpoint_band_is_declared_for_any_numeric_class() {
+fn only_the_declared_class_has_a_checkpoint_band() {
     // A fallback band would let an oracle of any class, the float-activation one included, write
-    // a CheckpointParity pass for this pack.
+    // a CheckpointParity pass for this pack. The declared class's band is the source program's
+    // own spread between backends (docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md).
     assert_eq!(PACK.checkpoint_parity, None);
-    assert!(PACK.checkpoint_parity_classes.is_empty());
     for class in [
         "source-weights-float32-accumulation",
         "inkling2-float-activation",
-        "inkling2-declared-activation-quant",
     ] {
         assert_eq!(PACK.checkpoint_parity_for(class), None, "{class}");
     }
+    let gate = PACK.checkpoint_parity_for(DECLARED_PARITY_CLASS).unwrap();
+    assert_eq!(
+        (gate.max_abs, gate.max_rel, gate.require_argmax),
+        (3.7, 0.0, true)
+    );
+    assert_eq!(PACK.checkpoint_probe_tokens().len(), 26);
 }
 
 #[test]
