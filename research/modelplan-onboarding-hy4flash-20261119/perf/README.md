@@ -350,3 +350,23 @@ Tried and dropped (kernels kept bit-equal, so only their speed decided): a persi
 GEMM that walks its items as one stream of stages, with the A operands laid out for direct
 loads and one-warp blocks for narrow outputs (+2.9 ms a step on `chat`); the routed experts'
 NVFP4 codes decoded with byte permutes instead of a table (no gain, `kbench` 125 -> 131 us).
+
+### 19. Prefill GEMM: only the live 16-row slices (`receipts/s19-gemm-live/`, sampled)
+
+`nsys` of `long`'s prefill on step 18 (5.46 s of GPU time): the GEMMs are half of it (NVFP4
+grouped experts 1.18 s, FP8 1.03 s, BF16 0.54 s), attention 1.67 s, its merge 0.29 s. Useful
+rate (4 m n k: the hi and the lo mma of each product) 33 to 49 TF/s for FP8 and the experts, 36
+to 44 for the BF16 projections; `ncu` (`kbench`, `KB_PRE`: the model's shapes at 2104 rows) has
+the tensor pipe 33% active on the FP8 shapes, stalled on the global loads of the next K step
+(2 blocks an SM at 172 registers) and on the block barriers.
+
+`r_gemm_kernel` now skips the fragment loads and mma of a warp's 16-row slices past the tile's
+rows (they held zero rows and wrote nothing): a grouped expert tile is often a few rows of 64.
+`kbench` output hashes equal; `long`'s prefill 404.2 -> 406.7 tokens/s (interleaved, two runs
+each), decode unchanged. 3 of 3 tapes bit-equal.
+
+The o_proj gap seen in `kbench` (m1 232 GB/s, m4 280) is the first case of a process, not the
+row count: with the rows in the order 4, 1, 1, 4 the first (m4) reads at 223 GB/s and the rest at
+272 to 284; warm or with a 4 GiB eviction read the same. 280 GB/s is above the bus (273), so
+`kbench`'s cold reads are partly cached; `ncu` (caches flushed, base clock) times m1 and m4 at
+250 us alike. The model's o_proj at 232 GB/s reads at the bus's streaming rate.

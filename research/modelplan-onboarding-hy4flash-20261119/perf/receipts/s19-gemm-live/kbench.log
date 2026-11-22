@@ -1,0 +1,77 @@
+== oproj S19 KB_ROWS=1,4
+o_proj fp8 3072x16384 m1                         227.0 us    221.7 GB/s
+o_proj fp8 3072x16384 m4                         179.4 us    280.6 GB/s
+o_proj fp8 3072x8192 m1                           92.6 us    271.8 GB/s
+o_proj fp8 3072x8192 m4                           93.0 us    270.5 GB/s
+KBENCH ALL EQUAL
+== oproj S19 KB_ROWS=4,1,1,4
+o_proj fp8 3072x16384 m4                         219.5 us    229.3 GB/s
+o_proj fp8 3072x16384 m1                         177.8 us    283.1 GB/s
+o_proj fp8 3072x16384 m1                         177.1 us    284.2 GB/s
+o_proj fp8 3072x16384 m4                         180.0 us    279.6 GB/s
+o_proj fp8 3072x8192 m4                           93.3 us    269.7 GB/s
+o_proj fp8 3072x8192 m1                           91.3 us    275.8 GB/s
+o_proj fp8 3072x8192 m1                           92.5 us    272.1 GB/s
+o_proj fp8 3072x8192 m4                           93.4 us    269.5 GB/s
+KBENCH ALL EQUAL
+== oproj S19 KB_ROWS=4,1,1,4 KB_THRASH_MB=4096
+o_proj fp8 3072x16384 m4                         225.6 us    223.1 GB/s
+o_proj fp8 3072x16384 m1                         179.5 us    280.4 GB/s
+o_proj fp8 3072x16384 m1                         177.3 us    283.9 GB/s
+o_proj fp8 3072x16384 m4                         184.8 us    272.3 GB/s
+o_proj fp8 3072x8192 m4                           93.7 us    268.6 GB/s
+o_proj fp8 3072x8192 m1                           92.2 us    273.0 GB/s
+o_proj fp8 3072x8192 m1                           92.8 us    271.2 GB/s
+o_proj fp8 3072x8192 m4                           94.5 us    266.3 GB/s
+KBENCH ALL EQUAL
+== oproj S19 KB_ROWS=1,4,1,4 KB_WARM=1
+o_proj fp8 3072x16384 m1                         216.4 us    232.6 GB/s
+o_proj fp8 3072x16384 m4                         179.7 us    280.1 GB/s
+o_proj fp8 3072x16384 m1                         176.9 us    284.5 GB/s
+o_proj fp8 3072x16384 m4                         180.2 us    279.3 GB/s
+o_proj fp8 3072x8192 m1                           58.8 us    427.9 GB/s
+o_proj fp8 3072x8192 m4                           75.2 us    334.8 GB/s
+o_proj fp8 3072x8192 m1                           52.0 us    483.9 GB/s
+o_proj fp8 3072x8192 m4                           76.9 us    327.1 GB/s
+KBENCH ALL EQUAL
+== pre rb
+pre fp8 16384x3072                     12252.5 us    34.6 TF/s  out b6656833d587c587
+pre fp8 3072x16384                     12732.5 us    33.3 TF/s  out 0dcf3c6b44541ee2
+pre fp8 8192x3072                       5506.1 us    38.5 TF/s  out 76430ce70029a77e
+pre bf16 1536x3072                       744.6 us    53.3 TF/s  out 4c6e03e1f9cb0595
+pre bf16 3072x1536                       854.8 us    46.5 TF/s  out f82703612aad30ed
+pre bf16 64x(256x512)                   3165.2 us    22.3 TF/s  out 4bf3003d81d6dd91
+pre experts nvfp4 33664 rows 769 tiles    9248.2 us    34.4 TF/s  out 2df8a87fe6f57072
+KBENCH PRE DONE
+== pre S19
+pre fp8 16384x3072                     12367.8 us    34.2 TF/s  out b6656833d587c587
+pre fp8 3072x16384                     12572.3 us    33.7 TF/s  out 0dcf3c6b44541ee2
+pre fp8 8192x3072                       5780.2 us    36.6 TF/s  out 76430ce70029a77e
+pre bf16 1536x3072                       704.5 us    56.4 TF/s  out 4c6e03e1f9cb0595
+pre bf16 3072x1536                       704.2 us    56.4 TF/s  out f82703612aad30ed
+pre bf16 64x(256x512)                   3074.7 us    23.0 TF/s  out 4bf3003d81d6dd91
+pre experts nvfp4 33664 rows 769 tiles    9194.0 us    34.6 TF/s  out 2df8a87fe6f57072
+KBENCH PRE DONE
+== pre S19
+pre fp8 16384x3072                     12288.5 us    34.5 TF/s  out b6656833d587c587
+pre fp8 3072x16384                     12661.2 us    33.5 TF/s  out 0dcf3c6b44541ee2
+pre fp8 8192x3072                       5659.0 us    37.4 TF/s  out 76430ce70029a77e
+pre bf16 1536x3072                       702.8 us    56.5 TF/s  out 4c6e03e1f9cb0595
+pre bf16 3072x1536                       779.3 us    51.0 TF/s  out f82703612aad30ed
+pre bf16 64x(256x512)                   3107.7 us    22.7 TF/s  out 4bf3003d81d6dd91
+pre experts nvfp4 33664 rows 769 tiles    9078.0 us    35.0 TF/s  out 2df8a87fe6f57072
+KBENCH PRE DONE
+== pre rb
+pre fp8 16384x3072                     12259.5 us    34.6 TF/s  out b6656833d587c587
+pre fp8 3072x16384                     12625.9 us    33.5 TF/s  out 0dcf3c6b44541ee2
+pre fp8 8192x3072                       5589.9 us    37.9 TF/s  out 76430ce70029a77e
+pre bf16 1536x3072                       830.1 us    47.8 TF/s  out 4c6e03e1f9cb0595
+pre bf16 3072x1536                       758.1 us    52.4 TF/s  out f82703612aad30ed
+pre bf16 64x(256x512)                   3120.7 us    22.6 TF/s  out 4bf3003d81d6dd91
+pre experts nvfp4 33664 rows 769 tiles    9291.2 us    34.2 TF/s  out 2df8a87fe6f57072
+KBENCH PRE DONE
+ncu pre_fp8_3072x16384 rc=0
+ncu pre_fp8_16384x3072 rc=0
+ncu pre_experts rc=0
+ncu pre_bf16_3072x1536 rc=0
+K1_DONE

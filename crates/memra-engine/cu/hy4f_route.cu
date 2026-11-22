@@ -342,16 +342,22 @@ __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
       for (int c = 0; c < 4; c++) acc[a][b][c] = part[a][b][c] = 0.0f;
 
   const bool fold_blocks = FMT == R_FP8 && !g.red_dq;
+  // a warp's 16-row slices past the tile's rows hold zero rows and write nothing: skip their
+  // fragment loads and mma (a grouped expert tile is often a few rows of BM)
+  bool live[MT];
+#pragma unroll
+  for (int a = 0; a < MT; a++) live[a] = m0 + wm * WR + a * 16 < m;
   load(0);
   for (int k0 = 0; k0 < k; k0 += RG_BK) {
     store(k0);
     __syncthreads();
     if (k0 + RG_BK < k) load(k0 + RG_BK);
 #pragma unroll
-    for (int kk = 0; kk < RG_BK; kk += 16) {
+    for (int kk = 0; kk < RG_BK && live[0]; kk += 16) {
       uint32_t af[MT][4], afl[MT][4], bfr[NT][2];
 #pragma unroll
       for (int a = 0; a < MT; a++) {
+        if (!live[a]) continue;
         const int r = wm * WR + a * 16 + (lane >> 2);
         const int c = kk + (lane & 3) * 2;
         af[a][0] = *(const uint32_t*)&As[r * LDS + c];
@@ -371,13 +377,15 @@ __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
         bfr[b][1] = *(const uint32_t*)&Bs[r * LDS + c + 8];
       }
 #pragma unroll
-      for (int a = 0; a < MT; a++)
+      for (int a = 0; a < MT; a++) {
+        if (!live[a]) continue;
 #pragma unroll
         for (int b = 0; b < NT; b++) {
           float* c = fold_blocks ? part[a][b] : acc[a][b];
           r_mma(c, af[a], bfr[b]);
           r_mma(c, afl[a], bfr[b]);
         }
+      }
     }
     if (fold_blocks && (((k0 + RG_BK) % 128) == 0 || k0 + RG_BK >= k)) {
       const float s = ((const float*)sc)[(long)(n0 / 128) * g.grid_cols + k0 / 128];
