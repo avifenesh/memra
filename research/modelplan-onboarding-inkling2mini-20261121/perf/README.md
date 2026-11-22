@@ -180,3 +180,27 @@ writes and reads of the input; the prefill quantizer runs rows / top_k as many b
   tile kernel in 0 outputs; slot and logit digests equal on all 48 slots for shipped, float and
   nvfp4-rig at chunk 1, 4 and 512 against the previous binary (s8/gl-id), and at chunk 4 all-f64 against
   the merged route (s8/gk-rows). Gate ALL OK, 36 cells.
+
+## Steps 10-11: attention split and arms, multi-row GEMV, branch-free e2m1 (2026-11-22)
+
+All bit-identical to the step before under its program (gate ALL OK; digests equal on all 48 slots and the
+logits at chunk 1, 2, 3, 4, 5, 6, 8 and 512, both classes; receipts s10-attention-rows, s11-rows-e2m1).
+The precision program changed once, by ruling (docs/decisions/INKLING2-PRECISION-ARMS.md, round 4).
+
+| Change | Measurement (nvfp4-rig unless named; c=1 3 interleaved takes, no voids) |
+|---|---|
+| attention fold split into top / exp / out | 4k decode 22.7 -> 38.1 tok/s; 32k decode 7.1 -> 17.6 (single runs) |
+| adopted program (conv, router f32c; attention f32t) | 32k prefill 62.9 -> 109.6 tok/s, 32k decode 17.6 -> 26.8 (single runs) |
+| multi-row GEMV rewrite (x transposed, 32 rows a block, rows per warp by size, next-row prefetch) | shipped 4-row call GEMV 18.3 -> 10.1 ms, 8 rows 36.4 -> 19.9 ms; rig 8 rows 40.7 -> 22.8 ms |
+| branch-free e2m1 decode (byte-permute table, fp16 widen) | 5864 -> 2720 SASS instructions in the NVFP4 jobs GEMV; rig c=1 59.1 -> 67.5 tok/s |
+| rejected: one pass of 5..8 rows (4 warps a block) | slower than two passes of 4: shipped 8 rows 19.9 -> 27.5 ms; deleted |
+
+Final table on the adopted program (binary a18 for the long rows, a20 for c=1 rig; tok/s):
+
+| | c=1 decode | 4k decode | 32k decode | prefill 512 / 2048 / 8192 / 32768 |
+|---|---|---|---|---|
+| nvfp4-rig | 67.5 (p50 14.2 ms) | 42.7 | 27.3 | 679 / 387 / 241 / 110 |
+| shipped | 59.9 (p50 16.2 ms) | 44.1 | 26.1 | 703 / 399 / 246 / 98 |
+| float | 15.9 | | | |
+
+The decode floor of nvfp4-rig is 3.58 ms a token (3.10 GB at 865 GB/s, about 279 tok/s): c=1 runs at 25% of it.

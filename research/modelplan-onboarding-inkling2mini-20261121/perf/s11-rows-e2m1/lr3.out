@@ -1,0 +1,38 @@
+gpulock: 5090 leased as claude-code-20261122T073847-458768 for 40m
+samples=8 clamp_hits=0 P8, 510 MHz, 405 MHz, 20.65 W, 150.00 W, 0x0000000000000400
+OK
+CLAMP_RC=0
+GATE_RC=0
+ink2-gpu-gate: ALL OK (36 cells, 0 skipped)
+ink2g-gemv-rows [m=2 n=520 k=2304] BF16 and dense NVFP4, the multi-row GEMV vs the #1397 tile kernel bit-differ=0 OK
+ink2g-gemv-rows [m=3 n=384 k=2304] BF16 and dense NVFP4, the multi-row GEMV vs the #1397 tile kernel bit-differ=0 OK
+ink2g-gemv-rows [m=5 n=2304 k=3072] BF16 and dense NVFP4, the multi-row GEMV vs the #1397 tile kernel bit-differ=0 OK
+ink2g-gemv-rows [m=8 n=1030 k=2304] BF16 and dense NVFP4, the multi-row GEMV vs the #1397 tile kernel bit-differ=0 OK
+RC shipped c1 base=0
+RC shipped c1 new=0
+RC shipped c2 base=0
+RC shipped c2 new=0
+RC shipped c3 base=0
+RC shipped c3 new=0
+RC shipped c4 base=0
+RC shipped c4 new=0
+RC shipped c8 base=0
+RC shipped c8 new=0
+RC nvfp4-rig c1 base=0
+RC nvfp4-rig c1 new=0
+RC nvfp4-rig c2 base=0
+RC nvfp4-rig c2 new=0
+RC nvfp4-rig c3 base=0
+RC nvfp4-rig c3 new=0
+RC nvfp4-rig c4 base=0
+RC nvfp4-rig c4 new=0
+RC nvfp4-rig c8 base=0
+RC nvfp4-rig c8 new=0
+NSYS shipped 1=0
+NSYS shipped 2=0
+NSYS shipped 4=0
+NSYS shipped 8=0
+NSYS nvfp4-rig 1=0
+NSYS nvfp4-rig 2=0
+NSYS nvfp4-rig 4=0
+NSYS nvfp4-rig 8=0
