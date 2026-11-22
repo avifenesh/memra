@@ -23,7 +23,8 @@
 //!   own chooser at their positions. Writes one JSON line a prompt: the ids, and for every anchor
 //!   `i` how many of each round's drafts equal the answer's next tokens from the front
 //!   (`m_greedy[i]`, `m_chosen[i]`; for a sampled prompt also `m_half[i]`, the coupled draw from
-//!   the drafter's row at half the request's temperature). The DFly2 block is causal, so a round of `k < K` drafts keeps
+//!   the drafter's row at half the request's temperature), and `q_greedy[i]`, the drafter's
+//!   probability of each greedy draft at the request's temperature (1 for a greedy prompt). The DFly2 block is causal, so a round of `k < K` drafts keeps
 //!   `min(m, k)`: one replay prices every depth. The answer is the target's own, so arms of another
 //!   drafter (another checkpoint directory over the same target) replay the same tokens.
 //! - `cost CKPT REQUEST [--k K] [--reps R] [--temperature T]`: what a step costs by its shape, after the request's
@@ -574,6 +575,7 @@ fn replay(args: &[String]) -> Result<(), String> {
         let mut greedy_drafts: Vec<Vec<u32>> = Vec::new();
         let mut chosen_drafts: Vec<Vec<u32>> = Vec::new();
         let mut half_drafts: Vec<Vec<u32>> = Vec::new();
+        let mut q_greedy: Vec<Vec<f64>> = Vec::new();
         loop {
             let t = *ids.last().unwrap();
             if ids.len() >= n || eos == Some(t) {
@@ -581,7 +583,23 @@ fn replay(args: &[String]) -> Result<(), String> {
             }
             // the round after this call, both ways; its block rows sit past the session's
             // positions and the next call writes them again before any query reads them
-            let g = route.draft_in(&mut sess, src, t, k, None, false, None)?;
+            // greedy drafts, with the drafter's probability of each draft at the request's
+            // temperature (1 for a greedy prompt): the softmax of its row at its first maximum
+            let tq = if temperature > 0.0 {
+                temperature as f64
+            } else {
+                1.0
+            };
+            let mut qs = Vec::with_capacity(k);
+            let mut top = |_s: usize, row: &[f32]| -> Result<u32, String> {
+                let best = argmax(row);
+                let mx = row[best as usize] as f64;
+                let z: f64 = row.iter().map(|&x| ((x as f64 - mx) / tq).exp()).sum();
+                qs.push(1.0 / z);
+                Ok(best)
+            };
+            let g = route.draft_in(&mut sess, src, t, k, None, false, Some(&mut top))?;
+            q_greedy.push(qs);
             let pos0 = pl + ids.len();
             let mut pick = |s: usize, row: &[f32]| pick_row(row, pos0 + s, sample.as_ref());
             let c = route.draft_in(&mut sess, src, t, k, None, false, Some(&mut pick))?;
@@ -619,7 +637,8 @@ fn replay(args: &[String]) -> Result<(), String> {
         let line = json!({
             "name": name, "prompt_tokens": pl, "n": n, "k": k, "temperature": temperature,
             "seed": sample.as_ref().map(|c| c.seed), "ids": ids, "m_greedy": m_greedy,
-            "m_chosen": m_chosen, "m_half": m_half, "seconds": tr.elapsed().as_secs_f64(),
+            "m_chosen": m_chosen, "m_half": m_half, "q_greedy": q_greedy,
+            "seconds": tr.elapsed().as_secs_f64(),
         });
         use std::io::Write;
         writeln!(w, "{line}").map_err(|e| format!("{out}: {e}"))?;
