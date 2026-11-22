@@ -1,0 +1,50 @@
+timed-r1.jsonl
+kind	K	decode tok/s	vs plain	accepted/verify	ms per verify	equal plain
+chat	plain	48.8	1.000			
+chat	adapt	47.9	0.983	1.121	67.5	4/4
+code	plain	46.0	1.000			
+code	adapt	52.2	1.134	1.805	79.2	4/4
+agentic	plain	35.5	1.000			
+agentic	adapt	53.9	1.519	2.455	65.8	4/4
+all	plain	43.9	1.000			
+all	adapt	50.8	1.158	1.668	71.0	12/12
+timed-r2.jsonl
+kind	K	decode tok/s	vs plain	accepted/verify	ms per verify	equal plain
+chat	plain	47.7	1.000			
+chat	adapt	45.7	0.959	1.200	76.6	4/4
+code	plain	45.4	1.000			
+code	adapt	54.0	1.191	2.125	69.1	4/4
+agentic	plain	35.5	1.000			
+agentic	adapt	56.8	1.598	2.948	71.4	4/4
+all	plain	43.4	1.000			
+all	adapt	51.1	1.178	1.927	72.6	12/12
+rig-r1.jsonl
+kind	K	decode tok/s	vs plain	accepted/verify	ms per verify	equal plain
+chat	plain	52.6	1.000			
+chat	adapt	48.8	0.927	0.000	520.9	4/4
+code	plain	49.7	1.000			
+code	adapt	45.5	0.917	0.000	557.7	4/4
+agentic	plain	37.0	1.000			
+agentic	adapt	34.0	0.920	0.000	536.3	4/4
+all	plain	46.9	1.000			
+all	adapt	43.2	0.921	0.000	538.4	12/12
+rig-r2.jsonl
+kind	K	decode tok/s	vs plain	accepted/verify	ms per verify	equal plain
+chat	plain	50.4	1.000			
+chat	adapt	46.2	0.917	0.000	549.5	4/4
+code	plain	48.0	1.000			
+code	adapt	44.2	0.920	0.000	574.5	4/4
+agentic	plain	36.8	1.000			
+agentic	adapt	33.7	0.915	0.000	541.7	4/4
+all	plain	45.6	1.000			
+all	adapt	41.8	0.917	0.000	555.9	12/12
+sample-s1.jsonl
+kind	K	decode tok/s	vs plain	accepted/verify	ms per verify	equal plain
+chat	plain	44.6	1.000			
+chat	adapt	42.6	0.955	1.136	180.9	0/4
+code	plain	42.6	1.000			
+code	adapt	47.1	1.106	2.022	116.1	0/4
+agentic	plain	33.5	1.000			
+agentic	adapt	44.2	1.317	2.610	101.7	0/4
+all	plain	41.1	1.000			
+all	adapt	44.6	1.086	1.913	131.8	0/12

@@ -173,6 +173,19 @@ mod ffi {
             n: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_ink2d_fold_nvfp4(
+            codes: *const c_void,
+            scales: *const c_void,
+            t: f32,
+            how: *const c_void,
+            hob: *const c_void,
+            fold: *mut f32,
+            fold_b: *mut f32,
+            vocab: i32,
+            h: i32,
+            rank: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_ink2d_fold(
             head: *const c_void,
             how: *const c_void,
@@ -568,19 +581,37 @@ impl DraftGpu {
         let mut fold = dev.zeros::<f32>(g.vocab * r)?;
         let mut fold_b = dev.zeros::<f32>(g.vocab)?;
         dev.bind()?;
-        ck("memra_ink2d_fold", unsafe {
-            ffi::memra_ink2d_fold(
-                shared.head as *const _,
-                p(&how, &st) as *const _,
-                p(&hob, &st) as *const _,
-                pm(&mut fold, &st) as *mut f32,
-                pm(&mut fold_b, &st) as *mut f32,
-                g.vocab as i32,
-                h as i32,
-                r as i32,
-                dev.sp(),
-            )
-        })?;
+        // the fold reads the head the base logits read
+        match shared.head_nv {
+            Some((codes, scales, t)) => ck("memra_ink2d_fold_nvfp4", unsafe {
+                ffi::memra_ink2d_fold_nvfp4(
+                    codes as *const _,
+                    scales as *const _,
+                    t,
+                    p(&how, &st) as *const _,
+                    p(&hob, &st) as *const _,
+                    pm(&mut fold, &st) as *mut f32,
+                    pm(&mut fold_b, &st) as *mut f32,
+                    g.vocab as i32,
+                    h as i32,
+                    r as i32,
+                    dev.sp(),
+                )
+            })?,
+            None => ck("memra_ink2d_fold", unsafe {
+                ffi::memra_ink2d_fold(
+                    shared.head as *const _,
+                    p(&how, &st) as *const _,
+                    p(&hob, &st) as *const _,
+                    pm(&mut fold, &st) as *mut f32,
+                    pm(&mut fold_b, &st) as *mut f32,
+                    g.vocab as i32,
+                    h as i32,
+                    r as i32,
+                    dev.sp(),
+                )
+            })?,
+        }
         dev.sync()?;
         drop((how, hob));
         let wide = chunk.max(rows);
