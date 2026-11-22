@@ -1,0 +1,155 @@
+{
+ "build": {
+  "binaries": {
+   "argmax-margin-probe": {
+    "bytes": 45019312,
+    "sha256": "97180b6b765be08daf0a070ea7d36645abbc24acccb7a9d7ab965dc3ec83ebf7"
+   },
+   "kernel-check": {
+    "bytes": 38677256,
+    "sha256": "5f3c53ca5ec662b629ce7b47a5654cb36e2f8a65ddaade221d48ddd6a727140c"
+   },
+   "memra-server": {
+    "bytes": 67466840,
+    "sha256": "62a3972337dcb2bb279e982a5997bd1ceb049bd590a88db1b26b83c9c5c34291"
+   },
+   "run-gen": {
+    "bytes": 47075216,
+    "sha256": "00f5392fa90dcfd8b506e5fa0341b9cb62533b9f95a18010aaf1cba4ab3e119d"
+   },
+   "run-spec": {
+    "bytes": 47017184,
+    "sha256": "2af5486e56f29e584a58999f51a45e319a4d14d47ab5312abf0fd0864c8dbb27"
+   },
+   "tok-parity": {
+    "bytes": 1386896,
+    "sha256": "2384404097f99383fefcb5299600e99a5f31b8de4b63262d1dacf3b7dae1df52"
+   }
+  },
+  "env": {
+   "CARGO_BUILD_JOBS": "2",
+   "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "1",
+   "CARGO_PROFILE_RELEASE_LTO": "fat"
+  },
+  "target": "120a",
+  "toolchain": {
+   "nvcc": "Build cuda_13.4.r13.4/compiler.38855100_0",
+   "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+  }
+ },
+ "device": {
+  "class": "rtxpro6000",
+  "compute_cap": "12.0",
+  "driver": "615.71.09",
+  "name": "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+  "uuid_sha256": "f22ccec2dff0d849f5a1a39e1812357ea26cd41614e7b676fd6ea72b7fe2486a"
+ },
+ "failures": [],
+ "finished": "2026-11-22T00:30:13.168433+00:00",
+ "inputs_sha256": "30cbd61a87e389720c2657c7aaeeecad68f8f98a89569d6f3c57b8df5c7cefdf",
+ "kinds": {
+  "perf": {
+   "accepted_regression": null,
+   "base_commit": "91e01a7dccc2c9fa7799d6e7764a9c2a6512154e",
+   "baseline": "interleaved",
+   "runs": [
+    {
+     "arm": "A",
+     "log": "perf/01-A-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/02-B-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/03-B-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/04-A-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/05-A-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/06-B-ornith-ai_ornith-1.5-35b-a3b.log",
+     "model": "ornith-ai/ornith-1.5-35b-a3b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/07-A-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/08-B-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/09-B-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/10-A-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "A",
+     "log": "perf/11-A-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    },
+    {
+     "arm": "B",
+     "log": "perf/12-B-qwen_qwen3.8-27b.log",
+     "model": "qwen/qwen3.8-27b"
+    }
+   ],
+   "verdicts": {
+    "ornith-ai/ornith-1.5-35b-a3b": {
+     "base_median": 275.19,
+     "candidate_median": 275.13,
+     "delta_pct": -0.02,
+     "regressed": false
+    },
+    "qwen/qwen3.8-27b": {
+     "base_median": 77.9,
+     "candidate_median": 78.11,
+     "delta_pct": 0.27,
+     "regressed": false
+    }
+   }
+  }
+ },
+ "payloads": {
+  "build.log": "5993f92f4cc04dfed5fec5fde94e38af66767baffd752a649b3aaebcad698cd9",
+  "perf/01-A-ornith-ai_ornith-1.5-35b-a3b.log": "5e99bb791f6aae5f0e29f854e68bd2d405230a861b62641b817f180395ea7e12",
+  "perf/02-B-ornith-ai_ornith-1.5-35b-a3b.log": "1f6e610c3e45ab9eaa051f4f561c9fe592ebb09bce424c812f3ff9dd05f2c602",
+  "perf/03-B-ornith-ai_ornith-1.5-35b-a3b.log": "e47c316ae8dd706e67fa5a0b3a02277f99b46c76861a9cc82c981bb1ecde9537",
+  "perf/04-A-ornith-ai_ornith-1.5-35b-a3b.log": "43865c8f0ef7b13d1f94c5ee26f0540f6a3edfe63c0ea349c9bffb48de6921b7",
+  "perf/05-A-ornith-ai_ornith-1.5-35b-a3b.log": "8e92427257bdc714035153ea2ef42e964cc9f25c6483110891793d304bc4150b",
+  "perf/06-B-ornith-ai_ornith-1.5-35b-a3b.log": "9a8bc56a79964c1ad13b5ee0c1a57a5b04c154c1e3e763a0c78e02f799af2c30",
+  "perf/07-A-qwen_qwen3.8-27b.log": "7a72b88e520559451eb5ca72fac45c2b090ad48313da31609926200bf52be797",
+  "perf/08-B-qwen_qwen3.8-27b.log": "459d2fefc4acfa6d6d24010d600d69f0d94db84f5d2016f199f536a7e6a2a258",
+  "perf/09-B-qwen_qwen3.8-27b.log": "67a91ad3f61502c8dadf0b449293637e62528a024b9d017b0fa8554b7b110c36",
+  "perf/10-A-qwen_qwen3.8-27b.log": "05eac355a3e2c4a222d48868c7044add64320a6464a79c25545b138483b106a9",
+  "perf/11-A-qwen_qwen3.8-27b.log": "2b5defbfbad2524a600e9e122b2ab9bac2c59b6d5ba2fd14fa725d446017ae65",
+  "perf/12-B-qwen_qwen3.8-27b.log": "004b38e73d3dd7094cbe5c10d17b2f221f4c934f2acba02de19f0ddf2f034624",
+  "perf/prompt.txt": "a56691ecf645da1b1f582426fde6a81d7655b0a00d789bc619c233e26499438c",
+  "roster.tsv": "c61fd59845e5ee4e67fb10300e22268e441c610151f84651a35dbf0fc04a135f"
+ },
+ "schema": "memra-cell-evidence-v1",
+ "started": "2026-11-22T00:28:08.712486+00:00",
+ "status": "pass",
+ "target": "120a",
+ "tested_commit": "2b2620775ac328a5588255f08d214769424210c0"
+}
