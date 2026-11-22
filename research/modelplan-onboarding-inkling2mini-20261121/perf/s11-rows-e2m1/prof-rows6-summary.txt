@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/home/avifenesh/.cache/inkling2mini/perf/rows3.py", line 5, in <module>
+    rows=db.execute('select k.start,k.end,s.value,k.gridX,k.gridY,k.gridZ from CUPTI_ACTIVITY_KIND_KERNEL k join StringIds s on k.shortName=s.id order by k.start').fetchall()
+         ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.OperationalError: no such table: CUPTI_ACTIVITY_KIND_KERNEL

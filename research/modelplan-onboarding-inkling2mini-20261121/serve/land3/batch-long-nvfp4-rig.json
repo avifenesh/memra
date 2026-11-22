@@ -1,0 +1,66 @@
+{
+  "batch_check": {
+    "batched_calls": 20,
+    "bit_identical": false,
+    "decode_rows_compared": 61,
+    "decode_rows_differ": 61,
+    "max_rows": 4,
+    "prefill_calls": 19,
+    "prefill_chunk": 256,
+    "red_batch_rows_rotated": false,
+    "schedule": [
+      {
+        "decode": 16,
+        "offset": 0,
+        "prompt": 1000
+      },
+      {
+        "decode": 15,
+        "offset": 3,
+        "prompt": 1060
+      },
+      {
+        "decode": 14,
+        "offset": 6,
+        "prompt": 1120
+      },
+      {
+        "decode": 16,
+        "offset": 1,
+        "prompt": 1180
+      }
+    ],
+    "sequences": 4
+  },
+  "chunk": 512,
+  "clocks_at_end": "2385 MHz, 14001 MHz, 117.60 W, 86, 96 %",
+  "clocks_at_start": "1747 MHz, 14001 MHz, 40.30 W, 78, 25 %",
+  "context": 2048,
+  "expert_activation_class": "DeclaredActivationQuant",
+  "force_moe_in": false,
+  "force_router": false,
+  "load_s": 2.829725528,
+  "loadavg_at_start": "12.08 17.13 20.11 9/8264 1458549",
+  "memory": {
+    "conv": 7667712,
+    "declared_work": 67241096,
+    "device_total": 25244663808,
+    "driver_free_after_load": 8704753664,
+    "driver_free_at_open": 24743772160,
+    "driver_free_before_kv": 8738308096,
+    "kv_full": 33947648,
+    "kv_rings": 167772160,
+    "max_context": 527166,
+    "per_position": 16576,
+    "weights": 15389163076,
+    "work": 313724168
+  },
+  "numeric_class": "inkling2-gpu-f32-stream/nvfp4-rig/DeclaredActivationQuant",
+  "red_arms": [],
+  "resident_gib": 14.916889507323503,
+  "runner": "ink2-gpu",
+  "stream_outside_experts": "f32",
+  "tape": "/home/avifenesh/.cache/inkling2mini/oracle/tapes/p2_window.exact_f32",
+  "tape_arm": "exact",
+  "weight_gib": 14.332274977117777
+}
