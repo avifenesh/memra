@@ -323,18 +323,36 @@ __global__ void dk_cap_kernel(const float* __restrict__ base, const float* __res
 
 // fold[v, j] = sum_h head[v, h] * how[h, j]; fold_b[v] = sum_h head[v, h] * hob[h]; f64 sums.
 // grid (vocab), block rank threads.
-__global__ void dk_fold_kernel(const uint16_t* __restrict__ head, const uint16_t* __restrict__ how,
-                               const uint16_t* __restrict__ hob, float* __restrict__ fold, float* __restrict__ fold_b,
-                               int h, int rank) {
+// The head's element (v, i): BF16 rows, or (FP4) NVFP4 codes [vocab, h/2] (even element in the low
+// nibble) with e4m3 scales [vocab, h/16] and the global scale t, decoded exactly.
+template <bool FP4>
+__device__ __forceinline__ double dk_head_at(const void* head, const uint8_t* sc, double t, int64_t v, int h, int i) {
+  if constexpr (FP4) {
+    const uint8_t b = ((const uint8_t*)head)[v * (h / 2) + i / 2];
+    const uint8_t nib = (i & 1) ? (b >> 4) : (b & 15);
+    const float lut[8] = {0.f, 0.5f, 1.f, 1.5f, 2.f, 3.f, 4.f, 6.f};
+    const float e = (nib & 8) ? -lut[nib & 7] : lut[nib & 7];
+    const uint8_t sb = sc[v * (h / 16) + i / 16];
+    const uint32_t ex = (sb >> 3) & 15u, mm = sb & 7u;
+    const float s = ex == 0 ? (float)mm * 0x1p-9f : (float)(8u + mm) * __uint_as_float((ex + 117u) << 23);
+    return (double)e * (double)s * t;
+  } else {
+    return dk_bf16(((const uint16_t*)head)[v * h + i]);
+  }
+}
+
+template <bool FP4>
+__global__ void dk_fold_kernel(const void* __restrict__ head, const uint8_t* __restrict__ sc, double t,
+                               const uint16_t* __restrict__ how, const uint16_t* __restrict__ hob,
+                               float* __restrict__ fold, float* __restrict__ fold_b, int h, int rank) {
   __shared__ double red[32];
   const int v = blockIdx.x, j = threadIdx.x;
-  const uint16_t* hr = head + (int64_t)v * h;
   double s = 0.0, b = 0.0;
   for (int i = 0; i < h; i++) {
-    const double hv = dk_bf16(hr[i]);
+    const double hv = dk_head_at<FP4>(head, sc, t, v, h, i);
     if (j < rank) s += hv * (double)dk_bf16(how[(int64_t)i * rank + j]);
   }
-  for (int i = j; i < h; i += blockDim.x) b += (double)dk_bf16(hr[i]) * (double)dk_bf16(hob[i]);
+  for (int i = j; i < h; i += blockDim.x) b += dk_head_at<FP4>(head, sc, t, v, h, i) * (double)dk_bf16(hob[i]);
   const double bias = dk_block_sum(b, red);
   if (j < rank) fold[(int64_t)v * rank + j] = (float)s;
   if (j == 0) fold_b[v] = (float)bias;
@@ -542,8 +560,21 @@ int memra_ink2d_fold(const void* head, const void* how, const void* hob, float* 
                      int rank, void* stream) {
   if (!head || !how || !hob || !fold || !fold_b || vocab <= 0 || h <= 0 || rank <= 0 || rank > 1024) return 46012;
   const int threads = rank < 32 ? 32 : ((rank + 31) / 32) * 32;
-  dk_fold_kernel<<<vocab, threads, 0, (cudaStream_t)stream>>>((const uint16_t*)head, (const uint16_t*)how,
-                                                               (const uint16_t*)hob, fold, fold_b, h, rank);
+  dk_fold_kernel<false><<<vocab, threads, 0, (cudaStream_t)stream>>>(head, nullptr, 1.0, (const uint16_t*)how,
+                                                                      (const uint16_t*)hob, fold, fold_b, h, rank);
+  return dk_rc();
+}
+
+// The fold of an NVFP4 head (a class's shared NVFP4 unembed): the same f64 sums over its decoded values.
+int memra_ink2d_fold_nvfp4(const void* codes, const void* scales, float t, const void* how, const void* hob,
+                           float* fold, float* fold_b, int vocab, int h, int rank, void* stream) {
+  if (!codes || !scales || !how || !hob || !fold || !fold_b || vocab <= 0 || h <= 0 || h % 16 || rank <= 0 ||
+      rank > 1024)
+    return 46017;
+  const int threads = rank < 32 ? 32 : ((rank + 31) / 32) * 32;
+  dk_fold_kernel<true><<<vocab, threads, 0, (cudaStream_t)stream>>>(codes, (const uint8_t*)scales, (double)t,
+                                                                     (const uint16_t*)how, (const uint16_t*)hob, fold,
+                                                                     fold_b, h, rank);
   return dk_rc();
 }
 
