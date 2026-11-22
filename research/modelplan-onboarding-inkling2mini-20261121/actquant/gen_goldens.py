@@ -13,8 +13,15 @@ What the port fixes and what it does not:
 - GEMM: the source accumulates in the tensor core, whose addition order is hardware
   defined. The goldens carry the fp32 INDEX-ORDER sum (a software model, labelled as
   such) plus the float64 sum and sum of magnitudes, for an error bound.
-- SiTU: the source uses PTX approx instructions. The goldens evaluate exp2 and tanh in
-  float64 and round once to fp32 (labelled 'f64 elementary functions').
+- SiTU: the source uses PTX approx instructions in fp32. The program here is not that
+  sequence: it is the mathematical SiTU (cap tanh(g / cap) sigmoid(g) * cap tanh(u / cap) *
+  gamma) evaluated in float64 and rounded once to bf16 (round-to-odd fp32, then nearest even),
+  the coordinator's ruling for #1396 (the correct program, not a library or an approx sequence).
+- Non-finite inputs: the source's tl.max / tl.minimum / tl.maximum without propagate_nan are
+  IEEE maxNum / minNum (a NaN operand is dropped; all-NaN gives NaN); its MXFP8 clamp
+  propagates NaN (propagate_nan=ALL) and its exponent-255 path gives a NaN scale and a zero
+  inverse. The port follows each of those; e4m3 of NaN is 0x7f and e2m1 of NaN is 0x7 for
+  either sign, what the sm_120 conversions the image uses give (measured: ink2-cvt-hw).
 
 Run: uv run --with torch --with numpy python3 gen_goldens.py OUT.bin
 """
@@ -49,6 +56,7 @@ def e2m1(x):
         torch.where(a <= 5.0, 6, 7))))))).to(torch.int64)
     value = E2M1_VALUES[code]
     sign = (x.view(torch.int32) >> 31) & 1
+    sign = torch.where(torch.isnan(x), torch.zeros_like(sign), sign)  # NaN: 0x7, as the sm_120 cvt
     return (code | (sign << 3)).to(torch.uint8), torch.where(sign != 0, -value, value)
 
 
@@ -69,6 +77,8 @@ def e4m3_encode(x):
     normal = ((e1 + 7) << 3) | (q - 8)
     byte = torch.where(a < 2.0**-6, sub.to(torch.int64), normal)
     byte = byte.clamp(max=0x7E)
+    byte = torch.where(torch.isnan(v), torch.full_like(byte, 0x7F), byte)
+    sign = torch.where(torch.isnan(v), torch.zeros_like(sign), sign)  # NaN: 0x7f, as the sm_120 cvt
     return (byte | (sign << 7)).to(torch.uint8)
 
 
@@ -79,6 +89,14 @@ def e4m3_decode(b):
     m = (b & 7).to(torch.float64)
     mag = torch.where(e == 0, m * 2.0**-9, (1.0 + m / 8.0) * torch.pow(2.0, (e - 7).to(torch.float64)))
     return torch.where(sign != 0, -mag, mag).to(F32)
+
+
+def amax_maxnum(t, dim):
+    """tl.max of magnitudes: NaN dropped (maxNum), NaN only when every element is NaN."""
+    a = t.abs()
+    nan = torch.isnan(a)
+    m = torch.where(nan, torch.tensor(float("-inf"), dtype=a.dtype), a).amax(dim=dim)
+    return torch.where(nan.all(dim=dim), torch.tensor(float("nan"), dtype=a.dtype), m)
 
 
 def bf16_round(x):
@@ -106,7 +124,7 @@ def block_error(x, reconstructed, variant=None):
 
 def nvfp4_row_scalars(amax, variant=None):
     """nvfp4.py:231-240."""
-    encoder = torch.minimum(f32(1536.0) / amax, FP32_MAX)
+    encoder = torch.fmin(f32(1536.0) / amax, FP32_MAX)
     decoder = f32(1.0) / encoder
     outer = amax * f32(1.0 / 1536.0)
     if variant == "outer_div":
@@ -118,15 +136,15 @@ def nvfp4_quantize(x, variant=None):
     """nvfp4.py nvfp4_quantize: x fp32 [M, K] (bf16 values). Returns packed codes
     [M, K/2] u8, e4m3 scale bytes [M, K/16] u8, amax [M] fp32."""
     m, k = x.shape
-    amax = x.abs().max(dim=1).values
+    amax = amax_maxnum(x, 1)
     encoder, decoder, outer = nvfp4_row_scalars(amax, variant)
     xb = x.reshape(m, k // 16, 16)
-    block_max = xb.abs().max(dim=2).values
+    block_max = amax_maxnum(xb, 2)
     enc = encoder[:, None]
     dec = decoder[:, None]
     # nvfp4.py:98-108 _block_scales
-    scale6 = torch.minimum(block_max * (enc * f32(1.0 / 6.0)), f32(448.0))
-    scale4 = torch.minimum(block_max * (enc * f32(0.25)), f32(448.0))
+    scale6 = torch.fmin(block_max * (enc * f32(1.0 / 6.0)), f32(448.0))
+    scale4 = torch.fmin(block_max * (enc * f32(0.25)), f32(448.0))
     if variant == "div6":
         scale6 = torch.minimum(block_max * (enc / f32(6.0)), f32(448.0))
     if variant == "mul_order":
@@ -136,8 +154,8 @@ def nvfp4_quantize(x, variant=None):
     byte4 = e4m3_encode(scale4)
     scale6 = e4m3_decode(byte6)
     scale4 = e4m3_decode(byte4)
-    inverse6 = torch.minimum(f32(1.0) / (scale6 * dec), FP32_MAX)
-    inverse4 = torch.minimum(f32(1.0) / (scale4 * dec), FP32_MAX)
+    inverse6 = torch.fmin(f32(1.0) / (scale6 * dec), FP32_MAX)
+    inverse4 = torch.fmin(f32(1.0) / (scale4 * dec), FP32_MAX)
     # nvfp4.py:112-129 _quantize_block
     code6, rounded6 = e2m1(xb * inverse6[:, :, None])
     code4, rounded4 = e2m1(xb * inverse4[:, :, None])
@@ -164,14 +182,16 @@ def mxfp8_quantize(x):
     [M, K] and ue8m0 exponent bytes [M, K/32]."""
     m, k = x.shape
     g = x.reshape(m, k // 32, 32)
-    amax = g.abs().max(dim=2).values
+    amax = amax_maxnum(g, 2)
     raw = amax * f32(1.0 / 448.0)
     min_scale = f32(2.0**-127)
     exponent = ((raw.contiguous().view(torch.int32) + 0x007FFFFF) & 0x7F800000) >> 23
     exponent = torch.where(raw <= min_scale, 0, torch.clamp(exponent, max=254))
     exponent = torch.where(raw != raw, 255, exponent).to(torch.int32)
-    scale = torch.maximum((exponent << 23).view(F32), min_scale)
+    scale = torch.fmax((exponent << 23).view(F32), min_scale)
+    scale = torch.where(exponent == 255, f32(float("nan")), scale)
     inverse = torch.where(exponent == 0, f32(2.0**127), f32(1.0) / scale)
+    inverse = torch.where(exponent == 255, f32(0.0), inverse)
     values = g * inverse[:, :, None]
     values = torch.clamp(values, -448.0, 448.0)
     return e4m3_encode(values).reshape(m, k), exponent.to(torch.uint8)
@@ -217,17 +237,27 @@ def row_scale(act_amax, w_amax, denominator):
     return (act_amax * w_amax) * rcp_rn(f32(1536.0) * denominator)
 
 
+def bf16_from_f64(z):
+    """float64 -> bf16 (as fp32), rounded once: round-to-odd to fp32, then nearest even."""
+    r = z.to(F32)
+    rd = r.double()
+    bits = r.view(torch.int32)
+    inexact = (rd != z) & torch.isfinite(r)
+    toward = rd.abs() > z.abs()
+    bits = torch.where(inexact & toward, bits - 1, bits)
+    bits = torch.where(inexact, bits | 1, bits)
+    return bits.view(F32).to(torch.bfloat16).to(F32)
+
+
 def situ(gate_up, gamma, gate_cap=4.0, up_cap=25.0):
-    """activation.py:64-78 with float64 exp2/tanh rounded once to fp32.
+    """The mathematical SiTU times the routing weight, rounded once to bf16 (not the source's
+    approx fp32 sequence, activation.py:20-78; see the module note).
     gate_up [R, 2F] interleaved (gate, up); gamma [R]. Returns bf16-rounded fp32 [R, F]."""
-    gate = gate_up[:, 0::2]
-    up = gate_up[:, 1::2]
-    t = gate * f32(-1.4426950408889634)
-    ex = torch.pow(torch.tensor(2.0, dtype=torch.float64), t.double()).to(F32)
-    sigmoid = f32(1.0) / (ex + f32(1.0))
-    gate_c = f32(gate_cap) * torch.tanh((gate / f32(gate_cap)).double()).to(F32)
-    up_c = f32(up_cap) * torch.tanh((up / f32(up_cap)).double()).to(F32)
-    return bf16_round(((gate_c * sigmoid) * up_c) * gamma[:, None])
+    g = gate_up[:, 0::2].double()
+    u = gate_up[:, 1::2].double()
+    gf = gate_cap * torch.tanh(g / gate_cap) * (1.0 / (1.0 + torch.exp(-g)))
+    uf = up_cap * torch.tanh(u / up_cap)
+    return bf16_from_f64((gf * uf) * gamma.double()[:, None])
 
 
 # ---------------------------------------------------------------- container
@@ -520,7 +550,7 @@ def main(path):
 
     # ---- whole expert block: quant x once per token, w13, SiTU * gamma, quant, w2, combine
     for kind in ("nvfp4", "mxfp8"):
-        e, h, f, tokens, topk = 6, 128, 64, 5, 3
+        e, h, f, tokens, topk = 6, 128, 128, 5, 3  # f % 128: the W8A8 kernel packs 4 ue8m0 scales per word
         x = to_bf16(torch.randn(tokens, h, generator=gen) * 2.0)
         sel = torch.stack([torch.randperm(e, generator=gen)[:topk] for _ in range(tokens)])
         gamma = (torch.rand(tokens, topk, generator=gen) * 2.0 + 0.1).to(F32)
@@ -564,6 +594,53 @@ def main(path):
         out.add("chain/" + kind, dims=u32s(e, h, f, tokens, topk), x=bf16_bits(x), sel=sel.numpy().astype(np.uint32), gamma=gamma.numpy(),
                 gate_up=bf16_bits(gate_up), y=bf16_bits(y), down=bf16_bits(down), out=bf16_bits(comb), **blobs)
         del xr
+
+    # ---- records added for the #1396 review (own generator: the records above keep their bytes)
+    gen2 = torch.Generator().manual_seed(13960)
+    # non-finite quantizer rows: inf, NaN, all-NaN blocks, mixed with finite values
+    def nonfinite_rows(k, blk):
+        rows = []
+        for j in range(6):
+            r = to_bf16(torch.randn(k, generator=gen2) * 3.0)
+            if j == 0:
+                r[5] = float("inf")
+            elif j == 1:
+                r[9] = float("-inf"); r[k - 1] = float("inf")
+            elif j == 2:
+                r[3] = float("nan")
+            elif j == 3:
+                r[blk:2 * blk] = float("nan")          # one all-NaN block
+            elif j == 4:
+                r[::7] = float("nan"); r[1] = float("inf")
+            else:
+                r[:] = float("nan")
+            rows.append(r)
+        return torch.stack(rows)
+    x = nonfinite_rows(256, 16)
+    packed, scales, amax, _ = nvfp4_quantize(x)
+    out.add("nvfp4q/nonfinite", dims=u32s(x.shape[0], 256), x=bf16_bits(x), codes=packed.numpy(), scales=scales.numpy(), amax=amax.numpy())
+    x = nonfinite_rows(256, 32)
+    values, exps = mxfp8_quantize(x)
+    out.add("mxfp8q/nonfinite", dims=u32s(x.shape[0], 256), x=bf16_bits(x), values=values.numpy(), exps=exps.numpy())
+    # W8A8 with e4m3 subnormal operands (the field-exponent reading of the tensor-core chain):
+    # weights mostly subnormal codes, and all subnormal; heavy-tailed activations, whose blocks
+    # quantize to many subnormal codes
+    for name, frac in (("subnormal_w", 0.97), ("subnormal_all", 1.0)):
+        e, n, k, r = 2, 32, 1152, 16
+        w8 = torch.randint(1, 8, (e, n, k), generator=gen2, dtype=torch.int64)
+        w8 = w8 | (torch.randint(0, 2, (e, n, k), generator=gen2, dtype=torch.int64) << 7)
+        normal = torch.rand(e, n, k, generator=gen2) >= frac
+        w8 = torch.where(normal, torch.randint(0x08, 0x40, (e, n, k), generator=gen2, dtype=torch.int64), w8).to(torch.uint8)
+        wex = torch.randint(110, 124, (e, n, k // 32), generator=gen2, dtype=torch.int64).to(torch.uint8)
+        x = to_bf16(torch.randn(r, k, generator=gen2) * torch.exp(torch.randn(r, k, generator=gen2) * 2.5))
+        expert = torch.arange(r) % e
+        values, exps = mxfp8_quantize(x)
+        a = mxfp8_dequant(values, exps)
+        w = mxfp8_dequant(w8, wex)[expert]
+        acc, exact, mag = dot_index_order(a, w)
+        y = bf16_round(acc * f32(1.0))
+        out.add("w8a8/" + name, dims=u32s(e, n, k, r), w=w8.numpy(), wexps=wex.numpy(), expert=expert.numpy().astype(np.uint32),
+                x=bf16_bits(x), acc=acc.numpy(), out=bf16_bits(y), exact=exact.numpy(), mag=mag.numpy())
 
     out.write(path)
     print("records:", len(out.records))

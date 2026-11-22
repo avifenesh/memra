@@ -1,0 +1,104 @@
+ink2-actq-nvfp4 [12 golden records, 428 rows] value-bytes-bad=0 scale-bytes-bad=0 amax-bad=0 OK
+ink2-actq-mxfp8 [4 golden records, 44 rows] value-bytes-bad=0 scale-bytes-bad=0 amax-bad=0 OK
+ink2-cvt-hw cvt.rn.satfinite.e4m3x2.f32 vs RNE goldens bad=0/1027; cvt.rn.satfinite.e2m1x2.f32 vs goldens bad=0/110 OK
+ink2-situ-actq-nvfp4 [rows=16 k=1152] library: bf16 differ=0/18432 max=0 step; ptx-approx (measurement): bf16 differ=12/18432 max=1 step; quantization of the device rows bit-bad=0 OK
+ink2-situ-actq-mxfp8 [rows=16 k=1152] library: bf16 differ=0/18432 max=0 step; ptx-approx (measurement): bf16 differ=12/18432 max=1 step; quantization of the device rows bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/k1152 [n=16 k=1152 rows=8 nb=1] acc: over-bound=0/128 max|err|/sum|p|=1.098e-7 (bound 1.372e-4) bit-equal index-order=64 step-rn=78 fused-rn=78 chain-rz=128 max-ulp-vs-index-order=32; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w4a4-gemm golden w4a4/k1152 [n=16 k=1152 rows=8 nb=2] acc: over-bound=0/128 max|err|/sum|p|=1.098e-7 (bound 1.372e-4) bit-equal index-order=64 step-rn=78 fused-rn=78 chain-rz=128 max-ulp-vs-index-order=32; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w4a4-gemm golden w4a4/k1152 [n=16 k=1152 rows=8 nb=4] acc: over-bound=0/128 max|err|/sum|p|=1.098e-7 (bound 1.372e-4) bit-equal index-order=64 step-rn=78 fused-rn=78 chain-rz=128 max-ulp-vs-index-order=32; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w4a4-gemm golden w4a4/k2304 [n=16 k=2304 rows=8 nb=1] acc: over-bound=0/128 max|err|/sum|p|=1.011e-7 (bound 2.745e-4) bit-equal index-order=44 step-rn=51 fused-rn=51 chain-rz=128 max-ulp-vs-index-order=96; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w4a4-gemm golden w4a4/k2304 [n=16 k=2304 rows=8 nb=2] acc: over-bound=0/128 max|err|/sum|p|=1.011e-7 (bound 2.745e-4) bit-equal index-order=44 step-rn=51 fused-rn=51 chain-rz=128 max-ulp-vs-index-order=96; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w4a4-gemm golden w4a4/k2304 [n=16 k=2304 rows=8 nb=4] acc: over-bound=0/128 max|err|/sum|p|=1.011e-7 (bound 2.745e-4) bit-equal index-order=44 step-rn=51 fused-rn=51 chain-rz=128 max-ulp-vs-index-order=96; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w4a4-gemm golden w4a4/small [n=32 k=128 rows=12 nb=1] acc: over-bound=0/384 max|err|/sum|p|=2.748e-8 (bound 1.514e-5) bit-equal index-order=380 step-rn=380 fused-rn=382 chain-rz=384 max-ulp-vs-index-order=2; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w4a4-gemm golden w4a4/small [n=32 k=128 rows=12 nb=2] acc: over-bound=0/384 max|err|/sum|p|=2.748e-8 (bound 1.514e-5) bit-equal index-order=380 step-rn=380 fused-rn=382 chain-rz=384 max-ulp-vs-index-order=2; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w4a4-gemm golden w4a4/small [n=32 k=128 rows=12 nb=4] acc: over-bound=0/384 max|err|/sum|p|=2.748e-8 (bound 1.514e-5) bit-equal index-order=380 step-rn=380 fused-rn=382 chain-rz=384 max-ulp-vs-index-order=2; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w4a4-gemm w13 decode M=1 [n=2304 k=2304 rows=8 nb=1] acc: over-bound=0/18432 max|err|/sum|p|=1.351e-7 (bound 2.745e-4) bit-equal index-order=5850 step-rn=7140 fused-rn=7230 chain-rz=18432 max-ulp-vs-index-order=16384; epilogue bit-bad=0; bf16 vs reference: differ=1 max=1 step OK
+ink2-w4a4-gemm w13 decode M=8 [n=2304 k=2304 rows=64 nb=1] acc: over-bound=0/147456 max|err|/sum|p|=1.300e-7 (bound 2.745e-4) bit-equal index-order=47439 step-rn=57756 fused-rn=58300 chain-rz=147456 max-ulp-vs-index-order=65536; epilogue bit-bad=0; bf16 vs reference: differ=17 max=1 step OK
+ink2-w4a4-gemm w13 prefill group [n=2304 k=2304 rows=40 nb=4] acc: over-bound=0/92160 max|err|/sum|p|=1.597e-7 (bound 2.745e-4) bit-equal index-order=29245 step-rn=35767 fused-rn=36097 chain-rz=92160 max-ulp-vs-index-order=16384; epilogue bit-bad=0; bf16 vs reference: differ=4 max=1 step OK
+ink2-w4a4-gemm w2 decode M=1 [n=2304 k=1152 rows=8 nb=1] acc: over-bound=0/18432 max|err|/sum|p|=1.104e-7 (bound 1.372e-4) bit-equal index-order=10730 step-rn=12596 fused-rn=12672 chain-rz=18432 max-ulp-vs-index-order=2048; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w4a4-gemm w2 decode M=8 [n=2304 k=1152 rows=64 nb=1] acc: over-bound=0/147456 max|err|/sum|p|=1.621e-7 (bound 1.372e-4) bit-equal index-order=86710 step-rn=101080 fused-rn=101626 chain-rz=147456 max-ulp-vs-index-order=65536; epilogue bit-bad=0; bf16 vs reference: differ=7 max=1 step OK
+ink2-w4a4-gemm w2 prefill group [n=2304 k=1152 rows=40 nb=4] acc: over-bound=0/92160 max|err|/sum|p|=1.361e-7 (bound 1.372e-4) bit-equal index-order=54137 step-rn=63565 fused-rn=63915 chain-rz=92160 max-ulp-vs-index-order=524288; epilogue bit-bad=0; bf16 vs reference: differ=3 max=9 step OK
+ink2-w8a8-gemm golden w8a8/k1152 [n=16 k=1152 rows=8 nb=1] acc: over-bound=0/128 max|err|/sum|p|=6.823e-7 (bound 1.372e-4) bit-equal index-order=4 step-rn=6 fused-rn=6 chain-rz=18 max-ulp-vs-index-order=209; epilogue bit-bad=0; bf16 vs reference: differ=1 max=1 step OK
+ink2-w8a8-gemm golden w8a8/k1152 [n=16 k=1152 rows=8 nb=2] acc: over-bound=0/128 max|err|/sum|p|=6.823e-7 (bound 1.372e-4) bit-equal index-order=4 step-rn=6 fused-rn=6 chain-rz=18 max-ulp-vs-index-order=209; epilogue bit-bad=0; bf16 vs reference: differ=1 max=1 step OK
+ink2-w8a8-gemm golden w8a8/k2304 [n=16 k=2304 rows=8 nb=1] acc: over-bound=0/128 max|err|/sum|p|=8.175e-7 (bound 2.745e-4) bit-equal index-order=4 step-rn=0 fused-rn=0 chain-rz=8 max-ulp-vs-index-order=4704; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w8a8-gemm golden w8a8/k2304 [n=16 k=2304 rows=8 nb=2] acc: over-bound=0/128 max|err|/sum|p|=8.175e-7 (bound 2.745e-4) bit-equal index-order=4 step-rn=0 fused-rn=0 chain-rz=8 max-ulp-vs-index-order=4704; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w8a8-gemm golden w8a8/small [n=32 k=128 rows=12 nb=1] acc: over-bound=0/384 max|err|/sum|p|=2.440e-7 (bound 1.514e-5) bit-equal index-order=84 step-rn=111 fused-rn=121 chain-rz=249 max-ulp-vs-index-order=32; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w8a8-gemm golden w8a8/small [n=32 k=128 rows=12 nb=2] acc: over-bound=0/384 max|err|/sum|p|=2.440e-7 (bound 1.514e-5) bit-equal index-order=84 step-rn=111 fused-rn=121 chain-rz=249 max-ulp-vs-index-order=32; epilogue bit-bad=0; bf16 vs reference: differ=0 max=0 step OK
+ink2-w8a8-gemm w13 decode M=1 [n=2304 k=2304 rows=8 nb=1] acc: over-bound=0/18432 max|err|/sum|p|=1.127e-6 (bound 2.745e-4) bit-equal index-order=284 step-rn=190 fused-rn=193 chain-rz=1375 max-ulp-vs-index-order=526336; epilogue bit-bad=0; bf16 vs reference: differ=15 max=8 step OK
+ink2-w8a8-gemm w13 decode M=8 [n=2304 k=2304 rows=64 nb=1] acc: over-bound=0/147456 max|err|/sum|p|=1.221e-6 (bound 2.745e-4) bit-equal index-order=2153 step-rn=1732 fused-rn=1744 chain-rz=10677 max-ulp-vs-index-order=15527936; epilogue bit-bad=0; bf16 vs reference: differ=124 max=237 step OK
+ink2-w8a8-gemm w13 prefill group [n=2304 k=2304 rows=40 nb=2] acc: over-bound=0/92160 max|err|/sum|p|=1.283e-6 (bound 2.745e-4) bit-equal index-order=1379 step-rn=1077 fused-rn=1090 chain-rz=6598 max-ulp-vs-index-order=720896; epilogue bit-bad=0; bf16 vs reference: differ=72 max=11 step OK
+ink2-w8a8-gemm w2 decode M=1 [n=2304 k=1152 rows=8 nb=1] acc: over-bound=0/18432 max|err|/sum|p|=9.198e-7 (bound 1.372e-4) bit-equal index-order=631 step-rn=464 fused-rn=446 chain-rz=2823 max-ulp-vs-index-order=65536; epilogue bit-bad=0; bf16 vs reference: differ=6 max=1 step OK
+ink2-w8a8-gemm w2 decode M=8 [n=2304 k=1152 rows=64 nb=1] acc: over-bound=0/147456 max|err|/sum|p|=1.017e-6 (bound 1.372e-4) bit-equal index-order=5390 step-rn=3909 fused-rn=3918 chain-rz=22214 max-ulp-vs-index-order=98304; epilogue bit-bad=0; bf16 vs reference: differ=53 max=1 step OK
+ink2-w8a8-gemm w2 prefill group [n=2304 k=1152 rows=40 nb=2] acc: over-bound=0/92160 max|err|/sum|p|=1.147e-6 (bound 1.372e-4) bit-equal index-order=3373 step-rn=2404 fused-rn=2442 chain-rz=14034 max-ulp-vs-index-order=237568; epilogue bit-bad=0; bf16 vs reference: differ=33 max=4 step OK
+ink2-actq-bench Nvfp4 w13 gate/up tokens=1 rows=8 nb=1 wpb=2: 96.7 us/call, 23.89 MB weights (8.0 experts, 8.0 groups), 247 GB/s, 0.9 TFLOP/s (best of 3 x 200 calls, 16 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=1 rows=8 nb=1 wpb=4: 101.4 us/call, 23.89 MB weights (8.0 experts, 8.0 groups), 236 GB/s, 0.8 TFLOP/s (best of 3 x 200 calls, 16 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=1 rows=8 nb=1 wpb=8: 95.1 us/call, 23.89 MB weights (8.0 experts, 8.0 groups), 251 GB/s, 0.9 TFLOP/s (best of 3 x 200 calls, 16 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=2 rows=16 nb=1 wpb=2: 175.7 us/call, 47.78 MB weights (16.0 experts, 16.0 groups), 272 GB/s, 1.0 TFLOP/s (best of 3 x 200 calls, 8 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=2 rows=16 nb=1 wpb=4: 213.5 us/call, 47.78 MB weights (16.0 experts, 16.0 groups), 224 GB/s, 0.8 TFLOP/s (best of 3 x 200 calls, 8 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=2 rows=16 nb=1 wpb=8: 306.5 us/call, 47.78 MB weights (16.0 experts, 16.0 groups), 156 GB/s, 0.6 TFLOP/s (best of 3 x 200 calls, 8 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=4 rows=32 nb=1 wpb=2: 592.7 us/call, 95.55 MB weights (32.0 experts, 32.0 groups), 161 GB/s, 0.6 TFLOP/s (best of 3 x 200 calls, 4 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=4 rows=32 nb=1 wpb=4: 686.4 us/call, 95.55 MB weights (32.0 experts, 32.0 groups), 139 GB/s, 0.5 TFLOP/s (best of 3 x 200 calls, 4 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=4 rows=32 nb=1 wpb=8: 609.1 us/call, 95.55 MB weights (32.0 experts, 32.0 groups), 157 GB/s, 0.6 TFLOP/s (best of 3 x 200 calls, 4 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=8 rows=64 nb=1 wpb=2: 986.3 us/call, 191.10 MB weights (64.0 experts, 64.0 groups), 194 GB/s, 0.7 TFLOP/s (best of 3 x 200 calls, 2 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=8 rows=64 nb=1 wpb=4: 1292.6 us/call, 191.10 MB weights (64.0 experts, 64.0 groups), 148 GB/s, 0.5 TFLOP/s (best of 3 x 200 calls, 2 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=8 rows=64 nb=1 wpb=8: 1320.6 us/call, 191.10 MB weights (64.0 experts, 64.0 groups), 145 GB/s, 0.5 TFLOP/s (best of 3 x 200 calls, 2 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=256 rows=2048 nb=4 wpb=2: 3707.8 us/call, 382.21 MB weights (128.0 experts, 128.0 groups), 103 GB/s, 5.9 TFLOP/s (best of 3 x 200 calls, 1 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=256 rows=2048 nb=4 wpb=4: 2787.5 us/call, 382.21 MB weights (128.0 experts, 128.0 groups), 137 GB/s, 7.8 TFLOP/s (best of 3 x 200 calls, 1 expert sets)
+ink2-actq-bench Nvfp4 w13 gate/up tokens=256 rows=2048 nb=4 wpb=8: 2852.6 us/call, 382.21 MB weights (128.0 experts, 128.0 groups), 134 GB/s, 7.6 TFLOP/s (best of 3 x 200 calls, 1 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=1 rows=8 nb=1 wpb=2: 37.6 us/call, 11.94 MB weights (8.0 experts, 8.0 groups), 318 GB/s, 1.1 TFLOP/s (best of 3 x 200 calls, 16 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=1 rows=8 nb=1 wpb=4: 34.5 us/call, 11.94 MB weights (8.0 experts, 8.0 groups), 346 GB/s, 1.2 TFLOP/s (best of 3 x 200 calls, 16 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=1 rows=8 nb=1 wpb=8: 62.3 us/call, 11.94 MB weights (8.0 experts, 8.0 groups), 192 GB/s, 0.7 TFLOP/s (best of 3 x 200 calls, 16 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=2 rows=16 nb=1 wpb=2: 104.8 us/call, 23.89 MB weights (16.0 experts, 16.0 groups), 228 GB/s, 0.8 TFLOP/s (best of 3 x 200 calls, 8 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=2 rows=16 nb=1 wpb=4: 119.3 us/call, 23.89 MB weights (16.0 experts, 16.0 groups), 200 GB/s, 0.7 TFLOP/s (best of 3 x 200 calls, 8 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=2 rows=16 nb=1 wpb=8: 125.7 us/call, 23.89 MB weights (16.0 experts, 16.0 groups), 190 GB/s, 0.7 TFLOP/s (best of 3 x 200 calls, 8 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=4 rows=32 nb=1 wpb=2: 232.1 us/call, 47.78 MB weights (32.0 experts, 32.0 groups), 206 GB/s, 0.7 TFLOP/s (best of 3 x 200 calls, 4 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=4 rows=32 nb=1 wpb=4: 271.9 us/call, 47.78 MB weights (32.0 experts, 32.0 groups), 176 GB/s, 0.6 TFLOP/s (best of 3 x 200 calls, 4 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=4 rows=32 nb=1 wpb=8: 294.2 us/call, 47.78 MB weights (32.0 experts, 32.0 groups), 162 GB/s, 0.6 TFLOP/s (best of 3 x 200 calls, 4 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=8 rows=64 nb=1 wpb=2: 482.6 us/call, 95.55 MB weights (64.0 experts, 64.0 groups), 198 GB/s, 0.7 TFLOP/s (best of 3 x 200 calls, 2 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=8 rows=64 nb=1 wpb=4: 504.5 us/call, 95.55 MB weights (64.0 experts, 64.0 groups), 189 GB/s, 0.7 TFLOP/s (best of 3 x 200 calls, 2 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=8 rows=64 nb=1 wpb=8: 534.8 us/call, 95.55 MB weights (64.0 experts, 64.0 groups), 179 GB/s, 0.6 TFLOP/s (best of 3 x 200 calls, 2 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=256 rows=2048 nb=4 wpb=2: 1391.4 us/call, 191.10 MB weights (128.0 experts, 128.0 groups), 137 GB/s, 7.8 TFLOP/s (best of 3 x 200 calls, 1 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=256 rows=2048 nb=4 wpb=4: 1401.6 us/call, 191.10 MB weights (128.0 experts, 128.0 groups), 136 GB/s, 7.8 TFLOP/s (best of 3 x 200 calls, 1 expert sets)
+ink2-actq-bench Nvfp4 w2 down tokens=256 rows=2048 nb=4 wpb=8: 1363.6 us/call, 191.10 MB weights (128.0 experts, 128.0 groups), 140 GB/s, 8.0 TFLOP/s (best of 3 x 200 calls, 1 expert sets)
+ink2-actq-bench Nvfp4 quantize rows=1 k=2304: 41.5 us/call (best of 3 x 200 calls)
+ink2-actq-bench Nvfp4 quantize rows=8 k=2304: 14.7 us/call (best of 3 x 200 calls)
+ink2-actq-bench Nvfp4 quantize + SiTU rows=8 k=1152: 17.7 us/call (best of 3 x 200 calls)
+ink2-actq-bench Nvfp4 quantize + SiTU rows=64 k=1152: 11.0 us/call (best of 3 x 200 calls)
+ink2-actq-bench Nvfp4 quantize + SiTU rows=2048 k=1152: 82.8 us/call (best of 3 x 200 calls)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=1 rows=8 nb=1 wpb=2: 121.5 us/call, 43.79 MB weights (8.0 experts, 8.0 groups), 360 GB/s, 0.7 TFLOP/s (best of 3 x 200 calls, 16 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=1 rows=8 nb=1 wpb=4: 173.8 us/call, 43.79 MB weights (8.0 experts, 8.0 groups), 252 GB/s, 0.5 TFLOP/s (best of 3 x 200 calls, 16 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=1 rows=8 nb=1 wpb=8: 168.2 us/call, 43.79 MB weights (8.0 experts, 8.0 groups), 260 GB/s, 0.5 TFLOP/s (best of 3 x 200 calls, 16 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=2 rows=16 nb=1 wpb=2: 307.4 us/call, 87.59 MB weights (16.0 experts, 16.0 groups), 285 GB/s, 0.6 TFLOP/s (best of 3 x 200 calls, 8 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=2 rows=16 nb=1 wpb=4: 351.3 us/call, 87.59 MB weights (16.0 experts, 16.0 groups), 249 GB/s, 0.5 TFLOP/s (best of 3 x 200 calls, 8 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=2 rows=16 nb=1 wpb=8: 592.1 us/call, 87.59 MB weights (16.0 experts, 16.0 groups), 148 GB/s, 0.3 TFLOP/s (best of 3 x 200 calls, 8 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=4 rows=32 nb=1 wpb=2: 1029.6 us/call, 175.18 MB weights (32.0 experts, 32.0 groups), 170 GB/s, 0.3 TFLOP/s (best of 3 x 200 calls, 4 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=4 rows=32 nb=1 wpb=4: 1019.4 us/call, 175.18 MB weights (32.0 experts, 32.0 groups), 172 GB/s, 0.3 TFLOP/s (best of 3 x 200 calls, 4 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=4 rows=32 nb=1 wpb=8: 1110.3 us/call, 175.18 MB weights (32.0 experts, 32.0 groups), 158 GB/s, 0.3 TFLOP/s (best of 3 x 200 calls, 4 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=8 rows=64 nb=1 wpb=2: 2296.5 us/call, 350.36 MB weights (64.0 experts, 64.0 groups), 153 GB/s, 0.3 TFLOP/s (best of 3 x 200 calls, 2 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=8 rows=64 nb=1 wpb=4: 1928.7 us/call, 350.36 MB weights (64.0 experts, 64.0 groups), 182 GB/s, 0.4 TFLOP/s (best of 3 x 200 calls, 2 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=8 rows=64 nb=1 wpb=8: 2056.8 us/call, 350.36 MB weights (64.0 experts, 64.0 groups), 170 GB/s, 0.3 TFLOP/s (best of 3 x 200 calls, 2 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=256 rows=2048 nb=2 wpb=2: 7735.7 us/call, 700.71 MB weights (128.0 experts, 188.0 groups), 91 GB/s, 2.8 TFLOP/s (best of 3 x 200 calls, 1 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=256 rows=2048 nb=2 wpb=4: 6521.4 us/call, 700.71 MB weights (128.0 experts, 188.0 groups), 107 GB/s, 3.3 TFLOP/s (best of 3 x 200 calls, 1 expert sets)
+ink2-actq-bench Mxfp8 w13 gate/up tokens=256 rows=2048 nb=2 wpb=8: 6274.0 us/call, 700.71 MB weights (128.0 experts, 188.0 groups), 112 GB/s, 3.5 TFLOP/s (best of 3 x 200 calls, 1 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=1 rows=8 nb=1 wpb=2: 63.0 us/call, 21.90 MB weights (8.0 experts, 8.0 groups), 348 GB/s, 0.7 TFLOP/s (best of 3 x 200 calls, 16 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=1 rows=8 nb=1 wpb=4: 76.5 us/call, 21.90 MB weights (8.0 experts, 8.0 groups), 286 GB/s, 0.6 TFLOP/s (best of 3 x 200 calls, 16 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=1 rows=8 nb=1 wpb=8: 81.9 us/call, 21.90 MB weights (8.0 experts, 8.0 groups), 267 GB/s, 0.5 TFLOP/s (best of 3 x 200 calls, 16 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=2 rows=16 nb=1 wpb=2: 147.7 us/call, 43.79 MB weights (16.0 experts, 16.0 groups), 297 GB/s, 0.6 TFLOP/s (best of 3 x 200 calls, 8 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=2 rows=16 nb=1 wpb=4: 247.4 us/call, 43.79 MB weights (16.0 experts, 16.0 groups), 177 GB/s, 0.3 TFLOP/s (best of 3 x 200 calls, 8 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=2 rows=16 nb=1 wpb=8: 266.5 us/call, 43.79 MB weights (16.0 experts, 16.0 groups), 164 GB/s, 0.3 TFLOP/s (best of 3 x 200 calls, 8 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=4 rows=32 nb=1 wpb=2: 517.8 us/call, 87.59 MB weights (32.0 experts, 32.0 groups), 169 GB/s, 0.3 TFLOP/s (best of 3 x 200 calls, 4 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=4 rows=32 nb=1 wpb=4: 510.5 us/call, 87.59 MB weights (32.0 experts, 32.0 groups), 172 GB/s, 0.3 TFLOP/s (best of 3 x 200 calls, 4 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=4 rows=32 nb=1 wpb=8: 535.1 us/call, 87.59 MB weights (32.0 experts, 32.0 groups), 164 GB/s, 0.3 TFLOP/s (best of 3 x 200 calls, 4 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=8 rows=64 nb=1 wpb=2: 986.2 us/call, 175.18 MB weights (64.0 experts, 64.0 groups), 178 GB/s, 0.3 TFLOP/s (best of 3 x 200 calls, 2 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=8 rows=64 nb=1 wpb=4: 954.0 us/call, 175.18 MB weights (64.0 experts, 64.0 groups), 184 GB/s, 0.4 TFLOP/s (best of 3 x 200 calls, 2 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=8 rows=64 nb=1 wpb=8: 980.3 us/call, 175.18 MB weights (64.0 experts, 64.0 groups), 179 GB/s, 0.3 TFLOP/s (best of 3 x 200 calls, 2 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=256 rows=2048 nb=2 wpb=2: 3337.5 us/call, 350.36 MB weights (128.0 experts, 182.0 groups), 105 GB/s, 3.3 TFLOP/s (best of 3 x 200 calls, 1 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=256 rows=2048 nb=2 wpb=4: 3157.0 us/call, 350.36 MB weights (128.0 experts, 182.0 groups), 111 GB/s, 3.4 TFLOP/s (best of 3 x 200 calls, 1 expert sets)
+ink2-actq-bench Mxfp8 w2 down tokens=256 rows=2048 nb=2 wpb=8: 3091.4 us/call, 350.36 MB weights (128.0 experts, 182.0 groups), 113 GB/s, 3.5 TFLOP/s (best of 3 x 200 calls, 1 expert sets)
+ink2-actq-bench Mxfp8 quantize rows=1 k=2304: 25.7 us/call (best of 3 x 200 calls)
+ink2-actq-bench Mxfp8 quantize rows=8 k=2304: 22.7 us/call (best of 3 x 200 calls)
+ink2-actq-bench Mxfp8 quantize + SiTU rows=8 k=1152: 12.7 us/call (best of 3 x 200 calls)
+ink2-actq-bench Mxfp8 quantize + SiTU rows=64 k=1152: 13.2 us/call (best of 3 x 200 calls)
+ink2-actq-bench Mxfp8 quantize + SiTU rows=2048 k=1152: 65.4 us/call (best of 3 x 200 calls)
+ink2-actq-gate: ALL OK (32 lines)
+GATE_RC=0

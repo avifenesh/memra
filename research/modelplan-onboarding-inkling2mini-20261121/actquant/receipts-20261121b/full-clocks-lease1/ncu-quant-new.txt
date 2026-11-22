@@ -1,0 +1,13 @@
+==PROF== Connected to process 2339075 (/home/avifenesh/.cache/inkling2mini/actq-fix/qbench/qb_new)
+==ERROR== ERR_NVGPUCTRPERM - The user does not have permission to access NVIDIA GPU Performance Counters on the target device 0. For instructions on enabling permissions and to get more information see https://developer.nvidia.com/ERR_NVGPUCTRPERM
+after NVFP4 rows=1 k=2304: 58.66 us/call
+after NVFP4 rows=8 k=2304: 59.57 us/call
+after NVFP4 + SiTU rows=8 k=1152: 64.26 us/call
+after NVFP4 + SiTU rows=64 k=1152: 64.59 us/call
+after NVFP4 + SiTU rows=2048 k=1152: 59.65 us/call
+after MXFP8 rows=1 k=2304: 59.53 us/call
+after MXFP8 rows=8 k=2304: 60.46 us/call
+after MXFP8 + SiTU rows=8 k=1152: 55.29 us/call
+after MXFP8 + SiTU rows=64 k=1152: 58.64 us/call
+after MXFP8 + SiTU rows=2048 k=1152: 61.58 us/call
+==PROF== Disconnected from process 2339075
