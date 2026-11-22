@@ -137,7 +137,8 @@ What had to match for that, found by the comparison and kept in the header's com
 ## Not shown by this change
 
 The SASS comparison proves the device code of the two units unchanged; it does not run anything. The GPU battery
-for the merge (the kernel gate on an RTX PRO 6000, the tensor-parallel gates on four ranks and the full pair
-battery of AGENTS.md, since a `.cu` and kernel dispatch change) is prepared in
-`research/bs-small-skeleton-20261118/gpu-battery.sh` with its expected counts, to run when a PRO 6000 box is
-free.
+(`research/bs-small-skeleton-20261118/gpu-battery.sh`) ran on four RTX PRO 6000 on 2026-11-22, comparing the change
+with memra#1337's head. The kernel gate gave 1,091 of 1,091 on each arm, with the check lines equal. The four-rank
+tensor-parallel gates gave 1,056 / 1,054 / 1,054 on the three transports on each arm, with the layer hashes equal
+(`research/bs-small-skeleton-20261118/receipts-l30/`). The pair battery on the board models was not run: no board
+model reaches these kernels. The landing's sm_120a record runs the device battery on the landing commit.
