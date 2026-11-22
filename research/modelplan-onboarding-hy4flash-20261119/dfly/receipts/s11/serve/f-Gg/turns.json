@@ -1,0 +1,188 @@
+[
+ {
+  "turn": "capital",
+  "status": 200,
+  "sampling": {
+   "temperature": 0
+  },
+  "prompt_tokens": 41,
+  "completion_tokens": 49,
+  "finish": "stop",
+  "spec": {
+   "rounds": 22,
+   "drafted": 58,
+   "accepted": 28,
+   "acceptance_rate": 0.4827586206896552
+  },
+  "content": "The capital of Japan is Tokyo. It is known for its vibrant blend of traditional culture and cutting-edge technology, as well as landmarks like the Tokyo Tower, bustling neighborhoods such as Shibuya and Shinjuku, and its renowned cuisine.",
+  "reasoning": null,
+  "error": null,
+  "walls_s": [
+   6.02
+  ],
+  "specs": [
+   {
+    "rounds": 22,
+    "drafted": 58,
+    "accepted": 28,
+    "acceptance_rate": 0.4827586206896552
+   }
+  ],
+  "wall_s": 6.02
+ },
+ {
+  "turn": "code",
+  "status": 200,
+  "sampling": {
+   "temperature": 0
+  },
+  "prompt_tokens": 42,
+  "completion_tokens": 203,
+  "finish": "stop",
+  "spec": {
+   "rounds": 50,
+   "drafted": 221,
+   "accepted": 154,
+   "acceptance_rate": 0.6968325791855203
+  },
+  "content": "```python\ndef fibonacci(n):\n    \"\"\"\n    Return the n-th Fibonacci number iteratively.\n\n    The Fibonacci sequence is defined as:\n        F(0) = 0, F(1) = 1\n        F(n) = F(n-1) + F(n-2) for n >= 2\n\n    Parameters:\n        n (int): A non-negative integer representing the index in the\n                 Fibonacci sequence.\n\n    Returns:\n        int: The n-th Fibonacci number.\n\n    Raises:\n        ValueError: If n is negative.\n\n    Examples:\n        >>> fibonacci(0)\n        0\n        >>> fibonacci(1)\n        1\n        >>> fibonacci(10)\n        55\n    \"\"\"\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n```",
+  "reasoning": null,
+  "error": null,
+  "walls_s": [
+   15.623
+  ],
+  "specs": [
+   {
+    "rounds": 50,
+    "drafted": 221,
+    "accepted": 154,
+    "acceptance_rate": 0.6968325791855203
+   }
+  ],
+  "wall_s": 15.623
+ },
+ {
+  "turn": "explain",
+  "status": 200,
+  "sampling": {
+   "temperature": 0
+  },
+  "prompt_tokens": 35,
+  "completion_tokens": 136,
+  "finish": "stop",
+  "spec": {
+   "rounds": 59,
+   "drafted": 174,
+   "accepted": 78,
+   "acceptance_rate": 0.4482758620689655
+  },
+  "content": "The sky appears blue because of a phenomenon called **Rayleigh scattering**. Sunlight, which looks white, is actually made up of all the colors of the rainbow, each with its own wavelength. Blue and violet light have much shorter wavelengths than red or yellow light. When sunlight enters Earth's atmosphere, it collides with gas molecules and tiny particles. These molecules scatter the shorter, blue wavelengths much more effectively than the longer ones. This scattered blue light reaches our eyes from all directions, making the entire sky look blue. (Our eyes see the sky as blue rather than violet because our eyes are more sensitive to blue light and some of the violet is absorbed by the upper atmosphere.)",
+  "reasoning": null,
+  "error": null,
+  "walls_s": [
+   15.93
+  ],
+  "specs": [
+   {
+    "rounds": 59,
+    "drafted": 174,
+    "accepted": 78,
+    "acceptance_rate": 0.4482758620689655
+   }
+  ],
+  "wall_s": 15.93
+ },
+ {
+  "turn": "list",
+  "status": 200,
+  "sampling": {
+   "temperature": 0
+  },
+  "prompt_tokens": 33,
+  "completion_tokens": 256,
+  "finish": "length",
+  "spec": {
+   "rounds": 123,
+   "drafted": 308,
+   "accepted": 132,
+   "acceptance_rate": 0.42857142857142855
+  },
+  "content": "Here are five practical tips for writing clear technical documentation:\n\n1. **Know your audience and write for them**  \n   Tailor vocabulary, depth, and examples to the reader\u2019s expertise. A developer integrating an API needs different detail than an end user troubleshooting a login issue. When in doubt, define terms on first use and avoid unexplained jargon.\n\n2. **Structure information with a predictable hierarchy**  \n   Use consistent headings, short paragraphs, and scannable lists. Lead with the most important information (inverted pyramid), then drill into details. A reader should be able to skim headings and still understand the document\u2019s purpose and flow.\n\n3. **Show, don\u2019t just tell\u2014with realistic examples**  \n   Include copy\u2011pasteable code snippets, command-line examples, screenshots, or sample payloads. Make examples minimal but complete, and verify they actually run. Annotate tricky lines inline so readers know *why*, not just *what*.\n\n4. **Be precise and unambiguous**  \n   Replace vague words like \u201cfast,\u201d \u201ceasy,\u201d or \u201cshould work\u201d with concrete values and conditions (e.g., \u201cresponds in <200 ms under 100 concurrent requests\u201d). State prerequisites, defaults, edge cases, and failure modes explicitly",
+  "reasoning": null,
+  "error": null,
+  "walls_s": [
+   32.525
+  ],
+  "specs": [
+   {
+    "rounds": 123,
+    "drafted": 308,
+    "accepted": 132,
+    "acceptance_rate": 0.42857142857142855
+   }
+  ],
+  "wall_s": 32.525
+ },
+ {
+  "turn": "reasoning",
+  "status": 200,
+  "sampling": {
+   "temperature": 0
+  },
+  "prompt_tokens": 43,
+  "completion_tokens": 97,
+  "finish": "stop",
+  "spec": {
+   "rounds": 27,
+   "drafted": 115,
+   "accepted": 71,
+   "acceptance_rate": 0.6173913043478261
+  },
+  "content": "The trip is **3 hours 25 minutes**.",
+  "reasoning": "We need answer simple time duration. Need compute. From 9:40 to 13:05. 9:40 to 12:40 = 3 hours. 12:40 to 13:05 = 25 min. Total 3h25. Or 13:05 - 9:40 borrow: 12:65 - 9:40 = 3:25. Need final concise.",
+  "error": null,
+  "walls_s": [
+   8.29
+  ],
+  "specs": [
+   {
+    "rounds": 27,
+    "drafted": 115,
+    "accepted": 71,
+    "acceptance_rate": 0.6173913043478261
+   }
+  ],
+  "wall_s": 8.29
+ },
+ {
+  "turn": "translate",
+  "status": 200,
+  "sampling": {
+   "temperature": 0
+  },
+  "prompt_tokens": 37,
+  "completion_tokens": 196,
+  "finish": "stop",
+  "spec": {
+   "rounds": 74,
+   "drafted": 247,
+   "accepted": 123,
+   "acceptance_rate": 0.4979757085020243
+  },
+  "content": "La r\u00e9union est report\u00e9e \u00e0 jeudi midi.\n\nA few natural alternatives depending on tone:\n\n- **La r\u00e9union a \u00e9t\u00e9 d\u00e9plac\u00e9e \u00e0 jeudi midi.** (slightly more formal, \"has been moved\")\n- **La r\u00e9union est avanc\u00e9e \u00e0 jeudi midi.** (use only if the original time was *later* than Thursday noon \u2014 \"avanc\u00e9e\" means moved earlier)\n- **On d\u00e9place la r\u00e9union \u00e0 jeudi midi.** (casual, \"We're moving the meeting...\")\n\n\u26a0\ufe0f Note: In French, **reporter** = to postpone (to a later time), while **avancer** = to bring forward (to an earlier time). Since English \"moved\" is ambiguous, *report\u00e9e* is the safest default if the new time is later than the original. If you'd like, tell me the original time and I can pick the exact verb.",
+  "reasoning": null,
+  "error": null,
+  "walls_s": [
+   20.913
+  ],
+  "specs": [
+   {
+    "rounds": 74,
+    "drafted": 247,
+    "accepted": 123,
+    "acceptance_rate": 0.4979757085020243
+   }
+  ],
+  "wall_s": 20.913
+ }
+]

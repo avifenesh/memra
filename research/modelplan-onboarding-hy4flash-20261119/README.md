@@ -1434,7 +1434,7 @@ the identity check only: speed is not read on greedy decoding (`dfly/receipts/ge
 
 ## Through the server
 
-All of this section ran on one GB10 with the binaries of the record's pin, `ef45222ac6`
+All of this section ran on one GB10 with the binaries of step 10's pin, `ef45222ac6`
 (`dfly/receipts/bins-ef45222ac6.sha256`), in one chain (`dfly/receipts/scripts/pin-chain.sh`).
 
 **The step 9 gates with drafts on.** The served-answer gates (`serve/scripts/chat_gate.py`) with
@@ -1531,19 +1531,210 @@ pin's tree with every oracle file equal to step 9's (`dfly/receipts/verify-ef452
 comparison scripts, a FLAGS row's wording, the boundary allowlist's pin of `Cargo.lock` and the
 record; none changes a file under `crates/`.
 
-## For step 11
+## Step 11: the drafter's quantization, sampled drafts and the draft gate
 
-- Replay acceptance with the BF16 drafter against this artifact's NVFP4 drafter. The BF16 source
-  holds the same five layers at 9,216 in BF16 (`dfly/receipts/widths-bf16-source.json`). Replaying
-  the same probes and turns through both arms on the same target gives the quantization's cost in
-  acceptance. The prefill numeric config is part of the acceptance config, so the target arm stays
-  this class.
-- Sampled drafting. Drafts here are greedy even for sampled requests, which keeps the tokens
-  exact; the checkpoint declares `draft_sample_method: probabilistic`. A drafted sample at the
-  request's temperature with rejection sampling is another acceptance arm and needs its own
-  distribution gate.
-- A draft gate like the deepseek-v4.1 route's (stop drafting a request whose rounds do not pay),
-  and batched verify rows across requests (the speed lane's batched decode).
+Step 10 left three questions: what the artifact's NVFP4 drafter costs in acceptance against the
+BF16 source's, whether sampled requests should draft by sampling, and whether a gate should stop
+rounds that do not pay. All of this section ran on one GB10 on 2026-11-22, sampled at the
+artifact's `generation_config.json` (temperature 0.9, no top-k, no top-p), seed 20261121, on the
+six chat turns of `serve/scripts/real_turns.py` and the `long` probe (2,104-token prompt, 64
+tokens). Receipts: `dfly/receipts/s11/`.
+
+**A replay that prices every depth.** `hy4f-spec replay` serves a prompt the way the serve route
+does, one call a token with the route's own sampler, and after every call drafts a round of five
+from that call's row. For every anchor it records how many drafts equal the answer's next tokens
+from the front, and the drafter's probability of each draft. The DFly2 block is causal, so a
+round of `k` drafts keeps `min(m, k)` of the five-draft round's `m`: one replay prices every depth
+and every gate offline. Walking the serve loop over the replay at five drafts a round
+(`dfly/receipts/s11/scripts/sim.py`) gives main's served numbers exactly, on all seven requests:
+rounds, drafts and kept drafts (capital 25, 125, 32; code 48, 240, 156; explain 60, 300, 80; list
+113, 561, 142; reasoning 32, 160, 65; translate 75, 375, 105; `long` 23, 111, 40). The answer is
+the target's own, so another drafter over the same target replays the same tokens.
+
+**The step's costs.** `hy4f-spec cost` times each shape after the `long` prompt, eight times,
+interleaved (medians, ms, sampled host work included):
+
+| | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---:|---:|---:|---:|---:|---:|
+| verify call, by rows | 185.2 | 208.2 | 226.4 | 245.7 | 263.4 | 285.1 |
+| draft round, by drafts | 22.7 | 36.5 | 51.0 | 64.2 | 78.8 | |
+
+A round of five drafts costs a draft round and a six-row call, 363.9 ms against 185.2 ms for a
+one-token call: it pays when it keeps more than 0.97 drafts. A round of one draft costs 230.9 ms
+and pays when its draft holds more than a quarter of the time. Each added depth costs about 33 ms,
+a verified row and a draft step.
+
+### The drafter's quantization
+
+The artifact's drafter MLPs and hidden correction are NVFP4, its attention projections FP8, as
+the target's tensor classes. The arms replace them with the BF16 source's tensors
+(`tencent/Hy4-flash@d88c9dfd`, shard 148, sha256 `9e65e4e7...` equal to the Hub's). `bf16`
+takes every drafter tensor from the source; `bf16-mlp` only the NVFP4 ones. The target, its
+prefill and its numeric class are the artifact's in all three, and every arm generates the same
+tokens (`ids_equal` on all seven requests). Builder: `scripts/make_arm.py`, which lists the
+replaced modules as excluded in the quant maps so the pack reads them as BF16.
+
+| request | anchors | kept a five-draft round, NVFP4 / BF16 / BF16 MLP | served at five drafts: rounds, kept / drafted, NVFP4 | BF16 | BF16 MLP |
+|---|---:|---:|---:|---:|---:|
+| capital | 56 | 1.393 / 1.357 / 1.357 | 25, 32 / 125 | 26, 31 / 130 | 26, 31 / 130 |
+| code | 203 | 3.345 / 3.389 / 3.379 | 48, 156 / 240 | 47, 157 / 235 | 47, 157 / 235 |
+| explain | 139 | 1.381 / 1.417 / 1.417 | 60, 80 / 300 | 59, 81 / 295 | 59, 81 / 295 |
+| list | 255 | 1.353 / 1.345 / 1.345 | 113, 142 / 561 | 112, 143 / 556 | 112, 143 / 556 |
+| reasoning | 96 | 2.552 / 2.562 / 2.583 | 32, 65 / 160 | 32, 65 / 160 | 32, 65 / 160 |
+| translate | 179 | 1.693 / 1.620 / 1.592 | 75, 105 / 375 | 74, 106 / 370 | 74, 106 / 370 |
+| long | 63 | 1.984 / 2.127 / 2.111 | 23, 40 / 111 | 21, 42 / 101 | 21, 42 / 101 |
+
+Over the 991 anchors the NVFP4 drafter keeps 1.985 drafts a round, the BF16 drafter 1.992 and the
+BF16 MLPs alone 1.986: the quantization costs 0.4% of the kept drafts, inside the per-request
+spread (NVFP4 keeps more at 30 anchors, BF16 at 44, the rest are equal). Served at five drafts, the
+six turns take 353 rounds with the NVFP4 drafter and 350 with BF16. `long` takes 23 against 21.
+The BF16 drafter costs 3.7 ms more a round (draft rounds 26.4 to 82.6 ms) and 0.9 GiB more
+memory. The NVFP4 drafter stays.
+
+### Sampled drafts
+
+Drafts are greedy for every request. The serve route keeps a draft only when it equals the
+route's own choice for its row, so a sampled draft can be drawn any way without changing a
+token. The candidate was the request's own position-keyed draw applied to the drafter's row at
+the draft's position: the drafter's row and the target's row share the uniform, so a draft holds
+when both rows put that uniform on the same token. The replay measures it against greedy drafts,
+and against the same draw from the drafter's row at half the temperature:
+
+| request | greedy | the request's draw | the draw at half temperature |
+|---|---:|---:|---:|
+| capital | 1.393 | 1.161 | 1.429 |
+| code | 3.345 | 3.330 | 3.379 |
+| explain | 1.381 | 1.331 | 1.388 |
+| list | 1.353 | 1.259 | 1.333 |
+| reasoning | 2.552 | 2.667 | 2.531 |
+| translate | 1.693 | 1.391 | 1.531 |
+| long | 1.984 | 1.921 | 1.968 |
+
+The request's draw keeps fewer drafts on six of the seven requests. The drafter is less sure of
+its rows than the target, so the shared uniform often lands on another token where its first
+choice would have held. Served, in one window, five drafts a round, the same binary otherwise:
+the six turns take 123.1 s with the request's draw and 112.5 s with greedy drafts (main);
+`long` reads 8.53 and 8.02 tok/s (`serve/h-fixed/`, `serve/main/`). Half temperature is level
+with greedy. Greedy drafts stay; the draw was removed from the serve route. The replay keeps both
+draws as arms (`m_chosen`, `m_half`).
+
+### The draft gate
+
+**Depth from the drafter's own probabilities.** The replay records the drafter's softmax
+probability of each greedy draft at the request's temperature. Against whether the draft held,
+given that the drafts before it held (2,823 drafts):
+
+| drafter's probability | 0 to 0.2 | 0.2 to 0.4 | 0.4 to 0.6 | 0.6 to 0.8 | 0.8 to 0.9 | 0.9 to 0.95 | 0.95 to 1 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| drafts | 58 | 222 | 303 | 318 | 197 | 136 | 1,589 |
+| held | 0.07 | 0.19 | 0.35 | 0.46 | 0.64 | 0.68 | 0.91 |
+
+The probability orders the drafts well and runs high in the middle of its range. The gate prices
+each round as it is drafted. Draft `j` survives with the product of the drafter's probabilities of
+drafts 1 to `j`, each scaled by the request's own ratio of drafts that held to the probabilities
+the drafter gave them (`Calib`: a running ratio with the house weight 0.25 that starts at 1 with
+the weight of two drafts). The round verifies the depth, 0 to 5, with the most expected tokens per
+millisecond of its step, at the request's prices, and stops drafting once one more draft that
+surely held could not beat that depth (`RoundPlan`). The prices are the route's measured call
+costs: decode calls by rows and draft rounds by drafts, averaged from its own calls and seeded by
+a timed warm-up round. Each request starts from the route's table and updates its own copy, since
+a call's cost moves with its context. A round priced at no draft ends drafting for a stretch of 8
+one-token steps, doubling to 64 while it repeats (`Stretch`, the deepseek-v4.1 route's lengths).
+
+**The policies, replayed** (tokens a second over the decode steps at the sampled prices above;
+`dfly/receipts/s11/replay/simq-nv-sampled.json.gz`, `sim-nv-sampledcost.json.gz`):
+
+| policy | capital | code | explain | list | reasoning | translate | long | all |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| five drafts every round (step 10) | 6.27 | 11.68 | 6.41 | 6.22 | 8.33 | 6.60 | 7.65 | 7.29 |
+| fixed 1 | 7.35 | 8.41 | 7.25 | 7.17 | 7.56 | 7.05 | 7.58 | 7.46 |
+| fixed 2 | 7.48 | 10.35 | 7.83 | 7.77 | 9.00 | 7.87 | 8.88 | 8.39 |
+| fixed 3 | 7.39 | 12.06 | 7.15 | 7.55 | 8.60 | 7.58 | 8.57 | 8.28 |
+| fixed 4 | 6.69 | 12.46 | 6.89 | 6.85 | 8.88 | 7.14 | 8.47 | 7.90 |
+| five drafts, deepseek-v4.1 `DraftGate` stop | 6.24 | 11.68 | 5.50 | 6.11 | 8.58 | 5.29 | 7.65 | 6.76 |
+| last round's kept + 1 | 8.18 | 10.91 | 7.28 | 7.26 | 8.93 | 7.70 | 8.27 | 8.17 |
+| step 11's first gate: per-depth survivals + `DraftGate` | 7.32 | 12.23 | 7.38 | 5.45 | 8.64 | 5.29 | 8.63 | 6.98 |
+| per-depth survivals, no stop | 7.32 | 12.23 | 7.38 | 7.34 | 8.72 | 7.73 | 8.63 | 8.31 |
+| drafter's raw probabilities | 6.91 | 12.37 | 7.17 | 7.48 | 8.89 | 7.53 | 8.43 | 8.26 |
+| **drafter's probabilities x the request's ratio (the gate)** | 7.31 | 12.53 | 7.68 | 7.69 | 9.37 | 7.79 | 8.86 | 8.58 |
+| every depth chosen in hindsight (bound) | 9.84 | 14.30 | 9.84 | 9.89 | 11.83 | 10.06 | 10.92 | 10.83 |
+
+Five drafts a round, the default before this step, is the slowest drafting policy here. A fixed
+depth of 3 reads 13.6% more. The drafter's raw probabilities price no better than a fixed 3, since
+they run high in the middle. The request's own ratio corrects that and reads 17.7% over five
+drafts and 3.6% over a fixed 3, the best causal policy found. Its weights move it by under 3%
+(running weights 0.05 to 0.25, a start worth 2 or 8 drafts). The bound, every depth chosen with the answer known, is
+10.83. Two history-only gates read less: the deepseek-v4.1 route's `DraftGate` (stop for a
+stretch when a drafted step's running gain falls under one) stops `translate` and `explain` on
+their first rounds and reads 6.76, and per-depth running survivals over the request's own rounds
+read 6.89 to 8.31. Step 11's first gate was that pair (`serve/h-gate/`); served, it was slower
+than five drafts on four of the six turns.
+
+**Served.** One GB10, the binaries of `d43aacce37` (`dfly/receipts/s11/bins-h4.sha256`),
+one window, in the order gate on, gate off (`MEMRA_HY4F_DRAFT_GATE=0`: five drafts every round,
+main's behavior), drafts off, the gate over the BF16 drafter arm, gate off, gate on
+(`dfly/receipts/s11/scripts/chain4.sh`; `serve/f-G1`, `f-F1`, `f-P`, `f-B`, `f-F2`, `f-G2`). The
+`long` rows are medians of N = 3 after a warm-up; the turns are each turn's median wall of three,
+summed:
+
+| workload | drafts off | five drafts (first / second run) | gate (first / second run) | gate, BF16 drafter |
+|---|---:|---:|---:|---:|
+| long, c = 1, decode tok/s | 5.37 | 8.11 / 8.13 | 9.05 / 9.05 | 9.39 |
+| long, c = 1, drafts kept / drafted | | 40 / 111 | 40 / 79, 40 / 78 | 41 / 74 |
+| long, c = 4, aggregate tok/s | 1.99 | 2.29 / 2.29 | 2.37 / 2.37 | 2.41 |
+| six turns, total wall s | 160.7 | 112.4 / 112.1 | 102.4 / 101.7 | 103.7 |
+| six turns, tokens over wall, tok/s | 5.78 | 8.27 / 8.28 | 9.07 / 9.14 | 8.96 |
+| six turns, drafts kept / drafted | | 580 / 1,761 | 558 / 1,070, 561 / 1,072 | 558 / 1,076 |
+| decode step at c = 1, ms, p50 / p95 / p99 | 172 / 187 / 193 | 312 / 340 / 353 | 263 / 321 / 344, 262 / 316 / 339 | 268 / 317 / 348 |
+
+The gate reads 11.5% more on `long` and 10% more over the six turns than five drafts every round,
+both runs of each arm within 0.8% of each other. By turn (tok/s, gate first / second against five
+drafts first / second): capital 7.66 / 7.90 against 6.91 / 6.94, explain 7.96 / 8.00 against 7.31 /
+7.33, list 8.46 / 8.43 against 7.19 / 7.20, translate 8.40 / 8.52 against 7.61 / 7.62, reasoning
+9.42 / 9.55 against 9.31 / 9.34, and code level at 12.75 / 12.87 against 12.85 / 12.87. It verifies
+39% fewer drafts for 3.5% fewer kept, at 3 drafts in most rounds (rounds by depth 0 to 5, first
+run: 7, 298, 291, 1,163, 7, 266). TTFT does not move (10.3 s on `long`). With the gate, the BF16
+drafter reads 3.8% more on `long` and 1.6% less over the turns than the NVFP4 drafter. The 250 ms
+GPU telemetry of each run is in its directory.
+
+The tokens are the undrafted route's. Against the drafts-off run, every bench request and every
+turn of both gate runs, both five-draft runs and the BF16 arm generated the same text
+(`serve/bench-identity-*.json`, `serve/turns-identity-*.json`). The step 9 served-answer gates pass
+with the gate on (`serve/f-G1/chat-gate.json`), and all 51 of their answers equal the drafts-off
+server's (`serve/draft-identity-f.json`): greedy, seeded sampled, penalized, stopped, streamed,
+tool calls, concurrent sets, the admission set and the needle. The six greedy turns with the gate equal the drafts-off greedy turns
+(`serve/turns-identity-f-Gg.json`), and with a draft round or a ring backup refused through
+`MEMRA_HY4F_DRAFT_FAULT` (`draft:3`, `backup:3`) every turn reports exactly three rounds, one logged
+refusal, and the drafts-off answer (`serve/turns-identity-f-fault-*.json`). The target route is
+unchanged: the head's `hy4f-gpu` gives the step 8 reference tapes bit for bit on `chat` (forced),
+`long` and `long-split` (`logs/perf-check3-s11h4.log`, 3 of 3 equal), and the hy4f_serve unit tests
+pass (13, `logs/s11-test-h4.log`).
+
+A request whose rounds always stop early never updates the draft table's longer rounds, which then
+keep their warm-up prices (the table takes only rounds that ran all their allowed drafts). The
+warm-up times a second round after the one that grows the drafter's scratch, so those seeds are
+warm.
+
+### The record
+
+`hy_v4_flash-gpu-1x-gb10` stays NativeQualified and moves its pin to `d43aacce37`, the draft gate.
+At the pin, on one GB10, `memra model verify checkpoint` (native side `hy4f-gpu`) and `verify
+serve` (the pin's memra-server, the gate on) pass, `verified=Checkpoint` and `verified=Serve`,
+with every native logits hash of `checkpoint-parity.tsv` equal to step 10's
+(`dfly/receipts/s11/verify-d43aacce37/`). Commits after the pin are docs, comments and receipts.
+
+## For step 12
+
+- Batched verify rows across requests (the speed lane's batched decode): calls still run one
+  request at a time, so four requests share the one-request rate. The gate's prices then become a
+  function of the batch, not of the request.
+- The draft table prices a stopped round at a full round of its length. A block sized to the
+  priced depth would make that exact and save the block's unused rows.
+- The checkpoint's DFly2 confidence head (`model.dfly_layers.confidence_head.*`) has no program in
+  the pinned sources (vLLM ignores it), so the gate prices from the drafter's own softmax instead.
+- Probabilistic drafting with rejection sampling (`draft_sample_method: probabilistic`) keeps the
+  distribution, not the tokens; it needs a distribution gate and gives up the drafts-off identity
+  every check here rests on.
 
 ## Commands
 
@@ -1551,6 +1742,10 @@ record; none changes a file under `crates/`.
   [--anchors SPEC] [--force-drafts TAPE] [--red ARM]`, over a target dump from
   `checkpoint/make_checkpoint_oracle.py --dump-dfly` or `tiny/make_tiny_oracle.py --dump-dfly`.
 - `memra-reference hy4f_dfly tiny-image|tiny|checkpoint ...`, `memra-engine hy4f-spec gate|gate-route|gen ...`.
+- `hy4f-spec replay CKPT PROMPTS OUT [--k K]` (teacher-forced draft replay) and `hy4f-spec cost CKPT
+  REQUEST [--reps R] [--temperature T]` (step prices); `dfly/receipts/s11/scripts/sim.py` and
+  `sim_q.py` walk the serve loop over a replay under a depth policy; `make_arm.py` builds a drafter
+  arm over the artifact's target.
 - `dfly/compare_dfly.py ORACLE NATIVE [--atol X]`.
 - `serve/scripts/serve_gate.sh TAG gate,bench,turns [MEMRA_HY4F_DRAFT=N]` with `D=` the run directory.
 - `serve/scripts/draft_identity.py ON_JSON OFF_JSON [OUT_JSON]` over two `chat_gate.py` reports;

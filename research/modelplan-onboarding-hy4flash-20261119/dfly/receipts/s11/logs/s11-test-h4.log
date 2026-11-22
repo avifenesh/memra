@@ -1,0 +1,24 @@
+warning: memra-engine@0.141.1: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+warning: memra-engine@0.141.1: MEMRA_CUDA_ARCH auto-detected 121a (compute_cap 12.1); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.141.1 (/home/avifenesh/hy4flash/s11/src/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 3m 10s
+     Running unittests src/lib.rs (/home/avifenesh/hy4flash/s11/target/release/deps/memra_server-7f3c7a2686fb6d2c)
+
+running 13 tests
+test hy4f_serve::tests::the_greedy_pick_is_the_first_of_equal_maxima ... ok
+test hy4f_serve::tests::the_live_check_keeps_a_running_sessions_scratch_growth ... ok
+test hy4f_serve::tests::the_book_refuses_what_never_fits_and_queues_what_fits_alone ... ok
+test hy4f_serve::tests::the_draft_gate_is_on_unless_set_off ... ok
+test hy4f_serve::tests::a_stop_string_ends_after_its_token_and_the_calls_close_stays_whole ... ok
+test hy4f_serve::tests::a_drafting_route_books_one_rounds_positions_with_every_session ... ok
+test hy4f_serve::tests::a_round_verifies_the_depth_with_the_most_tokens_a_millisecond ... ok
+test hy4f_serve::tests::a_request_whose_rounds_price_no_draft_decodes_a_stretch_undrafted ... ok
+test hy4f_serve::tests::the_prefill_chunk_is_a_positive_count ... ok
+test hy4f_serve::tests::expected_tokens_are_the_survivals_summed ... ok
+test hy4f_serve::tests::the_draft_count_is_the_artifacts_unless_set ... ok
+test hy4f_serve::tests::a_requests_drafts_scale_the_drafters_claims_by_how_they_held ... ok
+test hy4f_serve::tests::a_requests_max_ctx_tightens_the_served_context ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 1340 filtered out; finished in 0.00s
+
+TEST_EXIT=0
