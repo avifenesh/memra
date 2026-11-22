@@ -48,6 +48,8 @@ pub struct SpecStats {
     pub decode_s: f64,
     /// Committed tokens after the prompt.
     pub generated: usize,
+    /// The output length at which an adaptive request stopped speculating, if it did.
+    pub stopped_at: Option<usize>,
 }
 
 impl SpecStats {
@@ -232,7 +234,17 @@ pub struct AdaptiveK {
     secs: Vec<f64>,
     /// The first verify accepted every proposal (the exploration then tries the longest).
     first_full: bool,
+    /// Probes in a row that did not make speculation pay; at STOP_AFTER the request stops
+    /// speculating (and stops capturing taps).
+    losing_probes: usize,
+    stopped: bool,
 }
+
+/// Losing probes in a row after which a request stops speculating. Each losing probe costs about
+/// one plain step over a plain decode, and the exploration about one more, so a request whose
+/// text the drafter cannot predict loses at most about three plain steps, then runs at the plain
+/// rate with no capture.
+const STOP_AFTER: usize = 2;
 
 /// Weight of a length's older steps at each new one.
 const DECAY: f64 = 0.9;
@@ -257,6 +269,8 @@ impl AdaptiveK {
             tokens: vec![0.0; max + 1],
             secs: vec![0.0; max + 1],
             first_full: false,
+            losing_probes: 0,
+            stopped: false,
         }
     }
 
@@ -317,6 +331,9 @@ impl AdaptiveK {
     /// The length of the next verify call (1..=max), or 0 for a plain one-row step.
     pub fn choose(&mut self) -> usize {
         self.probing = false;
+        if self.stopped {
+            return 0;
+        }
         // exploration: a short verify, the longest only when it accepted everything, then
         // plain steps for the plain step's time
         match self.steps {
@@ -337,6 +354,11 @@ impl AdaptiveK {
             }
             _ => 0,
         }
+    }
+
+    /// The request has stopped speculating.
+    pub fn stopped(&self) -> bool {
+        self.stopped
     }
 
     /// A finished step of length `k` (0: a plain step) that accepted `accepted` proposals in
@@ -377,6 +399,8 @@ impl AdaptiveK {
             } else {
                 (self.probe_every * 2).min(256)
             };
+            self.losing_probes = if won { 0 } else { self.losing_probes + 1 };
+            self.stopped = self.losing_probes >= STOP_AFTER;
         }
     }
 }
@@ -606,10 +630,17 @@ fn generate_inner(
                 Sampling::Greedy => Head::LastArgmax,
                 Sampling::Sample { .. } => Head::All,
             };
+            // a request that stopped speculating stops capturing: its plain steps are plain decode
+            if adapt.as_ref().is_some_and(AdaptiveK::stopped) && route.captured().is_some() {
+                route.set_capture(&[])?;
+                stats.stopped_at = Some(out.len());
+            }
             let o = route.forward(&[anchor], head, None)?;
-            let cap = route.captured().ok_or("capture is off")?;
-            // held, and committed with the next proposal's batch: a plain step stays a plain step
-            drafter.stage(&route.dev, cap, chunk, 0, 1)?;
+            if let Some(cap) = route.captured() {
+                // held, and committed with the next proposal's batch: a plain step stays a plain
+                // step
+                drafter.stage(&route.dev, cap, chunk, 0, 1)?;
+            }
             anchor = match sampling {
                 Sampling::Greedy => o.argmax[0],
                 Sampling::Sample { temperature, .. } => {
@@ -969,8 +1000,10 @@ mod tests {
             b.record(k, 0, if k > 0 { 0.052 } else { 0.021 });
         }
         // the first probe when the plain run reaches 16 (4 plain steps came from the exploration),
-        // then a losing probe doubles the interval: 32, then 64 plain steps
-        assert_eq!(&probes[..3], &[12, 12 + 33, 12 + 33 + 65], "{probes:?}");
+        // then a losing probe doubles the interval; after the second losing one the request
+        // stops speculating
+        assert_eq!(&probes[..], &[12, 12 + 33], "{probes:?}");
+        assert!(b.stopped());
         // one lucky K = 2 step among losing ones buys no run of them: after a 3-token step,
         // the next losing step already falls back to plain
         let mut c = AdaptiveK::new(7);
