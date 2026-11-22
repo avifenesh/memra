@@ -221,6 +221,77 @@ mod ffi {
             prec: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_ink2g_norm_n(
+            xs: *const *const f32,
+            ws: *const *const f32,
+            ys: *const *mut f32,
+            count: i32,
+            eps: f64,
+            r: i32,
+            h: i32,
+            prec: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_ink2g_heads_qr(
+            xq: *const f32,
+            sq: *const f32,
+            thrq: f64,
+            epsq: f64,
+            dq: *mut f32,
+            wq: i32,
+            xr: *const f32,
+            sr: *const f32,
+            thrr: f64,
+            epsr: f64,
+            dr: *mut f32,
+            wr: i32,
+            posd: *const i64,
+            pos0: i64,
+            log_floor: i32,
+            alpha: f64,
+            r: i32,
+            heads: i32,
+            prec: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_ink2g_conv2(
+            mode: i32,
+            x: *const f32,
+            state_in: *const f32,
+            state_out: *mut f32,
+            taps: *const f32,
+            dynamic: *const f32,
+            out: *mut f32,
+            x2: *const f32,
+            state_in2: *const f32,
+            state_out2: *mut f32,
+            taps2: *const f32,
+            dynamic2: *const f32,
+            out2: *mut f32,
+            groups: i32,
+            r: i32,
+            c: i32,
+            k: i32,
+            prec: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_ink2g_heads_e4m3_2(
+            xk: *const f32,
+            thrk: f64,
+            epsk: f64,
+            dk: *mut u8,
+            xv: *const f32,
+            epsv: f64,
+            dv: *mut u8,
+            posd: *const i64,
+            pos0: i64,
+            cap: i64,
+            r: i32,
+            heads: i32,
+            width: i32,
+            prec: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_ink2g_attn(
             q: *const f32,
             rel: *const f32,
@@ -2542,9 +2613,12 @@ impl Route {
             let attn_eps = rms(&layer.pre_attention_norm)?;
             let xn = dptr_mut(&mut w.xn, &st);
             let mut normed = [xn; 3];
+            // the distinct (source, norm) inputs, all in one launch
+            let (mut nx, mut nw, mut ny): (Vec<*const f32>, Vec<*const f32>, Vec<*mut f32>) =
+                (Vec::new(), Vec::new(), Vec::new());
             for i in 0..3 {
                 let norm_index = if lw.norms.len() == 3 { i } else { 0 };
-                // one launch where an earlier input had the same source and the same norm
+                // one norm where an earlier input had the same source and the same norm
                 if let Some(j) = (0..i).find(|j| {
                     src[*j] == src[i] && (if lw.norms.len() == 3 { *j } else { 0 }) == norm_index
                 }) {
@@ -2552,19 +2626,23 @@ impl Route {
                     continue;
                 }
                 normed[i] = xn + (i * rh * 4) as u64;
-                dev.launched("memra_ink2g_norm", unsafe {
-                    ffi::memra_ink2g_norm(
-                        src[i] as *const f32,
-                        dptr(&lw.norms[norm_index], &st) as *const f32,
-                        attn_eps,
-                        normed[i] as *mut f32,
-                        rows as i32,
-                        hidden as i32,
-                        dev.prec.get().norm as i32,
-                        dev.sp(),
-                    )
-                })?;
+                nx.push(src[i] as *const f32);
+                nw.push(dptr(&lw.norms[norm_index], &st) as *const f32);
+                ny.push(normed[i] as *mut f32);
             }
+            dev.launched("memra_ink2g_norm_n", unsafe {
+                ffi::memra_ink2g_norm_n(
+                    nx.as_ptr(),
+                    nw.as_ptr(),
+                    ny.as_ptr(),
+                    nx.len() as i32,
+                    attn_eps,
+                    rows as i32,
+                    hidden as i32,
+                    dev.prec.get().norm as i32,
+                    dev.sp(),
+                )
+            })?;
             let [xq, xk, xv] = normed;
 
             // ---- projections
@@ -2694,33 +2772,65 @@ impl Route {
                 })
             };
             let qb = dptr_mut(&mut w.qb, &st);
-            heads_k(
-                dev,
-                0,
-                qb,
-                lw.q_scale.as_ref(),
-                decimal(a.query_clip.threshold),
-                decimal(a.query_clip.epsilon),
-                true,
-                qb,
-                0,
-                heads,
-                dim,
-            )?;
             let rb = dptr_mut(&mut w.rb, &st);
-            heads_k(
-                dev,
-                0,
-                rb,
-                lw.r_scale.as_ref(),
-                decimal(a.relative.clip.threshold),
-                decimal(a.relative.clip.epsilon),
-                true,
-                rb,
-                0,
-                heads,
-                rank,
-            )?;
+            if rank <= dim {
+                // the Q and R clips in one launch
+                dev.launched("memra_ink2g_heads_qr", unsafe {
+                    ffi::memra_ink2g_heads_qr(
+                        qb as *const f32,
+                        lw.q_scale
+                            .as_ref()
+                            .map_or(std::ptr::null(), |s| dptr(s, &st) as *const f32),
+                        decimal(a.query_clip.threshold),
+                        decimal(a.query_clip.epsilon),
+                        qb as *mut f32,
+                        dim as i32,
+                        rb as *const f32,
+                        lw.r_scale
+                            .as_ref()
+                            .map_or(std::ptr::null(), |s| dptr(s, &st) as *const f32),
+                        decimal(a.relative.clip.threshold),
+                        decimal(a.relative.clip.epsilon),
+                        rb as *mut f32,
+                        rank as i32,
+                        posd as *const i64,
+                        pos0 as i64,
+                        log_floor,
+                        alpha,
+                        rows as i32,
+                        heads as i32,
+                        dev.prec.get().norm as i32,
+                        dev.sp(),
+                    )
+                })?;
+            } else {
+                heads_k(
+                    dev,
+                    0,
+                    qb,
+                    lw.q_scale.as_ref(),
+                    decimal(a.query_clip.threshold),
+                    decimal(a.query_clip.epsilon),
+                    true,
+                    qb,
+                    0,
+                    heads,
+                    dim,
+                )?;
+                heads_k(
+                    dev,
+                    0,
+                    rb,
+                    lw.r_scale.as_ref(),
+                    decimal(a.relative.clip.threshold),
+                    decimal(a.relative.clip.epsilon),
+                    true,
+                    rb,
+                    0,
+                    heads,
+                    rank,
+                )?;
+            }
 
             // ---- K and V: short convolution with the slot's history, clip / norm into the cache
             let cur = *parity;
@@ -2761,59 +2871,92 @@ impl Route {
             };
             let kcv = dptr_mut(&mut w.kcv, &st);
             let vcv = dptr_mut(&mut w.vcv, &st);
-            conv(
-                dev,
-                &lw.kconv,
-                dptr(&w.kp, &st),
-                &mut ss.conv[0],
-                dptr(&w.dynk, &st),
-                0,
-                kcv,
-            )?;
-            conv(
-                dev,
-                &lw.vconv,
-                dptr(&w.vp, &st),
-                &mut ss.conv[1],
-                dptr(&w.dynv, &st),
-                0,
-                vcv,
-            )?;
+            let (kw, vw) = (&lw.kconv, &lw.vconv);
+            let same = kw.dynamic.is_some() == vw.dynamic.is_some()
+                && kw.dynamic.as_ref().map(|d| d.1) == vw.dynamic.as_ref().map(|d| d.1)
+                && kw.channels == vw.channels
+                && kw.kernel == vw.kernel
+                && !red.conv_state_dropped;
+            if same {
+                // K and V in one launch: two jobs of one shape, each its own program
+                let [k0, k1] = &mut ss.conv[0];
+                let (ki, ko) = if cur == 0 { (&*k0, k1) } else { (&*k1, k0) };
+                let ki = dptr(ki, &st);
+                let ko = dptr_mut(ko, &st);
+                let [v0, v1] = &mut ss.conv[1];
+                let (vi, vo) = if cur == 0 { (&*v0, v1) } else { (&*v1, v0) };
+                let vi = dptr(vi, &st);
+                let vo = dptr_mut(vo, &st);
+                dev.launched("memra_ink2g_conv2", unsafe {
+                    ffi::memra_ink2g_conv2(
+                        i32::from(kw.dynamic.is_some()),
+                        dptr(&w.kp, &st) as *const f32,
+                        ki as *const f32,
+                        ko as *mut f32,
+                        dptr(&kw.taps, &st) as *const f32,
+                        dptr(&w.dynk, &st) as *const f32,
+                        kcv as *mut f32,
+                        dptr(&w.vp, &st) as *const f32,
+                        vi as *const f32,
+                        vo as *mut f32,
+                        dptr(&vw.taps, &st) as *const f32,
+                        dptr(&w.dynv, &st) as *const f32,
+                        vcv as *mut f32,
+                        kw.dynamic.as_ref().map_or(0, |d| d.1 as i32),
+                        rows as i32,
+                        kw.channels as i32,
+                        kw.kernel as i32,
+                        dev.prec.get().conv as i32,
+                        dev.sp(),
+                    )
+                })?;
+            } else {
+                conv(
+                    dev,
+                    &lw.kconv,
+                    dptr(&w.kp, &st),
+                    &mut ss.conv[0],
+                    dptr(&w.dynk, &st),
+                    0,
+                    kcv,
+                )?;
+                conv(
+                    dev,
+                    &lw.vconv,
+                    dptr(&w.vp, &st),
+                    &mut ss.conv[1],
+                    dptr(&w.dynv, &st),
+                    0,
+                    vcv,
+                )?;
+            }
             let (kc, vc) = if ss.fp8 {
                 (dptr_mut(&mut ss.kc8, &st), dptr_mut(&mut ss.vc8, &st))
             } else {
                 (dptr_mut(&mut ss.kc, &st), dptr_mut(&mut ss.vc, &st))
             };
             if ss.fp8 {
-                // K and V land in the e4m3 cache: the same epilogue, rounded once on the store
-                for (mode, x, thr, eps, dst) in [
-                    (
-                        0,
-                        kcv,
+                // K and V land in the e4m3 cache: the same epilogue, rounded once on the store; both
+                // in one launch
+                dev.launched("memra_ink2g_heads_e4m3_2", unsafe {
+                    ffi::memra_ink2g_heads_e4m3_2(
+                        kcv as *const f32,
                         decimal(a.key_clip.threshold),
                         decimal(a.key_clip.epsilon),
-                        kc,
-                    ),
-                    (1, vcv, 0.0, decimal(a.value_norm_epsilon), vc),
-                ] {
-                    dev.launched("memra_ink2g_heads_e4m3", unsafe {
-                        ffi::memra_ink2g_heads_e4m3(
-                            mode,
-                            x as *const f32,
-                            thr,
-                            eps,
-                            posd as *const i64,
-                            pos0 as i64,
-                            dst as *mut u8,
-                            ss.cap as i64,
-                            rows as i32,
-                            kvh as i32,
-                            dim as i32,
-                            dev.prec.get().norm as i32,
-                            dev.sp(),
-                        )
-                    })?;
-                }
+                        kc as *mut u8,
+                        vcv as *const f32,
+                        decimal(a.value_norm_epsilon),
+                        vc as *mut u8,
+                        posd as *const i64,
+                        pos0 as i64,
+                        ss.cap as i64,
+                        rows as i32,
+                        kvh as i32,
+                        dim as i32,
+                        dev.prec.get().norm as i32,
+                        dev.sp(),
+                    )
+                })?;
             } else {
                 heads_k(
                     dev,

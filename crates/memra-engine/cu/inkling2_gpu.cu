@@ -557,9 +557,21 @@ __global__ void ink2g_embed_kernel(const uint16_t* __restrict__ table, const uin
 }
 
 // y[r] = w * x[r] * rsqrt(mean(x[r]^2) + eps)
+struct Ink2gNorm3 {
+  const float* x[2];
+  const float* w[2];
+  float* y[2];
+};
+
 template <typename T, bool KC>
 __global__ void ink2g_norm_kernel(const float* __restrict__ x, const float* __restrict__ nw, T eps,
-                                  float* __restrict__ y, int H) {
+                                  float* __restrict__ y, int H, Ink2gNorm3 more) {
+  // blockIdx.y j > 0: the j-th norm of a joint launch (its own input, weights and output)
+  if (blockIdx.y > 0) {
+    x = more.x[blockIdx.y - 1];
+    nw = more.w[blockIdx.y - 1];
+    y = more.y[blockIdx.y - 1];
+  }
   __shared__ T sh[8];
   const int r = blockIdx.x;
   const float* row = x + (int64_t)r * H;
@@ -799,10 +811,32 @@ __device__ __forceinline__ void ink2g_kv_put(uint8_t* p, int64_t i, float v) {
 __device__ __forceinline__ float ink2g_kv_get(const float* p, int64_t i) { return p[i]; }
 __device__ __forceinline__ float ink2g_kv_get(const uint8_t* p, int64_t i) { return ink2g_e4m3(p[i]); }
 
+template <typename T, typename OUT>
+struct Ink2gHeads2 {
+  int mode;
+  const float* x;
+  T thr, eps;
+  OUT* dst;
+  const float* scale;
+  int width;  // 0: the first job's
+};
+
 template <typename T, bool KC, typename OUT = float>
 __global__ void ink2g_heads_kernel(int mode, const float* x, const float* __restrict__ scale, T thr,
                                    T eps, const int64_t* __restrict__ posd, int64_t pos0, int log_floor,
-                                   T alpha, OUT* dst, int64_t cap, int heads, int width) {
+                                   T alpha, OUT* dst, int64_t cap, int heads, int width, Ink2gHeads2<T, OUT> j2) {
+  // blockIdx.z 1: the second epilogue of a pair launch (the same shape)
+  if (blockIdx.z == 1) {
+    mode = j2.mode;
+    x = j2.x;
+    thr = j2.thr;
+    eps = j2.eps;
+    dst = j2.dst;
+    if (j2.width > 0) {
+      scale = j2.scale;
+      width = j2.width;
+    }
+  }
   __shared__ T sh[8];
   const int r = blockIdx.x, h = blockIdx.y, t = threadIdx.x;
   const int64_t pos = (posd ? *posd : pos0) + r;
@@ -830,11 +864,29 @@ __global__ void ink2g_heads_kernel(int mode, const float* x, const float* __rest
 // mode 1 (dynamic): taps [K, C] and dyn [R, groups, K], both by lag with the current token first;
 //   out = (x + sum_lag (taps[lag, c] + dyn[r, group(c), lag]) * x[t - lag]) / sqrt(2K + 1).
 // add (nullable): out = add + conv. carry == 0 leaves the state untouched (the gate's red arm).
+struct Ink2gConv2 {
+  const float* x;
+  const float* state_in;
+  float* state_out;
+  const float* taps;
+  const float* dyn;
+  float* out;
+};
+
 template <typename T, bool KC>
 __global__ void ink2g_conv_kernel(int mode, const float* __restrict__ x, const float* __restrict__ state_in,
                                   float* __restrict__ state_out, const float* __restrict__ taps,
                                   const float* __restrict__ dyn, int groups, const float* add, float* out, int R,
-                                  int C, int K) {
+                                  int C, int K, Ink2gConv2 j2) {
+  // blockIdx.y 1: the second convolution of a pair launch (the same shape, its own tensors)
+  if (blockIdx.y == 1) {
+    x = j2.x;
+    state_in = j2.state_in;
+    state_out = j2.state_out;
+    taps = j2.taps;
+    dyn = j2.dyn;
+    out = j2.out;
+  }
   const int c = blockIdx.x * blockDim.x + threadIdx.x;
   if (c >= C) return;
   T hist[INK2G_MAX_KERNEL];  // hist[l] = input l steps back, l in 1..K-1
@@ -2131,12 +2183,33 @@ int memra_ink2g_embed(const void* table, const uint32_t* ids, const float* norm_
   return ink2g_rc();
 }
 
+// Up to three norms of rows of one shape and one eps in a launch (blockIdx.y picks the norm).
+int memra_ink2g_norm_n(const float* const* xs, const float* const* ws, float* const* ys, int count, double eps, int R,
+                       int H, int prec, void* stream) {
+  if (!xs || !ws || !ys || count < 1 || count > 3 || R <= 0 || H <= 0) return 45012;
+  Ink2gNorm3 more{};
+  for (int j = 0; j < count; j++)
+    if (!xs[j] || !ws[j] || !ys[j]) return 45012;
+  for (int j = 1; j < count; j++) {
+    more.x[j - 1] = xs[j];
+    more.w[j - 1] = ws[j];
+    more.y[j - 1] = ys[j];
+  }
+  const dim3 g(R, count);
+  switch (prec) {
+    case 1: ink2g_norm_kernel<float, false><<<g, 256, 0, (cudaStream_t)stream>>>(xs[0], ws[0], eps, ys[0], H, more); break;
+    case 2: ink2g_norm_kernel<float, true><<<g, 256, 0, (cudaStream_t)stream>>>(xs[0], ws[0], eps, ys[0], H, more); break;
+    default: ink2g_norm_kernel<double, false><<<g, 256, 0, (cudaStream_t)stream>>>(xs[0], ws[0], eps, ys[0], H, more); break;
+  }
+  return ink2g_rc();
+}
+
 int memra_ink2g_norm(const float* x, const float* norm_w, double eps, float* y, int R, int H, int prec, void* stream) {
   if (!x || !norm_w || !y || R <= 0 || H <= 0) return 45012;
   switch (prec) {
-    case 1: ink2g_norm_kernel<float, false><<<R, 256, 0, (cudaStream_t)stream>>>(x, norm_w, eps, y, H); break;
-    case 2: ink2g_norm_kernel<float, true><<<R, 256, 0, (cudaStream_t)stream>>>(x, norm_w, eps, y, H); break;
-    default: ink2g_norm_kernel<double, false><<<R, 256, 0, (cudaStream_t)stream>>>(x, norm_w, eps, y, H); break;
+    case 1: ink2g_norm_kernel<float, false><<<R, 256, 0, (cudaStream_t)stream>>>(x, norm_w, eps, y, H, Ink2gNorm3{}); break;
+    case 2: ink2g_norm_kernel<float, true><<<R, 256, 0, (cudaStream_t)stream>>>(x, norm_w, eps, y, H, Ink2gNorm3{}); break;
+    default: ink2g_norm_kernel<double, false><<<R, 256, 0, (cudaStream_t)stream>>>(x, norm_w, eps, y, H, Ink2gNorm3{}); break;
   }
   return ink2g_rc();
 }
@@ -2218,11 +2291,11 @@ int memra_ink2g_heads(int mode, const float* x, const float* scale, double thr, 
   const int threads = ((width + 31) / 32) * 32;
   switch (prec) {
     case 1: ink2g_heads_kernel<float, false><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(mode, x, scale, thr, eps, posd, pos0,
-                                                                         log_floor, alpha, dst, cap, heads, width); break;
+                                                                         log_floor, alpha, dst, cap, heads, width, {}); break;
     case 2: ink2g_heads_kernel<float, true><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(mode, x, scale, thr, eps, posd, pos0,
-                                                                         log_floor, alpha, dst, cap, heads, width); break;
+                                                                         log_floor, alpha, dst, cap, heads, width, {}); break;
     default: ink2g_heads_kernel<double, false><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(mode, x, scale, thr, eps, posd, pos0,
-                                                                         log_floor, alpha, dst, cap, heads, width); break;
+                                                                         log_floor, alpha, dst, cap, heads, width, {}); break;
   }
   return ink2g_rc();
 }
@@ -2239,11 +2312,11 @@ int memra_ink2g_conv(int mode, const float* x, const float* state_in, float* sta
   if (x == out) return 45020;
   switch (prec) {
     case 1: ink2g_conv_kernel<float, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
-                                                                     add, out, R, C, K); break;
+                                                                     add, out, R, C, K, Ink2gConv2{}); break;
     case 2: ink2g_conv_kernel<float, true><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
-                                                                     add, out, R, C, K); break;
+                                                                     add, out, R, C, K, Ink2gConv2{}); break;
     default: ink2g_conv_kernel<double, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
-                                                                     add, out, R, C, K); break;
+                                                                     add, out, R, C, K, Ink2gConv2{}); break;
   }
   return ink2g_rc();
 }
@@ -2275,6 +2348,84 @@ int memra_ink2g_attn_e4m3(const float* q, const float* rel, const float* table, 
 }
 
 // The K / V epilogue into an e4m3 cache (nvfp4-rig): K (mode 0, no scale, no log scale) and V (mode 1).
+// The K and V convolutions of a slot in one launch: two jobs of one shape (blockIdx.y picks the job).
+int memra_ink2g_conv2(int mode, const float* x, const float* state_in, float* state_out, const float* taps,
+                      const float* dyn, float* out, const float* x2, const float* state_in2, float* state_out2,
+                      const float* taps2, const float* dyn2, float* out2, int groups, int R, int C, int K, int prec,
+                      void* stream) {
+  if ((mode != 0 && mode != 1) || !x || !state_in || !taps || !out || !x2 || !state_in2 || !taps2 || !out2 || R <= 0 ||
+      C <= 0)
+    return 45017;
+  if (state_out == state_in || state_out2 == state_in2) return 45041;
+  if (K < 2 || K > INK2G_MAX_KERNEL) return 45018;
+  if (mode == 1 && (!dyn || !dyn2 || groups <= 0 || C % groups != 0)) return 45019;
+  if (x == out || x2 == out2) return 45020;
+  const Ink2gConv2 j2{x2, state_in2, state_out2, taps2, dyn2, out2};
+  const dim3 g((C + 63) / 64, 2);
+  switch (prec) {
+    case 1: ink2g_conv_kernel<float, false><<<g, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups, nullptr, out, R, C, K, j2); break;
+    case 2: ink2g_conv_kernel<float, true><<<g, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups, nullptr, out, R, C, K, j2); break;
+    default: ink2g_conv_kernel<double, false><<<g, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups, nullptr, out, R, C, K, j2); break;
+  }
+  return ink2g_rc();
+}
+
+// The K and V epilogues into the e4m3 cache in one launch (blockIdx.z picks the job).
+int memra_ink2g_heads_e4m3_2(const float* xk, double thrk, double epsk, uint8_t* dk, const float* xv, double epsv,
+                             uint8_t* dv, const int64_t* posd, int64_t pos0, int64_t cap, int R, int heads, int width,
+                             int prec, void* stream) {
+  if (!xk || !dk || !xv || !dv || R <= 0 || heads <= 0 || width <= 0 || width > 256) return 45017;
+  if (heads > 65535 || cap <= 0) return 45018;
+  const int threads = ((width + 31) / 32) * 32;
+  const dim3 g(R, heads, 2);
+  switch (prec) {
+    case 1:
+      ink2g_heads_kernel<float, false, uint8_t><<<g, threads, 0, (cudaStream_t)stream>>>(
+          0, xk, nullptr, (float)thrk, (float)epsk, posd, pos0, 0, 0.0f, dk, cap, heads, width,
+          Ink2gHeads2<float, uint8_t>{1, xv, 0.0f, (float)epsv, dv, nullptr, 0});
+      break;
+    case 2:
+      ink2g_heads_kernel<float, true, uint8_t><<<g, threads, 0, (cudaStream_t)stream>>>(
+          0, xk, nullptr, (float)thrk, (float)epsk, posd, pos0, 0, 0.0f, dk, cap, heads, width,
+          Ink2gHeads2<float, uint8_t>{1, xv, 0.0f, (float)epsv, dv, nullptr, 0});
+      break;
+    default:
+      ink2g_heads_kernel<double, false, uint8_t><<<g, threads, 0, (cudaStream_t)stream>>>(
+          0, xk, nullptr, thrk, epsk, posd, pos0, 0, 0.0, dk, cap, heads, width,
+          Ink2gHeads2<double, uint8_t>{1, xv, 0.0, epsv, dv, nullptr, 0});
+  }
+  return ink2g_rc();
+}
+
+// The Q and R clip epilogues of a slot in one launch (blockIdx.z picks the job). The R job's narrower
+// heads run in the Q job's block: its extra threads hold zeros, which leave the block sum's value as is.
+int memra_ink2g_heads_qr(const float* xq, const float* sq, double thrq, double epsq, float* dq, int wq,
+                         const float* xr, const float* sr, double thrr, double epsr, float* dr, int wr,
+                         const int64_t* posd, int64_t pos0, int log_floor, double alpha, int R, int heads, int prec,
+                         void* stream) {
+  if (!xq || !dq || !xr || !dr || R <= 0 || heads <= 0 || wq <= 0 || wr <= 0 || wq > 256 || wr > wq) return 45017;
+  if (heads > 65535) return 45018;
+  const int threads = ((wq + 31) / 32) * 32;
+  const dim3 g(R, heads, 2);
+  switch (prec) {
+    case 1:
+      ink2g_heads_kernel<float, false, float><<<g, threads, 0, (cudaStream_t)stream>>>(
+          0, xq, sq, (float)thrq, (float)epsq, posd, pos0, log_floor, (float)alpha, dq, 0, heads, wq,
+          Ink2gHeads2<float, float>{0, xr, (float)thrr, (float)epsr, dr, sr, wr});
+      break;
+    case 2:
+      ink2g_heads_kernel<float, true, float><<<g, threads, 0, (cudaStream_t)stream>>>(
+          0, xq, sq, (float)thrq, (float)epsq, posd, pos0, log_floor, (float)alpha, dq, 0, heads, wq,
+          Ink2gHeads2<float, float>{0, xr, (float)thrr, (float)epsr, dr, sr, wr});
+      break;
+    default:
+      ink2g_heads_kernel<double, false, float><<<g, threads, 0, (cudaStream_t)stream>>>(
+          0, xq, sq, thrq, epsq, posd, pos0, log_floor, alpha, dq, 0, heads, wq,
+          Ink2gHeads2<double, float>{0, xr, thrr, epsr, dr, sr, wr});
+  }
+  return ink2g_rc();
+}
+
 int memra_ink2g_heads_e4m3(int mode, const float* x, double thr, double eps, const int64_t* posd, int64_t pos0,
                            uint8_t* dst, int64_t cap, int R, int heads, int width, int prec, void* stream) {
   if ((mode != 0 && mode != 1) || !x || !dst || R <= 0 || heads <= 0 || width <= 0 || width > 256) return 45017;
@@ -2283,15 +2434,15 @@ int memra_ink2g_heads_e4m3(int mode, const float* x, double thr, double eps, con
   switch (prec) {
     case 1:
       ink2g_heads_kernel<float, false, uint8_t><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(
-          mode, x, nullptr, (float)thr, (float)eps, posd, pos0, 0, 0.0f, dst, cap, heads, width);
+          mode, x, nullptr, (float)thr, (float)eps, posd, pos0, 0, 0.0f, dst, cap, heads, width, {});
       break;
     case 2:
       ink2g_heads_kernel<float, true, uint8_t><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(
-          mode, x, nullptr, (float)thr, (float)eps, posd, pos0, 0, 0.0f, dst, cap, heads, width);
+          mode, x, nullptr, (float)thr, (float)eps, posd, pos0, 0, 0.0f, dst, cap, heads, width, {});
       break;
     default:
       ink2g_heads_kernel<double, false, uint8_t><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(
-          mode, x, nullptr, thr, eps, posd, pos0, 0, 0.0, dst, cap, heads, width);
+          mode, x, nullptr, thr, eps, posd, pos0, 0, 0.0, dst, cap, heads, width, {});
   }
   return ink2g_rc();
 }

@@ -220,3 +220,15 @@ on shipped and nvfp4-rig at chunk 1, 4, 512 and on p3 8k). Three interleaved tak
 | shipped 4k prefill | 326 | 783 |
 
 At 4k the attention is 1.32 ms a token (was 6.31); nvfp4-rig is now ahead of shipped at 4k. Receipts: s12-breakdown.
+
+## Step 13: joint launches for paired small kernels (2026-11-22)
+
+Bit-identical (gate ALL OK; digests equal on shipped and nvfp4-rig at chunk 1, 4, 512 and on p3 8k):
+the K and V short convolutions in one launch, the K and V epilogues into the e4m3 cache in one launch, the
+Q and R clips in one launch (the R job's narrower heads run in the Q block; the extra threads add exact
+zeros), and the up to three attention-input norms of a slot in one launch. nvfp4-rig c=1 71.3 -> 74.0
+tok/s (p50 13.43 -> 12.93 ms), 3 interleaved takes; launches a token 1693 -> 1493.
+
+Measured and rejected (deleted): the depth mix's dot and output in one launch (the last block of a pair
+forms all outputs; 1.53 -> 2.22 ms a token, slower); the expert GEMM streaming two 16-row tiles a warp
+through one ring (4.24 -> 5.33 ms a token, slower).
