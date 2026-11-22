@@ -10,6 +10,7 @@ pub mod hy_v4_flash_dfly;
 pub mod hy_v4_flash_trunk;
 pub mod inkling2;
 pub mod inkling2_actquant;
+pub mod inkling2_drafter;
 pub mod mimo_audio;
 pub mod mimo_audio_attn;
 pub mod mimo_audio_codec_frontend;
@@ -699,7 +700,9 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
             }
         }
     }
-    if let Some(memra_gguf::model_plan::DrafterPlan::Dspark(dspark)) = plan.drafter.as_ref() {
+    if let Some(memra_gguf::model_plan::DrafterPlan::Dspark(dspark)) = plan.drafter.as_ref()
+        && dspark.is_deepseek_v4()
+    {
         add_dspark_fixture(&mut weights, dspark, hidden, vocab)?;
     }
     let token_ids = (1..=3.min(vocab - 1)).map(|token| token as u32).collect();
@@ -2458,8 +2461,10 @@ fn execute_embedded(
     let mut state = Vec::with_capacity(plan.layers.len());
     let mut layer_hidden = Vec::with_capacity(plan.layers.len());
     let dspark = plan.drafter.as_ref().and_then(|drafter| match drafter {
-        memra_gguf::model_plan::DrafterPlan::Dspark(plan) => Some(plan),
-        memra_gguf::model_plan::DrafterPlan::MiMoMtp3(_) => None,
+        // this executor runs the DeepSeek-V4 program; another DSpark variant has its own
+        memra_gguf::model_plan::DrafterPlan::Dspark(plan) if plan.is_deepseek_v4() => Some(plan),
+        memra_gguf::model_plan::DrafterPlan::Dspark(_)
+        | memra_gguf::model_plan::DrafterPlan::MiMoMtp3(_) => None,
     });
     let mut draft_taps = dspark.map(|plan| vec![None; plan.target_layer_ids.len()]);
     // gemma4 E4B: per-layer inputs and KV sharing reach across layers, so its layers take the
@@ -9406,13 +9411,13 @@ mod tests {
         ));
         let mut plan = ModelPlan::compile(&config).unwrap();
         let block = plan.mtp_blocks.remove(0).layer;
-        plan.drafter = Some(DrafterPlan::Dspark(DsparkPlan {
-            block_size: 3,
-            noise_token_id: 31,
-            target_layer_ids: vec![1],
-            markov_rank: 8,
-            blocks: vec![block],
-        }));
+        plan.drafter = Some(DrafterPlan::Dspark(DsparkPlan::deepseek_v4(
+            3,
+            31,
+            vec![1],
+            8,
+            vec![block],
+        )));
         let fixture = deterministic_fixture(&plan).unwrap();
         let output = execute(&plan, &fixture.weights, &[1, 2, 3, 4]).unwrap();
         let draft = output.draft.expect("DSpark output");

@@ -935,7 +935,9 @@ pub mod step_guard;
 
 // Inkling 2 Mini routed experts, the act-quant class: kernels, gates and bench; no serving route.
 pub mod inkling2_actq;
+pub mod inkling2_dspark;
 pub mod inkling2_gpu;
+pub mod inkling2_spec;
 
 // MiMo V2.6 inspection components. Automatic serving selection remains closed.
 pub mod mimo_attn_load;

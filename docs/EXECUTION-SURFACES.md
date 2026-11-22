@@ -146,7 +146,7 @@ pre-existing allowlists for every operation, pinned by
 | `RelativeBiasState` | — | — | — | — | — | — | — | — | — | — |
 | `BlockAttentionResidual` | — | — | — | — | — | — | — | — | — | — |
 | `SoftcappedSwiGluActivation` | — | — | — | — | — | — | — | — | — | — |
-| `DsparkRnnDrafter` | — | — | — | — | — | — | — | — | — | — |
+| `DsparkContextAttention` | — | — | — | — | — | — | — | — | — | — |
 | `LogitsTruncate` | — | — | — | — | — | — | — | — | — | — |
 | `Mtp` | — | — | — | — | yes | — | yes | — | yes | — |
 | `DraftPlan` | — | — | — | — | — | — | — | — | — | — |

@@ -114,13 +114,13 @@ fn plan_builder(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
     let mut plan = canonical_plan(config)?;
     if config.nextn_predict_layers == 3 {
         let blocks = plan.mtp_blocks.drain(..).map(|block| block.layer).collect();
-        plan.drafter = Some(DrafterPlan::Dspark(DsparkPlan {
-            block_size: 5,
-            noise_token_id: 128_799,
-            target_layer_ids: vec![40, 41, 42],
-            markov_rank: 256,
+        plan.drafter = Some(DrafterPlan::Dspark(DsparkPlan::deepseek_v4(
+            5,
+            128_799,
+            vec![40, 41, 42],
+            256,
             blocks,
-        }));
+        )));
     }
     Ok(plan)
 }
