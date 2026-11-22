@@ -6,7 +6,8 @@ Chat completions, one request at a time, each stopping at its own end, sampled a
 `generation_config.json` (temperature 0.9, no top-k, no top-p) with seed 20261121, so a drafting
 and a non-drafting server of one binary give the same answers, and so does every repeat.
 `--runs N` asks each turn N times and keeps every wall time and their median; the answers of the
-repeats must be equal. `--greedy` asks for temperature 0: the identity and fault cells of step 10
+repeats must be equal. Their draft usage need not be: the draft gate prices rounds at the route's
+running costs, so a repeat may draft other depths (each repeat's usage is kept in `specs`). `--greedy` asks for temperature 0: the identity and fault cells of step 10
 ran that way; speed is read sampled.
 """
 
@@ -55,7 +56,7 @@ ok = True
 for name, messages, extra in TURNS:
     sampling = {"temperature": 0} if GREEDY else {"temperature": 0.9, "seed": 20261121}
     body = {"model": model, "messages": messages, "max_tokens": 256} | sampling | extra
-    walls, row = [], None
+    walls, row, specs = [], None, []
     for _ in range(RUNS):
         st, raw, dt = post("/v1/chat/completions", body)
         j = json.loads(raw) if st == 200 else {"error": raw}
@@ -66,12 +67,15 @@ for name, messages, extra in TURNS:
                "completion_tokens": usage.get("completion_tokens"), "finish": ch.get("finish_reason"),
                "spec": usage.get("spec"), "content": msg.get("content"),
                "reasoning": msg.get("reasoning"), "error": j.get("error")}
-        if row is not None and got != row:
+        answer = {k: v for k, v in got.items() if k != "spec"}
+        if row is not None and answer != {k: v for k, v in row.items() if k not in ("spec", "specs")}:
             ok = False
             got["repeat_differs"] = True
+        specs.append(got["spec"])
         row = got
         walls.append(round(dt, 3))
     row["walls_s"] = walls
+    row["specs"] = specs
     row["wall_s"] = sorted(walls)[len(walls) // 2]
     rows.append(row)
     print(json.dumps({k: row[k] for k in ("turn", "status", "prompt_tokens", "completion_tokens", "finish",
