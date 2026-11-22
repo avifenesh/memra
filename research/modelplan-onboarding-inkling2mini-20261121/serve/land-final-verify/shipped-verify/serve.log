@@ -1,0 +1,25 @@
+[server] build: memra-0.141.1-1315a39fc6a6 (id: source-tree, git: 39d8e4ab3676)
+[server] starting; models config = [("verify", "/home/avifenesh/models/inkling2-mini", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "verify" <- /home/avifenesh/models/inkling2-mini
+[inkling2-serve] verify: rewrite bundle /home/avifenesh/.cache/inkling2mini/wt-serve/research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/shipped-verify installed for plan cbeb7e660624e320fe02c8290ec0e3333084ada510c75a68c0207d63459474df; the route runs the plan's own native program, no rewrite
+[inkling2-serve] verify: class shipped (inkling2-gpu-f32-stream/shipped/DeclaredActivationQuant); memory: device 23.511 GiB, driver free at open 23.022, weights 17.594, full KV 0.000 (1 positions x 65536 B), rings 0.625, conv 0.007, work 0.352, declared work 0.063, driver free before KV 4.335 and after load 4.335, max context 71018, drafter 0.000 (context K/V 0.000)
+[inkling2-serve] verify: a 4096-position sequence is 947191808 bytes, 0 more at the driver
+[inkling2-serve] verify: up in 5.2s
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[route-contract] model="verify" route=inkling2-thread capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[prefix-cache] WARNING: derived budget is 0 B after the boot free-VRAM reserve clamp; prefix caching disabled
+[admission] idle capacity (post-load, cache empty): dev0 free 5344MB (pool used 19409MB)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["verify"]
+[server] listening on http://127.0.0.1:33153
+[meter] admit id=cmpl-ce6fefcef2ba02fadfa5b99ede639844 tenant=default lane=interactive model="verify"
+[inkling2-serve] admit request_id="cmpl-ce6fefcef2ba02fadfa5b99ede639844" class=shipped prompt=1 capacity=2 driver_free=3446276096
+[inkling2-step] prefill_rows=1 decode_rows=0 step_s=0.015

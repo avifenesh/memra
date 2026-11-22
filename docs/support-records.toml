@@ -439,11 +439,11 @@ id = "inkling2-shipped-gpu-1x-5090"
 pack = "inkling2"
 state = "NativeQualified"
 artifact = "thinkingmachines/Inkling-2-Mini@ed40e7da625f594fc9c4990f5f66be24873c22d7 (a local copy: its config, quant-config, census, tokenizer and template sha256 in the verify bundle's artifact.lock equal the pinned remote inspect's, research/modelplan-onboarding-inkling2mini-20261121/inspect-remote/artifact.lock; weights model-00001-of-00001.safetensors sha256 65e60f51aa1284d4fb022584908c315270334d991828bb774af60584523539d1)"
-numeric_program = "the checkpoint's shipped class (inkling2-declared-activation-quant): routed experts as declared, NVFP4 W4A4 four-over-six on layers 0..19 and MXFP8 W8A8 on 20..23 with per-token activation quantization and the sm_120 tensor-core accumulators, SiTU rounded once to bf16; everything outside the experts on an f32 stream from the BF16 weights, attention in f64; KV caches f32. Every request in that one class (numeric_class shipped); batched decode rows are bit-equal to their solo calls"
+numeric_program = "the checkpoint's shipped class (inkling2-declared-activation-quant): routed experts as declared, NVFP4 W4A4 four-over-six on layers 0..19 and MXFP8 W8A8 on 20..23 with per-token activation quantization and the sm_120 tensor-core accumulators, SiTU rounded once to bf16; everything outside the experts on an f32 stream from the BF16 weights under lane P's adopted program (controller and norms f32, convolutions and router compensated f32, attention f32 tiles with f64 merges); KV caches f32. Every request in that one class (numeric_class shipped); batched decode rows are bit-equal to their solo calls"
 topology = "1x RTX 5090 Laptop GPU (sm_120a, 24 GB); every weight resident as shipped (17.6 GiB), the drafter and vision tower not executed"
 route = "memra-server inkling2 route (inkling2_serve) over inkling2_gpu"
-memra_commit = "b948b9f57a71623ae79f418a46b9961d0c8edc4e"
-notes = "Pinned at b948b9f57a, the serve route (memra#1400) with lane P's decode (memra#1399 at e4b6ceaf2b) merged and the attention scratch fix. At the pin, on the RTX 5090 Laptop, from the binaries in serve-frozen4 (sha256 in verify-b948b9f57a/SHA256SUMS): memra model verify checkpoint (native side ink2-gpu under MEMRA_ORACLE_OUT) passed against lane E's CPU tape of the declared program on the pack's probe, max abs 1.737 under the class band of 3.7, argmax 200001 on both sides; verify serve passed on that receipt (research/modelplan-onboarding-inkling2mini-20261121/checkpoint-parity/verify-b948b9f57a/gates.txt). The band and the method are in docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md: twice the largest spread between independent backends of the source program (lane E's CPU oracle, lane F's harness on CPU and GPU); per-MoE outputs bit-equal to lane D's host reference at every slot; the float trunk at f32 rounding of the f64 oracle; the route's per-token KL on rawdoc, chatwrap and the oracle prompts inside the harness's own GPU-vs-CPU spread. TokenizerTemplate is the inspect gate on the pinned artifact (token parity of the template against the checkpoint's own renderer: memra#1394, research/modelplan-onboarding-inkling2mini-20261121/chat/). TinyParity ran at the pin: memra model verify tiny --against inkling2 (verified=Tiny) and ci:verify-tiny's test, 1 passed (research/modelplan-onboarding-inkling2mini-20261121/checkpoint-parity/verify-b948b9f57a-tiny/). After the pin: 2e5e2f845d and the commit that writes this record are research, docs and this pack's support field. Served at the pin's head (research/modelplan-onboarding-inkling2mini-20261121/serve/s3b/): c=1 41.0 output tok/s, c=4 24.6, every answer at c=2 and c=4 equal to its c=1 answer. RewriteParity stays pending: no rewrite is qualified. The nvfp4-rig class (memra#1401) carries no evidence here; it has no CheckpointParity or Serve receipt yet. No other topology carries evidence."
+memra_commit = "39d8e4ab36760ef146f5a5cb249ada977d586d5a"
+notes = "Pinned at 39d8e4ab36, the land/inkling2mini-1 head (main 63f806baf9 with memra#1393, #1394, #1395, #1396, #1397, #1401, #1399 at 38925f1ac5, #1398 at ac04e22200 and #1400), whose route runs lane P's adopted program (controller and norms f32, convolutions and router compensated f32, attention f32 tiles with f64 merges). At the pin, on the RTX 5090 Laptop, from the binaries whose sha256 are in serve/land-final-verify/*-verify/SHA256SUMS: memra model verify checkpoint (native side ink2-gpu under MEMRA_ORACLE_OUT) against lane E's CPU tape of the class on the pack's probe, verify serve on that receipt, serve_check all pass, and memra model verify tiny with ci:verify-tiny (serve/land-final-verify/tiny/). The band rule and the per-MoE, trunk and corpus-KL evidence are in docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md. TokenizerTemplate is the inspect gate on the pinned artifact (memra#1394, research/modelplan-onboarding-inkling2mini-20261121/chat/). Batched decode rows are bit-equal to their solo calls, and sessions past the load's context run the same program (serve/land-final/, serve/land-final-gate/: 0 rows differing, equal digests, red arms move). The drafter gates of lane S pass on the same binaries (serve/land-final-spec/: tiny gate, run-spec K=1..7 28/28 spec equal to plain). After the pin: the data commits that write these records and receipts. RewriteParity stays pending: no rewrite is qualified. No other topology carries evidence. Shipped class: max abs 2.054 under the class band 3.7, argmax 200001 on both sides. Served at full clocks (serve/land-final-verify/shipped/): 57.6, 77.1 and 98.4 output tok/s at c=1, 2 and 4, TPOT p50 17.2 ms at c=1, every answer at c=2 and c=4 equal to its c=1 answer."
 [record.gates]
 Config = "passed"
 TokenizerTemplate = "passed"
@@ -453,9 +453,36 @@ CheckpointParity = "passed"
 RewriteParity = "pending"
 Serve = "passed"
 [record.evidence]
-Config = ["research/modelplan-onboarding-inkling2mini-20261121/checkpoint-parity/verify-b948b9f57a/gates.txt", "ci:verify-tiny"]
-TokenizerTemplate = ["research/modelplan-onboarding-inkling2mini-20261121/checkpoint-parity/verify-b948b9f57a/gates.txt"]
-TensorCensus = ["research/modelplan-onboarding-inkling2mini-20261121/checkpoint-parity/verify-b948b9f57a/gates.txt"]
-TinyParity = ["research/modelplan-onboarding-inkling2mini-20261121/checkpoint-parity/verify-b948b9f57a-tiny/gates.txt", "ci:verify-tiny"]
-CheckpointParity = ["research/modelplan-onboarding-inkling2mini-20261121/checkpoint-parity/verify-b948b9f57a/gates.txt"]
-Serve = ["research/modelplan-onboarding-inkling2mini-20261121/checkpoint-parity/verify-b948b9f57a/gates.txt"]
+Config = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/shipped-verify/gates.txt", "ci:verify-tiny"]
+TokenizerTemplate = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/shipped-verify/gates.txt"]
+TensorCensus = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/shipped-verify/gates.txt"]
+TinyParity = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/tiny/gates.txt", "ci:verify-tiny"]
+CheckpointParity = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/shipped-verify/gates.txt"]
+Serve = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/shipped-verify/gates.txt"]
+
+[[record]]
+id = "inkling2-nvfp4-rig-gpu-1x-5090"
+pack = "inkling2"
+state = "NativeQualified"
+artifact = "thinkingmachines/Inkling-2-Mini@ed40e7da625f594fc9c4990f5f66be24873c22d7 (a local copy: its config, quant-config, census, tokenizer and template sha256 in the verify bundle's artifact.lock equal the pinned remote inspect's, research/modelplan-onboarding-inkling2mini-20261121/inspect-remote/artifact.lock; weights model-00001-of-00001.safetensors sha256 65e60f51aa1284d4fb022584908c315270334d991828bb774af60584523539d1)"
+numeric_program = "the nvfp4-rig class (inkling2-nvfp4-rig): the checkpoint's declared experts with layers 20..23 re-minted to NVFP4 W4A4 by lane M's overlay (bound by sha256), K/V caches rounded once to e4m3; the stream outside the experts as the shipped class under lane P's adopted program. Every request in that one class; batched decode rows are bit-equal to their solo calls"
+topology = "1x RTX 5090 Laptop GPU (sm_120a, 24 GB); every weight resident, the overlay in place of layers 20..23 (14.3 GiB), the drafter and vision tower not executed"
+route = "memra-server inkling2 route (inkling2_serve) over inkling2_gpu"
+memra_commit = "39d8e4ab36760ef146f5a5cb249ada977d586d5a"
+notes = "Pinned at 39d8e4ab36, the land/inkling2mini-1 head (main 63f806baf9 with memra#1393, #1394, #1395, #1396, #1397, #1401, #1399 at 38925f1ac5, #1398 at ac04e22200 and #1400), whose route runs lane P's adopted program (controller and norms f32, convolutions and router compensated f32, attention f32 tiles with f64 merges). At the pin, on the RTX 5090 Laptop, from the binaries whose sha256 are in serve/land-final-verify/*-verify/SHA256SUMS: memra model verify checkpoint (native side ink2-gpu under MEMRA_ORACLE_OUT) against lane E's CPU tape of the class on the pack's probe, verify serve on that receipt, serve_check all pass, and memra model verify tiny with ci:verify-tiny (serve/land-final-verify/tiny/). The band rule and the per-MoE, trunk and corpus-KL evidence are in docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md. TokenizerTemplate is the inspect gate on the pinned artifact (memra#1394, research/modelplan-onboarding-inkling2mini-20261121/chat/). Batched decode rows are bit-equal to their solo calls, and sessions past the load's context run the same program (serve/land-final/, serve/land-final-gate/: 0 rows differing, equal digests, red arms move). The drafter gates of lane S pass on the same binaries (serve/land-final-spec/: tiny gate, run-spec K=1..7 28/28 spec equal to plain). After the pin: the data commits that write these records and receipts. RewriteParity stays pending: no rewrite is qualified. No other topology carries evidence. nvfp4-rig class (lane M's minted overlay, sha256-bound, at <checkpoint>.nvfp4-rig; e4m3 K/V; the route's default class when the overlay sits beside the checkpoint): max abs 2.573 under the class band 5.5, argmax 200001 on both sides; corpus KL to lane F's harness inside the harness's own GPU-vs-CPU spread (checkpoint-parity/kl-harness-rig.json). Served at full clocks (serve/land-final-verify/nvfp4-rig/): 65.7, 76.5 and 94.5 output tok/s at c=1, 2 and 4, TPOT p50 15.1 ms at c=1."
+[record.gates]
+Config = "passed"
+TokenizerTemplate = "passed"
+TensorCensus = "passed"
+TinyParity = "passed"
+CheckpointParity = "passed"
+RewriteParity = "pending"
+Serve = "passed"
+[record.evidence]
+Config = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/nvfp4-rig-verify/gates.txt", "ci:verify-tiny"]
+TokenizerTemplate = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/nvfp4-rig-verify/gates.txt"]
+TensorCensus = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/nvfp4-rig-verify/gates.txt"]
+TinyParity = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/tiny/gates.txt", "ci:verify-tiny"]
+CheckpointParity = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/nvfp4-rig-verify/gates.txt"]
+Serve = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/nvfp4-rig-verify/gates.txt"]
+
