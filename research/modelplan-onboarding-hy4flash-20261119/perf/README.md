@@ -59,6 +59,8 @@ L2.
 | step 18: prefill hyper-connection reductions over one read | 17.35 [17.29-17.35] | 57.5 | 16.20 [16.17-16.20] | 61.5 | 105.8 | 403.8 |
 | step 21: prefill GEMM live slices, pair dequant, 8 warps (`receipts/s21-gemm-warps/`) | 17.29 [17.28-17.30] | 57.8 | 16.17 [16.14-16.20] | 61.6 | 116.3 | 434.8 |
 | step 22: prefill attention, queries resident, pieces read ahead (`receipts/s22-attn-prefetch/`) | 17.23 [17.23-17.30] | 57.8 | 16.15 [16.11-16.18] | 61.7 | 116.2 | 472.9 |
+| A/B, head (step 22 + review fixes) against step 18, interleaved A B B A A B, 3 runs an arm (`receipts/ab-final/`): step 18 | 17.27 | 57.80 | 16.13 | 61.68 | 105.2 | 402.8 |
+| same A/B: head | 17.32 | 57.62 | 16.15 | 61.77 | 116.1 | 473.7 |
 
 How the rows were read: steps 9, 17 and 18 one build a session, one after the other (not
 interleaved); steps 19 to 22 interleaved against the step before in both orders (`long` two
@@ -106,6 +108,18 @@ route as the native runner, then the five red arms (`tools/verify-chain.sh`). On
 `verified=Checkpoint`; Engram off fails at 0.0182 past the 0.0058 band, BF16 dequantization at
 0.0060, reversed ties are refused, the cache off by one fails at 0.0097, the early pool at 0.894
 past 0.0224: the points step 8 fails at.
+
+### The head on main (`receipts/final-gates/`, `receipts/ab-final/`)
+
+One build of the head (step 22 and the review's fixes): check3 3 of 3 `BITWISE_EQUAL`; the 12
+drafter gate logits hashes equal the pins; `memra model verify` Checkpoint and Serve passed;
+the serving chat gate PASS with drafts on and off; draft, bench and turns identity PASS.
+Interleaved sampled A/B against step 18 (A B B A A B, three runs an arm, each the median of
+three timed sequences; `summary.txt`, 250 ms telemetry in `telemetry-rb-final.csv.gz`: GPU
+47 to 70 C, SM clock 2190 MHz under load): `long` prefill 402.8 -> 473.7 tokens/s, `chat`
+prefill 105.2 -> 116.1; decode level (chat 57.80 -> 57.62 ms a step, long 61.68 -> 61.77);
+the same ids in every run. Both prompts' sampled decodes run past the end token (chat's first
+token, long's 33rd), so the decode figures time 63 calls, not a request's answer.
 
 ### On main with step 21 (`receipts/rebase-main/`)
 

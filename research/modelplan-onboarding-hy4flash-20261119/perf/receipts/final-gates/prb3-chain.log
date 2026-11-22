@@ -1,0 +1,45 @@
+CHAIN3 START 2026-11-22 05:28:41 e560965138f69cd98f9cad191af22f5ce8fa3c06
+run chatf rc=0
+run lsplit rc=0
+run long rc=0
+CHECK3 3/3
+gen chat rc=0
+gen long rc=0
+gate-route chat rc=0
+gate chat rc=0
+gate chat red layers rc=0
+gate chat red width rc=0
+gate chat red no-correction rc=0
+gate chat red topk rc=0
+gate-route long rc=0
+gate long rc=0
+gate long red layers rc=0
+gate long red width rc=0
+gate long red no-correction rc=0
+gate long red topk rc=0
+GATE HASHES EQUAL 12
+family=hy_v4_flash verified=Serve
+SERVE rc=0 2026-11-22 05:56:20
+Config=passed
+TokenizerTemplate=passed
+TensorCensus=passed
+TinyParity=pending
+CheckpointParity=passed
+RewriteParity=pending
+Serve=passed
+spec5 rc=0
+plain rc=0
+draft-identity rc=0
+bench-identity rc=0
+turns-identity rc=0
+==> serve/draft-identity-f.log <==
+DRAFT-IDENTITY PASS
+
+==> serve/bench-identity-f.log <==
+BENCH-IDENTITY PASS
+
+==> serve/turns-identity-f.log <==
+TURNS-IDENTITY PASS
+CHAT-GATE PASS
+CHAT-GATE PASS
+CHAIN3-DONE 2026-11-22 06:17:38

@@ -1,0 +1,28 @@
+AB START 2026-11-22 06:17:38 A=rb B=final
+6096f68e59e3f08c56c946002216a91acd5f6923645187b5ea5a37ffca27202a  bins/hy4f-gpu-rb
+b1119e43f2833c70e8f6fc9509d6e45075a70927ae7a9c1cb5400b5f56181733  bins/hy4f-gpu-final
+run 1 rb long rc=0
+run 2 final long rc=0
+run 3 final long rc=0
+run 4 rb long rc=0
+run 5 rb long rc=0
+run 6 final long rc=0
+run 7 rb chat rc=0
+run 8 final chat rc=0
+run 9 final chat rc=0
+run 10 rb chat rc=0
+run 11 rb chat rc=0
+run 12 final chat rc=0
+ab-rb-final-1-rb-long.jsonl N=3 prefill tok/s   402.40 [402.05-403.25] decode tok/s    16.11 [16.11-16.12] step p50 ms    61.82 [61.81-61.88] ids ead08f022a2590ca sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+ab-rb-final-2-final-long.jsonl N=3 prefill tok/s   472.85 [472.65-473.38] decode tok/s    16.12 [16.06-16.15] step p50 ms    61.80 [61.72-62.15] ids ead08f022a2590ca sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+ab-rb-final-3-final-long.jsonl N=3 prefill tok/s   473.73 [472.41-474.52] decode tok/s    16.16 [16.11-16.16] step p50 ms    61.71 [61.64-61.96] ids ead08f022a2590ca sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+ab-rb-final-4-rb-long.jsonl N=3 prefill tok/s   403.05 [402.28-403.13] decode tok/s    16.14 [16.12-16.15] step p50 ms    61.68 [61.65-61.83] ids ead08f022a2590ca sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+ab-rb-final-5-rb-long.jsonl N=3 prefill tok/s   402.85 [402.78-403.76] decode tok/s    16.13 [16.11-16.15] step p50 ms    61.64 [61.63-62.08] ids ead08f022a2590ca sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+ab-rb-final-6-final-long.jsonl N=3 prefill tok/s   473.82 [472.75-474.52] decode tok/s    16.15 [16.07-16.19] step p50 ms    61.77 [61.56-62.12] ids ead08f022a2590ca sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+ab-rb-final-10-rb-chat.jsonl N=3 prefill tok/s   105.17 [104.95-105.66] decode tok/s    17.18 [17.16-17.23] step p50 ms    58.08 [58.01-58.08] ids d6514054f539ff62 sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+ab-rb-final-11-rb-chat.jsonl N=3 prefill tok/s   106.80 [105.26-107.07] decode tok/s    17.27 [17.22-17.28] step p50 ms    57.80 [57.74-57.92] ids d6514054f539ff62 sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+ab-rb-final-12-final-chat.jsonl N=3 prefill tok/s   115.96 [115.65-116.04] decode tok/s    17.32 [17.32-17.33] step p50 ms    57.60 [57.54-57.61] ids d6514054f539ff62 sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+ab-rb-final-7-rb-chat.jsonl N=3 prefill tok/s   104.54 [104.09-105.10] decode tok/s    17.28 [17.28-17.29] step p50 ms    57.74 [57.68-57.80] ids d6514054f539ff62 sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+ab-rb-final-8-final-chat.jsonl N=3 prefill tok/s   116.07 [116.02-116.17] decode tok/s    17.33 [17.27-17.33] step p50 ms    57.62 [57.61-57.79] ids d6514054f539ff62 sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+ab-rb-final-9-final-chat.jsonl N=3 prefill tok/s   116.63 [116.59-116.81] decode tok/s    17.29 [17.27-17.30] step p50 ms    57.70 [57.67-57.81] ids d6514054f539ff62 sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+AB-DONE
