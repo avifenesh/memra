@@ -1,0 +1,12 @@
+gpulock: 5090 leased as claude-code-20261122T154626-541063 for 45m
+samples=8 clamp_hits=0 P5, 487 MHz, 810 MHz, 25.32 W, 174.89 W, 0x0000000000000400
+OK
+CLAMP_RC=0
+barrier blocks=82 threads=128: 0.580 us per barrier
+barrier blocks=82 threads=256: 0.581 us per barrier
+barrier blocks=164 threads=128: 0.582 us per barrier
+barrier blocks=164 threads=256: 0.586 us per barrier
+barrier blocks=328 threads=128: 0.589 us per barrier
+barrier blocks=328 threads=256: 0.598 us per barrier
+graph node grid=1 x256: 0.391 us per node
+graph node grid=82 x256: 0.405 us per node

@@ -247,3 +247,36 @@ blocks of one warp an SM (shared-memory bound, 16% occupancy), 90% of cycles wit
 stalls on long scoreboard (39%) and the MIO queue (34%), 43-54% of DRAM bandwidth.
 
 PERSISTENT-SLOT-DESIGN.md: the design of the per-slot persistent kernel for the latency-bound stages.
+
+## Step 15 (lane K): expert GEMM in fragment order, dense GEMV re-tiled, L2 prefetch (2026-11-22)
+
+Receipts: `s15-lanek/` (lkN.out = lease log with clampcheck, gate and identity lines; lkN-{rig,sh,rig4k} = 3
+interleaved takes in both orders with 250 ms telemetry, no voids anywhere; lkN-prof/bk-*.txt per-kernel breakdowns;
+binaries.sha256). Identity on every kept binary: ink2-gpu-gate 36/36, ink2-actq-gate 48/48 (lk3, lk5), digests equal
+to perf/pin-mixepi on shipped and nvfp4-rig at chunk 1/4/8/512, p2, p3 c1024, and to the base binary at chunk 2/3.
+
+| Change | A/B (tok/s, median of 3) | Verdict |
+|---|---|---|
+| decode expert ring RG = RING (twice the one-warp blocks an SM) (lk1, a29 vs a28) | rig 76.8 -> 74.8, shipped 66.7 -> 63.9, 4k 69.9 -> 68.0 | rejected, deleted |
+| expert weights in MMA-fragment order, register stream (lk3, a31 vs a30) | rig 67.6 -> 78.6, shipped 54.2 -> 63.0, 4k 61.9 -> 72.5 | kept |
+| L2 prefetch kernel in the main stream (lk2, a30 vs a28) | rig 76.9 -> 66.7 (the kernel holds the stream for its whole transfer, 30 us) | replaced by the side stream |
+| L2 prefetch on a side stream, 3-8 blocks (lk4 a32 vs a31; lk6 a33 vs a34 without prefetch) | vs in-stream 77.7 -> 92.8; vs none rig 91.7 -> 92.2, shipped 79.0 -> 75.6 | replaced: 363 GB/s, the GEMV waited 20 us at the join |
+| side-stream prefetch over every SM, 4 KB chunks (lk9, a37 vs a38) | rig 83.5 -> 84.1, shipped 77.2 -> 78.3, 4k 77.1 -> 77.0 | kept for now, inside noise: decide with the next GEMV |
+| programmatic dependent launch on every kernel (lk5, a33 vs a32) | rig 92.5 -> 92.1, shipped 75.4 -> 74.8, 4k 84.7 -> 83.0 | rejected, deleted |
+| dense NVFP4 GEMV, 32 rows a warp (lk8, a37 vs a36) | rig 90.9 -> 83.5 | rejected (one warp's serial work: proj 28.8 us, wo 34.5 us) |
+| dense NVFP4 GEMV, 8 rows a warp, fold along the stream (lk10, a39 vs a36) | rig 89.2 -> 92.0, shipped 76.0 -> 77.5, 4k 83.1 -> 84.9 | kept |
+
+Per kernel now (a39, nvfp4-rig c=1, per launch; roofline 865 GB/s DRAM):
+
+| Kernel | bytes | time | GB/s | of roofline |
+|---|---|---|---|---|
+| expert GEMM, a slot (w13 + w2, 8 experts) | 35.9 MB | 49.6 us | 724 | 84% |
+| dense projections (q, r, gate, k, v) | 11.1 MB | 19.2 us | 577 | 67% |
+| output projection | 4.0 MB | 13.7 us | 290 | 34% (72 blocks on 82 SMs: was 11.6 us in the old kernel) |
+| unembed | 259 MB | 398 us | 651 | 75% |
+
+FLOPs are not the limit anywhere in decode (the expert GEMM runs 2 x 8 x 4.6 M MACs a slot, about 0.1% of the 910 TF FP4 peak).
+
+Grid barrier vs graph node on this card (k-barrier/barrier.cu, lk11): a software grid barrier costs 0.58-0.60 us at
+82-328 blocks; an empty graph node 0.39-0.41 us. A persistent kernel therefore saves only the in-kernel ramp and
+serial latency of the small kernels, not node overhead: the fusion lane targets those.

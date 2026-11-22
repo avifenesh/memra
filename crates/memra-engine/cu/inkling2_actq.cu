@@ -307,25 +307,22 @@ __host__ __device__ constexpr int ink2_stride(int words) { return words + ((4 - 
 // FP8: K step 32, 4 bytes per word:
 //   a0 = row g, K[4t .. 4t + 4); a2 at K + 16; scale A: lane t = 0 row g, t = 1 row g + 8 (one byte)
 //   b0 = act column g, K[4t ..); b1 at K + 16; scale B: lane t = 0 column g
-constexpr int INK2_STAGE = 576;  // one ring stage: 16 rows x 32 B of codes + 16 scale words
-
-__device__ __forceinline__ void ink2_cp16(void* smem, const void* gmem) {
-    const uint32_t s = static_cast<uint32_t>(__cvta_generic_to_shared(smem));
-    asm volatile("cp.async.cg.shared.global [%0], [%1], 16;" ::"r"(s), "l"(gmem));
-}
-__device__ __forceinline__ void ink2_cp4(void* smem, const void* gmem) {
-    const uint32_t s = static_cast<uint32_t>(__cvta_generic_to_shared(smem));
-    asm volatile("cp.async.ca.shared.global [%0], [%1], 4;" ::"r"(s), "l"(gmem));
-}
-__device__ __forceinline__ void ink2_cp_commit() { asm volatile("cp.async.commit_group;" ::); }
-template <int PENDING>
-__device__ __forceinline__ void ink2_cp_wait() {
-    asm volatile("cp.async.wait_group %0;" ::"n"(PENDING));
+// The weights come in MMA-fragment order (ink2_frag_values / ink2_frag_scales in inkling2_actq.rs):
+// for each tile of 16 rows and each K step, 512 contiguous bytes in which lane L = 4g + t holds its
+// A fragment as 16 bytes, {a0, a1, a2, a3} above; the weight scales as [tile][word][16 rows] u32
+// (FP4 one word a step, FP8 one word per 4 steps). Each lane loads its fragment straight into
+// registers, one 16-byte load a step: the same operand values as a stage read back by ldmatrix.
+__device__ __forceinline__ uint4 ink2_ldg_stream(const uint4* p) {
+    uint4 v;
+    asm volatile("ld.global.nc.L1::no_allocate.v4.u32 {%0,%1,%2,%3}, [%4];"
+                 : "=r"(v.x), "=r"(v.y), "=r"(v.z), "=r"(v.w)
+                 : "l"(p));
+    return v;
 }
 
-// Weight stages each warp keeps in flight. 16 was measured beside 8 at every decode and prefill shape
-// and won nothing (research/modelplan-onboarding-inkling2mini-20261121/actquant/README.md).
-constexpr int RING = 8;
+// K steps of weight fragments a warp keeps in flight in registers.
+template <bool ONE>
+__host__ __device__ constexpr int ink2_depth() { return ONE ? 16 : 8; }
 
 template <bool FP4, int NB, bool ONE = false>
 __global__ void ink2_expert_gemm_kernel(const uint32_t* __restrict__ Act, const uint8_t* __restrict__ ActSc,
@@ -339,8 +336,7 @@ __global__ void ink2_expert_gemm_kernel(const uint32_t* __restrict__ Act, const 
     // ONE: every group holds one routed row (a decode step); only that column is staged, the MMA
     // reads zeros for the other seven, as it does from a staged column past a group's count
     constexpr int SCOLS = ONE ? 1 : COLS;
-    // a one-row group keeps twice the weight stages in flight (its block is small enough)
-    constexpr int RG = ONE ? 2 * RING : RING;
+    constexpr int D = ink2_depth<ONE>();
     const int words = K / KS * WPS;           // words per operand row
     const int steps = K / KS;
     const int scw = FP4 ? steps : (steps + 3) / 4;  // u32 words of scales per row
@@ -353,30 +349,26 @@ __global__ void ink2_expert_gemm_kernel(const uint32_t* __restrict__ Act, const 
     const uint32_t expert = grp[0], count = grp[1];
     if (count == 0u) return;  // an empty record of a device-built table
     const int n0 = (blockIdx.y * (nthr >> 5) + warp) * 16;
-    // The weights are the bytes of this kernel. Each warp keeps RING stages in flight in its own
-    // shared-memory ring: a stage is one K step of its 16 weight rows, 16 x 32 B of codes copied as 32
-    // 16-byte cp.async (lane 2r + h: row r, half h) plus the rows' scale words. ldmatrix.x4 reads a
-    // stage back as the A fragment: matrix 0 = rows 0..7 first half, 1 = rows 8..15 first half, 2 and 3
-    // the second halves, which is a0..a3.
-    // The ring's first stages are issued before the activation is staged: the weight stream does not
-    // wait on it, and the MMA sequence of every output is unchanged.
-    const int rowbytes = steps * 32;
-    const int scrow = FP4 ? 4 * steps : steps;
-    const int head = ((SCOLS * (stride + scw) * 4) + 15) & ~15;
-    uint8_t* ring = reinterpret_cast<uint8_t*>(ink2_sm) + head + warp * (RG * INK2_STAGE);
-    const uint8_t* wrow = reinterpret_cast<const uint8_t*>(W) + ((long)expert * N + n0) * rowbytes;
-    const uint8_t* wsrow = WSc + ((long)expert * N + n0) * scrow;
-    auto issue = [&](int s) {
-        uint8_t* stg = ring + (s % RG) * INK2_STAGE;
-        const int r = lane >> 1, h = lane & 1;
-        ink2_cp16(stg + r * 32 + h * 16, wrow + (long)r * rowbytes + s * 32 + h * 16);
-        // FP4: the step's 4 ue4m3 bytes; FP8: the 4 ue8m0 bytes of steps s & ~3 .. + 3
-        if (lane < 16) ink2_cp4(stg + 512 + lane * 4, wsrow + (long)lane * scrow + (FP4 ? s * 4 : (s & ~3)));
-    };
+    const int g = lane >> 2, t = lane & 3;
+    // scale source of this lane: FP4 lanes t = 2, 3; FP8 lanes t = 0, 1 (row g, row g + 8)
+    const int st = FP4 ? t - 2 : t;
+    const bool has_sa = st == 0 || st == 1;
+    const int sr = g + 8 * (st == 1);
+    // The weights are the bytes of this kernel. Each warp streams its tile's fragments D steps
+    // ahead in registers; the first D are issued before the activation is staged, so the weight
+    // stream does not wait on it, and the MMA sequence of every output is unchanged.
+    const long tile = ((long)expert * N + n0) >> 4;
+    const uint4* wf = reinterpret_cast<const uint4*>(W) + tile * steps * 32 + lane;
+    const uint32_t* wsf = reinterpret_cast<const uint32_t*>(WSc) + tile * scw * 16 + sr;
+    uint4 wb[D];
+    uint32_t sw[D];
     if (n0 < N) {
-        for (int s = 0; s < RG - 1; ++s) {
-            if (s < steps) issue(s);
-            ink2_cp_commit();
+#pragma unroll
+        for (int i = 0; i < D; ++i) {
+            if (i < steps) {
+                wb[i] = ink2_ldg_stream(wf + (long)i * 32);
+                sw[i] = has_sa ? __ldg(wsf + (FP4 ? i : i >> 2) * 16) : 0u;
+            }
         }
     }
     for (int i = tid; i < SCOLS * words; i += nthr) {
@@ -398,57 +390,44 @@ __global__ void ink2_expert_gemm_kernel(const uint32_t* __restrict__ Act, const 
     }
     __syncthreads();
     if (n0 >= N) return;
-    const int g = lane >> 2, t = lane & 3;
     float acc[NB][4];
 #pragma unroll
     for (int b = 0; b < NB; ++b) acc[b][0] = acc[b][1] = acc[b][2] = acc[b][3] = 0.0f;
-    const int li = lane >> 3, lr = lane & 7;
-    const int ldoff = ((li & 1) * 8 + lr) * 32 + (li >> 1) * 16;
-    // scale source of this lane: FP4 lanes t = 2, 3; FP8 lanes t = 0, 1 (row g, row g + 8)
-    const int st = FP4 ? t - 2 : t;
-    const bool has_sa = st == 0 || st == 1;
-    const int sr = g + 8 * (st == 1);
     const bool has_sb = FP4 ? t == 1 : t == 0;
-    for (int s = 0; s < steps; ++s) {
-        ink2_cp_wait<RG - 2>();
-        __syncwarp();  // stage s landed for every lane; stage s - 1's readers are done
-        if (s + RG - 1 < steps) issue(s + RG - 1);
-        ink2_cp_commit();
-        const uint8_t* stg = ring + (s % RG) * INK2_STAGE;
-        uint32_t a[4];
-        {
-            const uint32_t addr = static_cast<uint32_t>(__cvta_generic_to_shared(stg + ldoff));
-            asm volatile("ldmatrix.sync.aligned.m8n8.x4.b16 {%0,%1,%2,%3},[%4];"
-                         : "=r"(a[0]), "=r"(a[1]), "=r"(a[2]), "=r"(a[3])
-                         : "r"(addr));
-        }
-        uint32_t sa = 0;
-        if (has_sa) {
-            const uint32_t word = *reinterpret_cast<const uint32_t*>(stg + 512 + sr * 4);
-            sa = FP4 ? word : (word >> (8 * (s & 3))) & 0xffu;
-        }
+    for (int s0 = 0; s0 < steps; s0 += D) {
 #pragma unroll
-        for (int b = 0; b < NB; ++b) {
-            const int col = 8 * b + g;
-            const bool live = !ONE || col == 0;
-            const uint32_t b0 = live ? sact[col * stride + s * WPS + t] : 0u;
-            const uint32_t b1 = live ? sact[col * stride + s * WPS + 4 + t] : 0u;
-            uint32_t sb = 0;
-            if (has_sb && live) {
-                if constexpr (FP4) {
-                    sb = ssc[col * scw + s];
-                } else {
-                    sb = (ssc[col * scw + (s >> 2)] >> (8 * (s & 3))) & 0xffu;
+        for (int i = 0; i < D; ++i) {
+            const int s = s0 + i;
+            if (s < steps) {
+                const uint32_t a[4] = {wb[i].x, wb[i].y, wb[i].z, wb[i].w};
+                const uint32_t sa = FP4 ? sw[i] : (sw[i] >> (8 * (s & 3))) & 0xffu;
+                if (s + D < steps) {
+                    wb[i] = ink2_ldg_stream(wf + (long)(s + D) * 32);
+                    sw[i] = has_sa ? __ldg(wsf + (FP4 ? s + D : (s + D) >> 2) * 16) : 0u;
                 }
-            }
-            if constexpr (FP4) {
-                ink2_mma_fp4(acc[b], a, b0, b1, sa, sb);
-            } else {
-                ink2_mma_fp8(acc[b], a, b0, b1, sa, sb);
+#pragma unroll
+                for (int b = 0; b < NB; ++b) {
+                    const int col = 8 * b + g;
+                    const bool live = !ONE || col == 0;
+                    const uint32_t b0 = live ? sact[col * stride + s * WPS + t] : 0u;
+                    const uint32_t b1 = live ? sact[col * stride + s * WPS + 4 + t] : 0u;
+                    uint32_t sb = 0;
+                    if (has_sb && live) {
+                        if constexpr (FP4) {
+                            sb = ssc[col * scw + s];
+                        } else {
+                            sb = (ssc[col * scw + (s >> 2)] >> (8 * (s & 3))) & 0xffu;
+                        }
+                    }
+                    if constexpr (FP4) {
+                        ink2_mma_fp4(acc[b], a, b0, b1, sa, sb);
+                    } else {
+                        ink2_mma_fp8(acc[b], a, b0, b1, sa, sb);
+                    }
+                }
             }
         }
     }
-    ink2_cp_wait<0>();
     // d0 = (row g, col 2t), d1 = (row g, col 2t + 1), d2, d3 = row g + 8
     float rcp = 1.0f, wamax = 1.0f;
     if constexpr (FP4) {
@@ -542,7 +521,8 @@ int memra_ink2_group_words(int nb) { return 2 + 8 * nb; }
 // [R][K / 32] ue8m0; weights [E][N][K], [E][N][K / 32]). nb B tiles per group (W4A4: 1, 2 or 4; W8A8:
 // 1 or 2); groups is ngroups records of memra_ink2_group_words(nb) u32. out is bf16 [R][N], written
 // for the grouped rows only; acc (nullable) receives the fp32 accumulators [R][N] before the row scale.
-// wpb warps per block (0 = default: 2 for a decode group, 8 with several B tiles). N % 16 == 0;
+// The weights and their scales are in MMA-fragment order (ink2_frag_values / ink2_frag_scales).
+// wpb warps per block (0 = default: 1 for one-row groups, 4 for nb 1, 8 with several B tiles). N % 16 == 0;
 // K % 64 == 0 (W4A4) or K % 128 == 0 (W8A8).
 int memra_ink2_expert_gemm_x(int kind, int nb, const void* act, const void* act_scales, const float* act_amax,
                              const void* w, const void* w_scales, const float* w_amax, float denominator,
@@ -585,7 +565,7 @@ int memra_ink2_expert_gemm_x(int kind, int nb, const void* act, const void* act_
     const int words = K / ks * 8, steps = K / ks;
     const int scw = kind == 0 ? steps : (steps + 3) / 4;
     const size_t head = (static_cast<size_t>(one ? 1 : 8 * nb) * (ink2_stride(words) + scw) * sizeof(uint32_t) + 15) & ~size_t(15);
-    const size_t smem = head + static_cast<size_t>(wpb) * (one ? 2 * RING : RING) * INK2_STAGE;
+    const size_t smem = head;
     // groups on grid.x (up to 2^31 - 1), the N blocks of one group on grid.y (N / 16 / wpb, at most 65,535)
     const int nblocks = (N / 16 + wpb - 1) / wpb;
     if (nblocks > 65535) return 7;

@@ -70,7 +70,14 @@ Every kernel change must keep the digests. Commands (scratch under ~/.cache/inkl
 - NVFP4 jobs GEMV: 2-3 blocks an SM (registers / shared memory), 31-36% of DRAM, issue 28-43% busy; the
   branch-free e2m1 decode already halved its instructions.
 
-## Open items, in order
+## Lane K (2026-11-22, after this handoff)
+
+See README step 15 and docs/decisions/INKLING2-EXPERT-FRAGMENT-ORDER.md: the expert GEMM in fragment order (84% of
+DRAM), the dense NVFP4 GEMV re-tiled (projections 67%, unembed 75%), a side-stream L2 prefetch (inside noise),
+PDL and the smaller ring rejected. nvfp4-rig c=1 about 92 tok/s, shipped about 78. A grid barrier costs 0.58 us and
+a graph node 0.40 us on this card.
+
+## Open items, in order (lane P's list)
 
 1. Smaller ring for decode expert groups (RG = RING instead of 2*RING for ONE): twice the warps an SM; one
    A/B.

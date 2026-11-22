@@ -1513,6 +1513,137 @@ __global__ void __launch_bounds__(256) ink2g_gemv_rows_kernel(const float* __res
   }
 }
 
+// ---- dense NVFP4 GEMV, rows a warp folded across lanes ---------------------------------------------
+// ink2g_gemv_kernel's NVFP4 program per output, unchanged: per 16-input group a fused multiply-add
+// chain from 0 over the e2m1 codes in input order, the groups folded in ascending order as
+// fmaf(partial, e4m3 scale, sum) from 0, the tensor scale once in f64. Its bits equal
+// ink2g_gemv_nvfp4_jobs_kernel's and the tile GEMM's, for every row of a call of R rows alike.
+// What changes is who computes what: a warp owns INK2G_G4_RW weight rows; per 32 groups, lane L forms
+// group L's partial of each of its rows (a row's 256 code bytes one coalesced load, the next 32
+// groups' loads issued before these compute), the partials go through a shared tile, and lane r
+// folds row r's 32 partials in order with its own scale bytes, so the fold runs along the stream
+// instead of as one serial tail. Small blocks keep a decode step's grid in one wave.
+#define INK2G_G4_WARPS 4
+#define INK2G_G4_RW 8
+template <int ITERS, int R>
+__global__ void __launch_bounds__(32 * INK2G_G4_WARPS) ink2g_gemv4_kernel(const Ink2gRowJobs jt, int64_t ldx, int k) {
+  constexpr int RW = INK2G_G4_RW;
+  extern __shared__ float ink2g_g4[];
+  int j = 0;
+  while (j + 1 < jt.count && (int)blockIdx.x >= jt.first[j + 1]) j++;
+  const int n = jt.n[j];
+  const float* x = jt.x[j];
+  const uint8_t* w = (const uint8_t*)jt.w[j];
+  const uint8_t* sc = jt.sc[j];
+  const int groups = k >> 4;
+  const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+  float* xs = ink2g_g4;                                 // [R][16][groups]
+  float* pt = ink2g_g4 + R * k + warp * (RW * 33);      // [RW rows][33]
+  const int r0 = (((int)blockIdx.x - jt.first[j]) * INK2G_G4_WARPS + warp) * RW;
+  uint2 c[RW];
+  auto load = [&](uint2 (&cc)[RW], int it) {
+    const int g = it * 32 + lane;
+#pragma unroll
+    for (int q = 0; q < RW; q++) {
+      const int row = r0 + q;
+      cc[q] = (row < n && g < groups) ? __ldcs(reinterpret_cast<const uint2*>(w + (int64_t)row * (k / 2)) + g)
+                                      : make_uint2(0u, 0u);
+    }
+  };
+  load(c, 0);  // the weights do not wait on the input staging
+  for (int i = threadIdx.x; i < R * k; i += 32 * INK2G_G4_WARPS) {
+    const int r = i / k, e = i - r * k;
+    xs[r * k + (e & 15) * groups + (e >> 4)] = x[(int64_t)r * ldx + e];
+  }
+  __syncthreads();
+  if (r0 >= n) return;
+  const int my = r0 + lane;  // the row lane < RW folds
+  const bool folds = lane < RW && my < n;
+  float acc[R];
+#pragma unroll
+  for (int r = 0; r < R; r++) acc[r] = 0.0f;
+#pragma unroll
+  for (int it = 0; it < ITERS; it++) {
+    const int g = it * 32 + lane;
+    uint2 cn[RW];
+    if (it + 1 < ITERS) load(cn, it + 1);
+    // the scale bytes of this lane's row for these 32 groups (groups % 16 == 0: 16-byte aligned)
+    const int live = groups - it * 32 < 32 ? groups - it * 32 : 32;
+    uint4 s16[2] = {make_uint4(0u, 0u, 0u, 0u), make_uint4(0u, 0u, 0u, 0u)};
+    if (folds) {
+      const uint4* sp = reinterpret_cast<const uint4*>(sc + (int64_t)my * groups + it * 32);
+      s16[0] = __ldg(sp);
+      if (live > 16) s16[1] = __ldg(sp + 1);
+    }
+    const uint8_t* sb = reinterpret_cast<const uint8_t*>(s16);
+#pragma unroll
+    for (int r = 0; r < R; r++) {
+      float xv[16];
+#pragma unroll
+      for (int i = 0; i < 16; i++) xv[i] = g < groups ? xs[r * k + i * groups + g] : 0.0f;
+#pragma unroll
+      for (int q = 0; q < RW; q++) {
+        float wv[16];
+        ink2g_e2m1x8(c[q].x, wv);
+        ink2g_e2m1x8(c[q].y, wv + 8);
+        float part = 0.0f;
+#pragma unroll
+        for (int i = 0; i < 16; i++) part = fmaf(xv[i], wv[i], part);
+        pt[q * 33 + lane] = part;
+      }
+      __syncwarp();
+      if (folds) {
+        float a = acc[r];
+#pragma unroll
+        for (int gg = 0; gg < 32; gg++)
+          if (gg < live) a = fmaf(pt[lane * 33 + gg], ink2g_e4m3(sb[gg]), a);
+        acc[r] = a;
+      }
+      __syncwarp();
+    }
+    if (it + 1 < ITERS) {
+#pragma unroll
+      for (int q = 0; q < RW; q++) c[q] = cn[q];
+    }
+  }
+  if (folds) {
+#pragma unroll
+    for (int r = 0; r < R; r++)
+      jt.y[j][(int64_t)r * jt.ldy[j] + my] = (float)((double)acc[r] * (double)jt.amax[j][0] / (double)jt.denom[j]);
+  }
+}
+
+template <int R>
+int ink2g_gemv4_r(Ink2gRowJobs jt, int64_t ldx, int k, cudaStream_t stream) {
+  if (k <= 0 || (k % 256) != 0 || k > INK2G_GV_MAX_K) return -1;
+  const size_t smem = (size_t)R * k * 4 + (size_t)INK2G_G4_WARPS * INK2G_G4_RW * 33 * 4;
+  int blocks = 0;
+  for (int j = 0; j < jt.count; j++) {
+    if (((uintptr_t)jt.w[j] & 7) != 0 || ((uintptr_t)jt.sc[j] & 15) != 0) return -1;
+    jt.first[j] = blocks;
+    blocks += (jt.n[j] + INK2G_G4_RW * INK2G_G4_WARPS - 1) / (INK2G_G4_RW * INK2G_G4_WARPS);
+  }
+  jt.first[jt.count] = blocks;
+  auto go = [&](auto kern) -> int {
+    if (smem > 48 * 1024) {
+      const cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+      if (e != cudaSuccess) return 10000 + (int)e;
+    }
+    kern<<<blocks, 32 * INK2G_G4_WARPS, smem, stream>>>(jt, ldx, k);
+    return ink2g_rc();
+  };
+  switch ((k / 16 + 31) / 32) {
+    case 8: return go(ink2g_gemv4_kernel<8, R>);
+    case 5: return go(ink2g_gemv4_kernel<5, R>);
+    case 6: return go(ink2g_gemv4_kernel<6, R>);
+    case 7: return go(ink2g_gemv4_kernel<7, R>);
+    case 1: return go(ink2g_gemv4_kernel<1, R>);
+    case 2: return go(ink2g_gemv4_kernel<2, R>);
+    case 3: return go(ink2g_gemv4_kernel<3, R>);
+    default: return go(ink2g_gemv4_kernel<4, R>);
+  }
+}
+
 // rows 1..4 of x through the multi-row GEMV; -1 when the shape does not fit
 template <int R, bool FP4>
 int ink2g_gemv_rows_r(const float* x, int64_t ldx, const void* w, const uint8_t* sc, const float* amax, float denom,
@@ -1552,13 +1683,29 @@ int ink2g_gemv_rows(const float* x, int64_t ldx, const void* w, const uint8_t* s
     const int r = m - r0 < 4 ? m - r0 : 4;
     const float* xr = x + (int64_t)r0 * ldx;
     float* yr = y + (int64_t)r0 * ldy;
-    int rc;
+    int rc = -1;
     if (fp4) {
+      Ink2gRowJobs jt{};
+      jt.count = 1;
+      jt.x[0] = xr;
+      jt.w[0] = w;
+      jt.sc[0] = sc;
+      jt.amax[0] = amax;
+      jt.denom[0] = denom;
+      jt.y[0] = yr;
+      jt.ldy[0] = ldy;
+      jt.n[0] = n;
+      rc = r == 1 ? ink2g_gemv4_r<1>(jt, ldx, k, stream)
+         : r == 2 ? ink2g_gemv4_r<2>(jt, ldx, k, stream)
+         : r == 3 ? ink2g_gemv4_r<3>(jt, ldx, k, stream)
+                  : ink2g_gemv4_r<4>(jt, ldx, k, stream);
+    }
+    if (rc == -1 && fp4) {
       rc = r == 1 ? ink2g_gemv_rows_r<1, true>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream)
          : r == 2 ? ink2g_gemv_rows_r<2, true>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream)
          : r == 3 ? ink2g_gemv_rows_r<3, true>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream)
                   : ink2g_gemv_rows_r<4, true>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream);
-    } else {
+    } else if (rc == -1) {
       rc = r == 1 ? ink2g_gemv_rows_r<1, false>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream)
          : r == 2 ? ink2g_gemv_rows_r<2, false>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream)
          : r == 3 ? ink2g_gemv_rows_r<3, false>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream)
@@ -1704,6 +1851,27 @@ int ink2g_gemv_nvfp4_jobs(const float* const* xs, const void* const* ws, const v
                           const float* const* amaxs, const float* denoms, float* const* ys, const int* ns, int count,
                           int k, cudaStream_t stream) {
   if (count <= 0 || count > INK2G_JOBS || k <= 0 || (k % 16) != 0 || k > INK2G_GV_MAX_K) return -1;
+  {
+    // the 32-rows-a-warp GEMV (the same bits) where the shape fits
+    Ink2gRowJobs jt{};
+    jt.count = count;
+    bool ok = true;
+    for (int j = 0; j < count; j++) {
+      ok = ok && xs[j] && ws[j] && scs[j] && amaxs[j] && ys[j] && ns[j] > 0;
+      jt.x[j] = xs[j];
+      jt.w[j] = ws[j];
+      jt.sc[j] = (const uint8_t*)scs[j];
+      jt.amax[j] = amaxs[j];
+      jt.denom[j] = denoms[j];
+      jt.y[j] = ys[j];
+      jt.ldy[j] = 0;
+      jt.n[j] = ns[j];
+    }
+    if (ok) {
+      const int rc = ink2g_gemv4_r<1>(jt, 0, k, stream);
+      if (rc != -1) return rc;
+    }
+  }
   Ink2gJobs4 jobs;
   int blocks = 0;
   for (int j = 0; j < INK2G_JOBS; j++) {
@@ -2141,6 +2309,42 @@ static int ink2g_attn_any(const float* q, const float* rel, const float* table, 
   return ink2g_rc();
 }
 
+// ---- L2 weight prefetch ---------------------------------------------------------------------------
+// Issues L2 prefetches of up to INK2G_PF_MAX byte ranges (the weights of a GEMV that runs a few
+// latency-bound kernels later) and returns: the fills run on in the memory system while the next
+// kernels execute. A hint only: it writes nothing and changes no result. Each thread takes chunks of
+// INK2G_PF_CHUNK bytes, over one-warp blocks on every SM (a block's bulk prefetches go through its
+// SM's copy engine: three blocks moved 13 MB at 363 GB/s); a 16-byte aligned chunk is one cp.async.bulk.prefetch.L2 (sm_90+), the
+// rest (and other targets) one prefetch.global.L2 per 128-byte line.
+#define INK2G_PF_MAX 32
+#define INK2G_PF_CHUNK 4096
+struct Ink2gPf {
+  const char* p[INK2G_PF_MAX];
+  uint64_t n[INK2G_PF_MAX];
+  int count;
+};
+
+__global__ void __launch_bounds__(32) ink2g_l2_prefetch_kernel(const Ink2gPf pf) {
+  const int64_t t = (int64_t)blockIdx.x * blockDim.x + threadIdx.x, nt = (int64_t)gridDim.x * blockDim.x;
+  for (int r = 0; r < pf.count; ++r) {
+    const char* p = pf.p[r];
+    const uint64_t n = pf.n[r];
+    const int64_t chunks = (int64_t)((n + INK2G_PF_CHUNK - 1) / INK2G_PF_CHUNK);
+    for (int64_t c = t; c < chunks; c += nt) {
+      const uint64_t off = (uint64_t)c * INK2G_PF_CHUNK;
+      const uint64_t len = n - off < INK2G_PF_CHUNK ? n - off : INK2G_PF_CHUNK;
+      uint64_t done = 0;
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+      if ((reinterpret_cast<uintptr_t>(p + off) & 15) == 0 && len >= 16) {
+        done = len & ~uint64_t(15);
+        asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;" ::"l"(p + off), "r"((uint32_t)done) : "memory");
+      }
+#endif
+      for (uint64_t b = done; b < len; b += 128) asm volatile("prefetch.global.L2 [%0];" ::"l"(p + off + b));
+    }
+  }
+}
+
 extern "C" {
 
 int memra_ink2g_tile_words() { return INK2G_TILE_WORDS; }
@@ -2260,13 +2464,24 @@ int memra_ink2g_gemv_rows_jobs(const float* const* xs, int64_t ldx, const void* 
   for (int r0 = 0; r0 < m; r0 += 4) {
     const int r = m - r0 < 4 ? m - r0 : 4;
     const cudaStream_t st = (cudaStream_t)stream;
-    int rc;
-    if (fp4)
+    int rc = -1;
+    if (fp4) {
+      Ink2gRowJobs jp = jt;
+      for (int j = 0; j < count; j++) {
+        jp.x[j] = xs[j] + (int64_t)r0 * ldx;
+        jp.y[j] = jt.y[j] + (int64_t)r0 * jt.ldy[j];
+      }
+      rc = r == 1 ? ink2g_gemv4_r<1>(jp, ldx, k, st)
+         : r == 2 ? ink2g_gemv4_r<2>(jp, ldx, k, st)
+         : r == 3 ? ink2g_gemv4_r<3>(jp, ldx, k, st)
+                  : ink2g_gemv4_r<4>(jp, ldx, k, st);
+    }
+    if (rc == -1 && fp4)
       rc = r == 1 ? ink2g_gemv_rows_jobs_r<1, true>(jt, xs, ldx, r0, k, st)
          : r == 2 ? ink2g_gemv_rows_jobs_r<2, true>(jt, xs, ldx, r0, k, st)
          : r == 3 ? ink2g_gemv_rows_jobs_r<3, true>(jt, xs, ldx, r0, k, st)
                   : ink2g_gemv_rows_jobs_r<4, true>(jt, xs, ldx, r0, k, st);
-    else
+    else if (rc == -1)
       rc = r == 1 ? ink2g_gemv_rows_jobs_r<1, false>(jt, xs, ldx, r0, k, st)
          : r == 2 ? ink2g_gemv_rows_jobs_r<2, false>(jt, xs, ldx, r0, k, st)
          : r == 3 ? ink2g_gemv_rows_jobs_r<3, false>(jt, xs, ldx, r0, k, st)
@@ -2648,6 +2863,84 @@ int memra_ink2g_groups(const uint32_t* ids, uint32_t* groups, int pairs, void* s
   if (!ids || !groups || pairs <= 0) return 45039;
   ink2g_groups_kernel<<<(pairs + 63) / 64, 64, 0, (cudaStream_t)stream>>>(ids, groups, pairs);
   return ink2g_rc();
+}
+
+// L2 prefetch on a side stream: the prefetch kernel holds its threads until the bytes land, so it
+// runs beside the main stream (a parallel branch of a captured graph) and the main stream joins it
+// before the GEMV that reads the bytes. *handle (0 at first) owns the side stream and two events.
+struct Ink2gPfHandle {
+  cudaStream_t side;
+  cudaEvent_t fork, join;
+  int pending;
+};
+
+static int ink2g_pf_handle(uint64_t* handle, Ink2gPfHandle** out) {
+  if (!handle) return 45050;
+  if (*handle == 0) {
+    Ink2gPfHandle* h = new Ink2gPfHandle{};
+    if (cudaStreamCreateWithFlags(&h->side, cudaStreamNonBlocking) != cudaSuccess ||
+        cudaEventCreateWithFlags(&h->fork, cudaEventDisableTiming) != cudaSuccess ||
+        cudaEventCreateWithFlags(&h->join, cudaEventDisableTiming) != cudaSuccess) {
+      delete h;
+      return ink2g_rc();
+    }
+    *handle = (uint64_t)(uintptr_t)h;
+  }
+  *out = (Ink2gPfHandle*)(uintptr_t)*handle;
+  return 0;
+}
+
+// The main stream waits for the last prefetch issued through handle (nothing when none is pending).
+int memra_ink2g_l2_join(uint64_t* handle, void* stream) {
+  if (!handle || *handle == 0) return 0;
+  Ink2gPfHandle* h = (Ink2gPfHandle*)(uintptr_t)*handle;
+  if (!h->pending) return 0;
+  h->pending = 0;
+  const cudaError_t e = cudaStreamWaitEvent((cudaStream_t)stream, h->join, 0);
+  return e == cudaSuccess ? 0 : 10000 + (int)e;
+}
+
+// Frees the side stream and events of a handle (after the main stream is synchronized).
+void memra_ink2g_l2_free(uint64_t handle) {
+  if (handle == 0) return;
+  Ink2gPfHandle* h = (Ink2gPfHandle*)(uintptr_t)handle;
+  cudaEventDestroy(h->fork);
+  cudaEventDestroy(h->join);
+  cudaStreamDestroy(h->side);
+  delete h;
+}
+
+// L2 prefetch of n byte ranges (ptrs[i], bytes[i]); n <= 32, empty ranges skipped. Joins the
+// previous prefetch, then forks the side stream from the main stream's current point and issues
+// the prefetch kernel there. Returns 0, 45050 (bad arguments) or 10000 + cudaError.
+int memra_ink2g_l2_prefetch(uint64_t* handle, const void* const* ptrs, const uint64_t* bytes, int n, void* stream) {
+  if (n < 0 || n > INK2G_PF_MAX || (n > 0 && (!ptrs || !bytes))) return 45050;
+  Ink2gPf pf{};
+  int64_t chunks = 0;
+  for (int i = 0; i < n; ++i) {
+    if (!ptrs[i] || bytes[i] == 0) continue;
+    pf.p[pf.count] = (const char*)ptrs[i];
+    pf.n[pf.count] = bytes[i];
+    chunks += (int64_t)((bytes[i] + INK2G_PF_CHUNK - 1) / INK2G_PF_CHUNK);
+    ++pf.count;
+  }
+  if (pf.count == 0) return 0;
+  int rc = memra_ink2g_l2_join(handle, stream);
+  if (rc) return rc;
+  Ink2gPfHandle* h = nullptr;
+  rc = ink2g_pf_handle(handle, &h);
+  if (rc) return rc;
+  cudaError_t e = cudaEventRecord(h->fork, (cudaStream_t)stream);
+  if (e == cudaSuccess) e = cudaStreamWaitEvent(h->side, h->fork, 0);
+  if (e != cudaSuccess) return 10000 + (int)e;
+  const int64_t blocks = (chunks + 31) / 32;
+  ink2g_l2_prefetch_kernel<<<(unsigned)(blocks < 164 ? blocks : 164), 32, 0, h->side>>>(pf);
+  rc = ink2g_rc();
+  if (rc) return rc;
+  e = cudaEventRecord(h->join, h->side);
+  if (e != cudaSuccess) return 10000 + (int)e;
+  h->pending = 1;
+  return 0;
 }
 
 int memra_ink2g_copy(void* dst, const void* src, int64_t bytes, void* stream) {

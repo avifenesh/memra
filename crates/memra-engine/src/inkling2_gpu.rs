@@ -461,6 +461,15 @@ mod ffi {
             bytes: i64,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_ink2g_l2_prefetch(
+            handle: *mut u64,
+            ptrs: *const *const c_void,
+            bytes: *const u64,
+            n: i32,
+            stream: *mut c_void,
+        ) -> i32;
+        pub fn memra_ink2g_l2_join(handle: *mut u64, stream: *mut c_void) -> i32;
+        pub fn memra_ink2g_l2_free(handle: u64);
 
         // cu/inkling2_actq.cu (the declared expert program)
         pub fn memra_ink2_actq_built() -> i32;
@@ -597,6 +606,34 @@ fn gemv_nvfp4_jobs(
     })
 }
 
+/// L2 prefetch of the weights a GEMV a few latency-bound kernels later reads (at most 32 ranges of
+/// (device address, bytes)), on the device's side stream: forked from the main stream here, so the
+/// fills overlap the kernels between, and joined by [`l2_join`] before the GEMV. A hint only; no
+/// result changes.
+fn l2_prefetch(dev: &Dev, ranges: &[(u64, usize)]) -> Result<(), String> {
+    if ranges.is_empty() {
+        return Ok(());
+    }
+    let ps: Vec<*const c_void> = ranges.iter().map(|r| r.0 as *const c_void).collect();
+    let ns: Vec<u64> = ranges.iter().map(|r| r.1 as u64).collect();
+    dev.launched("memra_ink2g_l2_prefetch", unsafe {
+        ffi::memra_ink2g_l2_prefetch(
+            dev.pf.as_ptr(),
+            ps.as_ptr(),
+            ns.as_ptr(),
+            ps.len() as i32,
+            dev.sp(),
+        )
+    })
+}
+
+/// The main stream waits for the pending prefetch (none: nothing).
+fn l2_join(dev: &Dev) -> Result<(), String> {
+    ck("memra_ink2g_l2_join", unsafe {
+        ffi::memra_ink2g_l2_join(dev.pf.as_ptr(), dev.sp())
+    })
+}
+
 fn ck(name: &str, rc: i32) -> Result<(), String> {
     match rc {
         0 => Ok(()),
@@ -634,6 +671,17 @@ pub struct Dev {
     pub allocated: Cell<usize>,
     /// The precision arm of each operation group (0: the f64 program).
     pub prec: Cell<Prec>,
+    /// The L2 prefetch side stream and its events (0 until the first prefetch).
+    pf: Cell<u64>,
+}
+
+impl Drop for Dev {
+    fn drop(&mut self) {
+        let h = self.pf.get();
+        if h != 0 && self.bind().is_ok() && self.sync().is_ok() {
+            unsafe { ffi::memra_ink2g_l2_free(h) };
+        }
+    }
 }
 
 /// Precision arms per operation group: 0 = f64 (the #1397 program), 1 = f32, 2 = f32 with every
@@ -764,6 +812,7 @@ impl Dev {
             round_trips: Cell::new(0),
             allocated: Cell::new(0),
             prec: Cell::new(Prec::default()),
+            pf: Cell::new(0),
         }
     }
 
@@ -1187,7 +1236,49 @@ fn bf16_parts(w: &CudaSlice<u8>, st: &CudaStream) -> WeightParts {
     (FMT_BF16, dptr(w, st), 0, 0)
 }
 
+fn range(s: &CudaSlice<u8>, st: &CudaStream) -> (u64, usize) {
+    (dptr(s, st), s.len())
+}
+
+impl LayerW {
+    /// The weights a slot's attention-input stages and projections read (controllers on a message
+    /// slot), for an L2 prefetch issued while the slot before it finishes.
+    fn proj_ranges(&self, st: &CudaStream, message: bool) -> Vec<(u64, usize)> {
+        let mut v = Vec::new();
+        if message && let Some((ctrls, _)) = &self.ctrl {
+            for c in ctrls {
+                v.extend([range(&c.down, st), range(&c.forget, st), range(&c.gain, st)]);
+            }
+        }
+        for d in [&self.wq, &self.wr, &self.gate, &self.wk, &self.wv] {
+            v.extend(d.ranges(st));
+        }
+        v.push(range(&self.sink, st));
+        for c in [&self.kconv, &self.vconv] {
+            if let Some((wp, _)) = &c.dynamic {
+                v.push(range(wp, st));
+            }
+        }
+        v
+    }
+
+    /// The output projection and the router, prefetched while the slot's attention runs.
+    fn out_ranges(&self, st: &CudaStream) -> Vec<(u64, usize)> {
+        let mut v = self.wo.ranges(st);
+        v.push(range(&self.router_w, st));
+        v
+    }
+}
+
 impl DenseW {
+    fn ranges(&self, st: &CudaStream) -> Vec<(u64, usize)> {
+        let mut v = vec![range(&self.data, st)];
+        if let Some(s) = &self.scales {
+            v.push(range(s, st));
+        }
+        v
+    }
+
     fn parts(&self, st: &CudaStream) -> WeightParts {
         (
             self.fmt,
@@ -1290,9 +1381,14 @@ struct Bank {
     denom: f32,
     n: usize,
     k: usize,
+    /// The bytes are in the declared expert GEMM's fragment order
+    /// ([`crate::inkling2_actq::ink2_frag_values`]); otherwise row-major as stored (the float class).
+    frag: bool,
 }
 
 impl Bank {
+    /// frag: the layer's experts run the declared GEMM, which reads fragment order.
+    #[allow(clippy::too_many_arguments)] // allow: one bank's tensor, format and shape
     fn load(
         ck: &Ckpt,
         dev: &Dev,
@@ -1301,8 +1397,31 @@ impl Bank {
         experts: usize,
         n: usize,
         k: usize,
+        frag: bool,
     ) -> Result<Self, String> {
         let nan = |bytes: &[u8]| bytes.iter().any(|b| b & 0x7f == 0x7f);
+        let up = |bytes: &[u8], rowbytes: usize| -> Result<CudaSlice<u8>, String> {
+            if frag {
+                dev.up(&crate::inkling2_actq::ink2_frag_values(
+                    bytes,
+                    experts * n,
+                    rowbytes,
+                )?)
+            } else {
+                dev.up(bytes)
+            }
+        };
+        let up_scales = |bytes: &[u8], rowbytes: usize| -> Result<CudaSlice<u8>, String> {
+            if frag {
+                dev.up(&crate::inkling2_actq::ink2_frag_scales(
+                    bytes,
+                    experts * n,
+                    rowbytes,
+                )?)
+            } else {
+                dev.up(bytes)
+            }
+        };
         match format {
             ExpertWeightFormat::Nvfp4Amax => {
                 if !k.is_multiple_of(16) {
@@ -1324,12 +1443,13 @@ impl Bank {
                 check_nvfp4_globals(name, &amax, denom)?;
                 Ok(Self {
                     fmt: FMT_NVFP4,
-                    data: dev.up(codes)?,
-                    scales: dev.up(scales)?,
+                    data: up(codes, k / 2)?,
+                    scales: up_scales(scales, k / 16)?,
                     amax: dev.up(&amax)?,
                     denom,
                     n,
                     k,
+                    frag,
                 })
             }
             ExpertWeightFormat::Mxfp8Row32 => {
@@ -1346,12 +1466,13 @@ impl Bank {
                 check_ue8m0(name, scales)?;
                 Ok(Self {
                     fmt: FMT_MXFP8,
-                    data: dev.up(values)?,
-                    scales: dev.up(scales)?,
+                    data: up(values, k)?,
+                    scales: up_scales(scales, k / 32)?,
                     amax: dev.up(&[1.0f32])?,
                     denom: 1.0,
                     n,
                     k,
+                    frag,
                 })
             }
         }
@@ -2020,6 +2141,7 @@ impl Route {
                     experts,
                     2 * width,
                     hidden,
+                    numerics.activation == ExpertActivationMode::Declared,
                 )?,
                 w2: Bank::load(
                     ck,
@@ -2029,6 +2151,7 @@ impl Route {
                     experts,
                     hidden,
                     width,
+                    numerics.activation == ExpertActivationMode::Declared,
                 )?,
                 ctrl,
             });
@@ -2335,6 +2458,9 @@ impl Route {
         y: &mut CudaSlice<f32>,
         round_bf16: bool,
     ) -> Result<(), String> {
+        if bank.frag {
+            return Err("the float-input GEMM reads a row-major bank, not fragment order".into());
+        }
         let st = &dev.st;
         let (ws, ss) = bank.strides();
         dev.launched("memra_ink2g_gemm", unsafe {
@@ -2540,11 +2666,26 @@ impl Route {
             )
         })?;
 
+        // the next slot's projection weights go to L2 while the latency-bound kernels before them run
+        let prefetch_slot = |dev: &Dev, at: usize| -> Result<(), String> {
+            match lp.execution_order.get(at) {
+                Some(&next) => {
+                    let info = lp.slots[next as usize];
+                    l2_prefetch(
+                        dev,
+                        &layers[info.physical_layer as usize].proj_ranges(&st, info.message),
+                    )
+                }
+                None => Ok(()),
+            }
+        };
+        prefetch_slot(dev, 0)?;
+
         let mut blocks: Vec<u32> = Vec::new();
         let mut prelude_blocks: Option<Vec<u32>> = None;
         let mut bank: Option<Vec<u32>> = None;
         let mut pass = None;
-        for &slot in &lp.execution_order {
+        for (si, &slot) in lp.execution_order.iter().enumerate() {
             let info = lp.slots[slot as usize];
             if info.pass != pass {
                 match info.pass {
@@ -2698,6 +2839,7 @@ impl Route {
                 )
             })?;
             let [xq, xk, xv] = normed;
+            l2_join(dev)?;
 
             // ---- projections
             let proj = |dev: &Dev,
@@ -2800,6 +2942,8 @@ impl Route {
                     )?;
                 }
             }
+
+            l2_prefetch(dev, &lw.out_ranges(&st))?;
 
             // ---- clip / tau epilogues on Q and R
             let (log_floor, alpha) = match a.log_scale {
@@ -3134,6 +3278,7 @@ impl Route {
                     dev.sp(),
                 )
             })?;
+            l2_join(dev)?;
             lw.wo.gemm(
                 dev,
                 dptr(&w.att, &st),
@@ -3247,6 +3392,7 @@ impl Route {
             Self::experts(
                 dev, w, lw, m, program, mode, red, rows, hidden, slot, &mut obs,
             )?;
+            prefetch_slot(dev, si + 1)?;
             if let Some(o) = obs.as_deref_mut()
                 && o.wants(Tap::MoeOut)
             {
@@ -3275,6 +3421,8 @@ impl Route {
                 return Err(format!("injected failure after slot {slot}"));
             }
         }
+
+        l2_join(dev)?;
 
         // ---- head: output mix, norm, unembed over the kept rows, softcap
         let last = plan.layers.last().ok_or("an empty plan")?;
@@ -3692,6 +3840,9 @@ fn declared_experts(
     if w13.fmt != w2.fmt || w13.k != hidden || w13.n != 2 * width || w2.k != width || w2.n != hidden
     {
         return Err("declared experts: bank shapes disagree with the layer".into());
+    }
+    if !w13.frag || !w2.frag {
+        return Err("declared experts: the banks are not in the GEMM's fragment order".into());
     }
     let kind = if w13.fmt == FMT_NVFP4 { 0 } else { 1 };
     let key = (caps.0.to_bits(), caps.1.to_bits());
@@ -4417,6 +4568,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             denom,
             n,
             k,
+            frag: false,
         };
         let x = rng.vec(rows * k, 1.0);
         let ids: Vec<u32> = (0..pairs)
@@ -5212,14 +5364,21 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             let (d2, s2, a2) = make(hidden, width);
             let denom = if fmt == FMT_NVFP4 { 2688.0f32 } else { 1.0 };
             let bank = |data: &[u8], scales: &[u8], amax: &[f32], n: usize, k: usize| {
+                let (vb, sb) = if fmt == FMT_NVFP4 {
+                    (k / 2, k / 16)
+                } else {
+                    (k, k / 32)
+                };
+                let rows = data.len() / vb;
                 Ok::<Bank, String>(Bank {
                     fmt,
-                    data: dev.up(data)?,
-                    scales: dev.up(scales)?,
+                    data: dev.up(&crate::inkling2_actq::ink2_frag_values(data, rows, vb)?)?,
+                    scales: dev.up(&crate::inkling2_actq::ink2_frag_scales(scales, rows, sb)?)?,
                     amax: dev.up(amax)?,
                     denom,
                     n,
                     k,
+                    frag: true,
                 })
             };
             let w13 = bank(&d13, &s13, &a13, 2 * width, hidden)?;
