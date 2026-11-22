@@ -467,14 +467,17 @@ mod tests {
                         c.numeric_class
                     );
                 }
-                let gate = pack
-                    .checkpoint_parity
-                    .expect("native reference packs require a checkpoint parity gate");
-                assert!(gate.max_abs >= 0.0 && gate.max_rel >= 0.0);
-                assert!(
-                    gate.max_abs > 0.0 || gate.max_rel > 0.0,
-                    "checkpoint parity gate must carry a positive absolute or relative bound"
-                );
+                // A supported pack may declare no band at all: `verify checkpoint` then refuses
+                // it, and its tiny fixtures carry their own comparison (memra-reference
+                // `TinyGate`; the tiny gate fails a fixture that asks for a band the pack lacks).
+                // A declared band is positive.
+                if let Some(gate) = pack.checkpoint_parity {
+                    assert!(gate.max_abs >= 0.0 && gate.max_rel >= 0.0);
+                    assert!(
+                        gate.max_abs > 0.0 || gate.max_rel > 0.0,
+                        "checkpoint parity gate must carry a positive absolute or relative bound"
+                    );
+                }
             }
         }
     }

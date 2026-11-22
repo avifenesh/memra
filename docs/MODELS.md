@@ -47,7 +47,7 @@ route; "qualified" and "tuned" belong to pack states.
 | [Hy4-flash](models/hy4-flash.md) | `hy_v4_flash` | NativeQualified on one GB10, NativeReference on CPU <!-- support: hy_v4_flash-gpu-1x-gb10,hy_v4_flash-reference --> | NVFP4 safetensors through its own memra-server route with the checkpoint's DFly2 drafts, one GB10 with the Engram tables on disk; `verify serve` November 2026 | no |
 | [Qwen3.8-Flash-Next](models/qwen38-flash-next.md) | `qwen4_exp` | none (pack support `None`) | none (bring-up gate path) | no |
 
-Packs with no model card: `qwen3`, `qwen3_moe`, `llama_dense` and `glm_dsa` (GLM-5 and 5.2) are NativeReference on tiny fixtures; `olmoe`, `minimax_m3`, `inkling2` (Inkling 2 Mini, inspect only: nothing executes its plan) and the `mimo_v2` profiles declare no state. <!-- support: qwen3-tiny-random,qwen3_moe-reference,llama_dense-reference,glm_dsa-reference -->
+Packs with no model card: `qwen3`, `qwen3_moe`, `llama_dense`, `glm_dsa` (GLM-5 and 5.2) and `inkling2` (Inkling 2 Mini: the reference executor runs its plan, no tuned surface does and nothing serves it) are NativeReference on tiny fixtures; `olmoe`, `minimax_m3` and the `mimo_v2` profiles declare no state. <!-- support: qwen3-tiny-random,qwen3_moe-reference,llama_dense-reference,glm_dsa-reference,inkling2-reference -->
 
 Speech: the Whisper large-v3, Nemotron RNNT and Qwen3-TTS packs bind their checkpoints and execute
 nothing natively. The `/v1/audio/*` routes exist: transcription and session open answer 503

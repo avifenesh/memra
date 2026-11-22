@@ -537,6 +537,8 @@ pub fn fixture_split(
         vision: None,
         multimodal_token_ids: None,
         decode_from: Some(decode_from),
+        chunk_ends: Vec::new(),
+        tiny_gate: crate::TinyGate::PackBand,
         checkpoint_files: vec![
             ("model.safetensors".into(), safetensors_bytes(&entries)),
             ("config.json".into(), pack::TINY_CONFIG.as_bytes().to_vec()),

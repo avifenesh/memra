@@ -6,8 +6,9 @@
 //! `inkling2.cpp` / `inkling2-loop.cpp`). The lane note is
 //! `research/modelplan-onboarding-inkling2mini-20261121/SEMANTICS.md`.
 //!
-//! None of these types parameterizes another family's plan. No reference executor or tuned
-//! surface implements them yet: every operation they emit is a registry row with no surface.
+//! None of these types parameterizes another family's plan. The reference executor
+//! (memra-reference `inkling2`) runs every operation they emit except the drafter; no tuned
+//! surface implements any of them, so each is a registry row with no surface.
 
 use super::{NormPlan, ValueNorm};
 use crate::quant_groups::ActivationQuant;
@@ -86,7 +87,8 @@ pub enum OutputGatePlan {
 /// Tap layout of a short convolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShortConvTaps {
-    /// Learned depthwise taps `[channels, 1, kernel]`.
+    /// Learned depthwise taps `[channels, 1, kernel]`, a causal cross-correlation: indexed oldest
+    /// input first, so the last tap weights the current token.
     Static,
     /// Static taps `[kernel, channels]` plus input-dependent taps projected per group
     /// (`weight_proj [kernel * groups, hidden]`). Both are indexed by lag with the current token

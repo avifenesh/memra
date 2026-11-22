@@ -1,6 +1,6 @@
 //! Inkling 2 (`inkling2`) pack: config normalization, the typed 48-slot plan and the
-//! config-derived tensor schema for `thinkingmachines/Inkling-2-Mini`. No executor runs the
-//! plan yet: support is none and every execution surface refuses it.
+//! config-derived tensor schema for `thinkingmachines/Inkling-2-Mini`. The reference executor
+//! (memra-reference `inkling2`) runs the plan; every tuned execution surface refuses it.
 //!
 //! The checkpoint defines the program. Its `config.json` gives the topology and
 //! `hf_quant_config.json` gives the numerics: the routed experts are NVFP4 (layers 0-19) or
@@ -69,8 +69,8 @@ pub static PACK: ModelPack = ModelPack {
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
     // The artifact ships `chat_template.jinja`.
     template: TemplateContract::ArtifactRequired,
-    // No executor implements the plan's operations: inspection only.
-    support: None,
+    // The reference executor runs the plan (memra-reference `inkling2`); no tuned surface does.
+    support: Some(NativeSupport::NativeReference),
     gates: &[
         Gate::Config,
         Gate::TokenizerTemplate,
@@ -80,8 +80,12 @@ pub static PACK: ModelPack = ModelPack {
         Gate::RewriteParity,
         Gate::Serve,
     ],
-    // No oracle of the declared numeric class exists yet, so no band is declared; the
-    // checkpoint gate cannot pass until one is.
+    // No band is declared, for any class, so `verify checkpoint` cannot pass: a band of the
+    // declared class has to come from that class's source program measured on two backends, and
+    // none has been. With no fallback band, a float-activation oracle cannot write a
+    // CheckpointParity pass for a pack whose default class is the declared one. The tiny gate
+    // does not read this field: its fixtures carry their own comparison (memra-reference
+    // `TinyGate`).
     checkpoint_parity: None,
     checkpoint_parity_classes: &[],
     checkpoint_probe: None,
@@ -89,8 +93,54 @@ pub static PACK: ModelPack = ModelPack {
     matches_config: |config| matches!(config.arch, Arch::Inkling2Loop) && config.inkling2.is_some(),
     plan_builder,
     tensor_schema,
-    tiny_plan: None,
+    tiny_plan: Some(tiny_plan),
 };
+
+/// The tiny-gate config: the family's program at hidden 64 in the checkpoint's own key layout.
+/// Eight physical layers in four attention-residual blocks of two (a prelude block, two looped
+/// core blocks, a tail block), a full-attention layer closing each block, three passes over
+/// layers 2..6 (16 cache slots), a sliding window of 8, a relative extent of 12 and a log-scale
+/// floor of 24, so a 40-token request crosses all three. Two core blocks make the loop's message
+/// bank hold two states, so the message mix is a real softmax. Top-2 of 8 experts.
+pub const TINY_CONFIG: &str = include_str!("fixtures/tiny-config.json");
+
+/// The tiny checkpoint's `hf_quant_config.json`: the real groups over the tiny tensor names,
+/// NVFP4 experts on layers 0-5 and MXFP8 on layers 6-7.
+pub const TINY_QUANT_CONFIG: &str = include_str!("fixtures/tiny-hf_quant_config.json");
+
+fn tiny_config() -> Result<ModelConfig, PlanCompileError> {
+    let mut config = ModelConfig::from_hf(&crate::config::HfConfig::parse(TINY_CONFIG));
+    config
+        .attach_quant_groups(TINY_QUANT_CONFIG)
+        .map_err(|value| PlanCompileError::UnsupportedSemantics {
+            field: "hf_quant_config.json",
+            value,
+        })?;
+    Ok(config)
+}
+
+/// The tiny gate's plan runs every layer's experts on float inputs. That is the class the gate
+/// has an independent oracle for (the float-activation implementation in f64): it pins the
+/// trunk, the loop, the exact bank dequantization and the float expert program. The declared
+/// quantizer is pinned by its own golden vectors, and [`tiny_declared_plan`] runs as a variant
+/// of the gate against a simulation of the activation-quant program.
+fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
+    let config = tiny_config()?;
+    let layers = inkling(&config)?.num_hidden_layers as usize;
+    plan_with_expert_activation(&config, &vec![ExpertActivationMode::Float; layers])
+}
+
+/// The tiny config under the family's default class: every layer on its declared quantizer.
+pub fn tiny_declared_plan() -> Result<ModelPlan, PlanCompileError> {
+    plan_builder(&tiny_config()?)
+}
+
+/// The tiny config with the expert input mode chosen per physical layer.
+pub fn tiny_plan_with_expert_activation(
+    modes: &[ExpertActivationMode],
+) -> Result<ModelPlan, PlanCompileError> {
+    plan_with_expert_activation(&tiny_config()?, modes)
+}
 
 fn inkling(config: &ModelConfig) -> Result<&Inkling2Config, PlanCompileError> {
     config
@@ -228,7 +278,9 @@ pub fn plan_with_expert_activation(
                 core_end: ink.loop_core_end,
                 passes: ink.loop_num_passes,
                 gate_rank: ink.loop_gate_rank,
-                controller_epsilon: PROGRAM_EPSILON,
+                // The message gate's norms take the config's RMS epsilon; the residual and
+                // message mixes take the program's constant.
+                controller_epsilon: ink.rms_norm_eps,
                 targets: [
                     LoopMessageTarget::Query,
                     LoopMessageTarget::Key,
