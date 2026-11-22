@@ -16,7 +16,7 @@ The route's program (Prec::default()):
 | convolutions | compensated f32 (f32c) | round 4, with the router and attention below |
 | router | compensated f32 (f32c) | round 4 |
 | attention | f32 tiles of 256 keys (scores, max, exp, value sums), the tiles merged in f64 (f32t) | round 4: 32k prefill 1.7x, 32k decode 1.5x over f64g |
-| depth mix, epilogues (output gate, softcap) | f64 | mix f32 fails with the set (round 2); the epilogue was backed off (round 1) |
+| depth mix, epilogues (output gate, softcap) | f32 | round 5 (together; each alone fails chatwrap) |
 
 History: round 1 adopted {controller, norm, f64g} (the epilogue backed off); round 4 replaced f64g with
 f32t and added conv and router under the revised gate below.
@@ -170,6 +170,22 @@ most 5.6e-5. The program adopted in round 1, for comparison: L1 flips 2540, L2 0
 of the adopted program (slot and logit digests, shipped / float / nvfp4-rig, p1 at chunk 1, 4 and 512, p2,
 nvfp4-rig p3) are in perf/pin-a16; the program is chunk-invariant (digests equal at chunk 1, 4 and 8,
 perf/s10-attention-rows/gr2-inv). Speed on the adopted program: perf/README.md.
+
+## Round 5: depth mix and epilogues in f32 (2026-11-22)
+
+Arms measured inside the round-4 program on the revised gate (receipts perf/set5; flips per 100k route rows;
+dNLL 95% CIs by sequence bootstrap, by 64-token blocks for L1 and L2):
+
+| Added arms | rawdoc dNLL [CI] | chatwrap dNLL [CI] | L1 dNLL [CI] | L2 dNLL [CI] | short KL p1 / p2 / rawdoc / chatwrap | flips L1 / L2 / rawdoc / chatwrap | verdict |
+|---|---|---|---|---|---|---|---|
+| mix f32 | +1.2e-6 [-3.2e-5, 4.1e-5] | +9.3e-6 [+3.6e-8, 2.3e-5] | -1.5e-2 [-2.6e-2, -4.4e-3] | -8.1e-6 [-2.4e-5, 1.9e-7] | 2.1e-12 / 3.1e-11 / 1.6e-5 / 3.3e-7 | 8943 / 1.2 / 144 / 4.9 | fail (chatwrap worse) |
+| epilogue f32 | +5.3e-6 [-3.0e-5, 4.5e-5] | +3.7e-5 [+1.5e-6, 9.1e-5] | -8.5e-3 [-1.8e-2, 1.1e-3] | -8.1e-6 [-2.4e-5, 2.3e-7] | 1.9e-12 / 2.2e-7 / 1.4e-5 / 9.3e-6 | 7620 / 1.0 / 121 / 49 | fail (chatwrap worse) |
+| **mix f32 + epilogue f32 (adopted)** | -1.4e-5 [-3.4e-5, 5.0e-8] | +1.8e-5 [-6.3e-6, 5.6e-5] | -1.5e-2 [-2.5e-2, -5.4e-3] | +2.9e-5 [-2.7e-4, 3.7e-4] | 2.2e-12 / 5.3e-11 / 1.5e-5 / 5.2e-6 | 8943 / 395 / 123 / 85 | pass |
+
+p2 argmax 288/288 for every set. As in rounds 2 and 4 the single arms fail and the pair passes: which
+near-tie set a perturbation crosses decides, not the precision. The adopted program is chunk-invariant
+(digests equal at chunk 1, 4 and 8) and its pins are in perf/pin-mixepi. nvfp4-rig c=1 74.0 -> 76.9 tok/s,
+4k 66.6 -> 69.8; shipped c=1 64.3 -> 66.5 (3 interleaved takes each, receipts s13-fusion).
 
 ## Speed
 
