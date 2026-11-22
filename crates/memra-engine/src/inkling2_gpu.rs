@@ -504,6 +504,13 @@ pub struct RedArms {
     /// A batched decode call hands every row the next row's caches (a descriptor table that
     /// mixes up its sequences), the batching gate's red arm.
     pub batch_rows_rotated: bool,
+    /// A batched decode call runs attention as one launch over its rows' descriptors (the unsplit
+    /// kernel: the dispatch before every row ran its solo call), the batching gate's red arm under
+    /// arms 3 and 4.
+    pub batch_attn_one_call: bool,
+    /// Arm 4 has no tile scratch past the load's context: such a call runs the unsplit f64 kernel
+    /// (the dispatch before t4s), the past-load-context gate's red arm.
+    pub t4_scratch_absent: bool,
 }
 
 /// The device, its stream and what the route did on it.
@@ -3284,7 +3291,7 @@ impl Route {
             // call runs the split arms (3, 4) row by row, each row as its sequence's solo call: the
             // rows are different sequences, and the split form is the solo program.
             let arm = dev.prec.get().attn;
-            let per_row = desc_slot != 0 && matches!(arm, 3 | 4);
+            let per_row = desc_slot != 0 && matches!(arm, 3 | 4) && !red.batch_attn_one_call;
             let calls: Vec<AttnCall> = if per_row {
                 (0..rows)
                     .map(|r| {
@@ -3333,6 +3340,8 @@ impl Route {
                             w.asc_ld as i64,
                             w.asc_rows as i32,
                         )
+                    } else if red.t4_scratch_absent {
+                        (0, 0, 0)
                     } else {
                         (dptr_mut(&mut w.t4s, &st), w.t4_ld as i64, w.t4_rows as i32)
                     }
