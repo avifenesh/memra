@@ -235,6 +235,41 @@ nvfp4-rig the route's unembed is NVFP4 (lane M, #1401). The drafter's base logit
 it was trained against, so the attach will load its own BF16 head (0.92 GB) when the route's is not BF16 (not built yet). Acceptance on
 nvfp4-rig is re-measured once #1401 is in this stack.
 
+## On lane P's 790355f639: timed decode, nvfp4-rig and the drafter's weights
+
+Setup: 12 prompts at 128 tokens, clampcheck OK, telemetry clean. Each cell is the adaptive length's decode tok/s over
+plain, two repetitions.
+
+| build (receipts) | all | chat | code | agentic | sampled T 1.0, all / chat |
+|---|---:|---:|---:|---:|---:|
+| rebased (timed-p790355/) | 1.158 / 1.178 | 0.983 / 0.959 | 1.134 / 1.191 | 1.519 / 1.598 | 1.086 / 0.955 |
+| DSpark plan, shared argmax (timed-dspark-unified/) | 1.212 / 1.190 | 1.018 / 1.012 | | | 1.083 / 0.964 |
+| plain steps replay a graph with tap copies (timed-graph-taps-rig-heads/) | 1.194 / 1.162 | 0.996 / 0.980 | 1.203 / 1.136 | 1.544 / 1.544 | 1.073 / 0.959 |
+| adaptive v5, prior-shrunk realized rate (timed-adaptive-v5/) | 1.190 / 1.131 | 1.017 / 0.988 | 1.217 / 1.203 | 1.435 / 1.252 | 1.084 / 0.995 |
+| v5 on nvfp4-rig | 1.112 / 1.107 | 0.971 / 0.961 | 1.096 / 1.100 | 1.366 / 1.356 | |
+
+- Every greedy run equals plain greedy (12/12), and run-spec is 28/28 on both classes in every build.
+- The graph build's declared gate cells equal the previous build's in accepted, steps and tokens. So does the
+  shared-argmax build's: the taps a replayed graph copies are the eager ones.
+- nvfp4-rig first accepted nothing: the fold read the NVFP4 unembed's codes as BF16. It now decodes them.
+  - Shared NVFP4 head: 1238 accepted / 542 steps, 1.101 / 1.093 of plain.
+  - Separate BF16 head: 1239 / 542, 1.097 / 1.084.
+  - The shared head stays the default (docs/decisions/INKLING2-DRAFTER-WEIGHTS.md).
+- Costs (verify-cost-p790355/, medians):
+  - a plain step 20.8 ms;
+  - a verify of 1..8 rows 20.6 to 72.4 ms, about +7.5 ms a row;
+  - a draft 3.9 to 8.3 ms for K = 1..7.
+  - At about 0.4 acceptance per proposal on chat, no length breaks even (K = 1 needs about 0.55). The policy has to
+    fall back to plain there.
+- Adaptive v5:
+  - A length is priced by decayed tokens over decayed seconds, with two plain steps at the plain rate as a prior.
+  - The first verify is K = 2, and the longest is tried only after a full accept.
+  - Result: chat is at plain within run noise on the declared class (greedy 1.017 / 0.988, sampled 0.995).
+  - On nvfp4-rig chat still loses 3 to 4%: its plain step is faster, so a verify row costs relatively more.
+- Drafter weights, NVFP4 per component with an FP8 control arm (quant-cpu/, quant-gpu/): no component saves draft
+  time. The kernels are latency-bound at these shapes, so NVFP4 all is 8.13 vs 5.88 ms at K = 7, and acceptance is
+  unchanged within noise. The drafter stays BF16; the decision record has the numbers.
+
 ## One DSpark plan for DeepSeek-V4 and Inkling 2
 
 The drafter is no longer a parallel program. memra's DSpark plan (DeepSeek-V4: crates/memra-gguf/src/dsv4_dspark.rs,
