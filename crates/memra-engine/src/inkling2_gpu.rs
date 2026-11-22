@@ -2008,7 +2008,8 @@ impl Route {
         }
         // the split attention's scores: 64 MiB of rows a launch pair, at least one row, which grows
         // with the context
-        let asc_rows = ((64usize << 20) / (max_heads * max_keys * 8)).clamp(1, chunk);
+        // a row holds its scores and, last, the row's max (the fold's top)
+        let asc_rows = ((64usize << 20) / (max_heads * (max_keys + 1) * 8)).clamp(1, chunk);
         if max_keys == context {
             account.per_position += max_heads * 8;
         }
@@ -2052,8 +2053,8 @@ impl Route {
             moe: dev.zeros(rh)?,
             dscr: dev.zeros(chunk * 128)?,
             posd: dev.zeros(1)?,
-            asc: dev.zeros(asc_rows * max_heads * max_keys)?,
-            asc_ld: max_keys,
+            asc: dev.zeros(asc_rows * max_heads * (max_keys + 1))?,
+            asc_ld: max_keys + 1,
             asc_rows,
             logits: dev.zeros(HEAD_ROWS * keep)?,
             best: dev.zeros(HEAD_ROWS)?,
@@ -4720,7 +4721,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             let mut vc = dev.zeros::<f32>(cap * kvw)?;
             let mut out = dev.zeros::<f32>(total * heads * dim)?;
             // a row of the arm-4 scratch holds its tiles' partials, (dim + 2) values a tile
-            let ld = cap.max(dim + 2);
+            let ld = (cap + 1).max(dim + 2);
             let mut ascr = dev.zeros::<f64>(3 * heads * ld)?;
             let mut at = 0usize;
             for rows in splits {
