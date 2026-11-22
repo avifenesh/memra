@@ -410,7 +410,7 @@ fn run() -> Result<(), String> {
                 serde_json::json!({"id": id, "kind": kind, "bench": {"reps": a.bench,
                     "prompt_tokens": ids.len(), "plain_step_ms": c.plain_step_ms,
                     "verify_ms_by_rows": c.verify_ms, "draft_ms_by_k": c.draft_ms,
-                    "commit_rows_ms": c.commit_rows_ms}})
+                    "commit_rows_ms": c.commit_rows_ms, "graph_steps": route.graph_steps.get()}})
             )
             .map_err(|e| e.to_string())?;
             eprintln!(
