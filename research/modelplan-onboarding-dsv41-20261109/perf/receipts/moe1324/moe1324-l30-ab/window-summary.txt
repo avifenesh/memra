@@ -1,0 +1,37 @@
+02:09:31 l30main 91e01a7dcc built 2026-11-22T02:03:36+02:00 on the four-card box, cuda 13.4, sm_120a
+02:09:31 l30a1337 2df9c40b39 built 2026-11-22T01:58:13+02:00 on the four-card box, cuda 13.4, sm_120a
+02:09:31 l30b1343 868417afce built 2026-11-22T02:09:03+02:00 on the four-card box, cuda 13.4, sm_120a
+02:09:31 armed; waiting for dssparks.window-0123; give up 2026-11-22 05:00
+02:16:41 W14-START: window from ds-sparks; all four box locks held; host free 930 GiB; load 2.42 2.92 3.14; hard stop 02:31:41
+0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 270.00 W, 40, 180 MHz
+1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 267.00 W, 54, 180 MHz
+2, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 283.00 W, 45, 180 MHz
+3, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 278.00 W, 64, 2347 MHz
+02:24:02 #1337 l30a1337 vs l30main (four cards) rc 0; load 3.49 3.27 3.20
+l30-1337-four/lease slowdown: 1 runs, 0 flagged (cards 0123)
+kgate: 1091 checks, 0 failed 0 FAIL lines
+gate-default: 1056 checks, 0 failed 0 FAIL lines
+PASS stress/push_gather: 20000 gathers on devices [0, 1, 2, 3]: 0 words differ, 0 ranks flagged [every consumer reads what every producer pushed]
+PASS stress/push_gather_control_word_first: 2000 gathers on devices [0, 1, 2, 3]: 46724039 words differ, 0 ranks flagged [the word before the data is caught (words differ)]
+gate-peer-pull: 1054 checks, 0 failed 0 FAIL lines
+gate-host-canonical: 1054 checks, 0 failed 0 FAIL lines
+decode tokens: decode-c1: 1 distinct over the runs
+slowdown: 12 runs, 0 flagged (cards 0123)
+02:24:05 main kgate rc 0: 1027 checks, 0 failed
+02:24:10 #1343 kgate rc 0: 02:24:10 BATTERY PASS kgate
+02:27:10 #1343 tp4 rc 0: 02:27:10 BATTERY PASS tp4
+02:24:08 kgate BASE rc 0: 1091 checks, 0 failed
+02:24:10 kgate HEAD rc 0: 1091 checks, 0 failed
+02:24:10 kgate: 1091 check lines equal between the arms
+02:24:41 tp4 default BASE rc 0: 1056 checks, 0 failed, 180 HASH lines
+02:25:12 tp4 default HEAD rc 0: 1056 checks, 0 failed, 180 HASH lines
+02:25:12 tp4 default: HASH lines equal
+02:25:41 tp4 peer-pull BASE rc 0: 1054 checks, 0 failed, 180 HASH lines
+02:26:11 tp4 peer-pull HEAD rc 0: 1054 checks, 0 failed, 180 HASH lines
+02:26:11 tp4 peer-pull: HASH lines equal
+02:26:41 tp4 host-canonical BASE rc 0: 1054 checks, 0 failed, 180 HASH lines
+02:27:10 tp4 host-canonical HEAD rc 0: 1054 checks, 0 failed, 180 HASH lines
+02:27:10 tp4 host-canonical: HASH lines equal
+02:27:10 all four box locks released (629 s in the window)
+02:27:10 touched dsv41.l30-4card-done
+02:27:10 W14-DONE

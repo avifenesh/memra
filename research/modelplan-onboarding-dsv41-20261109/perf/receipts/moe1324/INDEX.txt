@@ -38,6 +38,11 @@ Four cards (RTX PRO 6000 Blackwell Max-Q x4, 40 layers, four ranks), arm B = 4e8
   All of these untimed, MEMRA_FULL_PREC=1.
   moe1324-ab          A = main 0db086f87a, A B B A B A A B, one-row decode + rows 4 8 9 10 12 16; per_run.md
   moe1324-ab-base     A = base 8031c7ef90 (before the CUTLASS lane), the same cells; per_run.md
+  moe1324-l30-ab      2026-11-22, the landing head: A = main 91e01a7dcc, B = 2df9c40b39 (both built on the box the
+                      same day, nvcc 13.4), the kernel gate and three tp gates of B, then the same A/B cells;
+                      per_run.md, window-summary.txt (the window's log, power limits, load, #1343's battery lines)
+  moe1324-l30-kgate-main  main 91e01a7dcc's dsv41-gate kernels on the same window, 1027 of 1027
+w14_l30.sh: the 2026-11-22 window's runner (the box's paths).
   t1324               memra#1324's traced block (base route2, #1327's head gather2, main main25), kern/fam tables
   t1324b              the same traced block for B; kern-rows*.md and fam-rows*.md compare it with t1324's base
                       and main traces
