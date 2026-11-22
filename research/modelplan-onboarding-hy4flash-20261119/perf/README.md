@@ -99,6 +99,15 @@ route as the native runner, then the five red arms (`tools/verify-chain.sh`). On
 0.0060, reversed ties are refused, the cache off by one fails at 0.0097, the early pool at 0.894
 past 0.0224: the points step 8 fails at.
 
+### On main with step 21 (`receipts/rebase-main/`)
+
+The lane replayed on main (the serving route and the DFly2 drafter landed), one build of
+f37cbd6cec (step 21; the head adds a whitespace-only edit and receipts): check3 3 of 3
+`BITWISE_EQUAL`; the 12 drafter gate logits hashes equal the drafter branch's pins
+(`gate2-hashes.txt`); `memra model verify` Checkpoint and Serve passed; the serving chat gate
+PASS with drafts on and off; sampled bench and real turns, drafts on against off: draft, bench
+and turns identity PASS.
+
 ### On the DFly2 drafter's branch (`receipts/rebase-dfly2/`)
 
 The 23 steps replayed on the drafter's branch (the serving route and the DFly2 drafts); the
