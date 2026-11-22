@@ -109,6 +109,13 @@ __global__ void read_thrash(const uint4* p, size_t n, unsigned* sink) {
 
 int main(int argc, char** argv) {
   const char* only = argc > 1 ? argv[1] : "";
+  // KB_ROWS: the dense cases' row counts in order (default 1,4; e.g. 4,1,1,4 for an order check)
+  std::vector<int> rows_order;
+  for (const char* p = getenv("KB_ROWS") ? getenv("KB_ROWS") : "1,4"; *p;) {
+    rows_order.push_back(atoi(p));
+    while (*p && *p != ',') p++;
+    if (*p) p++;
+  }
   cudaStream_t st;
   CK(cudaStreamCreate(&st));
   cudaEvent_t e0, e1;
@@ -116,7 +123,8 @@ int main(int argc, char** argv) {
   CK(cudaEventCreate(&e1));
   int fails = 0;
   void* thrash;
-  const size_t thrash_bytes = 256u << 20;
+  // KB_THRASH_MB: the read between reps that evicts the caches (default 256 MiB)
+  const size_t thrash_bytes = (size_t)(getenv("KB_THRASH_MB") ? atoi(getenv("KB_THRASH_MB")) : 256) << 20;
   CK(cudaMalloc(&thrash, thrash_bytes));
   CK(cudaMemset(thrash, 1, thrash_bytes));
   unsigned* sink;
@@ -145,6 +153,131 @@ int main(int argc, char** argv) {
     const char* name;
     int fmt, n, k, batch;
   };
+  // KB_PRE: the prefill GEMMs (r_gemm_kernel) at the long request's 2104 rows, the model's shapes;
+  // per case the time, the useful rate (4 m n k: the hi and lo mma of every product) and an FNV-1a
+  // hash of the output for comparing two builds' bits
+  if (getenv("KB_PRE")) {
+    const int M = 2104;
+    auto fnv = [&](const float* d, size_t n) {
+      std::vector<uint32_t> h(n);
+      CK(cudaMemcpy(h.data(), d, n * 4, cudaMemcpyDeviceToHost));
+      uint64_t f = 1469598103934665603ull;
+      for (uint32_t v : h) {
+        for (int b = 0; b < 4; b++) {
+          f ^= (v >> (8 * b)) & 0xff;
+          f *= 1099511628211ull;
+        }
+      }
+      return f;
+    };
+    auto tpre = [&](const char* name, double flops, size_t outn, const float* y, auto&& fn) {
+      fn();
+      CK(cudaStreamSynchronize(st));
+      const uint64_t h = fnv(y, outn);
+      for (int i = 0; i < 2; i++) fn();
+      CK(cudaStreamSynchronize(st));
+      const int reps = 10;
+      CK(cudaEventRecord(e0, st));
+      for (int i = 0; i < reps; i++) fn();
+      CK(cudaEventRecord(e1, st));
+      CK(cudaEventSynchronize(e1));
+      float ms;
+      CK(cudaEventElapsedTime(&ms, e0, e1));
+      const double us = ms * 1e3 / reps;
+      printf("%-36s %9.1f us %7.1f TF/s  out %016llx\n", name, us, flops / us / 1e6, (unsigned long long)h);
+    };
+    struct PCase {
+      const char* name;
+      int fmt, n, k, batch;
+    };
+    std::vector<PCase> pc = {
+        {"pre fp8 16384x3072", 2, 16384, 3072, 1}, {"pre fp8 3072x16384", 2, 3072, 16384, 1},
+        {"pre fp8 8192x3072", 2, 8192, 3072, 1},   {"pre bf16 1536x3072", 0, 1536, 3072, 1},
+        {"pre bf16 3072x1536", 0, 3072, 1536, 1},  {"pre bf16 64x(256x512)", 0, 256, 512, 64},
+    };
+    for (auto& c : pc) {
+      if (*only && !strstr(c.name, only)) continue;
+      const long rb = c.fmt == 0 ? (long)c.k * 2 : (long)c.k;
+      const size_t wb = (size_t)c.n * rb;
+      void* wr = dev_rand(wb * c.batch, c.fmt == 0 ? 1 : 0);
+      void* w;
+      CK(cudaMalloc(&w, memra_hy4r_tile_bytes(c.n, rb) * c.batch));
+      if (memra_hy4r_tile(wr, c.n, rb, rb, (long)wb, w, memra_hy4r_tile_bytes(c.n, rb), c.batch, st)) fails++;
+      CK(cudaFree(wr));
+      const int gc = (c.k + 127) / 128;
+      void* sc = c.fmt == 2 ? dev_rand((size_t)((c.n + 127) / 128) * gc * 4, 3) : nullptr;
+      float* x = dev_x(M * c.batch, c.k);
+      float* y;
+      CK(cudaMalloc(&y, (size_t)M * c.n * c.batch * 4));
+      tpre(c.name, 4.0 * M * c.n * c.k * c.batch, (size_t)M * c.n * c.batch, y, [&] {
+        if (memra_hy4r_gemm(x, c.k, (long)M * c.k, w, (long)wb, sc, 0, nullptr, c.fmt, gc, y, c.n, (long)M * c.n, M,
+                            c.n, c.k, c.batch, nullptr, 0, 0, 0, 0, st))
+          fails++;
+      });
+      CK(cudaFree(w));
+      if (sc) CK(cudaFree(sc));
+      CK(cudaFree(x));
+      CK(cudaFree(y));
+    }
+    // the routed experts: 2104 tokens x 16 picks of 512 (a fixed draw), grouped in tiles of 64 rows,
+    // the table padded with empty tiles to rows / 64 + 512 as the route's plan
+    if (!*only || strstr("pre experts", only)) {
+      const int E = 512, n = 1536, k = 1536, BM = 64;
+      const size_t wbs = (size_t)n * k / 2, scbs = (size_t)n * k / 16;
+      void* wr = dev_rand(wbs * E, 0);
+      void* w;
+      CK(cudaMalloc(&w, wbs * E));
+      if (memra_hy4r_tile(wr, n, k / 2, k / 2, (long)wbs, w, (long)wbs, E, st)) fails++;
+      CK(cudaFree(wr));
+      void* sc = dev_rand(scbs * E, 2);
+      float* s2 = (float*)dev_rand(E * 4, 3);
+      std::vector<int> cnt(E, 0);
+      for (int t = 0; t < M; t++) {
+        std::vector<int> used;
+        while ((int)used.size() < 16) {
+          // skewed: half the picks from the first 128 experts
+          const int e = (rnd() & 1) ? (int)(rnd() % 128) : (int)(rnd() % E);
+          bool dup = false;
+          for (int u : used) dup |= u == e;
+          if (!dup) used.push_back(e);
+        }
+        for (int u : used) cnt[u]++;
+      }
+      std::vector<int> tl;
+      int off = 0, live = 0;
+      for (int e = 0; e < E; e++) {
+        for (int r = 0; r < cnt[e]; r += BM) {
+          tl.push_back(e);
+          tl.push_back(off + r);
+          tl.push_back(cnt[e] - r < BM ? cnt[e] - r : BM);
+          live++;
+        }
+        off += cnt[e];
+      }
+      const int rows = off, ntiles = rows / BM + E;
+      while ((int)tl.size() < ntiles * 3) tl.push_back(0);
+      int* dt;
+      CK(cudaMalloc(&dt, tl.size() * 4));
+      CK(cudaMemcpy(dt, tl.data(), tl.size() * 4, cudaMemcpyHostToDevice));
+      float* x = dev_x(rows, k);
+      float* y;
+      CK(cudaMalloc(&y, (size_t)rows * n * 4));
+      char nm[96];
+      snprintf(nm, sizeof nm, "pre experts nvfp4 %d rows %d tiles", rows, live);
+      tpre(nm, 4.0 * rows * n * k, (size_t)rows * n, y, [&] {
+        if (memra_hy4r_gemm(x, k, 0, w, wbs, sc, scbs, s2, 3, 0, y, n, 0, rows, n, k, 1, dt, ntiles, 0, 0, 0, st))
+          fails++;
+      });
+      CK(cudaFree(w));
+      CK(cudaFree(sc));
+      CK(cudaFree(s2));
+      CK(cudaFree(dt));
+      CK(cudaFree(x));
+      CK(cudaFree(y));
+    }
+    printf(fails ? "KBENCH PRE FAIL %d\n" : "KBENCH PRE DONE\n", fails);
+    return fails ? 1 : 0;
+  }
   // dense small-row GEMMs (FMT 0 bf16, 2 fp8, 3 nvfp4 grouped)
   std::vector<Case> cases = {
       {"o_proj fp8 3072x16384", 2, 3072, 16384, 1}, {"o_proj fp8 3072x8192", 2, 3072, 8192, 1},
@@ -155,7 +288,7 @@ int main(int argc, char** argv) {
   };
   for (auto& c : cases) {
     if (*only && !strstr(c.name, only)) continue;
-    for (int m : {1, 4}) {
+    for (int m : rows_order) {
       const size_t wb = c.fmt == 0 ? (size_t)c.n * c.k * 2 : (size_t)c.n * c.k;
       void* wr = dev_rand(wb * c.batch, c.fmt == 0 ? 1 : 0);
       // the route's GEMMs read the tile layout
