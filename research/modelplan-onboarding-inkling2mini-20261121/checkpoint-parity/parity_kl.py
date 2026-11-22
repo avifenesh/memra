@@ -214,8 +214,11 @@ def main():
                 out[("kl_" + k) if k in keys else k] = dist(v) if k in keys else float(v.mean())
         for k in ("self", "peer"):
             col = "kl_%s_mean" % k
-            if doc_rows and col in doc_rows[0]:
-                out["mean_route_minus_%s_ci95_by_doc" % k] = boot_ci([r["kl_route_mean"] for r in doc_rows], [r[col] for r in doc_rows])
+            both = [r for r in doc_rows if col in r]
+            if both:
+                # the documents that have the comparison (a peer may cover only part of a set)
+                out["mean_route_minus_%s_ci95_by_doc" % k] = boot_ci([r["kl_route_mean"] for r in both], [r[col] for r in both])
+                out["docs_with_%s" % k] = len(both)
         res["sets"][name] = out
         for k in pooled:
             pooled[k] += per[k]

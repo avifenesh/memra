@@ -1,4 +1,4 @@
-# Inkling 2 Mini: the declared class's checkpoint-parity band (2026-11-21)
+# Inkling 2 Mini: the checkpoint-parity bands of the served classes (2026-11-21, nvfp4-rig 2026-11-22)
 
 **Status:** adopted 2026-11-21 for the `inkling2` pack, class `inkling2-declared-activation-quant`
 (the checkpoint's shipped program: NVFP4 W4A4 four-over-six on layers 0..19, MXFP8 W8A8 on 20..23,
@@ -135,3 +135,34 @@ not count, since it is exact on short sums and understates the spread."
   tokens, the controllers and the loop on real routing.
 - **A KL field in `CheckpointParityGate`.** One probe row's KL is under 1e-9 for every pair, so it
   separates nothing there; the distribution gate needs a corpus and lives in its receipt.
+
+## The nvfp4-rig class (2026-11-22)
+
+The same method for the owner-ruled default class (`inkling2-nvfp4-rig`: the declared experts, the
+minted NVFP4 overlay of lane M, e4m3 K/V), on lane P's decode at 790355f639 with #1401 merged
+(`research/.../serve/s4/`, `s4b/`, `checkpoint-parity/kl-harness-rig.json`).
+
+- **Source backends.** Lane E's CPU oracle of the class (`checkpoint-parity/rig_probe_oracle.py`:
+  the overlay dequantized into the oracle's work file, the layer 20..23 banks read as NVFP4 from the
+  overlay, K/V rounded to e4m3 by a hook on the projections that feed the cache) and lane F's harness
+  with lane M's arm (`actq:all+kv:all+mx2nv:mx+w:unembed+w:attn:all`) on CPU and on the GPU. Probe
+  spread: lane E vs harness CPU 0.30, lane E vs harness GPU 2.61, harness GPU vs CPU 2.75 logits
+  max abs, argmax 200001 everywhere. **Band 5.5**, argmax required.
+- **Per MoE.** Every slot bit-equal to lane D's reference (2736 of 2736 rows on p1). All banks of
+  this class are NVFP4 W4A4, whose sm_120 accumulator chain equals the reference's index order on
+  these rows, so the index-order red arm cannot fail here; the second red arm (the routing weight
+  after the down projection) moves every row on both classes.
+- **Probe.** The route sits 3.70 from lane E's tape (mean 1.20); `verify checkpoint` and
+  `verify serve` pass (`checkpoint-parity/verify-rig/`).
+- **End to end.** KL(harness GPU || route) pooled 0.0438 against the harness's own GPU-vs-CPU
+  0.0440; route minus peer, 95% by document: oracle prompts -0.0018 .. 0.034, rawdoc -0.0020 ..
+  0.00002, chatwrap -0.0003 .. 0.0012. Inside the cross-device spread on every set.
+
+## Lane P's precision program moves the route, inside the band
+
+Lane P's adopted program (controller f32, norm f32, attention f64g; 99830e8662 and after) is a
+different evaluation of the same operations. On the probe, shipped: 3.08 max / 0.57 mean from lane
+E's tape under the program, 1.74 / 0.28 with `--prec all=f64` (the program before it); nvfp4-rig:
+3.70 / 1.20 under the program, 3.41 / 0.95 at all-f64. Shipped end to end under the program: pooled
+KL 0.0379 against the earlier peer 0.0383 (rawdoc 0.0145, chatwrap 0.0201 against 0.0142, 0.0181).
+Both classes stay inside their bands and inside the harness's cross-device spread on the corpora.
