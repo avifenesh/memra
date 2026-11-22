@@ -50,6 +50,10 @@ pub struct SpecStats {
     pub generated: usize,
     /// The output length at which an adaptive request stopped speculating, if it did.
     pub stopped_at: Option<usize>,
+    /// Seconds spent in plain steps and in speculative steps (draft, verify, commits); the rest
+    /// of decode_s is the loop between them.
+    pub plain_s: f64,
+    pub spec_s: f64,
 }
 
 impl SpecStats {
@@ -651,6 +655,7 @@ fn generate_inner(
             if let Some(a) = adapt.as_mut() {
                 a.record(0, 0, t_step.elapsed().as_secs_f64());
             }
+            stats.plain_s += t_step.elapsed().as_secs_f64();
             out.push(anchor);
             continue;
         }
@@ -708,6 +713,7 @@ fn generate_inner(
         if let Some(a) = adapt.as_mut() {
             a.record(kk, accepted, t_step.elapsed().as_secs_f64());
         }
+        stats.spec_s += t_step.elapsed().as_secs_f64();
         stats.steps += 1;
         stats.proposed += kk;
         stats.accepted += accepted;
