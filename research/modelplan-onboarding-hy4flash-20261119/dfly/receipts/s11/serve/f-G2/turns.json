@@ -1,0 +1,278 @@
+[
+ {
+  "turn": "capital",
+  "status": 200,
+  "sampling": {
+   "temperature": 0.9,
+   "seed": 20261121
+  },
+  "prompt_tokens": 41,
+  "completion_tokens": 56,
+  "finish": "stop",
+  "spec": {
+   "rounds": 26,
+   "drafted": 67,
+   "accepted": 31,
+   "acceptance_rate": 0.4626865671641791
+  },
+  "content": "The capital of Japan is Tokyo. It is known for its vibrant blend of traditional culture and cutting-edge technology, as well as iconic landmarks like the Tokyo Tower, bustling neighborhoods such as Shibuya and Shinjuku, and world-class cuisine including sushi and ramen.",
+  "reasoning": null,
+  "error": null,
+  "walls_s": [
+   7.119,
+   7.085,
+   7.036
+  ],
+  "specs": [
+   {
+    "rounds": 26,
+    "drafted": 68,
+    "accepted": 31,
+    "acceptance_rate": 0.45588235294117646
+   },
+   {
+    "rounds": 26,
+    "drafted": 68,
+    "accepted": 31,
+    "acceptance_rate": 0.45588235294117646
+   },
+   {
+    "rounds": 26,
+    "drafted": 67,
+    "accepted": 31,
+    "acceptance_rate": 0.4626865671641791
+   }
+  ],
+  "wall_s": 7.085
+ },
+ {
+  "turn": "code",
+  "status": 200,
+  "sampling": {
+   "temperature": 0.9,
+   "seed": 20261121
+  },
+  "prompt_tokens": 42,
+  "completion_tokens": 203,
+  "finish": "stop",
+  "spec": {
+   "rounds": 52,
+   "drafted": 206,
+   "accepted": 152,
+   "acceptance_rate": 0.7378640776699029
+  },
+  "content": "```python\ndef fibonacci(n):\n    \"\"\"\n    Return the n-th Fibonacci number iteratively.\n\n    The Fibonacci sequence is defined as follows:\n    F(0) = 0, F(1) = 1\n    F(n) = F(n-1) + F(n-2) for n > 1\n\n    Parameters:\n    n (int): A non-negative integer representing the index in the Fibonacci sequence.\n\n    Returns:\n    int: The n-th Fibonacci number.\n\n    Raises:\n    ValueError: If n is a negative integer.\n    \"\"\"\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n    elif n == 0:\n        return 0\n    elif n == 1:\n        return 1\n\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n```",
+  "reasoning": null,
+  "error": null,
+  "walls_s": [
+   15.941,
+   15.702,
+   15.774
+  ],
+  "specs": [
+   {
+    "rounds": 53,
+    "drafted": 204,
+    "accepted": 151,
+    "acceptance_rate": 0.7401960784313726
+   },
+   {
+    "rounds": 52,
+    "drafted": 204,
+    "accepted": 152,
+    "acceptance_rate": 0.7450980392156863
+   },
+   {
+    "rounds": 52,
+    "drafted": 206,
+    "accepted": 152,
+    "acceptance_rate": 0.7378640776699029
+   }
+  ],
+  "wall_s": 15.774
+ },
+ {
+  "turn": "explain",
+  "status": 200,
+  "sampling": {
+   "temperature": 0.9,
+   "seed": 20261121
+  },
+  "prompt_tokens": 35,
+  "completion_tokens": 139,
+  "finish": "stop",
+  "spec": {
+   "rounds": 65,
+   "drafted": 177,
+   "accepted": 75,
+   "acceptance_rate": 0.423728813559322
+  },
+  "content": "The sky appears blue because of a phenomenon called **Rayleigh scattering**. Sunlight, which looks white, is actually made up of all the colors of the rainbow, each with different wavelengths. Blue and violet light have much shorter, smaller wavelengths than red or yellow light. When sunlight enters Earth's atmosphere, it collides with gas molecules and tiny particles. These collisions scatter the shorter blue and violet wavelengths much more strongly in all directions than the longer wavelengths. Our eyes see this scattered blue light coming from every direction, which makes the entire sky look blue. (We see blue instead of violet because our eyes are more sensitive to blue light and some of the violet is absorbed by the upper atmosphere.)",
+  "reasoning": null,
+  "error": null,
+  "walls_s": [
+   17.378,
+   17.35,
+   17.474
+  ],
+  "specs": [
+   {
+    "rounds": 65,
+    "drafted": 186,
+    "accepted": 75,
+    "acceptance_rate": 0.4032258064516129
+   },
+   {
+    "rounds": 65,
+    "drafted": 183,
+    "accepted": 75,
+    "acceptance_rate": 0.4098360655737705
+   },
+   {
+    "rounds": 65,
+    "drafted": 177,
+    "accepted": 75,
+    "acceptance_rate": 0.423728813559322
+   }
+  ],
+  "wall_s": 17.378
+ },
+ {
+  "turn": "list",
+  "status": 200,
+  "sampling": {
+   "temperature": 0.9,
+   "seed": 20261121
+  },
+  "prompt_tokens": 33,
+  "completion_tokens": 256,
+  "finish": "length",
+  "spec": {
+   "rounds": 113,
+   "drafted": 296,
+   "accepted": 142,
+   "acceptance_rate": 0.4797297297297297
+  },
+  "content": "1. **Know your audience**  \n   Write for the reader\u2019s skill level\u2014not your own. Define jargon, avoid unexplained acronyms, and choose examples that match their context (e.g., beginner vs. experienced engineer).\n\n2. **Structure with a predictable hierarchy**  \n   Use consistent headings, short sections, and a logical flow: overview \u2192 prerequisites \u2192 step-by-step \u2192 troubleshooting \u2192 reference. Readers should be able to scan and jump straight to what they need.\n\n3. **Write short, active sentences**  \n   Prefer \u201cClick **Save**\u201d over \u201cThe save button should be clicked by the user.\u201d Keep paragraphs to 3\u20135 lines, use parallel wording for repeated steps, and put the action first.\n\n4. **Show concrete examples (and keep them accurate)**  \n   Include copy-pasteable commands, code snippets, screenshots, or sample inputs/outputs. Verify every example against the current version\u2014stale examples erode trust faster than vague prose.\n\n5. **Review, test, and maintain**  \n   Have someone unfamiliar with the project follow the docs verbatim. Track docs changes alongside code changes, date-stamp pages, and regularly prune outdated content or broken links.\n\n*Bonus:*",
+  "reasoning": null,
+  "error": null,
+  "walls_s": [
+   30.798,
+   30.356,
+   29.752
+  ],
+  "specs": [
+   {
+    "rounds": 114,
+    "drafted": 306,
+    "accepted": 141,
+    "acceptance_rate": 0.46078431372549017
+   },
+   {
+    "rounds": 114,
+    "drafted": 299,
+    "accepted": 141,
+    "acceptance_rate": 0.47157190635451507
+   },
+   {
+    "rounds": 113,
+    "drafted": 296,
+    "accepted": 142,
+    "acceptance_rate": 0.4797297297297297
+   }
+  ],
+  "wall_s": 30.356
+ },
+ {
+  "turn": "reasoning",
+  "status": 200,
+  "sampling": {
+   "temperature": 0.9,
+   "seed": 20261121
+  },
+  "prompt_tokens": 43,
+  "completion_tokens": 96,
+  "finish": "stop",
+  "spec": {
+   "rounds": 35,
+   "drafted": 106,
+   "accepted": 61,
+   "acceptance_rate": 0.5754716981132075
+  },
+  "content": "The trip is **3 hours 25 minutes**.",
+  "reasoning": "We need answer simple time difference. Need reason: From 9:40 to 13:05. Compute: 9:40 -> 12:40 = 3 hours; to 13:05 = 25 min; total 3h25m. Alternative 13:05 - 9:40: borrow, 12:65 - 9:40 = 3:25. Final concise.",
+  "error": null,
+  "walls_s": [
+   10.111,
+   10.057,
+   9.747
+  ],
+  "specs": [
+   {
+    "rounds": 36,
+    "drafted": 115,
+    "accepted": 60,
+    "acceptance_rate": 0.5217391304347826
+   },
+   {
+    "rounds": 36,
+    "drafted": 113,
+    "accepted": 60,
+    "acceptance_rate": 0.5309734513274337
+   },
+   {
+    "rounds": 35,
+    "drafted": 106,
+    "accepted": 61,
+    "acceptance_rate": 0.5754716981132075
+   }
+  ],
+  "wall_s": 10.057
+ },
+ {
+  "turn": "translate",
+  "status": 200,
+  "sampling": {
+   "temperature": 0.9,
+   "seed": 20261121
+  },
+  "prompt_tokens": 37,
+  "completion_tokens": 179,
+  "finish": "stop",
+  "spec": {
+   "rounds": 80,
+   "drafted": 220,
+   "accepted": 100,
+   "acceptance_rate": 0.45454545454545453
+  },
+  "content": "La r\u00e9union est report\u00e9e au jeudi \u00e0 midi.\n\nA few natural alternatives depending on tone:\n\n- **More formal:** La r\u00e9union a \u00e9t\u00e9 d\u00e9plac\u00e9e au jeudi \u00e0 midi.\n- **Slightly more conversational:** La r\u00e9union passe au jeudi \u00e0 midi.\n- **With \"renvoy\u00e9e\":** La r\u00e9union est renvoy\u00e9e \u00e0 jeudi midi. *(common in everyday French)*\n\n\ud83d\udca1 Note: In French, we usually say **\u00ab \u00e0 midi \u00bb** (not \u00ab \u00e0 douze heures \u00bb) for noon, and **\u00ab jeudi \u00bb** doesn\u2019t need an article here \u2014 *\u00ab au jeudi \u00bb* is also correct but slightly less common than *\u00ab \u00e0 jeudi \u00bb* in speech.\n\nLet me know if you want it adapted for an email or calendar invite! \ud83d\udcc5",
+  "reasoning": null,
+  "error": null,
+  "walls_s": [
+   21.014,
+   21.002,
+   21.007
+  ],
+  "specs": [
+   {
+    "rounds": 80,
+    "drafted": 220,
+    "accepted": 100,
+    "acceptance_rate": 0.45454545454545453
+   },
+   {
+    "rounds": 80,
+    "drafted": 221,
+    "accepted": 100,
+    "acceptance_rate": 0.45248868778280543
+   },
+   {
+    "rounds": 80,
+    "drafted": 220,
+    "accepted": 100,
+    "acceptance_rate": 0.45454545454545453
+   }
+  ],
+  "wall_s": 21.007
+ }
+]

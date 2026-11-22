@@ -31,7 +31,15 @@ All on one GB10, sampled at the artifact's `generation_config.json` (temperature
   five drafts, the six turns take 123.1 s against 112.5 s with greedy drafts.
 - Depth: replayed at the measured costs, five drafts read 7.29 tok/s over the decode steps, a
   fixed 3 reads 8.28, the gate 8.58 (17.7% over five drafts), the hindsight bound 10.83.
-@@SERVED_DECISION@@
+- Served, balanced (gate, five drafts, off, BF16 arm, five drafts, gate; N = 3 each, one window,
+  250 ms telemetry): `long` at one request 9.05 / 9.05 tok/s with the gate against 8.11 / 8.13 with
+  five drafts; four at once 2.37 against 2.29 aggregate; the six turns 102.4 / 101.7 s against
+  112.4 / 112.1 s (9.07 / 9.14 against 8.27 / 8.28 tok/s), level on code, faster on the other five.
+  Decode step at one request p50 / p95 / p99 263 / 321 / 344 ms against 312 / 340 / 353. Every
+  text equals the drafts-off run's; the served-answer gates pass with the gate on and all 51
+  answers equal the drafts-off server's.
+- A request whose rounds always stop early leaves the draft table's longer rounds at their warm
+  seeds (the table takes only full rounds); the warm-up times a second round so the seeds are warm.
 
 ## Decision
 

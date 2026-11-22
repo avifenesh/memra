@@ -6,11 +6,11 @@ layers), 4-stream hyper-connections, a latent MoE of 512 experts and the Engram 
 
 | | |
 |---|---|
-| **Serving route** | memra-server's `hy_v4_flash` route (`hy4f_serve` over the GPU route `hy4f_route`) on one GB10 (DGX Spark, sm_121a): weights resident in their stored formats, a carried F32 cache per request, the Engram tables read from disk; `verify checkpoint` and `verify serve` pass at `2e915e65a9`, served greedy answers equal the route's own. A correctness route: about 6 tok/s decode for one request, nothing tuned |
+| **Serving route** | memra-server's `hy_v4_flash` route (`hy4f_serve` over the GPU route `hy4f_route`) on one GB10 (DGX Spark, sm_121a): weights resident in their stored formats, a carried F32 cache per request, the Engram tables read from disk; `verify checkpoint` and `verify serve` pass at `d43aacce37` (the draft gate), served greedy answers equal the route's own. A correctness route: about 6 tok/s decode for one request undrafted, 9 with drafts |
 | **Pack** | `hy_v4_flash` (aliases `hy-v4-flash`, `hy4-flash`), **NativeQualified** on that route (record `hy_v4_flash-gpu-1x-gb10`) and **NativeReference** on CPU (record `hy_v4_flash-reference`) <!-- support: hy_v4_flash-gpu-1x-gb10,hy_v4_flash-reference --> |
 | **Artifact** | `Avifenesh/Hy4-flash-NVFP4@f9eac06cf022cfd3dc2e8ed423922466b2adcd87`, from `tencent/Hy4-flash@d88c9dfd96ba4f2e6b92adba0b8e8f1c8696f959`: NVFP4 routed experts, FP8 128x128 attention projections, FP8 Engram rows, BF16 and F32 elsewhere; 2,429 tensors, 161.08 GB |
 | **Hardware** | one GB10 with 128 GB of unified memory: 87.5 GiB of weights resident, about 21 GB left for sessions; CPU for the reference gates |
-| **Drafters** | the checkpoint's DFly2 drafter (5 blocks over the target's layers 25 to 41, MLP 9,216) drafts 5 tokens a round on the serve route; the served tokens are the undrafted route's (`MEMRA_HY4F_DRAFT`, `0` turns it off) |
+| **Drafters** | the checkpoint's DFly2 drafter (5 blocks over the target's layers 25 to 41, MLP 9,216) drafts up to 5 tokens a round on the serve route, each round's depth priced by the draft gate from the drafter's own probabilities and the route's measured costs; the served tokens are the undrafted route's (`MEMRA_HY4F_DRAFT`, `0` turns it off; `MEMRA_HY4F_DRAFT_GATE=0` drafts the full 5 every round) |
 | **Input** | text; the artifact's chat template, efforts and tool-call format; image and video parts are refused |
 
 ## Serve it
@@ -29,10 +29,12 @@ MEMRA_MODELS=hy4=/path/Hy4-flash-NVFP4 memra-server
   `xhigh`); `low` and `medium` render `high`. Tool calls parse from the Hy4 call format.
 - Greedy, temperature, top-p, top-k, seeds, penalties, stop strings and `ignore_eos` are served;
   `min_p`, `response_format` and image parts are not.
-- DFly2 drafts are on by default: after every call the drafter proposes the artifact's 5 tokens,
-  the next call verifies them in one call, and the route keeps the drafts that equal its own
-  choices, so every answer is the undrafted route's token for token, greedy or sampled.
-  `MEMRA_HY4F_DRAFT=N` sets the drafts a round, `0` serves without the drafter.
+- DFly2 drafts are on by default: after every call the drafter proposes up to the artifact's 5
+  tokens, the next call verifies them in one call, and the route keeps the drafts that equal its
+  own choices, so every answer is the undrafted route's token for token, greedy or sampled. The
+  draft gate verifies the depth with the most expected tokens a millisecond, from the drafter's
+  probabilities scaled by how the request's drafts held. `MEMRA_HY4F_DRAFT=N` caps the drafts a
+  round, `0` serves without the drafter.
 
 ## Gates
 
@@ -58,10 +60,12 @@ MEMRA_MODELS=hy4=/path/Hy4-flash-NVFP4 memra-server
 ## Limits
 
 - Untuned: about 6 tok/s decode without drafts and 205 tok/s prefill on a 2,104-token prompt for
-  one request; with drafts, six sampled chat turns read 1.2 to 2.2 times the undrafted speed
-  (the drafter keeps 0.25 to 0.65 of its drafts). Requests run one call at a time, so throughput does
+  one request; with drafts and the draft gate, six sampled chat turns read 1.3 to 2.2 times the
+  undrafted speed (9.1 against 5.8 tok/s over the six; 0.42 to 0.73 of the verified drafts
+  hold), and the 2,104-token prompt decodes at 9.05 tok/s (step 11). Requests run one call at a time, so throughput does
   not grow with concurrency.
-- No prefix reuse, constrained decoding or vision; drafts are greedy for sampled requests too.
+- No prefix reuse, constrained decoding or vision; drafts are greedy for sampled requests too
+  (drawing them with the request's sampler kept fewer, step 11).
 - One GB10 only; the record covers no other device.
 
 ## Deeper sources

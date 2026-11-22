@@ -1,0 +1,1732 @@
+{
+  "producer": {
+    "repo": "Avifenesh/Hy4-flash-NVFP4",
+    "date": "2026-11-18",
+    "source": "tencent/Hy4-flash@d88c9dfd96ba4f2e6b92adba0b8e8f1c8696f959",
+    "note": "Modified from tencent/Hy4-flash: weights quantized as listed below; see README.md"
+  },
+  "quantization": {
+    "quant_algo": "MIXED_PRECISION",
+    "kv_cache_quant_algo": null,
+    "activations": "not quantized (weight-only)",
+    "layout": "LAYOUT.md",
+    "quantized_layers": {
+      "model.dfly_layers.0.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.0.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.0.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.1.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.1.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.1.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.2.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.2.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.2.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.3.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.3.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.3.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.4.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.4.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.dfly_layers.4.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.1.engram_layer.multi_head_embedding.embedding": {
+        "quant_algo": "FP8_ROW"
+      },
+      "model.layers.1.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.1.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.1.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.1.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.1.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.1.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.10.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.10.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.10.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.10.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.10.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.10.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.11.engram_layer.multi_head_embedding.embedding": {
+        "quant_algo": "FP8_ROW"
+      },
+      "model.layers.11.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.11.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.11.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.11.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.11.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.11.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.12.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.12.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.12.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.12.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.12.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.12.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.13.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.13.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.13.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.13.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.13.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.13.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.14.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.14.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.14.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.14.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.14.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.14.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.15.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.15.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.15.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.15.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.15.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.15.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.16.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.16.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.16.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.16.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.16.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.16.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.17.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.17.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.17.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.17.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.17.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.17.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.18.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.18.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.18.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.18.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.18.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.18.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.19.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.19.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.19.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.19.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.19.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.19.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.2.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.2.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.2.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.2.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.2.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.2.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.20.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.20.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.20.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.20.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.20.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.20.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.21.engram_layer.multi_head_embedding.embedding": {
+        "quant_algo": "FP8_ROW"
+      },
+      "model.layers.21.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.21.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.21.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.21.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.21.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.21.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.22.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.22.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.22.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.22.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.22.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.22.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.23.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.23.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.23.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.23.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.23.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.23.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.24.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.24.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.24.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.24.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.24.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.24.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.25.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.25.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.25.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.25.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.25.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.25.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.26.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.26.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.26.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.26.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.26.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.26.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.27.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.27.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.27.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.27.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.27.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.27.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.28.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.28.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.28.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.28.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.28.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.28.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.29.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.29.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.29.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.29.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.29.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.29.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.3.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.3.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.3.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.3.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.3.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.3.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.30.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.30.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.30.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.30.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.30.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.30.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.31.engram_layer.multi_head_embedding.embedding": {
+        "quant_algo": "FP8_ROW"
+      },
+      "model.layers.31.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.31.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.31.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.31.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.31.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.31.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.32.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.32.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.32.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.32.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.32.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.32.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.33.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.33.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.33.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.33.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.33.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.33.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.34.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.34.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.34.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.34.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.34.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.34.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.35.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.35.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.35.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.35.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.35.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.35.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.36.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.36.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.36.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.36.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.36.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.36.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.37.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.37.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.37.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.37.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.37.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.37.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.38.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.38.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.38.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.38.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.38.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.38.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.39.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.39.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.39.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.39.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.39.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.39.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.4.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.4.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.4.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.4.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.4.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.4.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.40.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.40.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.40.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.40.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.40.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.40.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.41.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.41.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.41.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.41.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.41.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.41.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.5.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.5.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.5.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.5.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.5.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.5.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.6.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.6.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.6.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.6.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.6.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.6.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.7.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.7.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.7.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.7.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.7.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.7.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.8.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.8.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.8.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.8.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.8.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.8.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.9.mlp.experts.down_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.9.mlp.experts.gate_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.9.mlp.experts.up_proj": {
+        "quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_scale": "E4M3 per 16",
+        "weight_scale_2": "FP32 per expert"
+      },
+      "model.layers.9.self_attn.linear_gate": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.9.self_attn.o_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      },
+      "model.layers.9.self_attn.q_b_proj": {
+        "quant_algo": "FP8_BLOCK",
+        "block": [
+          128,
+          128
+        ]
+      }
+    }
+  }
+}
