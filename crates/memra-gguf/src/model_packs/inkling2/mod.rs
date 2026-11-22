@@ -105,14 +105,30 @@ pub static PACK: ModelPack = ModelPack {
     // float trunk and its end-to-end KL on longer text are held separately
     // (docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md,
     // research/modelplan-onboarding-inkling2mini-20261121/checkpoint-parity/).
-    checkpoint_parity_classes: &[ClassParityGate {
-        numeric_class: DECLARED_PARITY_CLASS,
-        gate: CheckpointParityGate {
-            max_abs: 3.7,
-            max_rel: 0.0,
-            require_argmax: true,
+    checkpoint_parity_classes: &[
+        ClassParityGate {
+            numeric_class: DECLARED_PARITY_CLASS,
+            gate: CheckpointParityGate {
+                max_abs: 3.7,
+                max_rel: 0.0,
+                require_argmax: true,
+            },
         },
-    }],
+        // The nvfp4-rig class (the declared experts over the minted NVFP4 overlay, e4m3 K/V): the
+        // same rule over the same probe. Lane E's CPU oracle of the class (the overlay dequantized,
+        // K/V rounded to e4m3 on the store) and lane F's harness with its nvfp4-rig arm on CPU and
+        // on the GPU differ pairwise by 0.30 to 2.75 logits at most (KL under 2e-9, the same
+        // argmax), so the band is 5.5 with the argmax required
+        // (docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md).
+        ClassParityGate {
+            numeric_class: NVFP4_RIG_PARITY_CLASS,
+            gate: CheckpointParityGate {
+                max_abs: 5.5,
+                max_rel: 0.0,
+                require_argmax: true,
+            },
+        },
+    ],
     // The probe is a real chat turn: the system turn "Thinking effort level: 0.9" and the user turn
     // "Explain in one sentence why the sky is usually blue." rendered by the checkpoint's template
     // (lane E's p1_chat prompt, 26 tokens), whose next token every backend picks by a margin of
