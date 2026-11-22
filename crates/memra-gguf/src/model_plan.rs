@@ -8,17 +8,32 @@ use crate::config::{Arch, AttentionGateKind, LayerKind, ModelConfig};
 use crate::model_packs::mimo_v2::audio::MiMoAudioPatchPlan;
 
 pub mod deepseek_v41;
+pub mod dspark;
 pub mod hy_v4_flash;
+pub mod inkling2;
 pub mod speech;
 pub use deepseek_v41::{
     BlockElement, BlockQuant, BlockScale, Csa2AttentionPlan, Csa2Candidates, Csa2CompressedState,
     Csa2CompressorPlan, Csa2IndexerPlan, Csa2Mode, Csa2Pooling, Csa2StatePlan, DeepSeekV41Numerics,
     EngramPlan, SinglePassHcPlan,
 };
+pub use dspark::{
+    DraftAttentionPlan, DraftBlockPlan, DraftFusePlan, DraftRnnHeadPlan, DraftRopePlan,
+    DraftRowInput, DrafterTap, DsparkConfidence, DsparkContextLayers, DsparkFusion, DsparkLayers,
+    DsparkMarkov, DsparkRows, RnnChunk, RnnInput,
+};
 pub use hy_v4_flash::{
     GroupTieOrder, HyV4AttentionKind, HyV4AttentionPlan, HyV4EngramMultiplierBound,
     HyV4EngramNormEpsilon, HyV4EngramPlan, HyV4FlashNumerics, HyV4ResidualPlan, HyV4StatePlan,
     HyV4WeightFormat, IndexPoolPlan, LatentMoePlan,
+};
+pub use inkling2::{
+    AttentionInputs, BeyondExtent, BlockAttentionPlan, ClipScale, DenseNumericsPlan,
+    DenseTensorClass, ExpertActivationMode, ExpertNumericsPlan, ExpertWeightFormat,
+    Inkling2NumericClass, Inkling2Numerics, Inkling2Plan, Inkling2WeightClass, KvCacheFormat,
+    L2ClipPlan, LogPositionScalePlan, LoopMessageTarget, LoopPlan, LoopSlotPlan, OutputGatePlan,
+    QuerySinkPlan, RelativeBiasAttentionPlan, RelativeBiasPlan, RelativeBiasStatePlan,
+    ShortConvPlan, ShortConvTaps,
 };
 use speech::WhisperPlan;
 
@@ -62,6 +77,9 @@ pub struct ModelPlan {
     /// Hy4-flash family numerics (stream copy at entry, hc_head exit, F32 head). `None` for
     /// every other family.
     pub hy_v4_flash: Option<HyV4FlashNumerics>,
+    /// Inkling 2 model-level program (embedding norm, the loop, numerics, the declared drafter).
+    /// `None` for every other family.
+    pub inkling2: Option<Inkling2Plan>,
 }
 
 // Plan hashes use Debug serialization. Keep the pre-speech representation unchanged
@@ -100,6 +118,9 @@ impl std::fmt::Debug for ModelPlan {
         }
         if let Some(numerics) = &self.hy_v4_flash {
             d.field("hy_v4_flash", numerics);
+        }
+        if let Some(inkling) = &self.inkling2 {
+            d.field("inkling2", inkling);
         }
         d.finish()
     }
@@ -373,6 +394,8 @@ pub enum AttentionPlan {
     /// Hy4-flash gated MLA (indexed or sliding), sinks, elementwise sigmoid output gate,
     /// post-projection norm.
     HyV4(HyV4AttentionPlan),
+    /// Inkling 2 relative-position-bias attention (full or sliding window).
+    RelativeBias(RelativeBiasAttentionPlan),
 }
 
 #[derive(Clone, PartialEq)]
@@ -767,6 +790,12 @@ pub enum ActivationPlan {
     SwiGluPreClamped {
         limit: f32,
     },
+    /// Inkling 2: `softcap(g, gate_cap) * sigmoid(g) * softcap(u, up_cap)` with
+    /// `softcap(x, c) = c * tanh(x / c)`. The sigmoid reads the raw gate.
+    SwiGluSoftcapped {
+        gate_cap: f32,
+        up_cap: f32,
+    },
     Named(String),
 }
 
@@ -804,6 +833,8 @@ pub enum ResidualTopology {
     /// Hy4-flash independent hyper-connections: per-sublayer sigmoid pre/post mixes, no
     /// Sinkhorn, identity residual, config write-back magnitude, Engram before attention.
     HyV4(HyV4ResidualPlan),
+    /// Inkling 2 block attention residual: depth mixes over block outputs, a new stream per block.
+    BlockAttention(BlockAttentionPlan),
 }
 
 /// qwen4_exp trunk/MTP exit downmix: `hyper_connection_mixer` (same tensor shapes as one
@@ -879,12 +910,16 @@ pub enum StatePlan {
     Csa2(Csa2StatePlan),
     /// Hy4-flash latent + rope-key cache (windowed on sliding layers) plus indexer token keys.
     HyV4(HyV4StatePlan),
+    /// Inkling 2: per-slot KV rows plus short-conv history.
+    RelativeBias(RelativeBiasStatePlan),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LogitsTransform {
     Softcap(f32),
     SuppressTokens(Vec<u32>),
+    /// Keep the first `n` logits: the output projection is padded past the vocabulary.
+    Truncate(u32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -951,13 +986,102 @@ pub struct MiMoMtp3Plan {
     pub shared_output_head: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// The DSpark drafter program: a block of `block_size` rows drafted in parallel from the
+/// trunk's taps, then chained through a Markov head. The components are typed variants
+/// (`dspark`); the DeepSeek-V4 program is the one `DsparkPlan::deepseek_v4` builds.
+#[derive(Clone, PartialEq)]
 pub struct DsparkPlan {
     pub block_size: u32,
+    /// The token rows `1..block_size` embed under `DsparkRows::NoiseToken`; 0 and unread
+    /// under the other row inputs.
     pub noise_token_id: u32,
+    /// The trunk taps, as the checkpoint counts them (DeepSeek-V4: trunk layer ids; Inkling 2:
+    /// layer visits in execution order, typed by `DsparkFusion::FuseWeights::taps`).
     pub target_layer_ids: Vec<u32>,
     pub markov_rank: u32,
+    /// Trunk-shaped draft blocks (`DsparkLayers::TrunkBlocks`); empty otherwise.
     pub blocks: Vec<LayerPlan>,
+    pub rows: DsparkRows,
+    pub fusion: DsparkFusion,
+    pub layers: DsparkLayers,
+    pub markov: DsparkMarkov,
+    pub confidence: Option<DsparkConfidence>,
+}
+
+impl DsparkPlan {
+    /// The DeepSeek-V4 program over these blocks.
+    pub fn deepseek_v4(
+        block_size: u32,
+        noise_token_id: u32,
+        target_layer_ids: Vec<u32>,
+        markov_rank: u32,
+        blocks: Vec<LayerPlan>,
+    ) -> Self {
+        Self {
+            block_size,
+            noise_token_id,
+            target_layer_ids,
+            markov_rank,
+            blocks,
+            rows: DsparkRows::NoiseToken,
+            fusion: DsparkFusion::MainProjection,
+            layers: DsparkLayers::TrunkBlocks,
+            markov: DsparkMarkov::Bigram,
+            confidence: Some(DsparkConfidence::HiddenAndMarkovEmbedding),
+        }
+    }
+
+    /// The draft program's operations: the shared DSpark operations with their variants, and
+    /// the draft layers' own.
+    pub fn operations(&self, operations: &mut Vec<OperationKind>) {
+        if matches!(self.rows, DsparkRows::Block(b) if b.anchor == DraftRowInput::TrunkEmbeddingNormed)
+        {
+            operations.push(OperationKind::EmbeddingNorm);
+        }
+        operations.push(OperationKind::DsparkFusion);
+        match &self.layers {
+            DsparkLayers::TrunkBlocks => {
+                for block in &self.blocks {
+                    block.operations(operations);
+                }
+            }
+            DsparkLayers::Context(_) => operations.push(OperationKind::DsparkContextAttention),
+        }
+        operations.push(OperationKind::DsparkMarkovHead);
+        if self.confidence.is_some() {
+            operations.push(OperationKind::DsparkConfidenceHead);
+        }
+    }
+
+    /// Every component is the DeepSeek-V4 one.
+    pub fn is_deepseek_v4(&self) -> bool {
+        self.rows == DsparkRows::NoiseToken
+            && self.fusion == DsparkFusion::MainProjection
+            && self.layers == DsparkLayers::TrunkBlocks
+            && self.markov == DsparkMarkov::Bigram
+            && self.confidence == Some(DsparkConfidence::HiddenAndMarkovEmbedding)
+    }
+}
+
+// The serialized plan (`{plan:#?}`) is what rewrite receipts bind: the DeepSeek-V4 program
+// prints the fields it has always printed, and another program prints its variants too.
+impl std::fmt::Debug for DsparkPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = f.debug_struct("DsparkPlan");
+        s.field("block_size", &self.block_size)
+            .field("noise_token_id", &self.noise_token_id)
+            .field("target_layer_ids", &self.target_layer_ids)
+            .field("markov_rank", &self.markov_rank)
+            .field("blocks", &self.blocks);
+        if !self.is_deepseek_v4() {
+            s.field("rows", &self.rows)
+                .field("fusion", &self.fusion)
+                .field("layers", &self.layers)
+                .field("markov", &self.markov)
+                .field("confidence", &self.confidence);
+        }
+        s.finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1087,6 +1211,13 @@ impl ModelPlan {
             return Err(PlanCompileError::UnsupportedSemantics {
                 field: "deepseek_v41",
                 value: "compiled only by the deepseek_v41 model pack".into(),
+            });
+        }
+        // The canonical compiler has no loop, relative-bias attention or block residual arm.
+        if cfg.inkling2.is_some() {
+            return Err(PlanCompileError::UnsupportedSemantics {
+                field: "inkling2",
+                value: "compiled only by the inkling2 model pack".into(),
             });
         }
         const MAX_MODEL_LAYERS: u32 = 1_024;
@@ -1398,6 +1529,7 @@ impl ModelPlan {
             sampling_defaults: None,
             deepseek_v41: None,
             hy_v4_flash: None,
+            inkling2: None,
         })
     }
 
@@ -1446,12 +1578,7 @@ impl ModelPlan {
             operations.push(OperationKind::MtpHead);
         }
         if let Some(DrafterPlan::Dspark(dspark)) = self.drafter.as_ref() {
-            operations.push(OperationKind::DsparkFusion);
-            for block in &dspark.blocks {
-                block.operations(&mut operations);
-            }
-            operations.push(OperationKind::DsparkMarkovHead);
-            operations.push(OperationKind::DsparkConfidenceHead);
+            dspark.operations(&mut operations);
         }
         if matches!(self.drafter.as_ref(), Some(DrafterPlan::MiMoMtp3(_))) {
             operations.push(OperationKind::MiMoMtp3Draft);
@@ -1469,6 +1596,7 @@ impl ModelPlan {
             operations.push(match transform {
                 LogitsTransform::Softcap(_) => OperationKind::LogitsSoftcap,
                 LogitsTransform::SuppressTokens(_) => OperationKind::LogitsMask,
+                LogitsTransform::Truncate(_) => OperationKind::LogitsTruncate,
             });
         }
         operations.push(OperationKind::OutputProjection);
@@ -1515,6 +1643,43 @@ impl ModelPlan {
         if self.deepseek_v41.is_some() {
             operations.push(OperationKind::Fp8Block32Linear);
         }
+        if let Some(inkling) = &self.inkling2 {
+            operations.push(OperationKind::EmbeddingNorm);
+            operations.push(OperationKind::LoopWeightSharing);
+            operations.push(OperationKind::LoopMessageMix);
+            operations.push(OperationKind::LoopController);
+            for (format, mode, operation) in [
+                (
+                    ExpertWeightFormat::Nvfp4Amax,
+                    ExpertActivationMode::Declared,
+                    OperationKind::Nvfp4W4A4Experts,
+                ),
+                (
+                    ExpertWeightFormat::Mxfp8Row32,
+                    ExpertActivationMode::Declared,
+                    OperationKind::Mxfp8W8A8Experts,
+                ),
+                (
+                    ExpertWeightFormat::Nvfp4Amax,
+                    ExpertActivationMode::Float,
+                    OperationKind::Nvfp4FloatInputExperts,
+                ),
+                (
+                    ExpertWeightFormat::Mxfp8Row32,
+                    ExpertActivationMode::Float,
+                    OperationKind::Mxfp8FloatInputExperts,
+                ),
+            ] {
+                if inkling
+                    .numerics
+                    .experts
+                    .iter()
+                    .any(|expert| expert.weight == format && expert.activation == mode)
+                {
+                    operations.push(operation);
+                }
+            }
+        }
         if self.per_layer_input.is_some() {
             operations.push(OperationKind::PerLayerInputEmbedding);
         }
@@ -1532,12 +1697,7 @@ impl ModelPlan {
                 operations.push(OperationKind::MtpHead);
             }
             if let Some(DrafterPlan::Dspark(dspark)) = self.drafter.as_ref() {
-                operations.push(OperationKind::DsparkFusion);
-                for block in &dspark.blocks {
-                    block.operations(&mut operations);
-                }
-                operations.push(OperationKind::DsparkMarkovHead);
-                operations.push(OperationKind::DsparkConfidenceHead);
+                dspark.operations(&mut operations);
             }
             if matches!(self.drafter.as_ref(), Some(DrafterPlan::MiMoMtp3(_))) {
                 operations.push(OperationKind::MiMoMtp3Draft);
@@ -1558,6 +1718,7 @@ impl ModelPlan {
             operations.push(match transform {
                 LogitsTransform::Softcap(_) => OperationKind::LogitsSoftcap,
                 LogitsTransform::SuppressTokens(_) => OperationKind::LogitsMask,
+                LogitsTransform::Truncate(_) => OperationKind::LogitsTruncate,
             });
         }
         operations.push(OperationKind::OutputProjection);
@@ -1929,7 +2090,7 @@ impl ModelConfig {
                 }
                 ActivationPlan::GeluTanh => matches!(kind, "gelu_pytorch_tanh" | "gelu_tanh"),
                 ActivationPlan::SwiGluOai { .. } => kind == "swigluoai",
-                ActivationPlan::Named(_) => false,
+                ActivationPlan::SwiGluSoftcapped { .. } | ActivationPlan::Named(_) => false,
             };
             if !represented {
                 return Err(unsupported("hidden_act", kind.to_owned()));
@@ -2046,6 +2207,22 @@ impl LayerPlan {
             }
             AttentionPlan::GatedDeltaNet(_) => operations.push(OperationKind::GatedDeltaNet),
             AttentionPlan::KimiDeltaNet(_) => operations.push(OperationKind::KimiDeltaNet),
+            AttentionPlan::RelativeBias(attention) => {
+                operations.push(OperationKind::RelativeBiasAttention);
+                operations.push(OperationKind::AttentionL2Clip);
+                if attention.log_scale.is_some() {
+                    operations.push(OperationKind::AttentionLogScale);
+                }
+                operations.push(OperationKind::PerQuerySink);
+                push_gate(AttentionGateKind::SeparatePerDim, operations);
+                operations.push(OperationKind::ShortConv);
+                if [attention.key_conv, attention.value_conv]
+                    .iter()
+                    .any(|conv| matches!(conv.taps, ShortConvTaps::StaticPlusDynamic { .. }))
+                {
+                    operations.push(OperationKind::DynamicShortConv);
+                }
+            }
             AttentionPlan::Csa2(csa2) => {
                 operations.push(OperationKind::Csa2Attention);
                 let candidates = match csa2.mode {
@@ -2087,6 +2264,7 @@ impl LayerPlan {
             StatePlan::SharedKvCache { .. } => OperationKind::SharedKvState,
             StatePlan::Csa2(_) => OperationKind::Csa2State,
             StatePlan::HyV4(_) => OperationKind::HyV4State,
+            StatePlan::RelativeBias(_) => OperationKind::RelativeBiasState,
         });
         operations.push(OperationKind::RmsNorm);
         match &self.mlp {
@@ -2138,6 +2316,7 @@ impl LayerPlan {
                 OperationKind::SinglePassHyperConnections
             }
             ResidualTopology::HyV4(_) => OperationKind::IndependentHyperConnections,
+            ResidualTopology::BlockAttention(_) => OperationKind::BlockAttentionResidual,
         });
     }
 }
@@ -2159,6 +2338,7 @@ fn push_activation(activation: &ActivationPlan, operations: &mut Vec<OperationKi
         ActivationPlan::SwiGluOai { .. } => OperationKind::SwiGluOaiActivation,
         ActivationPlan::SwiGluClamped { .. } => OperationKind::SwiGluClampedActivation,
         ActivationPlan::SwiGluPreClamped { .. } => OperationKind::SwiGluPreClampedActivation,
+        ActivationPlan::SwiGluSoftcapped { .. } => OperationKind::SoftcappedSwiGluActivation,
         ActivationPlan::Named(_) => OperationKind::NamedActivation,
     });
 }
@@ -2178,6 +2358,7 @@ fn push_gate(gate: AttentionGateKind, operations: &mut Vec<OperationKind>) {
         AttentionGateKind::None => {}
         AttentionGateKind::FusedQ => operations.push(OperationKind::FusedAttentionGate),
         AttentionGateKind::SeparateHead => operations.push(OperationKind::SeparateAttentionGate),
+        AttentionGateKind::SeparatePerDim => operations.push(OperationKind::PerDimOutputGate),
     }
 }
 
@@ -3106,6 +3287,52 @@ pub enum OperationKind {
     Nvfp4W4A16Linear,
     /// Hy4-flash exit: `hc_head` stream collapse before the final norm, F32 head.
     HyV4StreamExit,
+    /// Inkling 2 bring-up numerics: NVFP4 expert weights dequantized exactly, float inputs.
+    Nvfp4FloatInputExperts,
+    /// Inkling 2 bring-up numerics: MXFP8 expert weights dequantized exactly, float inputs.
+    Mxfp8FloatInputExperts,
+    /// Inkling 2: RMS norm on token embeddings before the first layer.
+    EmbeddingNorm,
+    /// Inkling 2 loop: core layers run several passes over shared weights, each pass in its own
+    /// cache slots.
+    LoopWeightSharing,
+    /// Inkling 2 loop: the depth mix that reads a message from the previous pass.
+    LoopMessageMix,
+    /// Inkling 2 loop: the low-rank forget/gain controller that mixes a message into a layer input.
+    LoopController,
+    /// Inkling 2 declared numerics: NVFP4 expert weights (per-expert amax) with NVFP4-quantized
+    /// inputs (per-token amax, four-over-six block scales).
+    Nvfp4W4A4Experts,
+    /// Inkling 2 declared numerics: MXFP8 expert weights (ue8m0 per 32 inputs) with
+    /// MXFP8-quantized inputs.
+    Mxfp8W8A8Experts,
+    /// Inkling 2 attention core: GQA without RoPE over a learned relative-position bias.
+    RelativeBiasAttention,
+    /// Inkling 2: L2 norm clips on Q, K and the relative-position vector.
+    AttentionL2Clip,
+    /// Inkling 2 full layers: the log position scale on Q and the relative-position vector.
+    AttentionLogScale,
+    /// Inkling 2: a per-query projected sink logit in the softmax denominator.
+    PerQuerySink,
+    /// Inkling 2: a per-head-and-channel sigmoid output gate from its own tensor.
+    PerDimOutputGate,
+    /// Inkling 2: causal depthwise short convolutions with a residual (K, V, attention and MLP
+    /// outputs).
+    ShortConv,
+    /// Inkling 2 full layers: input-dependent taps added to the K and V short convolutions.
+    DynamicShortConv,
+    /// Inkling 2 per-slot state: KV rows (a ring on sliding layers) plus short-conv history.
+    RelativeBiasState,
+    /// Inkling 2: block attention residual (depth mixes over block outputs, a new stream per
+    /// block).
+    BlockAttentionResidual,
+    /// Inkling 2: `softcap(gate) * sigmoid(gate) * softcap(up)`.
+    SoftcappedSwiGluActivation,
+    /// DSpark draft layers with bidirectional block attention over context K/V written once
+    /// per committed position, and dense SwiGLU (`DsparkLayers::Context`, Inkling 2).
+    DsparkContextAttention,
+    /// Drop the logits past the unpadded vocabulary.
+    LogitsTruncate,
     Mtp,
     DraftPlan,
     MtpFusion,

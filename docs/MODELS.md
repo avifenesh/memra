@@ -46,6 +46,7 @@ route; "qualified" and "tuned" belong to pack states.
 | [DeepSeek-V4.1-Flash](models/deepseek-v41-flash.md) | `deepseek_v41` | NativeQualified on one RTX PRO 6000, NativeReference on CPU <!-- support: deepseek_v41-gpu-1x-pro6000,deepseek_v41-reference --> | safetensors checkpoint through its own memra-server route, one RTX PRO 6000 with the routed experts in host memory; `verify serve` November 2026 | no |
 | [Hy4-flash](models/hy4-flash.md) | `hy_v4_flash` | NativeQualified on one GB10, NativeReference on CPU <!-- support: hy_v4_flash-gpu-1x-gb10,hy_v4_flash-reference --> | NVFP4 safetensors through its own memra-server route with the checkpoint's DFly2 drafts, one GB10 with the Engram tables on disk; `verify serve` November 2026 | no |
 | [Qwen3.8-Flash-Next](models/qwen38-flash-next.md) | `qwen4_exp` | none (pack support `None`) | none (bring-up gate path) | no |
+| [Inkling 2 Mini](models/inkling2-mini.md) | `inkling2` | NativeQualified <!-- support: inkling2-shipped-gpu-1x-5090,inkling2-nvfp4-rig-gpu-1x-5090 --> (the nvfp4-rig class, the default, and the shipped class; one RTX 5090 Laptop GPU) | safetensors checkpoint through its own memra-server route, one RTX 5090 Laptop GPU; verify checkpoint and verify serve passed November 2026 | no |
 
 Packs with no model card: `qwen3`, `qwen3_moe`, `llama_dense` and `glm_dsa` (GLM-5 and 5.2) are NativeReference on tiny fixtures; `olmoe`, `minimax_m3` and the `mimo_v2` profiles declare no state. <!-- support: qwen3-tiny-random,qwen3_moe-reference,llama_dense-reference,glm_dsa-reference -->
 

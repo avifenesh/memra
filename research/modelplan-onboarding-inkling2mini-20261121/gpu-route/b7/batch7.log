@@ -1,0 +1,11 @@
+gpulock: 5090 leased as claude-code-20261121T091233-2965530 for 20m
+c6506ef55ceb20014f88ab122cd9276f6a2b79ad184ba0ba7eca15a69cb58093  ink2-gpu
+398f26d0a52195a7bea0b279621647c116c32bd741f6230eadebea23d4c04e12  ink2-gpu-gate
+ff13a6b38b76f25f0822f6efab47e7c385f3bce94240fb398608dd63a8a576f0  kernel-check
+87fee614c0a3626522a1288b02afc9fedc5aac211d4b0e1968c402db022f6f17  ink2-gpu-debug
+RC=0
+ink2-gpu: class inkling2-gpu-f32-stream/FloatActivation; resident weights 17.594 GiB, with state 19.005 GiB, loaded in 36.7s; context 8448, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 8260 positions in 96.8s: resid attn worst slot 2.219e-6, ffn worst slot 2.133e-6, router rows 396480/396480, logits max abs 1.097e-4 KL mean 8.239e-13, argmax 148/148, greedy 1/1
+RC=0
+ink2-gpu: class inkling2-gpu-f32-stream/DeclaredActivationQuant; resident weights 17.594 GiB, with state 19.067 GiB, loaded in 23.1s; context 8448, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 8260 positions in 85.1s: resid attn worst slot 3.513e-1, ffn worst slot 3.634e-1, router rows 198732/396480, logits max abs 1.793e1 KL mean 3.946e-2, argmax 144/148, greedy 1/1

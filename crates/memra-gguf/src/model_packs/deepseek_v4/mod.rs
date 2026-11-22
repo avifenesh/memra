@@ -10,6 +10,7 @@ pub static PACK: ModelPack = ModelPack {
     family: "deepseek_v4",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
+    auxiliary_files: &[],
     // `deepseek_v4_preview` names the preview encoding, whose clamp-only act-quant is
     // GATE-ONLY: memra-server serves the matrix program, which implements the 0731
     // RefFp8Round contract alone, and refuses a preview artifact at load by name
@@ -46,6 +47,7 @@ pub static DSPARK_PACK: ModelPack = ModelPack {
     family: "deepseek_v4_dspark",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
+    auxiliary_files: &[],
     aliases: &["deepseek_v4_dspark", "deepseek-v4-dspark"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
@@ -112,13 +114,13 @@ fn plan_builder(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
     let mut plan = canonical_plan(config)?;
     if config.nextn_predict_layers == 3 {
         let blocks = plan.mtp_blocks.drain(..).map(|block| block.layer).collect();
-        plan.drafter = Some(DrafterPlan::Dspark(DsparkPlan {
-            block_size: 5,
-            noise_token_id: 128_799,
-            target_layer_ids: vec![40, 41, 42],
-            markov_rank: 256,
+        plan.drafter = Some(DrafterPlan::Dspark(DsparkPlan::deepseek_v4(
+            5,
+            128_799,
+            vec![40, 41, 42],
+            256,
             blocks,
-        }));
+        )));
     }
     Ok(plan)
 }

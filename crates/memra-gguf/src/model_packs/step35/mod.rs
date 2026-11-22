@@ -6,6 +6,7 @@ pub static PACK: ModelPack = ModelPack {
     family: "step35",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
+    auxiliary_files: &[],
     aliases: &["step35", "step37", "step-3.7-flash"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[

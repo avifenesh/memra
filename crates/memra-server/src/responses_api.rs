@@ -1278,7 +1278,7 @@ async fn run_background_job(
                             return;
                         }
                     }
-                    Event::Token { text: delta, .. } => {
+                    Event::Token { id: token_id, text: delta } => {
                         if let Err(error) = publication.reserve_delta(&delta, 1) {
                             publication.fail_storage(error);
                             finalize_terminal_job(&guarded_store, &id, JobRecord { status: JobStatus::Failed, output: None, error: Some("background output could not be buffered by the configured store".into()) });
@@ -1309,7 +1309,7 @@ async fn run_background_job(
                             r.capture_completion_delta(&delta);
                         }
                         match parser.as_mut() {
-                            Some(p) => consume(p.push(&delta), &mut text, &mut reasoning, &mut calls),
+                            Some(p) => consume(p.push_id(token_id, &delta), &mut text, &mut reasoning, &mut calls),
                             None => text.push_str(&delta),
                         }
                     }
@@ -1778,7 +1778,7 @@ fn responses_sse(
                     terminal = true;
                     break;
                 }
-                Event::Token { id: _, text } => {
+                Event::Token { id, text } => {
                     if let Some(receipt) = receipt.as_mut()
                         && let Err(err) = receipt.record_completion_token()
                     {
@@ -1799,7 +1799,7 @@ fn responses_sse(
                     }
                     match parser.as_mut() {
                         Some(p) => {
-                            for piece in p.push(&text) {
+                            for piece in p.push_id(id, &text) {
                                 piece_frames!(piece);
                             }
                         }

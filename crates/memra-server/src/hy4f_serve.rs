@@ -436,6 +436,7 @@ pub fn caps(m: &Hy4fModel) -> ModelCaps {
         tools_branch: true,
         hy3: true,
         hy4: true,
+        inkling2: None,
         qwen_think: false,
         think_switch: false,
         chat_ok: true,

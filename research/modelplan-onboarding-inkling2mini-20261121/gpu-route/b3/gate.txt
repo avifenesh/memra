@@ -1,0 +1,15 @@
+ink2g-gemm-bf16 [m=70 n=200 k=320] max|err|/sum|p|=7.236e-8 (bound 3.815e-5); rows alone (decode GEMV) vs in the call (tile GEMM) bit-differ=0 OK
+ink2g-gemm-nvfp4 [experts=5 n=130 k=96 pairs=150 tiles=5] max|err|/sum|p|=1.956e-7 (bound 1.168e-5); decode GEMV on device tiles vs the tile GEMM bit-differ=0 (red arm 0); red arm dequant-bf16: vs its own reference 2.199e-7, elements moved 19500/19500 OK
+ink2g-gemm-mxfp8 [experts=5 n=130 k=96 pairs=150 tiles=5] max|err|/sum|p|=2.623e-7 (bound 1.168e-5); decode GEMV on device tiles vs the tile GEMM bit-differ=0 (red arm 0); red arm dequant-bf16: vs its own reference 2.623e-7, elements moved 0/19500 OK
+ink2g-embed-norm [rows=9 hidden=2304] embed max rel=5.896e-8, norm max rel=5.938e-8 (one f32 rounding 1.2e-7) OK
+ink2g-mix [rows=7 states=4 queries=3] max rel=5.922e-8 OK
+ink2g-controller [rows=5 rank=64] max rel=5.867e-8 OK
+ink2g-heads [rows=6 heads=24 width=128] clip+scale+tau max rel=5.937e-8, value norm into a ring max rel=5.918e-8 OK
+ink2g-conv-static [rows=11 channels=1024 kernel=4] max rel=5.919e-8; calls of 5,1,1,3,1 vs one call bit-differ=0; red arm conv-state moved 6144/11264 OK
+ink2g-conv-dynamic [rows=11 channels=1024 kernel=4] max rel=5.832e-8; calls of 5,1,1,3,1 vs one call bit-differ=0; red arm conv-state moved 6144/11264 OK
+ink2g-attn-sliding [positions=40 window=8 extent=8 mask_beyond=true cache rows=16] max |err| / (|ref| + 1)=3.900e-8; calls of 8 vs calls of 1 bit-differ=0 OK
+ink2g-attn-full [positions=40 window=0 extent=12 mask_beyond=false cache rows=64] max |err| / (|ref| + 1)=3.917e-8; calls of 8 vs calls of 1 bit-differ=0 OK
+ink2g-attn-full-masked [positions=40 window=0 extent=12 mask_beyond=true cache rows=64] max |err| / (|ref| + 1)=3.914e-8; calls of 8 vs calls of 1 bit-differ=0 OK
+ink2g-route [rows=9 experts=128 top_k=8] picks in rank order differ=0, weights max rel=5.862e-8; red arm ties-high moved 3/3 tied rows and no untied row OK
+ink2g-swiglu-sum-head SwiGLU max rel=5.898e-8, routed sum max rel=5.958e-8, softcap max rel=5.895e-8, argmax [777, 3] (first of equal maxima: [777, 3]) OK
+ink2-gpu-gate: ALL OK (14 cells)

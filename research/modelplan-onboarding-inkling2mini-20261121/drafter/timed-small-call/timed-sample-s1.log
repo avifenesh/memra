@@ -1,0 +1,26 @@
+memory: device 23.511 GiB, driver free at open 23.051, weights 17.594, full KV 0.125 (2048 positions x 65728 B), rings 0.625, conv 0.007, work 0.228, declared work 0.063, driver free before KV 4.489 and after load 4.364, max context 73331, drafter 0.852 (context K/V 0.047)
+loaded: route 17.594 GiB weights, drafter 0.852 GiB; class inkling2-gpu-f32-stream/DeclaredActivationQuant
+chat-trip [chat] k=0: accept len 1.228, tokens/step 2.228, 57 steps, plain-equal None
+chat-trip [chat] k=5: accept len 0.984, tokens/step 1.984, 64 steps, plain-equal None
+chat-email [chat] k=0: accept len 1.246, tokens/step 2.246, 57 steps, plain-equal None
+chat-email [chat] k=5: accept len 1.286, tokens/step 2.286, 56 steps, plain-equal None
+chat-explain [chat] k=0: accept len 0.882, tokens/step 1.882, 68 steps, plain-equal None
+chat-explain [chat] k=5: accept len 1.228, tokens/step 2.228, 57 steps, plain-equal None
+chat-multi [chat] k=0: accept len 1.065, tokens/step 2.065, 62 steps, plain-equal None
+chat-multi [chat] k=5: accept len 1.415, tokens/step 2.415, 53 steps, plain-equal None
+code-py-lru [code] k=0: accept len 1.153, tokens/step 2.153, 59 steps, plain-equal None
+code-py-lru [code] k=5: accept len 1.844, tokens/step 2.844, 45 steps, plain-equal None
+code-rust-fix [code] k=0: accept len 2.048, tokens/step 3.048, 42 steps, plain-equal None
+code-rust-fix [code] k=5: accept len 2.969, tokens/step 3.969, 32 steps, plain-equal None
+code-sql [code] k=0: accept len 2.432, tokens/step 3.432, 37 steps, plain-equal None
+code-sql [code] k=5: accept len 2.528, tokens/step 3.528, 36 steps, plain-equal None
+code-ts-review [code] k=0: accept len 0.924, tokens/step 1.924, 66 steps, plain-equal None
+code-ts-review [code] k=5: accept len 1.646, tokens/step 2.646, 48 steps, plain-equal None
+agent-ci [agentic] k=0: accept len 4.000, tokens/step 5.000, 10 steps, plain-equal None
+agent-ci [agentic] k=5: accept len 4.556, tokens/step 5.556, 9 steps, plain-equal None
+agent-bug [agentic] k=0: accept len 3.381, tokens/step 4.381, 21 steps, plain-equal None
+agent-bug [agentic] k=5: accept len 4.182, tokens/step 5.182, 11 steps, plain-equal None
+agent-ops [agentic] k=0: accept len 1.833, tokens/step 2.833, 42 steps, plain-equal None
+agent-ops [agentic] k=5: accept len 2.282, tokens/step 3.282, 39 steps, plain-equal None
+agent-followup [agentic] k=0: accept len 2.870, tokens/step 3.870, 23 steps, plain-equal None
+agent-followup [agentic] k=5: accept len 3.818, tokens/step 4.818, 22 steps, plain-equal None

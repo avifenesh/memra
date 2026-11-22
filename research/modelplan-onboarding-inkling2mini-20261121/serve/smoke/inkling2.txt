@@ -1,0 +1,21 @@
+    Finished `release` profile [optimized] target(s) in 0.15s
+serve-smoke: pack inkling2 (env: MEMRA_CTX=8192; arms: plain)
+warning: memra-engine@0.141.1: nvcc from $CUDA_HOME: /usr/local/cuda/bin/nvcc
+warning: memra-engine@0.141.1: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.141.1 (/home/avifenesh/.cache/inkling2mini/wt-serve/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 3m 14s
+== serve-smoke: plain serving ==
+  ok: /models lists the model
+  ok: chat non-stream (text + usage + finish_reason)
+  ok: chat stream (SSE chunks + [DONE])
+  ok: /v1/completions
+  ok: greedy determinism (2 runs identical)
+  ok: 3 concurrent chats
+  ok: long generation (>=100 tok)
+== serve-smoke: cache-metering arm SKIP (pack inkling2 runs no such arm)
+== serve-smoke: spec arm SKIP (no draft at /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+== serve-smoke: gemma4 arm SKIP (no model at /data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf)
+== serve-smoke: Q35 coldhol arm SKIP (no model at /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf)
+== serve-smoke: MoE spec arm SKIP (no model at /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf or no draft at /data/ai-ml/hf-models/qwen36-35b-moe/draft-35b-owntrim-nvfp4head-q4blk.gguf)
+serve-smoke: server logs kept in SMOKE_OUT (serve-smoke-boot<N>.log; the last boot in serve-smoke.log)
+serve-smoke: 0 failed

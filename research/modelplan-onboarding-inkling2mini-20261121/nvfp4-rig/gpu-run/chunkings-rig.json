@@ -1,0 +1,43 @@
+{
+  "chunk": 512,
+  "chunkings": {
+    "a": 26,
+    "argmax_differ": 0,
+    "b": 1,
+    "bit_identical": true,
+    "logit_rows_differ": 0,
+    "rows": 57,
+    "slot_output_rows_compared": 2736,
+    "slot_output_rows_differ": 0
+  },
+  "clocks_at_end": "2767 MHz, 14001 MHz, 106.36 W, 81, 99 %",
+  "clocks_at_start": "1627 MHz, 14001 MHz, 32.09 W, 71, 6 %",
+  "context": 2048,
+  "expert_activation_class": "DeclaredActivationQuant",
+  "force_moe_in": false,
+  "force_router": false,
+  "load_s": 26.200106697,
+  "loadavg_at_start": "18.49 17.61 19.29 14/6988 4114094",
+  "memory": {
+    "conv": 7667712,
+    "declared_work": 66830336,
+    "device_total": 25244663808,
+    "driver_free_after_load": 8779333632,
+    "driver_free_at_open": 24751243264,
+    "driver_free_before_kv": 8812888064,
+    "kv_full": 33554432,
+    "kv_rings": 167772160,
+    "max_context": 537896,
+    "per_position": 16384,
+    "weights": 15389163076,
+    "work": 243961216
+  },
+  "numeric_class": "inkling2-gpu-f32-stream/nvfp4-rig/DeclaredActivationQuant",
+  "red_arms": [],
+  "resident_gib": 14.851535145193338,
+  "runner": "ink2-gpu",
+  "stream_outside_experts": "f32",
+  "tape": "/home/avifenesh/.cache/inkling2mini/oracle/tapes/p1_chat.actq_f32",
+  "tape_arm": "actq",
+  "weight_gib": 14.332274977117777
+}

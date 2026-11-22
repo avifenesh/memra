@@ -492,6 +492,7 @@ pub fn caps(m: &Dsv41Model) -> ModelCaps {
         gemma_unopened_thought: false,
         dsv4: true,
         dsv41: true,
+        inkling2: None,
         glm5: false,
         hy4: false,
         chat_temperature_default: None,

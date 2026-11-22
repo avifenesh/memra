@@ -162,6 +162,7 @@ impl WhisperPlan {
             partition_boundaries: Vec::new(),
             deepseek_v41: None,
             hy_v4_flash: None,
+            inkling2: None,
         }
     }
 }

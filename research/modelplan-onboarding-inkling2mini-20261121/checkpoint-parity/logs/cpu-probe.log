@@ -1,0 +1,6 @@
+Loading weights:   0%|          | 0/645 [00:00<?, ?it/s]Loading weights:   8%|▊         | 49/645 [00:00<00:01, 469.36it/s]Loading weights: 100%|██████████| 645/645 [00:00<00:00, 2475.98it/s]Loading weights: 100%|██████████| 645/645 [00:00<00:00, 2254.80it/s]
+/home/avifenesh/.cache/inkling2mini/klsens/klh.py:209: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:208.)
+  d = {"w": torch.from_numpy(np.ascontiguousarray(st.raw(p + nm + "_weight"))).to(DEV),
+[transformers] `causal_conv1d_fn` is falling back to its reference PyTorch implementation because `causal_conv1d` is not installed. This is correct but much slower; install `causal_conv1d` for the optimized kernel.
+harness loaded in 2.4s, gpu mem 0.00 GiB
+PARITY_KL_DONE

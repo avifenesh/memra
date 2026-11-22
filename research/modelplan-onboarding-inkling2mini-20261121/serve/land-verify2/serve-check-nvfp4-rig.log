@@ -1,0 +1,24 @@
+PASS chat non-stream: status 200 finish length
+PASS chat stream: 64 frames
+PASS stream text equals non-stream: 0 chars
+PASS greedy determinism
+PASS completions: {"object":"text_completion","model":"ink2","choices":[{"index":0,"text":" Paris.\n\nA. Noun\n\n","finish_reason":"length"}],"usage":{"prompt_tokens":5,"completi
+PASS tool call parsed: [{"id": "call_0acaa39fa4e08df2", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\":\"Paris\"}"}}]
+PASS reasoning_effort 0.5 accepted
+PASS reasoning_effort 'high' accepted
+PASS reasoning_effort 0.0 accepted
+PASS reasoning_effort 'none' accepted
+PASS reasoning_effort '0.5' refused: status 400: {"error":{"message":"bad reasoning_effort \"0.5\": Unknown reasoning_effort: 0.5 (none|minimal|low|medium|high|xhigh|max, or a number in [0.0, 0.99])","type":"i
+PASS reasoning_effort 1.5 refused: status 400: {"error":{"message":"bad reasoning_effort 1.5: reasoning_effort must be in [0.0, 0.99]","type":"invalid_request_error","param":null,"code":null}}
+PASS reasoning_effort 'ultra' refused: status 400: {"error":{"message":"bad reasoning_effort \"ultra\": Unknown reasoning_effort: ultra (none|minimal|low|medium|high|xhigh|max, or a number in [0.0, 0.99])","type
+PASS image part refused: status 400: {"error":{"message":"user message: image input is not enabled on this deployment","type":"invalid_request_error","param":null,"code":null}}
+PASS forced tool_choice refused: status 400: {"error":{"message":"tool_choice required/named and parallel_tool_calls=false are not available on the inkling2 route (its calls are framed by control tokens no
+PASS numeric_class nvfp4-rig (the boot's class) equals the unnamed answer
+PASS numeric_class this boot does not serve refused: status 400: {"error":{"message":"numeric_class \"shipped\" is not served by this route; it serves nvfp4-rig","type":"invalid_request_error","param":"numeric_class","code":null}}
+PASS c=1: every request equals its c=1 answer: 8/8 equal
+c=1: {"requests": 8, "wall_s": 21.280529550043866, "ttft_ms": {"p50": 35.30158952344209, "p95": 36.32410697755404, "p99": 36.576169427717105}, "tpot_ms": {"p50": 20.889175287172876, "p95": 20.952741657457075, "p99": 20.97094317227162}, "itl_ms": {"p50": 19.589684554375708, "p95": 21.550506219500676, "p99": 22.221922578755766}, "e2e_ms": {"p50": 2688.226850994397, "p95": 2697.3156170279253, "p99": 2699.8846162168775}, "req_per_s": 0.3759304946423906, "out_tok_per_s": 48.119103314225995, "output_tokens": 1024, "failures": 0}
+PASS c=2: every request equals its c=1 answer: 8/8 equal
+c=2: {"requests": 8, "wall_s": 16.10931045305915, "ttft_ms": {"p50": 135.33181906677783, "p95": 219.47071324684657, "p99": 219.94001706247218}, "tpot_ms": {"p50": 30.626913488156887, "p95": 31.424271043272704, "p99": 31.428030700400825}, "itl_ms": {"p50": 28.92474696272984, "p95": 31.203702779021114, "p99": 32.171380382496864}, "e2e_ms": {"p50": 4016.6843784973025, "p95": 4045.534673827933, "p99": 4045.667946009198}, "req_per_s": 0.49660722743603236, "out_tok_per_s": 63.56572511181214, "output_tokens": 1024, "failures": 0}
+PASS c=4: every request equals its c=1 answer: 8/8 equal
+c=4: {"requests": 8, "wall_s": 13.949170324020088, "ttft_ms": {"p50": 322.3160755005665, "p95": 407.41931995144114, "p99": 408.12966958386824}, "tpot_ms": {"p50": 51.40506129988697, "p95": 56.48892376215314, "p99": 57.29731122177556}, "itl_ms": {"p50": 49.359186028596014, "p95": 54.10527457133867, "p99": 54.90886749117635}, "e2e_ms": {"p50": 6928.601117513608, "p95": 7320.8316266478505, "p99": 7378.0435405659955}, "req_per_s": 0.5735108120534036, "out_tok_per_s": 73.40938394283566, "output_tokens": 1024, "failures": 0}
+serve_check: ALL PASS

@@ -1,0 +1,69 @@
+[server] build: memra-0.141.1-f59740ed4946 (id: source-tree, git: affa5ca9c2a1)
+[server] starting; models config = [("smoke", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "smoke" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "smoke": 33 layers, eos=248046, stop=[248046]
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=2; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed), greedy only: a sampled request takes its cold rung
+[worker] smoke: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="smoke" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[fa-pool] grow #0 dev=0 o_len 0 -> 2162688 ml_len 0 -> 8448 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 2162688 -> 4325376 ml_len 8448 -> 16896 (retired kept, zero=false)
+[device-trim] reason=wave-probe {"device":0,"reclaimed_bytes":6576668672,"still_owned_bytes":7733620736,"pool_reserved_bytes":7885291520,"pool_cached_bytes":151670784,"driver_free_bytes":16862019584,"synchronization_errors":[]}
+[wave-probe] 32 sessions at depth 2048: two 16-row waves 60.0 ms, one 32-row wave 64.4 ms (tensor-core tier 63.6 ms) -> wave cap 16, tensor-core b32 off (16.6s; released 6272MiB of cached pool to the driver)
+[worker] smoke: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 7890MB (7890010112 B, derived: 2 x 3945005056 B max entry for model "smoke" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), discrete card: the larger of that and free after the transient reserve, driver headroom 2147483648 B and a session peak of 336797368320 B (76 resident sessions x 4431544320 B served-context session), requested 7890010112 B; boot driver free 16862019584 B, post-reserve clamp 15251406848 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, whole-entry restores only
+[admission] "smoke": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[spec-cost] calibration skipped: the LOW/HIGH band owns the spec gate
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admission] idle capacity (post-load, cache empty): dev0 free 17014MB (pool used 7734MB)
+[admit-mem] door=OFF open_output_tokens=32768 defer_budget_ms=8000 (not the receipted card; the single-card default of the RTX PRO 6000 Blackwell Workstation Edition: armed, admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[admit-oom] batch OOM recovery: ON (RTX 5090 Laptop GPU: an untouched batched chunk takes one reclaim rung and retries once)
+[admission] prefill workspace: held (RTX 5090 Laptop: a single-device slab prime is charged what it allocates beside the resident slab; concat batches fit free memory)
+[kv-vmm] door=OFF (pooled K/V planes: the on-demand planes are the default on the RTX PRO 6000 Blackwell Workstation Edition only)
+[server] worker ready; serving models: ["smoke"]
+[server] listening on http://127.0.0.1:8177
+[meter] admit id=cmpl-8b11d96dc11ec287f1f69d41d8a5ef62 tenant=default lane=interactive model="smoke"
+[meter] admit id=cmpl-02a94d6355c3a622194069ebbc9afd53 tenant=default lane=interactive model="smoke"
+[meter] admit id=cmpl-7304ff813324dbd48cfd88ae896cd5dc tenant=default lane=interactive model="smoke"
+[meter] admit id=cmpl-803acef91b9c976806cfd322fe6e9109 tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=344 path=plain = 14848 B/token x ctx + 94MB prefill-workspace + 0MB fixed = 99MB
+[meter] admit id=cmpl-fbc1bfb99454c016370d7cde21088326 tenant=default lane=interactive model="smoke"
+[meter] admit id=cmpl-adc70d64a0d37eabf69e2d3d93031006 tenant=default lane=interactive model="smoke"
+[spec-k] model="smoke" tenant="meter-B" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=1 wave=6 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="smoke" 104MB (observed 108MB at ctx 288 path=plain)
+[admission] request cost: model="smoke" ctx=344 path=plain = 14848 B/token x ctx + 94MB prefill-workspace + 104MB fixed = 202MB
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=2 wave=6 placement=single-or-non-pp2
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=3 wave=6 placement=single-or-non-pp2
+[prefix-cache] insert (in-batch fanout): 256 tokens, 56.5MB (resident 56.5MB / 7890MB, model smoke, ns "meter-A")
+[prefix-dedup] B=2 prefix=256 saved=256 hash=6f9cf1d9c04f1a45 in 54.9ms retained=true (model smoke, ns "meter-A")
+[prefix-cache] insert (seed): 256 tokens, 56.5MB (resident 113.0MB / 7890MB, model smoke, ns "meter-B")
+[prefix-cache] hit: 256 of 272 prompt tokens from cache (model smoke)
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=256 lcp=256 active=4 wave=6 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 256 tokens, model smoke)
+[prefix-cache] hit: 256 of 272 prompt tokens from cache (model smoke)
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=256 lcp=256 active=5 wave=6 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 256 tokens, model smoke)
+[prefix-cache] hit: 256 of 272 prompt tokens from cache (model smoke)
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=256 lcp=256 active=6 wave=6 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 256 tokens, model smoke)
+[prefix-cache] insert tail: 16 prompt-end tokens past the 256-token entry, 52.9MB (resident 165.9MB, model smoke, ns "meter-A")
+[prefix-cache] evict tail (replaced): 16 prompt-end tokens past the 256-token entry, 52.9MB (model smoke, ns "meter-A")
+[prefix-cache] insert tail: 16 prompt-end tokens past the 256-token entry, 52.9MB (resident 165.9MB, model smoke, ns "meter-A")
+[prefix-cache] evict tail (replaced): 16 prompt-end tokens past the 256-token entry, 52.9MB (model smoke, ns "meter-A")
+[prefix-cache] insert tail: 16 prompt-end tokens past the 256-token entry, 52.9MB (resident 165.9MB, model smoke, ns "meter-A")
+[prefix-cache] insert tail: 16 prompt-end tokens past the 256-token entry, 52.9MB (resident 218.8MB, model smoke, ns "meter-B")
+[kv-reuse] park-compact: 273 of 288 rows retained in 1.3ms (model smoke)
+[kv-reuse] park-compact: 280 of 288 rows retained in 2.7ms (model smoke)
+[kv-reuse] park-compact: 280 of 288 rows retained in 0.7ms (model smoke)
+[kv-reuse] park-compact: 280 of 288 rows retained in 0.6ms (model smoke)
+[kv-reuse] park-compact: 280 of 288 rows retained in 0.7ms (model smoke)
+[kv-reuse] park-compact: 280 of 288 rows retained in 0.7ms (model smoke)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

@@ -1,0 +1,51 @@
+gpulock: 5090 leased as claude-code-20261121T160508-2924317 for 32m
+17:52:22 jobs 48 pending 48
+Loading weights:   0%|          | 0/645 [00:00<?, ?it/s]Loading weights:   8%|▊         | 49/645 [00:00<00:03, 188.05it/s]Loading weights:  42%|████▏     | 272/645 [00:00<00:00, 909.29it/s]Loading weights:  66%|██████▌   | 427/645 [00:00<00:00, 1122.60it/s]Loading weights:  89%|████████▉ | 573/645 [00:00<00:00, 1221.87it/s]Loading weights: 100%|██████████| 645/645 [00:00<00:00, 717.60it/s] 
+/home/avifenesh/.cache/inkling2mini/klsens/klh.py:209: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:208.)
+  d = {"w": torch.from_numpy(np.ascontiguousarray(st.raw(p + nm + "_weight"))).to(DEV),
+17:53:24 harness loaded in 61.3s, gpu mem 16.84 GiB
+[transformers] `causal_conv1d_fn` is falling back to its reference PyTorch implementation because `causal_conv1d` is not installed. This is correct but much slower; install `causal_conv1d` for the optimized kernel.
+17:54:02 ARM rawdoc w:attn:L0 n=15360 flips 0.3304 KL mean 6.279e-03 p50 1.12e-03 p99 6.416e-02 max 3.449e+00 top1 0.97565 dNLL +8.63e-04 wall 38s
+17:54:35 ARM rawdoc w:attn:L1 n=15360 flips 0.3177 KL mean 5.632e-03 p50 1.11e-03 p99 6.355e-02 max 1.774e+00 top1 0.97461 dNLL +6.49e-04 wall 33s
+17:55:08 ARM rawdoc w:attn:L2 n=15360 flips 0.3003 KL mean 5.252e-03 p50 9.74e-04 p99 5.698e-02 max 1.583e+00 top1 0.97643 dNLL -2.23e-04 wall 33s
+17:55:41 ARM rawdoc w:attn:L3 n=15360 flips 0.2885 KL mean 5.141e-03 p50 9.67e-04 p99 6.031e-02 max 8.134e-01 top1 0.97539 dNLL +2.68e-04 wall 33s
+17:56:14 ARM rawdoc w:attn:L4 n=15360 flips 0.2857 KL mean 5.099e-03 p50 9.58e-04 p99 5.928e-02 max 8.823e-01 top1 0.97669 dNLL -4.90e-04 wall 33s
+17:56:46 ARM rawdoc w:attn:L5 n=15360 flips 0.2934 KL mean 5.219e-03 p50 9.54e-04 p99 5.704e-02 max 1.591e+00 top1 0.97480 dNLL -3.42e-04 wall 33s
+17:57:19 ARM rawdoc w:attn:L6 n=15360 flips 0.3290 KL mean 6.269e-03 p50 1.19e-03 p99 6.761e-02 max 1.871e+00 top1 0.97487 dNLL +1.32e-03 wall 33s
+17:57:52 ARM rawdoc w:attn:L7 n=15360 flips 0.3025 KL mean 5.370e-03 p50 1.06e-03 p99 6.322e-02 max 1.136e+00 top1 0.97480 dNLL -9.26e-04 wall 33s
+17:58:25 ARM rawdoc w:attn:L8 n=15360 flips 0.2716 KL mean 4.657e-03 p50 8.68e-04 p99 5.330e-02 max 8.851e-01 top1 0.97728 dNLL -1.30e-04 wall 33s
+17:58:58 ARM rawdoc w:attn:L9 n=15360 flips 0.2513 KL mean 4.205e-03 p50 8.21e-04 p99 4.649e-02 max 4.385e-01 top1 0.97930 dNLL -4.01e-04 wall 33s
+17:59:30 ARM rawdoc w:attn:L10 n=15360 flips 0.2454 KL mean 4.256e-03 p50 8.24e-04 p99 4.544e-02 max 1.067e+00 top1 0.97897 dNLL -4.25e-04 wall 33s
+18:00:03 ARM rawdoc w:attn:L11 n=15360 flips 0.2454 KL mean 4.610e-03 p50 8.98e-04 p99 4.929e-02 max 1.685e+00 top1 0.97897 dNLL +9.97e-04 wall 32s
+18:00:36 ARM rawdoc w:attn:L12 n=15360 flips 0.2648 KL mean 5.159e-03 p50 1.06e-03 p99 5.286e-02 max 1.193e+00 top1 0.97487 dNLL -8.03e-05 wall 33s
+18:01:09 ARM rawdoc w:attn:L13 n=15360 flips 0.2023 KL mean 3.490e-03 p50 6.80e-04 p99 3.776e-02 max 4.994e-01 top1 0.98001 dNLL -8.20e-04 wall 33s
+18:01:41 ARM rawdoc w:attn:L14 n=15360 flips 0.1907 KL mean 3.205e-03 p50 6.49e-04 p99 3.336e-02 max 5.347e-01 top1 0.97988 dNLL -3.33e-04 wall 32s
+18:02:13 ARM rawdoc w:attn:L15 n=15360 flips 0.1733 KL mean 2.723e-03 p50 6.04e-04 p99 3.043e-02 max 2.697e-01 top1 0.98242 dNLL +2.63e-04 wall 32s
+18:02:46 ARM rawdoc w:attn:L16 n=15360 flips 0.1709 KL mean 2.976e-03 p50 7.17e-04 p99 2.931e-02 max 3.100e-01 top1 0.98034 dNLL -2.79e-04 wall 33s
+18:03:18 ARM rawdoc w:attn:L17 n=15360 flips 0.1632 KL mean 2.832e-03 p50 6.08e-04 p99 2.794e-02 max 2.150e+00 top1 0.98431 dNLL +2.98e-04 wall 32s
+18:03:51 ARM rawdoc w:attn:L18 n=15360 flips 0.0215 KL mean 6.644e-04 p50 9.90e-05 p99 7.629e-03 max 1.578e-01 top1 0.99323 dNLL +8.21e-04 wall 33s
+18:04:24 ARM rawdoc w:attn:L19 n=15360 flips 0.0095 KL mean 2.601e-04 p50 2.84e-05 p99 3.799e-03 max 4.416e-02 top1 0.99603 dNLL +1.67e-04 wall 33s
+18:04:57 ARM rawdoc w:attn:L20 n=15360 flips 0.0076 KL mean 2.429e-04 p50 4.22e-05 p99 2.807e-03 max 3.988e-02 top1 0.99635 dNLL +4.37e-04 wall 33s
+18:05:30 ARM rawdoc w:attn:L21 n=15360 flips 0.0060 KL mean 2.276e-04 p50 6.23e-05 p99 2.217e-03 max 2.974e-02 top1 0.99596 dNLL +4.62e-04 wall 33s
+18:06:03 ARM rawdoc w:attn:L22 n=15360 flips 0.0035 KL mean 2.010e-04 p50 4.10e-05 p99 2.096e-03 max 7.551e-02 top1 0.99655 dNLL +4.31e-04 wall 33s
+18:06:35 ARM rawdoc w:attn:L23 n=15360 flips 0.0022 KL mean 4.299e-04 p50 9.42e-05 p99 4.086e-03 max 6.644e-02 top1 0.99368 dNLL +4.01e-04 wall 33s
+18:07:09 ARM chatwrap w:attn:L0 n=15360 flips 0.3351 KL mean 7.494e-03 p50 1.29e-03 p99 9.067e-02 max 9.595e-01 top1 0.97233 dNLL -6.76e-04 wall 33s
+18:07:41 ARM chatwrap w:attn:L1 n=15360 flips 0.3216 KL mean 6.481e-03 p50 1.17e-03 p99 8.008e-02 max 1.680e+00 top1 0.97064 dNLL +1.09e-03 wall 33s
+18:08:14 ARM chatwrap w:attn:L2 n=15360 flips 0.3090 KL mean 7.160e-03 p50 1.25e-03 p99 8.263e-02 max 2.609e+00 top1 0.97292 dNLL +1.21e-03 wall 33s
+18:08:48 ARM chatwrap w:attn:L3 n=15360 flips 0.2909 KL mean 6.625e-03 p50 1.03e-03 p99 7.398e-02 max 5.652e+00 top1 0.97591 dNLL +1.25e-04 wall 34s
+18:09:22 ARM chatwrap w:attn:L4 n=15360 flips 0.2930 KL mean 6.625e-03 p50 1.16e-03 p99 8.513e-02 max 1.971e+00 top1 0.97415 dNLL +2.40e-03 wall 34s
+18:09:56 ARM chatwrap w:attn:L5 n=15360 flips 0.3047 KL mean 6.878e-03 p50 1.20e-03 p99 8.307e-02 max 1.401e+00 top1 0.97207 dNLL -1.43e-03 wall 34s
+18:10:30 ARM chatwrap w:attn:L6 n=15360 flips 0.3381 KL mean 7.747e-03 p50 1.40e-03 p99 8.807e-02 max 2.633e+00 top1 0.97051 dNLL -3.75e-04 wall 34s
+18:11:04 ARM chatwrap w:attn:L7 n=15360 flips 0.3082 KL mean 7.023e-03 p50 1.24e-03 p99 7.494e-02 max 2.808e+00 top1 0.97311 dNLL +2.28e-03 wall 35s
+18:11:39 ARM chatwrap w:attn:L8 n=15360 flips 0.2779 KL mean 5.670e-03 p50 1.05e-03 p99 6.013e-02 max 2.715e+00 top1 0.97546 dNLL +9.51e-04 wall 35s
+18:12:14 ARM chatwrap w:attn:L9 n=15360 flips 0.2620 KL mean 5.959e-03 p50 1.01e-03 p99 7.069e-02 max 2.626e+00 top1 0.97546 dNLL -1.78e-03 wall 35s
+18:12:49 ARM chatwrap w:attn:L10 n=15360 flips 0.2508 KL mean 5.273e-03 p50 9.79e-04 p99 5.738e-02 max 2.639e+00 top1 0.97428 dNLL +1.69e-03 wall 35s
+18:13:23 ARM chatwrap w:attn:L11 n=15360 flips 0.2485 KL mean 5.768e-03 p50 9.90e-04 p99 6.943e-02 max 1.823e+00 top1 0.97611 dNLL -1.05e-04 wall 35s
+18:13:58 ARM chatwrap w:attn:L12 n=15360 flips 0.2677 KL mean 6.760e-03 p50 1.27e-03 p99 7.735e-02 max 2.805e+00 top1 0.97422 dNLL -6.03e-03 wall 35s
+18:14:33 ARM chatwrap w:attn:L13 n=15360 flips 0.2018 KL mean 5.321e-03 p50 7.34e-04 p99 5.591e-02 max 2.772e+00 top1 0.97832 dNLL -1.96e-03 wall 35s
+18:15:08 ARM chatwrap w:attn:L14 n=15360 flips 0.1905 KL mean 4.331e-03 p50 7.33e-04 p99 4.885e-02 max 2.752e+00 top1 0.97786 dNLL -2.89e-03 wall 35s
+18:15:43 ARM chatwrap w:attn:L15 n=15360 flips 0.1734 KL mean 4.487e-03 p50 6.74e-04 p99 5.149e-02 max 2.796e+00 top1 0.97923 dNLL +2.13e-03 wall 35s
+18:16:18 ARM chatwrap w:attn:L16 n=15360 flips 0.1717 KL mean 4.708e-03 p50 7.88e-04 p99 4.867e-02 max 1.342e+00 top1 0.97943 dNLL +1.49e-03 wall 35s
+18:16:53 ARM chatwrap w:attn:L17 n=15360 flips 0.1616 KL mean 3.733e-03 p50 6.88e-04 p99 4.222e-02 max 1.366e+00 top1 0.98125 dNLL +1.91e-03 wall 35s
+18:16:53 BUDGET_STOP
+RUN_EXIT

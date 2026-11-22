@@ -1,0 +1,14 @@
+gpulock: 5090 leased as claude-code-20261122T003322-2218548 for 30m
+samples=8 clamp_hits=0 P4, 1672 MHz, 9001 MHz, 37.31 W, 175.00 W, 0x0000000000000400
+OK
+CLAMP_RC=0
+GATE_RC=0
+ink2-gpu-gate: ALL OK (36 cells, 0 skipped)
+ink2g-attn-sliding [positions=40 window=8 extent=8 mask_beyond=true cache rows=16] max |err| / (|ref| + 1)=3.939e-8; calls of 8 vs calls of 1 (split form) bit-differ=0; calls of 8 split 3 rows a launch vs the tiled kernel bit-differ=0; arm f32t max |err| / (|ref| + 1)=1.595e-6 (bound 1e-4) OK
+ink2g-attn-full [positions=40 window=0 extent=12 mask_beyond=false cache rows=64] max |err| / (|ref| + 1)=3.878e-8; calls of 8 vs calls of 1 (split form) bit-differ=0; calls of 8 split 3 rows a launch vs the tiled kernel bit-differ=0; arm f32t max |err| / (|ref| + 1)=1.911e-6 (bound 1e-4) OK
+ink2g-attn-full-masked [positions=40 window=0 extent=12 mask_beyond=true cache rows=64] max |err| / (|ref| + 1)=3.938e-8; calls of 8 vs calls of 1 (split form) bit-differ=0; calls of 8 split 3 rows a launch vs the tiled kernel bit-differ=0; arm f32t max |err| / (|ref| + 1)=2.089e-6 (bound 1e-4) OK
+ink2g-attn-full-long [positions=2600 window=0 extent=12 mask_beyond=false cache rows=2600] max |err| / (|ref| + 1)=3.880e-8; calls of 8 vs calls of 1 (split form) bit-differ=0; calls of 8 split 3 rows a launch vs the tiled kernel bit-differ=0; arm f32t max |err| / (|ref| + 1)=2.251e-6 (bound 1e-4) OK
+RC p3 base=0
+RC p3 new=0
+RC_rig4k=0
+NSYS=0

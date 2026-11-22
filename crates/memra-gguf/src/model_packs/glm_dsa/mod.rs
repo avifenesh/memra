@@ -9,6 +9,7 @@ pub static PACK: ModelPack = ModelPack {
     family: "glm_dsa",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
+    auxiliary_files: &[],
     aliases: &["glm_moe_dsa", "glm-dsa"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[
@@ -135,5 +136,6 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
         partition_boundaries: vec![1],
         deepseek_v41: None,
         hy_v4_flash: None,
+        inkling2: None,
     })
 }

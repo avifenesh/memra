@@ -1,0 +1,8 @@
+Loading weights:   0%|          | 0/645 [00:00<?, ?it/s]Loading weights:   8%|▊         | 49/645 [00:00<00:01, 381.72it/s]Loading weights:  68%|██████▊   | 436/645 [00:00<00:00, 2216.45it/s]Loading weights: 100%|██████████| 645/645 [00:00<00:00, 1550.97it/s]
+/home/avifenesh/.cache/inkling2mini/klsens/klh.py:209: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:208.)
+  d = {"w": torch.from_numpy(np.ascontiguousarray(st.raw(p + nm + "_weight"))).to(DEV),
+[transformers] `causal_conv1d_fn` is falling back to its reference PyTorch implementation because `causal_conv1d` is not installed. This is correct but much slower; install `causal_conv1d` for the optimized kernel.
+harness loaded in 2.7s, gpu mem 0.00 GiB
+tape_cross p1_chat.actq_f32 {"lane_e_cpu||klh_actq": 0.039484, "lane_e_cpu||klh_actq_rev": 0.039484, "klh_actq||klh_actq_rev": 0.0, "lane_e_cpu||route": 0.050961, "klh_actq||route": 0.106992, "klh_actq_rev||route": 0.106992}
+tape_cross p2_window.actq_f32 {"lane_e_cpu||klh_actq": 0.473632, "lane_e_cpu||klh_actq_rev": 0.492271, "klh_actq||klh_actq_rev": 0.245416, "lane_e_cpu||route": 0.495826, "klh_actq||route": 0.491208, "klh_actq_rev||route": 0.395118}
+PARITY_KL_DONE
