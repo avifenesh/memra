@@ -1,0 +1,48 @@
+gpulock: 5090 leased as claude-code-20261122T144730-3422023 for 45m
+samples=8 clamp_hits=0 P8, 682 MHz, 405 MHz, 22.72 W, 150.00 W, 0x0000000000000400
+OK
+CLAMP_RC=0
+GATE_RC=0
+ink2-gpu-gate: ALL OK (36 cells, 0 skipped)
+RC shipped p1 c1=0 0 0 True
+RC shipped p1 c4=0 0 0 True
+RC shipped p1 c8=0 0 0 True
+RC shipped p1 c512=0 0 0 True
+RC shipped p2 c512=0 0 0 True
+RC shipped p1 c2=0/0 0 0 True
+RC shipped p1 c3=0/0 0 0 True
+RC nvfp4-rig p1 c1=0 0 0 True
+RC nvfp4-rig p1 c4=0 0 0 True
+RC nvfp4-rig p1 c8=0 0 0 True
+RC nvfp4-rig p1 c512=0 0 0 True
+RC nvfp4-rig p2 c512=0 0 0 True
+RC nvfp4-rig p1 c2=0/0 0 0 True
+RC nvfp4-rig p1 c3=0/0 0 0 True
+RC p3=0 0 0 True
+RC_rig=0
+RC_sh=0
+RC_rig4k=0
+NSYS=0
+calls 14 wall/token 10.543 ms kernel busy/token 12.686 ms gaps/token -2.143 ms launches/token 1589
+ink2g_l2_prefetch_kernel               3006.6 us  x 96.0
+ink2_expert_gemm_kernel                2384.8 us  x 96.0
+ink2g_gemv_nvfp4_jobs_kernel           2259.3 us  x 97.0
+ink2g_mix_dot_kernel                    737.8 us  x120.0
+ink2g_gemv_bf16_kernel                  552.3 us  x 96.0
+ink2g_ctrl_up_kernel                    541.0 us  x 96.0
+ink2g_norm_kernel                       537.3 us  x 97.0
+ink2g_attn_t4g_kernel                   527.9 us  x 48.0
+ink2g_ctrl_down_kernel                  497.8 us  x 96.0
+ink2_actq_kernel                        438.8 us  x 96.0
+ink2g_conv_kernel                       395.3 us  x144.0
+ink2g_mix_out_kernel                    242.2 us  x120.0
+ink2g_heads_kernel                      131.4 us  x 96.0
+ink2g_attn_t4_merge_kernel              130.4 us  x 48.0
+ink2g_route_kernel                      124.7 us  x 48.0
+ink2g_sum_bf16_kernel                    39.1 us  x 48.0
+ink2g_argmax_kernel                      37.9 us  x  1.0
+ink2g_to_bf16_kernel                     34.4 us  x 48.0
+ink2g_gate_kernel                        30.8 us  x 48.0
+ink2g_groups_kernel                      26.6 us  x 48.0
+ink2g_embed_kernel                        7.9 us  x  1.0
+ink2g_softcap_kernel                      1.6 us  x  1.0

@@ -1,0 +1,74 @@
+gpulock: 5090 leased as claude-code-20261122T151958-4079069 for 45m
+samples=8 clamp_hits=0 P8, 390 MHz, 405 MHz, 17.80 W, 150.00 W, 0x0000000000000400
+OK
+CLAMP_RC=0
+GATE_RC=0
+ink2-gpu-gate: ALL OK (36 cells, 0 skipped)
+RC shipped p1 c1=0 0 0 True
+RC shipped p1 c4=0 0 0 True
+RC shipped p1 c8=0 0 0 True
+RC shipped p1 c512=0 0 0 True
+RC shipped p2 c512=0 0 0 True
+RC shipped p1 c2=0/0 0 0 True
+RC shipped p1 c3=0/0 0 0 True
+RC nvfp4-rig p1 c1=0 0 0 True
+RC nvfp4-rig p1 c4=0 0 0 True
+RC nvfp4-rig p1 c8=0 0 0 True
+RC nvfp4-rig p1 c512=0 0 0 True
+RC nvfp4-rig p2 c512=0 0 0 True
+RC nvfp4-rig p1 c2=0/0 0 0 True
+RC nvfp4-rig p1 c3=0/0 0 0 True
+RC p3=0 0 0 True
+NSYS=0
+calls 14 wall/token 10.432 ms kernel busy/token 10.951 ms gaps/token -0.520 ms launches/token 1589
+ink2_expert_gemm_kernel                2383.0 us  x 96.0
+ink2g_gemv_nvfp4_jobs_kernel           2295.6 us  x 97.0
+ink2g_l2_prefetch_kernel                908.6 us  x 96.0
+ink2g_mix_dot_kernel                    764.6 us  x120.0
+ink2g_conv_kernel                       628.6 us  x144.0
+ink2g_ctrl_down_kernel                  573.6 us  x 96.0
+ink2g_ctrl_up_kernel                    571.5 us  x 96.0
+ink2g_norm_kernel                       537.5 us  x 97.0
+ink2g_attn_t4g_kernel                   514.7 us  x 48.0
+ink2g_gemv_bf16_kernel                  510.0 us  x 96.0
+ink2_actq_kernel                        420.4 us  x 96.0
+ink2g_mix_out_kernel                    219.8 us  x120.0
+ink2g_heads_kernel                      186.6 us  x 96.0
+ink2g_attn_t4_merge_kernel              124.3 us  x 48.0
+ink2g_route_kernel                      122.2 us  x 48.0
+ink2g_argmax_kernel                      53.7 us  x  1.0
+ink2g_sum_bf16_kernel                    38.4 us  x 48.0
+ink2g_to_bf16_kernel                     33.6 us  x 48.0
+ink2g_gate_kernel                        29.1 us  x 48.0
+ink2g_groups_kernel                      26.0 us  x 48.0
+ink2g_embed_kernel                        7.9 us  x  1.0
+ink2g_softcap_kernel                      1.6 us  x  1.0
+ink2g_sum_bf16_kernel            grid(9,1,1)x256  st17 dur   0.90 us  gap   0.00
+ink2g_l2_prefetch_kernel         grid(86,1,1)x32   st17 dur   9.50 us  gap   0.19
+ink2g_conv_kernel                grid(36,1,1)x64   st18 dur   7.39 us  gap  -9.38
+ink2g_mix_dot_kernel             grid(3,1,1)x256  st18 dur   5.86 us  gap   0.19
+ink2g_mix_out_kernel             grid(18,1,1)x128  st18 dur   2.08 us  gap   0.19
+ink2g_norm_kernel                grid(1,1,1)x256  st18 dur   5.66 us  gap   0.19
+ink2g_gemv_bf16_kernel           grid(1,1,1)x256  st17 dur   4.42 us  gap   0.16
+ink2g_gemv_nvfp4_jobs_kernel     grid(268,1,1)x256  st17 dur  26.27 us  gap   0.19
+ink2g_l2_prefetch_kernel         grid(35,1,1)x32   st17 dur   3.42 us  gap   0.19
+ink2g_heads_kernel               grid(1,24,2)x128  st18 dur   3.23 us  gap  -3.26
+ink2g_conv_kernel                grid(16,2,1)x64   st18 dur   3.04 us  gap   0.22
+ink2g_heads_kernel               grid(1,8,2)x128  st18 dur   1.22 us  gap   0.19
+ink2g_attn_t4g_kernel            grid(4,8,1)x256  st18 dur  10.66 us  gap   0.19
+ink2g_attn_t4_merge_kernel       grid(1,24,1)x128  st18 dur   2.53 us  gap   0.19
+ink2g_gate_kernel                grid(12,1,1)x256  st18 dur   0.61 us  gap   0.19
+ink2g_gemv_nvfp4_jobs_kernel     grid(72,1,1)x256  st17 dur  11.58 us  gap   0.61
+ink2g_conv_kernel                grid(36,1,1)x64   st17 dur   2.69 us  gap   0.19
+ink2g_mix_dot_kernel             grid(3,1,1)x256  st17 dur   6.11 us  gap   0.19
+ink2g_mix_out_kernel             grid(18,1,1)x128  st17 dur   2.05 us  gap   0.19
+ink2g_norm_kernel                grid(1,1,1)x256  st17 dur   5.54 us  gap   0.19
+ink2g_gemv_bf16_kernel           grid(4,1,1)x256  st17 dur   5.70 us  gap   0.19
+ink2g_route_kernel               grid(1,1,1)x128  st17 dur   2.53 us  gap   0.16
+ink2g_to_bf16_kernel             grid(9,1,1)x256  st17 dur   0.70 us  gap   0.19
+ink2g_groups_kernel              grid(1,1,1)x64   st17 dur   0.54 us  gap   0.19
+ink2_actq_kernel                 grid(1,1,1)x256  st17 dur   3.39 us  gap   0.16
+ink2_expert_gemm_kernel          grid(8,144,1)x32   st17 dur  32.29 us  gap   0.19
+ink2_actq_kernel                 grid(8,1,1)x256  st17 dur   5.41 us  gap   0.19
+ink2_expert_gemm_kernel          grid(8,144,1)x32   st17 dur  16.67 us  gap   0.19
+slot wall 174.5 us

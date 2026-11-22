@@ -104,10 +104,88 @@ pub struct Ink2Rows {
     pub amax: CudaSlice<f32>,
 }
 
-/// One projection of the experts as stored in the checkpoint, on the device.
+/// The expert GEMM reads its weights in MMA-fragment order (`cu/inkling2_actq.cu`). A projection
+/// stored row-major as `rows` rows of `rowbytes` bytes (32 bytes a row per K step: the e2m1 codes of
+/// 64 inputs or the e4m3 values of 32) becomes tiles of 16 rows; per tile and K step 512 bytes, lane
+/// `L = 4g + t` holding row g bytes `[4t, 4t + 4)` of the step, row g + 8 the same, then both rows at
+/// `16 + 4t`. A layout change only: every byte is kept, so every product is the one stored.
+pub fn ink2_frag_values(src: &[u8], rows: usize, rowbytes: usize) -> Result<Vec<u8>, String> {
+    if !rows.is_multiple_of(16) || !rowbytes.is_multiple_of(32) || src.len() != rows * rowbytes {
+        return Err(format!(
+            "fragment order: {} bytes are not {rows} rows (a multiple of 16) of {rowbytes} (a multiple of 32)",
+            src.len()
+        ));
+    }
+    let mut out = vec![0u8; src.len()];
+    by_tiles(&mut out, src, 16 * rowbytes, |o, s| {
+        for step in 0..rowbytes / 32 {
+            for lane in 0..32 {
+                let (g, t) = (lane / 4, lane % 4);
+                let d = step * 512 + lane * 16;
+                let parts = [
+                    (g, 4 * t),
+                    (g + 8, 4 * t),
+                    (g, 16 + 4 * t),
+                    (g + 8, 16 + 4 * t),
+                ];
+                for (q, (r, c)) in parts.into_iter().enumerate() {
+                    let at = r * rowbytes + step * 32 + c;
+                    o[d + 4 * q..d + 4 * q + 4].copy_from_slice(&s[at..at + 4]);
+                }
+            }
+        }
+    });
+    Ok(out)
+}
+
+/// The weight scales of [`ink2_frag_values`]'s tiles: row-major `rows` x `rowbytes` (a multiple of 4:
+/// one 4-byte word a K step for NVFP4, a word per 4 steps for MXFP8) becomes `[tile][word][16 rows]`
+/// of 4-byte words.
+pub fn ink2_frag_scales(src: &[u8], rows: usize, rowbytes: usize) -> Result<Vec<u8>, String> {
+    if !rows.is_multiple_of(16) || !rowbytes.is_multiple_of(4) || src.len() != rows * rowbytes {
+        return Err(format!(
+            "fragment order: {} scale bytes are not {rows} rows (a multiple of 16) of {rowbytes} (a multiple of 4)",
+            src.len()
+        ));
+    }
+    let mut out = vec![0u8; src.len()];
+    by_tiles(&mut out, src, 16 * rowbytes, |o, s| {
+        for w in 0..rowbytes / 4 {
+            for r in 0..16 {
+                let d = (w * 16 + r) * 4;
+                o[d..d + 4].copy_from_slice(&s[r * rowbytes + 4 * w..r * rowbytes + 4 * w + 4]);
+            }
+        }
+    });
+    Ok(out)
+}
+
+/// `f(out tile, src tile)` over equal tiles of both, on up to 8 threads.
+fn by_tiles(out: &mut [u8], src: &[u8], tile: usize, f: impl Fn(&mut [u8], &[u8]) + Sync) {
+    let tiles = out.len() / tile;
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .clamp(1, 8)
+        .min(tiles.max(1));
+    let per = tiles.div_ceil(threads).max(1) * tile;
+    std::thread::scope(|sc| {
+        for (oc, scs) in out.chunks_mut(per).zip(src.chunks(per)) {
+            let f = &f;
+            sc.spawn(move || {
+                for (o, s) in oc.chunks_mut(tile).zip(scs.chunks(tile)) {
+                    f(o, s);
+                }
+            });
+        }
+    });
+}
+
+/// One projection of the experts on the device, in the expert GEMM's fragment order
+/// ([`ink2_frag_values`], [`ink2_frag_scales`]).
 pub struct Ink2Weights {
     pub quant: Ink2Quant,
-    /// Experts in the buffers: values `[experts][n][value_bytes(k)]`, scales likewise, amax `[experts]`.
+    /// Experts in the buffers: values `[experts][n][value_bytes(k)]` as stored, then in fragment order;
+    /// scales likewise; amax `[experts]`.
     pub experts: usize,
     pub n: usize,
     pub k: usize,
@@ -117,6 +195,35 @@ pub struct Ink2Weights {
     pub amax: CudaSlice<f32>,
     /// The outer-scale denominator (NVFP4).
     pub denominator: f32,
+}
+
+impl Ink2Weights {
+    /// Uploads a projection stored row-major (`values` `[experts][n][value_bytes(k)]`, `scales`
+    /// `[experts][n][scale_bytes(k)]`) in fragment order.
+    #[allow(clippy::too_many_arguments)] // allow: one projection's shape and buffers
+    pub fn upload(
+        e: &Engine,
+        quant: Ink2Quant,
+        experts: usize,
+        n: usize,
+        k: usize,
+        values: &[u8],
+        scales: &[u8],
+        amax: &[f32],
+        denominator: f32,
+    ) -> Res<Self> {
+        let rows = experts * n;
+        Ok(Self {
+            quant,
+            experts,
+            n,
+            k,
+            values: e.htod_bytes(&ink2_frag_values(values, rows, quant.value_bytes(k))?)?,
+            scales: e.htod_bytes(&ink2_frag_scales(scales, rows, quant.scale_bytes(k))?)?,
+            amax: e.htod(amax)?,
+            denominator,
+        })
+    }
 }
 
 /// SiTU's two factor tables on the device (65,536 f64 each, from
@@ -504,16 +611,7 @@ pub fn ink2_random_weights(
             scales.iter_mut().for_each(|s| *s = 110 + (*s % 14));
         }
     }
-    let w = Ink2Weights {
-        quant,
-        experts,
-        n,
-        k,
-        values: e.htod_bytes(&values)?,
-        scales: e.htod_bytes(&scales)?,
-        amax: e.htod(&amax)?,
-        denominator: 1344.0,
-    };
+    let w = Ink2Weights::upload(e, quant, experts, n, k, &values, &scales, &amax, 1344.0)?;
     Ok((w, values, scales, amax))
 }
 
@@ -596,16 +694,7 @@ fn gemm_case(
 ) -> Res<()> {
     let rows = expert.len();
     let experts = wv.len() / (n * quant.value_bytes(k));
-    let w = Ink2Weights {
-        quant,
-        experts,
-        n,
-        k,
-        values: e.htod_bytes(wv)?,
-        scales: e.htod_bytes(ws)?,
-        amax: e.htod(wamax)?,
-        denominator,
-    };
+    let w = Ink2Weights::upload(e, quant, experts, n, k, wv, ws, wamax, denominator)?;
     let act = quantize_on_device(e, quant, x, rows, k)?;
     let groups = e.ink2_groups_upload(expert, nb)?;
     let mut out = e.alloc_u8(rows * n * 2)?;
@@ -715,16 +804,7 @@ pub fn ink2_actq_capture(e: &Engine) -> Res<Vec<u8>> {
             ),
             Ink2Quant::Mxfp8 => (&r["w"], &r["wexps"], vec![1.0; experts], 1.0),
         };
-        let w = Ink2Weights {
-            quant,
-            experts,
-            n,
-            k,
-            values: e.htod_bytes(wv)?,
-            scales: e.htod_bytes(ws)?,
-            amax: e.htod(&wamax)?,
-            denominator,
-        };
+        let w = Ink2Weights::upload(e, quant, experts, n, k, wv, ws, &wamax, denominator)?;
         let act = quantize_on_device(e, quant, &bf16s(&r["x"]), rows, k)?;
         let groups = e.ink2_groups_upload(&expert, 1)?;
         let mut out = e.alloc_u8(rows * n * 2)?;
@@ -864,16 +944,17 @@ fn expert_block_case(
         (1.0, 1.0)
     };
     let upload = |name: &str, n: usize, k: usize, amax: &[f32], den: f32| -> Res<Ink2Weights> {
-        Ok(Ink2Weights {
+        Ink2Weights::upload(
+            e,
             quant,
             experts,
             n,
             k,
-            values: e.htod_bytes(&r[&tag(name)])?,
-            scales: e.htod_bytes(&r[&stag(name)])?,
-            amax: e.htod(amax)?,
-            denominator: den,
-        })
+            &r[&tag(name)],
+            &r[&stag(name)],
+            amax,
+            den,
+        )
     };
     let w13 = upload("w13", 2 * f, h, &a13, d13)?;
     let w2 = upload("w2", h, f, &a2, d2)?;

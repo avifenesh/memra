@@ -1,0 +1,46 @@
+{
+ "set": "rawdoc",
+ "class": "nvfp4-rig",
+ "hidden": "/home/avifenesh/.cache/inkling2mini/wt-mint/research/modelplan-onboarding-inkling2mini-20261121/nvfp4-rig/gpu-run/hidden-rawdoc-nvfp4-rig.safetensors",
+ "sequences": 15,
+ "stats": {
+  "kl_all": {
+   "mean": 0.027893609019909678,
+   "ci95": [
+    0.02404831691709933,
+    0.031834533435165416
+   ],
+   "n_tok": 15360,
+   "n_seq": 15
+  },
+  "kl_real": {
+   "mean": 0.027894361158414854,
+   "ci95": [
+    0.023962724733667035,
+    0.031761760601453484
+   ],
+   "n_tok": 15345,
+   "n_seq": 15,
+   "p50": 0.007781281601637602,
+   "p99": 0.28099764943122824,
+   "max": 1.7857022285461426
+  },
+  "kl_model": {
+   "mean": 0.0,
+   "ci95": null,
+   "n_tok": 0,
+   "n_seq": 0
+  },
+  "dnll_real": {
+   "mean": 0.01951653198103451,
+   "ci95": [
+    0.014408508108998297,
+    0.025223418001647305
+   ],
+   "n_tok": 15345,
+   "n_seq": 15
+  },
+  "top1_real": 0.9448028673835125,
+  "nll_ref_real": 1.2434545024827046
+ }
+}

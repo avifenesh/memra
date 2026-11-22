@@ -22,9 +22,12 @@
 //
 // Return codes: 0 ok, 10000 + cudaError_t, 45xxx for a refused contract.
 
+#include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include <math.h>
 #include <stdint.h>
+
+#include <type_traits>
 
 #define INK2G_W_BF16 0
 #define INK2G_W_NVFP4 1
@@ -39,6 +42,9 @@
 #define INK2G_MAX_EXTENT 1024
 // keys one attention tile holds (shared f64 scores)
 #define INK2G_ATTN_TILE 1024
+// keys the split fold stages at a time, and the widest head it stages
+#define INK2G_FOLD_TILE 32
+#define INK2G_FOLD_DIM 128
 #define INK2G_MAX_KERNEL 8
 
 namespace {
@@ -59,35 +65,92 @@ __device__ __forceinline__ float ink2g_e4m3(uint8_t b) {
   return (b & 0x80) ? -mag : mag;
 }
 
+// e2m1 to fp32 exactly, from the bits (a lookup table here would sit in local memory)
 __device__ __forceinline__ float ink2g_e2m1(uint8_t nib) {
-  const float t[16] = {0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 6.0f,
-                       -0.0f, -0.5f, -1.0f, -1.5f, -2.0f, -3.0f, -4.0f, -6.0f};
-  return t[nib & 15];
+  const uint32_t m = nib & 7u;
+  uint32_t bits = m == 0u ? 0u : (m == 1u ? 0x3f000000u : ((126u + (m >> 1)) << 23) | ((m & 1u) << 22));
+  bits |= (uint32_t)(nib & 8u) << 28;
+  return __uint_as_float(bits);
+}
+
+// Eight e2m1 codes of a word (code i at bits 4i..4i+3) to f32, exactly and without branches: each code's
+// fp16 high byte (sign | the magnitude's byte from an 8-entry byte table) by one byte permute per four
+// codes, the bytes spread to fp16 pairs, the pairs widened. The same values as ink2g_e2m1 (-0 included).
+__device__ __forceinline__ void ink2g_e2m1x8(uint32_t w, float* v) {
+  const uint32_t lut_lo = 0x3E3C3800u, lut_hi = 0x46444240u;  // fp16 high bytes of 0, .5, 1, 1.5 | 2, 3, 4, 6
+#pragma unroll
+  for (int h = 0; h < 2; h++) {
+    const uint32_t q = (w >> (4 * h)) & 0x0F0F0F0Fu;  // codes h, h + 2, h + 4, h + 6, a byte each
+    const uint32_t m = q & 0x07070707u;
+    const uint32_t t = m | (m >> 4);
+    const uint32_t sel = (t & 0xFFu) | ((t >> 8) & 0xFF00u);
+    const uint32_t hb = __byte_perm(lut_lo, lut_hi, sel) | ((q & 0x08080808u) << 4);
+    const uint32_t p01 = __byte_perm(hb, 0u, 0x1404u), p23 = __byte_perm(hb, 0u, 0x3424u);
+    const float2 a = __half22float2(*reinterpret_cast<const __half2*>(&p01));
+    const float2 b = __half22float2(*reinterpret_cast<const __half2*>(&p23));
+    v[h] = a.x;
+    v[h + 2] = a.y;
+    v[h + 4] = b.x;
+    v[h + 6] = b.y;
+  }
 }
 
 // Sum of one value per thread over the block, in a fixed order: lanes inside a warp by the shuffle
 // tree, warps in ascending order. sh holds one slot per warp.
-__device__ __forceinline__ double ink2g_block_sum(double v, double* sh) {
+template <typename T>
+__device__ __forceinline__ T ink2g_block_sum(T v, T* sh) {
   for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffffu, v, o);
   if ((threadIdx.x & 31) == 0) sh[threadIdx.x >> 5] = v;
   __syncthreads();
-  double t = 0.0;
+  T t = T(0.0);
   const int nw = (blockDim.x + 31) >> 5;
   for (int w = 0; w < nw; w++) t += sh[w];
   __syncthreads();
   return t;
 }
 
-__device__ __forceinline__ double ink2g_block_max(double v, double* sh) {
+template <typename T>
+__device__ __forceinline__ T ink2g_block_max(T v, T* sh) {
   for (int o = 16; o > 0; o >>= 1) v = fmax(v, __shfl_down_sync(0xffffffffu, v, o));
   if ((threadIdx.x & 31) == 0) sh[threadIdx.x >> 5] = v;
   __syncthreads();
-  double t = -INFINITY;
+  T t = (T)-INFINITY;
   const int nw = (blockDim.x + 31) >> 5;
   for (int w = 0; w < nw; w++) t = fmax(t, sh[w]);
   __syncthreads();
   return t;
 }
+
+
+// ---- precision arms ----------------------------------------------------------------------------
+// The f64 program of #1397 is <double, false>. <float, false> runs the same operations in f32;
+// <float, true> also carries every sequential sum as a compensated (Kahan) pair.
+struct Ink2gKahan {
+  float s, c;
+  __device__ Ink2gKahan(float v = 0.0f) : s(v), c(0.0f) {}
+  __device__ Ink2gKahan& operator+=(float x) {
+    const float y = __fsub_rn(x, c);
+    const float t = __fadd_rn(s, y);
+    c = __fsub_rn(__fsub_rn(t, s), y);
+    s = t;
+    return *this;
+  }
+  __device__ Ink2gKahan& operator=(float v) {
+    s = v;
+    c = 0.0f;
+    return *this;
+  }
+  __device__ operator float() const { return s; }
+};
+template <typename T, bool KC>
+struct Ink2gAccT {
+  using type = T;
+};
+template <>
+struct Ink2gAccT<float, true> {
+  using type = Ink2gKahan;
+};
+#define INK2G_ACC typename Ink2gAccT<T, KC>::type
 
 // ---- tile GEMM ---------------------------------------------------------------------------------
 // Y[row, n] = sum_k X[xrow, k] * W[e][n, k]. One 64x64 output tile per block, 16x16 threads, 4x4
@@ -110,6 +173,7 @@ __global__ void ink2g_gemm_kernel(const float* __restrict__ x, int64_t ldx, cons
   int expert = 0;
   if (tiles) {
     const uint32_t* rec = tiles + (int64_t)blockIdx.y * INK2G_TILE_WORDS;
+    if (rec[1] == 0u) return;  // an empty record of a device-built table
     expert = (int)rec[0];
     const int count = (int)rec[1];
     if (tid < TILE_M) {
@@ -280,39 +344,248 @@ __global__ void ink2g_gemv_kernel(const float* __restrict__ x, int64_t ldx, cons
   y[(int64_t)yrow * ldy + gn] = acc;
 }
 
+// ---- prefill GEMM, BF16 weights --------------------------------------------------------------------
+// The same function as ink2g_gemm_kernel for BF16 weights and no expert tiles: each output is a
+// fused multiply-add chain from 0 over each 16-input group in input order, the group partials added
+// from 0 in group order, so its bits equal it. What changes is the tiling: 128 x 128 outputs a block,
+// 8 x 8 a thread, the next K step staged in registers while the current one computes.
+#define INK2G_SG_BM 128
+#define INK2G_SG_BN 128
+#define INK2G_SG_BK 16
+template <bool FP4>
+__global__ void __launch_bounds__(256) ink2g_sgemm_bf16_kernel(const float* __restrict__ x, int64_t ldx,
+                                                              const void* __restrict__ wv0, const uint8_t* __restrict__ sc,
+                                                              const float* __restrict__ amax, float denom,
+                                                              float* __restrict__ y, int64_t ldy, int m, int n, int k) {
+  __shared__ __align__(16) float as[2][INK2G_SG_BK][INK2G_SG_BM];
+  __shared__ __align__(16) float bs[2][INK2G_SG_BK][INK2G_SG_BN];
+  __shared__ float ss[2][INK2G_SG_BN];  // FP4: the e4m3 block scale of each weight row for the step
+  const int tid = threadIdx.x, tx = tid & 15, ty = tid >> 4;
+  const int m0 = blockIdx.y * INK2G_SG_BM, n0 = blockIdx.x * INK2G_SG_BN;
+  // loader: row (or weight row) tid / 2, inputs (tid & 1) * 8 .. + 8 of the step
+  const int lr = tid >> 1, lk = (tid & 1) * 8;
+  const bool xin = m0 + lr < m, win = n0 + lr < n;
+  const float* xp = x + (int64_t)(m0 + lr) * ldx + lk;
+  const uint16_t* wp = (const uint16_t*)wv0 + (int64_t)(n0 + lr) * k + lk;
+  const uint8_t* cp = (const uint8_t*)wv0 + (int64_t)(n0 + lr) * (k / 2) + lk / 2;
+  uint32_t cw = 0u;
+  uint8_t sb = 0;
+  float4 xa = make_float4(0.f, 0.f, 0.f, 0.f), xb = xa;
+  uint4 wv = make_uint4(0u, 0u, 0u, 0u);
+  auto fetch = [&](int k0) {
+    if (xin) {
+      xa = *reinterpret_cast<const float4*>(xp + k0);
+      xb = *reinterpret_cast<const float4*>(xp + k0 + 4);
+    }
+    if constexpr (FP4) {
+      if (win) {
+        cw = __ldcs(reinterpret_cast<const uint32_t*>(cp + k0 / 2));
+        sb = sc[(int64_t)(n0 + lr) * (k / 16) + k0 / 16];
+      }
+    } else {
+      if (win) wv = __ldcs(reinterpret_cast<const uint4*>(wp + k0));
+    }
+  };
+  auto stash = [&](int buf) {
+    const float xv[8] = {xa.x, xa.y, xa.z, xa.w, xb.x, xb.y, xb.z, xb.w};
+    const uint32_t ww[4] = {wv.x, wv.y, wv.z, wv.w};
+#pragma unroll
+    for (int i = 0; i < 8; i++) as[buf][lk + i][lr] = xv[i];
+    if constexpr (FP4) {
+#pragma unroll
+      for (int i = 0; i < 8; i++) {
+        const uint8_t b = (uint8_t)((cw >> (8 * (i >> 1))) & 0xffu);
+        bs[buf][lk + i][lr] = win ? ink2g_e2m1((i & 1) ? (uint8_t)(b >> 4) : b) : 0.0f;
+      }
+      if (lk == 0) ss[buf][lr] = win ? ink2g_e4m3(sb) : 1.0f;
+    } else {
+#pragma unroll
+      for (int i = 0; i < 4; i++) {
+        bs[buf][lk + 2 * i][lr] = __uint_as_float(ww[i] << 16);
+        bs[buf][lk + 2 * i + 1][lr] = __uint_as_float(ww[i] & 0xffff0000u);
+      }
+    }
+  };
+  float acc[8][8], part[8][8];
+#pragma unroll
+  for (int i = 0; i < 8; i++)
+#pragma unroll
+    for (int j = 0; j < 8; j++) acc[i][j] = part[i][j] = 0.0f;
+  const int steps = k / INK2G_SG_BK;
+  fetch(0);
+  stash(0);
+  __syncthreads();
+  for (int s = 0; s < steps; s++) {
+    const int buf = s & 1;
+    if (s + 1 < steps) fetch((s + 1) * INK2G_SG_BK);
+#pragma unroll
+    for (int kk = 0; kk < INK2G_SG_BK; kk++) {
+      const float4 a0 = *reinterpret_cast<const float4*>(&as[buf][kk][ty * 4]);
+      const float4 a1 = *reinterpret_cast<const float4*>(&as[buf][kk][64 + ty * 4]);
+      const float4 b0 = *reinterpret_cast<const float4*>(&bs[buf][kk][tx * 4]);
+      const float4 b1 = *reinterpret_cast<const float4*>(&bs[buf][kk][64 + tx * 4]);
+      const float a[8] = {a0.x, a0.y, a0.z, a0.w, a1.x, a1.y, a1.z, a1.w};
+      const float b[8] = {b0.x, b0.y, b0.z, b0.w, b1.x, b1.y, b1.z, b1.w};
+#pragma unroll
+      for (int i = 0; i < 8; i++)
+#pragma unroll
+        for (int j = 0; j < 8; j++) part[i][j] = fmaf(a[i], b[j], part[i][j]);
+    }
+#pragma unroll
+    for (int i = 0; i < 8; i++)
+#pragma unroll
+      for (int j = 0; j < 8; j++) {
+        if constexpr (FP4) {
+          acc[i][j] = fmaf(part[i][j], ss[buf][j < 4 ? tx * 4 + j : 64 + tx * 4 + j - 4], acc[i][j]);
+        } else {
+          acc[i][j] = __fadd_rn(acc[i][j], part[i][j]);
+        }
+        part[i][j] = 0.0f;
+      }
+    if (s + 1 < steps) {
+      stash(buf ^ 1);
+      __syncthreads();
+    }
+  }
+#pragma unroll
+  for (int i = 0; i < 8; i++) {
+    const int gm = m0 + (i < 4 ? ty * 4 + i : 64 + ty * 4 + i - 4);
+    if (gm >= m) continue;
+#pragma unroll
+    for (int j = 0; j < 8; j++) {
+      const int gn = n0 + (j < 4 ? tx * 4 + j : 64 + tx * 4 + j - 4);
+      if (gn < n) {
+        float v = acc[i][j];
+        if constexpr (FP4) v = (float)((double)v * (double)amax[0] / (double)denom);
+        y[(int64_t)gm * ldy + gn] = v;
+      }
+    }
+  }
+}
+
+// ---- decode GEMV, BF16, at the read bandwidth --------------------------------------------------
+// The same function as ink2g_gemv_kernel (and the tile GEMM) for BF16 weights: for each output,
+// per 16-input group, a fused multiply-add chain from 0 in input order, and the groups' partials
+// added from 0 in group order. Its bits equal theirs. What changes is who computes what: a lane
+// computes one group's partial from a 32-byte slice of the row, so a warp reads a weight row
+// with coalesced 16-byte loads, and one thread per row adds the row's partials in order after.
+// Several matrices that read inputs of the same width run in one launch (one job each).
+#define INK2G_JOBS 8
+#define INK2G_GV_ROWS 32
+#define INK2G_GV_THREADS 256
+#define INK2G_GV_MAX_K 4096
+struct Ink2gJobs {
+  const float* x[INK2G_JOBS];
+  const uint16_t* w[INK2G_JOBS];
+  float* y[INK2G_JOBS];
+  int n[INK2G_JOBS];
+  int first[INK2G_JOBS + 1];  // the first block of each job; first[count] = the grid
+  int count;
+};
+
+template <int ITERS>
+__global__ void __launch_bounds__(INK2G_GV_THREADS) ink2g_gemv_bf16_kernel(const Ink2gJobs jobs, int k) {
+  extern __shared__ float ink2g_gv[];
+  const int groups = k >> 4, pstride = groups + 1;
+  float* xs = ink2g_gv;
+  float* ps = ink2g_gv + k;
+  int j = 0;
+  while (j + 1 < jobs.count && (int)blockIdx.x >= jobs.first[j + 1]) j++;
+  const int r0 = ((int)blockIdx.x - jobs.first[j]) * INK2G_GV_ROWS;
+  const int n = jobs.n[j];
+  const float* x = jobs.x[j];
+  // x transposed: element i of group g at xs[i * groups + g] (consecutive lanes, consecutive words)
+  for (int i = threadIdx.x; i < k; i += INK2G_GV_THREADS) xs[(i & 15) * groups + (i >> 4)] = x[i];
+  __syncthreads();
+  const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+  for (int rl = warp; rl < INK2G_GV_ROWS; rl += INK2G_GV_THREADS / 32) {
+    const int row = r0 + rl;
+    if (row >= n) break;
+    const uint4* wr = reinterpret_cast<const uint4*>(jobs.w[j] + (int64_t)row * k);
+    uint4 lo[ITERS], hi[ITERS];
+#pragma unroll
+    for (int it = 0; it < ITERS; it++) {
+      const int g = it * 32 + lane;
+      if (g < groups) {
+        lo[it] = __ldcs(wr + 2 * g);
+        hi[it] = __ldcs(wr + 2 * g + 1);
+      }
+    }
+#pragma unroll
+    for (int it = 0; it < ITERS; it++) {
+      const int g = it * 32 + lane;
+      if (g < groups) {
+        const uint32_t wv[8] = {lo[it].x, lo[it].y, lo[it].z, lo[it].w, hi[it].x, hi[it].y, hi[it].z, hi[it].w};
+        const float* xg = xs + g;
+        float part = 0.0f;
+#pragma unroll
+        for (int i = 0; i < 8; i++) {
+          part = fmaf(xg[(2 * i) * groups], __uint_as_float(wv[i] << 16), part);
+          part = fmaf(xg[(2 * i + 1) * groups], __uint_as_float(wv[i] & 0xffff0000u), part);
+        }
+        ps[rl * pstride + g] = part;
+      }
+    }
+  }
+  __syncthreads();
+  if (threadIdx.x < INK2G_GV_ROWS) {
+    const int row = r0 + threadIdx.x;
+    if (row < n) {
+      const float* p = ps + threadIdx.x * pstride;
+      float acc = 0.0f;
+      for (int g = 0; g < groups; g++) acc = __fadd_rn(acc, p[g]);
+      jobs.y[j][row] = acc;
+    }
+  }
+}
+
 // ---- embedding ---------------------------------------------------------------------------------
 // out[r] = norm_w * e * rsqrt(mean(e^2) + eps), e the BF16 row ids[r] of the table.
+template <typename T, bool KC>
 __global__ void ink2g_embed_kernel(const uint16_t* __restrict__ table, const uint32_t* __restrict__ ids,
-                                   const float* __restrict__ nw, double eps, float* __restrict__ out, int H) {
-  __shared__ double sh[8];
+                                   const float* __restrict__ nw, T eps, float* __restrict__ out, int H) {
+  __shared__ T sh[8];
   const int r = blockIdx.x;
   const uint16_t* row = table + (int64_t)ids[r] * H;
-  double ss = 0.0;
+  INK2G_ACC ss = T(0.0);
   for (int j = threadIdx.x; j < H; j += blockDim.x) {
-    const double v = (double)ink2g_bf16(row[j]);
+    const T v = (T)ink2g_bf16(row[j]);
     ss += v * v;
   }
-  ss = ink2g_block_sum(ss, sh);
-  const double f = 1.0 / sqrt(ss / (double)H + eps);
+  ss = ink2g_block_sum<T>(ss, sh);
+  const T f = T(1.0) / sqrt(ss / (T)H + eps);
   for (int j = threadIdx.x; j < H; j += blockDim.x)
-    out[(int64_t)r * H + j] = (float)((double)nw[j] * ((double)ink2g_bf16(row[j]) * f));
+    out[(int64_t)r * H + j] = (float)((T)nw[j] * ((T)ink2g_bf16(row[j]) * f));
 }
 
 // y[r] = w * x[r] * rsqrt(mean(x[r]^2) + eps)
-__global__ void ink2g_norm_kernel(const float* __restrict__ x, const float* __restrict__ nw, double eps,
-                                  float* __restrict__ y, int H) {
-  __shared__ double sh[8];
+struct Ink2gNorm3 {
+  const float* x[2];
+  const float* w[2];
+  float* y[2];
+};
+
+template <typename T, bool KC>
+__global__ void ink2g_norm_kernel(const float* __restrict__ x, const float* __restrict__ nw, T eps,
+                                  float* __restrict__ y, int H, Ink2gNorm3 more) {
+  // blockIdx.y j > 0: the j-th norm of a joint launch (its own input, weights and output)
+  if (blockIdx.y > 0) {
+    x = more.x[blockIdx.y - 1];
+    nw = more.w[blockIdx.y - 1];
+    y = more.y[blockIdx.y - 1];
+  }
+  __shared__ T sh[8];
   const int r = blockIdx.x;
   const float* row = x + (int64_t)r * H;
-  double ss = 0.0;
+  INK2G_ACC ss = T(0.0);
   for (int j = threadIdx.x; j < H; j += blockDim.x) {
-    const double v = (double)row[j];
+    const T v = (T)row[j];
     ss += v * v;
   }
-  ss = ink2g_block_sum(ss, sh);
-  const double f = 1.0 / sqrt(ss / (double)H + eps);
+  ss = ink2g_block_sum<T>(ss, sh);
+  const T f = T(1.0) / sqrt(ss / (T)H + eps);
   for (int j = threadIdx.x; j < H; j += blockDim.x)
-    y[(int64_t)r * H + j] = (float)((double)nw[j] * ((double)row[j] * f));
+    y[(int64_t)r * H + j] = (float)((T)nw[j] * ((T)row[j] * f));
 }
 
 // ---- depth mix ---------------------------------------------------------------------------------
@@ -409,32 +682,181 @@ __global__ void ink2g_controller_kernel(const float* x, const float* __restrict_
   }
 }
 
+// ---- loop controller, split over blocks ----------------------------------------------------------
+// The same function as ink2g_controller_kernel, with the same per-thread orders and the same block
+// reductions (256 threads, ink2g_block_sum), so its bits equal it. Phase 1 runs one block per
+// (rank output, row): each block repeats the row's two RMS sums and forms its own g[o] into
+// scratch. Phase 2 runs the forget / gain projections with one thread per output channel.
+template <typename T, bool KC>
+__global__ void __launch_bounds__(256) ink2g_ctrl_down_kernel(const float* __restrict__ x, const float* __restrict__ msg,
+                                                             const uint16_t* __restrict__ down, T eps,
+                                                             double* __restrict__ g, int H, int rank) {
+  __shared__ T sh[8];
+  const int o = blockIdx.x, r = blockIdx.y;
+  const float* xr = x + (int64_t)r * H;
+  const float* mr = msg + (int64_t)r * H;
+  INK2G_ACC sx = T(0.0), sm = T(0.0);
+  for (int j = threadIdx.x; j < H; j += blockDim.x) {
+    sx += (T)xr[j] * (T)xr[j];
+    sm += (T)mr[j] * (T)mr[j];
+  }
+  sx = ink2g_block_sum<T>(sx, sh);
+  sm = ink2g_block_sum<T>(sm, sh);
+  const T fx = T(1.0) / sqrt(sx / (T)H + eps), fm = T(1.0) / sqrt(sm / (T)H + eps);
+  const uint16_t* dr = down + (int64_t)o * 2 * H;
+  INK2G_ACC d = T(0.0);
+  for (int j = threadIdx.x; j < H; j += blockDim.x)
+    d += (T)ink2g_bf16(dr[j]) * ((T)xr[j] * fx) + (T)ink2g_bf16(dr[H + j]) * ((T)mr[j] * fm);
+  d = ink2g_block_sum<T>(d, sh);
+  if (threadIdx.x == 0) g[(int64_t)r * rank + o] = d;
+}
+
+template <typename T, bool KC>
+__global__ void ink2g_ctrl_up_kernel(const float* x, const float* __restrict__ msg,
+                                     const uint16_t* __restrict__ forget, const uint16_t* __restrict__ gain,
+                                     const double* __restrict__ gin, float* out, int H, int rank) {
+  __shared__ T g[128];
+  const int r = blockIdx.y;
+  for (int o = threadIdx.x; o < rank; o += blockDim.x) g[o] = gin[(int64_t)r * rank + o];
+  __syncthreads();
+  const int j = blockIdx.x * blockDim.x + threadIdx.x;
+  if (j >= H) return;
+  const float* xr = x + (int64_t)r * H;
+  const float* mr = msg + (int64_t)r * H;
+  INK2G_ACC f = T(0.0), a = T(0.0);
+  for (int o = 0; o < rank; o++) {
+    f += (T)ink2g_bf16(forget[(int64_t)j * rank + o]) * g[o];
+    a += (T)ink2g_bf16(gain[(int64_t)j * rank + o]) * g[o];
+  }
+  out[(int64_t)r * H + j] = (float)((T(1.0) - tanh(f)) * (T)xr[j] + tanh(a) * (T)mr[j]);
+}
+
+// ---- depth mix, split over blocks ----------------------------------------------------------------
+// The same function as ink2g_mix_kernel, the same orders and block reductions, so the same bits.
+// Phase 1: one block per (state, query, row) forms the state's RMS factor and the scaled score
+// into scratch [row][query][state][2]. Phase 2: one thread per output channel; each block repeats
+// the softmax over the states on thread 0.
+template <typename T, bool KC>
+__global__ void __launch_bounds__(256) ink2g_mix_dot_kernel(Ink2gStates st, int ns, const float* __restrict__ queries,
+                                                           int nq, T eps, double* __restrict__ scr, int H) {
+  __shared__ T sh[8];
+  const int s = blockIdx.x, q = blockIdx.y, r = blockIdx.z;
+  const float* row = st.p[s] + (int64_t)r * H;
+  INK2G_ACC ss = T(0.0);
+  for (int j = threadIdx.x; j < H; j += blockDim.x) {
+    const T v = (T)row[j];
+    ss += v * v;
+  }
+  ss = ink2g_block_sum<T>(ss, sh);
+  // one thread forms the two factors (an f64 sqrt and divide in every thread cost more than the dot)
+  __shared__ T fac[2];
+  if (threadIdx.x == 0) {
+    fac[0] = T(1.0) / sqrt(ss / (T)H + eps);
+    fac[1] = T(1.0) / sqrt((T)H);
+  }
+  __syncthreads();
+  const T inv = fac[0], scale = fac[1];
+  const float* qr = queries + (int64_t)q * H;
+  INK2G_ACC d = T(0.0);
+  for (int j = threadIdx.x; j < H; j += blockDim.x) d += (T)qr[j] * ((T)row[j] * inv);
+  d = ink2g_block_sum<T>(d, sh) * scale;
+  if (threadIdx.x == 0) {
+    double* o = scr + (((int64_t)r * nq + q) * ns + s) * 2;
+    o[0] = d;
+    o[1] = inv;
+  }
+}
+
+template <typename T, bool KC>
+__global__ void ink2g_mix_out_kernel(Ink2gStates st, int ns, int nq, const double* __restrict__ scr,
+                                     float* __restrict__ out, int64_t out_stride, int H) {
+  __shared__ T inv[INK2G_MAX_STATES];
+  __shared__ T prob[INK2G_MAX_STATES];
+  const int q = blockIdx.y, r = blockIdx.z;
+  if (threadIdx.x == 0) {
+    const double* p = scr + ((int64_t)r * nq + q) * ns * 2;
+    for (int s = 0; s < ns; s++) {
+      prob[s] = p[2 * s];
+      inv[s] = p[2 * s + 1];
+    }
+    T top = -INFINITY;
+    for (int s = 0; s < ns; s++) top = fmax(top, prob[s]);
+    INK2G_ACC den = T(0.0);
+    for (int s = 0; s < ns; s++) {
+      prob[s] = exp(prob[s] - top);
+      den += prob[s];
+    }
+    for (int s = 0; s < ns; s++) prob[s] /= den;
+  }
+  __syncthreads();
+  const int j = blockIdx.x * blockDim.x + threadIdx.x;
+  if (j >= H) return;
+  INK2G_ACC a = T(0.0);
+  for (int s = 0; s < ns; s++) a += prob[s] * ((T)st.p[s][(int64_t)r * H + j] * inv[s]);
+  out[(int64_t)q * out_stride + (int64_t)r * H + j] = (float)a;
+}
+
 // ---- head epilogues: clip / tau / value norm ------------------------------------------------------
 // One block per (row, head). mode 0: v = x * scale (optional); v *= min(1, thr / (|v| + eps)); v *= tau.
 // mode 1: v = x * rsqrt(mean(x^2) + eps). tau = 1 + alpha * ln(max(1, (pos + 1) / floor)) when
 // log_floor > 0. The row lands at dst row (pos0 + r) % cap when cap > 0 (a cache ring), else r.
 // dst may be x (a block reads its head before it writes it).
-__global__ void ink2g_heads_kernel(int mode, const float* x, const float* __restrict__ scale, double thr,
-                                   double eps, int64_t pos0, int log_floor, double alpha, float* dst,
-                                   int64_t cap, int heads, int width) {
-  __shared__ double sh[8];
+// KV cache elements: f32 as computed, or one e4m3 byte (the nvfp4-rig class: the f32 value rounded
+// to the nearest e4m3, ties to even, saturating at 448, by cvt.rn.satfinite.e4m3x2.f32; read back
+// exactly).
+__device__ __forceinline__ void ink2g_kv_put(float* p, int64_t i, float v) { p[i] = v; }
+__device__ __forceinline__ void ink2g_kv_put(uint8_t* p, int64_t i, float v) {
+  uint32_t b;
+  asm("{ .reg .b16 q; cvt.rn.satfinite.e4m3x2.f32 q, %1, %1; cvt.u32.u16 %0, q; }" : "=r"(b) : "f"(v));
+  p[i] = (uint8_t)(b & 0xffu);
+}
+__device__ __forceinline__ float ink2g_kv_get(const float* p, int64_t i) { return p[i]; }
+__device__ __forceinline__ float ink2g_kv_get(const uint8_t* p, int64_t i) { return ink2g_e4m3(p[i]); }
+
+template <typename T, typename OUT>
+struct Ink2gHeads2 {
+  int mode;
+  const float* x;
+  T thr, eps;
+  OUT* dst;
+  const float* scale;
+  int width;  // 0: the first job's
+};
+
+template <typename T, bool KC, typename OUT = float>
+__global__ void ink2g_heads_kernel(int mode, const float* x, const float* __restrict__ scale, T thr,
+                                   T eps, const int64_t* __restrict__ posd, int64_t pos0, int log_floor,
+                                   T alpha, OUT* dst, int64_t cap, int heads, int width, Ink2gHeads2<T, OUT> j2) {
+  // blockIdx.z 1: the second epilogue of a pair launch (the same shape)
+  if (blockIdx.z == 1) {
+    mode = j2.mode;
+    x = j2.x;
+    thr = j2.thr;
+    eps = j2.eps;
+    dst = j2.dst;
+    if (j2.width > 0) {
+      scale = j2.scale;
+      width = j2.width;
+    }
+  }
+  __shared__ T sh[8];
   const int r = blockIdx.x, h = blockIdx.y, t = threadIdx.x;
-  const int64_t pos = pos0 + r;
+  const int64_t pos = (posd ? *posd : pos0) + r;
   const int64_t drow = cap > 0 ? pos % cap : (int64_t)r;
-  double v = 0.0;
+  T v = T(0.0);
   if (t < width) {
-    v = (double)x[((int64_t)r * heads + h) * width + t];
-    if (scale) v *= (double)scale[h * width + t];
+    v = (T)x[((int64_t)r * heads + h) * width + t];
+    if (scale) v *= (T)scale[h * width + t];
   }
-  const double ss = ink2g_block_sum(v * v, sh);
-  double f;
+  const T ss = ink2g_block_sum<T>(v * v, sh);
+  T f;
   if (mode == 0) {
-    f = fmin(thr / (sqrt(ss) + eps), 1.0);
-    if (log_floor > 0) f *= 1.0 + alpha * log(fmax((double)(pos + 1) / (double)log_floor, 1.0));
+    f = fmin(thr / (sqrt(ss) + eps), T(1.0));
+    if (log_floor > 0) f *= T(1.0) + alpha * log(fmax((T)(pos + 1) / (T)log_floor, T(1.0)));
   } else {
-    f = 1.0 / sqrt(ss / (double)width + eps);
+    f = T(1.0) / sqrt(ss / (T)width + eps);
   }
-  if (t < width) dst[(drow * heads + h) * width + t] = (float)(v * f);
+  if (t < width) ink2g_kv_put(dst, (drow * heads + h) * width + t, (float)(v * f));
 }
 
 // ---- short convolution with carried state --------------------------------------------------------
@@ -444,21 +866,40 @@ __global__ void ink2g_heads_kernel(int mode, const float* x, const float* __rest
 // mode 1 (dynamic): taps [K, C] and dyn [R, groups, K], both by lag with the current token first;
 //   out = (x + sum_lag (taps[lag, c] + dyn[r, group(c), lag]) * x[t - lag]) / sqrt(2K + 1).
 // add (nullable): out = add + conv. carry == 0 leaves the state untouched (the gate's red arm).
+struct Ink2gConv2 {
+  const float* x;
+  const float* state_in;
+  float* state_out;
+  const float* taps;
+  const float* dyn;
+  float* out;
+};
+
+template <typename T, bool KC>
 __global__ void ink2g_conv_kernel(int mode, const float* __restrict__ x, const float* __restrict__ state_in,
                                   float* __restrict__ state_out, const float* __restrict__ taps,
                                   const float* __restrict__ dyn, int groups, const float* add, float* out, int R,
-                                  int C, int K) {
+                                  int C, int K, Ink2gConv2 j2) {
+  // blockIdx.y 1: the second convolution of a pair launch (the same shape, its own tensors)
+  if (blockIdx.y == 1) {
+    x = j2.x;
+    state_in = j2.state_in;
+    state_out = j2.state_out;
+    taps = j2.taps;
+    dyn = j2.dyn;
+    out = j2.out;
+  }
   const int c = blockIdx.x * blockDim.x + threadIdx.x;
   if (c >= C) return;
-  double hist[INK2G_MAX_KERNEL];  // hist[l] = input l steps back, l in 1..K-1
-  for (int l = 1; l < K; l++) hist[l] = (double)state_in[(int64_t)(K - 1 - l) * C + c];
-  double tp[INK2G_MAX_KERNEL];
-  for (int j = 0; j < K; j++) tp[j] = mode == 0 ? (double)taps[(int64_t)c * K + j] : (double)taps[(int64_t)j * C + c];
+  T hist[INK2G_MAX_KERNEL];  // hist[l] = input l steps back, l in 1..K-1
+  for (int l = 1; l < K; l++) hist[l] = (T)state_in[(int64_t)(K - 1 - l) * C + c];
+  T tp[INK2G_MAX_KERNEL];
+  for (int j = 0; j < K; j++) tp[j] = mode == 0 ? (T)taps[(int64_t)c * K + j] : (T)taps[(int64_t)j * C + c];
   const int group = mode == 1 ? c / (C / groups) : 0;
-  const double div = sqrt(mode == 0 ? (double)(K + 1) : (double)(2 * K + 1));
+  const T div = sqrt(mode == 0 ? (T)(K + 1) : (T)(2 * K + 1));
   for (int r = 0; r < R; r++) {
-    const double cur = (double)x[(int64_t)r * C + c];
-    double sum = 0.0;
+    const T cur = (T)x[(int64_t)r * C + c];
+    INK2G_ACC sum = T(0.0);
     if (mode == 0) {
       for (int tap = 0; tap < K; tap++) {
         const int lag = K - 1 - tap;
@@ -466,10 +907,10 @@ __global__ void ink2g_conv_kernel(int mode, const float* __restrict__ x, const f
       }
     } else {
       const float* dr = dyn + ((int64_t)r * groups + group) * K;
-      for (int lag = 0; lag < K; lag++) sum += (lag == 0 ? cur : hist[lag]) * (tp[lag] + (double)dr[lag]);
+      for (int lag = 0; lag < K; lag++) sum += (lag == 0 ? cur : hist[lag]) * (tp[lag] + (T)dr[lag]);
     }
-    double o = (sum + cur) / div;
-    if (add) o = (double)add[(int64_t)r * C + c] + o;
+    T o = (sum + cur) / div;
+    if (add) o = (T)add[(int64_t)r * C + c] + o;
     out[(int64_t)r * C + c] = (float)o;
     for (int l = K - 1; l > 1; l--) hist[l] = hist[l - 1];
     hist[1] = cur;
@@ -490,24 +931,26 @@ __global__ void ink2g_conv_kernel(int mode, const float* __restrict__ x, const f
 // into the output, oldest key first. Every score is the same sequential f64 dot in every pass, so
 // the result is the one a stored-score program computes, with shared memory that does not grow
 // with the context.
-__device__ __forceinline__ double ink2g_attn_score(const float* qs, const float* kc, int64_t cap, int64_t pos,
+template <typename T, bool KC, typename KV>
+__device__ __forceinline__ T ink2g_attn_score(const float* qs, const KV* kc, int64_t cap, int64_t pos,
                                                    int64_t d, int kvw, int kvh, int dim, int extent,
-                                                   int mask_beyond, const double* bias, double scale) {
+                                                   int mask_beyond, const T* bias, T scale) {
   if (d >= extent && mask_beyond) return -INFINITY;
-  const float* kr = kc + ((pos - d) % cap) * kvw + kvh * dim;
-  double dot = 0.0;
-  for (int i = 0; i < dim; i++) dot += (double)qs[i] * (double)kr[i];
-  return dot * scale + (d < extent ? bias[d] : 0.0);
+  const KV* kr = kc + ((pos - d) % cap) * kvw + kvh * dim;
+  INK2G_ACC dot = T(0.0);
+  for (int i = 0; i < dim; i++) dot += (T)qs[i] * (T)ink2g_kv_get(kr, i);
+  return dot * scale + (d < extent ? bias[d] : T(0.0));
 }
 
+template <typename T, bool KC, typename KV>
 __global__ void ink2g_attn_kernel(const float* __restrict__ q, const float* __restrict__ rel,
                                   const float* __restrict__ table, const float* __restrict__ sink,
-                                  const float* __restrict__ kc, const float* __restrict__ vc, int64_t cap, int64_t pos0,
+                                  const KV* __restrict__ kc, const KV* __restrict__ vc, int64_t cap, int64_t pos0,
                                   int window, int extent, int mask_beyond, float* __restrict__ out, int heads,
                                   int kv_heads, int dim, int rank) {
-  __shared__ double sh[8];
-  __shared__ double bias[INK2G_MAX_EXTENT];
-  __shared__ double tile[INK2G_ATTN_TILE];
+  __shared__ T sh[8];
+  __shared__ T bias[INK2G_MAX_EXTENT];
+  __shared__ T tile[INK2G_ATTN_TILE];
   __shared__ float qs[256];
   const int r = blockIdx.x, h = blockIdx.y, t = threadIdx.x, nt = blockDim.x;
   const int64_t pos = pos0 + r;
@@ -516,42 +959,165 @@ __global__ void ink2g_attn_kernel(const float* __restrict__ q, const float* __re
   const int kvw = kv_heads * dim;
   const float* relr = rel + ((int64_t)r * heads + h) * rank;
   for (int d = t; d < extent && d < nkeys; d += nt) {
-    double b = 0.0;
-    for (int i = 0; i < rank; i++) b += (double)relr[i] * (double)table[(int64_t)i * extent + d];
+    INK2G_ACC b = T(0.0);
+    for (int i = 0; i < rank; i++) b += (T)relr[i] * (T)table[(int64_t)i * extent + d];
     bias[d] = b;
   }
   if (t < dim) qs[t] = q[((int64_t)r * heads + h) * dim + t];
+  __shared__ T scl;
+  if (t == 0) scl = T(1.0) / sqrt((T)dim);
   __syncthreads();
-  const double scale = 1.0 / sqrt((double)dim);
-  const double sk = (double)sink[(int64_t)r * heads + h];
-  double top = -INFINITY;
+  const T scale = scl;
+  const T sk = (T)sink[(int64_t)r * heads + h];
+  T top = -INFINITY;
   for (int64_t d = t; d < nkeys; d += nt)
-    top = fmax(top, ink2g_attn_score(qs, kc, cap, pos, d, kvw, kvh, dim, extent, mask_beyond, bias, scale));
-  top = fmax(ink2g_block_max(top, sh), sk);
-  double den = 0.0;
+    top = fmax(top, ink2g_attn_score<T, KC, KV>(qs, kc, cap, pos, d, kvw, kvh, dim, extent, mask_beyond, bias, scale));
+  top = fmax(ink2g_block_max<T>(top, sh), sk);
+  INK2G_ACC den = T(0.0);
   for (int64_t d = t; d < nkeys; d += nt)
-    den += exp(ink2g_attn_score(qs, kc, cap, pos, d, kvw, kvh, dim, extent, mask_beyond, bias, scale) - top);
-  den = ink2g_block_sum(den, sh) + exp(sk - top);
-  double a = 0.0;
+    den += exp(ink2g_attn_score<T, KC, KV>(qs, kc, cap, pos, d, kvw, kvh, dim, extent, mask_beyond, bias, scale) - top);
+  den = ink2g_block_sum<T>(den, sh) + exp(sk - top);
+  INK2G_ACC a = T(0.0);
   for (int64_t hi = nkeys - 1; hi >= 0; hi -= INK2G_ATTN_TILE) {
     const int64_t lo = hi - INK2G_ATTN_TILE + 1 > 0 ? hi - INK2G_ATTN_TILE + 1 : 0;
     __syncthreads();  // the previous tile is folded
     for (int64_t d = lo + t; d <= hi; d += nt)
       tile[d - lo] =
-          exp(ink2g_attn_score(qs, kc, cap, pos, d, kvw, kvh, dim, extent, mask_beyond, bias, scale) - top);
+          exp(ink2g_attn_score<T, KC, KV>(qs, kc, cap, pos, d, kvw, kvh, dim, extent, mask_beyond, bias, scale) - top);
     __syncthreads();
     if (t < dim)
       for (int64_t d = hi; d >= lo; d--)  // oldest key first, as the reference sums
-        a += tile[d - lo] * (double)vc[((pos - d) % cap) * kvw + kvh * dim + t];
+        a += tile[d - lo] * (T)ink2g_kv_get(vc, ((pos - d) % cap) * kvw + kvh * dim + t);
   }
   if (t < dim) out[((int64_t)r * heads + h) * dim + t] = (float)(a / den);
 }
 
 
+// ---- decode attention, split over blocks ----------------------------------------------------------
+// The same function as ink2g_attn_kernel for a call of one row: every score is the same f64
+// expression (ink2g_attn_score), the maximum and the denominator run with the same 256-thread
+// mapping and block reductions, and the output sums the same exp(score - max) terms in the same
+// oldest-first order, so the bits are equal. Phase 1 spreads the scores over blocks of
+// INK2G_SC_KEYS keys into f64 scratch [heads][ld]; phase 2 runs one block per head. pos is read from
+// posd when it is set (a graph replays one step at every position).
+#define INK2G_SC_KEYS 256
+template <typename T, bool KC, typename KV>
+__global__ void __launch_bounds__(INK2G_SC_KEYS) ink2g_attn_scores_kernel(
+    const float* __restrict__ q, const float* __restrict__ rel, const float* __restrict__ table,
+    const KV* __restrict__ kc, int64_t cap, const int64_t* __restrict__ posd, int64_t pos0, int window, int extent,
+    int mask_beyond, double* __restrict__ scr, int64_t ld, int heads, int kv_heads, int dim, int rank, int r0) {
+  __shared__ T bias[INK2G_SC_KEYS];
+  __shared__ float qs[256];
+  const int h = blockIdx.y, t = threadIdx.x, r = r0 + (int)blockIdx.z;
+  const int64_t pos = (posd ? *posd : pos0) + r;
+  q += (int64_t)r * heads * dim;
+  rel += (int64_t)r * heads * rank;
+  scr += (int64_t)blockIdx.z * heads * ld;
+  const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
+  const int64_t d0 = (int64_t)blockIdx.x * INK2G_SC_KEYS;
+  if (d0 >= nkeys) return;
+  const int kvh = h / (heads / kv_heads);
+  const int kvw = kv_heads * dim;
+  const float* relr = rel + (int64_t)h * rank;
+  const int64_t d = d0 + t;
+  if (d < extent && d < nkeys) {
+    INK2G_ACC b = T(0.0);
+    for (int i = 0; i < rank; i++) b += (T)relr[i] * (T)table[(int64_t)i * extent + d];
+    bias[t] = b;
+  }
+  for (int i = t; i < dim; i += blockDim.x) qs[i] = q[(int64_t)h * dim + i];
+  __shared__ T scl;
+  if (t == 0) scl = T(1.0) / sqrt((T)dim);
+  __syncthreads();
+  if (d >= nkeys) return;
+  const T scale = scl;
+  scr[(int64_t)h * ld + d] = ink2g_attn_score<T, KC, KV>(qs, kc, cap, pos, d, kvw, kvh, dim, extent, mask_beyond, bias - d0, scale);
+}
+
+// The fold of the split form in three launches, the same f64 (or arm) program as one block a head:
+// top: one block a (row, head), the max over the row's scores and the sink (a max is exact in any
+// order), stored at scr[ld - 1]; exp: every key's weight exp(score - top) in place, over many blocks;
+// out: blocks of INK2G_FOLD_OUT outputs of a head, each forming the denominator with the one-block
+// thread mapping (so its bits are the one-block sum) and the weighted sums, oldest key first, from
+// 32-key tiles staged in shared memory.
+#define INK2G_FOLD_OUT 16
+template <typename T, bool KC>
+__global__ void __launch_bounds__(256) ink2g_attn_top_kernel(const float* __restrict__ sink,
+                                                             const int64_t* __restrict__ posd, int64_t pos0,
+                                                             int window, double* __restrict__ scr, int64_t ld,
+                                                             int heads, int r0) {
+  __shared__ T sh[8];
+  const int h = blockIdx.y, t = threadIdx.x, nt = blockDim.x, r = r0 + (int)blockIdx.x;
+  const int64_t pos = (posd ? *posd : pos0) + r;
+  const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
+  double* sc = scr + ((int64_t)blockIdx.x * heads + h) * ld;
+  const T sk = (T)sink[(int64_t)r * heads + h];
+  T top = -INFINITY;
+  for (int64_t d = t; d < nkeys; d += nt) top = fmax(top, (T)sc[d]);
+  top = fmax(ink2g_block_max<T>(top, sh), sk);
+  if (t == 0) sc[ld - 1] = (double)top;
+}
+
+template <typename T, bool KC>
+__global__ void __launch_bounds__(256) ink2g_attn_exp_kernel(const int64_t* __restrict__ posd, int64_t pos0,
+                                                             int window, double* __restrict__ scr, int64_t ld,
+                                                             int heads, int r0) {
+  const int h = blockIdx.y, r = r0 + (int)blockIdx.z;
+  const int64_t pos = (posd ? *posd : pos0) + r;
+  const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
+  const int64_t d = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+  if (d >= nkeys) return;
+  double* sc = scr + ((int64_t)blockIdx.z * heads + h) * ld;
+  const T top = (T)sc[ld - 1];
+  const T e = exp((T)sc[d] - top);
+  sc[d] = e;
+}
+
+template <typename T, bool KC, typename KV>
+__global__ void __launch_bounds__(256) ink2g_attn_out_kernel(const float* __restrict__ sink, const KV* __restrict__ vc,
+                                                             int64_t cap, const int64_t* __restrict__ posd,
+                                                             int64_t pos0, int window, const double* __restrict__ scr,
+                                                             int64_t ld, float* __restrict__ out, int heads,
+                                                             int kv_heads, int dim, int r0, int od) {
+  __shared__ T sh[8];
+  __shared__ T ske;
+  __shared__ double tw[INK2G_FOLD_TILE];
+  __shared__ float tv[INK2G_FOLD_TILE * INK2G_FOLD_DIM];
+  const int h = blockIdx.y, t = threadIdx.x, nt = blockDim.x, r = r0 + (int)blockIdx.x;
+  const int c0 = (int)blockIdx.z * od;
+  const int oc = dim - c0 < od ? dim - c0 : od;
+  const int64_t pos = (posd ? *posd : pos0) + r;
+  const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
+  const int kvh = h / (heads / kv_heads);
+  const int kvw = kv_heads * dim;
+  const double* sc = scr + ((int64_t)blockIdx.x * heads + h) * ld;
+  const T top = (T)sc[ld - 1];
+  if (t == 0) ske = exp((T)sink[(int64_t)r * heads + h] - top);
+  INK2G_ACC den = T(0.0);
+  for (int64_t d = t; d < nkeys; d += nt) den += (T)sc[d];
+  den = ink2g_block_sum<T>(den, sh);  // its barriers publish ske
+  const T dn = (T)den + ske;
+  INK2G_ACC a = T(0.0);
+  for (int64_t hi = nkeys - 1; hi >= 0; hi -= INK2G_FOLD_TILE) {
+    const int nk = (int)(hi + 1 < INK2G_FOLD_TILE ? hi + 1 : INK2G_FOLD_TILE);
+    for (int i = t; i < nk; i += nt) tw[i] = sc[hi - i];
+    for (int e = t; e < nk * oc; e += nt) {
+      const int i = e / oc, c = e - i * oc;
+      tv[i * od + c] = ink2g_kv_get(vc, ((pos - (hi - i)) % cap) * kvw + kvh * dim + c0 + c);
+    }
+    __syncthreads();
+    if (t < oc)
+      for (int i = 0; i < nk; i++) a += (T)tw[i] * (T)tv[i * od + t];
+    __syncthreads();
+  }
+  if (t < oc) out[((int64_t)r * heads + h) * dim + c0 + t] = (float)(a / dn);
+}
+
 // y *= sigmoid(g)
+template <typename T, bool KC>
 __global__ void ink2g_gate_kernel(float* __restrict__ y, const float* __restrict__ g, int64_t n) {
   const int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
-  if (i < n) y[i] = (float)((double)y[i] * (1.0 / (1.0 + exp(-(double)g[i]))));
+  if (i < n) y[i] = (float)((T)y[i] * (T(1.0) / (T(1.0) + exp(-(T)g[i]))));
 }
 
 // ---- router ------------------------------------------------------------------------------------
@@ -559,27 +1125,42 @@ __global__ void ink2g_gate_kernel(float* __restrict__ y, const float* __restrict
 // lower expert (tie_high: the gate's red arm, to the higher), in rank order; weight =
 // score / (sum of the selected scores) * scale. margin (nullable) = key of rank top_k - 1 minus key
 // of rank top_k.
-__global__ void ink2g_route_kernel(const float* __restrict__ logits, const float* __restrict__ bias, double scale,
+// An order-preserving integer image of a finite value: a < b exactly when ord(a) < ord(b), equal values
+// (-0 and +0 too) give equal images. The router ranks on it: an f64 compare is as slow as an f64 fma here.
+__device__ __forceinline__ unsigned long long ink2g_ord(double v) {
+  unsigned long long b = (unsigned long long)__double_as_longlong(v == 0.0 ? 0.0 : v);
+  return (b >> 63) ? ~b : b | 0x8000000000000000ull;
+}
+__device__ __forceinline__ unsigned long long ink2g_ord(float v) {
+  uint32_t b = __float_as_uint(v == 0.0f ? 0.0f : v);
+  return (b >> 31) ? (unsigned long long)~b : (unsigned long long)(b | 0x80000000u);
+}
+
+template <typename T, bool KC>
+__global__ void ink2g_route_kernel(const float* __restrict__ logits, const float* __restrict__ bias, T scale,
                                    int top_k, int tie_high, uint32_t* __restrict__ ids, float* __restrict__ wts,
                                    float* __restrict__ margin, int E) {
-  __shared__ double key[1024];
-  __shared__ double score[1024];
-  __shared__ double sel[64];
-  __shared__ double edge[2];
+  __shared__ T key[1024];
+  __shared__ T score[1024];
+  __shared__ T sel[64];
+  __shared__ T edge[2];
+  __shared__ unsigned long long kord[1024];
   const int r = blockIdx.x;
   for (int i = threadIdx.x; i < E; i += blockDim.x) {
-    const double s = 1.0 / (1.0 + exp(-(double)logits[(int64_t)r * E + i]));
+    const T s = T(1.0) / (T(1.0) + exp(-(T)logits[(int64_t)r * E + i]));
     score[i] = s;
-    key[i] = bias ? s + (double)bias[i] : s;
+    key[i] = bias ? s + (T)bias[i] : s;
+    kord[i] = ink2g_ord(key[i]);
   }
   __syncthreads();
   for (int i = threadIdx.x; i < E; i += blockDim.x) {
     int rank = 0;
-    const double ki = key[i];
+    const T ki = key[i];
+    const unsigned long long oi = kord[i];
     for (int j = 0; j < E; j++) {
-      const double kj = key[j];
+      const unsigned long long oj = kord[j];
       const bool first = tie_high ? j > i : j < i;
-      rank += (kj > ki || (kj == ki && first)) ? 1 : 0;
+      rank += (oj > oi || (oj == oi && first)) ? 1 : 0;
     }
     if (rank < top_k) {
       ids[(int64_t)r * top_k + rank] = (uint32_t)i;
@@ -590,7 +1171,7 @@ __global__ void ink2g_route_kernel(const float* __restrict__ logits, const float
   }
   __syncthreads();
   if (threadIdx.x == 0) {
-    double total = 0.0;
+    INK2G_ACC total = T(0.0);
     for (int j = 0; j < top_k; j++) total += sel[j];
     for (int j = 0; j < top_k; j++) wts[(int64_t)r * top_k + j] = (float)(sel[j] / total * scale);
     if (margin) margin[r] = E > top_k ? (float)(edge[0] - edge[1]) : 0.0f;
@@ -651,9 +1232,10 @@ __global__ void ink2g_to_bf16_kernel(const float* __restrict__ x, uint16_t* __re
 }
 
 // logits = cap * tanh(logits / cap)
-__global__ void ink2g_softcap_kernel(float* __restrict__ y, double cap, int64_t n) {
+template <typename T, bool KC>
+__global__ void ink2g_softcap_kernel(float* __restrict__ y, T cap, int64_t n) {
   const int64_t i = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
-  if (i < n) y[i] = (float)(tanh((double)y[i] / cap) * cap);
+  if (i < n) y[i] = (float)(tanh((T)y[i] / cap) * cap);
 }
 
 // The first of the equal maxima of each row, as torch.argmax.
@@ -718,12 +1300,1132 @@ __global__ void ink2g_groups_kernel(const uint32_t* __restrict__ ids, uint32_t* 
   for (int i = 3; i < 10; i++) rec[i] = 0;
 }
 
+// Expert groups of a call of several rows, built on the device (no host round trip): the first,
+// (cap+1)-th, ... occurrence of an expert among the routed pairs leads a record {expert, count,
+// pair[cap]} at its own index; its next cap occurrences of that expert, in pair order, fill it. The
+// other records stay empty (count 0), and the GEMMs skip them. pairs <= 256.
+__global__ void ink2g_groups_dev_kernel(const uint32_t* __restrict__ ids, uint32_t* __restrict__ rec, int pairs,
+                                        int words, int cap) {
+  __shared__ uint32_t sid[256];
+  const int p = threadIdx.x;
+  if (p < pairs) sid[p] = ids[p];
+  for (int i = p; i < pairs * words; i += blockDim.x) rec[i] = 0u;
+  __syncthreads();
+  if (p >= pairs) return;
+  const uint32_t e = sid[p];
+  int idx = 0, total = 0;
+  for (int q = 0; q < pairs; q++)
+    if (sid[q] == e) {
+      if (q < p) idx++;
+      total++;
+    }
+  // the leader: occurrence number (idx / cap) * cap of this expert
+  const int want = (idx / cap) * cap;
+  int leader = p, seen = 0;
+  for (int q = 0; q < pairs; q++)
+    if (sid[q] == e) {
+      if (seen == want) {
+        leader = q;
+        break;
+      }
+      seen++;
+    }
+  uint32_t* r = rec + (int64_t)leader * words;
+  r[2 + idx % cap] = (uint32_t)p;
+  if (p == leader) {
+    r[0] = e;
+    r[1] = (uint32_t)(total - want < cap ? total - want : cap);
+  }
+}
+
 int ink2g_rc() {
   const cudaError_t e = cudaGetLastError();
   return e == cudaSuccess ? 0 : 10000 + (int)e;
 }
 
+// Launch the BF16 decode GEMV over jobs. 0 when launched, -1 when a job does not fit its form
+// (the caller then runs the generic GEMV), else an error code.
+int ink2g_gemv_jobs(const float* const* xs, const void* const* ws, float* const* ys, const int* ns, int count, int k,
+                    cudaStream_t stream) {
+  if (count <= 0 || count > INK2G_JOBS || k <= 0 || (k % 16) != 0 || k > INK2G_GV_MAX_K) return -1;
+  Ink2gJobs jobs;
+  int blocks = 0;
+  for (int j = 0; j < INK2G_JOBS; j++) {
+    const bool on = j < count;
+    jobs.x[j] = on ? xs[j] : nullptr;
+    jobs.w[j] = on ? (const uint16_t*)ws[j] : nullptr;
+    jobs.y[j] = on ? ys[j] : nullptr;
+    jobs.n[j] = on ? ns[j] : 0;
+    jobs.first[j] = blocks;
+    if (on) {
+      if (!xs[j] || !ws[j] || !ys[j] || ns[j] <= 0 || ((uintptr_t)ws[j] & 15) != 0) return -1;
+      blocks += (ns[j] + INK2G_GV_ROWS - 1) / INK2G_GV_ROWS;
+    }
+  }
+  jobs.first[INK2G_JOBS] = blocks;
+  jobs.count = count;
+  const int iters = (k / 16 + 31) / 32;
+  const size_t smem = (size_t)k * 4 + (size_t)INK2G_GV_ROWS * (k / 16 + 1) * 4;
+  auto go = [&](auto kern) -> int {
+    if (smem > 48 * 1024) {
+      const cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+      if (e != cudaSuccess) return 10000 + (int)e;
+    }
+    kern<<<blocks, INK2G_GV_THREADS, smem, stream>>>(jobs, k);
+    return ink2g_rc();
+  };
+  switch (iters) {
+    case 1: return go(ink2g_gemv_bf16_kernel<1>);
+    case 2: return go(ink2g_gemv_bf16_kernel<2>);
+    case 3: return go(ink2g_gemv_bf16_kernel<3>);
+    case 4: return go(ink2g_gemv_bf16_kernel<4>);
+    case 5: return go(ink2g_gemv_bf16_kernel<5>);
+    case 6: return go(ink2g_gemv_bf16_kernel<6>);
+    case 7: return go(ink2g_gemv_bf16_kernel<7>);
+    default: return go(ink2g_gemv_bf16_kernel<8>);
+  }
+}
+
+
+// ---- decode GEMV over 2 to 4 input rows at a time (a speculative verify, a short chunk) -----------
+// Per input row the same function as ink2g_gemv_bf16_kernel / ink2g_gemv_nvfp4_jobs_kernel (and the tile
+// GEMM): per 16-input group a fused multiply-add chain from 0, the partials folded in group order
+// (BF16: added; NVFP4: fmaf(partial, e4m3 scale, sum), the tensor scale once in f64). A lane reads its
+// weight slice once and forms the partial of every input row from it.
+// rows of a block: 8 warps of RPW weight rows (RPW 1 when the call has few rows, so the blocks spread)
+struct Ink2gRowJobs {
+  const float* x[INK2G_JOBS];
+  const void* w[INK2G_JOBS];
+  const uint8_t* sc[INK2G_JOBS];
+  const float* amax[INK2G_JOBS];
+  float denom[INK2G_JOBS];
+  float* y[INK2G_JOBS];
+  int64_t ldy[INK2G_JOBS];
+  int n[INK2G_JOBS];
+  int first[INK2G_JOBS + 1];
+  int count;  // 0: one projection, the kernel's own arguments
+};
+
+template <int ITERS, int R, bool FP4, int RPW>
+__global__ void __launch_bounds__(256) ink2g_gemv_rows_kernel(const float* __restrict__ x, int64_t ldx,
+                                                             const void* __restrict__ w, const uint8_t* __restrict__ sc,
+                                                             const float* __restrict__ amax, float denom,
+                                                             float* __restrict__ y, int64_t ldy, int n, int k,
+                                                             const Ink2gRowJobs jt) {
+  extern __shared__ float ink2g_mr[];
+  // a jobs launch: the block's projection (each its own x, weights and y, one k), its block index
+  // within that projection
+  int bidx = (int)blockIdx.x;
+  if (jt.count > 0) {
+    int j = 0;
+    while (j + 1 < jt.count && (int)blockIdx.x >= jt.first[j + 1]) j++;
+    x = jt.x[j];
+    w = jt.w[j];
+    sc = jt.sc[j];
+    amax = jt.amax[j];
+    denom = jt.denom[j];
+    y = jt.y[j];
+    ldy = jt.ldy[j];
+    n = jt.n[j];
+    bidx -= jt.first[j];
+  }
+  constexpr int WARPS = 8;
+  const int groups = k >> 4, pstride = groups + 1;
+  // x transposed per input row: element i of group g at xs[r * k + i * groups + g] (a warp's lanes,
+  // consecutive groups, read consecutive words)
+  float* xs = ink2g_mr;                                                   // [R][16][groups]
+  float* ps = xs + R * k;                                                 // [WARPS][R][pstride]
+  uint8_t* sv = reinterpret_cast<uint8_t*>(ps + WARPS * R * pstride);     // [WARPS][pstride] (NVFP4)
+  const int r0 = bidx * (WARPS * RPW);
+  for (int i = threadIdx.x; i < R * k; i += 256) {
+    const int r = i / k, e = i - r * k;
+    xs[r * k + (e & 15) * groups + (e >> 4)] = x[(int64_t)r * ldx + e];
+  }
+  __syncthreads();
+  const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+  float* pw = ps + warp * R * pstride;
+  uint8_t* sw = sv + warp * pstride;
+  // the raw weight bytes of a warp's row; the next row's are loaded before this row's fold
+  uint2 c4[FP4 ? ITERS : 1];
+  uint8_t s4[FP4 ? ITERS : 1];
+  uint4 lo[FP4 ? 1 : ITERS], hi[FP4 ? 1 : ITERS];
+  auto fetch = [&](int row) {
+#pragma unroll
+    for (int it = 0; it < ITERS; it++) {
+      const int g = it * 32 + lane;
+      if (row < n && g < groups) {
+        if constexpr (FP4) {
+          c4[it] = __ldcs(reinterpret_cast<const uint2*>((const uint8_t*)w + (int64_t)row * (k / 2)) + g);
+          s4[it] = sc[(int64_t)row * groups + g];
+        } else {
+          const uint4* wr = reinterpret_cast<const uint4*>((const uint16_t*)w + (int64_t)row * k);
+          lo[it] = __ldcs(wr + 2 * g);
+          hi[it] = __ldcs(wr + 2 * g + 1);
+        }
+      }
+    }
+  };
+  fetch(r0 + warp * RPW);
+  for (int q = 0; q < RPW; q++) {
+    const int row = r0 + warp * RPW + q;
+    if (row >= n) break;
+#pragma unroll
+    for (int it = 0; it < ITERS; it++) {
+      const int g = it * 32 + lane;
+      if (g >= groups) continue;
+      float wv[16];
+      if constexpr (FP4) {
+        ink2g_e2m1x8(c4[it].x, wv);
+        ink2g_e2m1x8(c4[it].y, wv + 8);
+        sw[g] = s4[it];
+      } else {
+        const uint32_t ww[8] = {lo[it].x, lo[it].y, lo[it].z, lo[it].w, hi[it].x, hi[it].y, hi[it].z, hi[it].w};
+#pragma unroll
+        for (int i = 0; i < 8; i++) {
+          wv[2 * i] = __uint_as_float(ww[i] << 16);
+          wv[2 * i + 1] = __uint_as_float(ww[i] & 0xffff0000u);
+        }
+      }
+#pragma unroll
+      for (int r = 0; r < R; r++) {
+        const float* xg = xs + r * k + g;
+        float part = 0.0f;
+#pragma unroll
+        for (int i = 0; i < 16; i++) part = fmaf(xg[i * groups], wv[i], part);
+        pw[r * pstride + g] = part;
+      }
+    }
+    if (q + 1 < RPW) fetch(row + 1);
+    __syncwarp();
+    // lane r folds input row r of this weight row, in group order
+    if (lane < R) {
+      const float* p = pw + lane * pstride;
+      float acc = 0.0f;
+      if constexpr (FP4) {
+        #pragma unroll 8
+        for (int g = 0; g < groups; g++) acc = fmaf(p[g], ink2g_e4m3(sw[g]), acc);
+        acc = (float)((double)acc * (double)amax[0] / (double)denom);
+      } else {
+        #pragma unroll 8
+        for (int g = 0; g < groups; g++) acc = __fadd_rn(acc, p[g]);
+      }
+      y[(int64_t)lane * ldy + row] = acc;
+    }
+    __syncwarp();
+  }
+}
+
+// ---- dense NVFP4 GEMV, rows a warp folded across lanes ---------------------------------------------
+// ink2g_gemv_kernel's NVFP4 program per output, unchanged: per 16-input group a fused multiply-add
+// chain from 0 over the e2m1 codes in input order, the groups folded in ascending order as
+// fmaf(partial, e4m3 scale, sum) from 0, the tensor scale once in f64. Its bits equal
+// ink2g_gemv_nvfp4_jobs_kernel's and the tile GEMM's, for every row of a call of R rows alike.
+// What changes is who computes what: a warp owns INK2G_G4_RW weight rows; per 32 groups, lane L forms
+// group L's partial of each of its rows (a row's 256 code bytes one coalesced load, the next 32
+// groups' loads issued before these compute), the partials go through a shared tile, and lane r
+// folds row r's 32 partials in order with its own scale bytes, so the fold runs along the stream
+// instead of as one serial tail. Small blocks keep a decode step's grid in one wave.
+#define INK2G_G4_WARPS 4
+#define INK2G_G4_RW 8
+template <int ITERS, int R, bool FP4>
+__global__ void __launch_bounds__(32 * INK2G_G4_WARPS) ink2g_gemv4_kernel(const Ink2gRowJobs jt, int64_t ldx, int k) {
+  constexpr int RW = INK2G_G4_RW;
+  // a row's 32 groups: FP4 8 code bytes a group (one uint2), BF16 32 bytes a group (two uint4)
+  using Chunk = typename std::conditional<FP4, uint2, uint4>::type;
+  constexpr int CW = FP4 ? 1 : 2;
+  extern __shared__ float ink2g_g4[];
+  int j = 0;
+  while (j + 1 < jt.count && (int)blockIdx.x >= jt.first[j + 1]) j++;
+  const int n = jt.n[j];
+  const float* x = jt.x[j];
+  const uint8_t* w = (const uint8_t*)jt.w[j];
+  const uint8_t* sc = jt.sc[j];
+  const int groups = k >> 4;
+  const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+  float* xs = ink2g_g4;                                 // [R][16][groups]
+  float* pt = ink2g_g4 + R * k + warp * (RW * 33);      // [RW rows][33]
+  const int r0 = (((int)blockIdx.x - jt.first[j]) * INK2G_G4_WARPS + warp) * RW;
+  Chunk c[RW][CW];
+  auto load = [&](Chunk (&cc)[RW][CW], int it) {
+    const int g = it * 32 + lane;
+#pragma unroll
+    for (int q = 0; q < RW; q++) {
+      const int row = r0 + q;
+      const bool on = row < n && g < groups;
+      if constexpr (FP4) {
+        cc[q][0] = on ? __ldcs(reinterpret_cast<const uint2*>(w + (int64_t)row * (k / 2)) + g) : make_uint2(0u, 0u);
+      } else {
+        const uint4* wr = reinterpret_cast<const uint4*>(w + (int64_t)row * k * 2);
+#pragma unroll
+        for (int h = 0; h < CW; h++) cc[q][h] = on ? __ldcs(wr + 2 * g + h) : make_uint4(0u, 0u, 0u, 0u);
+      }
+    }
+  };
+  load(c, 0);  // the weights do not wait on the input staging
+  for (int i = threadIdx.x; i < R * k; i += 32 * INK2G_G4_WARPS) {
+    const int r = i / k, e = i - r * k;
+    xs[r * k + (e & 15) * groups + (e >> 4)] = x[(int64_t)r * ldx + e];
+  }
+  __syncthreads();
+  if (r0 >= n) return;
+  const int my = r0 + lane;  // the row lane < RW folds
+  const bool folds = lane < RW && my < n;
+  float acc[R];
+#pragma unroll
+  for (int r = 0; r < R; r++) acc[r] = 0.0f;
+  // one 32-group step; the decode form (one NVFP4 row) unrolls every step, the others keep one step's
+  // double buffer live (the unrolled multi-row and BF16 forms ran out of registers)
+  auto step = [&](int it) {
+    const int g = it * 32 + lane;
+    Chunk cn[RW][CW];
+    if (it + 1 < ITERS) load(cn, it + 1);
+    const int live = groups - it * 32 < 32 ? groups - it * 32 : 32;
+    // FP4: the scale bytes of this lane's row for these 32 groups (groups % 16 == 0: 16-byte aligned)
+    uint4 s16[2] = {make_uint4(0u, 0u, 0u, 0u), make_uint4(0u, 0u, 0u, 0u)};
+    if (FP4 && folds) {
+      const uint4* sp = reinterpret_cast<const uint4*>(sc + (int64_t)my * groups + it * 32);
+      s16[0] = __ldg(sp);
+      if (live > 16) s16[1] = __ldg(sp + 1);
+    }
+    const uint8_t* sb = reinterpret_cast<const uint8_t*>(s16);
+#pragma unroll
+    for (int r = 0; r < R; r++) {
+      float xv[16];
+#pragma unroll
+      for (int i = 0; i < 16; i++) xv[i] = g < groups ? xs[r * k + i * groups + g] : 0.0f;
+#pragma unroll
+      for (int q = 0; q < RW; q++) {
+        float wv[16];
+        if constexpr (FP4) {
+          ink2g_e2m1x8(c[q][0].x, wv);
+          ink2g_e2m1x8(c[q][0].y, wv + 8);
+        } else {
+          const uint32_t ww[8] = {c[q][0].x, c[q][0].y, c[q][0].z, c[q][0].w, c[q][1].x, c[q][1].y, c[q][1].z, c[q][1].w};
+#pragma unroll
+          for (int i = 0; i < 8; i++) {
+            wv[2 * i] = __uint_as_float(ww[i] << 16);
+            wv[2 * i + 1] = __uint_as_float(ww[i] & 0xffff0000u);
+          }
+        }
+        float part = 0.0f;
+#pragma unroll
+        for (int i = 0; i < 16; i++) part = fmaf(xv[i], wv[i], part);
+        pt[q * 33 + lane] = part;
+      }
+      __syncwarp();
+      if (folds) {
+        float a = acc[r];
+#pragma unroll
+        for (int gg = 0; gg < 32; gg++) {
+          if (gg < live) {
+            if constexpr (FP4) {
+              a = fmaf(pt[lane * 33 + gg], ink2g_e4m3(sb[gg]), a);
+            } else {
+              a = __fadd_rn(a, pt[lane * 33 + gg]);
+            }
+          }
+        }
+        acc[r] = a;
+      }
+      __syncwarp();
+    }
+    if (it + 1 < ITERS) {
+#pragma unroll
+      for (int q = 0; q < RW; q++)
+#pragma unroll
+        for (int h = 0; h < CW; h++) c[q][h] = cn[q][h];
+    }
+  };
+  if constexpr (FP4 && R == 1) {
+#pragma unroll
+    for (int it = 0; it < ITERS; it++) step(it);
+  } else {
+#pragma unroll 1
+    for (int it = 0; it < ITERS; it++) step(it);
+  }
+  if (folds) {
+#pragma unroll
+    for (int r = 0; r < R; r++) {
+      float v = acc[r];
+      if constexpr (FP4) v = (float)((double)v * (double)jt.amax[j][0] / (double)jt.denom[j]);
+      jt.y[j][(int64_t)r * jt.ldy[j] + my] = v;
+    }
+  }
+}
+
+// jobs of up to R (1..4) input rows over dense NVFP4 (FP4) or BF16 weights, every job of width k;
+// -1 when the shape does not fit (NVFP4: k a multiple of 256; BF16: a multiple of 16; at most
+// INK2G_GV_MAX_K)
+template <int R, bool FP4 = true>
+int ink2g_gemv4_r(Ink2gRowJobs jt, int64_t ldx, int k, cudaStream_t stream) {
+  if (k <= 0 || (k % (FP4 ? 256 : 16)) != 0 || k > INK2G_GV_MAX_K) return -1;
+  const size_t smem = (size_t)R * k * 4 + (size_t)INK2G_G4_WARPS * INK2G_G4_RW * 33 * 4;
+  int blocks = 0;
+  for (int j = 0; j < jt.count; j++) {
+    if (FP4 && (((uintptr_t)jt.w[j] & 7) != 0 || ((uintptr_t)jt.sc[j] & 15) != 0)) return -1;
+    if (!FP4 && ((uintptr_t)jt.w[j] & 15) != 0) return -1;
+    jt.first[j] = blocks;
+    blocks += (jt.n[j] + INK2G_G4_RW * INK2G_G4_WARPS - 1) / (INK2G_G4_RW * INK2G_G4_WARPS);
+  }
+  jt.first[jt.count] = blocks;
+  auto go = [&](auto kern) -> int {
+    if (smem > 48 * 1024) {
+      const cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+      if (e != cudaSuccess) return 10000 + (int)e;
+    }
+    kern<<<blocks, 32 * INK2G_G4_WARPS, smem, stream>>>(jt, ldx, k);
+    return ink2g_rc();
+  };
+  switch ((k / 16 + 31) / 32) {
+    case 1: return go(ink2g_gemv4_kernel<1, R, FP4>);
+    case 2: return go(ink2g_gemv4_kernel<2, R, FP4>);
+    case 3: return go(ink2g_gemv4_kernel<3, R, FP4>);
+    case 4: return go(ink2g_gemv4_kernel<4, R, FP4>);
+    case 5: return go(ink2g_gemv4_kernel<5, R, FP4>);
+    case 6: return go(ink2g_gemv4_kernel<6, R, FP4>);
+    case 7: return go(ink2g_gemv4_kernel<7, R, FP4>);
+    default: return go(ink2g_gemv4_kernel<8, R, FP4>);
+  }
+}
+
+// the rows a launch needs before the re-tiled GEMV beats the jobs kernels for one input row
+// (decode: the projections, 8,576 rows, and the unembed take it; the output projection, 2,304 rows,
+// and the router do not: 72 blocks of the re-tiled kernel under-fill 82 SMs, s15-lanek lk10)
+#define INK2G_G4_MIN_ROWS 4096
+
+// one BF16 input row through several jobs: the re-tiled GEMV for a large launch, else the jobs kernel
+// (the same bits either way)
+int ink2g_gemv_bf16_any(const float* const* xs, const void* const* ws, float* const* ys, const int* ns, int count,
+                        int k, cudaStream_t stream) {
+  if (count <= 0 || count > INK2G_JOBS) return -1;
+  Ink2gRowJobs jt{};
+  jt.count = count;
+  int rows = 0;
+  bool ok = true;
+  for (int j = 0; j < count; j++) {
+    ok = ok && xs[j] && ws[j] && ys[j] && ns[j] > 0;
+    jt.x[j] = xs[j];
+    jt.w[j] = ws[j];
+    jt.denom[j] = 1.0f;
+    jt.y[j] = ys[j];
+    jt.n[j] = ns[j];
+    rows += ns[j] > 0 ? ns[j] : 0;
+  }
+  if (ok && rows >= INK2G_G4_MIN_ROWS) {
+    const int rc = ink2g_gemv4_r<1, false>(jt, 0, k, stream);
+    if (rc != -1) return rc;
+  }
+  return ink2g_gemv_jobs(xs, ws, ys, ns, count, k, stream);
+}
+
+// rows 1..4 of x through the multi-row GEMV; -1 when the shape does not fit
+template <int R, bool FP4>
+int ink2g_gemv_rows_r(const float* x, int64_t ldx, const void* w, const uint8_t* sc, const float* amax, float denom,
+                      float* y, int64_t ldy, int n, int k, cudaStream_t stream) {
+  const int iters = (k / 16 + 31) / 32;
+  const size_t smem = (size_t)R * k * 4 + (size_t)8 * R * (k / 16 + 1) * 4 + (size_t)8 * (k / 16 + 1);
+  if (smem > 99 * 1024) return -1;
+  // four rows a warp only when that still gives two blocks an SM
+  const bool wide = (n + 31) / 32 >= 2 * 82;
+  const int blocks = wide ? (n + 31) / 32 : (n + 7) / 8;
+  auto go = [&](auto kern) -> int {
+    const cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+    if (e != cudaSuccess) return 10000 + (int)e;
+    kern<<<blocks, 256, smem, stream>>>(x, ldx, w, sc, amax, denom, y, ldy, n, k, Ink2gRowJobs{});
+    return ink2g_rc();
+  };
+#define INK2G_MR_GO(I) \
+  return wide ? go(ink2g_gemv_rows_kernel<I, R, FP4, 4>) : go(ink2g_gemv_rows_kernel<I, R, FP4, 1>)
+  switch (iters) {
+    case 1: INK2G_MR_GO(1);
+    case 2: INK2G_MR_GO(2);
+    case 3: INK2G_MR_GO(3);
+    case 4: INK2G_MR_GO(4);
+    case 5: INK2G_MR_GO(5);
+    case 6: INK2G_MR_GO(6);
+    case 7: INK2G_MR_GO(7);
+    default: INK2G_MR_GO(8);
+  }
+#undef INK2G_MR_GO
+}
+
+// m in 2..8 input rows, in passes of up to 4 (a pass re-reads the weights, mostly from L2)
+int ink2g_gemv_rows(const float* x, int64_t ldx, const void* w, const uint8_t* sc, const float* amax, float denom,
+                    bool fp4, float* y, int64_t ldy, int m, int n, int k, cudaStream_t stream) {
+  if (m < 2 || m > 8 || n <= 0 || (k % 16) != 0 || k > INK2G_GV_MAX_K || ((uintptr_t)w & 15) != 0) return -1;
+  for (int r0 = 0; r0 < m; r0 += 4) {
+    const int r = m - r0 < 4 ? m - r0 : 4;
+    const float* xr = x + (int64_t)r0 * ldx;
+    float* yr = y + (int64_t)r0 * ldy;
+    int rc = -1;
+    {
+      Ink2gRowJobs jt{};
+      jt.count = 1;
+      jt.x[0] = xr;
+      jt.w[0] = w;
+      jt.sc[0] = sc;
+      jt.amax[0] = amax;
+      jt.denom[0] = denom;
+      jt.y[0] = yr;
+      jt.ldy[0] = ldy;
+      jt.n[0] = n;
+      if (fp4)
+        rc = r == 1 ? ink2g_gemv4_r<1>(jt, ldx, k, stream)
+           : r == 2 ? ink2g_gemv4_r<2>(jt, ldx, k, stream)
+           : r == 3 ? ink2g_gemv4_r<3>(jt, ldx, k, stream)
+                    : ink2g_gemv4_r<4>(jt, ldx, k, stream);
+      else
+        rc = r == 1 ? ink2g_gemv4_r<1, false>(jt, ldx, k, stream)
+           : r == 2 ? ink2g_gemv4_r<2, false>(jt, ldx, k, stream)
+           : r == 3 ? ink2g_gemv4_r<3, false>(jt, ldx, k, stream)
+                    : ink2g_gemv4_r<4, false>(jt, ldx, k, stream);
+    }
+    if (rc == -1 && fp4) {
+      rc = r == 1 ? ink2g_gemv_rows_r<1, true>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream)
+         : r == 2 ? ink2g_gemv_rows_r<2, true>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream)
+         : r == 3 ? ink2g_gemv_rows_r<3, true>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream)
+                  : ink2g_gemv_rows_r<4, true>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream);
+    } else if (rc == -1) {
+      rc = r == 1 ? ink2g_gemv_rows_r<1, false>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream)
+         : r == 2 ? ink2g_gemv_rows_r<2, false>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream)
+         : r == 3 ? ink2g_gemv_rows_r<3, false>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream)
+                  : ink2g_gemv_rows_r<4, false>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream);
+    }
+    if (rc != 0) return rc;
+  }
+  return 0;
+}
+
+// Several projections of the same m (2..8) input rows and the same k in one launch a pass of up to 4
+// rows: each job's blocks run its single launch's program.
+template <int R, bool FP4>
+int ink2g_gemv_rows_jobs_r(Ink2gRowJobs jt, const float* const* xs, int64_t ldx, int r0, int k,
+                           cudaStream_t stream) {
+  const int iters = (k / 16 + 31) / 32;
+  const size_t smem = (size_t)R * k * 4 + (size_t)8 * R * (k / 16 + 1) * 4 + (size_t)8 * (k / 16 + 1);
+  if (smem > 99 * 1024) return -1;
+  int wide_blocks = 0;
+  for (int j = 0; j < jt.count; j++) wide_blocks += (jt.n[j] + 31) / 32;
+  const bool wide = wide_blocks >= 2 * 82;
+  int blocks = 0;
+  for (int j = 0; j < jt.count; j++) {
+    jt.first[j] = blocks;
+    jt.x[j] = xs[j] + (int64_t)r0 * ldx;
+    jt.y[j] = jt.y[j] + (int64_t)r0 * jt.ldy[j];
+    blocks += wide ? (jt.n[j] + 31) / 32 : (jt.n[j] + 7) / 8;
+  }
+  jt.first[jt.count] = blocks;
+  auto go = [&](auto kern) -> int {
+    const cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+    if (e != cudaSuccess) return 10000 + (int)e;
+    kern<<<blocks, 256, smem, stream>>>(jt.x[0], ldx, jt.w[0], jt.sc[0], jt.amax[0], jt.denom[0], jt.y[0], jt.ldy[0],
+                                         jt.n[0], k, jt);
+    return ink2g_rc();
+  };
+#define INK2G_MRJ_GO(I) \
+  return wide ? go(ink2g_gemv_rows_kernel<I, R, FP4, 4>) : go(ink2g_gemv_rows_kernel<I, R, FP4, 1>)
+  switch (iters) {
+    case 1: INK2G_MRJ_GO(1);
+    case 2: INK2G_MRJ_GO(2);
+    case 3: INK2G_MRJ_GO(3);
+    case 4: INK2G_MRJ_GO(4);
+    case 5: INK2G_MRJ_GO(5);
+    case 6: INK2G_MRJ_GO(6);
+    case 7: INK2G_MRJ_GO(7);
+    default: INK2G_MRJ_GO(8);
+  }
+#undef INK2G_MRJ_GO
+}
+
+
+
+// ---- decode GEMV over dense NVFP4 weights, several jobs a launch --------------------------------
+// ink2g_gemv_kernel's NVFP4 program per output (per group an fma chain on the e2m1 codes, the partials folded as fmaf(partial, e4m3 scale, sum) in order, the tensor scale once in f64), with jobs like ink2g_gemv_bf16_kernel: the q / r /
+// gate / k / v / output projections of a decode step in one launch. Each warp issues the code loads of
+// all its rows before it computes, so a warp keeps its rows' bytes in flight together.
+struct Ink2gJobs4 {
+  const float* x[INK2G_JOBS];
+  const uint8_t* w[INK2G_JOBS];
+  const uint8_t* sc[INK2G_JOBS];
+  const float* amax[INK2G_JOBS];
+  float denom[INK2G_JOBS];
+  float* y[INK2G_JOBS];
+  int n[INK2G_JOBS];
+  int first[INK2G_JOBS + 1];
+  int count;
+};
+
+template <int ITERS>
+// three blocks an SM (registers capped for it): two left the DRAM 80% idle on the decode shapes
+__global__ void __launch_bounds__(INK2G_GV_THREADS, 3) ink2g_gemv_nvfp4_jobs_kernel(const Ink2gJobs4 jobs, int k) {
+  extern __shared__ float ink2g_gj4[];
+  constexpr int RPW = INK2G_GV_ROWS / (INK2G_GV_THREADS / 32);  // rows a warp
+  const int groups = k >> 4, pstride = groups + 1;
+  float* xs = ink2g_gj4;
+  float* ps = ink2g_gj4 + k;
+  uint8_t* sv = reinterpret_cast<uint8_t*>(ps + INK2G_GV_ROWS * pstride);
+  int j = 0;
+  while (j + 1 < jobs.count && (int)blockIdx.x >= jobs.first[j + 1]) j++;
+  const int r0 = ((int)blockIdx.x - jobs.first[j]) * INK2G_GV_ROWS;
+  const int n = jobs.n[j];
+  const float* x = jobs.x[j];
+  const uint8_t* w = jobs.w[j];
+  const uint8_t* sc = jobs.sc[j];
+  // x transposed: element i of group g at xs[i * groups + g], so a warp's lanes (consecutive groups)
+  // read consecutive words
+  for (int i = threadIdx.x; i < k; i += INK2G_GV_THREADS) xs[(i & 15) * groups + (i >> 4)] = x[i];
+  const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+  uint2 c[RPW][ITERS];
+  uint8_t sb[RPW][ITERS];
+#pragma unroll
+  for (int q = 0; q < RPW; q++) {
+    const int row = r0 + warp + q * (INK2G_GV_THREADS / 32);
+#pragma unroll
+    for (int it = 0; it < ITERS; it++) {
+      const int g = it * 32 + lane;
+      if (row < n && g < groups) {
+        c[q][it] = __ldcs(reinterpret_cast<const uint2*>(w + (int64_t)row * (k / 2)) + g);
+        sb[q][it] = sc[(int64_t)row * groups + g];
+      }
+    }
+  }
+  __syncthreads();
+  // a group of x is read once into registers for all the warp's rows
+#pragma unroll
+  for (int it = 0; it < ITERS; it++) {
+    const int g = it * 32 + lane;
+    if (g >= groups) continue;
+    float xv[16];
+#pragma unroll
+    for (int i = 0; i < 16; i++) xv[i] = xs[i * groups + g];
+#pragma unroll
+    for (int q = 0; q < RPW; q++) {
+      const int rl = warp + q * (INK2G_GV_THREADS / 32), row = r0 + rl;
+      if (row >= n) continue;
+      float wv[16];
+      ink2g_e2m1x8(c[q][it].x, wv);
+      ink2g_e2m1x8(c[q][it].y, wv + 8);
+      float part = 0.0f;
+#pragma unroll
+      for (int i = 0; i < 16; i++) part = fmaf(xv[i], wv[i], part);
+      ps[rl * pstride + g] = part;
+      sv[rl * pstride + g] = sb[q][it];
+    }
+  }
+  // each warp folds its own rows (lane q folds row q of the warp): no block-wide wait
+  __syncwarp();
+  if (lane < RPW) {
+    const int rl = warp + lane * (INK2G_GV_THREADS / 32), row = r0 + rl;
+    if (row < n) {
+      const float* p = ps + rl * pstride;
+      const uint8_t* sp = sv + rl * pstride;
+      float acc = 0.0f;
+      #pragma unroll 8
+      for (int g = 0; g < groups; g++) acc = fmaf(p[g], ink2g_e4m3(sp[g]), acc);
+      jobs.y[j][row] = (float)((double)acc * (double)jobs.amax[j][0] / (double)jobs.denom[j]);
+    }
+  }
+}
+
+int ink2g_gemv_nvfp4_jobs(const float* const* xs, const void* const* ws, const void* const* scs,
+                          const float* const* amaxs, const float* denoms, float* const* ys, const int* ns, int count,
+                          int k, cudaStream_t stream) {
+  if (count <= 0 || count > INK2G_JOBS || k <= 0 || (k % 16) != 0 || k > INK2G_GV_MAX_K) return -1;
+  {
+    // the re-tiled GEMV (the same bits) where the shape fits and the launch is large enough
+    Ink2gRowJobs jt{};
+    jt.count = count;
+    bool ok = true;
+    int rows = 0;
+    for (int j = 0; j < count; j++) {
+      ok = ok && xs[j] && ws[j] && scs[j] && amaxs[j] && ys[j] && ns[j] > 0;
+      jt.x[j] = xs[j];
+      jt.w[j] = ws[j];
+      jt.sc[j] = (const uint8_t*)scs[j];
+      jt.amax[j] = amaxs[j];
+      jt.denom[j] = denoms[j];
+      jt.y[j] = ys[j];
+      jt.ldy[j] = 0;
+      jt.n[j] = ns[j];
+      rows += ns[j] > 0 ? ns[j] : 0;
+    }
+    if (ok && rows >= INK2G_G4_MIN_ROWS) {
+      const int rc = ink2g_gemv4_r<1>(jt, 0, k, stream);
+      if (rc != -1) return rc;
+    }
+  }
+  Ink2gJobs4 jobs;
+  int blocks = 0;
+  for (int j = 0; j < INK2G_JOBS; j++) {
+    const bool on = j < count;
+    jobs.x[j] = on ? xs[j] : nullptr;
+    jobs.w[j] = on ? (const uint8_t*)ws[j] : nullptr;
+    jobs.sc[j] = on ? (const uint8_t*)scs[j] : nullptr;
+    jobs.amax[j] = on ? amaxs[j] : nullptr;
+    jobs.denom[j] = on ? denoms[j] : 1.0f;
+    jobs.y[j] = on ? ys[j] : nullptr;
+    jobs.n[j] = on ? ns[j] : 0;
+    jobs.first[j] = blocks;
+    if (on) {
+      if (!xs[j] || !ws[j] || !scs[j] || !amaxs[j] || !ys[j] || ns[j] <= 0 || ((uintptr_t)ws[j] & 7) != 0) return -1;
+      blocks += (ns[j] + INK2G_GV_ROWS - 1) / INK2G_GV_ROWS;
+    }
+  }
+  jobs.first[INK2G_JOBS] = blocks;
+  jobs.count = count;
+  const int iters = (k / 16 + 31) / 32;
+  const size_t smem = (size_t)k * 4 + (size_t)INK2G_GV_ROWS * (k / 16 + 1) * 5;
+  auto go = [&](auto kern) -> int {
+    if (smem > 48 * 1024) {
+      const cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+      if (e != cudaSuccess) return 10000 + (int)e;
+    }
+    kern<<<blocks, INK2G_GV_THREADS, smem, stream>>>(jobs, k);
+    return ink2g_rc();
+  };
+  switch (iters) {
+    case 1: return go(ink2g_gemv_nvfp4_jobs_kernel<1>);
+    case 2: return go(ink2g_gemv_nvfp4_jobs_kernel<2>);
+    case 3: return go(ink2g_gemv_nvfp4_jobs_kernel<3>);
+    case 4: return go(ink2g_gemv_nvfp4_jobs_kernel<4>);
+    case 5: return go(ink2g_gemv_nvfp4_jobs_kernel<5>);
+    case 6: return go(ink2g_gemv_nvfp4_jobs_kernel<6>);
+    case 7: return go(ink2g_gemv_nvfp4_jobs_kernel<7>);
+    default: return go(ink2g_gemv_nvfp4_jobs_kernel<8>);
+  }
+}
+
+
+// ---- attention arm 4: f32 tiles over keys, f64 merges (a flash-decode split) ---------------------
+// Each block takes one tile of keys of a (row, head): the scores q . k / sqrt(dim) + bias and the
+// tile's max, exp and value sum in f32 (oldest key first). The merge combines the tiles of a row in
+// f64: M = max(sink, tile maxima), L = exp(sink - M) + sum_t exp(m_t - M) l_t, out = sum_t exp(m_t - M)
+// o_t / L, tiles oldest first. A different numeric program from arms 0..3: measured by KL.
+#define INK2G_T4_MAX_TILE 1024
+#define INK2G_T4_MAX_TILES 512
+// the grouped kernel holds tiles of up to 512 keys for each of its heads
+#define INK2G_T4G_TILE 512
+template <typename KV>
+__global__ void __launch_bounds__(256) ink2g_attn_t4_kernel(
+    const float* __restrict__ q, const float* __restrict__ rel, const float* __restrict__ table,
+    const KV* __restrict__ kc, const KV* __restrict__ vc, int64_t cap, const int64_t* __restrict__ posd,
+    int64_t pos0, int window, int extent, int mask_beyond, double* __restrict__ scr, int64_t ld, int heads,
+    int kv_heads, int dim, int rank, int r0, int tile) {
+  __shared__ float sh[8];
+  __shared__ float qs[INK2G_FOLD_DIM];
+  __shared__ float sb[INK2G_T4_MAX_TILE];
+  __shared__ float sp[INK2G_T4_MAX_TILE];
+  __shared__ float tv[INK2G_FOLD_TILE * INK2G_FOLD_DIM];
+  __shared__ float scl;
+  const int ti = blockIdx.x, h = blockIdx.y, t = threadIdx.x, nt = blockDim.x, r = r0 + (int)blockIdx.z;
+  const int64_t pos = (posd ? *posd : pos0) + r;
+  const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
+  const int64_t d0 = (int64_t)ti * tile;
+  if (d0 >= nkeys) return;
+  const int cnt = (int)(nkeys - d0 < tile ? nkeys - d0 : tile);
+  const int kvh = h / (heads / kv_heads);
+  const int kvw = kv_heads * dim;
+  const float* relr = rel + ((int64_t)r * heads + h) * rank;
+  double* part = scr + ((int64_t)blockIdx.z * heads + h) * ld + (int64_t)ti * (dim + 2);
+  for (int i = t; i < dim; i += nt) qs[i] = q[((int64_t)r * heads + h) * dim + i];
+  if (t == 0) scl = 1.0f / sqrtf((float)dim);
+  for (int i = t; i < cnt; i += nt) {
+    const int64_t d = d0 + i;
+    if (d < extent) {
+      float b = 0.0f;
+      for (int k = 0; k < rank; k++) b += relr[k] * table[(int64_t)k * extent + d];
+      sb[i] = b;
+    }
+  }
+  __syncthreads();
+  float mx = -INFINITY;
+  for (int i = t; i < cnt; i += nt) {
+    const float s = ink2g_attn_score<float, false, KV>(qs, kc, cap, pos, d0 + i, kvw, kvh, dim, extent, mask_beyond,
+                                                       sb - d0, scl);
+    sp[i] = s;
+    mx = fmaxf(mx, s);
+  }
+  const float mt = ink2g_block_max<float>(mx, sh);
+  if (mt == -INFINITY) {
+    if (t == 0) {
+      part[0] = -INFINITY;
+      part[1] = 0.0;
+    }
+    for (int c = t; c < dim; c += nt) part[2 + c] = 0.0;
+    return;
+  }
+  float ls = 0.0f;
+  for (int i = t; i < cnt; i += nt) {
+    const float e = expf(sp[i] - mt);
+    sp[i] = e;
+    ls += e;
+  }
+  const float l = ink2g_block_sum<float>(ls, sh);  // its barriers order the stores above
+  float a = 0.0f;
+  for (int hi = cnt - 1; hi >= 0; hi -= INK2G_FOLD_TILE) {
+    const int n = hi + 1 < INK2G_FOLD_TILE ? hi + 1 : INK2G_FOLD_TILE;
+    for (int e = t; e < n * dim; e += nt) {
+      const int j = e / dim, c = e - j * dim;
+      tv[j * INK2G_FOLD_DIM + c] = ink2g_kv_get(vc, ((pos - (d0 + hi - j)) % cap) * kvw + kvh * dim + c);
+    }
+    __syncthreads();
+    if (t < dim)
+      for (int j = 0; j < n; j++) a = fmaf(sp[hi - j], tv[j * INK2G_FOLD_DIM + t], a);
+    __syncthreads();
+  }
+  if (t == 0) {
+    part[0] = (double)mt;
+    part[1] = (double)l;
+  }
+  if (t < dim) part[2 + t] = (double)a;
+}
+
+// Arm 4 for a group of G query heads over one KV head: the K and V rows of a tile are read once (16 bytes at
+// a time) and decoded once for all G heads. Every per-head value keeps the program of ink2g_attn_t4_kernel:
+// each key's dot in dim order, the scale and bias by the same expression, the max and the block sum over the
+// same 256-thread mapping (lanes by the shuffle tree, warps in order), each output's chain over the keys
+// oldest first. G = heads / kv_heads.
+template <typename KV>
+__device__ __forceinline__ void ink2g_kv_row16(const KV* p, int c, float* f);
+template <>
+__device__ __forceinline__ void ink2g_kv_row16<uint8_t>(const uint8_t* p, int c, float* f) {
+  const uint4 u = *reinterpret_cast<const uint4*>(p + c);
+  const uint32_t w[4] = {u.x, u.y, u.z, u.w};
+#pragma unroll
+  for (int i = 0; i < 16; i++) f[i] = ink2g_e4m3((uint8_t)(w[i >> 2] >> (8 * (i & 3))));
+}
+template <>
+__device__ __forceinline__ void ink2g_kv_row16<float>(const float* p, int c, float* f) {
+#pragma unroll
+  for (int q = 0; q < 4; q++) {
+    const float4 v = *reinterpret_cast<const float4*>(p + c + 4 * q);
+    f[4 * q] = v.x;
+    f[4 * q + 1] = v.y;
+    f[4 * q + 2] = v.z;
+    f[4 * q + 3] = v.w;
+  }
+}
+
+template <typename KV, int G>
+__global__ void __launch_bounds__(256) ink2g_attn_t4g_kernel(
+    const float* __restrict__ q, const float* __restrict__ rel, const float* __restrict__ table,
+    const KV* __restrict__ kc, const KV* __restrict__ vc, int64_t cap, const int64_t* __restrict__ posd,
+    int64_t pos0, int window, int extent, int mask_beyond, double* __restrict__ scr, int64_t ld, int heads,
+    int kv_heads, int dim, int rank, int r0, int tile) {
+  __shared__ float sh[G][8];
+  __shared__ float qs[G][INK2G_FOLD_DIM];
+  __shared__ float sb[G][INK2G_T4G_TILE];
+  __shared__ float sp[G][INK2G_T4G_TILE];
+  __shared__ float tv[INK2G_FOLD_TILE * INK2G_FOLD_DIM];
+  __shared__ float scl;
+  const int ti = blockIdx.x, kvh = blockIdx.y, t = threadIdx.x, nt = blockDim.x, r = r0 + (int)blockIdx.z;
+  const int lane = t & 31, warp = t >> 5;
+  const int64_t pos = (posd ? *posd : pos0) + r;
+  const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
+  const int64_t d0 = (int64_t)ti * tile;
+  if (d0 >= nkeys) return;
+  const int cnt = (int)(nkeys - d0 < tile ? nkeys - d0 : tile);
+  const int kvw = kv_heads * dim;
+  for (int i = t; i < G * dim; i += nt) {
+    const int g = i / dim, c = i - g * dim;
+    qs[g][c] = q[((int64_t)r * heads + kvh * G + g) * dim + c];
+  }
+  if (t == 0) scl = 1.0f / sqrtf((float)dim);
+  for (int i = t; i < cnt; i += nt) {
+    const int64_t d = d0 + i;
+    if (d < extent) {
+#pragma unroll
+      for (int g = 0; g < G; g++) {
+        const float* relr = rel + ((int64_t)r * heads + kvh * G + g) * rank;
+        float b = 0.0f;
+        for (int k = 0; k < rank; k++) b += relr[k] * table[(int64_t)k * extent + d];
+        sb[g][i] = b;
+      }
+    }
+  }
+  __syncthreads();
+  float mx[G];
+#pragma unroll
+  for (int g = 0; g < G; g++) mx[g] = -INFINITY;
+  for (int i = t; i < cnt; i += nt) {
+    const int64_t d = d0 + i;
+    if (d >= extent && mask_beyond) {
+#pragma unroll
+      for (int g = 0; g < G; g++) sp[g][i] = -INFINITY;
+      continue;
+    }
+    const KV* kr = kc + ((pos - d) % cap) * kvw + kvh * dim;
+    float dot[G];
+#pragma unroll
+    for (int g = 0; g < G; g++) dot[g] = 0.0f;
+    for (int c = 0; c < dim; c += 16) {
+      float kf[16];
+      ink2g_kv_row16<KV>(kr, c, kf);
+#pragma unroll
+      for (int e = 0; e < 16; e++)
+#pragma unroll
+        for (int g = 0; g < G; g++) dot[g] += qs[g][c + e] * kf[e];
+    }
+#pragma unroll
+    for (int g = 0; g < G; g++) {
+      const float s = dot[g] * scl + (d < extent ? sb[g][i] : 0.0f);
+      sp[g][i] = s;
+      mx[g] = fmaxf(mx[g], s);
+    }
+  }
+  // per head: the block max (exact in any order) and, below, the block sum in ink2g_block_sum's order
+  __shared__ float mts[G];
+#pragma unroll
+  for (int g = 0; g < G; g++) {
+    float v = mx[g];
+    for (int o = 16; o > 0; o >>= 1) v = fmaxf(v, __shfl_down_sync(0xffffffffu, v, o));
+    if (lane == 0) sh[g][warp] = v;
+  }
+  __syncthreads();
+  if (t < G) {
+    float m = -INFINITY;
+    for (int w = 0; w < (nt + 31) / 32; w++) m = fmaxf(m, sh[t][w]);
+    mts[t] = m;
+  }
+  __syncthreads();
+  float ls[G];
+#pragma unroll
+  for (int g = 0; g < G; g++) {
+    ls[g] = 0.0f;
+    const float m = mts[g];
+    if (m == -INFINITY) continue;
+    for (int i = t; i < cnt; i += nt) {
+      const float e = expf(sp[g][i] - m);
+      sp[g][i] = e;
+      ls[g] += e;
+    }
+  }
+#pragma unroll
+  for (int g = 0; g < G; g++) {
+    float v = ls[g];
+    for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffffu, v, o);
+    if (lane == 0) sh[g][warp] = v;
+  }
+  __syncthreads();
+  float lg[G];
+#pragma unroll
+  for (int g = 0; g < G; g++) {
+    float s = 0.0f;
+    for (int w = 0; w < (nt + 31) / 32; w++) s += sh[g][w];
+    lg[g] = s;
+  }
+  float a[G];
+#pragma unroll
+  for (int g = 0; g < G; g++) a[g] = 0.0f;
+  for (int hi = cnt - 1; hi >= 0; hi -= INK2G_FOLD_TILE) {
+    const int n = hi + 1 < INK2G_FOLD_TILE ? hi + 1 : INK2G_FOLD_TILE;
+    for (int e = t; e < n * (dim / 16); e += nt) {
+      const int j = e / (dim / 16), c = (e - j * (dim / 16)) * 16;
+      ink2g_kv_row16<KV>(vc + ((pos - (d0 + hi - j)) % cap) * kvw + kvh * dim, c, tv + j * INK2G_FOLD_DIM + c);
+    }
+    __syncthreads();
+    if (t < dim)
+      for (int j = 0; j < n; j++) {
+        const float v = tv[j * INK2G_FOLD_DIM + t];
+#pragma unroll
+        for (int g = 0; g < G; g++) a[g] = fmaf(sp[g][hi - j], v, a[g]);
+      }
+    __syncthreads();
+  }
+#pragma unroll
+  for (int g = 0; g < G; g++) {
+    double* part = scr + ((int64_t)blockIdx.z * heads + kvh * G + g) * ld + (int64_t)ti * (dim + 2);
+    if (mts[g] == -INFINITY) {
+      if (t == 0) {
+        part[0] = -INFINITY;
+        part[1] = 0.0;
+      }
+      for (int c = t; c < dim; c += nt) part[2 + c] = 0.0;
+      continue;
+    }
+    if (t == 0) {
+      part[0] = (double)mts[g];
+      part[1] = (double)lg[g];
+    }
+    if (t < dim) part[2 + t] = (double)a[g];
+  }
+}
+
+__global__ void __launch_bounds__(128) ink2g_attn_t4_merge_kernel(const float* __restrict__ sink,
+                                                                  const int64_t* __restrict__ posd, int64_t pos0,
+                                                                  int window, const double* __restrict__ scr,
+                                                                  int64_t ld, float* __restrict__ out, int heads,
+                                                                  int dim, int r0, int tile) {
+  __shared__ double w[INK2G_T4_MAX_TILES];
+  __shared__ double ms, lsum;
+  const int h = blockIdx.y, t = threadIdx.x, nt = blockDim.x, r = r0 + (int)blockIdx.x;
+  const int64_t pos = (posd ? *posd : pos0) + r;
+  const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
+  const int ntiles = (int)((nkeys + tile - 1) / tile);
+  const double* base = scr + ((int64_t)blockIdx.x * heads + h) * ld;
+  const double sk = (double)sink[(int64_t)r * heads + h];
+  if (t == 0) {
+    double m = sk;
+    for (int i = 0; i < ntiles; i++) m = fmax(m, base[(int64_t)i * (dim + 2)]);
+    ms = m;
+  }
+  __syncthreads();
+  const double m = ms;
+  for (int i = t; i < ntiles; i += nt) {
+    const double mi = base[(int64_t)i * (dim + 2)];
+    w[i] = mi == -INFINITY ? 0.0 : exp(mi - m);
+  }
+  __syncthreads();
+  if (t == 0) {
+    double l = exp(sk - m);
+    for (int i = ntiles - 1; i >= 0; i--) l += w[i] * base[(int64_t)i * (dim + 2) + 1];
+    lsum = l;
+  }
+  __syncthreads();
+  if (t < dim) {
+    double o = 0.0;
+    for (int i = ntiles - 1; i >= 0; i--) o += w[i] * base[(int64_t)i * (dim + 2) + 2 + t];
+    out[((int64_t)r * heads + h) * dim + t] = (float)(o / lsum);
+  }
+}
+
 }  // namespace
+
+template <typename KV>
+static int ink2g_attn_any(const float* q, const float* rel, const float* table, const float* sink, const KV* kc,
+                          const KV* vc, int64_t cap, const int64_t* posd, int64_t pos0, int window, int extent,
+                     int mask_beyond, float* out, int R, int heads, int kv_heads, int dim, int rank, double* scr,
+                     int64_t scr_ld, int scr_rows, int prec, void* stream) {
+  if (!q || !rel || !table || !sink || !kc || !vc || !out) return 45021;
+  if (R <= 0 || heads <= 0 || kv_heads <= 0 || heads % kv_heads != 0 || dim <= 0 || dim > 256 || rank <= 0)
+    return 45022;
+  if (extent <= 0 || extent > INK2G_MAX_EXTENT || heads > 65535) return 45023;
+  const int64_t last = pos0 + R - 1;
+  // every key a row of this call reads is still in the cache: the ring holds the window of its
+  // oldest row and the rows of the call
+  if ((window > 0 ? (int64_t)window - 1 + R : last + 1) > cap) return 45024;
+  if (scr && (R == 1 || scr_rows > 0)) {
+    // the split form, scr_rows rows a launch pair (scratch [scr_rows][heads][scr_ld]); the most keys a
+    // row can attend: a replayed step reads its position on the device
+    const int64_t most = window > 0 ? (int64_t)window : (R == 1 ? cap : pos0 + R);
+    // a row of scratch holds its scores and, last, the max of the row (arm 4: its tiles, bound below)
+    if (dim > INK2G_FOLD_DIM) return 45025;
+    const int group = R == 1 ? 1 : scr_rows;
+    if (prec == 4) {
+      // tiles of 256 keys, wider when a row would need more than INK2G_T4_MAX_TILES of them
+      // from the cache size, not the call: every call over this cache tiles the keys alike, so the
+      // program does not depend on how a prompt is split into calls
+      const int64_t tile = 256 * ((cap + 256 * INK2G_T4_MAX_TILES - 1) / (256 * INK2G_T4_MAX_TILES));
+      if (tile > INK2G_T4_MAX_TILE || scr_ld < ((most + tile - 1) / tile) * (dim + 2)) return 45026;
+      for (int r0 = 0; r0 < R; r0 += group) {
+        const int n = R - r0 < group ? R - r0 : group;
+        const int64_t keys = R == 1 ? most : (window > 0 ? most : pos0 + r0 + n);
+        const dim3 gt((unsigned)((keys + tile - 1) / tile), kv_heads, n);
+        const int grp = heads / kv_heads;
+        if (grp == 3 && tile <= INK2G_T4G_TILE && dim % 16 == 0)
+          ink2g_attn_t4g_kernel<KV, 3><<<gt, 256, 0, (cudaStream_t)stream>>>(
+              q, rel, table, kc, vc, cap, posd, pos0, window, extent, mask_beyond, scr, scr_ld, heads, kv_heads, dim,
+              rank, r0, (int)tile);
+        else
+          ink2g_attn_t4_kernel<KV><<<dim3((unsigned)((keys + tile - 1) / tile), heads, n), 256, 0, (cudaStream_t)stream>>>(
+              q, rel, table, kc, vc, cap, posd, pos0, window, extent, mask_beyond, scr, scr_ld, heads, kv_heads, dim,
+              rank, r0, (int)tile);
+        ink2g_attn_t4_merge_kernel<<<dim3(n, heads), 128, 0, (cudaStream_t)stream>>>(sink, posd, pos0, window, scr,
+                                                                                     scr_ld, out, heads, dim, r0,
+                                                                                     (int)tile);
+      }
+      return ink2g_rc();
+    }
+    if (scr_ld < most + 1) return 45025;
+    for (int r0 = 0; r0 < R; r0 += group) {
+      const int n = R - r0 < group ? R - r0 : group;
+      // the keys of the group's last row
+      const int64_t keys = R == 1 ? most : (window > 0 ? most : pos0 + r0 + n);
+      switch (prec) {
+    case 1: ink2g_attn_scores_kernel<float, false, KV><<<dim3((unsigned)((keys + INK2G_SC_KEYS - 1) / INK2G_SC_KEYS), heads, n), INK2G_SC_KEYS,
+                                 0, (cudaStream_t)stream>>>(q, rel, table, kc, cap, posd, pos0, window, extent,
+                                                            mask_beyond, scr, scr_ld, heads, kv_heads, dim, rank, r0); break;
+    case 2: ink2g_attn_scores_kernel<float, true, KV><<<dim3((unsigned)((keys + INK2G_SC_KEYS - 1) / INK2G_SC_KEYS), heads, n), INK2G_SC_KEYS,
+                                 0, (cudaStream_t)stream>>>(q, rel, table, kc, cap, posd, pos0, window, extent,
+                                                            mask_beyond, scr, scr_ld, heads, kv_heads, dim, rank, r0); break;
+    default: ink2g_attn_scores_kernel<double, false, KV><<<dim3((unsigned)((keys + INK2G_SC_KEYS - 1) / INK2G_SC_KEYS), heads, n), INK2G_SC_KEYS,
+                                 0, (cudaStream_t)stream>>>(q, rel, table, kc, cap, posd, pos0, window, extent,
+                                                            mask_beyond, scr, scr_ld, heads, kv_heads, dim, rank, r0); break;
+  }
+      const dim3 gx((unsigned)((keys + 255) / 256), heads, n), gh(n, heads),
+          go(n, heads, (dim + (R == 1 ? INK2G_FOLD_OUT : dim) - 1) / (R == 1 ? INK2G_FOLD_OUT : dim));
+      // a decode row spreads a head's outputs over blocks of INK2G_FOLD_OUT; a chunk has blocks enough
+      const int od = R == 1 ? INK2G_FOLD_OUT : dim;
+      cudaStream_t sm = (cudaStream_t)stream;
+      switch (prec) {
+        case 1:
+          ink2g_attn_top_kernel<float, false><<<gh, 256, 0, sm>>>(sink, posd, pos0, window, scr, scr_ld, heads, r0);
+          ink2g_attn_exp_kernel<float, false><<<gx, 256, 0, sm>>>(posd, pos0, window, scr, scr_ld, heads, r0);
+          ink2g_attn_out_kernel<float, false, KV><<<go, 256, 0, sm>>>(sink, vc, cap, posd, pos0, window, scr, scr_ld, out,
+                                                                     heads, kv_heads, dim, r0, od);
+          break;
+        case 2:
+          ink2g_attn_top_kernel<float, true><<<gh, 256, 0, sm>>>(sink, posd, pos0, window, scr, scr_ld, heads, r0);
+          ink2g_attn_exp_kernel<float, true><<<gx, 256, 0, sm>>>(posd, pos0, window, scr, scr_ld, heads, r0);
+          ink2g_attn_out_kernel<float, true, KV><<<go, 256, 0, sm>>>(sink, vc, cap, posd, pos0, window, scr, scr_ld, out,
+                                                                    heads, kv_heads, dim, r0, od);
+          break;
+        default:
+          ink2g_attn_top_kernel<double, false><<<gh, 256, 0, sm>>>(sink, posd, pos0, window, scr, scr_ld, heads, r0);
+          ink2g_attn_exp_kernel<double, false><<<gx, 256, 0, sm>>>(posd, pos0, window, scr, scr_ld, heads, r0);
+          ink2g_attn_out_kernel<double, false, KV><<<go, 256, 0, sm>>>(sink, vc, cap, posd, pos0, window, scr, scr_ld,
+                                                                      out, heads, kv_heads, dim, r0, od);
+          break;
+      }
+    }
+    return ink2g_rc();
+  }
+  switch (prec) {
+    case 1: ink2g_attn_kernel<float, false, KV><<<dim3(R, heads), 256, 0, (cudaStream_t)stream>>>(
+      q, rel, table, sink, kc, vc, cap, pos0, window, extent, mask_beyond, out, heads, kv_heads, dim, rank); break;
+    case 2: ink2g_attn_kernel<float, true, KV><<<dim3(R, heads), 256, 0, (cudaStream_t)stream>>>(
+      q, rel, table, sink, kc, vc, cap, pos0, window, extent, mask_beyond, out, heads, kv_heads, dim, rank); break;
+    default: ink2g_attn_kernel<double, false, KV><<<dim3(R, heads), 256, 0, (cudaStream_t)stream>>>(
+      q, rel, table, sink, kc, vc, cap, pos0, window, extent, mask_beyond, out, heads, kv_heads, dim, rank); break;
+  }
+  return ink2g_rc();
+}
+
+// ---- L2 weight prefetch ---------------------------------------------------------------------------
+// Issues L2 prefetches of up to INK2G_PF_MAX byte ranges (the weights of a GEMV that runs a few
+// latency-bound kernels later) and returns: the fills run on in the memory system while the next
+// kernels execute. A hint only: it writes nothing and changes no result. Each thread takes chunks of
+// INK2G_PF_CHUNK bytes, over one-warp blocks on every SM (a block's bulk prefetches go through its
+// SM's copy engine: three blocks moved 13 MB at 363 GB/s); a 16-byte aligned chunk is one cp.async.bulk.prefetch.L2 (sm_90+), the
+// rest (and other targets) one prefetch.global.L2 per 128-byte line.
+#define INK2G_PF_MAX 32
+#define INK2G_PF_CHUNK 4096
+struct Ink2gPf {
+  const char* p[INK2G_PF_MAX];
+  uint64_t n[INK2G_PF_MAX];
+  int count;
+};
+
+__global__ void __launch_bounds__(32) ink2g_l2_prefetch_kernel(const Ink2gPf pf) {
+  const int64_t t = (int64_t)blockIdx.x * blockDim.x + threadIdx.x, nt = (int64_t)gridDim.x * blockDim.x;
+  for (int r = 0; r < pf.count; ++r) {
+    const char* p = pf.p[r];
+    const uint64_t n = pf.n[r];
+    const int64_t chunks = (int64_t)((n + INK2G_PF_CHUNK - 1) / INK2G_PF_CHUNK);
+    for (int64_t c = t; c < chunks; c += nt) {
+      const uint64_t off = (uint64_t)c * INK2G_PF_CHUNK;
+      const uint64_t len = n - off < INK2G_PF_CHUNK ? n - off : INK2G_PF_CHUNK;
+      uint64_t done = 0;
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+      if ((reinterpret_cast<uintptr_t>(p + off) & 15) == 0 && len >= 16) {
+        done = len & ~uint64_t(15);
+        asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;" ::"l"(p + off), "r"((uint32_t)done) : "memory");
+      }
+#endif
+      for (uint64_t b = done; b < len; b += 128) asm volatile("prefetch.global.L2 [%0];" ::"l"(p + off + b));
+    }
+  }
+}
 
 extern "C" {
 
@@ -741,6 +2443,27 @@ int memra_ink2g_gemm(const void* x, int64_t ldx, const void* w, const void* scal
   if (fmt == INK2G_W_NVFP4 && ((k % 16) != 0 || !scales || !amax || !(denom > 0.0f))) return 45002;
   if (fmt == INK2G_W_MXFP8 && ((k % 32) != 0 || !scales)) return 45003;
   if (tiles ? (ntiles <= 0 || xdiv <= 0) : m <= 0) return 45004;
+  if (single && !tiles && fmt == INK2G_W_NVFP4 && !round_bf16 && ldx >= k) {
+    // one input row over dense NVFP4 weights: the bandwidth GEMV (the same bits, see the kernel)
+    const float* xs1[1] = {(const float*)x};
+    const void* ws1[1] = {w};
+    const void* ss1[1] = {scales};
+    const float* as1[1] = {amax};
+    const float ds1[1] = {denom};
+    float* ys1[1] = {(float*)y};
+    const int ns1[1] = {n};
+    const int rc = ink2g_gemv_nvfp4_jobs(xs1, ws1, ss1, as1, ds1, ys1, ns1, 1, k, (cudaStream_t)stream);
+    if (rc != -1) return rc;
+  }
+  if (single && !tiles && fmt == INK2G_W_BF16 && !round_bf16 && ldx >= k) {
+    // one BF16 input row: the bandwidth GEMV (the same bits, see the kernel)
+    const float* xs[1] = {(const float*)x};
+    const void* ws[1] = {w};
+    float* ys[1] = {(float*)y};
+    const int ns[1] = {n};
+    const int rc = ink2g_gemv_bf16_any(xs, ws, ys, ns, 1, k, (cudaStream_t)stream);
+    if (rc != -1) return rc;
+  }
   if (single && k <= INK2G_GEMV_MAX_K) {
     // one input row a tile: the decode GEMV (the same bits, see the kernel)
     const dim3 grid((n + 255) / 256, tiles ? ntiles : 1);
@@ -748,6 +2471,24 @@ int memra_ink2g_gemm(const void* x, int64_t ldx, const void* w, const void* scal
     ink2g_gemv_kernel<<<grid, 256, 0, (cudaStream_t)stream>>>(
         (const float*)x, ldx, (const uint8_t*)w, (const uint8_t*)scales, wstride, sstride, amax, denom, fmt,
         round_bf16, tiles, xdiv, (float*)y, ldy, n, k);
+    return ink2g_rc();
+  }
+  if (!tiles && (fmt == INK2G_W_BF16 || fmt == INK2G_W_NVFP4) && !round_bf16 && m >= 2 && m <= 8) {
+    // 2..8 input rows: the multi-row GEMV, one weight read for the rows (the same bits per row)
+    const int rc = ink2g_gemv_rows((const float*)x, ldx, w, (const uint8_t*)scales, amax, denom, fmt == INK2G_W_NVFP4,
+                                   (float*)y, ldy, m, n, k, (cudaStream_t)stream);
+    if (rc != -1) return rc;
+  }
+  if (!tiles && (fmt == INK2G_W_BF16 || fmt == INK2G_W_NVFP4) && !round_bf16 && (k % 16) == 0 && (ldx % 4) == 0 &&
+      ((uintptr_t)x & 15) == 0 && ((uintptr_t)w & 15) == 0 && (m + INK2G_SG_BM - 1) / INK2G_SG_BM <= 65535) {
+    // the prefill GEMM over BF16 or dense NVFP4 weights (the same bits, see the kernel)
+    const dim3 g((n + INK2G_SG_BN - 1) / INK2G_SG_BN, (m + INK2G_SG_BM - 1) / INK2G_SG_BM);
+    if (fmt == INK2G_W_NVFP4)
+      ink2g_sgemm_bf16_kernel<true><<<g, 256, 0, (cudaStream_t)stream>>>((const float*)x, ldx, w, (const uint8_t*)scales,
+                                                                      amax, denom, (float*)y, ldy, m, n, k);
+    else
+      ink2g_sgemm_bf16_kernel<false><<<g, 256, 0, (cudaStream_t)stream>>>((const float*)x, ldx, w, nullptr, nullptr, 1.0f,
+                                                                       (float*)y, ldy, m, n, k);
     return ink2g_rc();
   }
   const dim3 block(16, 16);
@@ -759,21 +2500,161 @@ int memra_ink2g_gemm(const void* x, int64_t ldx, const void* w, const void* scal
   return ink2g_rc();
 }
 
+// Several BF16 decode GEMVs (one input row each, the same input width k) in one launch: job j is
+// y[j][0..n[j]) = W[j] x[j]. Bits equal memra_ink2g_gemm's for each job alone.
+int memra_ink2g_gemv_jobs(const float* const* xs, const void* const* ws, float* const* ys, const int* ns, int count,
+                          int k, void* stream) {
+  if (!xs || !ws || !ys || !ns) return 45041;
+  const int rc = ink2g_gemv_bf16_any(xs, ws, ys, ns, count, k, (cudaStream_t)stream);
+  return rc == -1 ? 45042 : rc;
+}
+
+// The #1397 tile GEMM over BF16 weights, rows 0..m: the gate's oracle for the prefill GEMM's bits.
+int memra_ink2g_gemm_tile_v0(const void* x, int64_t ldx, const void* w, const void* scales, const float* amax,
+                             float denom, int fmt, void* y, int64_t ldy, int m, int n, int k, void* stream) {
+  if (!x || !w || !y || m <= 0 || n <= 0 || k <= 0) return 45045;
+  const dim3 block(16, 16);
+  const dim3 grid((n + TILE_N - 1) / TILE_N, (m + TILE_M - 1) / TILE_M);
+  ink2g_gemm_kernel<<<grid, block, 0, (cudaStream_t)stream>>>((const float*)x, ldx, (const uint8_t*)w,
+                                                              (const uint8_t*)scales, 0, 0, amax, denom, fmt, 0, nullptr,
+                                                              1, (float*)y, ldy, m, n, k);
+  return ink2g_rc();
+}
+
+// Several dense NVFP4 decode GEMVs of the same input width in one launch (the bits of each alone).
+// Projections of the same m input rows (2..8, x rows ldx apart) and the same k, one format, in one launch
+// a pass of up to 4 rows; y of job j holds m rows ldy[j] apart.
+int memra_ink2g_gemv_rows_jobs(const float* const* xs, int64_t ldx, const void* const* ws, const void* const* scs,
+                               const float* const* amaxs, const float* denoms, float* const* ys, const int64_t* ldys,
+                               const int* ns, int count, int fp4, int m, int k, void* stream) {
+  if (!xs || !ws || !ys || !ns || !ldys || count <= 0 || count > INK2G_JOBS || m < 2 || m > 8 || (k % 16) != 0 ||
+      k > INK2G_GV_MAX_K)
+    return 45049;
+  Ink2gRowJobs jt{};
+  jt.count = count;
+  for (int j = 0; j < count; j++) {
+    if (!xs[j] || !ws[j] || !ys[j] || ns[j] <= 0 || ((uintptr_t)ws[j] & 15) != 0) return 45049;
+    if (fp4 && (!scs || !scs[j] || !amaxs || !amaxs[j])) return 45049;
+    jt.w[j] = ws[j];
+    jt.sc[j] = fp4 ? (const uint8_t*)scs[j] : nullptr;
+    jt.amax[j] = fp4 ? amaxs[j] : nullptr;
+    jt.denom[j] = denoms ? denoms[j] : 1.0f;
+    jt.y[j] = ys[j];
+    jt.ldy[j] = ldys[j];
+    jt.n[j] = ns[j];
+  }
+  for (int r0 = 0; r0 < m; r0 += 4) {
+    const int r = m - r0 < 4 ? m - r0 : 4;
+    const cudaStream_t st = (cudaStream_t)stream;
+    int rc = -1;
+    {
+      Ink2gRowJobs jp = jt;
+      for (int j = 0; j < count; j++) {
+        jp.x[j] = xs[j] + (int64_t)r0 * ldx;
+        jp.y[j] = jt.y[j] + (int64_t)r0 * jt.ldy[j];
+      }
+      if (fp4)
+        rc = r == 1 ? ink2g_gemv4_r<1>(jp, ldx, k, st)
+           : r == 2 ? ink2g_gemv4_r<2>(jp, ldx, k, st)
+           : r == 3 ? ink2g_gemv4_r<3>(jp, ldx, k, st)
+                    : ink2g_gemv4_r<4>(jp, ldx, k, st);
+      else
+        rc = r == 1 ? ink2g_gemv4_r<1, false>(jp, ldx, k, st)
+           : r == 2 ? ink2g_gemv4_r<2, false>(jp, ldx, k, st)
+           : r == 3 ? ink2g_gemv4_r<3, false>(jp, ldx, k, st)
+                    : ink2g_gemv4_r<4, false>(jp, ldx, k, st);
+    }
+    if (rc == -1 && fp4)
+      rc = r == 1 ? ink2g_gemv_rows_jobs_r<1, true>(jt, xs, ldx, r0, k, st)
+         : r == 2 ? ink2g_gemv_rows_jobs_r<2, true>(jt, xs, ldx, r0, k, st)
+         : r == 3 ? ink2g_gemv_rows_jobs_r<3, true>(jt, xs, ldx, r0, k, st)
+                  : ink2g_gemv_rows_jobs_r<4, true>(jt, xs, ldx, r0, k, st);
+    else if (rc == -1)
+      rc = r == 1 ? ink2g_gemv_rows_jobs_r<1, false>(jt, xs, ldx, r0, k, st)
+         : r == 2 ? ink2g_gemv_rows_jobs_r<2, false>(jt, xs, ldx, r0, k, st)
+         : r == 3 ? ink2g_gemv_rows_jobs_r<3, false>(jt, xs, ldx, r0, k, st)
+                  : ink2g_gemv_rows_jobs_r<4, false>(jt, xs, ldx, r0, k, st);
+    if (rc != 0) return rc == -1 ? 45050 : rc;
+  }
+  return 0;
+}
+
+int memra_ink2g_gemv_nvfp4_jobs(const float* const* xs, const void* const* ws, const void* const* scs,
+                                const float* const* amaxs, const float* denoms, float* const* ys, const int* ns,
+                                int count, int k, void* stream) {
+  if (!xs || !ws || !scs || !amaxs || !denoms || !ys || !ns) return 45047;
+  const int rc = ink2g_gemv_nvfp4_jobs(xs, ws, scs, amaxs, denoms, ys, ns, count, k, (cudaStream_t)stream);
+  return rc == -1 ? 45048 : rc;
+}
+
 int memra_ink2g_embed(const void* table, const uint32_t* ids, const float* norm_w, double eps, float* out, int R,
-                      int H, void* stream) {
+                      int H, int prec, void* stream) {
   if (!table || !ids || !norm_w || !out || R <= 0 || H <= 0) return 45011;
-  ink2g_embed_kernel<<<R, 256, 0, (cudaStream_t)stream>>>((const uint16_t*)table, ids, norm_w, eps, out, H);
+  switch (prec) {
+    case 1: ink2g_embed_kernel<float, false><<<R, 256, 0, (cudaStream_t)stream>>>((const uint16_t*)table, ids, norm_w, eps, out, H); break;
+    case 2: ink2g_embed_kernel<float, true><<<R, 256, 0, (cudaStream_t)stream>>>((const uint16_t*)table, ids, norm_w, eps, out, H); break;
+    default: ink2g_embed_kernel<double, false><<<R, 256, 0, (cudaStream_t)stream>>>((const uint16_t*)table, ids, norm_w, eps, out, H); break;
+  }
   return ink2g_rc();
 }
 
-int memra_ink2g_norm(const float* x, const float* norm_w, double eps, float* y, int R, int H, void* stream) {
+// Up to three norms of rows of one shape and one eps in a launch (blockIdx.y picks the norm).
+int memra_ink2g_norm_n(const float* const* xs, const float* const* ws, float* const* ys, int count, double eps, int R,
+                       int H, int prec, void* stream) {
+  if (!xs || !ws || !ys || count < 1 || count > 3 || R <= 0 || H <= 0) return 45012;
+  Ink2gNorm3 more{};
+  for (int j = 0; j < count; j++)
+    if (!xs[j] || !ws[j] || !ys[j]) return 45012;
+  for (int j = 1; j < count; j++) {
+    more.x[j - 1] = xs[j];
+    more.w[j - 1] = ws[j];
+    more.y[j - 1] = ys[j];
+  }
+  const dim3 g(R, count);
+  switch (prec) {
+    case 1: ink2g_norm_kernel<float, false><<<g, 256, 0, (cudaStream_t)stream>>>(xs[0], ws[0], eps, ys[0], H, more); break;
+    case 2: ink2g_norm_kernel<float, true><<<g, 256, 0, (cudaStream_t)stream>>>(xs[0], ws[0], eps, ys[0], H, more); break;
+    default: ink2g_norm_kernel<double, false><<<g, 256, 0, (cudaStream_t)stream>>>(xs[0], ws[0], eps, ys[0], H, more); break;
+  }
+  return ink2g_rc();
+}
+
+int memra_ink2g_norm(const float* x, const float* norm_w, double eps, float* y, int R, int H, int prec, void* stream) {
   if (!x || !norm_w || !y || R <= 0 || H <= 0) return 45012;
-  ink2g_norm_kernel<<<R, 256, 0, (cudaStream_t)stream>>>(x, norm_w, eps, y, H);
+  switch (prec) {
+    case 1: ink2g_norm_kernel<float, false><<<R, 256, 0, (cudaStream_t)stream>>>(x, norm_w, eps, y, H, Ink2gNorm3{}); break;
+    case 2: ink2g_norm_kernel<float, true><<<R, 256, 0, (cudaStream_t)stream>>>(x, norm_w, eps, y, H, Ink2gNorm3{}); break;
+    default: ink2g_norm_kernel<double, false><<<R, 256, 0, (cudaStream_t)stream>>>(x, norm_w, eps, y, H, Ink2gNorm3{}); break;
+  }
   return ink2g_rc();
 }
 
+// scratch: at least R * nq * ns * 2 doubles.
 int memra_ink2g_mix(const float* const* states, int ns, const float* queries, int nq, double eps, float* out,
-                    int64_t out_stride, int R, int H, void* stream) {
+                    int64_t out_stride, int R, int H, double* scratch, int64_t scratch_len, int prec, void* stream) {
+  if (!states || ns <= 0 || ns > INK2G_MAX_STATES || !queries || nq <= 0 || !out || R <= 0 || H <= 0) return 45013;
+  if (!scratch || (int64_t)R * nq * ns * 2 > scratch_len || nq > 65535 || R > 65535) return 45043;
+  Ink2gStates st;
+  for (int s = 0; s < INK2G_MAX_STATES; s++) st.p[s] = s < ns ? states[s] : nullptr;
+  switch (prec) {
+    case 1: ink2g_mix_dot_kernel<float, false><<<dim3(ns, nq, R), 256, 0, (cudaStream_t)stream>>>(st, ns, queries, nq, eps, scratch, H); break;
+    case 2: ink2g_mix_dot_kernel<float, true><<<dim3(ns, nq, R), 256, 0, (cudaStream_t)stream>>>(st, ns, queries, nq, eps, scratch, H); break;
+    default: ink2g_mix_dot_kernel<double, false><<<dim3(ns, nq, R), 256, 0, (cudaStream_t)stream>>>(st, ns, queries, nq, eps, scratch, H); break;
+  }
+  switch (prec) {
+    case 1: ink2g_mix_out_kernel<float, false><<<dim3((H + 127) / 128, nq, R), 128, 0, (cudaStream_t)stream>>>(st, ns, nq, scratch, out,
+                                                                                    out_stride, H); break;
+    case 2: ink2g_mix_out_kernel<float, true><<<dim3((H + 127) / 128, nq, R), 128, 0, (cudaStream_t)stream>>>(st, ns, nq, scratch, out,
+                                                                                    out_stride, H); break;
+    default: ink2g_mix_out_kernel<double, false><<<dim3((H + 127) / 128, nq, R), 128, 0, (cudaStream_t)stream>>>(st, ns, nq, scratch, out,
+                                                                                    out_stride, H); break;
+  }
+  return ink2g_rc();
+}
+
+// The #1397 form of the mix (one block per row): the gate's oracle for the split form's bits.
+int memra_ink2g_mix_v0(const float* const* states, int ns, const float* queries, int nq, double eps, float* out,
+                       int64_t out_stride, int R, int H, void* stream) {
   if (!states || ns <= 0 || ns > INK2G_MAX_STATES || !queries || nq <= 0 || !out || R <= 0 || H <= 0) return 45013;
   Ink2gStates st;
   for (int s = 0; s < INK2G_MAX_STATES; s++) st.p[s] = s < ns ? states[s] : nullptr;
@@ -781,22 +2662,56 @@ int memra_ink2g_mix(const float* const* states, int ns, const float* queries, in
   return ink2g_rc();
 }
 
+// scratch: at least R * rank doubles. out may be x.
 int memra_ink2g_controller(const float* x, const float* msg, const void* down, const void* forget, const void* gain,
-                           double eps, float* out, int R, int H, int rank, void* stream) {
+                           double eps, float* out, int R, int H, int rank, double* scratch, int64_t scratch_len,
+                           int prec, void* stream) {
+  if (!x || !msg || !down || !forget || !gain || !out || R <= 0 || H <= 0 || rank <= 0 || rank > 128) return 45014;
+  if (!scratch || (int64_t)R * rank > scratch_len || R > 65535) return 45044;
+  switch (prec) {
+    case 1: ink2g_ctrl_down_kernel<float, false><<<dim3(rank, R), 256, 0, (cudaStream_t)stream>>>(x, msg, (const uint16_t*)down, eps, scratch,
+                                                                         H, rank); break;
+    case 2: ink2g_ctrl_down_kernel<float, true><<<dim3(rank, R), 256, 0, (cudaStream_t)stream>>>(x, msg, (const uint16_t*)down, eps, scratch,
+                                                                         H, rank); break;
+    default: ink2g_ctrl_down_kernel<double, false><<<dim3(rank, R), 256, 0, (cudaStream_t)stream>>>(x, msg, (const uint16_t*)down, eps, scratch,
+                                                                         H, rank); break;
+  }
+  switch (prec) {
+    case 1: ink2g_ctrl_up_kernel<float, false><<<dim3((H + 63) / 64, R), 64, 0, (cudaStream_t)stream>>>(
+      x, msg, (const uint16_t*)forget, (const uint16_t*)gain, scratch, out, H, rank); break;
+    case 2: ink2g_ctrl_up_kernel<float, true><<<dim3((H + 63) / 64, R), 64, 0, (cudaStream_t)stream>>>(
+      x, msg, (const uint16_t*)forget, (const uint16_t*)gain, scratch, out, H, rank); break;
+    default: ink2g_ctrl_up_kernel<double, false><<<dim3((H + 63) / 64, R), 64, 0, (cudaStream_t)stream>>>(
+      x, msg, (const uint16_t*)forget, (const uint16_t*)gain, scratch, out, H, rank); break;
+  }
+  return ink2g_rc();
+}
+
+// The #1397 form of the controller (one block per row): the gate's oracle for the split form's bits.
+int memra_ink2g_controller_v0(const float* x, const float* msg, const void* down, const void* forget, const void* gain,
+                              double eps, float* out, int R, int H, int rank, void* stream) {
   if (!x || !msg || !down || !forget || !gain || !out || R <= 0 || H <= 0 || rank <= 0 || rank > 128) return 45014;
   ink2g_controller_kernel<<<R, 256, 0, (cudaStream_t)stream>>>(
       x, msg, (const uint16_t*)down, (const uint16_t*)forget, (const uint16_t*)gain, eps, out, H, rank);
   return ink2g_rc();
 }
 
-int memra_ink2g_heads(int mode, const float* x, const float* scale, double thr, double eps, int64_t pos0,
-                      int log_floor, double alpha, float* dst, int64_t cap, int R, int heads, int width,
-                      void* stream) {
+// posd (nullable): the device copy of pos0, read by the kernel (a graph replays one step at every
+// position); pos0 must still be the call's position.
+int memra_ink2g_heads(int mode, const float* x, const float* scale, double thr, double eps, const int64_t* posd,
+                      int64_t pos0, int log_floor, double alpha, float* dst, int64_t cap, int R, int heads,
+                      int width, int prec, void* stream) {
   if ((mode != 0 && mode != 1) || !x || !dst || R <= 0 || heads <= 0 || width <= 0 || width > 256) return 45015;
   if (heads > 65535) return 45016;
   const int threads = ((width + 31) / 32) * 32;
-  ink2g_heads_kernel<<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(mode, x, scale, thr, eps, pos0,
-                                                                         log_floor, alpha, dst, cap, heads, width);
+  switch (prec) {
+    case 1: ink2g_heads_kernel<float, false><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(mode, x, scale, thr, eps, posd, pos0,
+                                                                         log_floor, alpha, dst, cap, heads, width, {}); break;
+    case 2: ink2g_heads_kernel<float, true><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(mode, x, scale, thr, eps, posd, pos0,
+                                                                         log_floor, alpha, dst, cap, heads, width, {}); break;
+    default: ink2g_heads_kernel<double, false><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(mode, x, scale, thr, eps, posd, pos0,
+                                                                         log_floor, alpha, dst, cap, heads, width, {}); break;
+  }
   return ink2g_rc();
 }
 
@@ -804,45 +2719,171 @@ int memra_ink2g_heads(int mode, const float* x, const float* scale, double thr, 
 // buffer, so a call that fails later leaves the caller's committed history untouched. A null
 // state_out drops the history (the gate's red arm).
 int memra_ink2g_conv(int mode, const float* x, const float* state_in, float* state_out, const float* taps,
-                     const float* dyn, int groups, const float* add, float* out, int R, int C, int K, void* stream) {
+                     const float* dyn, int groups, const float* add, float* out, int R, int C, int K, int prec, void* stream) {
   if ((mode != 0 && mode != 1) || !x || !state_in || !taps || !out || R <= 0 || C <= 0) return 45017;
   if (state_out == state_in) return 45041;
   if (K < 2 || K > INK2G_MAX_KERNEL) return 45018;
   if (mode == 1 && (!dyn || groups <= 0 || C % groups != 0)) return 45019;
   if (x == out) return 45020;
-  ink2g_conv_kernel<<<(C + 255) / 256, 256, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
-                                                                     add, out, R, C, K);
+  switch (prec) {
+    case 1: ink2g_conv_kernel<float, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
+                                                                     add, out, R, C, K, Ink2gConv2{}); break;
+    case 2: ink2g_conv_kernel<float, true><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
+                                                                     add, out, R, C, K, Ink2gConv2{}); break;
+    default: ink2g_conv_kernel<double, false><<<(C + 63) / 64, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups,
+                                                                     add, out, R, C, K, Ink2gConv2{}); break;
+  }
   return ink2g_rc();
 }
 
-int memra_ink2g_attn(const float* q, const float* rel, const float* table, const float* sink, const float* kc,
-                     const float* vc, int64_t cap, int64_t pos0, int window, int extent, int mask_beyond, float* out,
-                     int R, int heads, int kv_heads, int dim, int rank, void* stream) {
-  if (!q || !rel || !table || !sink || !kc || !vc || !out) return 45021;
-  if (R <= 0 || heads <= 0 || kv_heads <= 0 || heads % kv_heads != 0 || dim <= 0 || dim > 256 || rank <= 0)
-    return 45022;
-  if (extent <= 0 || extent > INK2G_MAX_EXTENT || heads > 65535) return 45023;
-  const int64_t last = pos0 + R - 1;
-  // every key a row of this call reads is still in the cache: the ring holds the window of its
-  // oldest row and the rows of the call
-  if ((window > 0 ? (int64_t)window - 1 + R : last + 1) > cap) return 45024;
-  ink2g_attn_kernel<<<dim3(R, heads), 256, 0, (cudaStream_t)stream>>>(
-      q, rel, table, sink, kc, vc, cap, pos0, window, extent, mask_beyond, out, heads, kv_heads, dim, rank);
+// posd (nullable): the device copy of pos0. scr (nullable): f64 scratch [heads][scr_ld] with scr_ld at
+// least the keys a row attends (the window, or the context); with it a call of one row runs the split
+// form (the same bits).
+
+// kc / vc: f32 rows, or e4m3 bytes when kv_e4m3 (the nvfp4-rig cache; each byte read back exactly).
+int memra_ink2g_attn(const float* q, const float* rel, const float* table, const float* sink, const void* kc,
+                     const void* vc, int kv_e4m3, int64_t cap, const int64_t* posd, int64_t pos0, int window,
+                     int extent, int mask_beyond, float* out, int R, int heads, int kv_heads, int dim, int rank,
+                     double* scr, int64_t scr_ld, int scr_rows, int prec, void* stream) {
+  if (kv_e4m3)
+    return ink2g_attn_any<uint8_t>(q, rel, table, sink, (const uint8_t*)kc, (const uint8_t*)vc, cap, posd, pos0, window,
+                                   extent, mask_beyond, out, R, heads, kv_heads, dim, rank, scr, scr_ld, scr_rows, prec,
+                                   stream);
+  return ink2g_attn_any<float>(q, rel, table, sink, (const float*)kc, (const float*)vc, cap, posd, pos0, window, extent,
+                               mask_beyond, out, R, heads, kv_heads, dim, rank, scr, scr_ld, scr_rows, prec, stream);
+}
+
+// The tiled f64 attention over an e4m3 cache (the gate's cell).
+int memra_ink2g_attn_e4m3(const float* q, const float* rel, const float* table, const float* sink,
+                          const uint8_t* kc, const uint8_t* vc, int64_t cap, int64_t pos0, int window, int extent,
+                          int mask_beyond, float* out, int R, int heads, int kv_heads, int dim, int rank,
+                          void* stream) {
+  return ink2g_attn_any<uint8_t>(q, rel, table, sink, kc, vc, cap, nullptr, pos0, window, extent, mask_beyond, out, R,
+                                 heads, kv_heads, dim, rank, nullptr, 0, 0, 0, stream);
+}
+
+// The K / V epilogue into an e4m3 cache (nvfp4-rig): K (mode 0, no scale, no log scale) and V (mode 1).
+// The K and V convolutions of a slot in one launch: two jobs of one shape (blockIdx.y picks the job).
+int memra_ink2g_conv2(int mode, const float* x, const float* state_in, float* state_out, const float* taps,
+                      const float* dyn, float* out, const float* x2, const float* state_in2, float* state_out2,
+                      const float* taps2, const float* dyn2, float* out2, int groups, int R, int C, int K, int prec,
+                      void* stream) {
+  if ((mode != 0 && mode != 1) || !x || !state_in || !taps || !out || !x2 || !state_in2 || !taps2 || !out2 || R <= 0 ||
+      C <= 0)
+    return 45017;
+  if (state_out == state_in || state_out2 == state_in2) return 45041;
+  if (K < 2 || K > INK2G_MAX_KERNEL) return 45018;
+  if (mode == 1 && (!dyn || !dyn2 || groups <= 0 || C % groups != 0)) return 45019;
+  if (x == out || x2 == out2) return 45020;
+  const Ink2gConv2 j2{x2, state_in2, state_out2, taps2, dyn2, out2};
+  const dim3 g((C + 63) / 64, 2);
+  switch (prec) {
+    case 1: ink2g_conv_kernel<float, false><<<g, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups, nullptr, out, R, C, K, j2); break;
+    case 2: ink2g_conv_kernel<float, true><<<g, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups, nullptr, out, R, C, K, j2); break;
+    default: ink2g_conv_kernel<double, false><<<g, 64, 0, (cudaStream_t)stream>>>(mode, x, state_in, state_out, taps, dyn, groups, nullptr, out, R, C, K, j2); break;
+  }
   return ink2g_rc();
 }
 
-int memra_ink2g_gate(float* y, const float* g, int64_t n, void* stream) {
+// The K and V epilogues into the e4m3 cache in one launch (blockIdx.z picks the job).
+int memra_ink2g_heads_e4m3_2(const float* xk, double thrk, double epsk, uint8_t* dk, const float* xv, double epsv,
+                             uint8_t* dv, const int64_t* posd, int64_t pos0, int64_t cap, int R, int heads, int width,
+                             int prec, void* stream) {
+  if (!xk || !dk || !xv || !dv || R <= 0 || heads <= 0 || width <= 0 || width > 256) return 45017;
+  if (heads > 65535 || cap <= 0) return 45018;
+  const int threads = ((width + 31) / 32) * 32;
+  const dim3 g(R, heads, 2);
+  switch (prec) {
+    case 1:
+      ink2g_heads_kernel<float, false, uint8_t><<<g, threads, 0, (cudaStream_t)stream>>>(
+          0, xk, nullptr, (float)thrk, (float)epsk, posd, pos0, 0, 0.0f, dk, cap, heads, width,
+          Ink2gHeads2<float, uint8_t>{1, xv, 0.0f, (float)epsv, dv, nullptr, 0});
+      break;
+    case 2:
+      ink2g_heads_kernel<float, true, uint8_t><<<g, threads, 0, (cudaStream_t)stream>>>(
+          0, xk, nullptr, (float)thrk, (float)epsk, posd, pos0, 0, 0.0f, dk, cap, heads, width,
+          Ink2gHeads2<float, uint8_t>{1, xv, 0.0f, (float)epsv, dv, nullptr, 0});
+      break;
+    default:
+      ink2g_heads_kernel<double, false, uint8_t><<<g, threads, 0, (cudaStream_t)stream>>>(
+          0, xk, nullptr, thrk, epsk, posd, pos0, 0, 0.0, dk, cap, heads, width,
+          Ink2gHeads2<double, uint8_t>{1, xv, 0.0, epsv, dv, nullptr, 0});
+  }
+  return ink2g_rc();
+}
+
+// The Q and R clip epilogues of a slot in one launch (blockIdx.z picks the job). The R job's narrower
+// heads run in the Q job's block: its extra threads hold zeros, which leave the block sum's value as is.
+int memra_ink2g_heads_qr(const float* xq, const float* sq, double thrq, double epsq, float* dq, int wq,
+                         const float* xr, const float* sr, double thrr, double epsr, float* dr, int wr,
+                         const int64_t* posd, int64_t pos0, int log_floor, double alpha, int R, int heads, int prec,
+                         void* stream) {
+  if (!xq || !dq || !xr || !dr || R <= 0 || heads <= 0 || wq <= 0 || wr <= 0 || wq > 256 || wr > wq) return 45017;
+  if (heads > 65535) return 45018;
+  const int threads = ((wq + 31) / 32) * 32;
+  const dim3 g(R, heads, 2);
+  switch (prec) {
+    case 1:
+      ink2g_heads_kernel<float, false, float><<<g, threads, 0, (cudaStream_t)stream>>>(
+          0, xq, sq, (float)thrq, (float)epsq, posd, pos0, log_floor, (float)alpha, dq, 0, heads, wq,
+          Ink2gHeads2<float, float>{0, xr, (float)thrr, (float)epsr, dr, sr, wr});
+      break;
+    case 2:
+      ink2g_heads_kernel<float, true, float><<<g, threads, 0, (cudaStream_t)stream>>>(
+          0, xq, sq, (float)thrq, (float)epsq, posd, pos0, log_floor, (float)alpha, dq, 0, heads, wq,
+          Ink2gHeads2<float, float>{0, xr, (float)thrr, (float)epsr, dr, sr, wr});
+      break;
+    default:
+      ink2g_heads_kernel<double, false, float><<<g, threads, 0, (cudaStream_t)stream>>>(
+          0, xq, sq, thrq, epsq, posd, pos0, log_floor, alpha, dq, 0, heads, wq,
+          Ink2gHeads2<double, float>{0, xr, thrr, epsr, dr, sr, wr});
+  }
+  return ink2g_rc();
+}
+
+int memra_ink2g_heads_e4m3(int mode, const float* x, double thr, double eps, const int64_t* posd, int64_t pos0,
+                           uint8_t* dst, int64_t cap, int R, int heads, int width, int prec, void* stream) {
+  if ((mode != 0 && mode != 1) || !x || !dst || R <= 0 || heads <= 0 || width <= 0 || width > 256) return 45017;
+  if (heads > 65535 || cap <= 0) return 45018;
+  const int threads = ((width + 31) / 32) * 32;
+  switch (prec) {
+    case 1:
+      ink2g_heads_kernel<float, false, uint8_t><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(
+          mode, x, nullptr, (float)thr, (float)eps, posd, pos0, 0, 0.0f, dst, cap, heads, width, {});
+      break;
+    case 2:
+      ink2g_heads_kernel<float, true, uint8_t><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(
+          mode, x, nullptr, (float)thr, (float)eps, posd, pos0, 0, 0.0f, dst, cap, heads, width, {});
+      break;
+    default:
+      ink2g_heads_kernel<double, false, uint8_t><<<dim3(R, heads), threads, 0, (cudaStream_t)stream>>>(
+          mode, x, nullptr, thr, eps, posd, pos0, 0, 0.0, dst, cap, heads, width, {});
+  }
+  return ink2g_rc();
+}
+
+int memra_ink2g_gate(float* y, const float* g, int64_t n, int prec, void* stream) {
   if (!y || !g || n <= 0) return 45031;
-  ink2g_gate_kernel<<<(unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream>>>(y, g, n);
+  switch (prec) {
+    case 1: ink2g_gate_kernel<float, false><<<(unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream>>>(y, g, n); break;
+    case 2: ink2g_gate_kernel<float, true><<<(unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream>>>(y, g, n); break;
+    default: ink2g_gate_kernel<double, false><<<(unsigned)((n + 255) / 256), 256, 0, (cudaStream_t)stream>>>(y, g, n); break;
+  }
   return ink2g_rc();
 }
 
 int memra_ink2g_route(const float* logits, const float* bias, double scale, int top_k, int tie_high, uint32_t* ids,
-                      float* wts, float* margin, int R, int E, void* stream) {
+                      float* wts, float* margin, int R, int E, int prec, void* stream) {
   if (!logits || !ids || !wts || R <= 0 || E <= 0 || E > 1024 || top_k <= 0 || top_k > 64 || top_k > E)
     return 45032;
-  ink2g_route_kernel<<<R, 128, 0, (cudaStream_t)stream>>>(logits, bias, scale, top_k, tie_high, ids, wts, margin,
-                                                        E);
+  switch (prec) {
+    case 1: ink2g_route_kernel<float, false><<<R, 128, 0, (cudaStream_t)stream>>>(logits, bias, scale, top_k, tie_high, ids, wts, margin,
+                                                        E); break;
+    case 2: ink2g_route_kernel<float, true><<<R, 128, 0, (cudaStream_t)stream>>>(logits, bias, scale, top_k, tie_high, ids, wts, margin,
+                                                        E); break;
+    default: ink2g_route_kernel<double, false><<<R, 128, 0, (cudaStream_t)stream>>>(logits, bias, scale, top_k, tie_high, ids, wts, margin,
+                                                        E); break;
+  }
   return ink2g_rc();
 }
 
@@ -881,11 +2922,15 @@ int memra_ink2g_to_bf16(const float* x, void* y, int rows, int H, int rep, void*
 }
 
 // softcap (cap > 0) in place, then the argmax of each row (best nullable).
-int memra_ink2g_head(float* logits, double cap, uint32_t* best, int R, int n, void* stream) {
+int memra_ink2g_head(float* logits, double cap, uint32_t* best, int R, int n, int prec, void* stream) {
   if (!logits || R <= 0 || n <= 0) return 45037;
   const int64_t total = (int64_t)R * n;
   if (cap > 0.0)
-    ink2g_softcap_kernel<<<(unsigned)((total + 255) / 256), 256, 0, (cudaStream_t)stream>>>(logits, cap, total);
+    switch (prec) {
+    case 1: ink2g_softcap_kernel<float, false><<<(unsigned)((total + 255) / 256), 256, 0, (cudaStream_t)stream>>>(logits, cap, total); break;
+    case 2: ink2g_softcap_kernel<float, true><<<(unsigned)((total + 255) / 256), 256, 0, (cudaStream_t)stream>>>(logits, cap, total); break;
+    default: ink2g_softcap_kernel<double, false><<<(unsigned)((total + 255) / 256), 256, 0, (cudaStream_t)stream>>>(logits, cap, total); break;
+  }
   if (best) ink2g_argmax_kernel<<<R, 1024, 0, (cudaStream_t)stream>>>(logits, best, n);
   return ink2g_rc();
 }
@@ -896,10 +2941,94 @@ int memra_ink2g_tiles(const uint32_t* ids, uint32_t* tiles, int pairs, void* str
   return ink2g_rc();
 }
 
+int memra_ink2g_groups_dev(const uint32_t* ids, uint32_t* recs, int pairs, int words, int cap, void* stream) {
+  if (!ids || !recs || pairs <= 0 || pairs > 256 || cap <= 0 || words != 2 + cap) return 45046;
+  ink2g_groups_dev_kernel<<<1, 256, 0, (cudaStream_t)stream>>>(ids, recs, pairs, words, cap);
+  return ink2g_rc();
+}
+
 int memra_ink2g_groups(const uint32_t* ids, uint32_t* groups, int pairs, void* stream) {
   if (!ids || !groups || pairs <= 0) return 45039;
   ink2g_groups_kernel<<<(pairs + 63) / 64, 64, 0, (cudaStream_t)stream>>>(ids, groups, pairs);
   return ink2g_rc();
+}
+
+// L2 prefetch on a side stream: the prefetch kernel holds its threads until the bytes land, so it
+// runs beside the main stream (a parallel branch of a captured graph) and the main stream joins it
+// before the GEMV that reads the bytes. *handle (0 at first) owns the side stream and two events.
+struct Ink2gPfHandle {
+  cudaStream_t side;
+  cudaEvent_t fork, join;
+  int pending;
+};
+
+static int ink2g_pf_handle(uint64_t* handle, Ink2gPfHandle** out) {
+  if (!handle) return 45050;
+  if (*handle == 0) {
+    Ink2gPfHandle* h = new Ink2gPfHandle{};
+    if (cudaStreamCreateWithFlags(&h->side, cudaStreamNonBlocking) != cudaSuccess ||
+        cudaEventCreateWithFlags(&h->fork, cudaEventDisableTiming) != cudaSuccess ||
+        cudaEventCreateWithFlags(&h->join, cudaEventDisableTiming) != cudaSuccess) {
+      delete h;
+      return ink2g_rc();
+    }
+    *handle = (uint64_t)(uintptr_t)h;
+  }
+  *out = (Ink2gPfHandle*)(uintptr_t)*handle;
+  return 0;
+}
+
+// The main stream waits for the last prefetch issued through handle (nothing when none is pending).
+int memra_ink2g_l2_join(uint64_t* handle, void* stream) {
+  if (!handle || *handle == 0) return 0;
+  Ink2gPfHandle* h = (Ink2gPfHandle*)(uintptr_t)*handle;
+  if (!h->pending) return 0;
+  h->pending = 0;
+  const cudaError_t e = cudaStreamWaitEvent((cudaStream_t)stream, h->join, 0);
+  return e == cudaSuccess ? 0 : 10000 + (int)e;
+}
+
+// Frees the side stream and events of a handle (after the main stream is synchronized).
+void memra_ink2g_l2_free(uint64_t handle) {
+  if (handle == 0) return;
+  Ink2gPfHandle* h = (Ink2gPfHandle*)(uintptr_t)handle;
+  cudaEventDestroy(h->fork);
+  cudaEventDestroy(h->join);
+  cudaStreamDestroy(h->side);
+  delete h;
+}
+
+// L2 prefetch of n byte ranges (ptrs[i], bytes[i]); n <= 32, empty ranges skipped. Joins the
+// previous prefetch, then forks the side stream from the main stream's current point and issues
+// the prefetch kernel there. Returns 0, 45050 (bad arguments) or 10000 + cudaError.
+int memra_ink2g_l2_prefetch(uint64_t* handle, const void* const* ptrs, const uint64_t* bytes, int n, void* stream) {
+  if (n < 0 || n > INK2G_PF_MAX || (n > 0 && (!ptrs || !bytes))) return 45050;
+  Ink2gPf pf{};
+  int64_t chunks = 0;
+  for (int i = 0; i < n; ++i) {
+    if (!ptrs[i] || bytes[i] == 0) continue;
+    pf.p[pf.count] = (const char*)ptrs[i];
+    pf.n[pf.count] = bytes[i];
+    chunks += (int64_t)((bytes[i] + INK2G_PF_CHUNK - 1) / INK2G_PF_CHUNK);
+    ++pf.count;
+  }
+  if (pf.count == 0) return 0;
+  int rc = memra_ink2g_l2_join(handle, stream);
+  if (rc) return rc;
+  Ink2gPfHandle* h = nullptr;
+  rc = ink2g_pf_handle(handle, &h);
+  if (rc) return rc;
+  cudaError_t e = cudaEventRecord(h->fork, (cudaStream_t)stream);
+  if (e == cudaSuccess) e = cudaStreamWaitEvent(h->side, h->fork, 0);
+  if (e != cudaSuccess) return 10000 + (int)e;
+  const int64_t blocks = (chunks + 31) / 32;
+  ink2g_l2_prefetch_kernel<<<(unsigned)(blocks < 164 ? blocks : 164), 32, 0, h->side>>>(pf);
+  rc = ink2g_rc();
+  if (rc) return rc;
+  e = cudaEventRecord(h->join, h->side);
+  if (e != cudaSuccess) return 10000 + (int)e;
+  h->pending = 1;
+  return 0;
 }
 
 int memra_ink2g_copy(void* dst, const void* src, int64_t bytes, void* stream) {

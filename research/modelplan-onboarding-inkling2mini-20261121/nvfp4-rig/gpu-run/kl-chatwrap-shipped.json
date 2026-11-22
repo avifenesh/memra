@@ -1,0 +1,49 @@
+{
+ "set": "chatwrap",
+ "class": "shipped",
+ "hidden": "/home/avifenesh/.cache/inkling2mini/wt-mint/research/modelplan-onboarding-inkling2mini-20261121/nvfp4-rig/gpu-run/hidden-chatwrap-shipped.safetensors",
+ "sequences": 15,
+ "stats": {
+  "kl_all": {
+   "mean": 0.01889362318738351,
+   "ci95": [
+    0.01592667599403717,
+    0.02232312026234826
+   ],
+   "n_tok": 15360,
+   "n_seq": 15
+  },
+  "kl_real": {
+   "mean": 0.015952895279787264,
+   "ci95": [
+    0.012831988492620254,
+    0.01933259065705628
+   ],
+   "n_tok": 14848,
+   "n_seq": 15,
+   "p50": 0.003280685981735587,
+   "p99": 0.17445932045579002,
+   "max": 3.30560040473938
+  },
+  "kl_model": {
+   "mean": 0.10677241962856196,
+   "ci95": [
+    0.09507351337878062,
+    0.120019437691066
+   ],
+   "n_tok": 497,
+   "n_seq": 15
+  },
+  "dnll_real": {
+   "mean": 0.004651455110546449,
+   "ci95": [
+    -3.334998918992763e-05,
+    0.010826614411587004
+   ],
+   "n_tok": 14848,
+   "n_seq": 15
+  },
+  "top1_real": 0.9579741379310345,
+  "nll_ref_real": 1.3028449866593235
+ }
+}

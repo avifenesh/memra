@@ -1,0 +1,23 @@
+calls 14 wall/token 10.904 ms kernel busy/token 11.306 ms gaps/token -0.402 ms launches/token 1589
+ink2_expert_gemm_kernel                2615.7 us  x 96.0
+ink2g_gemv4_kernel                     2202.2 us  x 97.0
+ink2g_l2_prefetch_kernel                955.3 us  x 96.0
+ink2g_mix_dot_kernel                    825.5 us  x120.0
+ink2g_norm_kernel                       673.4 us  x 97.0
+ink2g_ctrl_up_kernel                    628.3 us  x 96.0
+ink2g_conv_kernel                       590.6 us  x144.0
+ink2g_attn_t4g_kernel                   554.1 us  x 48.0
+ink2g_ctrl_down_kernel                  552.6 us  x 96.0
+ink2g_gemv_bf16_kernel                  484.2 us  x 96.0
+ink2_actq_kernel                        408.6 us  x 96.0
+ink2g_mix_out_kernel                    215.1 us  x120.0
+ink2g_heads_kernel                      184.1 us  x 96.0
+ink2g_attn_t4_merge_kernel              123.7 us  x 48.0
+ink2g_route_kernel                      120.4 us  x 48.0
+ink2g_argmax_kernel                      38.1 us  x  1.0
+ink2g_sum_bf16_kernel                    37.7 us  x 48.0
+ink2g_to_bf16_kernel                     33.0 us  x 48.0
+ink2g_gate_kernel                        28.5 us  x 48.0
+ink2g_groups_kernel                      25.6 us  x 48.0
+ink2g_embed_kernel                        7.8 us  x  1.0
+ink2g_softcap_kernel                      1.6 us  x  1.0

@@ -1,0 +1,14 @@
+gpulock: 5090 leased as claude-code-20261121T221228-3003919 for 35m
+samples=8 clamp_hits=0 P5, 585 MHz, 810 MHz, 28.22 W, 175.00 W, 0x0000000000000400
+OK
+CLAMP_RC=0
+waitfor: file /home/avifenesh/.cache/inkling2mini/perf/a2-bin/SHA256SUMS (deadline 20m00s, every 15s)
+waitfor: MET after 0m00s
+WAIT=0
+GATE_RC=0
+ink2-gpu-gate: ALL OK (32 cells, 0 skipped)
+ink2g-prec-adopted [Prec { controller: 1, mix: 0, norm: 1, conv: 0, router: 0, epilogue: 1, attn: 3 }] f32 norm max rel=1.645e-7, f32 controller max rel=7.079e-7, f32 output gate max rel=1.641e-7 (bound 5e-5) OK
+RC_rig=0
+RC_shipped=0
+NSYS_nvfp4-rig=0
+NSYS_shipped=0

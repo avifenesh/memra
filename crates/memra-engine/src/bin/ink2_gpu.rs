@@ -1,12 +1,23 @@
 //! Inkling 2 Mini on one GPU (`memra_engine::inkling2_gpu`): the checkpoint runner of the native
 //! sm_120a route. Weights resident as stored, a carried cache per slot.
 //!
-//! usage: ink2-gpu CKPT_DIR [--class declared|float] MODE... [--red ARM]... [--chunk N]
-//!                 [--context N] [--out FILE] [--device D]
+//! usage: ink2-gpu CKPT_DIR [--class nvfp4-rig|shipped|float] [--overlay DIR] MODE... [--red ARM]...
+//!                 [--chunk N] [--context N] [--out FILE] [--device D]
 //!        ink2-gpu CKPT_DIR --numeric-class [--class ...]
-//!   --class declared|float   the plan: every layer on its declared activation quantizer (the
-//!                            family's default class), or every layer on float expert inputs (the
+//!   --class nvfp4-rig        the family's default class: every layer on its declared activation
+//!                            quantizer, the minted NVFP4 overlay (MXFP8 banks, unembed, attention
+//!                            of every layer) and e4m3 KV on every slot
+//!   --class nvfp4-rig-outside-loop   a measurement class: nvfp4-rig with the loop core's
+//!                            attention read as stored (BF16)
+//!   --class shipped          (alias: declared) the checkpoint as stored, the declared quantizers,
+//!                            an f32 KV cache
+//!   --class float            every layer on float expert inputs, the checkpoint as stored (the
 //!                            bring-up class, which has an independent oracle)
+//!   --overlay DIR            the nvfp4-rig overlay (default: CKPT_DIR's sibling <name>.nvfp4-rig)
+//!   --corpus FILE --hidden-out OUT   a JSON list of {name, ids} sequences (the KL study's corpus
+//!                            format), each run alone as prefill calls of --chunk rows; OUT gets
+//!                            the final-norm hidden rows of every position, one F32 tensor
+//!                            [positions, hidden] per sequence name (safetensors)
 //!   --tape DIR               score against an oracle tape directory (tokens, per-slot residuals,
 //!                            router picks, logits, greedy ids): the tape's prefill, then one
 //!                            teacher-forced decode call per later position
@@ -16,6 +27,13 @@
 //!                            per-slot gate of a class that is not continuous)
 //!   --gen N                  greedy: the tape's prompt, then N - 1 decode calls on the argmax,
 //!                            scored against the tape's greedy ids; timed, launches counted
+//!   --prec SPEC              precision arms, group=f32|f32c|f64 (groups: controller, mix, norm, conv,
+//!                            router, epilogue, attn, all)
+//!   --corpus FILE --arms A;B  teacher-forced KL and NLL of each arm against all-f64 (lane F's corpora)
+//!   --eager                  no decode graph: every step eager (the graph's check arm)
+//!   --gen-digest             with --gen: an FNV digest of every step's logits row (untimed check)
+//!   --prompt-len N           with --gen: the prompt is the tape's ids repeated to N tokens (a
+//!                            context length for timing; no oracle ids past the tape's)
 //!   --chunkings A,B --limit N   the first N tape ids as calls of A rows and again as calls of B
 //!                            rows (1 = one token per call); the logits and every slot's output
 //!                            must be bit-identical
@@ -33,7 +51,9 @@
 //!                            later id; every slot output and logit row must equal a clean run
 //!   --chunk N                rows one call may hold (default 512)
 
-use memra_engine::inkling2_gpu::{Ckpt, Dev, Head, Observer, RedArms, Route, Tap, numeric_class};
+use memra_engine::inkling2_gpu::{
+    Ckpt, Dev, Head, Observer, Prec, RedArms, Route, Tap, numeric_class,
+};
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_plan::{ExpertActivationMode, ModelPlan};
 use memra_gguf::safetensors::StShard;
@@ -52,10 +72,23 @@ fn main() {
 struct Args {
     ckpt: PathBuf,
     class: String,
+    overlay: Option<PathBuf>,
+    hidden_out: Option<PathBuf>,
+    corpus: Option<PathBuf>,
     tape: Option<PathBuf>,
     force_router: bool,
     force_moe_in: bool,
     gen_tokens: usize,
+    /// --prompt-len N: the gen prompt is the tape's tokens repeated to N (a context length for timing)
+    prompt_len: usize,
+    /// --gen-digest: fold every decode step's logits row into a digest (an untimed check)
+    gen_digest: bool,
+    /// --eager: no decode graph (the check arm of a graph's bits)
+    eager: bool,
+    /// --prec SPEC: precision arms (group=f32|f32c|f64,...; see Prec)
+    prec: String,
+    /// --corpus FILE --arms SPEC;SPEC: teacher-forced KL / NLL of each arm against all-f64
+    arms: String,
     chunkings: Option<(usize, usize)>,
     limit: usize,
     red: RedArms,
@@ -75,7 +108,7 @@ fn parse() -> Result<Args, String> {
     let mut it = std::env::args().skip(1);
     let mut a = Args {
         ckpt: PathBuf::from(it.next().ok_or("usage: ink2-gpu CKPT_DIR ...")?),
-        class: "declared".into(),
+        class: "nvfp4-rig".into(),
         chunk: 512,
         ..Args::default()
     };
@@ -84,11 +117,19 @@ fn parse() -> Result<Args, String> {
         let num = |v: String| v.parse::<usize>().map_err(|e| format!("{e}"));
         match arg.as_str() {
             "--class" => a.class = val()?,
+            "--overlay" => a.overlay = Some(PathBuf::from(val()?)),
+            "--hidden-out" => a.hidden_out = Some(PathBuf::from(val()?)),
+            "--corpus" => a.corpus = Some(PathBuf::from(val()?)),
             "--tape" => a.tape = Some(PathBuf::from(val()?)),
             "--score" => a.score = true,
             "--force-router" => a.force_router = true,
             "--force-moe-in" => a.force_moe_in = true,
             "--gen" => a.gen_tokens = num(val()?)?,
+            "--prompt-len" => a.prompt_len = num(val()?)?,
+            "--gen-digest" => a.gen_digest = true,
+            "--eager" => a.eager = true,
+            "--prec" => a.prec = val()?,
+            "--arms" => a.arms = val()?,
             "--limit" => a.limit = num(val()?)?,
             "--chunk" => a.chunk = num(val()?)?,
             "--context" => a.context = num(val()?)?,
@@ -121,8 +162,19 @@ fn parse() -> Result<Args, String> {
             _ => return Err(format!("unknown argument {arg}")),
         }
     }
-    if a.class != "declared" && a.class != "float" {
-        return Err("--class is declared or float".into());
+    if a.class == "declared" {
+        a.class = "shipped".into();
+    }
+    if !matches!(
+        a.class.as_str(),
+        "nvfp4-rig" | "nvfp4-rig-outside-loop" | "shipped" | "float"
+    ) {
+        return Err(
+            "--class is nvfp4-rig, nvfp4-rig-outside-loop, shipped (declared) or float".into(),
+        );
+    }
+    if a.overlay.is_some() && !a.class.starts_with("nvfp4-rig") {
+        return Err("--overlay belongs to the nvfp4-rig classes".into());
     }
     if a.red.commit_on_error && a.inject_failure.is_none() {
         return Err("--red commit-on-error is an arm of --inject-failure".into());
@@ -150,7 +202,13 @@ fn compile(
         .compile_plan(&config)
         .map_err(|e| format!("plan: {e:?}"))?;
     let program = default.inkling2.as_ref().ok_or("not an inkling2 plan")?;
-    let plan = if a.class == "float" {
+    let plan = if a.class == "nvfp4-rig" {
+        memra_gguf::model_packs::inkling2::nvfp4_rig_plan(&config)
+            .map_err(|e| format!("plan: {e:?}"))?
+    } else if a.class == "nvfp4-rig-outside-loop" {
+        memra_gguf::model_packs::inkling2::nvfp4_rig_outside_loop_plan(&config)
+            .map_err(|e| format!("plan: {e:?}"))?
+    } else if a.class == "float" {
         let modes = vec![ExpertActivationMode::Float; program.numerics.experts.len()];
         memra_gguf::model_packs::inkling2::plan_with_expert_activation(&config, &modes)
             .map_err(|e| format!("plan: {e:?}"))?
@@ -331,7 +389,22 @@ struct Compare<'a> {
     route_rows: Vec<(usize, usize)>,
     min_margin: f64,
     error: Option<String>,
+    /// FNV-1a 64 of the bits of every tap row a slot emitted, in call order: two runs of the
+    /// same program on the same tokens and chunking hold equal digests
+    digest_attn: Vec<u64>,
+    digest_ffn: Vec<u64>,
 }
+
+fn fnv_fold(mut h: u64, data: &[f32]) -> u64 {
+    for v in data {
+        for b in v.to_bits().to_le_bytes() {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    h
+}
+const FNV0: u64 = 0xcbf2_9ce4_8422_2325;
 
 impl Compare<'_> {
     fn rows_of(&mut self, shard: &StShard, name: &str, slot: u32, data: &[f32], into: usize) {
@@ -367,6 +440,15 @@ impl Observer for Compare<'_> {
     }
     fn floats(&mut self, slot: u32, tap: Tap, data: &[f32]) {
         let tape = self.tape;
+        match tap {
+            Tap::ResidAttn => {
+                self.digest_attn[slot as usize] = fnv_fold(self.digest_attn[slot as usize], data)
+            }
+            Tap::ResidFfn => {
+                self.digest_ffn[slot as usize] = fnv_fold(self.digest_ffn[slot as usize], data)
+            }
+            _ => {}
+        }
         match tap {
             Tap::ResidAttn => self.rows_of(&tape.resid_attn, "resid_attn", slot, data, 0),
             Tap::ResidFfn => self.rows_of(&tape.resid_ffn, "resid_ffn", slot, data, 1),
@@ -648,6 +730,198 @@ fn attn_probe(
     Ok(serde_json::Value::Object(out))
 }
 
+/// --corpus: teacher-forced runs of every document of a corpus (lane F's rawdoc / chatwrap JSON:
+/// ids, sampled) under the reference precision (all f64) and each arm. Per position: KL(ref || arm)
+/// over the full vocabulary in f64, the NLL of the next token under both, top-1 agreement.
+fn corpus_run(
+    route: &mut Route,
+    path: &Path,
+    arms: &str,
+    out: Option<&PathBuf>,
+    top_k: usize,
+) -> Result<(), String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let docs: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("corpus: {e}"))?;
+    let docs = docs.as_array().ok_or("corpus: a list of documents")?;
+    let specs: Vec<String> = arms
+        .split(';')
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+    let precs: Vec<Prec> = specs
+        .iter()
+        .map(|s| Prec::parse(s))
+        .collect::<Result<_, _>>()?;
+    let threads = std::thread::available_parallelism()
+        .map_or(8, |n| n.get())
+        .min(16);
+    // per row: log-softmax in f64, stored as f32 deltas from the row's max is not needed: keep f64 lse
+    let lse_rows = |logits: &[f32], keep: usize| -> Vec<f64> {
+        let rows = logits.len() / keep;
+        let mut out = vec![0f64; rows];
+        std::thread::scope(|sc| {
+            for (ci, chunk) in out.chunks_mut(rows.div_ceil(threads).max(1)).enumerate() {
+                let base = ci * rows.div_ceil(threads).max(1);
+                sc.spawn(move || {
+                    for (i, o) in chunk.iter_mut().enumerate() {
+                        let x = &logits[(base + i) * keep..(base + i + 1) * keep];
+                        let top = x
+                            .iter()
+                            .fold(f64::NEG_INFINITY, |a, v| a.max(f64::from(*v)));
+                        *o = top
+                            + x.iter()
+                                .map(|v| (f64::from(*v) - top).exp())
+                                .sum::<f64>()
+                                .ln();
+                    }
+                });
+            }
+        });
+        out
+    };
+    let mut per_arm: Vec<BTreeMap<&str, Vec<f64>>> = vec![BTreeMap::new(); precs.len()];
+    let t0 = Instant::now();
+    for (di, d) in docs.iter().enumerate() {
+        let ids: Vec<u32> = d["ids"]
+            .as_array()
+            .ok_or("a document without ids")?
+            .iter()
+            .map(|v| v.as_u64().unwrap_or(0) as u32)
+            .collect();
+        let sampled: Vec<u8> = d["sampled"]
+            .as_array()
+            .map(|a| a.iter().map(|v| v.as_u64().unwrap_or(0) as u8).collect())
+            .unwrap_or_else(|| vec![0; ids.len()]);
+        let n = ids.len();
+        route.dev.prec.set(Prec::all_f64());
+        route.reset()?;
+        let mut ref_picks = Picks {
+            top_k,
+            ..Picks::default()
+        };
+        let rl = route.call(&ids, Head::All, Some(&mut ref_picks))?.logits;
+        let keep = rl.len() / n;
+        let rz = lse_rows(&rl, keep);
+        for (ai, p) in precs.iter().enumerate() {
+            route.dev.prec.set(*p);
+            route.reset()?;
+            let mut arm_picks = Picks {
+                top_k,
+                ..Picks::default()
+            };
+            let al = route.call(&ids, Head::All, Some(&mut arm_picks))?.logits;
+            // route rows (slot, position) whose expert set differs from the all-f64 route's
+            let (mut rows_all, mut rows_differ) = (0usize, 0usize);
+            for (slot, want) in &ref_picks.rows {
+                let got = arm_picks.rows.get(slot).map_or(&[][..], |v| &v[..]);
+                rows_all += want.len();
+                rows_differ += want.iter().zip(got).filter(|(a, b)| a != b).count()
+                    + want.len().saturating_sub(got.len());
+            }
+            let az = lse_rows(&al, keep);
+            let mut kl = vec![0f64; n];
+            std::thread::scope(|sc| {
+                let per = n.div_ceil(threads).max(1);
+                for (ci, chunk) in kl.chunks_mut(per).enumerate() {
+                    let (rl, al, rz, az) = (&rl, &al, &rz, &az);
+                    sc.spawn(move || {
+                        for (i, o) in chunk.iter_mut().enumerate() {
+                            let t = ci * per + i;
+                            let (x, y) =
+                                (&rl[t * keep..(t + 1) * keep], &al[t * keep..(t + 1) * keep]);
+                            *o = x
+                                .iter()
+                                .zip(y)
+                                .map(|(a, b)| {
+                                    let lp = f64::from(*a) - rz[t];
+                                    lp.exp() * (lp - (f64::from(*b) - az[t]))
+                                })
+                                .sum();
+                        }
+                    });
+                }
+            });
+            let m = &mut per_arm[ai];
+            m.entry("route_rows").or_default().push(rows_all as f64);
+            m.entry("route_rows_differ")
+                .or_default()
+                .push(rows_differ as f64);
+            for t in 0..n {
+                let has = t + 1 < n;
+                let lab = if has { ids[t + 1] as usize } else { 0 };
+                let (rr, aa) = (&rl[t * keep..(t + 1) * keep], &al[t * keep..(t + 1) * keep]);
+                m.entry("seq").or_default().push(di as f64);
+                m.entry("kl").or_default().push(kl[t]);
+                m.entry("has_label")
+                    .or_default()
+                    .push(f64::from(u8::from(has && lab < keep)));
+                m.entry("sampled").or_default().push(f64::from(if has {
+                    sampled[t + 1]
+                } else {
+                    0
+                }));
+                m.entry("nll_ref").or_default().push(if has && lab < keep {
+                    rz[t] - f64::from(rr[lab])
+                } else {
+                    0.0
+                });
+                m.entry("nll_arm").or_default().push(if has && lab < keep {
+                    az[t] - f64::from(aa[lab])
+                } else {
+                    0.0
+                });
+                m.entry("top1")
+                    .or_default()
+                    .push(f64::from(u8::from(argmax(rr) == argmax(aa))));
+            }
+        }
+        eprintln!(
+            "ink2-gpu corpus: doc {}/{} ({n} tokens) done at {:.0}s",
+            di + 1,
+            docs.len(),
+            t0.elapsed().as_secs_f64()
+        );
+    }
+    let arms_json: Vec<serde_json::Value> = specs
+        .iter()
+        .zip(&per_arm)
+        .map(|(s, m)| serde_json::json!({"spec": s, "arrays": m}))
+        .collect();
+    let receipt = serde_json::json!({"corpus": path.display().to_string(), "docs": docs.len(), "arms": arms_json});
+    let text = serde_json::to_string(&receipt).map_err(|e| e.to_string())?;
+    match out {
+        Some(p) => std::fs::write(p, text).map_err(|e| format!("{}: {e}", p.display()))?,
+        None => println!("{text}"),
+    }
+    Ok(())
+}
+
+/// The router's picks of every slot of a call, each row's set sorted: the route rows of a program.
+#[derive(Default)]
+struct Picks {
+    top_k: usize,
+    rows: BTreeMap<u32, Vec<Vec<u32>>>,
+}
+
+impl Observer for Picks {
+    fn wants(&self, _tap: Tap) -> bool {
+        false
+    }
+    fn floats(&mut self, _slot: u32, _tap: Tap, _data: &[f32]) {}
+    fn picks(&mut self, slot: u32, ids: &[u32]) {
+        let rows = self.rows.entry(slot).or_default();
+        for r in ids.chunks_exact(self.top_k.max(1)) {
+            let mut s = r.to_vec();
+            s.sort_unstable();
+            rows.push(s);
+        }
+    }
+    fn forced(&mut self, _slot: u32, _rows: usize) -> Option<(Vec<u32>, Vec<f32>)> {
+        None
+    }
+}
+
 fn argmax(row: &[f32]) -> u32 {
     let mut best = 0;
     for (i, v) in row.iter().enumerate() {
@@ -726,6 +1000,102 @@ impl Observer for Digest {
     }
 }
 
+/// Collects the final hidden rows of a call.
+struct Hidden {
+    rows: Vec<f32>,
+}
+
+impl Observer for Hidden {
+    fn wants(&self, tap: Tap) -> bool {
+        tap == Tap::FinalHidden
+    }
+    fn floats(&mut self, _slot: u32, _tap: Tap, data: &[f32]) {
+        self.rows.extend_from_slice(data);
+    }
+    fn picks(&mut self, _slot: u32, _ids: &[u32]) {}
+    fn forced(&mut self, _slot: u32, _rows: usize) -> Option<(Vec<u32>, Vec<f32>)> {
+        None
+    }
+}
+
+/// `--corpus FILE --hidden-out OUT`: every sequence alone, its final hidden rows saved.
+fn run_corpus(
+    a: &Args,
+    corpus: &Path,
+    pack: &'static memra_gguf::model_packs::ModelPack,
+    config: &ModelConfig,
+    plan: &ModelPlan,
+    class: &str,
+) -> Result<(), String> {
+    let out = a
+        .hidden_out
+        .as_ref()
+        .ok_or("--corpus needs --hidden-out FILE")?;
+    let text = std::fs::read_to_string(corpus).map_err(|e| format!("{}: {e}", corpus.display()))?;
+    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("corpus: {e}"))?;
+    let mut seqs = Vec::new();
+    for s in v.as_array().ok_or("the corpus is a JSON list")? {
+        let name = s["name"]
+            .as_str()
+            .ok_or("a corpus entry has a name")?
+            .to_string();
+        let ids: Vec<u32> = s["ids"]
+            .as_array()
+            .ok_or("a corpus entry has ids")?
+            .iter()
+            .map(|x| x.as_u64().map(|v| v as u32).ok_or("an id is an integer"))
+            .collect::<Result<_, _>>()?;
+        seqs.push((name, ids));
+    }
+    let longest = seqs
+        .iter()
+        .map(|s| s.1.len())
+        .max()
+        .ok_or("an empty corpus")?;
+    let context = if a.context > 0 {
+        a.context
+    } else {
+        (longest + 8).next_power_of_two().max(2048)
+    };
+    let ck = Ckpt::open_with_overlay(&a.ckpt, pack, config, plan, a.overlay.as_deref())?;
+    let dev = Dev::new(a.device)?;
+    let mut route = Route::load(dev, &ck, plan, context, a.chunk)?;
+    eprintln!("ink2-gpu: class {class}; {}", route.account.describe());
+    let hidden = plan.hidden_size as usize;
+    let t0 = Instant::now();
+    let mut tensors = BTreeMap::new();
+    for (name, ids) in &seqs {
+        route.reset()?;
+        let mut h = Hidden { rows: Vec::new() };
+        for chunk in ids.chunks(a.chunk) {
+            route.forward(chunk, Head::None, Some(&mut h))?;
+        }
+        if h.rows.len() != ids.len() * hidden {
+            return Err(format!(
+                "{name}: {} hidden values for {} positions",
+                h.rows.len(),
+                ids.len()
+            ));
+        }
+        let bytes: Vec<u8> = h.rows.iter().flat_map(|v| v.to_le_bytes()).collect();
+        tensors.insert(name.clone(), ("F32", vec![ids.len(), hidden], bytes));
+    }
+    let meta = BTreeMap::from([
+        ("class".to_string(), class.to_string()),
+        ("chunk".to_string(), a.chunk.to_string()),
+        ("corpus".to_string(), corpus.display().to_string()),
+    ]);
+    memra_gguf::model_packs::inkling2::nvfp4_rig::write_safetensors(out, &tensors, &meta)?;
+    eprintln!(
+        "ink2-gpu: corpus {} sequences, {} positions in {:.1}s -> {}",
+        seqs.len(),
+        seqs.iter().map(|s| s.1.len()).sum::<usize>(),
+        t0.elapsed().as_secs_f64(),
+        out.display()
+    );
+    Ok(())
+}
+
 fn run() -> Result<(), String> {
     let a = parse()?;
     let (plan, pack, config) = compile(&a)?;
@@ -735,7 +1105,7 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
     if a.contract_check {
-        let ck = Ckpt::open(&a.ckpt, pack, &config, &plan)?;
+        let ck = Ckpt::open_with_overlay(&a.ckpt, pack, &config, &plan, a.overlay.as_deref())?;
         // CPU only: the binding of the real census passed above; now its red arms
         let (lines, fails) = ck.contract_red_arms(&config)?;
         for line in &lines {
@@ -756,22 +1126,41 @@ fn run() -> Result<(), String> {
             Err(format!("{fails} contract red arm(s) accepted"))
         };
     }
+    if let Some(corpus) = &a.corpus
+        && a.arms.is_empty()
+    {
+        return run_corpus(&a, corpus, pack, &config, &plan, &class);
+    }
     let tape = match &a.tape {
         Some(dir) => Some(Tape::open(dir)?),
         None => None,
     };
     let tape = tape.as_ref().ok_or("a mode needs --tape DIR")?;
-    let need = tape.all_ids.len().max(tape.prompt + a.gen_tokens) + 8;
+    let need = tape
+        .all_ids
+        .len()
+        .max(tape.prompt.max(a.prompt_len) + a.gen_tokens)
+        + 8;
     let context = if a.context > 0 {
         a.context
     } else {
         need.next_power_of_two().max(2048)
     };
-    let ck = Ckpt::open(&a.ckpt, pack, &config, &plan)?;
+    let ck = Ckpt::open_with_overlay(&a.ckpt, pack, &config, &plan, a.overlay.as_deref())?;
     let t_load = Instant::now();
     let dev = Dev::new(a.device)?;
     let mut route = Route::load(dev, &ck, &plan, context, a.chunk)?;
     route.set_red(a.red)?;
+    route.dev.prec.set(Prec::parse(&a.prec)?);
+    if let Some(cp) = &a.corpus
+        && !a.arms.is_empty()
+    {
+        let top_k = match &plan.layers[0].mlp {
+            memra_gguf::model_plan::MlpPlan::Moe(m) => m.experts_per_token as usize,
+            _ => return Err("not an MoE plan".into()),
+        };
+        return corpus_run(&mut route, cp, &a.arms, a.out.as_ref(), top_k);
+    }
     eprintln!("ink2-gpu: {}", route.account.describe());
     let load_s = t_load.elapsed().as_secs_f64();
     eprintln!(
@@ -863,7 +1252,10 @@ fn run() -> Result<(), String> {
             route_rows: vec![(0, 0); nslots],
             min_margin: f64::INFINITY,
             error: None,
+            digest_attn: vec![FNV0; nslots],
+            digest_ffn: vec![FNV0; nslots],
         };
+        let mut digest_logits = FNV0;
         let lt = tensor(&tape.logits, "logits_post", "F32")?;
         if lt.shape[1] != vocab {
             return Err(format!(
@@ -884,6 +1276,7 @@ fn run() -> Result<(), String> {
         for (s0, s1) in calls {
             cmp.base = s0;
             let out = route.forward(&tape.all_ids[s0..s1], Head::All, Some(&mut cmp))?;
+            digest_logits = fnv_fold(digest_logits, &out.logits);
             for (row, got) in out.logits.chunks_exact(vocab).enumerate() {
                 let pos = s0 + row;
                 if let Some(&tr) = tape.logit_rows.get(&pos) {
@@ -926,6 +1319,13 @@ fn run() -> Result<(), String> {
             .route_rows
             .iter()
             .fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+        let hex = |d: &[u64]| d.iter().map(|v| format!("{v:016x}")).collect::<Vec<_>>();
+        receipt["digest"] = serde_json::json!({
+            "chunk": a.chunk,
+            "resid_attn_per_slot": hex(&cmp.digest_attn),
+            "resid_ffn_per_slot": hex(&cmp.digest_ffn),
+            "logits": format!("{digest_logits:016x}"),
+        });
         receipt["score"] = serde_json::json!({
             "positions": total,
             "seconds": t0.elapsed().as_secs_f64(),
@@ -969,8 +1369,16 @@ fn run() -> Result<(), String> {
 
     if a.gen_tokens > 0 {
         route.reset()?;
+        route.graph_off = a.eager;
         route.dev.sync()?;
-        let prompt = &tape.all_ids[..tape.prompt];
+        let prompt: Vec<u32> = if a.prompt_len > 0 {
+            (0..a.prompt_len)
+                .map(|i| tape.all_ids[i % tape.all_ids.len()])
+                .collect()
+        } else {
+            tape.all_ids[..tape.prompt].to_vec()
+        };
+        let prompt = &prompt[..];
         let tp = Instant::now();
         let mut next = *route
             .call(prompt, Head::LastArgmax, None)?
@@ -980,13 +1388,21 @@ fn run() -> Result<(), String> {
         let prefill_s = tp.elapsed().as_secs_f64();
         let mut ids = vec![next];
         let mut steps = Vec::new();
+        let mut digest = FNV0;
+        if a.gen_digest {
+            digest = fnv_fold(digest, &route.last_logits()?);
+        }
         route.dev.reset_counters();
+        route.graph_steps.set(0);
         let before = clocks();
         for _ in 1..a.gen_tokens {
             let ts = Instant::now();
             next = route.forward(&[next], Head::LastArgmax, None)?.argmax[0];
             steps.push(ts.elapsed().as_secs_f64());
             ids.push(next);
+            if a.gen_digest {
+                digest = fnv_fold(digest, &route.last_logits()?);
+            }
         }
         let after = clocks();
         let n = steps.len().max(1) as f64;
@@ -1005,6 +1421,8 @@ fn run() -> Result<(), String> {
             "prefill_s": prefill_s,
             "prefill_tok_s": prompt.len() as f64 / prefill_s,
             "decode_calls": steps.len(),
+            "logits_digest": if a.gen_digest { serde_json::json!(format!("{digest:016x}")) } else { serde_json::Value::Null },
+            "graph_steps": route.graph_steps.get(),
             "decode_step_p50_ms": sorted.get(sorted.len() / 2).map(|s| s * 1e3),
             "decode_tok_s": n / steps.iter().sum::<f64>().max(1e-12),
             "launches_per_token": route.dev.launches.get() as f64 / n,
