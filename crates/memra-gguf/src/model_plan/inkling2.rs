@@ -382,48 +382,6 @@ pub struct Inkling2Numerics {
     pub quant_config_sha256: String,
 }
 
-/// What a drafter tap reads from the trunk.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DrafterTap {
-    /// The running residual stream on entry to `slot`: the partial sum of its block so far,
-    /// before the depth mix and any norm.
-    SlotInput { slot: u32 },
-    /// The model's final hidden state after the output mix and norm.
-    FinalNorm,
-}
-
-/// Head of the DSpark drafter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DrafterHead {
-    /// `markov_head_type: rnn_hidden`: a recurrent head of rank `rank` over the previous draft
-    /// token, folded through the trunk's output projection. No confidence head.
-    RnnHidden { rank: u32 },
-}
-
-/// The drafter shipped in `mtp.safetensors`, as declared. It is not the `DsparkPlan` program
-/// (learned mask embedding, a fuse matrix over the taps, context K/V projections, a recurrent
-/// head, no confidence head), and no executor implements it: the plan names it so the contract
-/// can own its tensors and every drafting surface refuses it.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Inkling2DrafterPlan {
-    pub blocks: u32,
-    pub block_size: u32,
-    pub query_heads: u32,
-    pub kv_heads: u32,
-    pub head_dim: u32,
-    pub intermediate_size: u32,
-    pub rope_base: f32,
-    /// Blocks that see a window of context; the others see all of it.
-    pub local_blocks: Vec<u32>,
-    pub window: u32,
-    pub head: DrafterHead,
-    /// The checkpoint's `target_layer_ids`. They count layer visits in execution order; every
-    /// id but the last taps the input of that visit, and the last is the visit count.
-    pub target_visit_ids: Vec<u32>,
-    /// The same taps typed: the input of the cache slot each visit runs, then the final hidden.
-    pub taps: Vec<DrafterTap>,
-}
-
 impl Inkling2Numerics {
     /// The class a set of per-layer modes amounts to.
     pub fn class_of(experts: &[ExpertNumericsPlan]) -> Inkling2NumericClass {
@@ -452,7 +410,8 @@ pub struct Inkling2Plan {
     /// The output mix: one residual query over the block list and the final stream.
     pub output_queries: u32,
     pub numerics: Inkling2Numerics,
-    pub drafter: Inkling2DrafterPlan,
+    // The drafter (`mtp.safetensors`) is the plan's `DrafterPlan::Dspark`, typed by its
+    // variants.
     /// Vision tower tensors the contract owns and the text plan does not execute.
     pub vision_executed: bool,
 }

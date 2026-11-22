@@ -8,6 +8,7 @@ use crate::config::{Arch, AttentionGateKind, LayerKind, ModelConfig};
 use crate::model_packs::mimo_v2::audio::MiMoAudioPatchPlan;
 
 pub mod deepseek_v41;
+pub mod dspark;
 pub mod inkling2;
 pub mod speech;
 pub use deepseek_v41::{
@@ -15,13 +16,18 @@ pub use deepseek_v41::{
     Csa2CompressorPlan, Csa2IndexerPlan, Csa2Mode, Csa2Pooling, Csa2StatePlan, DeepSeekV41Numerics,
     EngramPlan, SinglePassHcPlan,
 };
+pub use dspark::{
+    DraftAttentionPlan, DraftBlockPlan, DraftFusePlan, DraftRnnHeadPlan, DraftRopePlan,
+    DraftRowInput, DrafterTap, DsparkConfidence, DsparkContextLayers, DsparkFusion, DsparkLayers,
+    DsparkMarkov, DsparkRows, RnnChunk, RnnInput,
+};
 pub use inkling2::{
     AttentionInputs, BeyondExtent, BlockAttentionPlan, ClipScale, DenseNumericsPlan,
-    DenseTensorClass, DrafterHead, DrafterTap, ExpertActivationMode, ExpertNumericsPlan,
-    ExpertWeightFormat, Inkling2DrafterPlan, Inkling2NumericClass, Inkling2Numerics, Inkling2Plan,
-    Inkling2WeightClass, KvCacheFormat, L2ClipPlan, LogPositionScalePlan, LoopMessageTarget,
-    LoopPlan, LoopSlotPlan, OutputGatePlan, QuerySinkPlan, RelativeBiasAttentionPlan,
-    RelativeBiasPlan, RelativeBiasStatePlan, ShortConvPlan, ShortConvTaps,
+    DenseTensorClass, ExpertActivationMode, ExpertNumericsPlan, ExpertWeightFormat,
+    Inkling2NumericClass, Inkling2Numerics, Inkling2Plan, Inkling2WeightClass, KvCacheFormat,
+    L2ClipPlan, LogPositionScalePlan, LoopMessageTarget, LoopPlan, LoopSlotPlan, OutputGatePlan,
+    QuerySinkPlan, RelativeBiasAttentionPlan, RelativeBiasPlan, RelativeBiasStatePlan,
+    ShortConvPlan, ShortConvTaps,
 };
 use speech::WhisperPlan;
 
@@ -957,13 +963,102 @@ pub struct MiMoMtp3Plan {
     pub shared_output_head: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// The DSpark drafter program: a block of `block_size` rows drafted in parallel from the
+/// trunk's taps, then chained through a Markov head. The components are typed variants
+/// (`dspark`); the DeepSeek-V4 program is the one `DsparkPlan::deepseek_v4` builds.
+#[derive(Clone, PartialEq)]
 pub struct DsparkPlan {
     pub block_size: u32,
+    /// The token rows `1..block_size` embed under `DsparkRows::NoiseToken`; 0 and unread
+    /// under the other row inputs.
     pub noise_token_id: u32,
+    /// The trunk taps, as the checkpoint counts them (DeepSeek-V4: trunk layer ids; Inkling 2:
+    /// layer visits in execution order, typed by `DsparkFusion::FuseWeights::taps`).
     pub target_layer_ids: Vec<u32>,
     pub markov_rank: u32,
+    /// Trunk-shaped draft blocks (`DsparkLayers::TrunkBlocks`); empty otherwise.
     pub blocks: Vec<LayerPlan>,
+    pub rows: DsparkRows,
+    pub fusion: DsparkFusion,
+    pub layers: DsparkLayers,
+    pub markov: DsparkMarkov,
+    pub confidence: Option<DsparkConfidence>,
+}
+
+impl DsparkPlan {
+    /// The DeepSeek-V4 program over these blocks.
+    pub fn deepseek_v4(
+        block_size: u32,
+        noise_token_id: u32,
+        target_layer_ids: Vec<u32>,
+        markov_rank: u32,
+        blocks: Vec<LayerPlan>,
+    ) -> Self {
+        Self {
+            block_size,
+            noise_token_id,
+            target_layer_ids,
+            markov_rank,
+            blocks,
+            rows: DsparkRows::NoiseToken,
+            fusion: DsparkFusion::MainProjection,
+            layers: DsparkLayers::TrunkBlocks,
+            markov: DsparkMarkov::Bigram,
+            confidence: Some(DsparkConfidence::HiddenAndMarkovEmbedding),
+        }
+    }
+
+    /// The draft program's operations: the shared DSpark operations with their variants, and
+    /// the draft layers' own.
+    pub fn operations(&self, operations: &mut Vec<OperationKind>) {
+        if matches!(self.rows, DsparkRows::Block(b) if b.anchor == DraftRowInput::TrunkEmbeddingNormed)
+        {
+            operations.push(OperationKind::EmbeddingNorm);
+        }
+        operations.push(OperationKind::DsparkFusion);
+        match &self.layers {
+            DsparkLayers::TrunkBlocks => {
+                for block in &self.blocks {
+                    block.operations(operations);
+                }
+            }
+            DsparkLayers::Context(_) => operations.push(OperationKind::DsparkContextAttention),
+        }
+        operations.push(OperationKind::DsparkMarkovHead);
+        if self.confidence.is_some() {
+            operations.push(OperationKind::DsparkConfidenceHead);
+        }
+    }
+
+    /// Every component is the DeepSeek-V4 one.
+    pub fn is_deepseek_v4(&self) -> bool {
+        self.rows == DsparkRows::NoiseToken
+            && self.fusion == DsparkFusion::MainProjection
+            && self.layers == DsparkLayers::TrunkBlocks
+            && self.markov == DsparkMarkov::Bigram
+            && self.confidence == Some(DsparkConfidence::HiddenAndMarkovEmbedding)
+    }
+}
+
+// The serialized plan (`{plan:#?}`) is what rewrite receipts bind: the DeepSeek-V4 program
+// prints the fields it has always printed, and another program prints its variants too.
+impl std::fmt::Debug for DsparkPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = f.debug_struct("DsparkPlan");
+        s.field("block_size", &self.block_size)
+            .field("noise_token_id", &self.noise_token_id)
+            .field("target_layer_ids", &self.target_layer_ids)
+            .field("markov_rank", &self.markov_rank)
+            .field("blocks", &self.blocks);
+        if !self.is_deepseek_v4() {
+            s.field("rows", &self.rows)
+                .field("fusion", &self.fusion)
+                .field("layers", &self.layers)
+                .field("markov", &self.markov)
+                .field("confidence", &self.confidence);
+        }
+        s.finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1441,12 +1536,6 @@ impl ModelPlan {
 
     pub fn draft_operations(&self) -> Option<Vec<OperationKind>> {
         let mut operations = vec![OperationKind::Embedding];
-        if self.inkling2.is_some() {
-            // The declared drafter is a program of its own; naming it here keeps every drafting
-            // surface closed on an operation with no implementation.
-            operations.push(OperationKind::EmbeddingNorm);
-            operations.push(OperationKind::DsparkRnnDrafter);
-        }
         if self.deepseek_v41.is_some() {
             operations.push(OperationKind::Fp8Block32Linear);
         }
@@ -1457,17 +1546,12 @@ impl ModelPlan {
             operations.push(OperationKind::MtpHead);
         }
         if let Some(DrafterPlan::Dspark(dspark)) = self.drafter.as_ref() {
-            operations.push(OperationKind::DsparkFusion);
-            for block in &dspark.blocks {
-                block.operations(&mut operations);
-            }
-            operations.push(OperationKind::DsparkMarkovHead);
-            operations.push(OperationKind::DsparkConfidenceHead);
+            dspark.operations(&mut operations);
         }
         if matches!(self.drafter.as_ref(), Some(DrafterPlan::MiMoMtp3(_))) {
             operations.push(OperationKind::MiMoMtp3Draft);
         }
-        if self.mtp_blocks.is_empty() && self.drafter.is_none() && self.inkling2.is_none() {
+        if self.mtp_blocks.is_empty() && self.drafter.is_none() {
             return None;
         }
         // qwen4_exp draft exit runs the MTP's OWN hyper_connection_mixer, not a final norm.
@@ -1581,18 +1665,10 @@ impl ModelPlan {
                 operations.push(OperationKind::MtpHead);
             }
             if let Some(DrafterPlan::Dspark(dspark)) = self.drafter.as_ref() {
-                operations.push(OperationKind::DsparkFusion);
-                for block in &dspark.blocks {
-                    block.operations(&mut operations);
-                }
-                operations.push(OperationKind::DsparkMarkovHead);
-                operations.push(OperationKind::DsparkConfidenceHead);
+                dspark.operations(&mut operations);
             }
             if matches!(self.drafter.as_ref(), Some(DrafterPlan::MiMoMtp3(_))) {
                 operations.push(OperationKind::MiMoMtp3Draft);
-            }
-            if self.inkling2.is_some() {
-                operations.push(OperationKind::DsparkRnnDrafter);
             }
         }
         // qwen4_exp exits through the global mixer (grouped hc_norm inside); every other
@@ -3143,9 +3219,9 @@ pub enum OperationKind {
     BlockAttentionResidual,
     /// Inkling 2: `softcap(gate) * sigmoid(gate) * softcap(up)`.
     SoftcappedSwiGluActivation,
-    /// Inkling 2 DSpark drafter (mask embedding, tap fuse, context K/V, recurrent Markov head).
-    /// Declared and owned by the contract; no executor implements it.
-    DsparkRnnDrafter,
+    /// DSpark draft layers with bidirectional block attention over context K/V written once
+    /// per committed position, and dense SwiGLU (`DsparkLayers::Context`, Inkling 2).
+    DsparkContextAttention,
     /// Drop the logits past the unpadded vocabulary.
     LogitsTruncate,
     Mtp,

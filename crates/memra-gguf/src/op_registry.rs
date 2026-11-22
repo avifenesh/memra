@@ -456,9 +456,11 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
         // `logits_truncate_keeps_the_head_bits_and_makes_the_padded_tail_unselectable`) and the
         // Inkling 2 executor never computes the dropped rows; no tuned surface does either.
         | OperationKind::LogitsTruncate
-        // Inkling 2: the reference executor (memra-reference `inkling2`) runs these, except
-        // `DsparkRnnDrafter`, which nothing executes. No tuned surface implements any of them, so
-        // every surface refuses a plan that names one.
+        // Inkling 2: the reference executor (memra-reference `inkling2`) runs these;
+        // `DsparkContextAttention` (the Inkling 2 DSpark variant) runs in memra-reference
+        // `inkling2_drafter` and on the Inkling 2 GPU route's drafter (memra-engine
+        // `inkling2_dspark`). No tuned surface implements any of them, so every surface refuses
+        // a plan that names one.
         | OperationKind::Nvfp4FloatInputExperts
         | OperationKind::Mxfp8FloatInputExperts
         | OperationKind::EmbeddingNorm
@@ -477,7 +479,7 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
         | OperationKind::RelativeBiasState
         | OperationKind::BlockAttentionResidual
         | OperationKind::SoftcappedSwiGluActivation
-        | OperationKind::DsparkRnnDrafter => Surfaces::NONE,
+        | OperationKind::DsparkContextAttention => Surfaces::NONE,
     }
 }
 
@@ -577,7 +579,7 @@ pub const ALL_OPERATIONS: &[OperationKind] = &[
     OperationKind::RelativeBiasState,
     OperationKind::BlockAttentionResidual,
     OperationKind::SoftcappedSwiGluActivation,
-    OperationKind::DsparkRnnDrafter,
+    OperationKind::DsparkContextAttention,
     OperationKind::LogitsTruncate,
     OperationKind::Mtp,
     OperationKind::DraftPlan,

@@ -205,6 +205,23 @@ mod ffi {
             prec: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_ink2g_conv_rows(
+            mode: i32,
+            x: *const f32,
+            state_in: *const f32,
+            state_out: *mut f32,
+            rows_out: *mut f32,
+            taps: *const f32,
+            dynamic: *const f32,
+            groups: i32,
+            add: *const f32,
+            out: *mut f32,
+            r: i32,
+            c: i32,
+            k: i32,
+            prec: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_ink2g_conv(
             mode: i32,
             x: *const f32,
@@ -642,14 +659,14 @@ impl Dev {
         }
     }
 
-    fn bind(&self) -> Result<(), String> {
+    pub(crate) fn bind(&self) -> Result<(), String> {
         self.st
             .context()
             .bind_to_thread()
             .map_err(|e| format!("bind: {e:?}"))
     }
 
-    fn sp(&self) -> *mut c_void {
+    pub(crate) fn sp(&self) -> *mut c_void {
         self.st.cu_stream() as *mut c_void
     }
 
@@ -688,7 +705,7 @@ impl Dev {
         Ok(out)
     }
 
-    fn put<T: cudarc::driver::DeviceRepr>(
+    pub(crate) fn put<T: cudarc::driver::DeviceRepr>(
         &self,
         host: &[T],
         dst: &mut CudaSlice<T>,
@@ -711,9 +728,27 @@ impl Dev {
         self.round_trips.set(0);
     }
 
-    fn launched(&self, name: &str, rc: i32) -> Result<(), String> {
+    pub(crate) fn launched(&self, name: &str, rc: i32) -> Result<(), String> {
         self.launches.set(self.launches.get() + 1);
         ck(name, rc)
+    }
+
+    /// The stream every launch of this handle goes to.
+    pub fn stream(&self) -> &Arc<CudaStream> {
+        &self.st
+    }
+
+    /// `bytes` from device address `src` to `dst`, on the stream.
+    pub(crate) fn copy_raw(&self, dst: u64, src: u64, bytes: usize) -> Result<(), String> {
+        self.copies.set(self.copies.get() + 1);
+        ck("memra_ink2g_copy", unsafe {
+            ffi::memra_ink2g_copy(
+                dst as *mut c_void,
+                src as *const c_void,
+                bytes as i64,
+                self.sp(),
+            )
+        })
     }
 
     /// f32 rows `src` to `dst` (`n` elements).
@@ -1055,6 +1090,17 @@ struct DenseW {
     t: Option<CudaSlice<f32>>,
 }
 
+/// The output projection a drafter shares with the trunk (see [`Route::shared_weights`]).
+pub enum SharedHead<'a> {
+    Bf16(&'a CudaSlice<u8>),
+    /// codes `[n, k/2]`, block scales `[n, k/16]` (e4m3) and the global scale
+    Nvfp4 {
+        codes: &'a CudaSlice<u8>,
+        scales: &'a CudaSlice<u8>,
+        global: f32,
+    },
+}
+
 /// A weight's format and device addresses (data, block scales, tensor scale; 0 when absent).
 type WeightParts = (i32, u64, u64, u64);
 
@@ -1298,6 +1344,9 @@ struct SlotState {
     /// K, V, attention output, MLP output: two buffers each. `Route::parity` names the committed
     /// one; a call writes the other and the route swaps only when the whole call succeeded.
     conv: [[CudaSlice<f32>; 2]; 4],
+    /// The history after each row of the last call, `[row][kernel - 1][channels]` per conv, for
+    /// up to the second field's rows (allocated by [`Route::keep_row_history`]).
+    row_hist: Option<([CudaSlice<f32>; 4], usize)>,
 }
 
 /// What a caller can read out of a call, per slot.
@@ -1359,6 +1408,8 @@ pub enum Head {
     LastArgmax,
     /// Every row: logits and argmax.
     All,
+    /// Every row: argmax only (a verify call that needs no distribution).
+    AllArgmax,
 }
 
 pub struct CallOut {
@@ -1439,13 +1490,17 @@ pub struct MemoryAccount {
     pub driver_free_after_load: usize,
     /// Positions the driver's free memory before the full caches holds at this chunk.
     pub max_context: usize,
+    /// A drafter loaded beside the route (`inkling2_dspark`): all its bytes, and of them the
+    /// context K/V that grows with the context. Zero without one.
+    pub drafter: usize,
+    pub drafter_kv: usize,
 }
 
 impl MemoryAccount {
     pub fn describe(&self) -> String {
         let g = |b: usize| b as f64 / (1u64 << 30) as f64;
         format!(
-            "memory: device {:.3} GiB, driver free at open {:.3}, weights {:.3}, full KV {:.3} ({} positions x {} B), rings {:.3}, conv {:.3}, work {:.3}, declared work {:.3}, driver free before KV {:.3} and after load {:.3}, max context {}",
+            "memory: device {:.3} GiB, driver free at open {:.3}, weights {:.3}, full KV {:.3} ({} positions x {} B), rings {:.3}, conv {:.3}, work {:.3}, declared work {:.3}, driver free before KV {:.3} and after load {:.3}, max context {}, drafter {:.3} (context K/V {:.3})",
             g(self.device_total),
             g(self.driver_free_at_open),
             g(self.weights),
@@ -1458,13 +1513,28 @@ impl MemoryAccount {
             g(self.declared_work),
             g(self.driver_free_before_kv),
             g(self.driver_free_after_load),
-            self.max_context
+            self.max_context,
+            g(self.drafter),
+            g(self.drafter_kv)
         )
     }
 }
 
 /// Rows of logits one head launch holds.
 const HEAD_ROWS: usize = 32;
+/// Rows of the longest call a graph replays (a verify of the anchor and seven proposals).
+const GRAPH_ROWS: usize = 8;
+const _: () = assert!(GRAPH_ROWS <= HEAD_ROWS, "a graphed call's head is one pass");
+
+/// The key of a captured call graph ([`Route::forward`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct GraphKey {
+    tap: bool,
+    parity: usize,
+    rows: usize,
+    /// 0: last argmax, 1: every argmax, 2: every row's logits.
+    head: u8,
+}
 
 pub struct Route {
     pub dev: Dev,
@@ -1487,11 +1557,18 @@ pub struct Route {
     red: RedArms,
     /// Fault injection of the atomicity gate: the next forward fails after this slot ran.
     pub fail_after_slot: Option<u32>,
+    /// Rows of the last eager call (the rows whose history `row_hist` holds, when kept).
+    last_call_rows: usize,
     /// The decode step as a CUDA graph, one per conv-history parity (the step reads the history
     /// of one parity and writes the other), captured after one eager step at that parity. A graph
-    /// reads its position and token from the device, so it replays at every position.
-    graphs: [Option<CudaGraph>; 2],
-    warm: [bool; 2],
+    /// reads its position and token from the device, so it replays at every position. Indexed
+    /// [tap capture on][parity]: a step that captures taps records their copies into the capture
+    /// buffer (`set_capture` drops those graphs with the buffer).
+    /// Also the short calls (a speculative verify of 2..=GRAPH_ROWS rows, and a sampled
+    /// step's full logits): one graph per (tap capture, parity, rows, head), each captured after
+    /// one eager call of its key.
+    graphs: std::collections::BTreeMap<GraphKey, CudaGraph>,
+    warm: std::collections::BTreeSet<GraphKey>,
     /// Decode steps served by a graph replay since the last counter reset.
     pub graph_steps: Cell<u64>,
     /// A check seam: every step runs eager (the graph's bits are checked against it).
@@ -1503,6 +1580,34 @@ pub struct Route {
     pub weight_bytes: usize,
     /// Where the card's memory went at load.
     pub account: MemoryAccount,
+    /// Rows of the drafter's taps, when a caller asked for them ([`Route::set_capture`]).
+    tap_capture: Option<Capture>,
+    /// A BF16 output projection the drafter reads instead of the class's (`set_draft_head`).
+    draft_head: Option<CudaSlice<u8>>,
+}
+
+/// The drafter's taps of one call: the stream on entry to each named slot (the running partial
+/// block, before the depth mix and any norm), then the final norm output, `[taps, chunk, hidden]`.
+struct Capture {
+    slots: Vec<u32>,
+    buf: CudaSlice<f32>,
+}
+
+impl Carry {
+    /// The position saved with the history.
+    pub fn position(&self) -> u64 {
+        self.position
+    }
+}
+
+/// The committed convolution history (which of the two buffers, see `SlotState::conv`) and the
+/// position of a request, noted before a call whose last rows may be rejected. Nothing is
+/// copied: the call writes the other buffers. The K/V caches need no copy either: a rejected row's keys sit at
+/// positions past the committed ones, which the next call writes before any row reads them
+/// (the sliding rings hold `window - 1 + chunk` rows).
+pub struct Carry {
+    parity: usize,
+    position: u64,
 }
 
 fn program(plan: &ModelPlan) -> Result<&Inkling2Plan, String> {
@@ -1986,6 +2091,7 @@ impl Route {
                         dev.zeros((program.mlp_output_conv.kernel as usize - 1) * hidden)?,
                     ],
                 ],
+                row_hist: None,
             });
             account.conv += dev.allocated.get()
                 - before
@@ -2103,8 +2209,9 @@ impl Route {
             parity: 0,
             red: RedArms::default(),
             fail_after_slot: None,
-            graphs: [None, None],
-            warm: [false, false],
+            last_call_rows: 0,
+            graphs: Default::default(),
+            warm: Default::default(),
             graph_steps: Cell::new(0),
             graph_off: false,
             softcap,
@@ -2112,7 +2219,183 @@ impl Route {
             hidden,
             weight_bytes,
             account,
+            tap_capture: None,
+            draft_head: None,
         })
+    }
+
+    /// Capture the stream on entry to each of `slots` and the final norm output on every later
+    /// call. Their order is the tap order; an empty list turns capture off.
+    pub fn set_capture(&mut self, slots: &[u32]) -> Result<(), String> {
+        // the capturing graphs copy into the old buffer
+        self.graphs.retain(|k, _| !k.tap);
+        self.warm.retain(|k| !k.tap);
+        if slots.is_empty() {
+            self.tap_capture = None;
+            return Ok(());
+        }
+        if let Some(bad) = slots.iter().find(|s| **s as usize >= self.slots.len()) {
+            return Err(format!(
+                "capture of slot {bad}; the plan has {}",
+                self.slots.len()
+            ));
+        }
+        let buf = self
+            .dev
+            .zeros::<f32>((slots.len() + 1) * self.chunk * self.hidden)?;
+        self.tap_capture = Some(Capture {
+            slots: slots.to_vec(),
+            buf,
+        });
+        Ok(())
+    }
+
+    /// The last call's taps, `[taps, chunk, hidden]` (row `r` of tap `t` at
+    /// `(t * chunk + r) * hidden`).
+    pub fn captured(&self) -> Option<&CudaSlice<f32>> {
+        self.tap_capture.as_ref().map(|c| &c.buf)
+    }
+
+    /// The trunk's token embedding `[vocab, hidden]` (BF16 bytes), its norm weight, and the
+    /// output projection `[vocab, hidden]` as the class stores it: BF16 rows, or NVFP4 codes with
+    /// their e4m3 block scales and the global scale (the first `vocab()` rows get logits).
+    pub fn shared_weights(
+        &self,
+    ) -> Result<(&CudaSlice<u8>, &CudaSlice<f32>, SharedHead<'_>), String> {
+        let u = &self.unembed;
+        if let Some(h) = &self.draft_head {
+            return Ok((&self.embed, &self.embed_norm, SharedHead::Bf16(h)));
+        }
+        let head = match u.fmt {
+            FMT_BF16 => SharedHead::Bf16(&u.data),
+            FMT_NVFP4 => {
+                let (Some(scales), Some(t)) = (u.scales.as_ref(), u.t.as_ref()) else {
+                    return Err("an NVFP4 unembed without its scales".into());
+                };
+                SharedHead::Nvfp4 {
+                    codes: &u.data,
+                    scales,
+                    global: self.dev.down(t, 0, 1)?[0],
+                }
+            }
+            f => {
+                return Err(format!(
+                    "the drafter reads a BF16 or NVFP4 unembed, not format {f}"
+                ));
+            }
+        };
+        Ok((&self.embed, &self.embed_norm, head))
+    }
+
+    /// The drafter reads this BF16 output projection (`[vocab, hidden]` bytes, the checkpoint's
+    /// own) instead of the class's unembed: the separate-head arm of an NVFP4 class.
+    pub fn set_draft_head(&mut self, bf16: &[u8]) -> Result<(), String> {
+        let want = self.plan.vocab_size as usize * self.hidden * 2;
+        if bf16.len() != want {
+            return Err(format!(
+                "a draft head of {} bytes; the head holds {want}",
+                bf16.len()
+            ));
+        }
+        self.draft_head = Some(self.dev.up(bf16)?);
+        Ok(())
+    }
+
+    pub fn plan(&self) -> &ModelPlan {
+        &self.plan
+    }
+
+    /// Buffers for [`Route::save_carry`].
+    /// Keep the convolution history after every row of each call of up to `max_rows` rows, so
+    /// [`Route::commit_rows`] can commit the first rows of the last call without running them
+    /// again. `0` frees it.
+    pub fn keep_row_history(&mut self, max_rows: usize) -> Result<(), String> {
+        // a graph of several rows writes the history buffers this replaces
+        self.graphs.retain(|k, _| k.rows == 1);
+        self.warm.retain(|k| k.rows == 1);
+        if max_rows == 0 {
+            for s in &mut self.slots {
+                s.row_hist = None;
+            }
+            return Ok(());
+        }
+        if max_rows > self.chunk {
+            return Err(format!(
+                "row history for {max_rows} rows; a call holds {}",
+                self.chunk
+            ));
+        }
+        for s in &mut self.slots {
+            let n = |c: &[CudaSlice<f32>; 2]| c[0].len() * max_rows;
+            let bufs = [
+                self.dev.zeros::<f32>(n(&s.conv[0]))?,
+                self.dev.zeros::<f32>(n(&s.conv[1]))?,
+                self.dev.zeros::<f32>(n(&s.conv[2]))?,
+                self.dev.zeros::<f32>(n(&s.conv[3]))?,
+            ];
+            s.row_hist = Some((bufs, max_rows));
+        }
+        Ok(())
+    }
+
+    /// Keep only the first `n` rows of the last call: its convolution history after row
+    /// `n - 1` becomes the committed one and the position goes back to after that row. The
+    /// last call must have been an eager call with row history kept; its later rows' K and V sit
+    /// past the position and are written again before any row reads them.
+    pub fn commit_rows(&mut self, n: usize) -> Result<(), String> {
+        let rows = self.last_call_rows;
+        if n == 0 || n > rows {
+            return Err(format!("commit of {n} rows of a call of {rows}"));
+        }
+        if n == rows {
+            return Ok(());
+        }
+        let st = self.dev.st.clone();
+        let q = self.parity; // the buffers the last call wrote
+        for s in &mut self.slots {
+            let (hist, max) = s
+                .row_hist
+                .as_ref()
+                .ok_or("commit_rows without a kept row history")?;
+            if rows > *max {
+                return Err(format!(
+                    "the last call had {rows} rows; the history holds {max}"
+                ));
+            }
+            for (h, conv) in hist.iter().zip(s.conv.iter_mut()) {
+                let width = conv[q].len();
+                let src = dptr(h, &st) + ((n - 1) * width * 4) as u64;
+                let dst = dptr_mut(&mut conv[q], &st);
+                self.dev.copy_raw(dst, src, width * 4)?;
+            }
+        }
+        self.position = self.position - rows as u64 + n as u64;
+        self.last_call_rows = n;
+        Ok(())
+    }
+
+    pub fn carry(&self) -> Result<Carry, String> {
+        Ok(Carry {
+            parity: self.parity,
+            position: self.position,
+        })
+    }
+
+    /// Note the committed convolution history and the position. A call writes the other
+    /// buffer of each history and swaps only when it succeeds, so the noted buffers stay as
+    /// they are through the next call.
+    pub fn save_carry(&self, carry: &mut Carry) -> Result<(), String> {
+        carry.parity = self.parity;
+        carry.position = self.position;
+        Ok(())
+    }
+
+    /// Back to the noted convolution history and position (valid after one call since the
+    /// note: the call wrote the other buffers).
+    pub fn restore_carry(&mut self, carry: &Carry) -> Result<(), String> {
+        self.parity = carry.parity;
+        self.position = carry.position;
+        Ok(())
     }
 
     /// Kept vocabulary rows (the padded ids are never computed).
@@ -2286,25 +2569,39 @@ impl Route {
         head: Head,
         obs: Option<&mut (dyn Observer + '_)>,
     ) -> Result<CallOut, String> {
+        let rows = tokens.len();
         let graphable = !self.graph_off
-            && tokens.len() == 1
-            && head == Head::LastArgmax
+            && (1..=GRAPH_ROWS).contains(&rows)
+            && rows <= self.chunk
+            && matches!(head, Head::LastArgmax | Head::AllArgmax | Head::All)
             && obs.is_none()
             && self.red == RedArms::default()
             && self.fail_after_slot.is_none()
-            && self.position < self.context as u64
-            && tokens[0] < self.plan.vocab_size;
+            && self.position as usize + rows <= self.context
+            && tokens.iter().all(|t| *t < self.plan.vocab_size);
         if !graphable {
-            return self.forward_body(tokens, head, obs, false);
+            let out = self.forward_body(tokens, head, obs, false)?;
+            self.last_call_rows = rows;
+            return Ok(out);
         }
-        let p = self.parity;
-        if self.graphs[p].is_none() {
-            if !self.warm[p] {
+        let key = GraphKey {
+            tap: self.tap_capture.is_some(),
+            parity: self.parity,
+            rows,
+            head: match head {
+                Head::LastArgmax => 0,
+                Head::AllArgmax => 1,
+                _ => 2,
+            },
+        };
+        if !self.graphs.contains_key(&key) {
+            if !self.warm.contains(&key) {
                 let out = self.forward_body(tokens, head, None, false)?;
-                self.warm[p] = true;
+                self.warm.insert(key);
+                self.last_call_rows = rows;
                 return Ok(out);
             }
-            // capture one step: the token and the position go up first, outside the graph
+            // capture one call: the tokens and the position go up first, outside the graph
             self.dev.bind()?;
             self.dev.put(tokens, &mut self.w.tok)?;
             self.dev.put(&[self.position as i64], &mut self.w.posd)?;
@@ -2321,24 +2618,30 @@ impl Route {
                 )
                 .map_err(|e| format!("end_capture: {e:?}"))?;
             body?;
-            self.graphs[p] = Some(graph.ok_or("an empty decode graph")?);
+            self.graphs
+                .insert(key, graph.ok_or("an empty decode graph")?);
         } else {
             self.dev.bind()?;
             self.dev.put(tokens, &mut self.w.tok)?;
             self.dev.put(&[self.position as i64], &mut self.w.posd)?;
         }
-        let graph = self.graphs[p].as_ref().ok_or("no decode graph")?;
+        let graph = self.graphs.get(&key).ok_or("no decode graph")?;
         graph.launch().map_err(|e| format!("graph launch: {e:?}"))?;
         self.dev.launches.set(self.dev.launches.get() + 1);
         self.graph_steps.set(self.graph_steps.get() + 1);
-        let argmax = self.dev.down(&self.w.best, 0, 1)?;
-        // the step succeeded: commit the position and the conv histories it wrote
-        self.position += 1;
-        self.parity = 1 - p;
-        Ok(CallOut {
-            argmax,
-            logits: Vec::new(),
-        })
+        // the head's rows: the last one, or every one (rows <= HEAD_ROWS, one head pass)
+        let n = if head == Head::LastArgmax { 1 } else { rows };
+        let argmax = self.dev.down(&self.w.best, 0, n)?;
+        let logits = if head == Head::All {
+            self.dev.down(&self.w.logits, 0, n * self.keep)?
+        } else {
+            Vec::new()
+        };
+        // the call succeeded: commit the position and the conv histories it wrote
+        self.position += rows as u64;
+        self.parity = 1 - self.parity;
+        self.last_call_rows = rows;
+        Ok(CallOut { argmax, logits })
     }
 
     /// One chunk of rows through every slot. capture: the stream is capturing a decode graph; the
@@ -2388,6 +2691,7 @@ impl Route {
             softcap,
             keep,
             hidden,
+            tap_capture,
             ..
         } = self;
         let (hidden, chunk, red, softcap, keep) = (*hidden, *chunk, *red, *softcap, *keep);
@@ -2442,6 +2746,12 @@ impl Route {
                     None => {}
                 }
                 pass = info.pass;
+            }
+            if let Some(c) = tap_capture.as_mut()
+                && let Some(tap) = c.slots.iter().position(|s| *s == slot)
+            {
+                let dst = dptr_mut(&mut c.buf, &st) + ((tap * chunk * hidden) * 4) as u64;
+                dev.copy_raw(dst, dptr(&w.h, &st), rows * hidden * 4)?;
             }
             let layer = &plan.layers[slot as usize];
             let lw = &layers[info.physical_layer as usize];
@@ -2725,10 +3035,19 @@ impl Route {
             // ---- K and V: short convolution with the slot's history, clip / norm into the cache
             let cur = *parity;
             let ss = &mut slots[slot as usize];
+            // the history after every row of the call, when the caller keeps it (a verify call)
+            let hp: [u64; 4] = match ss.row_hist.as_mut() {
+                // a one-row call commits whole, so it needs none (and a decode graph holds no
+                // pointer into it)
+                Some((h, max)) if rows > 1 && rows <= *max => {
+                    [0, 1, 2, 3].map(|i| dptr_mut(&mut h[i], &st))
+                }
+                _ => [0; 4],
+            };
             let conv = |dev: &Dev,
                         cw: &ConvW,
                         x: u64,
-                        state: &mut [CudaSlice<f32>; 2],
+                        (state, hist): (&mut [CudaSlice<f32>; 2], u64),
                         dynamic: u64,
                         add: u64,
                         out: u64|
@@ -2741,11 +3060,12 @@ impl Route {
                     dptr_mut(&mut state[1 - cur], &st)
                 };
                 dev.launched("memra_ink2g_conv", unsafe {
-                    ffi::memra_ink2g_conv(
+                    ffi::memra_ink2g_conv_rows(
                         i32::from(cw.dynamic.is_some()),
                         x as *const f32,
                         state_in as *const f32,
                         state_out as *mut f32,
+                        hist as *mut f32,
                         dptr(&cw.taps, &st) as *const f32,
                         dynamic as *const f32,
                         cw.dynamic.as_ref().map_or(0, |d| d.1 as i32),
@@ -2765,7 +3085,7 @@ impl Route {
                 dev,
                 &lw.kconv,
                 dptr(&w.kp, &st),
-                &mut ss.conv[0],
+                (&mut ss.conv[0], hp[0]),
                 dptr(&w.dynk, &st),
                 0,
                 kcv,
@@ -2774,7 +3094,7 @@ impl Route {
                 dev,
                 &lw.vconv,
                 dptr(&w.vp, &st),
-                &mut ss.conv[1],
+                (&mut ss.conv[1], hp[1]),
                 dptr(&w.dynv, &st),
                 0,
                 vcv,
@@ -2948,7 +3268,7 @@ impl Route {
                     dev,
                     &lw.oconv,
                     dptr(&w.proj, &st),
-                    &mut ss.conv[2],
+                    (&mut ss.conv[2], hp[2]),
                     0,
                     0,
                     h_mut,
@@ -2958,7 +3278,7 @@ impl Route {
                     dev,
                     &lw.oconv,
                     dptr(&w.proj, &st),
-                    &mut ss.conv[2],
+                    (&mut ss.conv[2], hp[2]),
                     0,
                     h_mut,
                     h_mut,
@@ -3045,7 +3365,7 @@ impl Route {
                 dev,
                 &lw.mconv,
                 dptr(&w.moe, &st),
-                &mut ss.conv[3],
+                (&mut ss.conv[3], hp[3]),
                 0,
                 h_mut,
                 h_mut,
@@ -3100,6 +3420,11 @@ impl Route {
             let n = plan.layers.len() as u32;
             o.floats(n, Tap::FinalHidden, &dev.down(&w.mn, 0, rows * hidden)?);
         }
+        if let Some(c) = tap_capture.as_mut() {
+            let tap = c.slots.len();
+            let dst = dptr_mut(&mut c.buf, &st) + ((tap * chunk * hidden) * 4) as u64;
+            dev.copy_raw(dst, dptr(&w.mn, &st), rows * hidden * 4)?;
+        }
         let mut out = CallOut {
             argmax: Vec::new(),
             logits: Vec::new(),
@@ -3107,7 +3432,7 @@ impl Route {
         let first = match head {
             Head::None => rows,
             Head::LastArgmax => rows - 1,
-            Head::All => 0,
+            Head::All | Head::AllArgmax => 0,
         };
         let mut at = first;
         while at < rows {
@@ -3137,7 +3462,7 @@ impl Route {
             if !capture {
                 out.argmax.extend(dev.down(&w.best, 0, n)?);
             }
-            if head == Head::All {
+            if head == Head::All && !capture {
                 out.logits.extend(dev.down(&w.logits, 0, n * keep)?);
             }
             at += n;
