@@ -1,0 +1,17 @@
+# e7204c97a0's memra-reference (old NaN handling) run against the regenerated goldens: the non-finite records fail
+test inkling2_actquant::tests::a_zero_row_has_no_amax_epsilon ... ok
+test inkling2_actquant::tests::e2m1_and_e4m3_rounding_match_the_goldens ... ok
+test inkling2_actquant::tests::mxfp8_act_quant_is_bit_identical_to_the_goldens ... FAILED
+test inkling2_actquant::tests::nvfp4_act_quant_is_bit_identical_to_the_goldens ... FAILED
+test inkling2_actquant::tests::expert_block_matches_the_chain_goldens ... ok
+test inkling2_actquant::tests::chain_models_equal_the_sm120_capture ... ok
+test inkling2_actquant::tests::expert_gemms_match_the_index_order_goldens ... ok
+thread 'inkling2_actquant::tests::mxfp8_act_quant_is_bit_identical_to_the_goldens' (1868632) panicked at crates/memra-reference/src/inkling2_actquant.rs:722:17:
+assertion `left == right` failed: mxfp8q/nonfinite row 2 values
+  left: [231, 219, 227, 126, 101, 100, 109, 217, 252, 227, 97, 240, 228, 100, 94, 217, 248, 106, 108, 77, 240, 227, 236 ...]
+ right: [231, 219, 227, 127, 101, 100, 109, 217, 252, 227, 97, 240, 228, 100, 94, 217, 248, 106, 108, 77, 240, 227, 236, 209, 102, 116, 100, 85, 112, 107, 226, 109, 233, 247, 236, 101, 113, 229, 246, 118, 233, 198, 113, 243, 248, 110, 122, 110, 109, 243, 116, 245, 224, 104, 103, 126, 239, 120, 217, 249, 120, 243, 248, 111, 237, 234, 231, 227, 117, 238, 96, 94, 91, 88, 102, 237, 238, 114, 243, 244, 240, 240, 242, 233, 113, 107, 114, 70, 210, 232, 118, 243, 249, 107, 232, 225, 94, 112, 239, 246, 231, 249, 248, 229, 97, 109, 119, 108, 238, 242, 233, 241, 248, 242, 113, 248, 111, 226, 241, 243, 251, 245, 109, 93, 106, 105, 244, 239, 239, 230, 243, 104, 244, 248, 208, 116, 249, 229, 108, 252, 233, 220, 113, 105, 240, 233, 113, 249, 86, 218, 105, 252, 236, 237, 247, 237, 221, 249, 233, 100, 232, 225, 227, 247, 100, 240, 105, 115, 228, 115, 232, 242, 97, 85, 202, 111, 246, 228, 243, 116, 114, 90, 236, 233, 226, 241, 105, 104, 245, 82, 230, 215, 104, 243, 114, 68, 120, 114, 242, 226, 123, 248, 108, 209, 213, 102, 240, 93, 116, 246, 238, 225, 237, 194, 121, 115, 242, 104, 115, 116, 90, 245, 107, 247, 231, 194, 229, 221, 90, 98, 234, 223, 239, 114, 94, 89, 233, 106, 229, 99, 235, 31, 214, 108, 94, 218, 120, 233, 217, 112, 245, 107, 98, 232, 106, 221]
+thread 'inkling2_actquant::tests::nvfp4_act_quant_is_bit_identical_to_the_goldens' (1868633) panicked at crates/memra-reference/src/inkling2_actquant.rs:691:17:
+assertion `left == right` failed: nvfp4q/nonfinite row 3 scales
+  left: [115, 0, 120, 119, 119, 117, 113, 121, 113, 116, 120, 115, 112, 114, 120, 119] ...]
+ right: [115, 126, 120, 119, 119, 117, 113, 121, 113, 116, 120, 115, 112, 114, 120, 119]
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 138 filtered out; finished in 0.15s

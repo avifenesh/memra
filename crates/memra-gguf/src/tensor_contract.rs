@@ -350,6 +350,12 @@ pub enum QuantConstraint {
     Fp8Row32,
     /// FP8 e4m3 with one F32 scale per whole row (hy_v4_flash Engram tables).
     Fp8RowF32,
+    /// Stacked NVFP4 bank whose per-expert factor is `amax / outer_scale_denominator`
+    /// (Inkling 2 experts, layers 0-19).
+    Nvfp4Amax,
+    /// Stacked MXFP8 bank: e4m3 values, one ue8m0 exponent byte per 32 inputs of each row
+    /// (Inkling 2 experts, layers 20-23).
+    Mxfp8Row32,
     I64,
     I32,
 }
@@ -795,10 +801,12 @@ pub(crate) fn rope_factor_width(plan: &ModelPlan) -> Option<u32> {
             },
             // CSA2 rotates with YaRN factors derived from config, never checkpoint factors.
             // CSA2 rotates with YaRN factors derived from config; Hy4-flash with plain RoPE.
+            // Relative-bias attention has no rotary factors at all.
             AttentionPlan::GatedDeltaNet(_)
             | AttentionPlan::KimiDeltaNet(_)
             | AttentionPlan::Csa2(_)
-            | AttentionPlan::HyV4(_) => None,
+            | AttentionPlan::HyV4(_)
+            | AttentionPlan::RelativeBias(_) => None,
         })
         .max()
 }
@@ -844,6 +852,16 @@ impl QuantConstraint {
                     if layout.format == "FP8_E4M3"
                         && shape.len() == 2
                         && layout.block_shape == [1, shape[1] as u32]
+            ),
+            Self::Nvfp4Amax => matches!(
+                storage,
+                StorageLayout::Quantized(layout)
+                    if layout.format == "NVFP4_AMAX" && layout.block_shape == [16]
+            ),
+            Self::Mxfp8Row32 => matches!(
+                storage,
+                StorageLayout::Quantized(layout)
+                    if layout.format == "MXFP8_E4M3" && layout.block_shape == [1, 32]
             ),
             Self::I64 => matches!(storage, StorageLayout::Integer(IntegerType::I64)),
             Self::I32 => matches!(storage, StorageLayout::Integer(IntegerType::I32)),
@@ -1132,6 +1150,12 @@ fn add_layer(
         AttentionPlan::HyV4(_) => {
             return Err(TensorContractError::UnsupportedPlanOperation {
                 operation: "Hy4-flash attention in the canonical tensor schema",
+            });
+        }
+        // Pack-owned names too (`model_packs::inkling2`).
+        AttentionPlan::RelativeBias(_) => {
+            return Err(TensorContractError::UnsupportedPlanOperation {
+                operation: "relative-bias attention in the canonical tensor schema",
             });
         }
     }

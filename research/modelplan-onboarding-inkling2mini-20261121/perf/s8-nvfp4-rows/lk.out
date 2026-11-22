@@ -1,0 +1,26 @@
+gpulock: 5090 leased as claude-code-20261121T225855-837046 for 30m
+samples=8 clamp_hits=1 P4, 472 MHz, 9001 MHz, 26.58 W, 175.00 W, 0x0000000000000400
+UNSURE
+CLAMP_RC=2
+Job for nvidia-powerd.service failed because start of the service was attempted too often.
+See "systemctl status nvidia-powerd.service" and "journalctl -xeu nvidia-powerd.service" for details.
+To force a start use "systemctl reset-failed nvidia-powerd.service"
+followed by "systemctl start nvidia-powerd.service" again.
+waitfor: until bash /home/avifenesh/.cache/inkling2mini/ceiling/clampcheck.sh (deadline 1m00s, every 15s)
+waitfor: MET after 0m02s
+CLAMP_AFTER=0
+GATE_RC=0
+ink2-gpu-gate: ALL OK (36 cells, 0 skipped)
+ink2g-gemv-rows [m=2 n=520 k=2304] BF16 and dense NVFP4, the multi-row GEMV vs the #1397 tile kernel bit-differ=0 OK
+ink2g-gemv-rows [m=3 n=384 k=2304] BF16 and dense NVFP4, the multi-row GEMV vs the #1397 tile kernel bit-differ=0 OK
+ink2g-gemv-rows [m=5 n=2304 k=3072] BF16 and dense NVFP4, the multi-row GEMV vs the #1397 tile kernel bit-differ=0 OK
+ink2g-gemv-rows [m=8 n=1030 k=2304] BF16 and dense NVFP4, the multi-row GEMV vs the #1397 tile kernel bit-differ=0 OK
+ink2g-prec-adopted [Prec { controller: 1, mix: 0, norm: 1, conv: 0, router: 0, epilogue: 0, attn: 3 }] f32 norm max rel=1.618e-7, f32 controller max rel=5.544e-7, output gate (f64) max rel=5.818e-8 (bound 5e-5) OK
+RC shipped base=0
+RC shipped new=0
+RC float base=0
+RC float new=0
+RC nvfp4-rig base=0
+RC nvfp4-rig new=0
+NSYS_nvfp4-rig=0
+NSYS_shipped=0

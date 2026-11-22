@@ -1,0 +1,14 @@
+== shipped-r1 {1: 57}
+  R=1 kernel us/call median 15388, wall 21319; top: ink2g_gemv_bf16_kernel 4869, ink2_expert_gemm_kerne 4674, ink2g_mix_dot_kernel 1021, ink2g_norm_kernel 744, ink2g_attn_t4_kernel 735, ink2g_ctrl_up_kernel 628, ink2g_ctrl_down_kernel 576, ink2g_conv_kernel 540
+== shipped-r2 {2: 13, 1: 31}
+  R=1 kernel us/call median 15523, wall 21913; top: ink2g_gemv_bf16_kernel 4852, ink2_expert_gemm_kerne 4694, ink2g_mix_dot_kernel 1002, ink2g_attn_t4_kernel 918, ink2g_norm_kernel 738, ink2g_ctrl_up_kernel 618, ink2g_ctrl_down_kernel 567, ink2g_conv_kernel 529
+  R=2 kernel us/call median 20203, wall 29567; top: ink2_expert_gemm_kerne 7472, ink2g_gemv_rows_kernel 6921, ink2g_mix_dot_kernel 1032, ink2g_norm_kernel 746, ink2g_conv_kernel 643, ink2g_ctrl_up_kernel 635, ink2g_ctrl_down_kernel 592, ink2g_attn_t4_kernel 519
+== shipped-r4 {4: 6, 2: 1, 1: 31}
+  R=1 kernel us/call median 15540, wall 21591; top: ink2g_gemv_bf16_kernel 4857, ink2_expert_gemm_kerne 4681, ink2g_mix_dot_kernel 1009, ink2g_attn_t4_kernel 921, ink2g_norm_kernel 737, ink2g_ctrl_up_kernel 622, ink2g_ctrl_down_kernel 569, ink2g_conv_kernel 530
+  R=2 kernel us/call median 20902, wall 29970; top: ink2_expert_gemm_kerne 8005, ink2g_gemv_rows_kernel 6879, ink2g_mix_dot_kernel 1020, ink2g_norm_kernel 740, ink2g_attn_t4_kernel 706, ink2g_conv_kernel 643, ink2g_ctrl_up_kernel 627, ink2g_ctrl_down_kernel 591
+  R=4 kernel us/call median 28121, wall 42044; top: ink2_expert_gemm_kerne 11401, ink2g_gemv_rows_kernel 10290, ink2g_mix_dot_kernel 1068, ink2g_ctrl_up_kernel 838, ink2g_conv_kernel 812, ink2g_norm_kernel 744, ink2g_ctrl_down_kernel 626, ink2g_attn_t4_kernel 490
+Traceback (most recent call last):
+  File "/home/avifenesh/.cache/inkling2mini/perf/rows3.py", line 5, in <module>
+    rows=db.execute('select k.start,k.end,s.value,k.gridX,k.gridY,k.gridZ from CUPTI_ACTIVITY_KIND_KERNEL k join StringIds s on k.shortName=s.id order by k.start').fetchall()
+         ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.OperationalError: no such table: CUPTI_ACTIVITY_KIND_KERNEL

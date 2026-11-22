@@ -20,6 +20,9 @@ pub mod glm_dsa;
 pub mod hy3;
 /// Hy4-flash: its own config, typed plan and census; the canonical compiler refuses it.
 pub mod hy_v4_flash;
+/// Inkling 2: its own config, looped plan and census; the declared activation-quantized program
+/// is the default numeric class.
+pub mod inkling2;
 pub mod llama_dense;
 pub mod mimo_v2;
 pub mod minimax_m3;
@@ -163,12 +166,24 @@ pub enum TensorConsumption {
     Refuse,
 }
 
+/// A safetensors file outside the shard index (a drafter shipped beside the model, say). Its
+/// tensors enter the census as `prefix` + their name in the file, which keeps them apart from the
+/// indexed names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuxiliaryTensorFile {
+    pub file: &'static str,
+    pub prefix: &'static str,
+}
+
 pub struct ModelPack {
     pub family: &'static str,
     /// Output-head ownership when the head tensor is absent.
     pub output_head: OutputHeadContract,
     /// Loader policy for bound tensors that were never consumed.
     pub tensor_consumption: TensorConsumption,
+    /// Weight files of the checkpoint that its shard index does not list. A source reads their
+    /// headers too, so the census and the contract cover them.
+    pub auxiliary_files: &'static [AuxiliaryTensorFile],
     pub aliases: &'static [&'static str],
     pub config_layout: ConfigLayout,
     pub tokenizer_sources: &'static [TokenizerSource],
@@ -273,6 +288,7 @@ pub const PACKS: &[&ModelPack] = &[
     &deepseek_v4::PACK,
     &deepseek_v4::DSPARK_PACK,
     &deepseek_v41::PACK,
+    &inkling2::PACK,
     &qwen4_exp::PACK,
     &step35::PACK,
     &hy3::PACK,
@@ -451,14 +467,17 @@ mod tests {
                         c.numeric_class
                     );
                 }
-                let gate = pack
-                    .checkpoint_parity
-                    .expect("native reference packs require a checkpoint parity gate");
-                assert!(gate.max_abs >= 0.0 && gate.max_rel >= 0.0);
-                assert!(
-                    gate.max_abs > 0.0 || gate.max_rel > 0.0,
-                    "checkpoint parity gate must carry a positive absolute or relative bound"
-                );
+                // A supported pack may declare no band at all: `verify checkpoint` then refuses
+                // it, and its tiny fixtures carry their own comparison (memra-reference
+                // `TinyGate`; the tiny gate fails a fixture that asks for a band the pack lacks).
+                // A declared band is positive.
+                if let Some(gate) = pack.checkpoint_parity {
+                    assert!(gate.max_abs >= 0.0 && gate.max_rel >= 0.0);
+                    assert!(
+                        gate.max_abs > 0.0 || gate.max_rel > 0.0,
+                        "checkpoint parity gate must carry a positive absolute or relative bound"
+                    );
+                }
             }
         }
     }

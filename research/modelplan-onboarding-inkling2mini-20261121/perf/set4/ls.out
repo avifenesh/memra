@@ -1,0 +1,13 @@
+gpulock: 5090 leased as claude-code-20261122T012210-3603051 for 70m
+GATE_RC=0
+ink2-gpu-gate: ALL OK (36 cells, 0 skipped)
+RC_p3=0
+RC s3 controller=f32,norm=f32,attn=f32,conv=f32c=0
+RC s3 controller=f32,norm=f32,attn=f32t=0
+RC s3 controller=f32,norm=f32,attn=f32t,conv=f32c=0
+RC s3 controller=f32,norm=f32,attn=f32t,conv=f32c,mix=f32=0
+RC s3 controller=f32,norm=f32,attn=f32t,conv=f32c,router=f32c=0
+RC s3 controller=f32,norm=f32,attn=f64g,mix=f32,conv=f32c,router=f32c=0
+RC_rawdoc=0
+RC_chatwrap=0
+RC_p2=0

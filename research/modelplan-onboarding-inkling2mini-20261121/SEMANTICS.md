@@ -3,7 +3,9 @@
 Read from `config.json`, `hf_quant_config.json`, the safetensors headers, llama.cpp at
 `29b52d398b29` (`inkling2.cpp`, `inkling2-loop.cpp`), transformers PR 51050 at `6173a2f679ff`
 and the model code of the vendor's serving image (the files listed in `sources.lock.json`).
-Nothing here was executed by memra.
+The reference executor (memra-reference `inkling2`) runs this program on CPU; what its tests
+prove is listed under [Proven by the reference tests](#proven-by-the-reference-tests). No tuned
+surface runs any of it.
 
 There are two numeric classes. The **declared** class is the program `hf_quant_config.json`
 requires: the routed experts take quantized inputs. It is the default and the support target.
@@ -103,9 +105,10 @@ Float-activation class (the transformers PR and llama.cpp; bring-up only):
 - llama.cpp normalizes the routing weights with an epsilon of 1e-20.
 
 In exact arithmetic the two placements of the routing weight are equal; under input
-quantization or BF16 rounding they are not. Which rows of `w13` are gate and which are up, and
-the declared class's placement, are read from code and listed as open below until a test
-proves them.
+quantization or BF16 rounding they are not. Which rows of `w13` are gate and which are up is
+proven below. The declared class's placement is implemented by the activation-quant reference
+and pinned by its goldens, a port of the serving image's ops; it stays open against a serving
+binary.
 
 ## Stored quantization
 
@@ -132,15 +135,87 @@ proves them.
 window 1024, `markov_head_type: rnn_hidden`, `target_layer_ids [5, 23, 41, 48]`. Neither
 reference implements it.
 
+## Read from reference code, not yet proven
+
+These come from the model code of the vendor's serving image (the only public source of the
+declared numeric class and the drafter). Each one is typed in the plan as the reading a test has
+to confirm, and becomes a program fact only when a test proves it. The MoE readings (where the
+expert inputs are quantized, the routing weight before the down projection, no normalization
+epsilon, ties to the lower index) are in [MoE](#moe) under the declared class; the plan fields
+`routed_weight_before_down` and `gate_up_interleaved` carry two of them and say so in their
+doc comments.
+
+- Drafter taps `[5, 23, 41, 48]` count layer visits in execution order and read the INPUT of
+  the visit (the running residual stream): as cache slots they are the inputs of slots 5, 29 and
+  47, plus the final normed hidden. The drafter has a learned mask embedding, a fuse matrix over
+  the taps, context K/V projections, a recurrent Markov head and no confidence head, so it is not
+  the `DsparkPlan` program.
+
+## Proven by the reference tests
+
+Each line is a test of `crates/memra-reference/src/inkling2/tests.rs` against one module of the
+float-activation implementation run alone in f64, with the misreading run against the same
+record as a red arm. The table of tests, records and red arms is in
+[`reference/README.md`](reference/README.md#facts-proven-one-test-each).
+
+- `w13` rows are interleaved: row `2j` is gate `j`, row `2j + 1` is up `j`.
+- The sliding window counts the current token: the query sees itself and `window - 1` positions
+  back. A sliding layer's table ends its window; a full layer gives keys at or past its table a
+  zero bias.
+- The sink is one more logit per query and head in the softmax denominator, with no value row.
+  Subtracting the sink from the bias with a zero sink is the same function only when it comes
+  off the bias of every attended key, the zero-bias keys past the table included.
+- Static short-convolution taps run oldest input first, so the last tap weights the current
+  token. The static taps of a full layer's K and V convolutions run the other way, indexed by
+  lag with the current token first, like the dynamic taps. The state of a convolution is its
+  last three inputs.
+- `tau` is 1 through position `floor - 1` and `1 + alpha * ln((pos + 1) / floor)` from position
+  `floor` on, applied to Q and R of full layers after their clips.
+- The message queries of core layer `i` are rows `2i` (q) and `2i + 1` (mlp) of
+  `middle_cycle_cross_pass_queries` and rows `2i` (k) and `2i + 1` (v) of
+  `middle_cycle_cross_pass_kv_queries`.
+- NVFP4: the even element of a byte is its low nibble; the value is
+  `val(code) * e4m3(scale) * amax / denominator`, equal to the PR's dequantizer bit for bit in
+  f32. MXFP8: `e4m3(value) * 2^(scale - 127)`.
+- On float inputs the routing weight before or after the down projection is one function up to
+  rounding.
+- The whole trunk: on a tiny checkpoint in the real layout the executor's logits equal the f64
+  oracle's (the PR's trunk in f64 with a lane-written expert module; the PR program with
+  nothing replaced is 4.8e-5 from it) to the bit after rounding to f32, as one prefill chunk and
+  under three schedules that split the request at and around the window, the extent and the
+  floor. That run also pins the message bank, the Q-side sink and the place of the MLP
+  controller, which no module record sees
+  ([`reference/README.md`](reference/README.md#what-the-tiny-gate-runs)).
+
+Router ties are not provable against the PR, whose `torch.topk` leaves the order unspecified.
+The executor takes the lower expert index, the serving image's rule.
+
+## Closed from the bytes
+
+- **The MXFP8 scale grid is one exponent per row per 32 inputs.** `hf_quant_config.json`
+  declares `weight_block_shape [32, 32]` for the MXFP8 group. If the stored planes were a 32x32
+  grid repeated over rows, every aligned group of 32 rows would hold 32 identical rows.
+  [`mxfp8_scale_grid.py`](mxfp8_scale_grid.py) reads all 8 scale planes of layers 20-23:
+  none of the 73,728 aligned groups is uniform. In the four `w13` planes every one of the 31
+  other rows of every group differs from the group's first row; in the four `w2` planes all but
+  5 of 1,142,784 do ([`mxfp8-scale-grid.tsv`](mxfp8-scale-grid.tsv); exponents 113 to 118). So the stored scales have no 32-row block, and the program dequantizes with the
+  stored per-row exponents. The reader types this as one explicit reading
+  (`WeightBlock::Mxfp8Declared32x32StoredRow32`): `[32, 32]` is accepted only on an MXFP8 group
+  and only with that meaning, any other shape is refused, and the census pins the stored grid on
+  its own (`MXFP8_E4M3`, block 1x32). What the first 32 of the declaration meant to its writer
+  is not known and does not enter the program.
+
 ## Open facts
 
 | # | Fact | How it closes |
 |---|---|---|
 | 1 | The exact activation-quantization program of the default class: which expert inputs are quantized, the per-token amax, the `fouroversix_mae` selection rule, rounding ties | extraction from the vLLM image; the float-activation class stays a bring-up oracle |
-| 2 | The drafter program: the meaning of slots `[5, 23, 41, 48]` (48 read as the final hidden), `fuse_weight`, the RNN head, the `_ctx` projections | extraction from the vLLM image |
-| 3 | Whether the sliding window counts the current token (transformers mask against llama.cpp `n_swa`) | tiny fixture run past the window |
-| 4 | The sink form: llama.cpp subtracts the sink from the bias and uses a zero sink; on paper this equals the PR's form | tiny fixture |
-| 5 | NVFP4 nibble order and e4m3 scale decode | one expert dequantized against the PR's op, bit for bit |
-| 6 | The MXFP8 group declares `weight_block_shape [32, 32]` and stores one exponent per row per 32 inputs (`census-groups.tsv`). Whether the stored planes are a 32x32 grid repeated over rows | read the scale planes: a repeated grid makes every aligned 32-row group uniform |
+| 2 | The drafter program, read from the image's code (above) and not yet typed as an executable plan | a drafter plan with its own reference implementation and oracle |
+| 3 | closed: see "Proven by the reference tests" (the window edge) | |
+| 4 | closed: see "Proven by the reference tests" (the sink form, and when the two spellings are equal) | |
+| 5 | closed: see "Proven by the reference tests" (NVFP4 nibble order and e4m3 decode) | |
+| 6 | closed: see "Closed from the bytes" (the MXFP8 scale grid) | |
 | 7 | Whether single-term BF16 GEMM inputs hold the argmax | checkpoint parity on the GPU class |
-| 8 | Top-k tie order in the router | pinned to index order; checked against the oracle |
+| 8 | Top-k tie order in the router, read as lower index first, and the declared class's normalization without an epsilon. The PR cannot close it: its `torch.topk` leaves tie order unspecified | captured vectors of the declared class |
+| 9 | closed: see "Proven by the reference tests" (the interleave direction) | |
+| 10 | Whether the routing weight enters before the down projection in the declared class | captured vectors of the declared class |

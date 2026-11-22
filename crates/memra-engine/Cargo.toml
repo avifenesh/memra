@@ -35,6 +35,22 @@ base64 = "0.22"
 serde_json = "1"
 
 [[bin]]
+name = "ink2-actq-gate"
+path = "src/bin/ink2_actq_gate.rs"
+
+[[bin]]
+name = "ink2-gpu"
+path = "src/bin/ink2_gpu.rs"
+
+[[bin]]
+name = "ink2-gpu-gate"
+path = "src/bin/ink2_gpu_gate.rs"
+
+[[bin]]
+name = "ink2-spec"
+path = "src/bin/ink2_spec.rs"
+
+[[bin]]
 name = "storage-bench"
 path = "src/bin/storage_bench.rs"
 

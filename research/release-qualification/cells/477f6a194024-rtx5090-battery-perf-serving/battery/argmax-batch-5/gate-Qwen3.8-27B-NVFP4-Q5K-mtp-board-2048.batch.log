@@ -1,0 +1,44 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+argmax-margin-probe: T=2048 window=12 sm_count=82 model=/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+env: MEMRA_FA_SPLIT=<unset> MEMRA_Q80_G2=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset>
+decode program: served batch B=1 (decode_step_batch_sampled_lean_masked, greedy device sample, lean) batch_program=Generic MEMRA_SERVE_B1FAST=<unset>
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 73728 ml_len 24 -> 288 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 73728 -> 147456 ml_len 288 -> 576 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 147456 -> 294912 ml_len 576 -> 1152 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 294912 -> 589824 ml_len 1152 -> 2304 (retired kept, zero=false)
+
+pos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree
+2036     24822         1.090445423e1    24822        1.091394901e1    5.420684814e-3   yes
+2037     63            2.095954895e0    63           2.158823013e0    6.252098083e-2   yes
+2038     318           4.975013733e-1   318          6.029376984e-1   9.060287476e-2   yes
+2039     77            6.622791290e-1   77           7.033462524e-1   3.745269775e-2   yes
+2040     40049         5.847123146e0    40049        5.982575417e0    1.186981201e-1   yes
+2041     681           5.187492371e-1   681          5.396270752e-1   6.691551208e-2   yes
+2042     681           7.433319092e-1   681          7.260284424e-1   1.697158813e-2   yes
+2043     11069         4.842796326e-1   11069        4.334945679e-1   5.729293823e-2   yes
+2044     264           2.461299896e0    264          2.658355713e0    1.705532074e-1   yes
+2045     2972          1.387479782e0    2972         1.399312973e0    6.833648682e-2   yes
+2046     42714         2.579936981e0    42714        2.634328842e0    7.433700562e-2   yes
+2047     485           9.376869202e-1   485          6.835575104e-1   1.772193909e-1   yes
+
+rows in detail (top-2 ids, text, logits; each program's logit at the other's top-1):
+detail pos=2036 prefill: top1=24822 ".rs" 25.3366 top2=3667 "-r" 14.4322 margin=10.9045 at-decode-top1=25.3366 | decode: top1=24822 ".rs" 25.3421 top2=3667 "-r" 14.4281 margin=10.9139 at-prefill-top1=25.3421 | spread=0.0054 gap_shift=0.0095
+detail pos=2037 prefill: top1=63 "`" 23.2832 top2=7561 "`," 21.1872 margin=2.0960 at-decode-top1=23.2832 | decode: top1=63 "`" 23.3457 top2=7561 "`," 21.1869 margin=2.1588 at-prefill-top1=23.3457 | spread=0.0625 gap_shift=0.0629
+detail pos=2038 prefill: top1=318 " (" 21.9286 top2=11069 " →" 21.4311 margin=0.4975 at-decode-top1=21.9286 | decode: top1=318 " (" 21.9435 top2=11069 " →" 21.3405 margin=0.6029 at-prefill-top1=21.9435 | spread=0.0906 gap_shift=0.1054
+detail pos=2039 prefill: top1=77 "n" 18.7533 top2=35716 "nv" 18.0910 margin=0.6623 at-decode-top1=18.7533 | decode: top1=77 "n" 18.7907 top2=35716 "nv" 18.0874 margin=0.7033 at-prefill-top1=18.7907 | spread=0.0375 gap_shift=0.0411
+detail pos=2040 prefill: top1=40049 "inja" 20.6788 top2=38766 "vidia" 14.8317 margin=5.8471 at-decode-top1=20.6788 | decode: top1=40049 "inja" 20.7975 top2=38766 "vidia" 14.8149 margin=5.9826 at-prefill-top1=20.7975 | spread=0.1187 gap_shift=0.1355
+detail pos=2041 prefill: top1=681 ")," 17.7783 top2=8 ")" 17.2595 margin=0.5187 at-decode-top1=17.7783 | decode: top1=681 ")," 17.7323 top2=8 ")" 17.1926 margin=0.5396 at-prefill-top1=17.7323 | spread=0.0669 gap_shift=0.0209
+detail pos=2042 prefill: top1=681 ")," 21.2676 top2=8 ")" 20.5242 margin=0.7433 at-decode-top1=21.2676 | decode: top1=681 ")," 21.2506 top2=8 ")" 20.5246 margin=0.7260 at-prefill-top1=21.2506 | spread=0.0170 gap_shift=0.0173
+detail pos=2043 prefill: top1=11069 " →" 22.9460 top2=1083 " into" 22.4617 margin=0.4843 at-decode-top1=22.9460 | decode: top1=11069 " →" 22.9525 top2=1083 " into" 22.5190 margin=0.4335 at-prefill-top1=22.9525 | spread=0.0573 gap_shift=0.0508
+detail pos=2044 prefill: top1=264 " a" 23.2856 top2=799 " one" 20.8243 margin=2.4613 at-decode-top1=23.2856 | decode: top1=264 " a" 23.3121 top2=799 " one" 20.6537 margin=2.6584 at-prefill-top1=23.3121 | spread=0.1706 gap_shift=0.1971
+detail pos=2045 prefill: top1=2972 " **" 22.0372 top2=8400 " fat" 20.6497 margin=1.3875 at-decode-top1=22.0372 | decode: top1=2972 " **" 22.1055 top2=8400 " fat" 20.7062 margin=1.3993 at-prefill-top1=22.1055 | spread=0.0683 gap_shift=0.0118
+detail pos=2046 prefill: top1=42714 "fat" 23.8720 top2=63 "`" 21.2920 margin=2.5799 at-decode-top1=23.8720 | decode: top1=42714 "fat" 23.8520 top2=63 "`" 21.2177 margin=2.6343 at-prefill-top1=23.8520 | spread=0.0743 gap_shift=0.0544
+detail pos=2047 prefill: top1=485 "str" 14.4321 top2=332 "**" 13.4944 margin=0.9377 at-decode-top1=14.4321 | decode: top1=485 "str" 14.3552 top2=332 "**" 13.6717 margin=0.6836 at-prefill-top1=14.3552 | spread=0.1772 gap_shift=0.2541
+
+margin distribution (decode config, 12 positions): min 0.4335  p10 0.5396  p50 1.3993  p90 5.9826  max 10.9139
+margin distribution (prefill config): min 0.4843  p50 1.3875  max 10.9045
+DECISION POSITION (the gate's): prefill_top1=485 decode_top1=485 margin_p=0.9377 margin_d=0.6836 config_delta_at_ids=0.1772 gap_shift=0.2541
+agreement across sampled positions: 12/12 (0 flip(s))
+largest gap shift at an agreeing row: 2.541294098e-1 at row 2047 (12 agreeing rows; this is the floor when the window is the whole prompt)
+SERVED-ARGMAX: rows=12 device_mismatch=0

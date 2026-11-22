@@ -1622,6 +1622,7 @@ mod tests {
             dsv4: None,
             dsv41: None,
             hy_v4_flash: None,
+            inkling2: None,
             mimo: None,
             qwen4exp: None,
             qwen35_vision: None,

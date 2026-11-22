@@ -1,0 +1,8 @@
+[server] build: memra-0.141.1-c8d105dc370b (id: source-tree, git: f788a5055c8c)
+[server] starting; models config = [("ink2", "/home/avifenesh/models/inkling2-mini", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "ink2" <- /home/avifenesh/models/inkling2-mini
+[server] FATAL: worker init failed: load ink2: rewrite bundle /home/avifenesh/.cache/inkling2mini/wt-serve/research/modelplan-onboarding-inkling2mini-20261121/serve/verify-serve: artifact.lock plan_sha256 Some("b66d8356c1cacd7751c14935f6d3fbafca04549df203032c6e177496435daf7a") is not this binary's plan fd41055fbb0d1a092dadfb3d8417a1aea98a9868f95181b40ad4a93279e3c5c6

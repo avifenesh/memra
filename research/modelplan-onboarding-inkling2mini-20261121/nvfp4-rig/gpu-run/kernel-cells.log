@@ -1,0 +1,22 @@
+ink2g-gemm-bf16 [m=70 n=200 k=320] max|err|/sum|p|=7.236e-8 (bound 3.815e-5); rows alone (decode GEMV) vs in the call (tile GEMM) bit-differ=0 OK
+ink2g-gemm-nvfp4-dense [m=70 n=200 k=2304] minted by the class's quantizer: max|err|/sum|p| vs c*s*t = 5.331e-8 (bound 2.747e-4); the reference's fl32(c*fl32(s*t)) weights 2.548e-9 (bound 2^-23); rows alone (decode GEMV) vs in the call bit-differ=0 OK
+ink2g-kv-e4m3 [rows=9 kv_heads=8 dim=128 ring cap=16] key clip and value norm into the e4m3 cache: bytes differing from round-to-nearest-even of the f32 cache's values = 0 OK
+ink2g-attn-e4m3 [rows=5 heads=24 kv_heads=8 dim=128 keys=35] attention over the e4m3 cache vs the f32 kernel over its exact values: bit-differ=0 OK
+ink2g-gemm-nvfp4 [experts=5 n=130 k=96 pairs=150 tiles=5] max|err|/sum|p|=1.749e-7 (bound 1.168e-5); decode GEMV on device tiles vs the tile GEMM bit-differ=0 (red arm 0); red arm dequant-bf16: vs its own reference 1.433e-7, elements moved 19500/19500 OK
+ink2g-gemm-mxfp8 [experts=5 n=130 k=96 pairs=150 tiles=5] max|err|/sum|p|=2.110e-7 (bound 1.168e-5); decode GEMV on device tiles vs the tile GEMM bit-differ=0 (red arm 0); red arm dequant-bf16: vs its own reference 2.110e-7, elements moved 0/19500 OK
+ink2g-embed-norm [rows=9 hidden=2304] embed max rel=5.939e-8, norm max rel=5.877e-8 (one f32 rounding 1.2e-7) OK
+ink2g-mix [rows=7 states=4 queries=3] max rel=5.937e-8 OK
+ink2g-controller [rows=5 rank=64] max rel=5.878e-8 OK
+ink2g-heads [rows=6 heads=24 width=128] clip+scale+tau max rel=5.875e-8, value norm into a ring max rel=5.916e-8 OK
+ink2g-conv-static [rows=11 channels=1024 kernel=4] max rel=5.876e-8; calls of 5,1,1,3,1 vs one call bit-differ=0; red arm conv-state moved 6144/11264 OK
+ink2g-conv-dynamic [rows=11 channels=1024 kernel=4] max rel=5.931e-8; calls of 5,1,1,3,1 vs one call bit-differ=0; red arm conv-state moved 6144/11264 OK
+ink2g-attn-sliding [positions=40 window=8 extent=8 mask_beyond=true cache rows=16] max |err| / (|ref| + 1)=3.917e-8; calls of 8 vs calls of 1 bit-differ=0 OK
+ink2g-attn-full [positions=40 window=0 extent=12 mask_beyond=false cache rows=64] max |err| / (|ref| + 1)=3.913e-8; calls of 8 vs calls of 1 bit-differ=0 OK
+ink2g-attn-full-masked [positions=40 window=0 extent=12 mask_beyond=true cache rows=64] max |err| / (|ref| + 1)=3.967e-8; calls of 8 vs calls of 1 bit-differ=0 OK
+ink2g-attn-full-long [positions=2600 window=0 extent=12 mask_beyond=false cache rows=2600] max |err| / (|ref| + 1)=3.693e-8; calls of 8 vs calls of 1 bit-differ=0 OK
+ink2g-route [rows=9 experts=128 top_k=8] picks in rank order differ=0, weights max rel=5.846e-8; red arm ties-high moved 3/3 tied rows and no untied row OK
+ink2g-swiglu-sum-head SwiGLU max rel=5.921e-8, routed sum max rel=5.955e-8, softcap max rel=5.883e-8, argmax [777, 3] (first of equal maxima: [777, 3]) OK
+ink2g-moe-declared-nvfp4 [rows=9 top_k=4 hidden=256 width=128] vs the reference block: bf16 outputs equal 2304/2304 (worst row rel L2 0.000e0); one call per row vs one call bit-differ=0; red arms moved: weight-after-down 1762/2304, token-rows 2303/2304 OK
+ink2g-moe-declared-mxfp8 [rows=9 top_k=4 hidden=256 width=128] vs the reference block: bf16 outputs equal 2304/2304 (worst row rel L2 0.000e0); one call per row vs one call bit-differ=0; red arms moved: weight-after-down 2203/2304, token-rows 2303/2304 OK
+ink2g-load-refusals E8M0 0xFF, NVFP4 amax NaN / inf / 0 / negative, denominator 0: refused 6/6; valid planes accepted true OK
+ink2-gpu-gate: ALL OK (21 cells, 0 skipped)

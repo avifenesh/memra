@@ -1,0 +1,200 @@
+# arm /home/avifenesh/.cache/inkling2mini/actq-fix/runs/ink2-actq-gate.r3
+ink2-actq-nvfp4 [13 golden records, 434 rows] value-bytes-bad=0 scale-bytes-bad=0 amax-bad=0 OK
+ink2-actq-mxfp8 [5 golden records, 50 rows] value-bytes-bad=0 scale-bytes-bad=0 amax-bad=0 OK
+ink2-cvt-hw cvt.rn.satfinite.e4m3x2.f32 vs RNE goldens bad=0/1027; cvt.rn.satfinite.e2m1x2.f32 vs goldens bad=0/110; NaN, -NaN: hw e4m3 0x7f 0x7f, hw e2m1 0x7 0x7 (the software rounding: 0x7f 0x7f, 0x7 0x7) OK
+ink2-situ-actq-nvfp4 every-bf16 [rows=64 k=1024] bf16 rows differ from the f64 reference=0/65536; quantization of the device rows bit-bad=0; outputs within 2^-40 of a bf16 midpoint=0 OK
+ink2-situ-actq-nvfp4 window-117..133 [rows=4352 k=4352] bf16 rows differ from the f64 reference=0/18939904; quantization of the device rows bit-bad=0; outputs within 2^-40 of a bf16 midpoint=0 OK
+ink2-situ-actq-nvfp4 gauss [rows=16 k=1152] bf16 rows differ from the f64 reference=0/18432; quantization of the device rows bit-bad=0; outputs within 2^-40 of a bf16 midpoint=0 OK
+ink2-situ-actq-mxfp8 every-bf16 [rows=64 k=1024] bf16 rows differ from the f64 reference=0/65536; quantization of the device rows bit-bad=0; outputs within 2^-40 of a bf16 midpoint=0 OK
+ink2-situ-actq-mxfp8 window-117..133 [rows=4352 k=4352] bf16 rows differ from the f64 reference=0/18939904; quantization of the device rows bit-bad=0; outputs within 2^-40 of a bf16 midpoint=0 OK
+ink2-situ-actq-mxfp8 gauss [rows=16 k=1152] bf16 rows differ from the f64 reference=0/18432; quantization of the device rows bit-bad=0; outputs within 2^-40 of a bf16 midpoint=0 OK
+ink2-w4a4-gemm golden w4a4/k1152 [n=16 k=1152 rows=8 nb=1] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=64; over-bound=0 max|err|/sum|p|=1.098e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/k1152 [n=16 k=1152 rows=8 nb=2] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=64; over-bound=0 max|err|/sum|p|=1.098e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/k1152 [n=16 k=1152 rows=8 nb=4] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=64; over-bound=0 max|err|/sum|p|=1.098e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/k2304 [n=16 k=2304 rows=8 nb=1] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=44; over-bound=0 max|err|/sum|p|=1.011e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/k2304 [n=16 k=2304 rows=8 nb=2] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=44; over-bound=0 max|err|/sum|p|=1.011e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/k2304 [n=16 k=2304 rows=8 nb=4] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=44; over-bound=0 max|err|/sum|p|=1.011e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/small [n=32 k=128 rows=12 nb=1] acc: chain-model bit-equal=384/384 (gated) index-order bit-equal=380; over-bound=0 max|err|/sum|p|=2.748e-8 (bound 1.514e-5); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/small [n=32 k=128 rows=12 nb=2] acc: chain-model bit-equal=384/384 (gated) index-order bit-equal=380; over-bound=0 max|err|/sum|p|=2.748e-8 (bound 1.514e-5); epilogue bit-bad=0 OK
+ink2-w4a4-gemm golden w4a4/small [n=32 k=128 rows=12 nb=4] acc: chain-model bit-equal=384/384 (gated) index-order bit-equal=380; over-bound=0 max|err|/sum|p|=2.748e-8 (bound 1.514e-5); epilogue bit-bad=0 OK
+ink2-w4a4-gemm w13 decode M=1 [n=2304 k=2304 rows=8 nb=1] acc: chain-model bit-equal=18432/18432 (gated) index-order bit-equal=5850; over-bound=0 max|err|/sum|p|=1.351e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm w13 decode M=8 [n=2304 k=2304 rows=64 nb=1] acc: chain-model bit-equal=147456/147456 (gated) index-order bit-equal=47439; over-bound=0 max|err|/sum|p|=1.300e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm w13 prefill group [n=2304 k=2304 rows=40 nb=4] acc: chain-model bit-equal=92160/92160 (gated) index-order bit-equal=29245; over-bound=0 max|err|/sum|p|=1.597e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm w2 decode M=1 [n=2304 k=1152 rows=8 nb=1] acc: chain-model bit-equal=18432/18432 (gated) index-order bit-equal=10730; over-bound=0 max|err|/sum|p|=1.104e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm w2 decode M=8 [n=2304 k=1152 rows=64 nb=1] acc: chain-model bit-equal=147456/147456 (gated) index-order bit-equal=86710; over-bound=0 max|err|/sum|p|=1.621e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w4a4-gemm w2 prefill group [n=2304 k=1152 rows=40 nb=4] acc: chain-model bit-equal=92160/92160 (gated) index-order bit-equal=54137; over-bound=0 max|err|/sum|p|=1.361e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/k1152 [n=16 k=1152 rows=8 nb=1] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=4; over-bound=0 max|err|/sum|p|=6.823e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/k1152 [n=16 k=1152 rows=8 nb=2] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=4; over-bound=0 max|err|/sum|p|=6.823e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/k2304 [n=16 k=2304 rows=8 nb=1] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=4; over-bound=0 max|err|/sum|p|=8.175e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/k2304 [n=16 k=2304 rows=8 nb=2] acc: chain-model bit-equal=128/128 (gated) index-order bit-equal=4; over-bound=0 max|err|/sum|p|=8.175e-7 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/small [n=32 k=128 rows=12 nb=1] acc: chain-model bit-equal=384/384 (gated) index-order bit-equal=84; over-bound=0 max|err|/sum|p|=2.440e-7 (bound 1.514e-5); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/small [n=32 k=128 rows=12 nb=2] acc: chain-model bit-equal=384/384 (gated) index-order bit-equal=84; over-bound=0 max|err|/sum|p|=2.440e-7 (bound 1.514e-5); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/subnormal_all [n=32 k=1152 rows=16 nb=1] acc: chain-model bit-equal=512/512 (gated) index-order bit-equal=19; over-bound=0 max|err|/sum|p|=8.880e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/subnormal_all [n=32 k=1152 rows=16 nb=2] acc: chain-model bit-equal=512/512 (gated) index-order bit-equal=19; over-bound=0 max|err|/sum|p|=8.880e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/subnormal_w [n=32 k=1152 rows=16 nb=1] acc: chain-model bit-equal=512/512 (gated) index-order bit-equal=30; over-bound=0 max|err|/sum|p|=1.586e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm golden w8a8/subnormal_w [n=32 k=1152 rows=16 nb=2] acc: chain-model bit-equal=512/512 (gated) index-order bit-equal=30; over-bound=0 max|err|/sum|p|=1.586e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w13 decode M=1 [n=2304 k=2304 rows=8 nb=1] acc: chain-model bit-equal=18432/18432 (gated) index-order bit-equal=284; over-bound=0 max|err|/sum|p|=1.127e-6 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w13 decode M=8 [n=2304 k=2304 rows=64 nb=1] acc: chain-model bit-equal=147456/147456 (gated) index-order bit-equal=2153; over-bound=0 max|err|/sum|p|=1.221e-6 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w13 prefill group [n=2304 k=2304 rows=40 nb=2] acc: chain-model bit-equal=92160/92160 (gated) index-order bit-equal=1379; over-bound=0 max|err|/sum|p|=1.283e-6 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w2 decode M=1 [n=2304 k=1152 rows=8 nb=1] acc: chain-model bit-equal=18432/18432 (gated) index-order bit-equal=631; over-bound=0 max|err|/sum|p|=9.198e-7 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w2 decode M=8 [n=2304 k=1152 rows=64 nb=1] acc: chain-model bit-equal=147456/147456 (gated) index-order bit-equal=5390; over-bound=0 max|err|/sum|p|=1.017e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w2 prefill group [n=2304 k=1152 rows=40 nb=2] acc: chain-model bit-equal=92160/92160 (gated) index-order bit-equal=3373; over-bound=0 max|err|/sum|p|=1.147e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w13 decode M=1 subnormal-weights [n=2304 k=2304 rows=8 nb=1] acc: chain-model bit-equal=18432/18432 (gated) index-order bit-equal=402; over-bound=0 max|err|/sum|p|=3.640e-6 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w13 decode M=8 subnormal-weights [n=2304 k=2304 rows=64 nb=1] acc: chain-model bit-equal=147456/147456 (gated) index-order bit-equal=2891; over-bound=0 max|err|/sum|p|=3.832e-6 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w13 prefill group subnormal-weights [n=2304 k=2304 rows=40 nb=2] acc: chain-model bit-equal=92160/92160 (gated) index-order bit-equal=1811; over-bound=0 max|err|/sum|p|=3.712e-6 (bound 2.745e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w2 decode M=1 subnormal-weights [n=2304 k=1152 rows=8 nb=1] acc: chain-model bit-equal=18432/18432 (gated) index-order bit-equal=878; over-bound=0 max|err|/sum|p|=2.166e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w2 decode M=8 subnormal-weights [n=2304 k=1152 rows=64 nb=1] acc: chain-model bit-equal=147456/147456 (gated) index-order bit-equal=6993; over-bound=0 max|err|/sum|p|=2.431e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-w8a8-gemm w2 prefill group subnormal-weights [n=2304 k=1152 rows=40 nb=2] acc: chain-model bit-equal=92160/92160 (gated) index-order bit-equal=4428; over-bound=0 max|err|/sum|p|=2.266e-6 (bound 1.372e-4); epilogue bit-bad=0 OK
+ink2-expert-block-nvfp4 [tokens=5 top-k=3 h=128 f=128] vs the reference block (sm_120a accumulators): gate_up bad=0 y bad=0 down bad=0 out bad=0 OK
+ink2-expert-block-mxfp8 [tokens=5 top-k=3 h=128 f=128] vs the reference block (sm_120a accumulators): gate_up bad=0 y bad=0 down bad=0 out bad=0 OK
+#MARK 1795245441.110 Nvfp4-w13-t1 start
+#MARK 1795245441.378 Nvfp4-w13-t1 end
+#MARK 1795245441.379 Nvfp4-w13-t2 start
+#MARK 1795245441.913 Nvfp4-w13-t2 end
+#MARK 1795245441.914 Nvfp4-w13-t4 start
+#MARK 1795245443.057 Nvfp4-w13-t4 end
+#MARK 1795245443.059 Nvfp4-w13-t8 start
+#MARK 1795245445.207 Nvfp4-w13-t8 end
+#MARK 1795245445.250 Nvfp4-w13-t256 start
+#MARK 1795245451.251 Nvfp4-w13-t256 end
+#MARK 1795245451.356 Nvfp4-w2-t1 start
+#MARK 1795245451.448 Nvfp4-w2-t1 end
+#MARK 1795245451.448 Nvfp4-w2-t2 start
+#MARK 1795245451.635 Nvfp4-w2-t2 end
+#MARK 1795245451.635 Nvfp4-w2-t4 start
+#MARK 1795245451.987 Nvfp4-w2-t4 end
+#MARK 1795245451.988 Nvfp4-w2-t8 start
+#MARK 1795245452.698 Nvfp4-w2-t8 end
+#MARK 1795245452.720 Nvfp4-w2-t256 start
+#MARK 1795245454.811 Nvfp4-w2-t256 end
+#MARK 1795245454.812 Nvfp4-quant-r1 start
+#MARK 1795245454.817 Nvfp4-quant-r1 end
+#MARK 1795245454.817 Nvfp4-quant-r8 start
+#MARK 1795245454.822 Nvfp4-quant-r8 end
+#MARK 1795245454.822 Nvfp4-quant-situ-r8 start
+#MARK 1795245454.828 Nvfp4-quant-situ-r8 end
+#MARK 1795245454.830 Nvfp4-quant-situ-r64 start
+#MARK 1795245454.836 Nvfp4-quant-situ-r64 end
+#MARK 1795245454.880 Nvfp4-quant-situ-r2048 start
+#MARK 1795245454.936 Nvfp4-quant-situ-r2048 end
+#MARK 1795245455.542 Mxfp8-w13-t1 start
+#MARK 1795245456.031 Mxfp8-w13-t1 end
+#MARK 1795245456.031 Mxfp8-w13-t2 start
+#MARK 1795245456.987 Mxfp8-w13-t2 end
+#MARK 1795245456.988 Mxfp8-w13-t4 start
+#MARK 1795245458.799 Mxfp8-w13-t4 end
+#MARK 1795245458.801 Mxfp8-w13-t8 start
+#MARK 1795245462.301 Mxfp8-w13-t8 end
+#MARK 1795245462.351 Mxfp8-w13-t256 start
+#MARK 1795245474.227 Mxfp8-w13-t256 end
+#MARK 1795245474.545 Mxfp8-w2-t1 start
+#MARK 1795245474.782 Mxfp8-w2-t1 end
+#MARK 1795245474.783 Mxfp8-w2-t2 start
+#MARK 1795245475.272 Mxfp8-w2-t2 end
+#MARK 1795245475.273 Mxfp8-w2-t4 start
+#MARK 1795245476.299 Mxfp8-w2-t4 end
+#MARK 1795245476.300 Mxfp8-w2-t8 start
+#MARK 1795245478.334 Mxfp8-w2-t8 end
+#MARK 1795245478.360 Mxfp8-w2-t256 start
+#MARK 1795245483.046 Mxfp8-w2-t256 end
+#MARK 1795245483.047 Mxfp8-quant-r1 start
+#MARK 1795245483.051 Mxfp8-quant-r1 end
+#MARK 1795245483.052 Mxfp8-quant-r8 start
+#MARK 1795245483.056 Mxfp8-quant-r8 end
+#MARK 1795245483.056 Mxfp8-quant-situ-r8 start
+#MARK 1795245483.064 Mxfp8-quant-situ-r8 end
+#MARK 1795245483.065 Mxfp8-quant-situ-r64 start
+#MARK 1795245483.073 Mxfp8-quant-situ-r64 end
+#MARK 1795245483.122 Mxfp8-quant-situ-r2048 start
+#MARK 1795245483.183 Mxfp8-quant-situ-r2048 end
+#MARK 1795245441.110 Nvfp4-w13-t1 start
+#MARK 1795245441.378 Nvfp4-w13-t1 end
+ink2-actq-bench Nvfp4 w13 tokens=1 rows=8 nb=1: best 57.7 us/call at wpb=1, 23.89 MB weights (8.0 experts), 414 GB/s, 1.47 TFLOP/s; us/call by arm: w1=57.7 w2=66.2 w4=66.5 w8=69.8 (best of 5 x 200 calls, 16 expert sets)
+#MARK 1795245441.379 Nvfp4-w13-t2 start
+#MARK 1795245441.913 Nvfp4-w13-t2 end
+ink2-actq-bench Nvfp4 w13 tokens=2 rows=16 nb=1: best 108.0 us/call at wpb=1, 47.78 MB weights (16.0 experts), 442 GB/s, 1.57 TFLOP/s; us/call by arm: w1=108.0 w2=133.7 w4=140.1 w8=147.1 (best of 5 x 200 calls, 8 expert sets)
+#MARK 1795245441.914 Nvfp4-w13-t4 start
+#MARK 1795245443.057 Nvfp4-w13-t4 end
+ink2-actq-bench Nvfp4 w13 tokens=4 rows=32 nb=1: best 229.1 us/call at wpb=1, 95.55 MB weights (32.0 experts), 417 GB/s, 1.48 TFLOP/s; us/call by arm: w1=229.1 w2=245.9 w4=307.7 w8=327.4 (best of 5 x 200 calls, 4 expert sets)
+#MARK 1795245443.059 Nvfp4-w13-t8 start
+#MARK 1795245445.207 Nvfp4-w13-t8 end
+ink2-actq-bench Nvfp4 w13 tokens=8 rows=64 nb=1: best 372.5 us/call at wpb=1, 191.10 MB weights (64.0 experts), 513 GB/s, 1.82 TFLOP/s; us/call by arm: w1=372.5 w2=414.9 w4=632.0 w8=671.7 (best of 5 x 200 calls, 2 expert sets)
+#MARK 1795245445.250 Nvfp4-w13-t256 start
+#MARK 1795245451.251 Nvfp4-w13-t256 end
+ink2-actq-bench Nvfp4 w13 tokens=256 rows=2048 nb=4: best 798.8 us/call at wpb=4, 382.21 MB weights (128.0 experts), 478 GB/s, 27.22 TFLOP/s; us/call by arm: w1=2392.8 w2=1619.9 w4=798.8 w8=992.4 (best of 5 x 200 calls, 1 expert sets)
+#MARK 1795245451.356 Nvfp4-w2-t1 start
+#MARK 1795245451.448 Nvfp4-w2-t1 end
+ink2-actq-bench Nvfp4 w2 tokens=1 rows=8 nb=1: best 22.3 us/call at wpb=4, 11.94 MB weights (8.0 experts), 535 GB/s, 1.90 TFLOP/s; us/call by arm: w1=23.8 w2=23.3 w4=22.3 w8=22.4 (best of 5 x 200 calls, 16 expert sets)
+#MARK 1795245451.448 Nvfp4-w2-t2 start
+#MARK 1795245451.635 Nvfp4-w2-t2 end
+ink2-actq-bench Nvfp4 w2 tokens=2 rows=16 nb=1: best 42.2 us/call at wpb=1, 23.89 MB weights (16.0 experts), 566 GB/s, 2.01 TFLOP/s; us/call by arm: w1=42.2 w2=45.7 w4=48.2 w8=48.7 (best of 5 x 200 calls, 8 expert sets)
+#MARK 1795245451.635 Nvfp4-w2-t4 start
+#MARK 1795245451.987 Nvfp4-w2-t4 end
+ink2-actq-bench Nvfp4 w2 tokens=4 rows=32 nb=1: best 72.5 us/call at wpb=1, 47.78 MB weights (32.0 experts), 659 GB/s, 2.34 TFLOP/s; us/call by arm: w1=72.5 w2=78.4 w4=94.7 w8=102.5 (best of 5 x 200 calls, 4 expert sets)
+#MARK 1795245451.988 Nvfp4-w2-t8 start
+#MARK 1795245452.698 Nvfp4-w2-t8 end
+ink2-actq-bench Nvfp4 w2 tokens=8 rows=64 nb=1: best 134.8 us/call at wpb=1, 95.55 MB weights (64.0 experts), 709 GB/s, 2.52 TFLOP/s; us/call by arm: w1=134.8 w2=151.5 w4=188.5 w8=210.3 (best of 5 x 200 calls, 2 expert sets)
+#MARK 1795245452.720 Nvfp4-w2-t256 start
+#MARK 1795245454.811 Nvfp4-w2-t256 end
+ink2-actq-bench Nvfp4 w2 tokens=256 rows=2048 nb=4: best 326.6 us/call at wpb=8, 191.10 MB weights (128.0 experts), 585 GB/s, 33.29 TFLOP/s; us/call by arm: w1=908.6 w2=410.1 w4=328.4 w8=326.6 (best of 5 x 200 calls, 1 expert sets)
+#MARK 1795245454.812 Nvfp4-quant-r1 start
+#MARK 1795245454.817 Nvfp4-quant-r1 end
+ink2-actq-bench Nvfp4 quantize rows=1 k=2304: 4.5 us/call, 1.3 GB/s of input and output (best of 5 x 200 calls)
+#MARK 1795245454.817 Nvfp4-quant-r8 start
+#MARK 1795245454.822 Nvfp4-quant-r8 end
+ink2-actq-bench Nvfp4 quantize rows=8 k=2304: 4.6 us/call, 10.3 GB/s of input and output (best of 5 x 200 calls)
+#MARK 1795245454.822 Nvfp4-quant-situ-r8 start
+#MARK 1795245454.828 Nvfp4-quant-situ-r8 end
+ink2-actq-bench Nvfp4 quantize + SiTU rows=8 k=1152: 6.3 us/call, 6.6 GB/s of input and output (best of 5 x 200 calls)
+#MARK 1795245454.830 Nvfp4-quant-situ-r64 start
+#MARK 1795245454.836 Nvfp4-quant-situ-r64 end
+ink2-actq-bench Nvfp4 quantize + SiTU rows=64 k=1152: 6.8 us/call, 49.4 GB/s of input and output (best of 5 x 200 calls)
+#MARK 1795245454.880 Nvfp4-quant-situ-r2048 start
+#MARK 1795245454.936 Nvfp4-quant-situ-r2048 end
+ink2-actq-bench Nvfp4 quantize + SiTU rows=2048 k=1152: 53.2 us/call, 202.5 GB/s of input and output (best of 5 x 200 calls)
+#MARK 1795245455.542 Mxfp8-w13-t1 start
+#MARK 1795245456.031 Mxfp8-w13-t1 end
+ink2-actq-bench Mxfp8 w13 tokens=1 rows=8 nb=1: best 96.5 us/call at wpb=1, 43.79 MB weights (8.0 experts), 454 GB/s, 0.88 TFLOP/s; us/call by arm: w1=96.5 w2=107.8 w4=136.8 w8=143.1 (best of 5 x 200 calls, 16 expert sets)
+#MARK 1795245456.031 Mxfp8-w13-t2 start
+#MARK 1795245456.987 Mxfp8-w13-t2 end
+ink2-actq-bench Mxfp8 w13 tokens=2 rows=16 nb=1: best 181.7 us/call at wpb=1, 87.59 MB weights (16.0 experts), 482 GB/s, 0.93 TFLOP/s; us/call by arm: w1=181.7 w2=199.1 w4=270.4 w8=276.4 (best of 5 x 200 calls, 8 expert sets)
+#MARK 1795245456.988 Mxfp8-w13-t4 start
+#MARK 1795245458.799 Mxfp8-w13-t4 end
+ink2-actq-bench Mxfp8 w13 tokens=4 rows=32 nb=1: best 352.8 us/call at wpb=1, 175.18 MB weights (32.0 experts), 497 GB/s, 0.96 TFLOP/s; us/call by arm: w1=352.8 w2=386.9 w4=488.6 w8=532.6 (best of 5 x 200 calls, 4 expert sets)
+#MARK 1795245458.801 Mxfp8-w13-t8 start
+#MARK 1795245462.301 Mxfp8-w13-t8 end
+ink2-actq-bench Mxfp8 w13 tokens=8 rows=64 nb=1: best 700.9 us/call at wpb=1, 350.36 MB weights (64.0 experts), 500 GB/s, 0.97 TFLOP/s; us/call by arm: w1=700.9 w2=753.2 w4=938.9 w8=1023.6 (best of 5 x 200 calls, 2 expert sets)
+#MARK 1795245462.351 Mxfp8-w13-t256 start
+#MARK 1795245474.227 Mxfp8-w13-t256 end
+ink2-actq-bench Mxfp8 w13 tokens=256 rows=2048 nb=2: best 2042.5 us/call at wpb=4, 700.71 MB weights (128.0 experts), 343 GB/s, 10.65 TFLOP/s; us/call by arm: w1=5113.5 w2=2358.4 w4=2042.5 w8=2072.4 (best of 5 x 200 calls, 1 expert sets)
+#MARK 1795245474.545 Mxfp8-w2-t1 start
+#MARK 1795245474.782 Mxfp8-w2-t1 end
+ink2-actq-bench Mxfp8 w2 tokens=1 rows=8 nb=1: best 49.4 us/call at wpb=1, 21.90 MB weights (8.0 experts), 443 GB/s, 0.86 TFLOP/s; us/call by arm: w1=49.4 w2=58.2 w4=62.3 w8=65.9 (best of 5 x 200 calls, 16 expert sets)
+#MARK 1795245474.783 Mxfp8-w2-t2 start
+#MARK 1795245475.272 Mxfp8-w2-t2 end
+ink2-actq-bench Mxfp8 w2 tokens=2 rows=16 nb=1: best 94.4 us/call at wpb=1, 43.79 MB weights (16.0 experts), 464 GB/s, 0.90 TFLOP/s; us/call by arm: w1=94.4 w2=120.4 w4=130.2 w8=139.5 (best of 5 x 200 calls, 8 expert sets)
+#MARK 1795245475.273 Mxfp8-w2-t4 start
+#MARK 1795245476.299 Mxfp8-w2-t4 end
+ink2-actq-bench Mxfp8 w2 tokens=4 rows=32 nb=1: best 175.7 us/call at wpb=1, 87.59 MB weights (32.0 experts), 498 GB/s, 0.97 TFLOP/s; us/call by arm: w1=175.7 w2=238.6 w4=281.5 w8=312.9 (best of 5 x 200 calls, 4 expert sets)
+#MARK 1795245476.300 Mxfp8-w2-t8 start
+#MARK 1795245478.334 Mxfp8-w2-t8 end
+ink2-actq-bench Mxfp8 w2 tokens=8 rows=64 nb=1: best 341.4 us/call at wpb=1, 175.18 MB weights (64.0 experts), 513 GB/s, 1.00 TFLOP/s; us/call by arm: w1=341.4 w2=449.4 w4=570.8 w8=642.8 (best of 5 x 200 calls, 2 expert sets)
+#MARK 1795245478.360 Mxfp8-w2-t256 start
+#MARK 1795245483.046 Mxfp8-w2-t256 end
+ink2-actq-bench Mxfp8 w2 tokens=256 rows=2048 nb=2: best 956.3 us/call at wpb=4, 350.36 MB weights (128.0 experts), 366 GB/s, 11.37 TFLOP/s; us/call by arm: w1=1615.9 w2=1027.4 w4=956.3 w8=960.8 (best of 5 x 200 calls, 1 expert sets)
+#MARK 1795245483.047 Mxfp8-quant-r1 start
+#MARK 1795245483.051 Mxfp8-quant-r1 end
+ink2-actq-bench Mxfp8 quantize rows=1 k=2304: 4.6 us/call, 1.5 GB/s of input and output (best of 5 x 200 calls)
+#MARK 1795245483.052 Mxfp8-quant-r8 start
+#MARK 1795245483.056 Mxfp8-quant-r8 end
+ink2-actq-bench Mxfp8 quantize rows=8 k=2304: 4.6 us/call, 12.1 GB/s of input and output (best of 5 x 200 calls)
+#MARK 1795245483.056 Mxfp8-quant-situ-r8 start
+#MARK 1795245483.064 Mxfp8-quant-situ-r8 end
+ink2-actq-bench Mxfp8 quantize + SiTU rows=8 k=1152: 7.1 us/call, 6.5 GB/s of input and output (best of 5 x 200 calls)
+#MARK 1795245483.065 Mxfp8-quant-situ-r64 start
+#MARK 1795245483.073 Mxfp8-quant-situ-r64 end
+ink2-actq-bench Mxfp8 quantize + SiTU rows=64 k=1152: 7.5 us/call, 49.6 GB/s of input and output (best of 5 x 200 calls)
+#MARK 1795245483.122 Mxfp8-quant-situ-r2048 start
+#MARK 1795245483.183 Mxfp8-quant-situ-r2048 end
+ink2-actq-bench Mxfp8 quantize + SiTU rows=2048 k=1152: 51.2 us/call, 231.9 GB/s of input and output (best of 5 x 200 calls)
+ink2-actq-gate: ALL OK (48 lines)

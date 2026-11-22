@@ -1,0 +1,33 @@
+{
+  "chunk": 512,
+  "clocks_at_end": "2190 MHz, [N/A], 9.10 W, 48, 10 %",
+  "clocks_at_start": "2190 MHz, [N/A], 9.09 W, 48, 10 %",
+  "context": 2048,
+  "expert_activation_class": "DeclaredActivationQuant",
+  "force_moe_in": false,
+  "force_router": false,
+  "load_s": 40.174155577,
+  "loadavg_at_start": "1.13 0.75 0.55 1/646 2165072",
+  "memory": {
+    "conv": 7667712,
+    "declared_work": 67241096,
+    "device_total": 130661138432,
+    "driver_free_after_load": 6176833536,
+    "driver_free_at_open": 27506712576,
+    "driver_free_before_kv": 6313664512,
+    "kv_full": 134610944,
+    "kv_rings": 671088640,
+    "max_context": 96057,
+    "per_position": 65728,
+    "weights": 18891855904,
+    "work": 377621768
+  },
+  "numeric_class": "inkling2-gpu-f32-stream/shipped/DeclaredActivationQuant",
+  "red_arms": [],
+  "resident_gib": 18.80108119547367,
+  "runner": "ink2-gpu",
+  "stream_outside_experts": "f32",
+  "tape": "/home/avifenesh/projects/ink2-tapes/tapes/p1_chat.exact_f32",
+  "tape_arm": "exact",
+  "weight_gib": 17.59441187977791
+}

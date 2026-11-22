@@ -501,6 +501,13 @@ fn load_mixer_kind(
                 format!("layer {il}: gated MLA (hy_v4_flash) has no hybrid-engine mixer").into(),
             );
         }
+        // Inkling 2 relative-bias attention has no hybrid mixer either; refuse before upload.
+        AttentionPlan::RelativeBias(_) => {
+            return Err(format!(
+                "layer {il}: relative-bias attention (inkling2) has no hybrid-engine mixer"
+            )
+            .into());
+        }
         AttentionPlan::Mla(mla) => Mixer::Mla(MlaAttnLayer::load(e, src, il, mla)?),
         AttentionPlan::Full(full)
         | AttentionPlan::SlidingWindow {

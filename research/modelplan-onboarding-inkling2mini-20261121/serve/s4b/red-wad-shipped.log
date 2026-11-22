@@ -1,0 +1,4 @@
+ink2-gpu: memory: device 23.511 GiB, driver free at open 23.057, weights 17.594, full KV 0.125 (2048 positions x 65728 B), rings 0.625, conv 0.007, work 0.292, declared work 0.063, driver free before KV 4.432 and after load 4.307, max context 72405
+ink2-gpu: class inkling2-gpu-f32-stream/shipped/DeclaredActivationQuant; resident weights 17.594 GiB, with state 18.742 GiB, loaded in 21.8s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: moe reference: 0/2736 rows bit-equal over 48 slots (5786440 bf16 outputs differ)
+ink2-gpu: score 57 positions in 159.4s: resid attn worst slot 2.056e-4, ffn worst slot 2.616e-4, router rows 2736/2736, logits max abs 1.255e-2 KL mean 2.327e-8, argmax 57/57, greedy 32/32

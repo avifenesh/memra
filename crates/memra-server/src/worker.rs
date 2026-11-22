@@ -2507,6 +2507,11 @@ pub struct Request {
     /// cold-drafter conversion), so no plane is allocated. Sticky for the request's life, a
     /// step-OOM park replay included. Always false from the HTTP layer.
     pub drafter_refused: bool,
+    /// The numeric class the request names (`numeric_class`, an extension field of the
+    /// completions and chat surfaces). Only a route that serves several classes reads it (the
+    /// inkling2 route); the HTTP layer refuses it for every other model. None = the route's
+    /// default class.
+    pub numeric_class: Option<String>,
     /// Whether the VRAM gate's last pricing of this request charged a DFlash draft plane
     /// (memra#1173). `admit` builds a drafter session only for a funded request, so a request
     /// the gate priced plain can never allocate a plane: a refused request, and a step-OOM
@@ -2646,6 +2651,7 @@ pub(crate) fn choice_requests(
             oom_retries: 0,
             spec_k_replay: leader.spec_k_replay,
             drafter_refused: leader.drafter_refused,
+            numeric_class: leader.numeric_class.clone(),
             drafter_funded: false,
             grammar: leader.grammar.clone(),
             prepared_constraint: None,
@@ -2818,6 +2824,11 @@ pub struct ModelCaps {
     /// program). The renderer itself keys on the tokenizer's census (`Dsv4Encoding::V41`), so
     /// whoever builds these caps for a V4.1 checkpoint sets this from the same census.
     pub dsv41: bool,
+    /// inkling2 (`chat::INKLING2_DIALECT`): the checkpoint's framing marker ids. When set, chat
+    /// requests arm the inkling2 response parser fed by token id (`ToolStreamParser::inkling2`,
+    /// `push_token`), `reasoning_effort` passes through to the template (a level name of its
+    /// map or a number in [0.0, 0.99]), and the surfaces without that parser refuse the model.
+    pub inkling2: Option<crate::toolcall::Inkling2Markers>,
     /// GLM-5.3-Flash (`glm5_next`) dialect (lane/glm53-flash-bringup, 2026-08-27): the
     /// `[gMASK]<sop>` + `<|user|>`/`<|assistant|>`/`<|observation|>` turn dialect, an
     /// always-open `<think>` tail, an always-rendered `Reasoning Effort:` system line with a
@@ -21337,6 +21348,9 @@ pub fn run(
     // hy_v4_flash checkpoints serve on their own thread as well (`hy4f_serve`), through the
     // same dispatch map
     let mut hy4f_sessions: HashMap<String, usize> = HashMap::new();
+    // inkling2 checkpoints serve on their own thread too (`inkling2_serve`), through the same
+    // dedicated-thread dispatch map
+    let mut inkling2_sessions: HashMap<String, usize> = HashMap::new();
     // REMOVED-DOORS REFUSAL (2026-08-29). Env-only, so it runs BEFORE any model load: the
     // old step37-scoped refusal needed the loaded model's class and therefore paid a full
     // multi-minute checkpoint load before refusing; this one needs nothing but the
@@ -21367,6 +21381,11 @@ pub fn run(
                 ));
             } else if p.is_dir() && crate::hy4f_serve::is_hy4f_dir(p) {
                 planned.register(crate::hy4f_serve::contract(
+                    name,
+                    crate::route_contract::hybrid_interactive_cap().max(1),
+                ));
+            } else if p.is_dir() && crate::inkling2_serve::is_inkling2_dir(p) {
+                planned.register(crate::inkling2_serve::contract(
                     name,
                     crate::route_contract::hybrid_interactive_cap().max(1),
                 ));
@@ -21461,6 +21480,43 @@ pub fn run(
             dsv4_routes.insert(
                 name.clone(),
                 crate::hy4f_serve::spawn(hm, route_health, load),
+            );
+            order.push(name.clone());
+            continue;
+        }
+        if from_dir && crate::inkling2_serve::is_inkling2_dir(std::path::Path::new(path)) {
+            if draft.is_some() {
+                let _ = ready_tx.send(Err(format!(
+                    "model {name:?}: '+draft' is a GGUF-family attach; the inkling2 route serves \
+                     the trunk only (its drafter ships inside the checkpoint)"
+                )));
+                return;
+            }
+            let dir = std::path::Path::new(path);
+            let tok = match tokenizer_snapshots.load(name, path, || Tokenizer::from_hf_dir(dir)) {
+                Ok(t) => t,
+                Err(err) => {
+                    let _ = ready_tx.send(Err(format!("tokenizer {name}: {err}")));
+                    return;
+                }
+            };
+            let im = match crate::inkling2_serve::load(name, dir, tok) {
+                Ok(m) => m,
+                Err(err) => {
+                    let _ = ready_tx.send(Err(format!("load {name}: {err}")));
+                    return;
+                }
+            };
+            dsv4_caps.insert(name.clone(), crate::inkling2_serve::caps(&im));
+            inkling2_sessions.insert(name.clone(), im.sessions);
+            let cap = crate::inkling2_serve::contract(name, im.sessions)
+                .capacity
+                .concurrency();
+            let load = crate::route_telemetry::register(name, cap);
+            let route_health = health.register_route(name, load.clone());
+            dsv4_routes.insert(
+                name.clone(),
+                crate::inkling2_serve::spawn(im, route_health, load),
             );
             order.push(name.clone());
             continue;
@@ -21857,6 +21913,7 @@ pub fn run(
                 dsv41: false,
                 // Hy4-flash checkpoints serve on their own route (`hy4f_serve::caps`).
                 hy4: false,
+                inkling2: None,
                 // GLM-5.3-Flash: `[gMASK]<sop>` + `<|observation|>`. Template-keyed like every
                 // other cap — a glm5 checkpoint that shipped without its template would fall
                 // back to ChatML rendering, where arming this dialect would be guessing.
@@ -21911,6 +21968,8 @@ pub fn run(
             route_registry.register(crate::dsv41_serve::contract(name, sessions));
         } else if let Some(&sessions) = hy4f_sessions.get(name) {
             route_registry.register(crate::hy4f_serve::contract(name, sessions));
+        } else if let Some(&sessions) = inkling2_sessions.get(name) {
+            route_registry.register(crate::inkling2_serve::contract(name, sessions));
         } else if dsv4_routes.contains_key(name) {
             route_registry.register(crate::dsv4_serve::contract(
                 name,
@@ -31405,6 +31464,7 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         route_ticket: None,
         spec_k_replay: Some(s.spec_k),
         drafter_refused: s.drafter_refused,
+        numeric_class: None,
         drafter_funded: false,
         prepared_prompt: None,
         images: Vec::new(),
@@ -42460,6 +42520,7 @@ mod tests {
             oom_retries: 0,
             spec_k_replay: None,
             drafter_refused: false,
+            numeric_class: None,
             drafter_funded: false,
             grammar: None,
             prepared_constraint: None,
@@ -43085,6 +43146,7 @@ mod tests {
             oom_retries: 0,
             spec_k_replay: None,
             drafter_refused: false,
+            numeric_class: None,
             drafter_funded: false,
             grammar: None, // moved into the compiler job above
             prepared_constraint: None,
@@ -62065,6 +62127,7 @@ mod tests {
             oom_retries: 0,
             spec_k_replay: None,
             drafter_refused: false,
+            numeric_class: None,
             drafter_funded: false,
             grammar: None,
             prepared_constraint: None,

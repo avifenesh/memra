@@ -1,0 +1,26 @@
+== shipped-r1 {1: 57}
+  R=1 kernel us/call median 15677, wall 21203; top: ink2g_gemv_bf16_kernel 4837, ink2_expert_gemm_kerne 4640, ink2g_mix_dot_kernel 985, ink2g_norm_kernel 723, ink2g_attn_scores_kern 690, ink2g_conv_kernel 624, ink2g_ctrl_up_kernel 606, ink2g_ctrl_down_kernel 562
+== shipped-r2 {2: 13, 1: 31}
+  R=1 kernel us/call median 15763, wall 22660; top: ink2g_gemv_bf16_kernel 4837, ink2_expert_gemm_kerne 4676, ink2g_mix_dot_kernel 981, ink2g_norm_kernel 726, ink2g_attn_scores_kern 704, ink2g_conv_kernel 621, ink2g_ctrl_up_kernel 604, ink2g_ctrl_down_kernel 558
+  R=2 kernel us/call median 22770, wall 32061; top: ink2g_gemv_rows_kernel 8694, ink2_expert_gemm_kerne 7403, ink2g_mix_dot_kernel 1004, ink2g_conv_kernel 748, ink2g_norm_kernel 728, ink2g_attn_scores_kern 664, ink2g_ctrl_up_kernel 614, ink2g_ctrl_down_kernel 578
+== shipped-r4 {4: 6, 2: 1, 1: 31}
+  R=1 kernel us/call median 15763, wall 21150; top: ink2g_gemv_bf16_kernel 4838, ink2_expert_gemm_kerne 4664, ink2g_mix_dot_kernel 987, ink2g_norm_kernel 724, ink2g_attn_scores_kern 706, ink2g_conv_kernel 622, ink2g_ctrl_up_kernel 605, ink2g_ctrl_down_kernel 557
+  R=2 kernel us/call median 23410, wall 31587; top: ink2g_gemv_rows_kernel 8784, ink2_expert_gemm_kerne 7950, ink2g_mix_dot_kernel 1009, ink2g_conv_kernel 760, ink2g_norm_kernel 736, ink2g_attn_scores_kern 698, ink2g_ctrl_up_kernel 623, ink2g_ctrl_down_kernel 587
+  R=4 kernel us/call median 36956, wall 50276; top: ink2g_gemv_rows_kernel 18342, ink2_expert_gemm_kerne 11320, ink2g_mix_dot_kernel 1048, ink2g_conv_kernel 1031, ink2g_ctrl_up_kernel 847, ink2g_norm_kernel 741, ink2g_attn_scores_kern 686, ink2g_ctrl_down_kernel 625
+== shipped-r8 {8: 3, 2: 1, 1: 31}
+  R=1 kernel us/call median 15778, wall 21457; top: ink2g_gemv_bf16_kernel 4832, ink2_expert_gemm_kerne 4687, ink2g_mix_dot_kernel 985, ink2g_norm_kernel 723, ink2g_attn_scores_kern 706, ink2g_conv_kernel 621, ink2g_ctrl_up_kernel 604, ink2g_ctrl_down_kernel 554
+  R=2 kernel us/call median 23155, wall 31398; top: ink2g_gemv_rows_kernel 8644, ink2_expert_gemm_kerne 7921, ink2g_mix_dot_kernel 1004, ink2g_conv_kernel 753, ink2g_norm_kernel 726, ink2g_attn_scores_kern 691, ink2g_ctrl_up_kernel 608, ink2g_ctrl_down_kernel 571
+  R=8 kernel us/call median 63122, wall 85891; top: ink2g_gemv_rows_kernel 36360, ink2_expert_gemm_kerne 17397, ink2g_ctrl_up_kernel 1607, ink2g_conv_kernel 1600, ink2g_mix_dot_kernel 1066, ink2g_ctrl_down_kernel 981, ink2g_attn_scores_kern 791, ink2g_norm_kernel 742
+== nvfp4-rig-r1 {1: 57}
+  R=1 kernel us/call median 15357, wall 20877; top: ink2g_gemv_nvfp4_jobs_ 4446, ink2_expert_gemm_kerne 4235, ink2g_mix_dot_kernel 973, ink2g_norm_kernel 725, ink2g_conv_kernel 610, ink2g_attn_scores_kern 607, ink2g_ctrl_up_kernel 605, ink2g_gemv_bf16_kernel 583
+== nvfp4-rig-r2 {2: 13, 1: 31}
+  R=1 kernel us/call median 15475, wall 20955; top: ink2g_gemv_nvfp4_jobs_ 4454, ink2_expert_gemm_kerne 4264, ink2g_mix_dot_kernel 976, ink2g_norm_kernel 723, ink2g_attn_scores_kern 646, ink2g_conv_kernel 612, ink2g_ctrl_up_kernel 607, ink2g_gemv_bf16_kernel 584
+  R=2 kernel us/call median 22208, wall 30698; top: ink2g_gemv_rows_kernel 9140, ink2_expert_gemm_kerne 6718, ink2g_mix_dot_kernel 988, ink2g_conv_kernel 744, ink2g_norm_kernel 726, ink2g_ctrl_up_kernel 611, ink2g_ctrl_down_kernel 594, ink2g_attn_scores_kern 570
+== nvfp4-rig-r4 {4: 6, 2: 1, 1: 31}
+  R=1 kernel us/call median 15428, wall 21355; top: ink2g_gemv_nvfp4_jobs_ 4460, ink2_expert_gemm_kerne 4217, ink2g_mix_dot_kernel 975, ink2g_norm_kernel 721, ink2g_attn_scores_kern 646, ink2g_conv_kernel 611, ink2g_ctrl_up_kernel 606, ink2g_gemv_bf16_kernel 583
+  R=2 kernel us/call median 22904, wall 31954; top: ink2g_gemv_rows_kernel 9164, ink2_expert_gemm_kerne 7212, ink2g_mix_dot_kernel 1003, ink2g_conv_kernel 745, ink2g_norm_kernel 726, ink2g_attn_scores_kern 617, ink2g_ctrl_up_kernel 613, ink2g_ctrl_down_kernel 584
+  R=4 kernel us/call median 39777, wall 54203; top: ink2g_gemv_rows_kernel 22247, ink2_expert_gemm_kerne 10302, ink2g_mix_dot_kernel 1043, ink2g_conv_kernel 1026, ink2g_ctrl_up_kernel 841, ink2g_norm_kernel 741, ink2g_attn_scores_kern 626, ink2g_ctrl_down_kernel 618
+== nvfp4-rig-r8 {8: 3, 2: 1, 1: 31}
+  R=1 kernel us/call median 15428, wall 20905; top: ink2g_gemv_nvfp4_jobs_ 4454, ink2_expert_gemm_kerne 4226, ink2g_mix_dot_kernel 976, ink2g_norm_kernel 723, ink2g_attn_scores_kern 645, ink2g_conv_kernel 611, ink2g_ctrl_up_kernel 605, ink2g_gemv_bf16_kernel 583
+  R=2 kernel us/call median 22847, wall 30997; top: ink2g_gemv_rows_kernel 9133, ink2_expert_gemm_kerne 7191, ink2g_mix_dot_kernel 1004, ink2g_conv_kernel 746, ink2g_norm_kernel 726, ink2g_attn_scores_kern 618, ink2g_ctrl_up_kernel 610, ink2g_ctrl_down_kernel 579
+  R=8 kernel us/call median 68098, wall 91952; top: ink2g_gemv_rows_kernel 43210, ink2_expert_gemm_kerne 15808, ink2g_ctrl_up_kernel 1619, ink2g_conv_kernel 1605, ink2g_mix_dot_kernel 1064, ink2g_ctrl_down_kernel 990, ink2g_attn_scores_kern 841, ink2g_norm_kernel 742

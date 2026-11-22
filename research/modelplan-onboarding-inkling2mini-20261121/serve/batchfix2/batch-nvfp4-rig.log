@@ -1,0 +1,3 @@
+ink2-gpu: memory: device 23.511 GiB, driver free at open 23.057, weights 14.332, full KV 0.032 (2048 positions x 16576 B), rings 0.156, conv 0.007, work 0.352, declared work 0.063, driver free before KV 8.089 and after load 8.057, max context 523947
+ink2-gpu: class inkling2-gpu-f32-stream/nvfp4-rig/DeclaredActivationQuant; resident weights 14.332 GiB, with state 14.976 GiB, loaded in 2.5s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: batch check b=4: 45 decode rows over 17 batched calls (up to 4 rows) and 9 interleaved prefill chunks of 7; rows differing from solo: 0

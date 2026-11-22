@@ -14,7 +14,9 @@ use memra_gguf::source::{
     census_from_safetensors_headers,
 };
 use memra_gguf::tensor_contract::{BoundTensorContract, CheckpointDialect, TensorId, TensorOwner};
-use memra_reference::{deterministic_fixture, execute_multimodal, execute_tokens, execute_vision};
+use memra_reference::{
+    TinyGate, deterministic_fixture, execute_fixture, execute_multimodal, execute_vision,
+};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -206,14 +208,7 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
             let out_dir = request.out_dir.ok_or("verify tiny requires --out")?;
             let plan = pack.compile_tiny_plan()?;
             let fixture = deterministic_fixture(&plan)?;
-            let run = || {
-                execute_tokens(
-                    &plan,
-                    &fixture.weights,
-                    &fixture.token_ids,
-                    fixture.decode_from,
-                )
-            };
+            let run = || execute_fixture(&plan, &fixture);
             let first = run()?;
             let second = run()?;
             if first != second {
@@ -254,11 +249,8 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                     .into());
                 }
                 Some(pinned) => {
-                    let gate = pack.checkpoint_parity.expect(
-                        "a NativeReference pack with a pinned tiny oracle always declares a checkpoint-parity tolerance",
-                    );
                     if let Err(reason) =
-                        oracle_matches_within_tolerance(pinned, &oracle_text, &gate)
+                        tiny_gate_verdict(pack, fixture.tiny_gate, pinned, &oracle_text)
                     {
                         return Err(format!(
                             "tiny parity diverges from the pinned oracle at {}: {reason} (textual diff for context: {:?}); a divergence beyond the family's checkpoint-parity tolerance must be reviewed and the pinned oracle re-committed deliberately, not silently regenerated",
@@ -274,14 +266,7 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
             // fixture, checkpoint image and oracle written first and pinned the same way.
             let mut variant_texts = Vec::new();
             for variant in memra_reference::tiny_variants(&plan)? {
-                let run = || {
-                    execute_tokens(
-                        &variant.plan,
-                        &variant.fixture.weights,
-                        &variant.fixture.token_ids,
-                        variant.fixture.decode_from,
-                    )
-                };
+                let run = || execute_fixture(&variant.plan, &variant.fixture);
                 let output = run()?;
                 if output != run()? {
                     return Err(format!(
@@ -304,10 +289,10 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                     &out_dir.join(format!("reference-oracle-{}.tsv", variant.name)),
                     text.as_bytes(),
                 )?;
-                variant_texts.push((variant.name, text));
+                variant_texts.push((variant.name, text, variant.fixture.tiny_gate));
             }
             let mut variant_receipts = String::new();
-            for (name, text) in &variant_texts {
+            for (name, text, tiny_gate) in &variant_texts {
                 let path = pinned_tiny_variant_oracle_path(pack.family, name);
                 let pinned = pinned_tiny_variant_oracle(pack.family, name).ok_or_else(|| {
                     format!(
@@ -315,20 +300,20 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
                         pack.family
                     )
                 })?;
-                let gate = pack.checkpoint_parity.expect(
-                    "a NativeReference pack with a pinned tiny oracle always declares a checkpoint-parity tolerance",
-                );
-                if let Err(reason) = oracle_matches_within_tolerance(pinned, text, &gate) {
+                if let Err(reason) = tiny_gate_verdict(pack, *tiny_gate, pinned, text) {
                     return Err(format!(
                         "tiny parity diverges from the pinned oracle at {path}: {reason} (textual diff for context: {:?})",
                         first_diff_line(pinned, text),
                     )
                     .into());
                 }
+                // Two hashes: a run inside a band need not be the pinned bytes.
                 writeln!(
                     variant_receipts,
-                    "pinned_oracle_sha256_{name}\t{}",
-                    hex_sha256(text.as_bytes())
+                    "pinned_oracle_sha256_{name}\t{}\nreference_oracle_sha256_{name}\t{}\ncomparison_{name}\t{}",
+                    hex_sha256(pinned.as_bytes()),
+                    hex_sha256(text.as_bytes()),
+                    describe_tiny_gate(pack, *tiny_gate)
                 )
                 .unwrap();
             }
@@ -438,9 +423,15 @@ pub fn verify_model(request: VerifyRequest) -> Result<VerifySummary, Box<dyn std
             write_atomic(
                 &out_dir.join("tiny-gate.tsv"),
                 format!(
-                    "status\tpassed\nfamily\t{}\npinned_oracle_sha256\t{}\n{variant_receipts}",
+                    "status\tpassed\nfamily\t{}\npinned_oracle_sha256\t{}\nreference_oracle_sha256\t{}\ncomparison\t{}\n{variant_receipts}",
                     pack.family,
-                    hex_sha256(oracle_text.as_bytes())
+                    hex_sha256(
+                        pinned_tiny_oracle(pack.family)
+                            .expect("the pinned comparison above passed")
+                            .as_bytes()
+                    ),
+                    hex_sha256(oracle_text.as_bytes()),
+                    describe_tiny_gate(pack, fixture.tiny_gate)
                 )
                 .as_bytes(),
             )?;
@@ -1488,7 +1479,7 @@ pub fn inspect_model(
 ) -> Result<InspectSummary, Box<dyn std::error::Error>> {
     let pack = model_packs::by_alias(&request.against)
         .ok_or_else(|| format!("unknown model pack {:?}", request.against))?;
-    let source = load_source(&request.source)?;
+    let source = load_source(&request.source, pack)?;
     let plan = pack.compile_plan(&source.config)?;
     // Head ownership and the bind are the loader's own boundary (memra#541): what inspection
     // refuses here, `memra-server` refuses before upload with the same text.
@@ -1656,13 +1647,69 @@ pub fn inspect_model(
     })
 }
 
-fn load_source(source: &str) -> Result<SourceData, Box<dyn std::error::Error>> {
+fn load_source(source: &str, pack: &ModelPack) -> Result<SourceData, Box<dyn std::error::Error>> {
     let path = Path::new(source);
     if path.exists() {
-        return load_local(path);
+        return load_local(path, pack);
     }
     let (repo, revision) = parse_pinned_hf_source(source)?;
-    load_remote(repo, revision)
+    load_remote(repo, revision, pack)
+}
+
+/// Attach `hf_quant_config.json` to a config whose plan reads its numerics from it. `read`
+/// returns the file's text, or `None` when the artifact has none.
+fn attach_quant_groups(
+    config: &mut ModelConfig,
+    read: impl FnOnce() -> Result<Option<String>, Box<dyn std::error::Error>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !config.needs_quant_groups() {
+        return Ok(());
+    }
+    let text = read()?.ok_or(
+        "the artifact has no hf_quant_config.json; this family's expert formats and required activation quantizers are declared there",
+    )?;
+    config.attach_quant_groups(&text)?;
+    Ok(())
+}
+
+/// The JSON header of a local safetensors file.
+fn local_safetensors_header(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::Read;
+    let mut file =
+        std::fs::File::open(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let mut prefix = [0u8; 8];
+    file.read_exact(&mut prefix)?;
+    let header_len = u64::from_le_bytes(prefix) as usize;
+    if header_len == 0 || header_len > MAX_TEXT_BYTES {
+        return Err(format!(
+            "{}: invalid safetensors header length {header_len}",
+            path.display()
+        )
+        .into());
+    }
+    let mut bytes = vec![0u8; header_len];
+    file.read_exact(&mut bytes)?;
+    Ok(String::from_utf8(bytes)?)
+}
+
+/// Add the tensors of a weight file outside the shard index to `headers`, under the pack's
+/// census prefix for that file.
+fn add_auxiliary_headers(
+    headers: &mut BTreeMap<String, StInfo>,
+    auxiliary: &memra_gguf::model_packs::AuxiliaryTensorFile,
+    header_json: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for (name, info) in parse_header(header_json)? {
+        let name = format!("{}{name}", auxiliary.prefix);
+        if headers.insert(name.clone(), info).is_some() {
+            return Err(format!(
+                "tensor {name} of {} collides with an indexed tensor",
+                auxiliary.file
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 fn load_config_only(source: &str) -> Result<ModelConfig, Box<dyn std::error::Error>> {
@@ -1672,14 +1719,21 @@ fn load_config_only(source: &str) -> Result<ModelConfig, Box<dyn std::error::Err
     }
     if path.is_dir() {
         let bytes = std::fs::read(path.join("config.json"))?;
-        return Ok(ModelConfig::from_hf(&HfConfig::try_parse(
-            std::str::from_utf8(&bytes)?,
-        )?));
+        let mut config = ModelConfig::from_hf(&HfConfig::try_parse(std::str::from_utf8(&bytes)?)?);
+        attach_quant_groups(&mut config, || {
+            local_text(&path.join("hf_quant_config.json"))
+        })?;
+        return Ok(config);
     }
     let (repo, revision) = parse_pinned_hf_source(source)?;
-    let url = format!("https://huggingface.co/{repo}/resolve/{revision}/config.json");
-    let config = http_text(&url)?.ok_or("pinned model has no config.json")?;
-    Ok(ModelConfig::from_hf(&HfConfig::try_parse(&config)?))
+    let base = format!("https://huggingface.co/{repo}/resolve/{revision}");
+    let config =
+        http_text(&format!("{base}/config.json"))?.ok_or("pinned model has no config.json")?;
+    let mut config = ModelConfig::from_hf(&HfConfig::try_parse(&config)?);
+    attach_quant_groups(&mut config, || {
+        http_text(&format!("{base}/hf_quant_config.json"))
+    })?;
+    Ok(config)
 }
 
 /// `config_bytes` for a GGUF or Hy3-repack source, whose lock hashes its config as normalized,
@@ -1692,7 +1746,16 @@ fn normalized_config_bytes(config: &ModelConfig) -> Vec<u8> {
     format!("{config:#?}").into_bytes()
 }
 
-fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
+/// A local text file, or `None` when it does not exist.
+fn local_text(path: &Path) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("{}: {error}", path.display()).into()),
+    }
+}
+
+fn load_local(path: &Path, pack: &ModelPack) -> Result<SourceData, Box<dyn std::error::Error>> {
     if path.is_file() {
         let gguf = GgufFile::open(path)?;
         let tokenizer = inspect_gguf_tokenizer(&gguf);
@@ -1733,7 +1796,10 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
 
     let config_bytes = std::fs::read(path.join("config.json"))?;
     let config_text = std::str::from_utf8(&config_bytes)?;
-    let config = ModelConfig::from_hf(&HfConfig::try_parse(config_text)?);
+    let mut config = ModelConfig::from_hf(&HfConfig::try_parse(config_text)?);
+    attach_quant_groups(&mut config, || {
+        local_text(&path.join("hf_quant_config.json"))
+    })?;
     if let Some(map) = config.per_layer_quant_map() {
         let file = match std::fs::read_to_string(path.join("hf_quant_config.json")) {
             Ok(text) => Some(text),
@@ -1744,15 +1810,20 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
     }
     let tokenizer = inspect_hf_tokenizer_dir(path);
     let model = StModel::open(path)?;
-    let shards = local_shards(path)?;
+    let mut shards = local_shards(path)?;
     let revision = local_hf_revision(path, &shards).unwrap_or_else(|| "local".to_string());
-    let headers = model
+    let mut headers: BTreeMap<String, StInfo> = model
         .names()
         .map(|name| {
             let info = model.info(name).expect("StModel name must resolve");
             (name.clone(), info.clone())
         })
         .collect();
+    for auxiliary in pack.auxiliary_files {
+        let header = local_safetensors_header(&path.join(auxiliary.file))?;
+        add_auxiliary_headers(&mut headers, auxiliary, &header)?;
+        shards.push(auxiliary.file.to_string());
+    }
     Ok(SourceData {
         label: path.display().to_string(),
         revision,
@@ -1765,12 +1836,20 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
     })
 }
 
-fn load_remote(repo: &str, revision: &str) -> Result<SourceData, Box<dyn std::error::Error>> {
+fn load_remote(
+    repo: &str,
+    revision: &str,
+    pack: &ModelPack,
+) -> Result<SourceData, Box<dyn std::error::Error>> {
     let base = format!("https://huggingface.co/{repo}/resolve/{revision}");
     let config_bytes = http_text(&format!("{base}/config.json"))?
         .ok_or("pinned model has no config.json")?
         .into_bytes();
-    let config = ModelConfig::from_hf(&HfConfig::try_parse(std::str::from_utf8(&config_bytes)?)?);
+    let mut config =
+        ModelConfig::from_hf(&HfConfig::try_parse(std::str::from_utf8(&config_bytes)?)?);
+    attach_quant_groups(&mut config, || {
+        http_text(&format!("{base}/hf_quant_config.json"))
+    })?;
     // A config that carries a per-layer ModelOpt map must agree with the artifact's
     // hf_quant_config.json, the second copy of the same map.
     if let Some(map) = config.per_layer_quant_map() {
@@ -1778,7 +1857,7 @@ fn load_remote(repo: &str, revision: &str) -> Result<SourceData, Box<dyn std::er
     }
     let tokenizer = inspect_remote_hf_tokenizer(&base);
     let index = http_text(&format!("{base}/model.safetensors.index.json"))?;
-    let shards: Vec<String> = if let Some(index) = index {
+    let mut shards: Vec<String> = if let Some(index) = index {
         let mut files: Vec<_> = parse_index_json(&index)?.into_values().collect();
         files.sort();
         files.dedup();
@@ -1786,8 +1865,7 @@ fn load_remote(repo: &str, revision: &str) -> Result<SourceData, Box<dyn std::er
     } else {
         vec!["model.safetensors".to_string()]
     };
-    let mut headers = BTreeMap::new();
-    for shard in &shards {
+    let remote_header = |shard: &str| -> Result<String, Box<dyn std::error::Error>> {
         validate_remote_filename(shard)?;
         let url = format!("{base}/{shard}");
         let prefix = http_range(&url, 0, 7)?;
@@ -1806,12 +1884,21 @@ fn load_remote(repo: &str, revision: &str) -> Result<SourceData, Box<dyn std::er
             )
             .into());
         }
-        let parsed = parse_header(std::str::from_utf8(&bytes)?)?;
+        Ok(String::from_utf8(bytes)?)
+    };
+    let mut headers = BTreeMap::new();
+    for shard in &shards {
+        let parsed = parse_header(&remote_header(shard)?)?;
         for (name, info) in parsed {
             if headers.insert(name.clone(), info).is_some() {
                 return Err(format!("tensor {name} occurs in multiple safetensors shards").into());
             }
         }
+    }
+    for auxiliary in pack.auxiliary_files {
+        let header = remote_header(auxiliary.file)?;
+        add_auxiliary_headers(&mut headers, auxiliary, &header)?;
+        shards.push(auxiliary.file.to_string());
     }
     Ok(SourceData {
         label: repo.to_string(),
@@ -2546,6 +2633,11 @@ fn format_lock(
         .unwrap();
     }
     writeln!(output, "config_sha256={config}").unwrap();
+    // Only a family whose numerics come from `hf_quant_config.json` writes this line: every
+    // other lock keeps its bytes.
+    if let Some(line) = quant_config_lock_line(&source.config) {
+        output.push_str(&line);
+    }
     writeln!(output, "census_sha256={census}").unwrap();
     writeln!(output, "plan_sha256={plan}").unwrap();
     writeln!(output, "rewrite_manifest_sha256={rewrites}").unwrap();
@@ -2580,6 +2672,15 @@ fn format_lock(
         writeln!(output, "shard={}", lock_value(shard)).unwrap();
     }
     output
+}
+
+/// The lock line for `hf_quant_config.json`, a semantic input of the plan for a family that
+/// reads its numerics from it. The plan text carries the same hash, so `plan_sha256` already
+/// covers the file; the line makes that visible without reading the plan.
+fn quant_config_lock_line(config: &ModelConfig) -> Option<String> {
+    config
+        .quant_groups_sha256()
+        .map(|sha| format!("quant_config_sha256={sha}\n"))
 }
 
 fn parse_header(
@@ -2779,6 +2880,9 @@ fn format_tiny_fixture(
     if let Some(token_ids) = fixture.multimodal_token_ids.as_ref() {
         writeln!(output, "multimodal_tokens={token_ids:?}").unwrap();
     }
+    if !fixture.chunk_ends.is_empty() {
+        writeln!(output, "chunk_ends={:?}", fixture.chunk_ends).unwrap();
+    }
     if let Some(decode_from) = fixture.decode_from {
         writeln!(output, "decode_from={decode_from}").unwrap();
     }
@@ -2832,6 +2936,12 @@ fn pinned_tiny_oracle(family: &str) -> Option<&'static str> {
         "hy_v4_flash" => Some(include_str!(
             "../tests/fixtures/tiny-oracle/hy_v4_flash.tsv"
         )),
+        // Not produced by memra. The trunk, cache, masks and loader ops are the transformers
+        // PR 51050 model code, source-transformed to f64; the expert module is replaced by the
+        // oracle lane's own (stored bytes, each routed expert dequantized exactly, an f64 GEMM).
+        // Run over the fixture's checkpoint image by
+        // research/modelplan-onboarding-inkling2mini-20261121/reference/tiny_oracle.py.
+        "inkling2" => Some(include_str!("../tests/fixtures/tiny-oracle/inkling2.tsv")),
         _ => None,
     }
 }
@@ -2861,11 +2971,38 @@ fn pinned_tiny_variant_oracle(family: &str, variant: &str) -> Option<&'static st
         ("hy_v4_flash", "split500") => Some(include_str!(
             "../tests/fixtures/tiny-oracle/hy_v4_flash-split500.tsv"
         )),
+        // The same f64 float-activation oracle under each variant's schedule
+        // (research/modelplan-onboarding-inkling2mini-20261121/reference/tiny_oracle.py).
+        // One file: the oracle's logits under these schedules differ below 1e-12 in f64 and are
+        // the same bytes as the main run's after rounding to f32 (the oracle was run under each
+        // schedule: research/modelplan-onboarding-inkling2mini-20261121/tiny/oracle-run-*.json).
+        ("inkling2", "splits" | "offsplits" | "steps") => {
+            Some(include_str!("../tests/fixtures/tiny-oracle/inkling2.tsv"))
+        }
+        // The declared class: a CPU simulation of the activation-quant expert program on an
+        // f32 stream (tiny_oracle.py --arm actq). It is not the float-activation oracle and not
+        // a capture of a serving binary.
+        ("inkling2", "declared") => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/inkling2-declared.tsv"
+        )),
+        // nvfp4-rig: the same activation-quant simulation on the tiny checkpoint merged with its
+        // minted overlay (dense tensors dequantized by the oracle, the MXFP8 banks as NVFP4) and
+        // unit-scale e4m3 K/V on every slot
+        // (research/modelplan-onboarding-inkling2mini-20261121/nvfp4-rig/tiny_rig_oracle.py).
+        ("inkling2", "nvfp4-rig") => Some(include_str!(
+            "../tests/fixtures/tiny-oracle/inkling2-nvfp4-rig.tsv"
+        )),
         _ => None,
     }
 }
 
 fn pinned_tiny_variant_oracle_path(family: &str, variant: &str) -> String {
+    if matches!(
+        (family, variant),
+        ("inkling2", "splits" | "offsplits" | "steps")
+    ) {
+        return pinned_tiny_oracle_path(family);
+    }
     format!("crates/memra-cli/tests/fixtures/tiny-oracle/{family}-{variant}.tsv")
 }
 
@@ -2964,6 +3101,84 @@ fn parse_oracle_rows(text: &str) -> Result<Vec<(OracleRowIdentity, f32)>, String
 /// arm this gate exists for (memra#543: corrupt a weight by +1.0) differs by orders of magnitude
 /// more than any such tolerance, so this stays non-vacuous. Every row's non-float identity
 /// (stream, position, token/channel) is still required to match exactly.
+/// The tiny gate's comparison of one run with its pinned oracle, as the fixture declares it
+/// (`memra_reference::TinyGate`). `Exact` and `Band` are the tiny gate's own and never read the
+/// pack's checkpoint-parity band, so a pack can pass tiny parity while declaring none.
+fn tiny_gate_verdict(
+    pack: &ModelPack,
+    tiny_gate: TinyGate,
+    pinned: &str,
+    actual: &str,
+) -> Result<(), String> {
+    match tiny_gate {
+        TinyGate::PackBand => {
+            let gate = pack.checkpoint_parity.ok_or_else(|| {
+                format!(
+                    "model pack {} declares no checkpoint-parity band and its tiny fixture asks for the pack's band",
+                    pack.family
+                )
+            })?;
+            oracle_matches_within_tolerance(pinned, actual, &gate)
+        }
+        TinyGate::Exact => {
+            if pinned == actual {
+                Ok(())
+            } else {
+                Err(
+                    "this run is gated on bit equality and its oracle text is not the pinned bytes"
+                        .into(),
+                )
+            }
+        }
+        TinyGate::Band { max_abs, max_rel } => oracle_matches_within_tolerance(
+            pinned,
+            actual,
+            &CheckpointParityGate {
+                max_abs,
+                max_rel,
+                require_argmax: true,
+            },
+        ),
+    }
+}
+
+fn describe_tiny_gate(pack: &ModelPack, tiny_gate: TinyGate) -> String {
+    match tiny_gate {
+        TinyGate::PackBand => match pack.checkpoint_parity {
+            Some(gate) => format!(
+                "pack-band atol={} rtol={} argmax={}",
+                gate.max_abs, gate.max_rel, gate.require_argmax
+            ),
+            None => "pack-band undeclared".into(),
+        },
+        TinyGate::Exact => "exact".into(),
+        TinyGate::Band { max_abs, max_rel } => {
+            format!("tiny-band atol={max_abs} rtol={max_rel} argmax=true")
+        }
+    }
+}
+
+/// The token with the largest logit of each `(stream, position)` that has more than one row,
+/// lowest row first among equal maxima.
+fn oracle_argmaxes(rows: &[((String, String, String), f32)]) -> Vec<(&str, &str, &str)> {
+    let mut out: Vec<(&str, &str, &str, f32, usize)> = Vec::new();
+    for ((stream, position, token), value) in rows {
+        match out.last_mut() {
+            Some(last) if last.0 == stream && last.1 == position => {
+                last.4 += 1;
+                if *value > last.3 {
+                    (last.2, last.3) = (token, *value);
+                }
+            }
+            _ => out.push((stream, position, token, *value, 1)),
+        }
+    }
+    out.into_iter()
+        .filter(|group| group.4 > 1)
+        .map(|group| (group.0, group.1, group.2))
+        .collect()
+}
+
 fn oracle_matches_within_tolerance(
     pinned: &str,
     actual: &str,
@@ -2997,6 +3212,21 @@ fn oracle_matches_within_tolerance(
             return Err(format!(
                 "oracle row {index} ({pinned_identity:?}) diverges from the pinned oracle by {absolute} (allowed atol+rtol*abs(reference)={allowed}; pinned={reference} actual={native})"
             ));
+        }
+    }
+    // The band bounds every value; it does not bound the pick. A gate that requires the argmax
+    // refuses a run whose largest logit at any position is another token's.
+    if gate.require_argmax {
+        for (reference, native) in oracle_argmaxes(&pinned_rows)
+            .into_iter()
+            .zip(oracle_argmaxes(&actual_rows))
+        {
+            if reference != native {
+                return Err(format!(
+                    "argmax differs at stream {} position {}: pinned token {} actual token {}",
+                    reference.0, reference.1, reference.2, native.2
+                ));
+            }
         }
     }
     Ok(())
@@ -3144,6 +3374,37 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use memra_reference::execute;
+
+    /// The lock names `hf_quant_config.json` for a family whose plan reads its numerics from
+    /// it, and only for such a family.
+    #[test]
+    fn lock_names_the_quant_declaration_only_where_the_plan_reads_one() {
+        let mut inkling = ModelConfig::from_hf(&HfConfig::parse(include_str!(
+            "../../memra-gguf/src/model_packs/inkling2/fixtures/config.json"
+        )));
+        assert_eq!(
+            quant_config_lock_line(&inkling),
+            None,
+            "nothing attached yet"
+        );
+        inkling
+            .attach_quant_groups(include_str!(
+                "../../memra-gguf/src/model_packs/inkling2/fixtures/hf_quant_config.json"
+            ))
+            .unwrap();
+        assert_eq!(
+            quant_config_lock_line(&inkling).as_deref(),
+            Some(
+                "quant_config_sha256=7c656207d3ce37879c7be209a036b0dde43bf01f78159bff06880b868ed57143\n"
+            )
+        );
+        let qwen = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":64,
+            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+            "intermediate_size":128,"vocab_size":16,"max_position_embeddings":128}"#,
+        ));
+        assert_eq!(quant_config_lock_line(&qwen), None);
+    }
 
     #[test]
     fn hf_template_lock_uses_decoded_json_and_refuses_malformed_sidecars() {
@@ -3665,6 +3926,83 @@ mod tests {
         assert!(pinned_tiny_oracle("qwen3").is_some());
     }
 
+    #[test]
+    fn a_band_that_requires_the_argmax_refuses_a_swapped_pick_inside_the_band() {
+        let rows = |a: f32, b: f32, c: f32| {
+            format!(
+                "stream\tposition\ttoken\tlogit_f32_bits\nmain\t0\t0\t{:08x}\nmain\t0\t1\t{:08x}\nmain\t1\t0\t{:08x}\nmain\t1\t1\t{:08x}\ndspark-confidence\t0\t7\t{:08x}\n",
+                a.to_bits(),
+                b.to_bits(),
+                1.0f32.to_bits(),
+                0.5f32.to_bits(),
+                c.to_bits()
+            )
+        };
+        let pinned = rows(1.0, 1.0001, 0.25);
+        // Every value is inside the band, and position 0's largest logit moved to token 0.
+        let swapped = rows(1.0001, 1.0, 0.2501);
+        let gate = |require_argmax| CheckpointParityGate {
+            max_abs: 0.005,
+            max_rel: 0.005,
+            require_argmax,
+        };
+        oracle_matches_within_tolerance(&pinned, &swapped, &gate(false)).unwrap();
+        let error = oracle_matches_within_tolerance(&pinned, &swapped, &gate(true)).unwrap_err();
+        assert!(
+            error.contains("argmax differs at stream main position 0"),
+            "{error}"
+        );
+        // The same pick with other values inside the band passes, single-row streams included.
+        oracle_matches_within_tolerance(&pinned, &rows(1.0, 1.0002, 0.2501), &gate(true)).unwrap();
+    }
+
+    #[test]
+    fn inkling2_tiny_gate_is_exact_for_float_runs_and_reads_no_checkpoint_band() {
+        let pack = model_packs::by_alias("inkling2").unwrap();
+        // Only the declared class has a band, so a float-activation oracle cannot pass for the
+        // declared class.
+        assert_eq!(pack.checkpoint_parity, None);
+        assert!(
+            pack.checkpoint_parity_for("source-weights-float32-accumulation")
+                .is_none()
+        );
+        assert!(
+            pack.checkpoint_parity_for("inkling2-declared-activation-quant")
+                .is_some()
+        );
+        let pinned = pinned_tiny_oracle("inkling2").unwrap();
+        // One logit moved by one ulp: inside any band, and not the pinned bytes.
+        let line = pinned.lines().nth(1).unwrap();
+        let bits = u32::from_str_radix(line.rsplit('\t').next().unwrap(), 16).unwrap();
+        let moved = format!("{}{:08x}", &line[..line.len() - 8], bits ^ 1);
+        let drifted = pinned.replacen(line, &moved, 1);
+        assert_ne!(drifted, pinned);
+        tiny_gate_verdict(pack, TinyGate::Exact, pinned, pinned).unwrap();
+        assert!(tiny_gate_verdict(pack, TinyGate::Exact, pinned, &drifted).is_err());
+        let band = TinyGate::Band {
+            max_abs: 1e-5,
+            max_rel: 1e-5,
+        };
+        tiny_gate_verdict(pack, band, pinned, &drifted).unwrap();
+        // The pack has no band of its own to fall back on.
+        assert!(tiny_gate_verdict(pack, TinyGate::PackBand, pinned, pinned).is_err());
+        // Every float-activation run is exact; only the activation-quant variants ("declared",
+        // and "nvfp4-rig" on top of it) have a band.
+        let plan = pack.compile_tiny_plan().unwrap();
+        assert_eq!(
+            deterministic_fixture(&plan).unwrap().tiny_gate,
+            TinyGate::Exact
+        );
+        for variant in memra_reference::tiny_variants(&plan).unwrap() {
+            assert_eq!(
+                variant.fixture.tiny_gate == TinyGate::Exact,
+                !matches!(variant.name, "declared" | "nvfp4-rig"),
+                "{}",
+                variant.name
+            );
+        }
+    }
+
     /// The exact CI failure that shipped in PR #897's first two pushes: byte-exact comparison
     /// of a pinned oracle against a freshly computed one is not portable across machines.
     /// gemma4_dense's pinned bits 0x3f0382bf differed from a CI runner's freshly computed
@@ -3907,7 +4245,13 @@ mod tests {
         let run = |plan: &memra_gguf::model_plan::ModelPlan,
                    weights: &memra_reference::ReferenceWeights| {
             format_reference_oracle(
-                &execute_tokens(plan, weights, &fixture.token_ids, fixture.decode_from).unwrap(),
+                &memra_reference::execute_tokens(
+                    plan,
+                    weights,
+                    &fixture.token_ids,
+                    fixture.decode_from,
+                )
+                .unwrap(),
             )
         };
         // Bit for bit on the lane's machines (research/.../tiny/hashes.tsv); the gate holds

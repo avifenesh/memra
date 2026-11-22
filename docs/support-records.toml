@@ -460,3 +460,79 @@ TensorCensus = ["research/modelplan-onboarding-hy4flash-20261119/dfly/receipts/s
 TinyParity = ["research/modelplan-onboarding-hy4flash-20261119/dfly/receipts/verify-ef45222ac6-tiny/gates.txt", "ci:verify-tiny"]
 CheckpointParity = ["research/modelplan-onboarding-hy4flash-20261119/dfly/receipts/s11/verify-d43aacce37/gates.txt"]
 Serve = ["research/modelplan-onboarding-hy4flash-20261119/dfly/receipts/s11/verify-d43aacce37/gates.txt"]
+
+[[record]]
+id = "inkling2-reference"
+pack = "inkling2"
+state = "NativeReference"
+artifact = "tiny fixture (a seeded checkpoint image in the family's layout, sha256 db3bcf55117349fada275aa5e1261e13f5a703ad5b99c608ab88076326567953); census over thinkingmachines/Inkling-2-Mini@ed40e7da625f594fc9c4990f5f66be24873c22d7"
+numeric_program = "f64 reference executor from the stored values: BF16 and F32 tensors widened, NVFP4 and MXFP8 expert banks dequantized exactly. The expert input is set per physical layer: float inputs (the float-activation class, a bring-up and oracle class), or the declared activation quantizer in fp32 on bf16 rows (NVFP4 four-over-six W4A4, MXFP8 W8A8; the default class)"
+topology = "cpu"
+route = "memra model inspect + verify tiny"
+notes = "The tiny gate's main plan is the float-activation class, because that class has an oracle written apart from memra: the transformers PR 51050 trunk, cache, masks and loader ops, source-transformed to f64, with the expert module replaced by the oracle lane's own (stored bytes, each routed expert dequantized exactly, an f64 GEMM), run over the fixture's checkpoint image. The PR program with nothing replaced is 4.8e-5 from that oracle in f64 and 1.7e-4 in f32, argmax equal at 40 of 40 positions; its stock bf16 load is 5.19 away with 14 of 40 (research/modelplan-onboarding-inkling2mini-20261121/tiny/stock-crosscheck.json). The PR's own Interleave, expert module and dequantizer are pinned by module records in memra-reference. The reference matches the oracle to the bit after rounding to f32 on the main fixture and on three schedule variants (prefill chunks ending at 8, 12, 24; at 7, 11, 23; a prefill of 5 then one token per call), which cross the tiny config's sliding window, relative extent and log-scale floor; those four runs are gated on bit equality. A fourth variant runs the family's default class (every layer on its declared quantizer) and is pinned to a CPU simulation of the activation-quant expert program on an f32 stream, written apart from the reference: max abs 2.3e-6 under a tiny-gate band of 1e-5 that also requires the argmax at every position. That simulation is not a capture of a serving binary, so the default class has no vendor oracle here. The pack declares a checkpoint-parity band only for the declared class (inkling2-declared-activation-quant, docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md), so a float-activation oracle cannot pass for the default class. The tiny checkpoint and its token ids regenerate byte-identically from the tracked generator (reference/ink2_tiny.py, seed 20261121; tiny/generator-run.json). The drafter and the vision tower are contract-owned and not executed: a run returns no draft, and the standalone draft and multimodal entry points refuse the plan by name. No tuned surface implements any operation of the plan and every rewrite is ineligible. Receipts: research/modelplan-onboarding-inkling2mini-20261121/tiny and reference/README.md. TokenizerTemplate and TensorCensus passed at inspect on the pinned checkpoint."
+[record.gates]
+Config = "passed"
+TokenizerTemplate = "passed"
+TensorCensus = "passed"
+TinyParity = "passed"
+CheckpointParity = "pending"
+RewriteParity = "pending"
+Serve = "pending"
+[record.evidence]
+Config = ["research/modelplan-onboarding-inkling2mini-20261121/inspect/gates.txt", "ci:verify-tiny"]
+TokenizerTemplate = ["research/modelplan-onboarding-inkling2mini-20261121/inspect/gates.txt"]
+TensorCensus = ["research/modelplan-onboarding-inkling2mini-20261121/inspect/gates.txt"]
+TinyParity = ["research/modelplan-onboarding-inkling2mini-20261121/tiny/gates.txt", "ci:verify-tiny"]
+
+[[record]]
+id = "inkling2-shipped-gpu-1x-5090"
+pack = "inkling2"
+state = "NativeQualified"
+artifact = "thinkingmachines/Inkling-2-Mini@ed40e7da625f594fc9c4990f5f66be24873c22d7 (a local copy: its config, quant-config, census, tokenizer and template sha256 in the verify bundle's artifact.lock equal the pinned remote inspect's, research/modelplan-onboarding-inkling2mini-20261121/inspect-remote/artifact.lock; weights model-00001-of-00001.safetensors sha256 65e60f51aa1284d4fb022584908c315270334d991828bb774af60584523539d1)"
+numeric_program = "the checkpoint's shipped class (inkling2-declared-activation-quant): routed experts as declared, NVFP4 W4A4 four-over-six on layers 0..19 and MXFP8 W8A8 on 20..23 with per-token activation quantization and the sm_120 tensor-core accumulators, SiTU rounded once to bf16; everything outside the experts on an f32 stream from the BF16 weights under lane P's adopted program (controller and norms f32, convolutions and router compensated f32, attention f32 tiles with f64 merges); KV caches f32. Every request in that one class (numeric_class shipped); batched decode rows are bit-equal to their solo calls"
+topology = "1x RTX 5090 Laptop GPU (sm_120a, 24 GB); every weight resident as shipped (17.6 GiB), the drafter and vision tower not executed"
+route = "memra-server inkling2 route (inkling2_serve) over inkling2_gpu"
+memra_commit = "39d8e4ab36760ef146f5a5cb249ada977d586d5a"
+notes = "Pinned at 39d8e4ab36, the land/inkling2mini-1 head (main 63f806baf9 with memra#1393, #1394, #1395, #1396, #1397, #1401, #1399 at 38925f1ac5, #1398 at ac04e22200 and #1400), whose route runs lane P's adopted program (controller and norms f32, convolutions and router compensated f32, attention f32 tiles with f64 merges). At the pin, on the RTX 5090 Laptop, from the binaries whose sha256 are in serve/land-final-verify/*-verify/SHA256SUMS: memra model verify checkpoint (native side ink2-gpu under MEMRA_ORACLE_OUT) against lane E's CPU tape of the class on the pack's probe, verify serve on that receipt, serve_check all pass, and memra model verify tiny with ci:verify-tiny (serve/land-final-verify/tiny/). The band rule and the per-MoE, trunk and corpus-KL evidence are in docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md. TokenizerTemplate is the inspect gate on the pinned artifact (memra#1394, research/modelplan-onboarding-inkling2mini-20261121/chat/). Batched decode rows are bit-equal to their solo calls, and sessions past the load's context run the same program (serve/land-final/, serve/land-final-gate/: 0 rows differing, equal digests, red arms move). The drafter gates of lane S pass on the same binaries (serve/land-final-spec/: tiny gate, run-spec K=1..7 28/28 spec equal to plain). After the pin: the data commits that write these records and receipts. RewriteParity stays pending: no rewrite is qualified. No other topology carries evidence. Shipped class: max abs 2.054 under the class band 3.7, argmax 200001 on both sides. Served at full clocks (serve/land-final-verify/shipped/): 57.6, 77.1 and 98.4 output tok/s at c=1, 2 and 4, TPOT p50 17.2 ms at c=1, every answer at c=2 and c=4 equal to its c=1 answer."
+[record.gates]
+Config = "passed"
+TokenizerTemplate = "passed"
+TensorCensus = "passed"
+TinyParity = "passed"
+CheckpointParity = "passed"
+RewriteParity = "pending"
+Serve = "passed"
+[record.evidence]
+Config = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/shipped-verify/gates.txt", "ci:verify-tiny"]
+TokenizerTemplate = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/shipped-verify/gates.txt"]
+TensorCensus = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/shipped-verify/gates.txt"]
+TinyParity = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/tiny/gates.txt", "ci:verify-tiny"]
+CheckpointParity = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/shipped-verify/gates.txt"]
+Serve = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/shipped-verify/gates.txt"]
+
+[[record]]
+id = "inkling2-nvfp4-rig-gpu-1x-5090"
+pack = "inkling2"
+state = "NativeQualified"
+artifact = "thinkingmachines/Inkling-2-Mini@ed40e7da625f594fc9c4990f5f66be24873c22d7 (a local copy: its config, quant-config, census, tokenizer and template sha256 in the verify bundle's artifact.lock equal the pinned remote inspect's, research/modelplan-onboarding-inkling2mini-20261121/inspect-remote/artifact.lock; weights model-00001-of-00001.safetensors sha256 65e60f51aa1284d4fb022584908c315270334d991828bb774af60584523539d1)"
+numeric_program = "the nvfp4-rig class (inkling2-nvfp4-rig): the checkpoint's declared experts with layers 20..23 re-minted to NVFP4 W4A4 by lane M's overlay (bound by sha256), K/V caches rounded once to e4m3; the stream outside the experts as the shipped class under lane P's adopted program. Every request in that one class; batched decode rows are bit-equal to their solo calls"
+topology = "1x RTX 5090 Laptop GPU (sm_120a, 24 GB); every weight resident, the overlay in place of layers 20..23 (14.3 GiB), the drafter and vision tower not executed"
+route = "memra-server inkling2 route (inkling2_serve) over inkling2_gpu"
+memra_commit = "39d8e4ab36760ef146f5a5cb249ada977d586d5a"
+notes = "Pinned at 39d8e4ab36, the land/inkling2mini-1 head (main 63f806baf9 with memra#1393, #1394, #1395, #1396, #1397, #1401, #1399 at 38925f1ac5, #1398 at ac04e22200 and #1400), whose route runs lane P's adopted program (controller and norms f32, convolutions and router compensated f32, attention f32 tiles with f64 merges). At the pin, on the RTX 5090 Laptop, from the binaries whose sha256 are in serve/land-final-verify/*-verify/SHA256SUMS: memra model verify checkpoint (native side ink2-gpu under MEMRA_ORACLE_OUT) against lane E's CPU tape of the class on the pack's probe, verify serve on that receipt, serve_check all pass, and memra model verify tiny with ci:verify-tiny (serve/land-final-verify/tiny/). The band rule and the per-MoE, trunk and corpus-KL evidence are in docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md. TokenizerTemplate is the inspect gate on the pinned artifact (memra#1394, research/modelplan-onboarding-inkling2mini-20261121/chat/). Batched decode rows are bit-equal to their solo calls, and sessions past the load's context run the same program (serve/land-final/, serve/land-final-gate/: 0 rows differing, equal digests, red arms move). The drafter gates of lane S pass on the same binaries (serve/land-final-spec/: tiny gate, run-spec K=1..7 28/28 spec equal to plain). After the pin: the data commits that write these records and receipts. RewriteParity stays pending: no rewrite is qualified. No other topology carries evidence. nvfp4-rig class (lane M's minted overlay, sha256-bound, at <checkpoint>.nvfp4-rig; e4m3 K/V; the route's default class when the overlay sits beside the checkpoint): max abs 2.573 under the class band 5.5, argmax 200001 on both sides; corpus KL to lane F's harness inside the harness's own GPU-vs-CPU spread (checkpoint-parity/kl-harness-rig.json). Served at full clocks (serve/land-final-verify/nvfp4-rig/): 65.7, 76.5 and 94.5 output tok/s at c=1, 2 and 4, TPOT p50 15.1 ms at c=1."
+[record.gates]
+Config = "passed"
+TokenizerTemplate = "passed"
+TensorCensus = "passed"
+TinyParity = "passed"
+CheckpointParity = "passed"
+RewriteParity = "pending"
+Serve = "passed"
+[record.evidence]
+Config = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/nvfp4-rig-verify/gates.txt", "ci:verify-tiny"]
+TokenizerTemplate = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/nvfp4-rig-verify/gates.txt"]
+TensorCensus = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/nvfp4-rig-verify/gates.txt"]
+TinyParity = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/tiny/gates.txt", "ci:verify-tiny"]
+CheckpointParity = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/nvfp4-rig-verify/gates.txt"]
+Serve = ["research/modelplan-onboarding-inkling2mini-20261121/serve/land-final-verify/nvfp4-rig-verify/gates.txt"]
+

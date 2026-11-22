@@ -1,0 +1,2433 @@
+tokens=[13, 46, 117, 229, 235, 19, 168, 136, 41, 149, 46, 6, 48, 273, 197, 43, 264, 225, 292, 199, 230, 212, 162, 92, 92, 141, 194, 37, 182, 6, 96, 140, 256, 230, 174, 288, 79, 87, 150, 124]
+plan=ModelPlan {
+    arch: Inkling2Loop,
+    hidden_size: 64,
+    vocab_size: 320,
+    context_length: 4096,
+    embedding_scale: 1.0,
+    vision: None,
+    multimodal: None,
+    layers: [
+        LayerPlan {
+            index: 0,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: Some(
+                        8,
+                    ),
+                    inputs: SharedNorm,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 8,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: Masked,
+                    },
+                    log_scale: None,
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: true,
+                    attention_queries: 0,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: Some(
+                        8,
+                    ),
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 1,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: None,
+                    inputs: SeparateQkvNorms,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 12,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: ZeroBias,
+                    },
+                    log_scale: Some(
+                        LogPositionScalePlan {
+                            floor: 24,
+                            alpha: 0.1,
+                        },
+                    ),
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: false,
+                    attention_queries: 3,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: None,
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 2,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: Some(
+                        8,
+                    ),
+                    inputs: SharedNorm,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 8,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: Masked,
+                    },
+                    log_scale: None,
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: true,
+                    attention_queries: 1,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: Some(
+                        8,
+                    ),
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 3,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: None,
+                    inputs: SeparateQkvNorms,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 12,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: ZeroBias,
+                    },
+                    log_scale: Some(
+                        LogPositionScalePlan {
+                            floor: 24,
+                            alpha: 0.1,
+                        },
+                    ),
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: false,
+                    attention_queries: 3,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: None,
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 4,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: Some(
+                        8,
+                    ),
+                    inputs: SharedNorm,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 8,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: Masked,
+                    },
+                    log_scale: None,
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: true,
+                    attention_queries: 1,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: Some(
+                        8,
+                    ),
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 5,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: None,
+                    inputs: SeparateQkvNorms,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 12,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: ZeroBias,
+                    },
+                    log_scale: Some(
+                        LogPositionScalePlan {
+                            floor: 24,
+                            alpha: 0.1,
+                        },
+                    ),
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: false,
+                    attention_queries: 3,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: None,
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 6,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: Some(
+                        8,
+                    ),
+                    inputs: SharedNorm,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 8,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: Masked,
+                    },
+                    log_scale: None,
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: true,
+                    attention_queries: 1,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: Some(
+                        8,
+                    ),
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 7,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: None,
+                    inputs: SeparateQkvNorms,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 12,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: ZeroBias,
+                    },
+                    log_scale: Some(
+                        LogPositionScalePlan {
+                            floor: 24,
+                            alpha: 0.1,
+                        },
+                    ),
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: false,
+                    attention_queries: 3,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: None,
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 8,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: Some(
+                        8,
+                    ),
+                    inputs: SharedNorm,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 8,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: Masked,
+                    },
+                    log_scale: None,
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: true,
+                    attention_queries: 1,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: Some(
+                        8,
+                    ),
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 9,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: None,
+                    inputs: SeparateQkvNorms,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 12,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: ZeroBias,
+                    },
+                    log_scale: Some(
+                        LogPositionScalePlan {
+                            floor: 24,
+                            alpha: 0.1,
+                        },
+                    ),
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: false,
+                    attention_queries: 3,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: None,
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 10,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: Some(
+                        8,
+                    ),
+                    inputs: SharedNorm,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 8,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: Masked,
+                    },
+                    log_scale: None,
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: true,
+                    attention_queries: 1,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: Some(
+                        8,
+                    ),
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 11,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: None,
+                    inputs: SeparateQkvNorms,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 12,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: ZeroBias,
+                    },
+                    log_scale: Some(
+                        LogPositionScalePlan {
+                            floor: 24,
+                            alpha: 0.1,
+                        },
+                    ),
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: false,
+                    attention_queries: 3,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: None,
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 12,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: Some(
+                        8,
+                    ),
+                    inputs: SharedNorm,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 8,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: Masked,
+                    },
+                    log_scale: None,
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: true,
+                    attention_queries: 1,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: Some(
+                        8,
+                    ),
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 13,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: None,
+                    inputs: SeparateQkvNorms,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 12,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: ZeroBias,
+                    },
+                    log_scale: Some(
+                        LogPositionScalePlan {
+                            floor: 24,
+                            alpha: 0.1,
+                        },
+                    ),
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: false,
+                    attention_queries: 3,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: None,
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 14,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: Some(
+                        8,
+                    ),
+                    inputs: SharedNorm,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 8,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: Masked,
+                    },
+                    log_scale: None,
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: Static,
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: true,
+                    attention_queries: 1,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: Some(
+                        8,
+                    ),
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+        LayerPlan {
+            index: 15,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            attention: RelativeBias(
+                RelativeBiasAttentionPlan {
+                    query_heads: 4,
+                    kv_heads: 2,
+                    head_dim: 16,
+                    window: None,
+                    inputs: SeparateQkvNorms,
+                    query_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: PerHeadChannel,
+                    },
+                    key_clip: L2ClipPlan {
+                        threshold: 4.0,
+                        epsilon: 1e-6,
+                        scale: None,
+                    },
+                    value_norm: WeightlessRms,
+                    value_norm_epsilon: 1e-6,
+                    relative: RelativeBiasPlan {
+                        rank: 4,
+                        extent: 12,
+                        clip: L2ClipPlan {
+                            threshold: 2.0,
+                            epsilon: 1e-6,
+                            scale: PerHeadChannel,
+                        },
+                        beyond_extent: ZeroBias,
+                    },
+                    log_scale: Some(
+                        LogPositionScalePlan {
+                            floor: 24,
+                            alpha: 0.1,
+                        },
+                    ),
+                    sink: PerQueryProjection,
+                    output_gate: SeparatePerDimSigmoid,
+                    key_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    value_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 32,
+                        taps: StaticPlusDynamic {
+                            groups: 2,
+                        },
+                    },
+                    output_conv: ShortConvPlan {
+                        kernel: 4,
+                        channels: 64,
+                        taps: Static,
+                    },
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-6,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 8,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 32,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.0,
+                        selection_bias: true,
+                    },
+                    shared: None,
+                    activation: SwiGluSoftcapped {
+                        gate_cap: 2.0,
+                        up_cap: 3.0,
+                    },
+                },
+            ),
+            residual: BlockAttention(
+                BlockAttentionPlan {
+                    block: 2,
+                    starts_block: false,
+                    attention_queries: 3,
+                    normalize_values: true,
+                    epsilon: 1e-6,
+                },
+            ),
+            state: RelativeBias(
+                RelativeBiasStatePlan {
+                    key_width: 32,
+                    value_width: 32,
+                    window: None,
+                    conv_history: 3,
+                    conv_channels: 192,
+                },
+            ),
+            sparse_overlay: None,
+            ple: None,
+        },
+    ],
+    output_norm: NormPlan {
+        kind: Rms,
+        epsilon: 1e-6,
+        weight_transform: Identity,
+    },
+    exit_mixer: None,
+    logits: [
+        Softcap(
+            3.0,
+        ),
+        Truncate(
+            300,
+        ),
+    ],
+    mtp_blocks: [],
+    drafter: Some(
+        Dspark(
+            DsparkPlan {
+                block_size: 4,
+                noise_token_id: 0,
+                target_layer_ids: [
+                    1,
+                    7,
+                    13,
+                    16,
+                ],
+                markov_rank: 8,
+                blocks: [],
+                rows: Block(
+                    DraftBlockPlan {
+                        rows: 4,
+                        anchor: TrunkEmbeddingNormed,
+                        mask: LearnedMask,
+                        proposals: 3,
+                    },
+                ),
+                fusion: FuseWeights {
+                    fuse: DraftFusePlan {
+                        rows: 4,
+                        taps: 4,
+                    },
+                    taps: [
+                        SlotInput {
+                            slot: 1,
+                        },
+                        SlotInput {
+                            slot: 9,
+                        },
+                        SlotInput {
+                            slot: 15,
+                        },
+                        FinalNorm,
+                    ],
+                },
+                layers: Context(
+                    DsparkContextLayers {
+                        layers: 3,
+                        query_heads: 4,
+                        kv_heads: 2,
+                        head_dim: 16,
+                        intermediate_size: 128,
+                        hidden_size: 64,
+                        epsilon: 1e-6,
+                        attention: DraftAttentionPlan {
+                            scale: 0.25,
+                            qk_norm: true,
+                            rope: DraftRopePlan {
+                                theta: 1000000.0,
+                            },
+                            context_key_norm: true,
+                            bidirectional_block: true,
+                            local_layers: [
+                                0,
+                                2,
+                            ],
+                            local_context: 8,
+                        },
+                        mlp_swiglu: true,
+                    },
+                ),
+                markov: RnnHidden(
+                    DraftRnnHeadPlan {
+                        rank: 8,
+                        inputs: [
+                            State,
+                            PreviousToken,
+                            RowHidden,
+                            Feature,
+                        ],
+                        chunks: [
+                            Gate,
+                            Candidate,
+                            Out,
+                        ],
+                        folded_through_output: true,
+                        softcap: 3.0,
+                    },
+                ),
+                confidence: None,
+            },
+        ),
+    ),
+    draft_source: Embedded,
+    sampling_defaults: None,
+    partition_boundaries: [],
+    inkling2: Inkling2Plan {
+        embedding_norm: NormPlan {
+            kind: Rms,
+            epsilon: 1e-6,
+            weight_transform: Identity,
+        },
+        loop_plan: LoopPlan {
+            core_start: 2,
+            core_end: 6,
+            passes: 3,
+            gate_rank: 8,
+            controller_epsilon: 1e-6,
+            targets: [
+                Query,
+                Key,
+                Value,
+                Mlp,
+            ],
+            slots: [
+                LoopSlotPlan {
+                    slot: 0,
+                    physical_layer: 0,
+                    pass: None,
+                    message: false,
+                },
+                LoopSlotPlan {
+                    slot: 1,
+                    physical_layer: 1,
+                    pass: None,
+                    message: false,
+                },
+                LoopSlotPlan {
+                    slot: 2,
+                    physical_layer: 2,
+                    pass: Some(
+                        0,
+                    ),
+                    message: false,
+                },
+                LoopSlotPlan {
+                    slot: 3,
+                    physical_layer: 3,
+                    pass: Some(
+                        0,
+                    ),
+                    message: false,
+                },
+                LoopSlotPlan {
+                    slot: 4,
+                    physical_layer: 4,
+                    pass: Some(
+                        0,
+                    ),
+                    message: false,
+                },
+                LoopSlotPlan {
+                    slot: 5,
+                    physical_layer: 5,
+                    pass: Some(
+                        0,
+                    ),
+                    message: false,
+                },
+                LoopSlotPlan {
+                    slot: 6,
+                    physical_layer: 6,
+                    pass: None,
+                    message: false,
+                },
+                LoopSlotPlan {
+                    slot: 7,
+                    physical_layer: 7,
+                    pass: None,
+                    message: false,
+                },
+                LoopSlotPlan {
+                    slot: 8,
+                    physical_layer: 2,
+                    pass: Some(
+                        1,
+                    ),
+                    message: true,
+                },
+                LoopSlotPlan {
+                    slot: 9,
+                    physical_layer: 3,
+                    pass: Some(
+                        1,
+                    ),
+                    message: true,
+                },
+                LoopSlotPlan {
+                    slot: 10,
+                    physical_layer: 4,
+                    pass: Some(
+                        1,
+                    ),
+                    message: true,
+                },
+                LoopSlotPlan {
+                    slot: 11,
+                    physical_layer: 5,
+                    pass: Some(
+                        1,
+                    ),
+                    message: true,
+                },
+                LoopSlotPlan {
+                    slot: 12,
+                    physical_layer: 2,
+                    pass: Some(
+                        2,
+                    ),
+                    message: true,
+                },
+                LoopSlotPlan {
+                    slot: 13,
+                    physical_layer: 3,
+                    pass: Some(
+                        2,
+                    ),
+                    message: true,
+                },
+                LoopSlotPlan {
+                    slot: 14,
+                    physical_layer: 4,
+                    pass: Some(
+                        2,
+                    ),
+                    message: true,
+                },
+                LoopSlotPlan {
+                    slot: 15,
+                    physical_layer: 5,
+                    pass: Some(
+                        2,
+                    ),
+                    message: true,
+                },
+            ],
+            execution_order: [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                6,
+                7,
+            ],
+        },
+        mlp_output_conv: ShortConvPlan {
+            kernel: 4,
+            channels: 64,
+            taps: Static,
+        },
+        output_queries: 1,
+        numerics: Inkling2Numerics {
+            default_class: DeclaredActivationQuant,
+            bring_up_class: FloatActivation,
+            class: FloatActivation,
+            default_weight_class: Nvfp4Rig,
+            weight_class: Shipped,
+            minted: [],
+            kv: [
+                F32,
+                F32,
+                F32,
+                F32,
+                F32,
+                F32,
+                F32,
+                F32,
+                F32,
+                F32,
+                F32,
+                F32,
+                F32,
+                F32,
+                F32,
+                F32,
+            ],
+            experts: [
+                ExpertNumericsPlan {
+                    physical_layer: 0,
+                    weight: Nvfp4Amax,
+                    declared_activation: Nvfp4E2m1 {
+                        block_size: 16,
+                        amax: PerToken,
+                        scale: E4m3,
+                        scale_selection: FourOverSixMae,
+                    },
+                    activation: Float,
+                    minted: false,
+                },
+                ExpertNumericsPlan {
+                    physical_layer: 1,
+                    weight: Nvfp4Amax,
+                    declared_activation: Nvfp4E2m1 {
+                        block_size: 16,
+                        amax: PerToken,
+                        scale: E4m3,
+                        scale_selection: FourOverSixMae,
+                    },
+                    activation: Float,
+                    minted: false,
+                },
+                ExpertNumericsPlan {
+                    physical_layer: 2,
+                    weight: Nvfp4Amax,
+                    declared_activation: Nvfp4E2m1 {
+                        block_size: 16,
+                        amax: PerToken,
+                        scale: E4m3,
+                        scale_selection: FourOverSixMae,
+                    },
+                    activation: Float,
+                    minted: false,
+                },
+                ExpertNumericsPlan {
+                    physical_layer: 3,
+                    weight: Nvfp4Amax,
+                    declared_activation: Nvfp4E2m1 {
+                        block_size: 16,
+                        amax: PerToken,
+                        scale: E4m3,
+                        scale_selection: FourOverSixMae,
+                    },
+                    activation: Float,
+                    minted: false,
+                },
+                ExpertNumericsPlan {
+                    physical_layer: 4,
+                    weight: Nvfp4Amax,
+                    declared_activation: Nvfp4E2m1 {
+                        block_size: 16,
+                        amax: PerToken,
+                        scale: E4m3,
+                        scale_selection: FourOverSixMae,
+                    },
+                    activation: Float,
+                    minted: false,
+                },
+                ExpertNumericsPlan {
+                    physical_layer: 5,
+                    weight: Nvfp4Amax,
+                    declared_activation: Nvfp4E2m1 {
+                        block_size: 16,
+                        amax: PerToken,
+                        scale: E4m3,
+                        scale_selection: FourOverSixMae,
+                    },
+                    activation: Float,
+                    minted: false,
+                },
+                ExpertNumericsPlan {
+                    physical_layer: 6,
+                    weight: Mxfp8Row32,
+                    declared_activation: Mxfp8E4m3 {
+                        block_size: 32,
+                        scale: Ue8m0,
+                    },
+                    activation: Float,
+                    minted: false,
+                },
+                ExpertNumericsPlan {
+                    physical_layer: 7,
+                    weight: Mxfp8Row32,
+                    declared_activation: Mxfp8E4m3 {
+                        block_size: 32,
+                        scale: Ue8m0,
+                    },
+                    activation: Float,
+                    minted: false,
+                },
+            ],
+            dense: [
+                DenseNumericsPlan {
+                    class: AttentionProjections,
+                    weight: Bfloat16,
+                    output_f32: false,
+                },
+                DenseNumericsPlan {
+                    class: Router,
+                    weight: Bfloat16,
+                    output_f32: false,
+                },
+                DenseNumericsPlan {
+                    class: RouterBias,
+                    weight: Float32,
+                    output_f32: false,
+                },
+                DenseNumericsPlan {
+                    class: LoopControllers,
+                    weight: Bfloat16,
+                    output_f32: false,
+                },
+                DenseNumericsPlan {
+                    class: ShortConvs,
+                    weight: Bfloat16,
+                    output_f32: false,
+                },
+                DenseNumericsPlan {
+                    class: Norms,
+                    weight: Bfloat16,
+                    output_f32: false,
+                },
+                DenseNumericsPlan {
+                    class: ResidualQueries,
+                    weight: Float32,
+                    output_f32: false,
+                },
+                DenseNumericsPlan {
+                    class: Embedding,
+                    weight: Bfloat16,
+                    output_f32: false,
+                },
+                DenseNumericsPlan {
+                    class: OutputProjection,
+                    weight: Bfloat16,
+                    output_f32: true,
+                },
+            ],
+            gate_up_interleaved: true,
+            routed_weight_before_down: true,
+            quant_config_sha256: "84f405cc7abe3b37e4f47c46ff1da4453c8306bf1409bf423ee1344acdbaf67c",
+        },
+        vision_executed: false,
+    },
+}
+tensor=TokenEmbedding	shape=[320, 64]	sha256=b852ae45c34d6de15d6db50f7a729d1074344198828999b3e7dbe4c23c352b68
+tensor=OutputNorm	shape=[64]	sha256=eed651634ef1170c341c9da6bad8faab7b8fc5158bcb13043fbda4dd7a52ffb3
+tensor=OutputProjection	shape=[320, 64]	sha256=89b5db0391b4658ffb8ea55a9f292661c1dcf4dfe42bf4a4d4808c3b545d98c9
+tensor=Layer { index: 0, tensor: PreMlpNorm }	shape=[64]	sha256=9b40273db2afd253b9e8dcdb384dea5990e8db999359e585cd478caac11c172e
+tensor=Layer { index: 0, tensor: MoeRouter }	shape=[8, 64]	sha256=8c7734d1754b9efcd95aaabd93cb8fff5552835f2c271a6a5ceaea97f89a4d9b
+tensor=Layer { index: 0, tensor: MoeRouterBias }	shape=[8]	sha256=d5d2a1d976637b8b31eeef7d040aa37b7ada076156cef9cb8ecfb811b6bdda53
+tensor=Layer { index: 0, tensor: MoeExpertGateUpBank }	shape=[8, 64, 32]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 0, tensor: MoeExpertDownBank }	shape=[8, 64, 16]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 1, tensor: PreMlpNorm }	shape=[64]	sha256=f61d631fb209aa8b82b182a44b591d431a573323de41f80772c53fff3beaca1e
+tensor=Layer { index: 1, tensor: MoeRouter }	shape=[8, 64]	sha256=aa462c5ec75b342d606f161af0c278e0dd2ec2d61d9642c224c9d180c7da8829
+tensor=Layer { index: 1, tensor: MoeRouterBias }	shape=[8]	sha256=fd86f480aba6dd689934344867805b733a12bd63b2eae7084a97c1f5dfc794bb
+tensor=Layer { index: 1, tensor: MoeExpertGateUpBank }	shape=[8, 64, 32]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 1, tensor: MoeExpertDownBank }	shape=[8, 64, 16]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 2, tensor: PreMlpNorm }	shape=[64]	sha256=6709b38efeaa212033a21c676b1a5986fc9f180d0f9f0b44da2abfcc9a00b468
+tensor=Layer { index: 2, tensor: MoeRouter }	shape=[8, 64]	sha256=5733e31cf3e73fbc61459e5d933cd8ae8a3e93e29fecfc3c6a275d0ac6beba55
+tensor=Layer { index: 2, tensor: MoeRouterBias }	shape=[8]	sha256=bc8ed07903aad17c0f1454fef71a2fde398aba6784f33114a40e44b1eb646570
+tensor=Layer { index: 2, tensor: MoeExpertGateUpBank }	shape=[8, 64, 32]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 2, tensor: MoeExpertDownBank }	shape=[8, 64, 16]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 3, tensor: PreMlpNorm }	shape=[64]	sha256=f258ee985c8b075cf3b731c7e231a51e817693d597b226d2dd7e7e40ca786a7f
+tensor=Layer { index: 3, tensor: MoeRouter }	shape=[8, 64]	sha256=deb562ebb74a6113e5db280c0c0ef43e829b20142d581419cc9938254221ecc9
+tensor=Layer { index: 3, tensor: MoeRouterBias }	shape=[8]	sha256=20398b94865528178c90002a1cb27c4d9c825f0f4e981b898632a934b563a613
+tensor=Layer { index: 3, tensor: MoeExpertGateUpBank }	shape=[8, 64, 32]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 3, tensor: MoeExpertDownBank }	shape=[8, 64, 16]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 4, tensor: PreMlpNorm }	shape=[64]	sha256=b368ca8754246b923816693e098ba067dc9f333d864c0230d4cb591e9872f168
+tensor=Layer { index: 4, tensor: MoeRouter }	shape=[8, 64]	sha256=38368e259e3f40d960e8185d339c6e470774f37cf5ab8f1fa9b489214f034c5c
+tensor=Layer { index: 4, tensor: MoeRouterBias }	shape=[8]	sha256=f93e9b7058ea87e17e3a141e7b607335703bd106927689f7a735ee3e33c50929
+tensor=Layer { index: 4, tensor: MoeExpertGateUpBank }	shape=[8, 64, 32]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 4, tensor: MoeExpertDownBank }	shape=[8, 64, 16]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 5, tensor: PreMlpNorm }	shape=[64]	sha256=055c6d9152297b7110f4bf683749ae928cdbecf78301c744f805053c679de121
+tensor=Layer { index: 5, tensor: MoeRouter }	shape=[8, 64]	sha256=2f776e2acdf968696085623cf3f9ffd1c54627fcf5006e69bff4328924e3aa19
+tensor=Layer { index: 5, tensor: MoeRouterBias }	shape=[8]	sha256=77aecf15126401a67b56211f52e1bed2e5ccd2019ac7a4ad06792dedab12f828
+tensor=Layer { index: 5, tensor: MoeExpertGateUpBank }	shape=[8, 64, 32]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 5, tensor: MoeExpertDownBank }	shape=[8, 64, 16]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 6, tensor: PreMlpNorm }	shape=[64]	sha256=ee063e823006d899074d3fc7a42c3b445817735c731663929916da8806ce961d
+tensor=Layer { index: 6, tensor: MoeRouter }	shape=[8, 64]	sha256=9756c62b0b8fed1d5cb102087776407058f75406f1c156ca9a983e3ce553c830
+tensor=Layer { index: 6, tensor: MoeRouterBias }	shape=[8]	sha256=126597e20ea8015f27027a21e6af99a0da6f47bb244180059c14fddb12c556be
+tensor=Layer { index: 6, tensor: MoeExpertGateUpBank }	shape=[8, 64, 64]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 6, tensor: MoeExpertDownBank }	shape=[8, 64, 32]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 7, tensor: PreMlpNorm }	shape=[64]	sha256=6443f954ee0f2ae581c3c0f310ab62ee82527338bdba99ad24ebd5e8b2f2556a
+tensor=Layer { index: 7, tensor: MoeRouter }	shape=[8, 64]	sha256=68d798acae1b7318e50be62844462d334e4e971bfbe6cc962806c40d396dae10
+tensor=Layer { index: 7, tensor: MoeRouterBias }	shape=[8]	sha256=df4bc0d0a75015bf63099daa6878f965c81986c85b64466934fa19637956c40e
+tensor=Layer { index: 7, tensor: MoeExpertGateUpBank }	shape=[8, 64, 64]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Layer { index: 7, tensor: MoeExpertDownBank }	shape=[8, 64, 32]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.attn_res.attn_queries.0" }	shape=[3, 64]	sha256=43c48573ad3ac961b8db689787281bcce24a4e73615970de9cd16b6838f018f3
+tensor=Family { family: "inkling2", key: "llm.attn_res.attn_queries.1" }	shape=[64]	sha256=74b7cd6e34e3f58b16e2465566426cab6de761249e2f986a7a0efb374fa31d43
+tensor=Family { family: "inkling2", key: "llm.attn_res.attn_queries.2" }	shape=[3, 64]	sha256=0edd4e4b3e6705e6e40cc76f1083c38dc96844ebf613908d49698d6b32a44421
+tensor=Family { family: "inkling2", key: "llm.attn_res.attn_queries.3" }	shape=[64]	sha256=cb208b4772ce53ad76b9c55d72f9bd2b75b1d349bc47a946bdee7c0985e1b0cd
+tensor=Family { family: "inkling2", key: "llm.attn_res.attn_queries.4" }	shape=[3, 64]	sha256=c15ee3aac7ae634e389bfdfe06fe08f2023fcea0eb3e56353bc83e354eff85e7
+tensor=Family { family: "inkling2", key: "llm.attn_res.attn_queries.5" }	shape=[64]	sha256=795cdf88f9775e4e5f4f55aead68e9a329319a05490f51f31d93595c140618bc
+tensor=Family { family: "inkling2", key: "llm.attn_res.attn_queries.6" }	shape=[3, 64]	sha256=57b276f1220dd3f80401433dcb66e8b03e827d52bee6e960bc5680275dcaba96
+tensor=Family { family: "inkling2", key: "llm.attn_res.mlp_queries.0" }	shape=[64]	sha256=a484e25dc0b55569392dbae227488ed117af5eaf558bbecf5ee33986d13bcc53
+tensor=Family { family: "inkling2", key: "llm.attn_res.mlp_queries.1" }	shape=[64]	sha256=93040b6610ae407848df2460366c062212230164140a887a8918aee80cbb34ea
+tensor=Family { family: "inkling2", key: "llm.attn_res.mlp_queries.2" }	shape=[64]	sha256=f5279e06de30c2f7b8a0891f46d66f8054bf6a68c5b07f3f379225123eb6e282
+tensor=Family { family: "inkling2", key: "llm.attn_res.mlp_queries.3" }	shape=[64]	sha256=9b05b661d39833867127aed856cd85a0ab3fc4180deb7e6956834aec5447e9a3
+tensor=Family { family: "inkling2", key: "llm.attn_res.mlp_queries.4" }	shape=[64]	sha256=b94fdc463aa8151a2462b49f07b21d42b5f4bdcc551d6d89cd200e53a0f56db2
+tensor=Family { family: "inkling2", key: "llm.attn_res.mlp_queries.5" }	shape=[64]	sha256=870fa74b12a622982a43142c6742e8b85d95046ab67426270674dfa36cb0b70e
+tensor=Family { family: "inkling2", key: "llm.attn_res.mlp_queries.6" }	shape=[64]	sha256=d39c1939dcac59d66a8d80bae3d9e9ea3e78ee0dea92d457b9c0e029d27af7f6
+tensor=Family { family: "inkling2", key: "llm.attn_res.mlp_queries.7" }	shape=[64]	sha256=e9516d6c0b3d0e868f437d237202bbed303c87eae698ebfe93e3363bc789cbb4
+tensor=Family { family: "inkling2", key: "llm.attn_res.output_query" }	shape=[64]	sha256=08cac499dd5c200687fb838eebe21a6af8430154ac50a857d49feada36606d2d
+tensor=Family { family: "inkling2", key: "llm.embed_norm.weight" }	shape=[64]	sha256=bb1f4c78d6d0ec61053f948fa4ca62b37374108f420f6704cbea88ed9c043567
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn.attn_sink_proj.weight" }	shape=[4, 64]	sha256=2dc23760cee8a328e11e44b449133b909ee65a917d8d28bc6d384134d46dc3f1
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn.gate_attn.weight" }	shape=[64, 64]	sha256=37b3f0d80ea7cdea00806a0b28c184eeebd8c83a12c042a359b42ae701ffe8b5
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn.k_sconv.weight" }	shape=[32, 1, 4]	sha256=0d302563c352f6160278d45c257f90be1dae65628873034e4155df144edc73d9
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn.q_l2_clip.scale" }	shape=[4, 16]	sha256=0e0b401d17ba6f2f127a9acc060cdc8eb9956ac7b0b5542d5ca6b1efaebe4e0a
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn.rel_l2_clip.scale" }	shape=[4, 4]	sha256=08e30bcbddb9faf221ca935e8a86e78f7090b465fd8a1d95fe7dcdf3bf1fd00b
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn.rel_logits_proj.proj" }	shape=[4, 8]	sha256=842163e41aca4088987b440dd130a31f4289e7471388b6a1fbe416ca6b30a9b8
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn.v_sconv.weight" }	shape=[32, 1, 4]	sha256=2bf42aeebaa7a4a22043a6366b4ceb1d9e2093228cf6d53af6ec8284b486e235
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn.wk_dv.weight" }	shape=[32, 64]	sha256=30cc7f59563751792a91623755767fb00cc4482751fbc8a0ec32f03f88fef83c
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn.wo_ud.weight" }	shape=[64, 64]	sha256=15b9277167d8e7a9c6d529f62510a57a2dd252a380c6ac7a18199b29949206a2
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn.wq_du.weight" }	shape=[64, 64]	sha256=3700d6a988dd98e8b6717008e1db2974660a2ed9de2681f8ea5bb1dc83aa3ce3
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn.wr_du.weight" }	shape=[16, 64]	sha256=501eb57389607b567289366dd36d2cc7fe7831027928266490cc90e21de84385
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn.wv_dv.weight" }	shape=[32, 64]	sha256=14c84fb0dbe0585fbbdd37209c13b453001a204049183492483b043437e8ecd1
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn_norm.weight" }	shape=[64]	sha256=b6b0c89ff0c85fe127817892746244c6d724ffe098909608be4859f7ae07e238
+tensor=Family { family: "inkling2", key: "llm.layers.0.attn_sconv.weight" }	shape=[64, 1, 4]	sha256=a37f131a7561384be566ea7075b0a499e2afb7fb8dfec11e8950ee1a94a66683
+tensor=Family { family: "inkling2", key: "llm.layers.0.mlp.experts.w13_weight_amax" }	shape=[8]	sha256=e6a2e7ee0ef9b649c39f574967a45c2649972aabb6a74bf10f08570c4cfda73d
+tensor=Family { family: "inkling2", key: "llm.layers.0.mlp.experts.w13_weight_outer_scale_denominator" }	shape=[1]	sha256=0e01e67b0bf055fde977279fdce52ba668a272747f16a688b8603eac9a049daa
+tensor=Family { family: "inkling2", key: "llm.layers.0.mlp.experts.w13_weight_scale" }	shape=[8, 64, 4]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.0.mlp.experts.w2_weight_amax" }	shape=[8]	sha256=e74fdbbafb2b3a2c620cbd8622e04a6b0177afb303b27b1b00c123ae9634504b
+tensor=Family { family: "inkling2", key: "llm.layers.0.mlp.experts.w2_weight_outer_scale_denominator" }	shape=[1]	sha256=0e01e67b0bf055fde977279fdce52ba668a272747f16a688b8603eac9a049daa
+tensor=Family { family: "inkling2", key: "llm.layers.0.mlp.experts.w2_weight_scale" }	shape=[8, 64, 2]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.0.mlp_sconv.weight" }	shape=[64, 1, 4]	sha256=afe3227c20d8b2191ea38868dac089fb67d09224864075cee9bee016b5176816
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.attn_sink_proj.weight" }	shape=[4, 64]	sha256=b38dbf74625cc0198b0c0166c3da0f9b3246cdb57032ea6f703e3c59cd135452
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.gate_attn.weight" }	shape=[64, 64]	sha256=9c88e204fa3dccf66251e43b6f33a246736bb11cd468c2a51c607b5dc7549ff9
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.k_sconv.static_w" }	shape=[4, 32]	sha256=f46eef5f3b534173141b67d76079916392efe177d8201ec48327bf6b45c1ad3e
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.k_sconv.weight_proj" }	shape=[8, 64]	sha256=e29d28e5164df16b5dd6bff957b799784112aaf0e4a17f5ed187366d16834f8e
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.q_l2_clip.scale" }	shape=[4, 16]	sha256=e205bb7db29d971579d1eebf704b87088495a65acd3bfd4d932772c946a0b5d1
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.rel_l2_clip.scale" }	shape=[4, 4]	sha256=ed2e5dd0a5e28c6890e4ef406f8252de627e90912fb9919563f61639f2223047
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.rel_logits_proj.proj" }	shape=[4, 12]	sha256=fea728edaedd0596a6024c2d48cb261e9a21eebd6fa20021d8249162a9d63118
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.v_sconv.static_w" }	shape=[4, 32]	sha256=57f36a8db27235e16fbf653f77818d5cdce75d82116471a6543c179b5016b655
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.v_sconv.weight_proj" }	shape=[8, 64]	sha256=de4578fc2a286f513fff2e4fb00259acfcdd36af6a6781a25ba534b350b186a5
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.wk_dv.weight" }	shape=[32, 64]	sha256=882d2adee37c95f63c73ef6d1d941f799808c4c3ff015b94de08e5034fe8c728
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.wo_ud.weight" }	shape=[64, 64]	sha256=a82e9e769ee9a90c031e8ba49229d3ffaed5a8887193903a89201a3df1022e47
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.wq_du.weight" }	shape=[64, 64]	sha256=54aa03aaa1809136d6b23b7a265569f08bdd51c62a760ea260bdb83943186384
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.wr_du.weight" }	shape=[16, 64]	sha256=8548d7c11c55a53fe31e0ff882adfe96d0b045836c8c3b3955ca17ae07343004
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn.wv_dv.weight" }	shape=[32, 64]	sha256=0d7e108ed960d52f037f37414d5698cd3a9cd6f0b102160099010103a224f2f8
+tensor=Family { family: "inkling2", key: "llm.layers.1.attn_sconv.weight" }	shape=[64, 1, 4]	sha256=51b5384a18174dd3009aaa7b965501dbe0c04a2b28e8debd16647627c02ab58c
+tensor=Family { family: "inkling2", key: "llm.layers.1.k_input_norm.weight" }	shape=[64]	sha256=cda3bd4eff52dd134072085e01f969d5f51ecb37b9a4ce86e060871e0f29cae8
+tensor=Family { family: "inkling2", key: "llm.layers.1.mlp.experts.w13_weight_amax" }	shape=[8]	sha256=9e6ad9e5ed0f9b688641a4e48792af5b255104ba369b3319440c3d5bc459a6df
+tensor=Family { family: "inkling2", key: "llm.layers.1.mlp.experts.w13_weight_outer_scale_denominator" }	shape=[1]	sha256=0e01e67b0bf055fde977279fdce52ba668a272747f16a688b8603eac9a049daa
+tensor=Family { family: "inkling2", key: "llm.layers.1.mlp.experts.w13_weight_scale" }	shape=[8, 64, 4]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.1.mlp.experts.w2_weight_amax" }	shape=[8]	sha256=520748b74fdb203a214a422dc909e9222672804b181c52d96dcbc6b2acf3ec98
+tensor=Family { family: "inkling2", key: "llm.layers.1.mlp.experts.w2_weight_outer_scale_denominator" }	shape=[1]	sha256=0e01e67b0bf055fde977279fdce52ba668a272747f16a688b8603eac9a049daa
+tensor=Family { family: "inkling2", key: "llm.layers.1.mlp.experts.w2_weight_scale" }	shape=[8, 64, 2]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.1.mlp_sconv.weight" }	shape=[64, 1, 4]	sha256=7525a63ac670e1c9649a07f39b93c5fef0789c9ac185e0f9ebf5a6a9f5d8ef1a
+tensor=Family { family: "inkling2", key: "llm.layers.1.q_input_norm.weight" }	shape=[64]	sha256=e1f8a261db5d673f5cbe0dc7f360ab345c9c51f852c3a65acf0cddfcb1ab80c4
+tensor=Family { family: "inkling2", key: "llm.layers.1.v_input_norm.weight" }	shape=[64]	sha256=0548cffc916a0404c0f4f16dcf2d5c9ddcb707eb67d545700c381498eadbbcdf
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn.attn_sink_proj.weight" }	shape=[4, 64]	sha256=c83f6f6079ffc4fea863a82900c48c013b015060fdd60e608df0a4b78b6e3f9e
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn.gate_attn.weight" }	shape=[64, 64]	sha256=48729c5549581c9cbd5da3168badfc28c63e0080f0934ba9ee42d53024a8e021
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn.k_sconv.weight" }	shape=[32, 1, 4]	sha256=37180ac741b5d8eb93f0c885a2d56fd523bac3d817553f2c9d685997d52237b0
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn.q_l2_clip.scale" }	shape=[4, 16]	sha256=80552d37a74a7ab05cac73f6a8739f72ef6d411c7b136a67fa555c05ff1e39e3
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn.rel_l2_clip.scale" }	shape=[4, 4]	sha256=57f4eed7d995cd02c98581d21c0da0827e9ef10ae3995c0f5da5cca24fd4d7be
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn.rel_logits_proj.proj" }	shape=[4, 8]	sha256=1b00210a9e3d030d6a772a90e9228c61f29cfc6e649cb7c4dd6d67f695167865
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn.v_sconv.weight" }	shape=[32, 1, 4]	sha256=c8696dda0c372be33c5de0cf62ff2d91f825e6a2e4ac011f705d5d5ac287e1be
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn.wk_dv.weight" }	shape=[32, 64]	sha256=f79b64a65ff740c4318742b461fe0119070de6d2eeb423801a5a9ba8a77cf4ba
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn.wo_ud.weight" }	shape=[64, 64]	sha256=3ea57b29ce3c2ea40aaba90234b6d1a65cbc6c3e946c8f13bdab49060053b140
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn.wq_du.weight" }	shape=[64, 64]	sha256=15a6c456e83596453fab514e58b90296038275e37aa94ff96546609ea750c835
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn.wr_du.weight" }	shape=[16, 64]	sha256=9172d58e9ade25a6ce0cdf0a730ac748fd29132ec3ad93e18e1b1b7df3399477
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn.wv_dv.weight" }	shape=[32, 64]	sha256=8e9c148e1e611b9562ba57ff528fe8bb022000c7f3d304db10395bb95853a9b4
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn_norm.weight" }	shape=[64]	sha256=c99b092ef9d43eb04b9d645ebb8dc559cfd7737812904ae79b9eefa27d36b4c2
+tensor=Family { family: "inkling2", key: "llm.layers.2.attn_sconv.weight" }	shape=[64, 1, 4]	sha256=4093a7df43e57b275f154c15139220fa077d7084aca6dfbff67ab4d2dcb3a6a8
+tensor=Family { family: "inkling2", key: "llm.layers.2.controllers.attn.down_weight" }	shape=[8, 128]	sha256=022a4802b3088f4bf4e2f4f1139fef5f8811f73a0aa2449934abcb35564fd4b1
+tensor=Family { family: "inkling2", key: "llm.layers.2.controllers.attn.forget_weight" }	shape=[64, 8]	sha256=7e0a11448ef91dc69e56e82d1a7e5296ef6bf7c8c4a31e31af9f62da78a6ccd4
+tensor=Family { family: "inkling2", key: "llm.layers.2.controllers.attn.gain_weight" }	shape=[64, 8]	sha256=42f3a6b7dd50aa9772503e9a030d6f44db736b07f53feaecfa36c27795281bd3
+tensor=Family { family: "inkling2", key: "llm.layers.2.controllers.k.down_weight" }	shape=[8, 128]	sha256=6e80cb2181d5a39d54bd52eaa322879b9690e46890fceb30b83ccebea6e5f169
+tensor=Family { family: "inkling2", key: "llm.layers.2.controllers.k.forget_weight" }	shape=[64, 8]	sha256=c77aabda4514b73c39eaa1b9e61bb237a7f6f18322a20ddad7d18015ecd44d6b
+tensor=Family { family: "inkling2", key: "llm.layers.2.controllers.k.gain_weight" }	shape=[64, 8]	sha256=288a47131f5110aaeef5af1b76494176110083744a10833cf2310997b65ff0a2
+tensor=Family { family: "inkling2", key: "llm.layers.2.controllers.mlp.down_weight" }	shape=[8, 128]	sha256=f2392455712e1ea64260cc5499fd601c54b9d37acd18855326e4ac04c7b07e04
+tensor=Family { family: "inkling2", key: "llm.layers.2.controllers.mlp.forget_weight" }	shape=[64, 8]	sha256=62d864e628f9970abe634abda7b16a12ee6b592158eb2a76417e52a01e1e6450
+tensor=Family { family: "inkling2", key: "llm.layers.2.controllers.mlp.gain_weight" }	shape=[64, 8]	sha256=ca3da3bd860f220e93e02839b84a4bf33585a7e0fe85d0718147502d5144c8c2
+tensor=Family { family: "inkling2", key: "llm.layers.2.controllers.v.down_weight" }	shape=[8, 128]	sha256=7f46ad326af2c0ade1be2d2eaee6a1a384fc2603a36e91ae91e5a5a2d7e2eae9
+tensor=Family { family: "inkling2", key: "llm.layers.2.controllers.v.forget_weight" }	shape=[64, 8]	sha256=11189f1b1b34c82068036d3a4f97f0f6eeab604db5b1a6ef78baf436505cd674
+tensor=Family { family: "inkling2", key: "llm.layers.2.controllers.v.gain_weight" }	shape=[64, 8]	sha256=3f311b567363912cdaf821c92021c1150efc215878cb1164df3c23a80cdec9a9
+tensor=Family { family: "inkling2", key: "llm.layers.2.mlp.experts.w13_weight_amax" }	shape=[8]	sha256=e5eae3e38a77aa2502b35e154d5ab782c09c1f8fec84f170b52ca802337bf174
+tensor=Family { family: "inkling2", key: "llm.layers.2.mlp.experts.w13_weight_outer_scale_denominator" }	shape=[1]	sha256=0e01e67b0bf055fde977279fdce52ba668a272747f16a688b8603eac9a049daa
+tensor=Family { family: "inkling2", key: "llm.layers.2.mlp.experts.w13_weight_scale" }	shape=[8, 64, 4]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.2.mlp.experts.w2_weight_amax" }	shape=[8]	sha256=7115b67964ca8f06c6f37d481e59dedd55186c5811ccdc43d04b144f05d47804
+tensor=Family { family: "inkling2", key: "llm.layers.2.mlp.experts.w2_weight_outer_scale_denominator" }	shape=[1]	sha256=0e01e67b0bf055fde977279fdce52ba668a272747f16a688b8603eac9a049daa
+tensor=Family { family: "inkling2", key: "llm.layers.2.mlp.experts.w2_weight_scale" }	shape=[8, 64, 2]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.2.mlp_sconv.weight" }	shape=[64, 1, 4]	sha256=64fa1cadedc4a7ad1e121eeb005b0b092dc8038df787abb3d5e09e1b51f0bb3e
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.attn_sink_proj.weight" }	shape=[4, 64]	sha256=fb1ce1b466e4c36403044873ce9f460c9d6512fe3ad6967bd34777951a69e1bd
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.gate_attn.weight" }	shape=[64, 64]	sha256=a84ccdf21969a3e82cc3e909dc0d422c003b77ecb197eb4a47b3dc28729046b0
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.k_sconv.static_w" }	shape=[4, 32]	sha256=ceb87ccb7034b4cc157cf08770803172704ebec862c3454f1fda47dc06c2bbb5
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.k_sconv.weight_proj" }	shape=[8, 64]	sha256=c05b9803418036b53ae3c0913d06174bcdcae2222f6af69c7dbbe8dae1757524
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.q_l2_clip.scale" }	shape=[4, 16]	sha256=540fa831f47fee90a5b007937ae2a0c685f4d1dc4c256e02c6dc7b9d594c10b5
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.rel_l2_clip.scale" }	shape=[4, 4]	sha256=1bc64c3b9e7ca650047d7040586458dbf4329e90f31cd24e47e4029d5d5d76d3
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.rel_logits_proj.proj" }	shape=[4, 12]	sha256=7189e52c7a693816f405b14eebd8e8a616dc136e0edb5675017ef152f3a81288
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.v_sconv.static_w" }	shape=[4, 32]	sha256=0ff16e77f0a02ffc60e6aa6a4901746e321911f6bce4ad5be8ba4ecbe8740907
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.v_sconv.weight_proj" }	shape=[8, 64]	sha256=c54d22b6e772724c731c7d960bef0dd330afcf2e2426750c3c448a1b8934e285
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.wk_dv.weight" }	shape=[32, 64]	sha256=8de1719bcbb429dee438edf866180809381314e9ff59570b83660cb776c51f2d
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.wo_ud.weight" }	shape=[64, 64]	sha256=61d8de3e2a288ffe87523c3a4cd705726798b48ad8e35bbff3e87f3a88b65418
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.wq_du.weight" }	shape=[64, 64]	sha256=ef7b2fae7b8dde860e15ecf4663f580c9e865bb9e5ea1d02f6a0ed121e19247d
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.wr_du.weight" }	shape=[16, 64]	sha256=0d7fac03dd70898dfd12833bfae7888205feb4e0362699e742d1ab04b55d403b
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn.wv_dv.weight" }	shape=[32, 64]	sha256=644702d62e6f8170b5ea3a2d026210f482e8500f75755f235ef27d1f113e5d87
+tensor=Family { family: "inkling2", key: "llm.layers.3.attn_sconv.weight" }	shape=[64, 1, 4]	sha256=45b67bd98061f2ef7c1de7a394d7e262ab1a47d511ca142588ee310f176eee99
+tensor=Family { family: "inkling2", key: "llm.layers.3.controllers.attn.down_weight" }	shape=[8, 128]	sha256=373f78c8b0329ff69f8f4a51ddef9f80f7c47d28cb10001027a0104d4df96f0e
+tensor=Family { family: "inkling2", key: "llm.layers.3.controllers.attn.forget_weight" }	shape=[64, 8]	sha256=edf85fab29560802c921d969085298fc4a15027e9d7036bdfa8c013606c149e4
+tensor=Family { family: "inkling2", key: "llm.layers.3.controllers.attn.gain_weight" }	shape=[64, 8]	sha256=af9b4084d1ea593c4480b95840821832c9ee1a6cf4da7215bd3b97b069bf5d89
+tensor=Family { family: "inkling2", key: "llm.layers.3.controllers.k.down_weight" }	shape=[8, 128]	sha256=a485479f37ed9dba42d8d6d118d44d9df94c7e8fb4eeb22ef7f141dc93a07d3c
+tensor=Family { family: "inkling2", key: "llm.layers.3.controllers.k.forget_weight" }	shape=[64, 8]	sha256=2a5833fe19c280946971fedd67e94d7f5dc894754e3147ba1400a23498a38b84
+tensor=Family { family: "inkling2", key: "llm.layers.3.controllers.k.gain_weight" }	shape=[64, 8]	sha256=f5affe2b51a40d8b6745ced4aa4577bf2803d945ee9fbc82a0d24f666d9facdb
+tensor=Family { family: "inkling2", key: "llm.layers.3.controllers.mlp.down_weight" }	shape=[8, 128]	sha256=3a685af770c08cd1f23dc1d57d7eecfc98a2ce5123a3b5c1fd19b591d6286705
+tensor=Family { family: "inkling2", key: "llm.layers.3.controllers.mlp.forget_weight" }	shape=[64, 8]	sha256=28183f3a52bfa38b92aad9dd16a88185ed487e8c77d654225fa0495b99385608
+tensor=Family { family: "inkling2", key: "llm.layers.3.controllers.mlp.gain_weight" }	shape=[64, 8]	sha256=9c8a265f4b8cac94574fe6a9e0da371e46608c74bb991e977c00c7d8aab8f56e
+tensor=Family { family: "inkling2", key: "llm.layers.3.controllers.v.down_weight" }	shape=[8, 128]	sha256=bacf5b58997d758b3b165b807054d047c934b948e7ac22823195ba9ae7bfab5c
+tensor=Family { family: "inkling2", key: "llm.layers.3.controllers.v.forget_weight" }	shape=[64, 8]	sha256=5a29d0f00bcede80813ce47e5cbdf73be7a2a8f7f60e05c272637bf1f48362fa
+tensor=Family { family: "inkling2", key: "llm.layers.3.controllers.v.gain_weight" }	shape=[64, 8]	sha256=ec721c239fe4cbbc54e3ffb24a1e4cab9246d46f2e4574c8f06c7c05d6ddf280
+tensor=Family { family: "inkling2", key: "llm.layers.3.k_input_norm.weight" }	shape=[64]	sha256=f216eda1eda213da743e03caed11ec3c068441ab7c582163453b6cbafcf95d02
+tensor=Family { family: "inkling2", key: "llm.layers.3.mlp.experts.w13_weight_amax" }	shape=[8]	sha256=46aa37240537e93b86de3cdcb350c94aa7beb637d2fd2c5efd8c343664761bfd
+tensor=Family { family: "inkling2", key: "llm.layers.3.mlp.experts.w13_weight_outer_scale_denominator" }	shape=[1]	sha256=0e01e67b0bf055fde977279fdce52ba668a272747f16a688b8603eac9a049daa
+tensor=Family { family: "inkling2", key: "llm.layers.3.mlp.experts.w13_weight_scale" }	shape=[8, 64, 4]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.3.mlp.experts.w2_weight_amax" }	shape=[8]	sha256=b7857c777bc6e5240878f6d82da5ad6a32ece16e50df73c9aa59996c7c6da1ee
+tensor=Family { family: "inkling2", key: "llm.layers.3.mlp.experts.w2_weight_outer_scale_denominator" }	shape=[1]	sha256=0e01e67b0bf055fde977279fdce52ba668a272747f16a688b8603eac9a049daa
+tensor=Family { family: "inkling2", key: "llm.layers.3.mlp.experts.w2_weight_scale" }	shape=[8, 64, 2]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.3.mlp_sconv.weight" }	shape=[64, 1, 4]	sha256=f0ccc0d0a991af8931e674aaa370a7f3644a984f849fb4d0c7e71d3bbc108242
+tensor=Family { family: "inkling2", key: "llm.layers.3.q_input_norm.weight" }	shape=[64]	sha256=8a08d9a7898824070d0e62d604ab77abd409094a7b892d2fa4fb5958d05ab9c7
+tensor=Family { family: "inkling2", key: "llm.layers.3.v_input_norm.weight" }	shape=[64]	sha256=1504c73397964c08da4016fbfed86253e50a94d41cfc07ed39bde6422b7ae7cb
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn.attn_sink_proj.weight" }	shape=[4, 64]	sha256=689e3a6550e846bb746446a4d77fee3523fbee6f01e460c674c47d5eda46645b
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn.gate_attn.weight" }	shape=[64, 64]	sha256=764dd1d2ee70aa447813a6fe3c3e4c71153f2eed8dd069657616f90308f2f317
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn.k_sconv.weight" }	shape=[32, 1, 4]	sha256=62e3e8c5801789a6cb54f0c8c5a5c296d1abded1d115f0542832f9193a278d3e
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn.q_l2_clip.scale" }	shape=[4, 16]	sha256=9c10e6d4097286941b3a8849881ebdef3c3a302efce9f5e34a2edb440031cc23
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn.rel_l2_clip.scale" }	shape=[4, 4]	sha256=b74c991cc6dcc3a2cea469e7cfad81f2774d04d340a2f363c2519b1ec99827bc
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn.rel_logits_proj.proj" }	shape=[4, 8]	sha256=f1a6ff695eda817ab83f83718fb8b894b4ba74f5e902342d19454e6b6df1e335
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn.v_sconv.weight" }	shape=[32, 1, 4]	sha256=40aa201448981be82b8bcf8bddb6409b7485b4aeddb17ed9d0b98af608b5065b
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn.wk_dv.weight" }	shape=[32, 64]	sha256=7d6c8f09305b0f0248bf6b470ac000b48de3acf572ec6a703464c34a615facb5
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn.wo_ud.weight" }	shape=[64, 64]	sha256=6d62dc0e61f1eb243e312a0c420700401dcab1e8c904ddd4aca61f4fd8361a42
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn.wq_du.weight" }	shape=[64, 64]	sha256=474b7d61069b2f294545900b990124762496e7b6944684097bc92a6c37af2aac
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn.wr_du.weight" }	shape=[16, 64]	sha256=edb566f2b2feefa573efbaf75b0dc79c2ed2d1d18a4d4394867280929a5c4d19
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn.wv_dv.weight" }	shape=[32, 64]	sha256=d824a20be8ddf6e324dad8d5109849ff068e42e1c73802c962759eb353d82498
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn_norm.weight" }	shape=[64]	sha256=9819b5e34ace9754c124a6ab4e4753d9233b1a995b26c1688789c6d72e013bd6
+tensor=Family { family: "inkling2", key: "llm.layers.4.attn_sconv.weight" }	shape=[64, 1, 4]	sha256=6ed73003af3c24765c9e52c53640da783a8c9d06e09e84cb500a2e32d8738d5a
+tensor=Family { family: "inkling2", key: "llm.layers.4.controllers.attn.down_weight" }	shape=[8, 128]	sha256=871e285d810a153ec9e212d3ebb05371f222497880f899383e3db0443a348870
+tensor=Family { family: "inkling2", key: "llm.layers.4.controllers.attn.forget_weight" }	shape=[64, 8]	sha256=6126db11cbe835de6f93e41495e4646af9c1e5cde51f3046d9a9bde6e9ae537a
+tensor=Family { family: "inkling2", key: "llm.layers.4.controllers.attn.gain_weight" }	shape=[64, 8]	sha256=5c9db7bbf61e4d2425d3ea1e1a2bd2b8ff2dbfdb537c5192c9152df1e6c95bb1
+tensor=Family { family: "inkling2", key: "llm.layers.4.controllers.k.down_weight" }	shape=[8, 128]	sha256=3e1f0eea586023ded95d88613c8166cda59445447b9e0304baa8e3dfff500193
+tensor=Family { family: "inkling2", key: "llm.layers.4.controllers.k.forget_weight" }	shape=[64, 8]	sha256=ef471917f141609be3866b730167d7f277ee1bda6875788d51d3b866341265ac
+tensor=Family { family: "inkling2", key: "llm.layers.4.controllers.k.gain_weight" }	shape=[64, 8]	sha256=442b46e56ecf153740eb805596dc2317674634aa75d848f59f7fe636fff7e481
+tensor=Family { family: "inkling2", key: "llm.layers.4.controllers.mlp.down_weight" }	shape=[8, 128]	sha256=5f36ba3c240447f3746c300fb73898ce8ed58ac3b41daf04b9503b0e89c1aecd
+tensor=Family { family: "inkling2", key: "llm.layers.4.controllers.mlp.forget_weight" }	shape=[64, 8]	sha256=a2525e2af149ca77cbabc63522c1728fd5034705290ba0b859abf59f7b9923c8
+tensor=Family { family: "inkling2", key: "llm.layers.4.controllers.mlp.gain_weight" }	shape=[64, 8]	sha256=f49c110d3e465de1dece57cebb85828b7f1c8e949859a3a2cffbdcd8b741eae4
+tensor=Family { family: "inkling2", key: "llm.layers.4.controllers.v.down_weight" }	shape=[8, 128]	sha256=a9a75bd7d5a5a99a1b96c99255c95d2e295736193b22ae0c0a56d94559f94393
+tensor=Family { family: "inkling2", key: "llm.layers.4.controllers.v.forget_weight" }	shape=[64, 8]	sha256=09377d660ff26d7b7aaf54c2769a1e307016ab54ad4885fe9b0a98611a34c1a4
+tensor=Family { family: "inkling2", key: "llm.layers.4.controllers.v.gain_weight" }	shape=[64, 8]	sha256=c11076a03a4bf408877273de642f4e1b3bcb981d87a9ad00559cb136e688666c
+tensor=Family { family: "inkling2", key: "llm.layers.4.mlp.experts.w13_weight_amax" }	shape=[8]	sha256=b2c1c0b3c16f3c93316f9aa3cd1fd61d52786690ee4b00ea304b1a969fe89b52
+tensor=Family { family: "inkling2", key: "llm.layers.4.mlp.experts.w13_weight_outer_scale_denominator" }	shape=[1]	sha256=0e01e67b0bf055fde977279fdce52ba668a272747f16a688b8603eac9a049daa
+tensor=Family { family: "inkling2", key: "llm.layers.4.mlp.experts.w13_weight_scale" }	shape=[8, 64, 4]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.4.mlp.experts.w2_weight_amax" }	shape=[8]	sha256=98211c2b24b5a3677f29dc748a3b7bc86bd0a832062a35ccad1e3bc0bd0eb960
+tensor=Family { family: "inkling2", key: "llm.layers.4.mlp.experts.w2_weight_outer_scale_denominator" }	shape=[1]	sha256=0e01e67b0bf055fde977279fdce52ba668a272747f16a688b8603eac9a049daa
+tensor=Family { family: "inkling2", key: "llm.layers.4.mlp.experts.w2_weight_scale" }	shape=[8, 64, 2]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.4.mlp_sconv.weight" }	shape=[64, 1, 4]	sha256=cad2c2142d98e447c35f257611a841791fba5e7aa472aae35f696f86df9f3418
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.attn_sink_proj.weight" }	shape=[4, 64]	sha256=befa86a2eec1882e681405188f58cba427704cb189d7e8605fbbe7a363e6a155
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.gate_attn.weight" }	shape=[64, 64]	sha256=a3cf1aeda2abc4a6ff1bf94d2aa9ce187f6171a2bc067fb21dfdbd917eff1b58
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.k_sconv.static_w" }	shape=[4, 32]	sha256=0cb7fe13e061d52afc2516ea9cdad125cd376a2affc68e8edc0c2875bdce0af1
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.k_sconv.weight_proj" }	shape=[8, 64]	sha256=1f46c95ac89d718c3774210a60499913423d9e088c07da5f16dad89b1f50d53a
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.q_l2_clip.scale" }	shape=[4, 16]	sha256=27cb5bad0341dfc70b5f0f26a26f46c68695e7f52b6f2871e05c6ed4c11bd33e
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.rel_l2_clip.scale" }	shape=[4, 4]	sha256=7cfded0fbc2ebd860fe856c5751a07df7bf649271e1545a4ad2aa05b9e0261cc
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.rel_logits_proj.proj" }	shape=[4, 12]	sha256=48d0de21be0e3c1b063f2d7de9a9ebdd9a767759028c219929719181d19a6a47
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.v_sconv.static_w" }	shape=[4, 32]	sha256=7f3a563da31012c49886ba360cd5d5daa694491b92eb9e17f0072ec665fbc79a
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.v_sconv.weight_proj" }	shape=[8, 64]	sha256=f4f25c503ec5ad9522537a877b47f38341fc92ba8ee96a889544dcca3d2fd9ba
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.wk_dv.weight" }	shape=[32, 64]	sha256=b2ab6be21a8ca004b983eed8ebe51dbee89d291a6bec9a3ab7c03f605fb007cf
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.wo_ud.weight" }	shape=[64, 64]	sha256=bbf8e386a54e61808956290fb676a625b25c9978d69bbd1456c445c7e9dbadf0
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.wq_du.weight" }	shape=[64, 64]	sha256=14ebe4b89cbfce95e5f22563a1c4612b8f7a8056c2f044ab16a25a21d87140aa
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.wr_du.weight" }	shape=[16, 64]	sha256=a93c3d68dcd4d7839e91367b281b14c8d6193c6e85f89d492c93a9c98bc813d2
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn.wv_dv.weight" }	shape=[32, 64]	sha256=064dc6c0f2212b483db670d5d003962562d6ded309e9792d066614a7933bb64c
+tensor=Family { family: "inkling2", key: "llm.layers.5.attn_sconv.weight" }	shape=[64, 1, 4]	sha256=1373622e9c57631820a52c1a931c6ab77aa662a97e6c76fc8a1baeec84b10864
+tensor=Family { family: "inkling2", key: "llm.layers.5.controllers.attn.down_weight" }	shape=[8, 128]	sha256=9c90e376ba6693d79a3723bf5f3f14fe414aeb21b869aa3136b46d3b4034fa16
+tensor=Family { family: "inkling2", key: "llm.layers.5.controllers.attn.forget_weight" }	shape=[64, 8]	sha256=7c07fc6c3dc0cac018a9e2f175bb219c23d5793ccbdd742a3f0eea07a27c8217
+tensor=Family { family: "inkling2", key: "llm.layers.5.controllers.attn.gain_weight" }	shape=[64, 8]	sha256=2d0880789cbf4ea0eae33e269d5799d6c8d1effeeae56a1e94ab6cf131b2dcb8
+tensor=Family { family: "inkling2", key: "llm.layers.5.controllers.k.down_weight" }	shape=[8, 128]	sha256=dec3a1c157c46876a64ae70af4cc91dbc0e1e16a98e103f86cf21ed994850b12
+tensor=Family { family: "inkling2", key: "llm.layers.5.controllers.k.forget_weight" }	shape=[64, 8]	sha256=aba42b2aea62f67283cd34d8a355d94efc2be8a841421a3ce99f721d4edee245
+tensor=Family { family: "inkling2", key: "llm.layers.5.controllers.k.gain_weight" }	shape=[64, 8]	sha256=b4ce4516b98ac28871e9ee918ca0d5934a77532a610c323b9b05e9f44a3893dc
+tensor=Family { family: "inkling2", key: "llm.layers.5.controllers.mlp.down_weight" }	shape=[8, 128]	sha256=b7955c205bd0f8ef86377f5672c37b21c13285da8af9deb4ec72834ac82f18f5
+tensor=Family { family: "inkling2", key: "llm.layers.5.controllers.mlp.forget_weight" }	shape=[64, 8]	sha256=fb8d123758e78ffaa69cbbb147e5ce2c4eb51a3b2b1466c2437d9efcc844e047
+tensor=Family { family: "inkling2", key: "llm.layers.5.controllers.mlp.gain_weight" }	shape=[64, 8]	sha256=37feebd6ed43a635cea6ae8c25988b7616c0e302fb21880163760f7aac5b5771
+tensor=Family { family: "inkling2", key: "llm.layers.5.controllers.v.down_weight" }	shape=[8, 128]	sha256=2720448bc50ed36d5e7cfe7ddfce93b034c56fd3af07554b3f9820b7e1707588
+tensor=Family { family: "inkling2", key: "llm.layers.5.controllers.v.forget_weight" }	shape=[64, 8]	sha256=a1ef2e24b2673d26008b84ab52e45b6b9016a99d3be49b7dd35e052fc84d3d1a
+tensor=Family { family: "inkling2", key: "llm.layers.5.controllers.v.gain_weight" }	shape=[64, 8]	sha256=20f5917d61fe9d497e9c373f3feb996cacf18d015b27b0aed1c798e91eec678d
+tensor=Family { family: "inkling2", key: "llm.layers.5.k_input_norm.weight" }	shape=[64]	sha256=fd3ab003f8434840d6be2daeeac26eb53895987d1a8d13e9b1073c19ec2cf5e3
+tensor=Family { family: "inkling2", key: "llm.layers.5.mlp.experts.w13_weight_amax" }	shape=[8]	sha256=0e16e3e6c9f4476caa6577ab8118c6b938146ea96c800590cec286c7834b2c34
+tensor=Family { family: "inkling2", key: "llm.layers.5.mlp.experts.w13_weight_outer_scale_denominator" }	shape=[1]	sha256=0e01e67b0bf055fde977279fdce52ba668a272747f16a688b8603eac9a049daa
+tensor=Family { family: "inkling2", key: "llm.layers.5.mlp.experts.w13_weight_scale" }	shape=[8, 64, 4]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.5.mlp.experts.w2_weight_amax" }	shape=[8]	sha256=bc17c9b316d397156203dc13cdb9f5845fbfc26bd9f6fd66bcd599b3eb39af68
+tensor=Family { family: "inkling2", key: "llm.layers.5.mlp.experts.w2_weight_outer_scale_denominator" }	shape=[1]	sha256=0e01e67b0bf055fde977279fdce52ba668a272747f16a688b8603eac9a049daa
+tensor=Family { family: "inkling2", key: "llm.layers.5.mlp.experts.w2_weight_scale" }	shape=[8, 64, 2]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.5.mlp_sconv.weight" }	shape=[64, 1, 4]	sha256=78096835b613dbd3808ef452c6d546bb383270ec14d412e46bd1ee044dd57b0d
+tensor=Family { family: "inkling2", key: "llm.layers.5.q_input_norm.weight" }	shape=[64]	sha256=0cafa0fe58479b38726f91f40d22b83df84b776603290b7eac636776c7431f3a
+tensor=Family { family: "inkling2", key: "llm.layers.5.v_input_norm.weight" }	shape=[64]	sha256=8cf38709f344ddc9b2792d976ac2206428383fab3b2fd727e9a7857ff1d07f05
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn.attn_sink_proj.weight" }	shape=[4, 64]	sha256=2fa95e40eec9394de5cc2d02bf2544958dd806b38e01925e5e6e2bbb9c93c5b0
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn.gate_attn.weight" }	shape=[64, 64]	sha256=ae44341a0dcb20a44e6b36bec1cd3947a400f86c51ebf506be7dd49572a79da2
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn.k_sconv.weight" }	shape=[32, 1, 4]	sha256=6a68c0a86f30d252750b68f0cacde5d6c7f6bd7ddde975c6a6b42d27d68b2feb
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn.q_l2_clip.scale" }	shape=[4, 16]	sha256=023878b05124bf66c2841b6681a409b8dae5e0dcaa3680d094e327e9f221b8f7
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn.rel_l2_clip.scale" }	shape=[4, 4]	sha256=a40609dc5f18e24a655d39e8c9c2f2ce2c053dd8584c3706177fefeb9dd89a9f
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn.rel_logits_proj.proj" }	shape=[4, 8]	sha256=329bdac77db888b3c6b2808b9f8efa126530d63306862d5ab23b056937dc975b
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn.v_sconv.weight" }	shape=[32, 1, 4]	sha256=def43be0ae2955c1a0ae028ab29025d8c39635306a042c75f661979a0637b506
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn.wk_dv.weight" }	shape=[32, 64]	sha256=484cf3caaf5198837e09d49e85ce4fbfca8894f63a4b4b8b99c7c2c33efd9a94
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn.wo_ud.weight" }	shape=[64, 64]	sha256=ca1cc20ca482465162c8dfc9272dfd36ff2b376982f65307141eb67fe7cbce16
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn.wq_du.weight" }	shape=[64, 64]	sha256=70a20f6a31cf161673f8846c09b1375bea2d7df474a63b2251a8a4545cfd5f83
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn.wr_du.weight" }	shape=[16, 64]	sha256=f59aac41142fb4c2c4e9dc93bf6cdc97761c5670eaf729c6c748d52d5528429c
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn.wv_dv.weight" }	shape=[32, 64]	sha256=daa742204e7e3afa693fdd6242cc520c779e2d0010b9df29290815082094d040
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn_norm.weight" }	shape=[64]	sha256=d6e8d6fad7507c0fc9843f1d75a5b3dee7bfcbb2cd28c82cf8b1c77d94417de6
+tensor=Family { family: "inkling2", key: "llm.layers.6.attn_sconv.weight" }	shape=[64, 1, 4]	sha256=cfc104570ff14fd363715fb7594c4f48ece01a0867adecdbd0fce6725b2fdeef
+tensor=Family { family: "inkling2", key: "llm.layers.6.mlp.experts.w13_weight_scale" }	shape=[8, 64, 2]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.6.mlp.experts.w2_weight_scale" }	shape=[8, 64, 1]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.6.mlp_sconv.weight" }	shape=[64, 1, 4]	sha256=d9cc8b541bf68f1780d1a8a6031d269a49970922928dccc7dfae5fb52eef6756
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.attn_sink_proj.weight" }	shape=[4, 64]	sha256=439d06ed0b3e6bf34fbbf9d54f1c2d2dbc5b55322387b9e6bd945e37d83a3122
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.gate_attn.weight" }	shape=[64, 64]	sha256=726e548c685b0011828eb16f12605ea0881965c790b758bde6e3af35f3a52cb1
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.k_sconv.static_w" }	shape=[4, 32]	sha256=0e3f7177d27900f6d6a314253fae384a8796048b1c18fcc6cd94b5ff78e32bed
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.k_sconv.weight_proj" }	shape=[8, 64]	sha256=b475c5f3b7736dc85779718fecd91aaaabec2415b5c98c51e5016d1e93dc886e
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.q_l2_clip.scale" }	shape=[4, 16]	sha256=441924b1f8b5abcb67fb07c6d5adb000cf46561ba728543f705e5fd247c6146e
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.rel_l2_clip.scale" }	shape=[4, 4]	sha256=c35e05060dae2936de77271a335676259c52fb5e3e97d9829df5d53baf9fb04a
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.rel_logits_proj.proj" }	shape=[4, 12]	sha256=1b8dbd7c49a1787150d3f228d60d8c08398dd7d1e3e4bff74e252e3cf5a677d7
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.v_sconv.static_w" }	shape=[4, 32]	sha256=5dab7ccc33b0b821324389aca561b608cc191549219e07da9487e2988f52aa0f
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.v_sconv.weight_proj" }	shape=[8, 64]	sha256=e6739501158ffdc29774bb8b131e83a93078c746db05895de9e46addb76c9b1a
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.wk_dv.weight" }	shape=[32, 64]	sha256=17a6ad28639b9bcd0ef9ab45ea4d39c152c204dcf2c00decf22b28bd80bb00a2
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.wo_ud.weight" }	shape=[64, 64]	sha256=ea3ecb63715e8b5bbbc6f76e4c15ce2c1c13bbc10ebb0a6a53b2ce61344bbf0b
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.wq_du.weight" }	shape=[64, 64]	sha256=0fc050440cec949874b07e54c7f7c0a2e990f80768ccf62e41911867c43f5164
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.wr_du.weight" }	shape=[16, 64]	sha256=c2e74752cd42b869568216f0cfc5590a62da817ac13d2227ca79f11d4f764287
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn.wv_dv.weight" }	shape=[32, 64]	sha256=3136d8926a1ea17b5a1eb3d86c26f2464400b8603f76fec30565b2f3c960da36
+tensor=Family { family: "inkling2", key: "llm.layers.7.attn_sconv.weight" }	shape=[64, 1, 4]	sha256=1ef0ce21c5411b4524871b477c88b0363206f09fc2b397dcf1c6d941e29820a0
+tensor=Family { family: "inkling2", key: "llm.layers.7.k_input_norm.weight" }	shape=[64]	sha256=6e4b3a3c14126d34a3fbb65b9a88317ce7f06e2ea4f0648a561ef31a6bf847b6
+tensor=Family { family: "inkling2", key: "llm.layers.7.mlp.experts.w13_weight_scale" }	shape=[8, 64, 2]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.7.mlp.experts.w2_weight_scale" }	shape=[8, 64, 1]	sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+tensor=Family { family: "inkling2", key: "llm.layers.7.mlp_sconv.weight" }	shape=[64, 1, 4]	sha256=fc0e9888595bdf5cbe9efe8a1bd5fdf33c0b1e0419664973c148fbdd8f19c021
+tensor=Family { family: "inkling2", key: "llm.layers.7.q_input_norm.weight" }	shape=[64]	sha256=5d3db4bda285f6118a682a59ea7336400558657dd4cacab957581379fb01ab37
+tensor=Family { family: "inkling2", key: "llm.layers.7.v_input_norm.weight" }	shape=[64]	sha256=1cd76ec205d56221094b2788f5a717ecff2ce17d3574726b89f84f588b7347ea
+tensor=Family { family: "inkling2", key: "llm.middle_cycle_cross_pass_kv_queries" }	shape=[8, 64]	sha256=5a5a378bba777ce11f068776b87834aa506af96eca8f3f4990768a6a21dc31a7
+tensor=Family { family: "inkling2", key: "llm.middle_cycle_cross_pass_queries" }	shape=[8, 64]	sha256=e614283ed9bd8226bec3c7fd552a251e53a10f9414d7abeb005a60b02d7e2977
+chunk_ends=[8, 12, 24]
+checkpoint_file=model.safetensors	sha256=db3bcf55117349fada275aa5e1261e13f5a703ad5b99c608ab88076326567953
+checkpoint_file=config.json	sha256=4babb3b06779d9194f120e0ff94720b50ec1b5d263485dd0ea561544bccbd3aa
+checkpoint_file=hf_quant_config.json	sha256=84f405cc7abe3b37e4f47c46ff1da4453c8306bf1409bf423ee1344acdbaf67c
+checkpoint_file=schedule.json	sha256=05b5b88217cbb26ac57bc1f67564f79a080e47bc148b562a6cbcf8251affaf1f

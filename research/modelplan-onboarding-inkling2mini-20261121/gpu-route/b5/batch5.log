@@ -1,0 +1,50 @@
+gpulock: 5090 leased as claude-code-20261121T065545-1187706 for 40m
+df139e28961a6600e3779136743275bc871d91d339cd7417a3552dd3c26be997  /home/avifenesh/.cache/inkling2mini/gpu-frozen5/ink2-gpu
+f4144d477d1d981a0426cbd5600f2591b5524ddd2c6b6c2c5436e107b4ee4adc  /home/avifenesh/.cache/inkling2mini/gpu-frozen5/ink2-gpu-gate
+4.85 10.87 12.96 3/5641 1392759
+samples=8 clamp_hits=2 P4, 180 MHz, 9001 MHz, 20.39 W, 175.00 W, 0x0000000000000400
+UNSURE
+CLAMPCHECK_RC=2
+MARK float-1 07:20:31.287111342
+ink2-gpu: class inkling2-gpu-f32-stream/FloatActivation; resident weights 17.594 GiB, with state 18.798 GiB, loaded in 20.4s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: gen 32 ids, 32/32 equal to the oracle's greedy prefix; 1541.0 launches a token; 4.34 tok/s (clocks 2730 MHz, 14001 MHz, 122.26 W, 82, 100 %)
+gen 200001,200008,371,150409,171960,25,196980,100887,149881,150011,156021,151661,149876,158808,149884,152978,152778,13,1,170289,150893,150011,156021,13,170289,151791,153606,25,158808,156090,152778,150489
+RC=0
+MARK declared-1 07:21:00.080230021
+ink2-gpu: class inkling2-gpu-f32-stream/DeclaredActivationQuant; resident weights 17.594 GiB, with state 18.860 GiB, loaded in 14.1s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: gen 32 ids, 5/32 equal to the oracle's greedy prefix; 1637.0 launches a token; 5.38 tok/s (clocks 2775 MHz, 14001 MHz, 101.10 W, 79, 100 %)
+gen 200001,200008,371,150409,171960,149887,150011,156021,161043,151661,158808,149884,152978,152778,13,170289,150893,149911,4123,13,170289,151791,153606,25,220,47157,180553,25,151483,1638,152068,149971
+RC=0
+MARK float-2 07:21:21.028823048
+ink2-gpu: class inkling2-gpu-f32-stream/FloatActivation; resident weights 17.594 GiB, with state 18.798 GiB, loaded in 14.0s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: gen 32 ids, 32/32 equal to the oracle's greedy prefix; 1541.0 launches a token; 4.35 tok/s (clocks 2737 MHz, 14001 MHz, 120.47 W, 81, 100 %)
+gen 200001,200008,371,150409,171960,25,196980,100887,149881,150011,156021,151661,149876,158808,149884,152978,152778,13,1,170289,150893,150011,156021,13,170289,151791,153606,25,158808,156090,152778,150489
+RC=0
+MARK declared-2 07:21:43.566815174
+ink2-gpu: class inkling2-gpu-f32-stream/DeclaredActivationQuant; resident weights 17.594 GiB, with state 18.860 GiB, loaded in 11.6s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: gen 32 ids, 5/32 equal to the oracle's greedy prefix; 1637.0 launches a token; 5.38 tok/s (clocks 2775 MHz, 14001 MHz, 100.09 W, 79, 100 %)
+gen 200001,200008,371,150409,171960,149887,150011,156021,161043,151661,158808,149884,152978,152778,13,170289,150893,149911,4123,13,170289,151791,153606,25,220,47157,180553,25,151483,1638,152068,149971
+RC=0
+MARK float-3 07:22:01.798208188
+ink2-gpu: class inkling2-gpu-f32-stream/FloatActivation; resident weights 17.594 GiB, with state 18.798 GiB, loaded in 4.0s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: gen 32 ids, 32/32 equal to the oracle's greedy prefix; 1541.0 launches a token; 4.34 tok/s (clocks 2730 MHz, 14001 MHz, 120.88 W, 81, 100 %)
+gen 200001,200008,371,150409,171960,25,196980,100887,149881,150011,156021,151661,149876,158808,149884,152978,152778,13,1,170289,150893,150011,156021,13,170289,151791,153606,25,158808,156090,152778,150489
+RC=0
+MARK declared-3 07:22:13.928542095
+ink2-gpu: class inkling2-gpu-f32-stream/DeclaredActivationQuant; resident weights 17.594 GiB, with state 18.860 GiB, loaded in 4.1s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: gen 32 ids, 5/32 equal to the oracle's greedy prefix; 1637.0 launches a token; 5.38 tok/s (clocks 2767 MHz, 14001 MHz, 99.13 W, 79, 100 %)
+gen 200001,200008,371,150409,171960,149887,150011,156021,161043,151661,158808,149884,152978,152778,13,170289,150893,149911,4123,13,170289,151791,153606,25,220,47157,180553,25,151483,1638,152068,149971
+RC=0
+MARK end-timed 07:22:24.547716177
+ink2-gpu: class inkling2-gpu-f32-stream/DeclaredActivationQuant; resident weights 17.594 GiB, with state 19.837 GiB, loaded in 3.8s; context 8448, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: --force-moe-in needs the tape's MoE input at every position: /home/avifenesh/.cache/inkling2mini/oracle/tapes/p3_logscale.actq_f32 has 179 of 8291 positions
+RC_EXPECT_REFUSAL=1
+ink2-gpu: class inkling2-gpu-f32-stream/FloatActivation; resident weights 17.594 GiB, with state 19.774 GiB, loaded in 3.7s; context 8448, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 8291 positions in 72.8s: resid attn worst slot 1.057e-1, ffn worst slot 1.109e-1, router rows 372813/397968, logits max abs 1.142e1 KL mean 8.426e-4, argmax 178/179, greedy 32/32
+RC=0
+ink2-gpu: class inkling2-gpu-f32-stream/DeclaredActivationQuant; resident weights 17.594 GiB, with state 19.837 GiB, loaded in 3.8s; context 8448, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 8291 positions in 58.8s: resid attn worst slot 3.225e-1, ffn worst slot 3.363e-1, router rows 199658/397968, logits max abs 1.683e1 KL mean 2.912e-2, argmax 176/179, greedy 32/32
+RC=0
+ink2-gpu: class inkling2-gpu-f32-stream/FloatActivation; resident weights 17.594 GiB, with state 18.798 GiB, loaded in 3.7s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 1531 positions in 17.8s: resid attn worst slot 3.355e-1, ffn worst slot 3.387e-1, router rows 58682/73488, logits max abs 1.831e1 KL mean 8.638e-2, argmax 189/192, greedy 32/32
+RC=0

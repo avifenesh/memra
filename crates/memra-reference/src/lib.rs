@@ -8,6 +8,9 @@ pub mod hidden_trace;
 pub mod hy_v4_flash;
 pub mod hy_v4_flash_dfly;
 pub mod hy_v4_flash_trunk;
+pub mod inkling2;
+pub mod inkling2_actquant;
+pub mod inkling2_drafter;
 pub mod mimo_audio;
 pub mod mimo_audio_attn;
 pub mod mimo_audio_codec_frontend;
@@ -80,6 +83,18 @@ impl ReferenceTensor {
 
 pub type ReferenceWeights = BTreeMap<TensorId, ReferenceTensor>;
 
+/// How the tiny gate compares a fixture's run with its pinned oracle.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TinyGate {
+    /// Within the pack's checkpoint-parity band.
+    PackBand,
+    /// The run's oracle text is the pinned bytes.
+    Exact,
+    /// Within a band stated for this run alone, with the argmax of every position required. The
+    /// band is the tiny gate's and is never a checkpoint-parity band.
+    Band { max_abs: f32, max_rel: f32 },
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReferenceFixture {
     pub token_ids: Vec<u32>,
@@ -89,6 +104,13 @@ pub struct ReferenceFixture {
     /// Prefill `token_ids[..k]` as one chunk, then decode each later token one step at a time
     /// (teacher-forced; [`execute_tokens`]). `None`: one prefill chunk.
     pub decode_from: Option<usize>,
+    /// Ends of the prefill chunks before the last one: `token_ids[..chunk_ends[0]]`,
+    /// `token_ids[chunk_ends[0]..chunk_ends[1]]` and so on are each one prefill call
+    /// ([`execute_fixture`]). Empty: the prefill is one chunk. Only Inkling 2 plans have a chunked
+    /// reference prefill.
+    pub chunk_ends: Vec<usize>,
+    /// How the tiny gate compares this fixture's run with its pinned oracle.
+    pub tiny_gate: TinyGate,
     /// The fixture as checkpoint-format files (file name, bytes) an external oracle loads to
     /// run the source program on the same weights. Empty when the weights were generated
     /// directly in f32.
@@ -174,6 +196,18 @@ pub enum ReferenceLayerState {
         head_dim: usize,
         compressed: Vec<f32>,
         index_keys: Vec<f32>,
+    },
+    /// Inkling 2 slot: the cached K and V rows (`[rows, kv_heads * head_dim]`; a sliding slot
+    /// keeps the last `window - 1`), the position of each row, and the last `kernel - 1` inputs
+    /// of its four short convolutions (K, V, attention output, MLP output), oldest first.
+    RelativeBias {
+        key: Vec<f32>,
+        value: Vec<f32>,
+        positions: Vec<u64>,
+        kv_heads: usize,
+        head_dim: usize,
+        window: Option<usize>,
+        conv: Vec<Vec<f32>>,
     },
 }
 
@@ -312,6 +346,17 @@ fn refuse_hy_v4_flash(plan: &ModelPlan, operation: &'static str) -> Result<(), R
     }
     Ok(())
 }
+/// Inkling 2 plans run only through [`inkling2`] (text, no drafter); the generic entry points
+/// that have no Inkling 2 program refuse them.
+fn refuse_inkling2(plan: &ModelPlan, operation: &'static str) -> Result<(), ReferenceError> {
+    if plan.inkling2.is_some() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation,
+        });
+    }
+    Ok(())
+}
 
 pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, ReferenceError> {
     if plan.hy_v4_flash.is_some() {
@@ -319,6 +364,9 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
     }
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::fixture(plan);
+    }
+    if plan.inkling2.is_some() {
+        return inkling2::fixture(plan);
     }
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
@@ -471,6 +519,12 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
                     hidden,
                 )?;
             }
+            ResidualTopology::BlockAttention(_) => {
+                return Err(ReferenceError::UnsupportedOperation {
+                    layer: Some(layer.index),
+                    operation: "block attention residual",
+                });
+            }
             ResidualTopology::SinglePassHyperConnections(_) => {
                 return Err(ReferenceError::UnsupportedOperation {
                     layer: Some(layer.index),
@@ -532,6 +586,13 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
             }
             AttentionPlan::KimiDeltaNet(kda) => {
                 add_kda_fixture(&mut weights, layer.index, kda, hidden)?;
+            }
+            // Inkling 2 plans run only through `inkling2::execute`; this generic walker has no program for them.
+            AttentionPlan::RelativeBias(_) => {
+                return Err(ReferenceError::UnsupportedOperation {
+                    layer: Some(layer.index),
+                    operation: "relative-bias attention",
+                });
             }
             AttentionPlan::Csa2(_) => {
                 return Err(ReferenceError::UnsupportedOperation {
@@ -639,7 +700,9 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
             }
         }
     }
-    if let Some(memra_gguf::model_plan::DrafterPlan::Dspark(dspark)) = plan.drafter.as_ref() {
+    if let Some(memra_gguf::model_plan::DrafterPlan::Dspark(dspark)) = plan.drafter.as_ref()
+        && dspark.is_deepseek_v4()
+    {
         add_dspark_fixture(&mut weights, dspark, hidden, vocab)?;
     }
     let token_ids = (1..=3.min(vocab - 1)).map(|token| token as u32).collect();
@@ -672,6 +735,8 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
         vision,
         multimodal_token_ids,
         decode_from: None,
+        chunk_ends: Vec::new(),
+        tiny_gate: TinyGate::PackBand,
         checkpoint_files: Vec::new(),
     })
 }
@@ -2151,14 +2216,18 @@ pub struct TinyVariant {
 }
 
 /// The tiny-gate variants of `plan`'s family (DeepSeek-V4.1: below-window splits and a
-/// two-block window; Hy4-flash: splits below the indexer budget and the window). Every other family
-/// has none.
+/// two-block window; Hy4-flash: splits below the indexer budget and the window; Inkling 2: prefill
+/// and decode schedules across its window, relative extent and log-scale floor). Every other
+/// family has none.
 pub fn tiny_variants(plan: &ModelPlan) -> Result<Vec<TinyVariant>, ReferenceError> {
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::tiny_variants(plan);
     }
     if plan.hy_v4_flash.is_some() {
         return hy_v4_flash_trunk::tiny_variants(plan);
+    }
+    if plan.inkling2.is_some() {
+        return inkling2::tiny_variants(plan);
     }
     Ok(Vec::new())
 }
@@ -2179,6 +2248,9 @@ pub fn execute_tokens(
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::execute(plan, weights, token_ids, decode_from);
     }
+    if plan.inkling2.is_some() {
+        return inkling2::execute(plan, weights, token_ids, decode_from);
+    }
     match decode_from {
         None => execute(plan, weights, token_ids),
         Some(_) => Err(ReferenceError::UnsupportedOperation {
@@ -2186,6 +2258,36 @@ pub fn execute_tokens(
             operation: "teacher-forced reference decode",
         }),
     }
+}
+
+/// Runs a fixture's request under its own schedule: [`execute_tokens`] with the fixture's
+/// `decode_from`, after the prefill chunks its `chunk_ends` name. Only Inkling 2 plans have a
+/// chunked reference prefill; any other plan refuses a fixture that asks for one.
+pub fn execute_fixture(
+    plan: &ModelPlan,
+    fixture: &ReferenceFixture,
+) -> Result<ReferenceOutput, ReferenceError> {
+    if plan.inkling2.is_some() {
+        return inkling2::execute_schedule(
+            plan,
+            &fixture.weights,
+            &fixture.token_ids,
+            &fixture.chunk_ends,
+            fixture.decode_from,
+        );
+    }
+    if !fixture.chunk_ends.is_empty() {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation: "chunked reference prefill",
+        });
+    }
+    execute_tokens(
+        plan,
+        &fixture.weights,
+        &fixture.token_ids,
+        fixture.decode_from,
+    )
 }
 
 pub fn execute(
@@ -2198,6 +2300,9 @@ pub fn execute(
     }
     if plan.deepseek_v41.is_some() {
         return deepseek_v41::execute(plan, weights, token_ids, None);
+    }
+    if plan.inkling2.is_some() {
+        return inkling2::execute(plan, weights, token_ids, None);
     }
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
@@ -2223,6 +2328,7 @@ pub fn execute_multimodal(
 ) -> Result<ReferenceMultimodalOutput, ReferenceError> {
     refuse_deepseek_v41(plan, "DeepSeek-V4.1 multimodal reference execution")?;
     refuse_hy_v4_flash(plan, "Hy4-flash multimodal reference execution")?;
+    refuse_inkling2(plan, "Inkling 2 multimodal reference execution (text only)")?;
     if plan.speech.is_some() {
         return Err(ReferenceError::UnsupportedOperation {
             layer: None,
@@ -2355,8 +2461,10 @@ fn execute_embedded(
     let mut state = Vec::with_capacity(plan.layers.len());
     let mut layer_hidden = Vec::with_capacity(plan.layers.len());
     let dspark = plan.drafter.as_ref().and_then(|drafter| match drafter {
-        memra_gguf::model_plan::DrafterPlan::Dspark(plan) => Some(plan),
-        memra_gguf::model_plan::DrafterPlan::MiMoMtp3(_) => None,
+        // this executor runs the DeepSeek-V4 program; another DSpark variant has its own
+        memra_gguf::model_plan::DrafterPlan::Dspark(plan) if plan.is_deepseek_v4() => Some(plan),
+        memra_gguf::model_plan::DrafterPlan::Dspark(_)
+        | memra_gguf::model_plan::DrafterPlan::MiMoMtp3(_) => None,
     });
     let mut draft_taps = dspark.map(|plan| vec![None; plan.target_layer_ids.len()]);
     // gemma4 E4B: per-layer inputs and KV sharing reach across layers, so its layers take the
@@ -4343,6 +4451,14 @@ fn apply_logits_transforms(logits: &mut [f32], vocab: usize, transforms: &[Logit
                     *value = *cap * (*value / *cap).tanh();
                 }
             }
+            // The reference keeps the row width, so a dropped id becomes unselectable.
+            LogitsTransform::Truncate(keep) => {
+                for row in logits.chunks_exact_mut(vocab) {
+                    for value in row.iter_mut().skip(*keep as usize) {
+                        *value = f32::NEG_INFINITY;
+                    }
+                }
+            }
             LogitsTransform::SuppressTokens(ids) => {
                 for row in logits.chunks_exact_mut(vocab) {
                     for &id in ids {
@@ -4502,6 +4618,13 @@ fn execute_layer(
             tokens,
             hidden,
         )?,
+        // Inkling 2 plans run only through `inkling2::execute`; this generic walker has no program for them.
+        AttentionPlan::RelativeBias(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "relative-bias attention",
+            });
+        }
         AttentionPlan::Csa2(_) => {
             return Err(ReferenceError::UnsupportedOperation {
                 layer: Some(layer.index),
@@ -4928,6 +5051,13 @@ fn execute_hyper_layer(
             tokens,
             hidden,
         )?,
+        // Inkling 2 plans run only through `inkling2::execute`; this generic walker has no program for them.
+        AttentionPlan::RelativeBias(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "relative-bias attention",
+            });
+        }
         AttentionPlan::Csa2(_) => {
             return Err(ReferenceError::UnsupportedOperation {
                 layer: Some(layer.index),
@@ -6062,6 +6192,7 @@ pub fn execute_mtp_standalone(
 ) -> Result<Vec<ReferenceMtpOutput>, ReferenceError> {
     refuse_deepseek_v41(plan, "DeepSeek-V4.1 standalone MTP reference execution")?;
     refuse_hy_v4_flash(plan, "Hy4-flash standalone MTP reference execution")?;
+    refuse_inkling2(plan, "Inkling 2 drafter reference execution")?;
     let hidden = plan.hidden_size as usize;
     let vocab = plan.vocab_size as usize;
     let tokens = token_ids.len();
@@ -8433,6 +8564,13 @@ fn activate_pair(
         ActivationPlan::SwiGluPreClamped { limit } => {
             silu(gate.min(*limit)) * up.clamp(-*limit, *limit)
         }
+        // Inkling 2's activation; its plans run through `inkling2::execute`.
+        ActivationPlan::SwiGluSoftcapped { .. } => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer),
+                operation: "softcapped SwiGLU activation",
+            });
+        }
         ActivationPlan::Named(_) => {
             return Err(ReferenceError::UnsupportedOperation {
                 layer: Some(layer),
@@ -9273,13 +9411,13 @@ mod tests {
         ));
         let mut plan = ModelPlan::compile(&config).unwrap();
         let block = plan.mtp_blocks.remove(0).layer;
-        plan.drafter = Some(DrafterPlan::Dspark(DsparkPlan {
-            block_size: 3,
-            noise_token_id: 31,
-            target_layer_ids: vec![1],
-            markov_rank: 8,
-            blocks: vec![block],
-        }));
+        plan.drafter = Some(DrafterPlan::Dspark(DsparkPlan::deepseek_v4(
+            3,
+            31,
+            vec![1],
+            8,
+            vec![block],
+        )));
         let fixture = deterministic_fixture(&plan).unwrap();
         let output = execute(&plan, &fixture.weights, &[1, 2, 3, 4]).unwrap();
         let draft = output.draft.expect("DSpark output");
@@ -10054,6 +10192,66 @@ mod tests {
         assert!((output[0] - 0.474_592_9).abs() < 1e-4, "{output:?}");
         assert!((output[1] - 0.931_047_0).abs() < 1e-4, "{output:?}");
         assert!((output[2] - 8.868_546_0).abs() < 1e-3, "{output:?}");
+    }
+
+    /// `LogitsTransform::Truncate` through `execute` on a real tiny plan: every id below the
+    /// cut keeps its logit bit for bit, every id at or past it is unselectable, and the row
+    /// width does not change. This is the reference surface the registry names for
+    /// `LogitsTruncate`.
+    #[test]
+    fn logits_truncate_keeps_the_head_bits_and_makes_the_padded_tail_unselectable() {
+        let pack = memra_gguf::model_packs::by_alias("qwen3").expect("qwen3 pack");
+        let plan = pack.compile_tiny_plan().expect("tiny plan compiles");
+        let fixture = deterministic_fixture(&plan).unwrap();
+        let plain = execute(&plan, &fixture.weights, &fixture.token_ids).unwrap();
+        let vocab = plain.vocab;
+        assert!(vocab > 4 && plain.tokens > 1);
+        assert!(plain.logits.iter().all(|value| value.is_finite()));
+        let keep = vocab - 3;
+        let mut truncated_plan = plan.clone();
+        truncated_plan
+            .logits
+            .push(LogitsTransform::Truncate(keep as u32));
+        let truncated = execute(&truncated_plan, &fixture.weights, &fixture.token_ids).unwrap();
+        assert_eq!((truncated.tokens, truncated.vocab), (plain.tokens, vocab));
+        for (row, (cut, full)) in truncated
+            .logits
+            .chunks_exact(vocab)
+            .zip(plain.logits.chunks_exact(vocab))
+            .enumerate()
+        {
+            for id in 0..vocab {
+                if id < keep {
+                    assert_eq!(cut[id].to_bits(), full[id].to_bits(), "row {row} id {id}");
+                } else {
+                    assert_eq!(cut[id], f32::NEG_INFINITY, "row {row} id {id}");
+                }
+            }
+        }
+        // A cut at or past the width drops nothing.
+        let mut whole = plan.clone();
+        whole
+            .logits
+            .push(LogitsTransform::Truncate(vocab as u32 + 7));
+        let whole = execute(&whole, &fixture.weights, &fixture.token_ids).unwrap();
+        assert_eq!(whole.logits, plain.logits);
+        // Order matters and is the plan's: a softcap before the cut still caps the kept ids.
+        let mut capped = plan.clone();
+        capped.logits = vec![
+            LogitsTransform::Softcap(2.0),
+            LogitsTransform::Truncate(keep as u32),
+        ];
+        let capped = execute(&capped, &fixture.weights, &fixture.token_ids).unwrap();
+        for (cut, full) in capped
+            .logits
+            .chunks_exact(vocab)
+            .zip(plain.logits.chunks_exact(vocab))
+        {
+            for id in 0..keep {
+                assert_eq!(cut[id].to_bits(), (2.0 * (full[id] / 2.0).tanh()).to_bits());
+            }
+            assert!(cut[keep..].iter().all(|value| *value == f32::NEG_INFINITY));
+        }
     }
 
     /// The qwen4_exp pack's tiny plan executes end-to-end through `execute`: gated

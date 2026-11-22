@@ -1,0 +1,417 @@
+//! Inkling 2 program types, compiled only by the `inkling2` pack.
+//!
+//! Semantic sources: the checkpoint's `config.json` and `hf_quant_config.json`
+//! (`thinkingmachines/Inkling-2-Mini`), the model code of the vendor's serving image, and two
+//! float-activation implementations used for triage (the transformers loop model and llama.cpp's
+//! `inkling2.cpp` / `inkling2-loop.cpp`). The lane note is
+//! `research/modelplan-onboarding-inkling2mini-20261121/SEMANTICS.md`.
+//!
+//! None of these types parameterizes another family's plan. The reference executor
+//! (memra-reference `inkling2`) runs every operation they emit except the drafter; no tuned
+//! surface implements any of them, so each is a registry row with no surface.
+
+use super::{NormPlan, ValueNorm};
+use crate::quant_groups::ActivationQuant;
+
+/// Clip a vector to an L2 norm of at most `threshold`:
+/// `x * min(1, threshold / (|x| + epsilon))`, after the optional learned scale.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct L2ClipPlan {
+    pub threshold: f32,
+    pub epsilon: f32,
+    pub scale: ClipScale,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipScale {
+    None,
+    /// One learned factor per head and channel, multiplied in before the norm is taken.
+    PerHeadChannel,
+}
+
+/// Relative-position bias: `r = clip(scale * wr(x_q))` is a rank-`rank` vector per query head,
+/// and `bias[h, d] = (r_h @ table[rank, extent])[d]` for distance `d = pos_q - pos_k`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RelativeBiasPlan {
+    pub rank: u32,
+    /// Columns of the bias table.
+    pub extent: u32,
+    pub clip: L2ClipPlan,
+    pub beyond_extent: BeyondExtent,
+}
+
+/// What a key at distance `>= extent` gets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BeyondExtent {
+    /// Full layers: the key is attended with a zero bias.
+    ZeroBias,
+    /// Sliding layers: the window ends at the table, so the key is masked.
+    Masked,
+}
+
+/// `tau = 1 + alpha * ln(max(1, (pos + 1) / floor))`, multiplied into Q and R after their clips.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LogPositionScalePlan {
+    pub floor: u32,
+    pub alpha: f32,
+}
+
+/// How a layer derives its three attention inputs from the residual mix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttentionInputs {
+    /// One mixed input and one norm (`attn_norm`) shared by Q, K and V. In a loop pass that
+    /// carries a message the three inputs still differ, since each takes its own controller
+    /// before the shared norm.
+    SharedNorm,
+    /// Three mixed inputs (three residual queries), each with its own norm
+    /// (`q_input_norm`, `k_input_norm`, `v_input_norm`).
+    SeparateQkvNorms,
+}
+
+/// The sink logit of the softmax denominator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuerySinkPlan {
+    /// A per-query, per-head logit projected from the Q-side input (`attn_sink_proj`):
+    /// `exp(s) / (exp(sink) + sum exp(s))`. Not a learned per-head constant.
+    PerQueryProjection,
+}
+
+/// The attention output gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputGatePlan {
+    /// `sigmoid(gate_attn(x_q))`, one value per head and channel, from its own tensor
+    /// `[heads * head_dim, hidden]`. Applied before the output projection.
+    SeparatePerDimSigmoid,
+}
+
+/// Tap layout of a short convolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShortConvTaps {
+    /// Learned depthwise taps `[channels, 1, kernel]`, a causal cross-correlation: indexed oldest
+    /// input first, so the last tap weights the current token.
+    Static,
+    /// Static taps `[kernel, channels]` plus input-dependent taps projected per group
+    /// (`weight_proj [kernel * groups, hidden]`). Both are indexed by lag with the current token
+    /// first.
+    StaticPlusDynamic { groups: u32 },
+}
+
+/// Causal depthwise short convolution with a residual:
+/// `(x + conv(x)) / sqrt(kernel + 1)`, or `sqrt(2 * kernel + 1)` with dynamic taps. Inputs before
+/// position 0 are zero. Its state is the last `kernel - 1` inputs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShortConvPlan {
+    pub kernel: u32,
+    pub channels: u32,
+    pub taps: ShortConvTaps,
+}
+
+/// One attention layer of the family: GQA without RoPE, position through a relative bias and
+/// (on full layers) a log scale, clipped Q and K, a weightless-RMS V, a per-query sink, a
+/// separate per-dimension output gate, and short convolutions on K, V and the output.
+/// Softmax scale `head_dim^-0.5`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RelativeBiasAttentionPlan {
+    pub query_heads: u32,
+    pub kv_heads: u32,
+    pub head_dim: u32,
+    /// `Some(w)`: the query attends itself and the `w - 1` positions before it.
+    pub window: Option<u32>,
+    pub inputs: AttentionInputs,
+    pub query_clip: L2ClipPlan,
+    pub key_clip: L2ClipPlan,
+    pub value_norm: ValueNorm,
+    pub value_norm_epsilon: f32,
+    pub relative: RelativeBiasPlan,
+    /// Full layers only.
+    pub log_scale: Option<LogPositionScalePlan>,
+    pub sink: QuerySinkPlan,
+    pub output_gate: OutputGatePlan,
+    /// On the K projection, before the clip.
+    pub key_conv: ShortConvPlan,
+    /// On the V projection, before the norm.
+    pub value_conv: ShortConvPlan,
+    /// On the output projection.
+    pub output_conv: ShortConvPlan,
+}
+
+/// Per-slot state: KV rows (a ring of `window` on sliding layers) and the short-conv history of
+/// K, V, the attention output and the MLP output. Loop slots that share weights never share this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RelativeBiasStatePlan {
+    pub key_width: u32,
+    pub value_width: u32,
+    pub window: Option<u32>,
+    /// `kernel - 1` rows of history.
+    pub conv_history: u32,
+    /// K + V + attention output + MLP output channels.
+    pub conv_channels: u32,
+}
+
+/// Block attention residual. Layers are grouped in blocks of `block`. Every sublayer input is a
+/// depth mix: `softmax(q . rms(s) / sqrt(hidden))` over the earlier block outputs and the
+/// running stream, summing the RMS-normalized states. The first layer of a block pushes the
+/// running stream onto the block list and starts a new one, so its attention output is not added
+/// to its input.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BlockAttentionPlan {
+    pub block: u32,
+    pub starts_block: bool,
+    /// Residual queries of the attention sublayer: 0 on the first layer of the model, 1 on a
+    /// sliding layer, 3 (Q, K, V) on a full layer.
+    pub attention_queries: u32,
+    /// The mix sums normalized states, not raw ones.
+    pub normalize_values: bool,
+    pub epsilon: f32,
+}
+
+/// Where a loop message enters a core layer. Order is the checkpoint's query order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoopMessageTarget {
+    Query,
+    Key,
+    Value,
+    Mlp,
+}
+
+/// One cache slot of the looped program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoopSlotPlan {
+    /// Cache slot; also the index into `ModelPlan::layers`.
+    pub slot: u32,
+    /// The physical layer whose weights the slot runs.
+    pub physical_layer: u32,
+    /// Loop pass, `None` for prelude and tail layers.
+    pub pass: Option<u32>,
+    /// The slot reads a message from the previous pass (passes after the first).
+    pub message: bool,
+}
+
+/// The loop: core layers `core_start..core_end` run `passes` times over shared weights.
+///
+/// Every pass restarts from the prelude's stream and block list. A pass after the first reads a
+/// message from the pass before it: a depth mix (the block-residual form, values normalized)
+/// over that pass's block outputs after the first core block plus its final stream, with one
+/// query per core layer and target. A message enters its target through a rank-`gate_rank`
+/// controller: `g = down(cat(rms(x), rms(m)))`, `x - tanh(forget g) * x + tanh(gain g) * m`.
+/// The message bank is per token; the loop adds no cross-token state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoopPlan {
+    pub core_start: u32,
+    pub core_end: u32,
+    pub passes: u32,
+    pub gate_rank: u32,
+    pub controller_epsilon: f32,
+    pub targets: [LoopMessageTarget; 4],
+    /// One entry per cache slot, in slot order.
+    pub slots: Vec<LoopSlotPlan>,
+    /// Slots in execution order: prelude, every pass over the core, tail.
+    pub execution_order: Vec<u32>,
+}
+
+/// Stored format of an expert bank.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpertWeightFormat {
+    /// e2m1 codes, two per byte with the even element in the low nibble, one e4m3 scale per 16
+    /// inputs per row, and a per-expert factor `amax / outer_scale_denominator`.
+    Nvfp4Amax,
+    /// e4m3 values with one ue8m0 exponent per 32 inputs per row.
+    Mxfp8Row32,
+}
+
+/// What one physical layer's expert GEMMs take as input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpertActivationMode {
+    /// The layer's declared quantizer: the token's row once before gate/up, and each routed row
+    /// again before down.
+    Declared,
+    /// Float inputs against the exactly dequantized weights.
+    Float,
+}
+
+/// Numerics of one physical layer's routed experts. The numeric class is set per layer, so a
+/// per-layer measurement can move one layer without touching the others.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExpertNumericsPlan {
+    pub physical_layer: u32,
+    /// The stored format of both banks of the layer.
+    pub weight: ExpertWeightFormat,
+    /// The quantizer the layer's parameter group requires
+    /// (`required_activation_quantization`).
+    pub declared_activation: ActivationQuant,
+    /// The input this plan runs the layer's experts on.
+    pub activation: ExpertActivationMode,
+    /// The banks are the minted NVFP4 conversion of the stored ones (`nvfp4-rig`); `weight` is
+    /// then `Nvfp4Amax` and `declared_activation` the NVFP4 quantizer of the shipped NVFP4 layers.
+    pub minted: bool,
+}
+
+/// Tensor classes outside the routed experts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DenseTensorClass {
+    AttentionProjections,
+    Router,
+    RouterBias,
+    LoopControllers,
+    ShortConvs,
+    Norms,
+    ResidualQueries,
+    Embedding,
+    OutputProjection,
+}
+
+/// Numerics of one dense tensor class, from its parameter group: the weights run as stored (no
+/// requantization) and the linear accumulates in f32.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DenseNumericsPlan {
+    pub class: DenseTensorClass,
+    /// The group's `compute_dtype`.
+    pub weight: crate::quant_groups::ComputeDtype,
+    /// The group declares an f32 forward output (`fwd_output_dtype`).
+    pub output_f32: bool,
+}
+
+/// The numeric classes of the family. They are different functions of the same weights and are
+/// never presented as one another.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Inkling2NumericClass {
+    /// The program the checkpoint declares as required: quantized expert inputs (NVFP4 W4A4,
+    /// MXFP8 W8A8) with the routed experts' bf16 rounding points, and an f32 stream outside the
+    /// experts (BF16 and F32 weights as stored, f32 activations, f32 accumulation). The default
+    /// and the support target. Running the stream outside the experts in BF16 is a different
+    /// program and needs its own measured KL receipt before any route adopts it.
+    DeclaredActivationQuant,
+    /// Float expert inputs against the exactly dequantized weights. A bring-up and oracle
+    /// class: never the default, never a support claim.
+    FloatActivation,
+    /// Some layers run their declared quantizer and some run float inputs. A measurement
+    /// class: it is neither of the two above and is never reported as either.
+    PerLayerMixed,
+}
+
+/// The weight and cache program of a plan: how each tensor is stored and what the KV cache holds.
+/// A request runs one class from its first token to its last.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Inkling2WeightClass {
+    /// `shipped`: every weight as the checkpoint stores it and an f32 KV cache. The
+    /// checkpoint-faithful class.
+    Shipped,
+    /// `nvfp4-rig` (coordinator decision 8, from the per-layer KL receipts, and the owner's ruling to
+    /// convert the loop attention too): the tensors of
+    /// [`crate::model_packs::inkling2::nvfp4_rig::rig_tensors`] (the MXFP8 expert banks, the
+    /// output projection, the attention projections of every layer) are read from a minted
+    /// NVFP4 overlay bound to the checkpoint by hash, and every cache slot stores its keys and
+    /// values as unit-scale e4m3. The minted dense projections take f32 inputs (weight-only); the
+    /// minted expert banks run the NVFP4 declared program of the shipped NVFP4 layers.
+    Nvfp4Rig,
+    /// `nvfp4-rig-outside-loop`: a measurement class, `nvfp4-rig` with the loop core's attention
+    /// (layers 6-17) read as stored. It was decision 8's first default; the owner ruled the loop
+    /// attention converted too (2026-11-21 ~14:25) and asked for both sets measured.
+    Nvfp4RigOutsideLoop,
+}
+
+impl Inkling2WeightClass {
+    /// The name a request, a receipt and a manifest use.
+    pub fn name(self) -> &'static str {
+        match self {
+            Inkling2WeightClass::Shipped => "shipped",
+            Inkling2WeightClass::Nvfp4Rig => "nvfp4-rig",
+            Inkling2WeightClass::Nvfp4RigOutsideLoop => "nvfp4-rig-outside-loop",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "shipped" => Some(Inkling2WeightClass::Shipped),
+            "nvfp4-rig" => Some(Inkling2WeightClass::Nvfp4Rig),
+            "nvfp4-rig-outside-loop" => Some(Inkling2WeightClass::Nvfp4RigOutsideLoop),
+            _ => None,
+        }
+    }
+}
+
+/// What one cache slot's keys and values are stored as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KvCacheFormat {
+    /// The f32 keys and values as the slot computes them.
+    F32,
+    /// One e4m3 byte per element, no scale: the f32 value (after the key clip and the value norm)
+    /// rounded to the nearest e4m3, ties to even, saturating at 448. The token's own key and value
+    /// are read back through the same rounding.
+    E4m3Unit,
+}
+
+/// Family-level numerics, carried on [`Inkling2Plan`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Inkling2Numerics {
+    /// The family's default class.
+    pub default_class: Inkling2NumericClass,
+    pub bring_up_class: Inkling2NumericClass,
+    /// The class this plan runs, from its per-layer modes.
+    pub class: Inkling2NumericClass,
+    /// The family's default weight and cache class (`nvfp4-rig`).
+    pub default_weight_class: Inkling2WeightClass,
+    /// The weight and cache class this plan runs.
+    pub weight_class: Inkling2WeightClass,
+    /// Checkpoint names of the tensors this plan reads as minted NVFP4, in the overlay's order
+    /// (empty for `shipped`).
+    pub minted: Vec<String>,
+    /// One entry per cache slot, in slot order.
+    pub kv: Vec<KvCacheFormat>,
+    /// One entry per physical layer.
+    pub experts: Vec<ExpertNumericsPlan>,
+    /// One entry per dense tensor class.
+    pub dense: Vec<DenseNumericsPlan>,
+    /// Gate and up are one bank (`w13`) with interleaved output rows: row `2j` is gate `j`, row
+    /// `2j + 1` is up `j`.
+    ///
+    /// READ, NOT PROVEN: the checkpoint does not state the direction; this is how the vendor's
+    /// serving code and the transformers conversion read the bank. It is in the plan text (and
+    /// so the plan hash) as the reading a test has to confirm against captured vectors, and the
+    /// lane's SEMANTICS.md lists it as open.
+    pub gate_up_interleaved: bool,
+    /// The routing weight multiplies the activation output before the down projection, so
+    /// before the down input is quantized. With quantized down inputs this placement changes
+    /// the function, so it belongs to the numeric class.
+    ///
+    /// READ, NOT PROVEN: this is the vendor serving code's order for the declared class; the
+    /// float-activation implementations multiply after the down projection. Same status as
+    /// `gate_up_interleaved`.
+    pub routed_weight_before_down: bool,
+    /// sha256 of the `hf_quant_config.json` the numerics were read from.
+    pub quant_config_sha256: String,
+}
+
+impl Inkling2Numerics {
+    /// The class a set of per-layer modes amounts to.
+    pub fn class_of(experts: &[ExpertNumericsPlan]) -> Inkling2NumericClass {
+        let declared = experts
+            .iter()
+            .filter(|expert| expert.activation == ExpertActivationMode::Declared)
+            .count();
+        if declared == experts.len() {
+            Inkling2NumericClass::DeclaredActivationQuant
+        } else if declared == 0 {
+            Inkling2NumericClass::FloatActivation
+        } else {
+            Inkling2NumericClass::PerLayerMixed
+        }
+    }
+}
+
+/// Program parts that belong to the whole model, carried on `ModelPlan::inkling2`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Inkling2Plan {
+    /// RMS norm on token embeddings (`embed_norm`). Image embeddings would skip it.
+    pub embedding_norm: NormPlan,
+    pub loop_plan: LoopPlan,
+    /// Short convolution on every MLP output.
+    pub mlp_output_conv: ShortConvPlan,
+    /// The output mix: one residual query over the block list and the final stream.
+    pub output_queries: u32,
+    pub numerics: Inkling2Numerics,
+    // The drafter (`mtp.safetensors`) is the plan's `DrafterPlan::Dspark`, typed by its
+    // variants.
+    /// Vision tower tensors the contract owns and the text plan does not execute.
+    pub vision_executed: bool,
+}
