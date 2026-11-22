@@ -173,6 +173,20 @@ mod ffi {
             n: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_ink2d_gemv_fp8(
+            x: *const f32,
+            ldx: i64,
+            w: *const c_void,
+            ldw: i64,
+            rs: *const f32,
+            bias: *const f32,
+            y: *mut f32,
+            ldy: i64,
+            m: i32,
+            n: i32,
+            k: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_ink2d_fold_nvfp4(
             codes: *const c_void,
             scales: *const c_void,
@@ -246,12 +260,19 @@ pub enum WRef {
         lds: usize,
         t: f32,
     },
+    /// The FP8 control arm: e4m3 bytes with a row stride of `ldw` and one f32 scale per output row.
+    Fp8 {
+        w: u64,
+        ldw: usize,
+        rs: u64,
+    },
 }
 
 /// A drafter matrix `[n, k]` on the device: BF16 as stored, or NVFP4 from a drafter overlay.
 pub enum Mat {
     Bf16(CudaSlice<u8>, usize),
     Nv(CudaSlice<u8>, CudaSlice<u8>, f32, usize),
+    Fp8(CudaSlice<u8>, CudaSlice<f32>, usize),
 }
 
 impl Mat {
@@ -269,6 +290,11 @@ impl Mat {
                 lds: k / 16,
                 t: *t,
             },
+            Mat::Fp8(w, rs, k) => WRef::Fp8 {
+                w: p(w, st) + col as u64,
+                ldw: *k,
+                rs: p(rs, st),
+            },
         }
     }
 
@@ -281,9 +307,15 @@ impl Mat {
 /// tensor scale)` by name, or `None` for a tensor kept in BF16.
 /// One NVFP4 tensor on the host: codes, e4m3 scale bytes, tensor scale.
 pub type NvHost = (Vec<u8>, Vec<u8>, f32);
+/// One FP8 tensor on the host: e4m3 bytes and one f32 scale per row.
+pub type Fp8Host = (Vec<u8>, Vec<f32>);
 
 pub trait NvSource {
     fn nv(&self, name: &str, n: usize, k: usize) -> Result<Option<NvHost>, String>;
+    /// The FP8 control arm of a tensor: e4m3 bytes `[n, k]` and one f32 scale per row.
+    fn fp8(&self, _name: &str, _n: usize, _k: usize) -> Result<Option<Fp8Host>, String> {
+        Ok(None)
+    }
 }
 
 /// A drafter overlay file: `NAME` U8 codes, `NAME_scale` U8 (e4m3 bytes), `NAME_scale_2` F32,
@@ -294,8 +326,33 @@ pub struct NvOverlay<'a> {
 }
 
 impl NvSource for NvOverlay<'_> {
+    fn fp8(&self, name: &str, n: usize, k: usize) -> Result<Option<Fp8Host>, String> {
+        if !self.only.is_empty() && !self.only.iter().any(|o| o == name) {
+            return Ok(None);
+        }
+        let Some((_, rb)) = self.st.raw(&format!("{name}_rscale")) else {
+            return Ok(None);
+        };
+        let (_, wb) = self
+            .st
+            .raw(name)
+            .ok_or_else(|| format!("{name} missing from the FP8 overlay"))?;
+        let rows = wb.len() / k.max(1);
+        if wb.len() != rows * k || rb.len() != rows * 4 || rows < n {
+            return Err(format!("{name}: an FP8 overlay tensor of the wrong shape"));
+        }
+        let rs = rb[..n * 4]
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        Ok(Some((wb[..n * k].to_vec(), rs)))
+    }
+
     fn nv(&self, name: &str, n: usize, k: usize) -> Result<Option<NvHost>, String> {
         if !self.only.is_empty() && !self.only.iter().any(|o| o == name) {
+            return Ok(None);
+        }
+        if self.st.raw(&format!("{name}_rscale")).is_some() {
             return Ok(None);
         }
         let Some((ci, cb)) = self.st.raw(name) else {
@@ -533,7 +590,16 @@ impl DraftGpu {
                 None => Ok(None),
             }
         };
+        let fp8 = |name: &str, n: usize, k: usize| -> Result<Option<Mat>, String> {
+            Ok(match nv.map(|s| s.fp8(name, n, k)).transpose()?.flatten() {
+                Some((w, rs)) => Some(Mat::Fp8(dev.up(&w)?, dev.up(&rs)?, k)),
+                None => None,
+            })
+        };
         let mat = |name: String, n: usize, k: usize| -> Result<Mat, String> {
+            if let Some(m) = fp8(&name, n, k)? {
+                return Ok(m);
+            }
             Ok(match nvt(&name, n, k)? {
                 Some((c, s, t)) => Mat::Nv(dev.up(&c)?, dev.up(&s)?, t, k),
                 None => Mat::Bf16(b16(name, &[n, k])?, k),
@@ -638,9 +704,10 @@ impl DraftGpu {
                 Some((c, s, t)) => Some((dev.up(&c)?, dev.up(&s)?, t)),
                 None => None,
             },
-            fold_nv: match nvt("fold", g.vocab, r)? {
-                Some((c, s, t)) => Some(Mat::Nv(dev.up(&c)?, dev.up(&s)?, t, r)),
-                None => None,
+            fold_nv: match (fp8("fold", g.vocab, r)?, nvt("fold", g.vocab, r)?) {
+                (Some(m), _) => Some(m),
+                (None, Some((c, s, t))) => Some(Mat::Nv(dev.up(&c)?, dev.up(&s)?, t, r)),
+                (None, None) => None,
             },
             rnn_b: f32d(m("rnn_proj.bias"), &[3 * r])?,
             fold,
@@ -795,6 +862,22 @@ impl DraftGpu {
                     )
                 })
             }
+            WRef::Fp8 { w, ldw, rs } => dev.launched("memra_ink2d_gemv_fp8", unsafe {
+                ffi::memra_ink2d_gemv_fp8(
+                    x as *const f32,
+                    ldx as i64,
+                    w as *const _,
+                    ldw as i64,
+                    rs as *const f32,
+                    bias as *const f32,
+                    y as *mut f32,
+                    ldy as i64,
+                    m as i32,
+                    n as i32,
+                    k as i32,
+                    dev.sp(),
+                )
+            }),
             WRef::Nv {
                 codes,
                 scales,
