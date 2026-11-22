@@ -1647,6 +1647,19 @@ impl MemoryAccount {
 
 /// Rows of logits one head launch holds.
 const HEAD_ROWS: usize = 32;
+/// Rows of the longest call a graph replays (a verify of the anchor and seven proposals).
+const GRAPH_ROWS: usize = 8;
+const _: () = assert!(GRAPH_ROWS <= HEAD_ROWS, "a graphed call's head is one pass");
+
+/// The key of a captured call graph ([`Route::forward`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct GraphKey {
+    tap: bool,
+    parity: usize,
+    rows: usize,
+    /// 0: last argmax, 1: every argmax, 2: every row's logits.
+    head: u8,
+}
 
 pub struct Route {
     pub dev: Dev,
@@ -1676,8 +1689,11 @@ pub struct Route {
     /// reads its position and token from the device, so it replays at every position. Indexed
     /// [tap capture on][parity]: a step that captures taps records their copies into the capture
     /// buffer (`set_capture` drops those graphs with the buffer).
-    graphs: [[Option<CudaGraph>; 2]; 2],
-    warm: [[bool; 2]; 2],
+    /// Also the short calls (a speculative verify of 2..=GRAPH_ROWS rows, and a sampled
+    /// step's full logits): one graph per (tap capture, parity, rows, head), each captured after
+    /// one eager call of its key.
+    graphs: std::collections::BTreeMap<GraphKey, CudaGraph>,
+    warm: std::collections::BTreeSet<GraphKey>,
     /// Decode steps served by a graph replay since the last counter reset.
     pub graph_steps: Cell<u64>,
     /// A check seam: every step runs eager (the graph's bits are checked against it).
@@ -2319,8 +2335,8 @@ impl Route {
             red: RedArms::default(),
             fail_after_slot: None,
             last_call_rows: 0,
-            graphs: [[None, None], [None, None]],
-            warm: [[false, false], [false, false]],
+            graphs: Default::default(),
+            warm: Default::default(),
             graph_steps: Cell::new(0),
             graph_off: false,
             softcap,
@@ -2337,8 +2353,8 @@ impl Route {
     /// call. Their order is the tap order; an empty list turns capture off.
     pub fn set_capture(&mut self, slots: &[u32]) -> Result<(), String> {
         // the capturing graphs copy into the old buffer
-        self.graphs[1] = [None, None];
-        self.warm[1] = [false, false];
+        self.graphs.retain(|k, _| !k.tap);
+        self.warm.retain(|k| !k.tap);
         if slots.is_empty() {
             self.tap_capture = None;
             return Ok(());
@@ -2419,6 +2435,9 @@ impl Route {
     /// [`Route::commit_rows`] can commit the first rows of the last call without running them
     /// again. `0` frees it.
     pub fn keep_row_history(&mut self, max_rows: usize) -> Result<(), String> {
+        // a graph of several rows writes the history buffers this replaces
+        self.graphs.retain(|k, _| k.rows == 1);
+        self.warm.retain(|k| k.rows == 1);
         if max_rows == 0 {
             for s in &mut self.slots {
                 s.row_hist = None;
@@ -2675,29 +2694,39 @@ impl Route {
         head: Head,
         obs: Option<&mut (dyn Observer + '_)>,
     ) -> Result<CallOut, String> {
+        let rows = tokens.len();
         let graphable = !self.graph_off
-            && tokens.len() == 1
-            && head == Head::LastArgmax
+            && (1..=GRAPH_ROWS).contains(&rows)
+            && rows <= self.chunk
+            && matches!(head, Head::LastArgmax | Head::AllArgmax | Head::All)
             && obs.is_none()
             && self.red == RedArms::default()
             && self.fail_after_slot.is_none()
-            && self.position < self.context as u64
-            && tokens[0] < self.plan.vocab_size;
+            && self.position as usize + rows <= self.context
+            && tokens.iter().all(|t| *t < self.plan.vocab_size);
         if !graphable {
             let out = self.forward_body(tokens, head, obs, false)?;
-            self.last_call_rows = tokens.len();
+            self.last_call_rows = rows;
             return Ok(out);
         }
-        let p = self.parity;
-        let tap = usize::from(self.tap_capture.is_some());
-        if self.graphs[tap][p].is_none() {
-            if !self.warm[tap][p] {
+        let key = GraphKey {
+            tap: self.tap_capture.is_some(),
+            parity: self.parity,
+            rows,
+            head: match head {
+                Head::LastArgmax => 0,
+                Head::AllArgmax => 1,
+                _ => 2,
+            },
+        };
+        if !self.graphs.contains_key(&key) {
+            if !self.warm.contains(&key) {
                 let out = self.forward_body(tokens, head, None, false)?;
-                self.warm[tap][p] = true;
-                self.last_call_rows = 1;
+                self.warm.insert(key);
+                self.last_call_rows = rows;
                 return Ok(out);
             }
-            // capture one step: the token and the position go up first, outside the graph
+            // capture one call: the tokens and the position go up first, outside the graph
             self.dev.bind()?;
             self.dev.put(tokens, &mut self.w.tok)?;
             self.dev.put(&[self.position as i64], &mut self.w.posd)?;
@@ -2714,25 +2743,30 @@ impl Route {
                 )
                 .map_err(|e| format!("end_capture: {e:?}"))?;
             body?;
-            self.graphs[tap][p] = Some(graph.ok_or("an empty decode graph")?);
+            self.graphs
+                .insert(key, graph.ok_or("an empty decode graph")?);
         } else {
             self.dev.bind()?;
             self.dev.put(tokens, &mut self.w.tok)?;
             self.dev.put(&[self.position as i64], &mut self.w.posd)?;
         }
-        let graph = self.graphs[tap][p].as_ref().ok_or("no decode graph")?;
+        let graph = self.graphs.get(&key).ok_or("no decode graph")?;
         graph.launch().map_err(|e| format!("graph launch: {e:?}"))?;
         self.dev.launches.set(self.dev.launches.get() + 1);
         self.graph_steps.set(self.graph_steps.get() + 1);
-        let argmax = self.dev.down(&self.w.best, 0, 1)?;
-        // the step succeeded: commit the position and the conv histories it wrote
-        self.position += 1;
-        self.parity = 1 - p;
-        self.last_call_rows = 1;
-        Ok(CallOut {
-            argmax,
-            logits: Vec::new(),
-        })
+        // the head's rows: the last one, or every one (rows <= HEAD_ROWS, one head pass)
+        let n = if head == Head::LastArgmax { 1 } else { rows };
+        let argmax = self.dev.down(&self.w.best, 0, n)?;
+        let logits = if head == Head::All {
+            self.dev.down(&self.w.logits, 0, n * self.keep)?
+        } else {
+            Vec::new()
+        };
+        // the call succeeded: commit the position and the conv histories it wrote
+        self.position += rows as u64;
+        self.parity = 1 - self.parity;
+        self.last_call_rows = rows;
+        Ok(CallOut { argmax, logits })
     }
 
     /// One chunk of rows through every slot. capture: the stream is capturing a decode graph; the
@@ -3640,7 +3674,7 @@ impl Route {
             if !capture {
                 out.argmax.extend(dev.down(&w.best, 0, n)?);
             }
-            if head == Head::All {
+            if head == Head::All && !capture {
                 out.logits.extend(dev.down(&w.logits, 0, n * keep)?);
             }
             at += n;
