@@ -241,6 +241,9 @@ pub struct ExpertNumericsPlan {
     pub declared_activation: ActivationQuant,
     /// The input this plan runs the layer's experts on.
     pub activation: ExpertActivationMode,
+    /// The banks are the minted NVFP4 conversion of the stored ones (`nvfp4-rig`); `weight` is
+    /// then `Nvfp4Amax` and `declared_activation` the NVFP4 quantizer of the shipped NVFP4 layers.
+    pub minted: bool,
 }
 
 /// Tensor classes outside the routed experts.
@@ -286,6 +289,58 @@ pub enum Inkling2NumericClass {
     PerLayerMixed,
 }
 
+/// The weight and cache program of a plan: how each tensor is stored and what the KV cache holds.
+/// A request runs one class from its first token to its last.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Inkling2WeightClass {
+    /// `shipped`: every weight as the checkpoint stores it and an f32 KV cache. The
+    /// checkpoint-faithful class.
+    Shipped,
+    /// `nvfp4-rig` (coordinator decision 8, from the per-layer KL receipts, and the owner's ruling to
+    /// convert the loop attention too): the tensors of
+    /// [`crate::model_packs::inkling2::nvfp4_rig::rig_tensors`] (the MXFP8 expert banks, the
+    /// output projection, the attention projections of every layer) are read from a minted
+    /// NVFP4 overlay bound to the checkpoint by hash, and every cache slot stores its keys and
+    /// values as unit-scale e4m3. The minted dense projections take f32 inputs (weight-only); the
+    /// minted expert banks run the NVFP4 declared program of the shipped NVFP4 layers.
+    Nvfp4Rig,
+    /// `nvfp4-rig-outside-loop`: a measurement class, `nvfp4-rig` with the loop core's attention
+    /// (layers 6-17) read as stored. It was decision 8's first default; the owner ruled the loop
+    /// attention converted too (2026-11-21 ~14:25) and asked for both sets measured.
+    Nvfp4RigOutsideLoop,
+}
+
+impl Inkling2WeightClass {
+    /// The name a request, a receipt and a manifest use.
+    pub fn name(self) -> &'static str {
+        match self {
+            Inkling2WeightClass::Shipped => "shipped",
+            Inkling2WeightClass::Nvfp4Rig => "nvfp4-rig",
+            Inkling2WeightClass::Nvfp4RigOutsideLoop => "nvfp4-rig-outside-loop",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "shipped" => Some(Inkling2WeightClass::Shipped),
+            "nvfp4-rig" => Some(Inkling2WeightClass::Nvfp4Rig),
+            "nvfp4-rig-outside-loop" => Some(Inkling2WeightClass::Nvfp4RigOutsideLoop),
+            _ => None,
+        }
+    }
+}
+
+/// What one cache slot's keys and values are stored as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KvCacheFormat {
+    /// The f32 keys and values as the slot computes them.
+    F32,
+    /// One e4m3 byte per element, no scale: the f32 value (after the key clip and the value norm)
+    /// rounded to the nearest e4m3, ties to even, saturating at 448. The token's own key and value
+    /// are read back through the same rounding.
+    E4m3Unit,
+}
+
 /// Family-level numerics, carried on [`Inkling2Plan`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Inkling2Numerics {
@@ -294,6 +349,15 @@ pub struct Inkling2Numerics {
     pub bring_up_class: Inkling2NumericClass,
     /// The class this plan runs, from its per-layer modes.
     pub class: Inkling2NumericClass,
+    /// The family's default weight and cache class (`nvfp4-rig`).
+    pub default_weight_class: Inkling2WeightClass,
+    /// The weight and cache class this plan runs.
+    pub weight_class: Inkling2WeightClass,
+    /// Checkpoint names of the tensors this plan reads as minted NVFP4, in the overlay's order
+    /// (empty for `shipped`).
+    pub minted: Vec<String>,
+    /// One entry per cache slot, in slot order.
+    pub kv: Vec<KvCacheFormat>,
     /// One entry per physical layer.
     pub experts: Vec<ExpertNumericsPlan>,
     /// One entry per dense tensor class.
