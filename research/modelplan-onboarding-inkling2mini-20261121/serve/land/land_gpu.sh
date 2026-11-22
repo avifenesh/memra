@@ -14,4 +14,5 @@ for cls in shipped nvfp4-rig; do
   run batch-$cls $B/ink2-gpu $M --class $cls --tape $T/p1_chat.exact_f32 --batch-check 4,12,7 --out batch-$cls.json
   run batch-long-$cls $B/ink2-gpu $M --class $cls --tape $T/p2_window.exact_f32 --batch-check 4,16,256,1000,60 --out batch-long-$cls.json
 done
+run batch-red-shipped $B/ink2-gpu $M --class shipped --red batch-rows-rotated --tape $T/p1_chat.exact_f32 --batch-check 4,12,7 --out batch-red-shipped.json
 echo LAND_GPU_DONE
