@@ -1,5 +1,12 @@
 # Hy4-flash: the draft gate, greedy drafts and the NVFP4 drafter (2026-11-22)
 
+> **Amended (2026-11-22, step 12):** steps now batch every request's rows into one call and every
+> round into one batched draft, so a round's prices take the step's other requests into account: a
+> verify of `n` rows in a step of `b` requests costs a `b`-th of the route's measured step of
+> `b * n` rows, a round drafted beside others its share of the batched draft. One request keeps the
+> prices below. See [HY4F-BATCHED-STEP.md](HY4F-BATCHED-STEP.md). The numbers below are step 11's
+> and stay as measured.
+
 **Status:** decided with step 11 of the Hy4-flash onboarding. The serve route prices every DFly2
 round from the drafter's own probabilities and the route's measured costs, and verifies the
 depth, 0 to 5, with the most expected tokens per millisecond (`MEMRA_HY4F_DRAFT_GATE`, on;

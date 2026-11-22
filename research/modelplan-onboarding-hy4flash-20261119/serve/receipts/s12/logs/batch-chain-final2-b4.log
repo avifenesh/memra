@@ -1,0 +1,37 @@
+CHAIN-FINAL START 2026-11-22 14:21:33 a1e1379267dffebda49395c9461830bf1901358b
+batch-ident 4 rc=0 BATCH-IDENTITY PASS
+batch-ident 8 rc=0 BATCH-IDENTITY PASS
+CHECK3_DONE 3/3 equal
+chat-gate rc=0 CHAT-GATE PASS
+CHECKPOINT rc=0 2026-11-22 14:45:44
+SERVE rc=0 2026-11-22 14:47:23
+Config=passed
+TokenizerTemplate=passed
+TensorCensus=passed
+TinyParity=pending
+CheckpointParity=passed
+RewriteParity=pending
+Serve=passed
+verify rc=0
+b4-off rc=0 15:03:53
+base-b4-off rc=0 15:25:32
+base-b4-gate rc=0 15:44:14
+b4-gate rc=0 15:59:18
+cost base rc=0
+cost b4 rc=0
+cost base rc=0
+START 2026-11-22 16:04:12 tag=b4-off-c4 n=4 dur=10 env=MEMRA_HY4F_DRAFT=0
+Generating '/tmp/nsys-report-2297.qdstrm'
+[1/1] [0%                          ] b4-off-c4.nsys-rep[1/1] [0%                          ] b4-off-c4.nsys-rep[1/1] [0%                          ] b4-off-c4.nsys-rep[1/1] [6%                          ] b4-off-c4.nsys-rep[1/1] [10%                         ] b4-off-c4.nsys-rep[1/1] [13%                         ] b4-off-c4.nsys-rep[1/1] [=16%                        ] b4-off-c4.nsys-rep[1/1] [==19%                       ] b4-off-c4.nsys-rep[1/1] [===23%                      ] b4-off-c4.nsys-rep[1/1] [====26%                     ] b4-off-c4.nsys-rep[1/1] [=====29%                    ] b4-off-c4.nsys-rep[1/1] [======33%                   ] b4-off-c4.nsys-rep[1/1] [=======36%                  ] b4-off-c4.nsys-rep[1/1] [=======39%                  ] b4-off-c4.nsys-rep[1/1] [=========43%                ] b4-off-c4.nsys-rep[1/1] [=========46%                ] b4-off-c4.nsys-rep[1/1] [==========49%               ] b4-off-c4.nsys-rep[1/1] [===========53%              ] b4-off-c4.nsys-rep[1/1] [============56%             ] b4-off-c4.nsys-rep[1/1] [=============59%            ] b4-off-c4.nsys-rep[1/1] [==============63%           ] b4-off-c4.nsys-rep[1/1] [===============66%          ] b4-off-c4.nsys-rep[1/1] [================69%         ] b4-off-c4.nsys-rep[1/1] [=================72%        ] b4-off-c4.nsys-rep[1/1] [========================100%] b4-off-c4.nsys-rep[1/1] [========================100%] b4-off-c4.nsys-rep
+Generated:
+	/home/avifenesh/hy4flash/batch/prof/b4-off-c4.nsys-rep
+PROF-DONE 2026-11-22 16:06:25
+prof off rc=0 16:06:25
+START 2026-11-22 16:06:25 tag=b4-gate-c4 n=4 dur=10 env=
+Generating '/tmp/nsys-report-dd04.qdstrm'
+[1/1] [0%                          ] b4-gate-c4.nsys-rep[1/1] [0%                          ] b4-gate-c4.nsys-rep[1/1] [0%                          ] b4-gate-c4.nsys-rep[1/1] [7%                          ] b4-gate-c4.nsys-rep[1/1] [10%                         ] b4-gate-c4.nsys-rep[1/1] [14%                         ] b4-gate-c4.nsys-rep[1/1] [=17%                        ] b4-gate-c4.nsys-rep[1/1] [==21%                       ] b4-gate-c4.nsys-rep[1/1] [===24%                      ] b4-gate-c4.nsys-rep[1/1] [====28%                     ] b4-gate-c4.nsys-rep[1/1] [=====32%                    ] b4-gate-c4.nsys-rep[1/1] [======35%                   ] b4-gate-c4.nsys-rep[1/1] [=======39%                  ] b4-gate-c4.nsys-rep[1/1] [========42%                 ] b4-gate-c4.nsys-rep[1/1] [=========46%                ] b4-gate-c4.nsys-rep[1/1] [==========49%               ] b4-gate-c4.nsys-rep[1/1] [===========53%              ] b4-gate-c4.nsys-rep[1/1] [============56%             ] b4-gate-c4.nsys-rep[1/1] [=============60%            ] b4-gate-c4.nsys-rep[1/1] [==============63%           ] b4-gate-c4.nsys-rep[1/1] [===============67%          ] b4-gate-c4.nsys-rep[1/1] [================71%         ] b4-gate-c4.nsys-rep[1/1] [=================72%        ] b4-gate-c4.nsys-rep[1/1] [========================100%] b4-gate-c4.nsys-rep[1/1] [========================100%] b4-gate-c4.nsys-rep
+Generated:
+	/home/avifenesh/hy4flash/batch/prof/b4-gate-c4.nsys-rep
+PROF-DONE 2026-11-22 16:08:48
+prof gate rc=0 16:08:48
+CHAIN-FINAL-DONE 2026-11-22 16:08:48

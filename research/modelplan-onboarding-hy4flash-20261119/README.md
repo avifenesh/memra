@@ -1723,11 +1723,162 @@ serve` (the pin's memra-server, the gate on) pass, `verified=Checkpoint` and `ve
 with every native logits hash of `checkpoint-parity.tsv` equal to step 10's
 (`dfly/receipts/s11/verify-d43aacce37/`). Commits after the pin are docs, comments and receipts.
 
-## For step 12
+## Step 12: one call a step across requests
 
-- Batched verify rows across requests (the speed lane's batched decode): calls still run one
-  request at a time, so four requests share the one-request rate. The gate's prices then become a
-  function of the batch, not of the request.
+Up to step 11 the serve route ran each step as one call a request: the oldest prefilling request's
+chunk, then one decode or verify call for every generating request, each on its own session. Every
+call read all the weights, so `c` requests took `c` times the one-request step and shared its rate:
+four requests on the `long` probe decoded at 15.9 tokens/s together, a quarter each, and the
+decodes waited behind every other request's 2,048-row prefill call. Step 9 named the lever (one
+call for the step's rows) and the gate it needs (batched against alone). All of this section ran on
+one GB10 on 2026-11-22, sampled at the artifact's `generation_config.json` (temperature 0.9, no
+top-k, no top-p). Receipts: `serve/receipts/s12/`.
+
+**The call.** `Route::call_batch` scores several requests' rows in one call, each part's tokens on
+its own session at its own positions. The route's kernels compute every row on its own (step 9:
+chunked and whole prefills are equal bit for bit; step 10: a verify call's rows are the one-token
+rows), so the rows of several sessions can share a call: the embedding, the hyper-connections,
+every projection, the router, the experts, the norms and the head run once over all the rows, and
+the weights are read once for them. What belongs to a session runs part by part: its cache rows
+(the latent rows, the sliding rings, the indexer's token and group keys), the indexer's selection
+over its own keys, the attention of its queries over its own cache, its Engram n-grams over its
+own history, and its RoPE rows (a sub-table a part, from its own first position). The drafter's
+recall lists of a session's last rows now live in the session (`Session::snaps`), and a session
+remembers where its rows sat in its last call, so a round drafts from its own rows of a batched
+call. `call` and `call_in` are calls of one part. Two kernel choices follow the call's rows: the
+routed experts run on the small-row kernel's tiles whenever the call has at most 16 tokens (an
+expert's tile holds at most one row a token; before, only a one-token call took them), and the F32
+islands (the router logits and the head) run four rows a launch up to 16 rows (they ran the tiled
+F32 GEMM past four). Neither changes a value: a row's chain is its own on every one of these
+kernels (`check3` and the batch gate below).
+
+**The step.** Each step is one call: every generating request's decode token, or its anchor and
+the round's drafts it verifies, and the oldest prefilling request's next chunk, which gives up the
+rows the decode parts take, so a call never holds more than `MEMRA_HY4F_PREFILL_CHUNK` rows (the
+size the warm-up grew the scratch for); decode rows past the chunk hold the prefill and run as
+further calls. A failed call fails every request it carried; a call refused before it wrote
+anything leaves its sessions as they were. The drafter batches the same way
+(`Route::draft_batch`): every round's block rows run through the drafter's layers in one pass, each
+round's attention over its own cache, then each draft step scores the rounds still drafting
+through one pass of the correction and the head. A verify call's ring backup is one buffer and one
+slot upload for all 30 sliding layers (it was an allocation and an upload a layer), and the batched
+draft uploads its block rows and every layer's key lists once.
+
+**The gate's prices.** A request's verify of `n` rows in a step that decodes for `b` requests costs
+a `b`-th of the route's measured step of `b * n` rows (`Price::batched`; the step table times the
+backups, the call and every part's choices and rollback), as each of `b` like requests verifying
+`n` rows would pay: the call's fixed cost is shared, and a verified row costs what it adds. A round
+drafted beside others costs its share of the batched draft, from a table of its own. One request
+keeps step 11's prices. The first batched build kept the solo prices (each row priced at a
+one-request call's average) and drafted round by round; the second shared the call by rows alone,
+which prices a row at the call's average, not at what it adds. Both read below drafts off at two
+to eight requests on `long` (receipts `serve/b1-*`, `serve/b2-*`).
+
+**Identity.** A request's tokens are its own whatever it is served beside.
+
+- `hy4f-spec batch CKPT long.json 48 --parts 4` and `--parts 8 --all-draft`: requests cut from the
+  `long` prompt (2,104, 1,773, 1,442 and 37 tokens; with 8 parts 2,104 down to 118 by 331, and 37)
+  generate 48 tokens greedily, first each alone on its own calls and rounds, then together, every
+  step one `call_batch` with the next prefill chunk inside and one `draft_batch`; the gate fails
+  unless some batched call held every part. Every request's ids, every round's drafts and every
+  emitted row's logits are equal bit for bit (4 parts: 139 calls alone, 52 batched; 8 parts all
+  drafting: 176 alone, 32 batched, a call holding all 8 parts and up to 2,048 rows;
+  `logs/batch-ident-b4.log`, `logs/batch-ident8-b4.log`).
+- `check3`: the route's `hy4f-gpu` gives the step 8 reference tapes bit for bit on `chat` (forced),
+  `long` and `long-split` (3 of 3, `logs/perf-check3-batch-b4.log`).
+- Through the server, every sampled request of every reading below generated the text it generates
+  alone (`conc_bench.py` serves each request alone first, its seed `20261121 + i`), drafts off and
+  with the gate, at 1, 2, 4 and 8 requests, on both workloads, on every binary.
+- The step 9 served-answer gates pass with drafts on (`serve/b4-chatgate/chat-gate.json`):
+  rendering, served greedy equal to `hy4f-gpu --gen`, 23 teacher-forced positions, 2, 3, 4 and 6
+  requests at once equal alone, streaming, efforts, tool calls, seeded sampling beside others,
+  stops, penalties, refusals, cancellation, admission past the served context, and the
+  30,934-token needle.
+
+**Readings.** `serve/scripts/conc_bench.py` through the server: `long` (the 2,104-token prompt,
+64 tokens a request, `ignore_eos`) and the six chat turns (cycled, each to its own end, up to 256
+tokens), `c` requests at once, one warm-up then three samples a cell, medians (N = 3). The decode
+phase is the window in which every request is past its first token and none has ended; its
+aggregate is every token emitted in it over its length. Before is land 31's head (`a7abc09e6e`),
+after is the pin (`a1e1379267`), the four servers in the order after, before, before, after (drafts
+off, drafts off, gate, gate), one GB10, otherwise idle, 250 ms telemetry in each directory
+(`serve/b4-*`, `serve/base-b4-*`). Decode-phase aggregate tokens/s:
+
+| workload | c | drafts off, before | drafts off, after | gate, before | gate, after |
+|---|---:|---:|---:|---:|---:|
+| long | 1 | 15.87 | 15.87 | 18.87 | 23.06 |
+| long | 2 | 15.88 | 24.18 | 17.46 | 24.24 |
+| long | 4 | 15.89 | 30.34 | 17.67 | 26.61 |
+| long | 8 | 15.89 | 34.61 | 18.06 | 34.10 |
+| chat | 1 | 16.89 | 16.86 | 18.26 | 21.05 |
+| chat | 2 | 16.89 | 26.24 | 23.46 | 28.16 |
+| chat | 4 | 16.89 | 32.37 | 21.84 | 31.10 |
+| chat | 8 | 16.93 | 36.32 | 22.04 | 42.13 |
+
+Before, the aggregate is flat in `c`: the step is `c` one-request calls. After, drafts off, the
+step of `c` requests costs 63, 82, 129 and 221 ms at 1, 2, 4 and 8 (before: 63, 126, 251, 502): about
+40 ms the weights read once and about 22 ms a row, mostly the routed experts a row adds (a token
+picks 16 of 512 experts a layer, so rows of different requests rarely share one). Step p50 / p95
+(ms), decode rows a forward call, and the aggregate over each sample's wall time (prefills
+included; the four 2,104-token prefills take about 21 s of a `long` sample at any `c`):
+
+| workload | c | step, before | step, after | rows a call, before | after | wall tok/s, before | after |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| long, off | 1 | 63 / 64 | 63 / 64 | 1.00 | 1.00 | 7.35 | 7.35 |
+| long, off | 2 | 126 / 127 | 82 / 84 | 1.00 | 1.97 | 7.35 | 8.74 |
+| long, off | 4 | 251 / 254 | 129 / 137 | 1.00 | 3.81 | 7.35 | 9.47 |
+| long, off | 8 | 502 / 506 | 221 / 240 | 1.00 | 7.11 | 7.35 | 9.91 |
+| chat, off | 4 | 121 / 238 | 79 / 125 | 1.00 | 2.40 | 16.14 | 26.18 |
+| chat, off | 8 | 242 / 473 | 128 / 222 | 1.00 | 4.68 | 16.15 | 30.49 |
+| long, gate | 1 | 117 / 137 | 101 / 104 | 2.81 | 2.96 | 7.93 | 8.58 |
+| long, gate | 4 | 352 / 506 | 201 / 320 | 2.50 | 6.93 | 7.77 | 9.24 |
+| long, gate | 8 | 777 / 945 | 285 / 459 | 2.76 | 12.13 | 7.89 | 10.05 |
+| chat, gate | 4 | 118 / 441 | 95 / 251 | 2.65 | 4.34 | 20.63 | 26.75 |
+| chat, gate | 8 | 233 / 814 | 124 / 390 | 2.75 | 7.85 | 21.30 | 33.25 |
+
+Drafts off at one request is unchanged (15.87 both). With the gate one request reads 22% more on
+`long` and 15% more on chat: a verify call's rows are cheaper (`hy4f-spec cost` on `long`, eight
+reps a shape, A B A: verify of 1 to 6 rows 64.8 / 88.3 / 101.0 / 116.4 / 171.3 / 178.5 and
+64.0 / 88.8 / 100.3 / 114.2 / 159.7 / 172.7 ms before, 63.9 / 78.4 / 87.4 / 116.4 / 148.7 / 163.0
+after; draft rounds of 1 to 5 equal, 8.2 to 24.5 ms; `logs/batch-cost-*`). With several requests
+the gate leads drafts off on chat at two and eight requests, is level on `long` at two, and trails
+it at four on both workloads (26.6 against 30.3 on `long`, 31.1 against 32.4 on chat) and by 1.5% on
+`long` at eight: a drafted row costs the step about 22 ms and pays only when it
+holds about nine times in ten. The gate's prices are the step's, but a round's first draft step is
+paid before its first probability is known. The default stays the gate: against the drafts-off
+server it reads more in five cells of eight, and the gate before this step in every cell.
+
+Every sampled request of every cell generated the text it generates alone, and each request alone
+generated the same text on every binary of the lane, drafts on and off (`conc_summary.py`:
+references equal across the arms). The lane's earlier builds are in the same receipts: `b1` (the
+batched call, solo gate prices), `b2` (+ batched drafts, prices shared by rows), `b3` (+ the step
+table with the post-call work, the review's folds); `base`, `base2`, `base3` are land 31's head
+again between them, each cell within 1% of the others.
+
+**What is left in a step.** In a four-request decode step (drafts off, `prof/b1-off-c4*`, 116 ms a
+call), the routed experts take half (four tokens read about 60 of the 512 experts a layer, about
+10 GB, at about 180 GB/s) and the dense projections about 40% (about 9 GB, read once for the four
+rows). Most of the rest is the per-session launches: an attention, a merge and cache copies a part
+a layer (about 15 ms and 9 ms of the call). One attention launch for every part's rows (a per-row
+cache base) would take most of that share.
+
+### The record
+
+`hy_v4_flash-gpu-1x-gb10` stays NativeQualified and moves its pin to `a1e1379267`. At the pin, on
+one GB10, `memra model verify checkpoint` (native side `hy4f-gpu`) and `verify serve` (memra-server,
+drafting with the gate) pass, `verified=Checkpoint` and `verified=Serve`, every number of
+`checkpoint-parity.tsv` equal to step 11's (`serve/receipts/s12/verify-a1e1379267/`). Commits
+after the pin are docs and receipts.
+
+## For step 13
+
+- One attention launch for every part of a batched call (a per-row cache base): the per-session
+  launches are most of a batched step past its GEMMs.
+- A gate policy for batched steps that does not pay a round's first draft step before knowing it
+  pays (the drafter's confidence before the head, or a round started only for requests whose last
+  rounds held).
+- A smaller prefill chunk while others decode: a decode step that carries a 2,048-row chunk waits
+  about 5 s; any chunk gives the same values.
 - The draft table prices a stopped round at a full round of its length. A block sized to the
   priced depth would make that exact and save the block's unused rows.
 - The checkpoint's DFly2 confidence head (`model.dfly_layers.confidence_head.*`) has no program in
@@ -1752,3 +1903,7 @@ with every native logits hash of `checkpoint-parity.tsv` equal to step 10's
   `serve/scripts/turns_identity.py OFF_JSON OTHER_JSON [--out OUT_JSON] [--rounds N --log SERVER_LOG]`
   over two `real_turns.py` outputs.
 - The run box's chains are in `dfly/receipts/scripts/`.
+- `hy4f-spec batch CKPT REQUEST N [--parts P] [--k K] [--prefill-chunk C] [--all-draft]` (the
+  batched-against-alone gate); `serve/scripts/conc_bench.py ADDR KEY MODEL REQUESTS OUT --server-log
+  LOG [--conc 1,2,4,8] [--runs 3] [--work long,chat]` and `conc_summary.py TAG=JSONL ...`; step 12's
+  run box scripts are in `serve/receipts/s12/scripts/`.

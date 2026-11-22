@@ -1,0 +1,28 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+31.5,4944547616,6998,706565.8,704720.0,333728,1502304,241898.1,"void r_gemv_kernel<(int)3, (int)4, (int)4, (bool)0>(RGemm)"
+13.0,2037759904,10497,194127.8,206336.0,67392,656480,80321.0,"void r_gemv_kernel<(int)2, (int)4, (int)4, (bool)0>(RGemm)"
+12.8,2001474592,18525,108041.8,86816.0,39136,437984,59207.8,"void r_gemv_kernel<(int)0, (int)4, (int)4, (bool)0>(RGemm)"
+7.0,1091807808,15707,69510.9,32160.0,4896,400480,85128.8,"r_rms_kernel(const float *, long, const float *, float *, long, int, float)"
+5.7,889500160,7170,124058.6,115792.0,13376,416896,102835.8,"r_write_back_kernel(float *, const float *, const float *, int, int, long)"
+5.6,886118880,7256,122122.2,44064.0,4256,423968,101843.9,"r_hc_dots_kernel(const float *, const float *, int, int, float *)"
+4.7,742230208,25955,28596.8,31712.0,3552,267872,21500.8,"r_copy_kernel(const float *, long, void *, long, int, int, const int *)"
+3.9,612237568,14341,42691.4,39264.0,25632,265952,14738.0,"r_attn_merge_kernel(const float *, const float *, const float *, int, int, float *)"
+2.4,378211040,10240,36934.7,36064.0,24928,188000,7993.2,void r_attn_kernel<(int)2>(RAttn)
+2.2,352859200,86,4103014.0,4101696.0,4084608,4131232,9786.5,"void r_gemv_f32_kernel<(int)4, (int)4, (int)128>(const float *, long, const unsigned short *, float *, long, int, int, int)"
+1.8,288470400,4100,70358.6,68496.0,26432,301952,32066.8,void r_attn_kernel<(int)1>(RAttn)
+1.8,283893952,7256,39125.4,36384.0,7424,431040,14512.1,"r_hc_mix_kernel(const float *, const float *, const float *, const float *, int, int, int, float, float, float, float *, float *, const float *, float, float *)"
+1.6,252072160,10669,23626.6,20864.0,2400,179264,18262.2,"r_act_kernel(const float *, const float *, float *, long, float, int)"
+1.5,240999616,3499,68876.7,67424.0,52192,413856,15880.6,"r_gemv_f32_split_kernel(const float *, long, const unsigned short *, float *, long, int, int, int)"
+1.4,213148352,3499,60916.9,59872.0,53408,300352,9148.0,r_route_kernel(RRoute)
+1.1,172284160,5209,33074.3,33312.0,16192,113152,6186.2,"r_add_kernel(float *, const float *, const float *, const float *, long, int)"
+0.7,104885664,7170,14628.4,14176.0,10528,103072,3254.8,"r_rope_kernel(float *, long, long, int, int, int, const float2 *, const int *)"
+0.5,79494368,1025,77555.5,81216.0,47744,268192,18001.5,"r_pool_kernel(const float *, int, int, const float *, const float *, const float *, const float *, float, int, const float2 *, int, int, float *)"
+0.4,57550240,3499,16447.6,16064.0,13216,74144,2905.8,"r_moe_combine_kernel(const float *, int, const int *, const float *, int, float *)"
+0.1,16244352,3499,4642.6,4512.0,3328,49120,1464.7,"r_moe_gather_kernel(const float *, int, const int *, int, float *)"
+0.1,16062944,342,46967.7,46496.0,40064,89536,4648.7,"r_engram_mix_kernel(float *, const float *, const float *, const float *, const float *, const float *, const unsigned char *, int, int, float)"
+0.1,11442912,3499,3270.3,3200.0,1920,25760,786.1,"r_moe_place_kernel(const int *, int, int, int *, int *)"
+0.1,10638240,3499,3040.4,3008.0,2368,21920,695.9,"r_moe_plan_kernel(const int *, int, int, int, int *, int *)"
+0.0,5239040,342,15318.8,15040.0,5824,63616,3215.7,"r_engram_rows_kernel(const unsigned char *, const float *, const float *, int, int, float, float *)"
+0.0,4305216,3499,1230.4,1184.0,1024,15712,353.4,"r_moe_count_kernel(const int *, int, int *)"
+0.0,2219058,688,3225.4,3200.0,1920,10144,1283.7,"r_rope_table_kernel(float2 *, int, int, int, const double *)"
+0.0,849504,86,9878.0,9760.0,9504,13120,567.4,"r_embed_kernel(const unsigned short *, const int *, float *, int, int)"

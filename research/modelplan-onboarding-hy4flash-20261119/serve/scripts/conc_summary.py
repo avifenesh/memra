@@ -8,7 +8,8 @@ decode-phase aggregate (every request past its first token, none ended), the med
 decode tokens/s, the decode step p50 and p95 (steps with no prefill rows), decode rows a step,
 forward calls a decode step and decode rows a forward call (runs recorded before
 `decode_rows_per_call` existed show none), and whether every request's text equals the same
-request alone (identity).
+request alone (identity). Last, whether every arm's references (each request alone) are the same
+texts: the arms' binaries and draft settings generate the same answers.
 """
 import json
 import statistics
@@ -21,9 +22,11 @@ if "--json" in args:
     out_json = args[at + 1]
     del args[at:at + 2]
 rows = []
+refs = {}
 for spec in args:
     tag, path = spec.split("=", 1)
     data = [json.loads(line) for line in open(path) if line.strip()]
+    refs[tag] = {r["workload"]: r["references"] for r in data if "references" in r}
     keys = sorted({(r["workload"], r["concurrency"]) for r in data if "concurrency" in r},
                   key=lambda k: (k[0], k[1]))
     for w, c in keys:
@@ -58,5 +61,9 @@ for r in rows:
     print(f"| {r['arm']} | {r['workload']} | {r['c']} | {r['n']} | {f(r['agg_wall'])} | {f(r['agg_decode'])} | "
           f"{f(r['per_req'])} | {f(r['step_p50_ms'], 1)} | {f(r['step_p95_ms'], 1)} | {f(r['rows_step'])} | "
           f"{f(r['calls_step'])} | {f(r['rows_call'])} | {'PASS' if r['identity'] else 'FAIL'} |")
+# across arms: each request alone generated the same text on every binary and arm
+first = next(iter(refs.values()), {})
+same = all(r == first for r in refs.values())
+print(f"\nreferences (each request alone) equal across the {len(refs)} arms: {'PASS' if same else 'FAIL'}")
 if out_json:
-    json.dump(rows, open(out_json, "w"), indent=1)
+    json.dump({"rows": rows, "references_equal_across_arms": same}, open(out_json, "w"), indent=1)
