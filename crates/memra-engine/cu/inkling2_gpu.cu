@@ -1752,8 +1752,9 @@ static int ink2g_attn_any(const float* q, const float* rel, const float* table, 
     // row can attend: a replayed step reads its position on the device
     const int64_t most = window > 0 ? (int64_t)window : (R == 1 ? cap : pos0 + R);
     // a row of scratch holds its scores and, last, the max of the row
-    if (scr_ld < most + 1 || dim > INK2G_FOLD_DIM) return 45025;
+    if (dim > INK2G_FOLD_DIM) return 45025;
     const int group = R == 1 ? 1 : scr_rows;
+    // arm 4's scratch holds tiles, not scores: its own bound below
     if (prec == 4) {
       // tiles of 256 keys, wider when a row would need more than INK2G_T4_MAX_TILES of them
       // from the cache size, not the call: every call over this cache tiles the keys alike, so the
@@ -1772,6 +1773,7 @@ static int ink2g_attn_any(const float* q, const float* rel, const float* table, 
       }
       return ink2g_rc();
     }
+    if (scr_ld < most + 1) return 45025;
     for (int r0 = 0; r0 < R; r0 += group) {
       const int n = R - r0 < group ? R - r0 : group;
       // the keys of the group's last row
