@@ -558,18 +558,17 @@ pub struct Prec {
 
 impl Default for Prec {
     /// The route's program: the arms adopted by docs/decisions/INKLING2-PRECISION-ARMS.md (the
-    /// controller and the norms and clips in f32; attention f64 with a chunk's scores split over
-    /// blocks); every other group f64 (the epilogue in f32 was backed off: with the norms it moves
-    /// p3 into the 1e-2 flip cluster).
+    /// controller and the norms and clips in f32; convolutions and the router in compensated f32;
+    /// attention in f32 tiles over keys with f64 merges); the depth mix and the epilogues f64.
     fn default() -> Self {
         Self {
             controller: 1,
             mix: 0,
             norm: 1,
-            conv: 0,
-            router: 0,
+            conv: 2,
+            router: 2,
             epilogue: 0,
-            attn: 3,
+            attn: 4,
         }
     }
 }
@@ -2142,7 +2141,8 @@ impl Route {
         }
         // the split attention's scores: 64 MiB of rows a launch pair, at least one row, which grows
         // with the context
-        let asc_rows = ((64usize << 20) / (max_heads * max_keys * 8)).clamp(1, chunk);
+        // a row holds its scores and, last, the row's max (the fold's top)
+        let asc_rows = ((64usize << 20) / (max_heads * (max_keys + 1) * 8)).clamp(1, chunk);
         if max_keys == context {
             account.per_position += max_heads * 8;
         }
@@ -2186,8 +2186,8 @@ impl Route {
             moe: dev.zeros(rh)?,
             dscr: dev.zeros(chunk * 128)?,
             posd: dev.zeros(1)?,
-            asc: dev.zeros(asc_rows * max_heads * max_keys)?,
-            asc_ld: max_keys,
+            asc: dev.zeros(asc_rows * max_heads * (max_keys + 1))?,
+            asc_ld: max_keys + 1,
             asc_rows,
             logits: dev.zeros(HEAD_ROWS * keep)?,
             best: dev.zeros(HEAD_ROWS)?,
@@ -5471,7 +5471,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             let mut vc = dev.zeros::<f32>(cap * kvw)?;
             let mut out = dev.zeros::<f32>(total * heads * dim)?;
             // a row of the arm-4 scratch holds its tiles' partials, (dim + 2) values a tile
-            let ld = cap.max(dim + 2);
+            let ld = (cap + 1).max(dim + 2);
             let mut ascr = dev.zeros::<f64>(3 * heads * ld)?;
             let mut at = 0usize;
             for rows in splits {
@@ -6061,7 +6061,9 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 && p.norm == 1
                 && p.controller == 1
                 && p.epilogue == 0
-                && p.attn == 3,
+                && p.conv == 2
+                && p.router == 2
+                && p.attn == 4,
             format!(
                 "ink2g-prec-adopted [{p:?}] f32 norm max rel={e_norm:.3e}, f32 controller max rel={e_ctrl:.3e}, output gate (f64) max rel={e_gate:.3e} (bound {F32:.0e})"
             ),
