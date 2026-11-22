@@ -1,0 +1,42 @@
+gpulock: 5090 leased as claude-code-20261122T053835-1698902 for 60m
+samples=8 clamp_hits=0 P8, 562 MHz, 405 MHz, 21.36 W, 150.00 W, 0x0000000000000400
+OK
+CLAMP_RC=0
+GATE_RC=0
+ink2-gpu-gate: ALL OK (36 cells, 0 skipped)
+ink2g-prec-adopted [Prec { controller: 1, mix: 0, norm: 1, conv: 2, router: 2, epilogue: 0, attn: 4 }] f32 norm max rel=1.618e-7, f32 controller max rel=5.544e-7, output gate (f64) max rel=5.818e-8 (bound 5e-5) OK
+RC shipped c1 base=0
+RC shipped c1 new=0
+RC shipped c4 base=0
+RC shipped c4 new=0
+RC shipped c512 base=0
+RC shipped c512 new=0
+RC float c1 base=0
+RC float c1 new=0
+RC float c4 base=0
+RC float c4 new=0
+RC float c512 base=0
+RC float c512 new=0
+RC nvfp4-rig c1 base=0
+RC nvfp4-rig c1 new=0
+RC nvfp4-rig c4 base=0
+RC nvfp4-rig c4 new=0
+RC nvfp4-rig c512 base=0
+RC nvfp4-rig c512 new=0
+RC p3 base=0
+RC p3 new=0
+PIN shipped p1 c1=0
+PIN shipped p1 c4=0
+PIN shipped p1 c512=0
+PIN shipped p2=0
+PIN float p1 c1=0
+PIN float p1 c4=0
+PIN float p1 c512=0
+PIN float p2=0
+PIN nvfp4-rig p1 c1=0
+PIN nvfp4-rig p1 c4=0
+PIN nvfp4-rig p1 c512=0
+PIN nvfp4-rig p2=0
+PIN p3=0
+RC_p1=0
+RC_p2=0

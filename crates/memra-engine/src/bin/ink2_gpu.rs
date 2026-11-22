@@ -738,6 +738,7 @@ fn corpus_run(
     path: &Path,
     arms: &str,
     out: Option<&PathBuf>,
+    top_k: usize,
 ) -> Result<(), String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let docs: serde_json::Value =
@@ -795,13 +796,29 @@ fn corpus_run(
         let n = ids.len();
         route.dev.prec.set(Prec::all_f64());
         route.reset()?;
-        let rl = route.call(&ids, Head::All, None)?.logits;
+        let mut ref_picks = Picks {
+            top_k,
+            ..Picks::default()
+        };
+        let rl = route.call(&ids, Head::All, Some(&mut ref_picks))?.logits;
         let keep = rl.len() / n;
         let rz = lse_rows(&rl, keep);
         for (ai, p) in precs.iter().enumerate() {
             route.dev.prec.set(*p);
             route.reset()?;
-            let al = route.call(&ids, Head::All, None)?.logits;
+            let mut arm_picks = Picks {
+                top_k,
+                ..Picks::default()
+            };
+            let al = route.call(&ids, Head::All, Some(&mut arm_picks))?.logits;
+            // route rows (slot, position) whose expert set differs from the all-f64 route's
+            let (mut rows_all, mut rows_differ) = (0usize, 0usize);
+            for (slot, want) in &ref_picks.rows {
+                let got = arm_picks.rows.get(slot).map_or(&[][..], |v| &v[..]);
+                rows_all += want.len();
+                rows_differ += want.iter().zip(got).filter(|(a, b)| a != b).count()
+                    + want.len().saturating_sub(got.len());
+            }
             let az = lse_rows(&al, keep);
             let mut kl = vec![0f64; n];
             std::thread::scope(|sc| {
@@ -826,6 +843,10 @@ fn corpus_run(
                 }
             });
             let m = &mut per_arm[ai];
+            m.entry("route_rows").or_default().push(rows_all as f64);
+            m.entry("route_rows_differ")
+                .or_default()
+                .push(rows_differ as f64);
             for t in 0..n {
                 let has = t + 1 < n;
                 let lab = if has { ids[t + 1] as usize } else { 0 };
@@ -874,6 +895,31 @@ fn corpus_run(
         None => println!("{text}"),
     }
     Ok(())
+}
+
+/// The router's picks of every slot of a call, each row's set sorted: the route rows of a program.
+#[derive(Default)]
+struct Picks {
+    top_k: usize,
+    rows: BTreeMap<u32, Vec<Vec<u32>>>,
+}
+
+impl Observer for Picks {
+    fn wants(&self, _tap: Tap) -> bool {
+        false
+    }
+    fn floats(&mut self, _slot: u32, _tap: Tap, _data: &[f32]) {}
+    fn picks(&mut self, slot: u32, ids: &[u32]) {
+        let rows = self.rows.entry(slot).or_default();
+        for r in ids.chunks_exact(self.top_k.max(1)) {
+            let mut s = r.to_vec();
+            s.sort_unstable();
+            rows.push(s);
+        }
+    }
+    fn forced(&mut self, _slot: u32, _rows: usize) -> Option<(Vec<u32>, Vec<f32>)> {
+        None
+    }
 }
 
 fn argmax(row: &[f32]) -> u32 {
@@ -1109,7 +1155,11 @@ fn run() -> Result<(), String> {
     if let Some(cp) = &a.corpus
         && !a.arms.is_empty()
     {
-        return corpus_run(&mut route, cp, &a.arms, a.out.as_ref());
+        let top_k = match &plan.layers[0].mlp {
+            memra_gguf::model_plan::MlpPlan::Moe(m) => m.experts_per_token as usize,
+            _ => return Err("not an MoE plan".into()),
+        };
+        return corpus_run(&mut route, cp, &a.arms, a.out.as_ref(), top_k);
     }
     eprintln!("ink2-gpu: {}", route.account.describe());
     let load_s = t_load.elapsed().as_secs_f64();
