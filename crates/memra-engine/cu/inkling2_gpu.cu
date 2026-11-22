@@ -27,6 +27,8 @@
 #include <math.h>
 #include <stdint.h>
 
+#include <type_traits>
+
 #define INK2G_W_BF16 0
 #define INK2G_W_NVFP4 1
 #define INK2G_W_MXFP8 2
@@ -1525,9 +1527,12 @@ __global__ void __launch_bounds__(256) ink2g_gemv_rows_kernel(const float* __res
 // instead of as one serial tail. Small blocks keep a decode step's grid in one wave.
 #define INK2G_G4_WARPS 4
 #define INK2G_G4_RW 8
-template <int ITERS, int R>
+template <int ITERS, int R, bool FP4>
 __global__ void __launch_bounds__(32 * INK2G_G4_WARPS) ink2g_gemv4_kernel(const Ink2gRowJobs jt, int64_t ldx, int k) {
   constexpr int RW = INK2G_G4_RW;
+  // a row's 32 groups: FP4 8 code bytes a group (one uint2), BF16 32 bytes a group (two uint4)
+  using Chunk = typename std::conditional<FP4, uint2, uint4>::type;
+  constexpr int CW = FP4 ? 1 : 2;
   extern __shared__ float ink2g_g4[];
   int j = 0;
   while (j + 1 < jt.count && (int)blockIdx.x >= jt.first[j + 1]) j++;
@@ -1540,14 +1545,20 @@ __global__ void __launch_bounds__(32 * INK2G_G4_WARPS) ink2g_gemv4_kernel(const 
   float* xs = ink2g_g4;                                 // [R][16][groups]
   float* pt = ink2g_g4 + R * k + warp * (RW * 33);      // [RW rows][33]
   const int r0 = (((int)blockIdx.x - jt.first[j]) * INK2G_G4_WARPS + warp) * RW;
-  uint2 c[RW];
-  auto load = [&](uint2 (&cc)[RW], int it) {
+  Chunk c[RW][CW];
+  auto load = [&](Chunk (&cc)[RW][CW], int it) {
     const int g = it * 32 + lane;
 #pragma unroll
     for (int q = 0; q < RW; q++) {
       const int row = r0 + q;
-      cc[q] = (row < n && g < groups) ? __ldcs(reinterpret_cast<const uint2*>(w + (int64_t)row * (k / 2)) + g)
-                                      : make_uint2(0u, 0u);
+      const bool on = row < n && g < groups;
+      if constexpr (FP4) {
+        cc[q][0] = on ? __ldcs(reinterpret_cast<const uint2*>(w + (int64_t)row * (k / 2)) + g) : make_uint2(0u, 0u);
+      } else {
+        const uint4* wr = reinterpret_cast<const uint4*>(w + (int64_t)row * k * 2);
+#pragma unroll
+        for (int h = 0; h < CW; h++) cc[q][h] = on ? __ldcs(wr + 2 * g + h) : make_uint4(0u, 0u, 0u, 0u);
+      }
     }
   };
   load(c, 0);  // the weights do not wait on the input staging
@@ -1562,15 +1573,16 @@ __global__ void __launch_bounds__(32 * INK2G_G4_WARPS) ink2g_gemv4_kernel(const 
   float acc[R];
 #pragma unroll
   for (int r = 0; r < R; r++) acc[r] = 0.0f;
-#pragma unroll
-  for (int it = 0; it < ITERS; it++) {
+  // one 32-group step; the decode form (one NVFP4 row) unrolls every step, the others keep one step's
+  // double buffer live (the unrolled multi-row and BF16 forms ran out of registers)
+  auto step = [&](int it) {
     const int g = it * 32 + lane;
-    uint2 cn[RW];
+    Chunk cn[RW][CW];
     if (it + 1 < ITERS) load(cn, it + 1);
-    // the scale bytes of this lane's row for these 32 groups (groups % 16 == 0: 16-byte aligned)
     const int live = groups - it * 32 < 32 ? groups - it * 32 : 32;
+    // FP4: the scale bytes of this lane's row for these 32 groups (groups % 16 == 0: 16-byte aligned)
     uint4 s16[2] = {make_uint4(0u, 0u, 0u, 0u), make_uint4(0u, 0u, 0u, 0u)};
-    if (folds) {
+    if (FP4 && folds) {
       const uint4* sp = reinterpret_cast<const uint4*>(sc + (int64_t)my * groups + it * 32);
       s16[0] = __ldg(sp);
       if (live > 16) s16[1] = __ldg(sp + 1);
@@ -1584,8 +1596,17 @@ __global__ void __launch_bounds__(32 * INK2G_G4_WARPS) ink2g_gemv4_kernel(const 
 #pragma unroll
       for (int q = 0; q < RW; q++) {
         float wv[16];
-        ink2g_e2m1x8(c[q].x, wv);
-        ink2g_e2m1x8(c[q].y, wv + 8);
+        if constexpr (FP4) {
+          ink2g_e2m1x8(c[q][0].x, wv);
+          ink2g_e2m1x8(c[q][0].y, wv + 8);
+        } else {
+          const uint32_t ww[8] = {c[q][0].x, c[q][0].y, c[q][0].z, c[q][0].w, c[q][1].x, c[q][1].y, c[q][1].z, c[q][1].w};
+#pragma unroll
+          for (int i = 0; i < 8; i++) {
+            wv[2 * i] = __uint_as_float(ww[i] << 16);
+            wv[2 * i + 1] = __uint_as_float(ww[i] & 0xffff0000u);
+          }
+        }
         float part = 0.0f;
 #pragma unroll
         for (int i = 0; i < 16; i++) part = fmaf(xv[i], wv[i], part);
@@ -1595,31 +1616,54 @@ __global__ void __launch_bounds__(32 * INK2G_G4_WARPS) ink2g_gemv4_kernel(const 
       if (folds) {
         float a = acc[r];
 #pragma unroll
-        for (int gg = 0; gg < 32; gg++)
-          if (gg < live) a = fmaf(pt[lane * 33 + gg], ink2g_e4m3(sb[gg]), a);
+        for (int gg = 0; gg < 32; gg++) {
+          if (gg < live) {
+            if constexpr (FP4) {
+              a = fmaf(pt[lane * 33 + gg], ink2g_e4m3(sb[gg]), a);
+            } else {
+              a = __fadd_rn(a, pt[lane * 33 + gg]);
+            }
+          }
+        }
         acc[r] = a;
       }
       __syncwarp();
     }
     if (it + 1 < ITERS) {
 #pragma unroll
-      for (int q = 0; q < RW; q++) c[q] = cn[q];
+      for (int q = 0; q < RW; q++)
+#pragma unroll
+        for (int h = 0; h < CW; h++) c[q][h] = cn[q][h];
     }
+  };
+  if constexpr (FP4 && R == 1) {
+#pragma unroll
+    for (int it = 0; it < ITERS; it++) step(it);
+  } else {
+#pragma unroll 1
+    for (int it = 0; it < ITERS; it++) step(it);
   }
   if (folds) {
 #pragma unroll
-    for (int r = 0; r < R; r++)
-      jt.y[j][(int64_t)r * jt.ldy[j] + my] = (float)((double)acc[r] * (double)jt.amax[j][0] / (double)jt.denom[j]);
+    for (int r = 0; r < R; r++) {
+      float v = acc[r];
+      if constexpr (FP4) v = (float)((double)v * (double)jt.amax[j][0] / (double)jt.denom[j]);
+      jt.y[j][(int64_t)r * jt.ldy[j] + my] = v;
+    }
   }
 }
 
-template <int R>
+// jobs of up to R (1..4) input rows over dense NVFP4 (FP4) or BF16 weights, every job of width k;
+// -1 when the shape does not fit (NVFP4: k a multiple of 256; BF16: a multiple of 16; at most
+// INK2G_GV_MAX_K)
+template <int R, bool FP4 = true>
 int ink2g_gemv4_r(Ink2gRowJobs jt, int64_t ldx, int k, cudaStream_t stream) {
-  if (k <= 0 || (k % 256) != 0 || k > INK2G_GV_MAX_K) return -1;
+  if (k <= 0 || (k % (FP4 ? 256 : 16)) != 0 || k > INK2G_GV_MAX_K) return -1;
   const size_t smem = (size_t)R * k * 4 + (size_t)INK2G_G4_WARPS * INK2G_G4_RW * 33 * 4;
   int blocks = 0;
   for (int j = 0; j < jt.count; j++) {
-    if (((uintptr_t)jt.w[j] & 7) != 0 || ((uintptr_t)jt.sc[j] & 15) != 0) return -1;
+    if (FP4 && (((uintptr_t)jt.w[j] & 7) != 0 || ((uintptr_t)jt.sc[j] & 15) != 0)) return -1;
+    if (!FP4 && ((uintptr_t)jt.w[j] & 15) != 0) return -1;
     jt.first[j] = blocks;
     blocks += (jt.n[j] + INK2G_G4_RW * INK2G_G4_WARPS - 1) / (INK2G_G4_RW * INK2G_G4_WARPS);
   }
@@ -1633,15 +1677,45 @@ int ink2g_gemv4_r(Ink2gRowJobs jt, int64_t ldx, int k, cudaStream_t stream) {
     return ink2g_rc();
   };
   switch ((k / 16 + 31) / 32) {
-    case 8: return go(ink2g_gemv4_kernel<8, R>);
-    case 5: return go(ink2g_gemv4_kernel<5, R>);
-    case 6: return go(ink2g_gemv4_kernel<6, R>);
-    case 7: return go(ink2g_gemv4_kernel<7, R>);
-    case 1: return go(ink2g_gemv4_kernel<1, R>);
-    case 2: return go(ink2g_gemv4_kernel<2, R>);
-    case 3: return go(ink2g_gemv4_kernel<3, R>);
-    default: return go(ink2g_gemv4_kernel<4, R>);
+    case 1: return go(ink2g_gemv4_kernel<1, R, FP4>);
+    case 2: return go(ink2g_gemv4_kernel<2, R, FP4>);
+    case 3: return go(ink2g_gemv4_kernel<3, R, FP4>);
+    case 4: return go(ink2g_gemv4_kernel<4, R, FP4>);
+    case 5: return go(ink2g_gemv4_kernel<5, R, FP4>);
+    case 6: return go(ink2g_gemv4_kernel<6, R, FP4>);
+    case 7: return go(ink2g_gemv4_kernel<7, R, FP4>);
+    default: return go(ink2g_gemv4_kernel<8, R, FP4>);
   }
+}
+
+// the rows a launch needs before the re-tiled GEMV beats the jobs kernels for one input row
+// (decode: the projections, 8,576 rows, and the unembed take it; the output projection, 2,304 rows,
+// and the router do not: 72 blocks of the re-tiled kernel under-fill 82 SMs, s15-lanek lk10)
+#define INK2G_G4_MIN_ROWS 4096
+
+// one BF16 input row through several jobs: the re-tiled GEMV for a large launch, else the jobs kernel
+// (the same bits either way)
+int ink2g_gemv_bf16_any(const float* const* xs, const void* const* ws, float* const* ys, const int* ns, int count,
+                        int k, cudaStream_t stream) {
+  if (count <= 0 || count > INK2G_JOBS) return -1;
+  Ink2gRowJobs jt{};
+  jt.count = count;
+  int rows = 0;
+  bool ok = true;
+  for (int j = 0; j < count; j++) {
+    ok = ok && xs[j] && ws[j] && ys[j] && ns[j] > 0;
+    jt.x[j] = xs[j];
+    jt.w[j] = ws[j];
+    jt.denom[j] = 1.0f;
+    jt.y[j] = ys[j];
+    jt.n[j] = ns[j];
+    rows += ns[j] > 0 ? ns[j] : 0;
+  }
+  if (ok && rows >= INK2G_G4_MIN_ROWS) {
+    const int rc = ink2g_gemv4_r<1, false>(jt, 0, k, stream);
+    if (rc != -1) return rc;
+  }
+  return ink2g_gemv_jobs(xs, ws, ys, ns, count, k, stream);
 }
 
 // rows 1..4 of x through the multi-row GEMV; -1 when the shape does not fit
@@ -1684,7 +1758,7 @@ int ink2g_gemv_rows(const float* x, int64_t ldx, const void* w, const uint8_t* s
     const float* xr = x + (int64_t)r0 * ldx;
     float* yr = y + (int64_t)r0 * ldy;
     int rc = -1;
-    if (fp4) {
+    {
       Ink2gRowJobs jt{};
       jt.count = 1;
       jt.x[0] = xr;
@@ -1695,10 +1769,16 @@ int ink2g_gemv_rows(const float* x, int64_t ldx, const void* w, const uint8_t* s
       jt.y[0] = yr;
       jt.ldy[0] = ldy;
       jt.n[0] = n;
-      rc = r == 1 ? ink2g_gemv4_r<1>(jt, ldx, k, stream)
-         : r == 2 ? ink2g_gemv4_r<2>(jt, ldx, k, stream)
-         : r == 3 ? ink2g_gemv4_r<3>(jt, ldx, k, stream)
-                  : ink2g_gemv4_r<4>(jt, ldx, k, stream);
+      if (fp4)
+        rc = r == 1 ? ink2g_gemv4_r<1>(jt, ldx, k, stream)
+           : r == 2 ? ink2g_gemv4_r<2>(jt, ldx, k, stream)
+           : r == 3 ? ink2g_gemv4_r<3>(jt, ldx, k, stream)
+                    : ink2g_gemv4_r<4>(jt, ldx, k, stream);
+      else
+        rc = r == 1 ? ink2g_gemv4_r<1, false>(jt, ldx, k, stream)
+           : r == 2 ? ink2g_gemv4_r<2, false>(jt, ldx, k, stream)
+           : r == 3 ? ink2g_gemv4_r<3, false>(jt, ldx, k, stream)
+                    : ink2g_gemv4_r<4, false>(jt, ldx, k, stream);
     }
     if (rc == -1 && fp4) {
       rc = r == 1 ? ink2g_gemv_rows_r<1, true>(xr, ldx, w, sc, amax, denom, yr, ldy, n, k, stream)
@@ -1852,10 +1932,11 @@ int ink2g_gemv_nvfp4_jobs(const float* const* xs, const void* const* ws, const v
                           int k, cudaStream_t stream) {
   if (count <= 0 || count > INK2G_JOBS || k <= 0 || (k % 16) != 0 || k > INK2G_GV_MAX_K) return -1;
   {
-    // the 32-rows-a-warp GEMV (the same bits) where the shape fits
+    // the re-tiled GEMV (the same bits) where the shape fits and the launch is large enough
     Ink2gRowJobs jt{};
     jt.count = count;
     bool ok = true;
+    int rows = 0;
     for (int j = 0; j < count; j++) {
       ok = ok && xs[j] && ws[j] && scs[j] && amaxs[j] && ys[j] && ns[j] > 0;
       jt.x[j] = xs[j];
@@ -1866,8 +1947,9 @@ int ink2g_gemv_nvfp4_jobs(const float* const* xs, const void* const* ws, const v
       jt.y[j] = ys[j];
       jt.ldy[j] = 0;
       jt.n[j] = ns[j];
+      rows += ns[j] > 0 ? ns[j] : 0;
     }
-    if (ok) {
+    if (ok && rows >= INK2G_G4_MIN_ROWS) {
       const int rc = ink2g_gemv4_r<1>(jt, 0, k, stream);
       if (rc != -1) return rc;
     }
@@ -2379,7 +2461,7 @@ int memra_ink2g_gemm(const void* x, int64_t ldx, const void* w, const void* scal
     const void* ws[1] = {w};
     float* ys[1] = {(float*)y};
     const int ns[1] = {n};
-    const int rc = ink2g_gemv_jobs(xs, ws, ys, ns, 1, k, (cudaStream_t)stream);
+    const int rc = ink2g_gemv_bf16_any(xs, ws, ys, ns, 1, k, (cudaStream_t)stream);
     if (rc != -1) return rc;
   }
   if (single && k <= INK2G_GEMV_MAX_K) {
@@ -2423,7 +2505,7 @@ int memra_ink2g_gemm(const void* x, int64_t ldx, const void* w, const void* scal
 int memra_ink2g_gemv_jobs(const float* const* xs, const void* const* ws, float* const* ys, const int* ns, int count,
                           int k, void* stream) {
   if (!xs || !ws || !ys || !ns) return 45041;
-  const int rc = ink2g_gemv_jobs(xs, ws, ys, ns, count, k, (cudaStream_t)stream);
+  const int rc = ink2g_gemv_bf16_any(xs, ws, ys, ns, count, k, (cudaStream_t)stream);
   return rc == -1 ? 45042 : rc;
 }
 
@@ -2465,16 +2547,22 @@ int memra_ink2g_gemv_rows_jobs(const float* const* xs, int64_t ldx, const void* 
     const int r = m - r0 < 4 ? m - r0 : 4;
     const cudaStream_t st = (cudaStream_t)stream;
     int rc = -1;
-    if (fp4) {
+    {
       Ink2gRowJobs jp = jt;
       for (int j = 0; j < count; j++) {
         jp.x[j] = xs[j] + (int64_t)r0 * ldx;
         jp.y[j] = jt.y[j] + (int64_t)r0 * jt.ldy[j];
       }
-      rc = r == 1 ? ink2g_gemv4_r<1>(jp, ldx, k, st)
-         : r == 2 ? ink2g_gemv4_r<2>(jp, ldx, k, st)
-         : r == 3 ? ink2g_gemv4_r<3>(jp, ldx, k, st)
-                  : ink2g_gemv4_r<4>(jp, ldx, k, st);
+      if (fp4)
+        rc = r == 1 ? ink2g_gemv4_r<1>(jp, ldx, k, st)
+           : r == 2 ? ink2g_gemv4_r<2>(jp, ldx, k, st)
+           : r == 3 ? ink2g_gemv4_r<3>(jp, ldx, k, st)
+                    : ink2g_gemv4_r<4>(jp, ldx, k, st);
+      else
+        rc = r == 1 ? ink2g_gemv4_r<1, false>(jp, ldx, k, st)
+           : r == 2 ? ink2g_gemv4_r<2, false>(jp, ldx, k, st)
+           : r == 3 ? ink2g_gemv4_r<3, false>(jp, ldx, k, st)
+                    : ink2g_gemv4_r<4, false>(jp, ldx, k, st);
     }
     if (rc == -1 && fp4)
       rc = r == 1 ? ink2g_gemv_rows_jobs_r<1, true>(jt, xs, ldx, r0, k, st)

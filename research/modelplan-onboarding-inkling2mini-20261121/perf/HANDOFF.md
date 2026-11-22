@@ -77,6 +77,31 @@ DRAM), the dense NVFP4 GEMV re-tiled (projections 67%, unembed 75%), a side-stre
 PDL and the smaller ring rejected. nvfp4-rig c=1 about 92 tok/s, shipped about 78. A grid barrier costs 0.58 us and
 a graph node 0.40 us on this card.
 
+## RESUME POINT (lane K, paused 2026-11-22 16:14 Jerusalem by owner order: memra break)
+
+Head: the WIP commit after a256d4c8e3 on perf/inkling2mini-decode-20261121 (PR #1399, draft). a256d4c8e3 is the last
+measured, bit-identical head (nvfp4-rig c=1 ~92 tok/s, shipped ~78). Nothing was running on the GPU; the last build
+(CPU) was stopped mid-way.
+
+The WIP commit (built as a40 once, NOT measured, NOT identity-checked on the GPU):
+- ink2g_gemv4_kernel<ITERS, R, FP4> also takes BF16 (the BF16 program: 16-term fma chain a group, the groups
+  folded with __fadd_rn in order), used for every multi-row (2..8) GEMV of both formats and for single-row launches
+  of >= INK2G_G4_MIN_ROWS (4096) rows; smaller single-row launches (the output projection, 72 blocks; the router)
+  go back to the jobs kernels: the output-projection small-grid fallback.
+- The iteration loop is rolled except for R = 1 NVFP4 (the unrolled multi-row and BF16 forms used 255 registers
+  and spilled, cuobjdump); this last edit was never built.
+
+Next, in order:
+1. Build; GPU: ink2-gpu-gate + identity (perf/idab.sh) + A/B vs a39 (rig, shipped, 4k) and the 2-row verify
+   cost (lane S's bench or ink2-gpu --score --chunk 2 nsys, prof per row count).
+2. The L2 prefetch A/B (a binary with the three call sites in Route::forward_body removed, vs with): coordinator
+   ruling: delete it unless the A/B shows a win.
+3. Fold the attention-input norms and the MLP norm into the GEMVs that read them (design: the norm kernel's
+   256-thread reduction replayed exactly with virtual threads, ink2g_block_sum order; f32 norm arm only), about
+   0.5 ms a token; then the other single-kernel latency costs (mix_dot 6 us, ctrl 6 us, attention 10.7 us).
+   A grid barrier costs 0.58 us and a graph node 0.40 us here, so fusion pays only where it removes a kernel's
+   ramp and memory round trips.
+
 ## Open items, in order (lane P's list)
 
 1. Smaller ring for decode expert groups (RG = RING instead of 2*RING for ONE): twice the warps an SM; one
