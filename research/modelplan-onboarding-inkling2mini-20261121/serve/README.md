@@ -108,3 +108,7 @@ both pass (`../checkpoint-parity/verify/`).
 `tools/serve-smoke-packs.tsv`: 7 of 7 (`smoke/inkling2.txt`). The default GGUF battery with the
 script before and after the change, same binary: the same check lines, 0 failed each
 (`smoke/gguf-base.txt`, `smoke/gguf-new.txt`).
+
+## Open items (2026-11-22, for the follow-up landing)
+
+- **nvfp4-rig scales poorly with concurrency.** At the land/inkling2mini-1 head (39d8e4ab36, serve/land-final-verify/), served at full clocks, nvfp4-rig gives 65.7, 76.5 and 94.5 output tok/s at c=1, 2 and 4. That is 1.16x from c=1 to c=2 and 1.44x to c=4. Shipped gives 57.6, 77.1 and 98.4 (1.34x, 1.71x). Since the drafter rebase and lane P's grouped-query attention, nvfp4-rig is ahead at c=1 and behind at c=4. The batched call runs attention arms 3 and 4 row by row (303a0f22db) and its GEMVs over the rows, so the per-row attention and the NVFP4 W4A4 expert path at 2..4 rows are the first places to measure. This landing ships no fix.
