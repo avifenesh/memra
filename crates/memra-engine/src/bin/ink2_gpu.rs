@@ -107,6 +107,7 @@ struct Args {
     contract_check: bool,
     attn_probe: Vec<u32>,
     batch_check: Option<(usize, usize, usize, usize, usize)>,
+    batch_seq_cap: usize,
     /// `--moe-ref STRIDE`: hold the route's MoE output of every slot against the host reference
     /// (lane D's `inkling2_actquant`) bit for bit at every STRIDE-th position.
     moe_ref: usize,
@@ -148,6 +149,9 @@ fn parse() -> Result<Args, String> {
             "--limit" => a.limit = num(val()?)?,
             "--chunk" => a.chunk = num(val()?)?,
             "--context" => a.context = num(val()?)?,
+            // the batching gate's sessions hold this many positions (past the load's context: the
+            // serve route's sessions)
+            "--batch-seq-cap" => a.batch_seq_cap = num(val()?)?,
             "--device" => a.device = num(val()?)?,
             "--out" => a.out = Some(PathBuf::from(val()?)),
             "--numeric-class" => a.numeric_class = true,
@@ -183,6 +187,8 @@ fn parse() -> Result<Args, String> {
                     "ties-high" => a.red.ties_high = true,
                     "commit-on-error" => a.red.commit_on_error = true,
                     "batch-rows-rotated" => a.red.batch_rows_rotated = true,
+                    "batch-attn-one-call" => a.red.batch_attn_one_call = true,
+                    "t4-scratch-absent" => a.red.t4_scratch_absent = true,
                     // the --moe-ref check's own red arm: the reference accumulates in index order
                     "moe-ref-index-order" => a.moe_ref_red = 1,
                     // the routing weight after the down projection: a near miss the check must see
@@ -873,8 +879,8 @@ fn batch_check(
     b: usize,
     steps: usize,
     pchunk: usize,
-    len0: usize,
-    lenstep: usize,
+    (len0, lenstep): (usize, usize),
+    seq_cap: usize,
 ) -> Result<serde_json::Value, String> {
     let ids = &tape.all_ids;
     let vocab = route.vocab();
@@ -894,7 +900,7 @@ fn batch_check(
             return Err("the tape is too short for the batch schedule".into());
         }
     }
-    let context = plan.iter().map(|(_, l, n)| l + n).max().unwrap_or(1) + 8;
+    let context = (plan.iter().map(|(_, l, n)| l + n).max().unwrap_or(1) + 8).max(seq_cap);
     let row_digest = |row: &[f32]| fnv(row.iter().flat_map(|v| v.to_le_bytes()));
     // solo
     let mut solo: Vec<Vec<u64>> = Vec::new();
@@ -991,6 +997,12 @@ fn batch_check(
     Ok(serde_json::json!({
         "sequences": b,
         "red_batch_rows_rotated": red.batch_rows_rotated,
+        "red_batch_attn_one_call": red.batch_attn_one_call,
+        "red_t4_scratch_absent": red.t4_scratch_absent,
+        "session_positions": context,
+        // every solo decode row's logits digest, in order: equal across loads of other contexts
+        // when the sessions' program does not depend on the load
+        "solo_digest": format!("{:016x}", fnv(solo.iter().flatten().flat_map(|d| d.to_le_bytes()))),
         "schedule": plan.iter().map(|(o, l, n)| serde_json::json!({"offset": o, "prompt": l, "decode": n})).collect::<Vec<_>>(),
         "prefill_chunk": pchunk,
         "batched_calls": batched_calls,
@@ -2004,7 +2016,15 @@ fn run() -> Result<(), String> {
         );
     }
     if let Some((b, steps, pchunk, len0, step)) = a.batch_check {
-        receipt["batch_check"] = batch_check(&mut route, tape, b, steps, pchunk, len0, step)?;
+        receipt["batch_check"] = batch_check(
+            &mut route,
+            tape,
+            b,
+            steps,
+            pchunk,
+            (len0, step),
+            a.batch_seq_cap,
+        )?;
     }
     if !a.attn_probe.is_empty() {
         let tokens = &tape.all_ids[..tape.prompt];
