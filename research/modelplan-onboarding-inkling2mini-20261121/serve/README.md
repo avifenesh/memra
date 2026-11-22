@@ -112,3 +112,27 @@ script before and after the change, same binary: the same check lines, 0 failed 
 ## Open items (2026-11-22, for the follow-up landing)
 
 - **nvfp4-rig scales poorly with concurrency.** At the land/inkling2mini-1 head (39d8e4ab36, serve/land-final-verify/), served at full clocks, nvfp4-rig gives 65.7, 76.5 and 94.5 output tok/s at c=1, 2 and 4. That is 1.16x from c=1 to c=2 and 1.44x to c=4. Shipped gives 57.6, 77.1 and 98.4 (1.34x, 1.71x). Since the drafter rebase and lane P's grouped-query attention, nvfp4-rig is ahead at c=1 and behind at c=4. The batched call runs attention arms 3 and 4 row by row (303a0f22db) and its GEMVs over the rows, so the per-row attention and the NVFP4 W4A4 expert path at 2..4 rows are the first places to measure. This landing ships no fix.
+
+## Resume point (memra paused by the owner, 2026-11-22 16:10)
+
+- **Head:** branch `land/inkling2mini-1-replay`. `b72abd0d03` is land/inkling2mini-1 (`659adc355d`) replayed onto main `cfdc06a05a` (landing 31). One conflict: `docs/support-records.toml`, where both stacks' records are kept. `crates/memra-engine/build.rs` merges both kernel lists, and its sha is re-pinned in `tools/validation_inputs.json`. On top sits the commit that adds this section. main is not fast-forwarded.
+- **What was running, all stopped:**
+  - the sm_120a `cell_evidence` run at b72abd0d03, which was still in its build step and never took the GPU;
+  - the dev desk CPU suites on the replay.
+  - No gpulock or sparklock lease is held, and nothing is queued.
+- **Evidence so far, before the replay:** the frozen landing (P 38925f1ac5, S ac04e22200 and the serve route) passed everything at 39d8e4ab36 and 477f6a1940:
+  - the ten engine GPU tests;
+  - batched==solo and the batching gate;
+  - verify checkpoint and serve for both classes (shipped 2.054 under 3.7, nvfp4-rig 2.573 under 5.5);
+  - lane S's run-spec 28/28;
+  - the sm_120a and sm_121a cell records at 477f6a1940 (`research/release-qualification/cells/477f6a194024-*`).
+  - The trial replay onto land/31 (`006eb22341`) passed the dev desk CPU suites.
+- **Next, in order:**
+  1. If main moved, replay again.
+  2. Build ink2-gpu, ink2-spec, memra-server, memra and the ten GPU test binaries at the replay head.
+  3. Run `serve/land/land_all.sh` (GPU tests, batched==solo, verify for both classes, served c=1/2/4, batch_gate, lane S's spec gates) in one 5090 lease.
+  4. Re-pin both inkling2 support records to that head, citing the new receipts. That is the data commit Y.
+  5. Run both cells (`cell_evidence.py run`, rtx5090 and gb10 on cb33) at the exact commit Y, bank them and commit only the records.
+  6. Run `cell_evidence.py check` and the dev desk CPU suites.
+  7. Go to the coordinator before any push to main.
+- **Follow-up landing:** lane P's 90b00bde04 (precision round 5) still needs `batch_gate.sh` and its re-pins. nvfp4-rig's concurrency scaling is the open item above.
