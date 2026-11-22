@@ -111,7 +111,7 @@ struct Args {
     /// (lane D's `inkling2_actquant`) bit for bit at every STRIDE-th position.
     moe_ref: usize,
     dump_hidden: Option<(PathBuf, PathBuf)>,
-    moe_ref_index_order: bool,
+    moe_ref_red: u8,
 }
 
 fn parse() -> Result<Args, String> {
@@ -184,7 +184,9 @@ fn parse() -> Result<Args, String> {
                     "commit-on-error" => a.red.commit_on_error = true,
                     "batch-rows-rotated" => a.red.batch_rows_rotated = true,
                     // the --moe-ref check's own red arm: the reference accumulates in index order
-                    "moe-ref-index-order" => a.moe_ref_index_order = true,
+                    "moe-ref-index-order" => a.moe_ref_red = 1,
+                    // the routing weight after the down projection: a near miss the check must see
+                    "moe-ref-weight-after-down" => a.moe_ref_red = 2,
                     _ => return Err(format!("unknown red arm {v}")),
                 }
                 a.red_names.push(v);
@@ -439,7 +441,8 @@ struct MoeRefSlot {
 
 struct MoeRef {
     stride: usize,
-    index_order: bool,
+    /// 0 the reference, 1 its index-order accumulator, 2 the weight after the down projection
+    red: u8,
     cur: BTreeMap<u32, MoeRefSlot>,
     /// per slot: rows checked, rows bit-equal, bf16 outputs differing, worst row rel L2
     per_slot: Vec<(usize, usize, usize, f64)>,
@@ -469,8 +472,7 @@ impl MoeRef {
             if s.rows.is_empty() {
                 continue;
             }
-            let want =
-                route.reference_moe(slot, &s.x, &s.ids, &s.wts, threads, self.index_order)?;
+            let want = route.reference_moe(slot, &s.x, &s.ids, &s.wts, threads, self.red)?;
             if want.len() != s.out.len() {
                 return Err(format!(
                     "slot {slot}: the reference and the route disagree on rows"
@@ -1654,7 +1656,7 @@ fn run() -> Result<(), String> {
             digest_ffn: vec![FNV0; nslots],
             moe_ref: (a.moe_ref > 0).then(|| MoeRef {
                 stride: a.moe_ref,
-                index_order: a.moe_ref_index_order,
+                red: a.moe_ref_red,
                 cur: BTreeMap::new(),
                 per_slot: vec![(0, 0, 0, 0f64); nslots],
             }),
@@ -1769,7 +1771,7 @@ fn run() -> Result<(), String> {
             receipt["moe_reference"] = serde_json::json!({
                 "reference": "memra_reference::inkling2_actquant expert_block_w4a4 / expert_block_w8a8, Accumulation::Sm120, from the route's resident expert bytes",
                 "stride": mr.stride,
-                "red_arm_index_order_reference": mr.index_order,
+                "red_arm": (["none", "moe-ref-index-order", "moe-ref-weight-after-down"])[mr.red as usize],
                 "rows_checked": rows,
                 "rows_bit_equal": equal,
                 "bf16_outputs_differing": differ,

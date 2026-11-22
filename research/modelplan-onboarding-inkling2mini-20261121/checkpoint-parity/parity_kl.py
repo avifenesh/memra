@@ -37,10 +37,18 @@ import klh  # noqa: E402
 import klrun  # noqa: E402
 
 CLASS = "inkling2-declared-activation-quant"
+CLASS_NOW = CLASS
+CLASSES = {"shipped": ("inkling2-declared-activation-quant", None),
+           # lane M's nvfp4-rig in lane F's arm vocabulary (research/.../nvfp4-rig/lanef-jobs.json)
+           "nvfp4-rig": ("inkling2-nvfp4-rig", "actq:all+kv:all+mx2nv:mx+w:unembed+w:attn:all")}
+
+
+SPEC = None  # a lane F arm spec (klrun.Arms) for a class other than the shipped one
 
 
 def set_arm(H, mode, rev):
-    H.set_expert_mode(mode)
+    if SPEC is None:
+        H.set_expert_mode(mode)
     for layer in H.layers:
         layer.mlp.experts.rev = rev
 
@@ -56,7 +64,7 @@ def hidden(H, ids, mode, rev):
 def write_oracle(path, engine, ids, logits):
     bits = np.ascontiguousarray(logits, dtype="<f4").view("<u4")
     with open(path, "w") as f:
-        f.write(f"format\tmemra-checkpoint-oracle-v1\nengine\t{engine}\nnumeric_class\t{CLASS}\n")
+        f.write(f"format\tmemra-checkpoint-oracle-v1\nengine\t{engine}\nnumeric_class\t{CLASS_NOW}\n")
         f.write("tokens\t" + ",".join(str(i) for i in ids) + "\n")
         f.write(f"vocab\t{len(bits)}\n")
         for i, b in enumerate(bits):
@@ -89,12 +97,21 @@ def main():
     ap.add_argument("--peer", help="another backend's saved actq rows (DIR/<set>/<i>.actq.f32): KL(this || peer), KL(peer || route)")
     ap.add_argument("--no-rev", action="store_true", help="skip the actq_rev arm")
     ap.add_argument("--save-only", action="store_true", help="only run and save the arms")
+    ap.add_argument("--class", dest="cls", default="shipped", choices=sorted(CLASSES))
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     t0 = time.time()
     H = klh.Harness()
+    global SPEC, CLASS_NOW
+    CLASS_NOW, SPEC = CLASSES[a.cls]
+    if SPEC:
+        klrun.Arms(H).apply(SPEC)
+        # both sides of every comparison are this class: its head is the minted unembed
+        W = H.unembed_override.to(klh.DEV)
+        H.unembed_override = W
+        H.head_weight = lambda ref=False: W
     vocab = json.load(open(os.path.join(klh.CKPT, "config.json"))).get("unpadded_vocab_size")
-    res = {"harness": "lane F klh.py (transformers PR #51050 text model, act-quant experts)", "class": CLASS,
+    res = {"harness": "lane F klh.py (transformers PR #51050 text model, act-quant experts)", "class": CLASS_NOW, "arm_spec": SPEC,
            "load_s": time.time() - t0, "sets": {}}
     if a.probe_oracle:
         ids = [int(t) for t in a.probe_oracle[0].split(",")]
@@ -138,8 +155,8 @@ def main():
     pooled = {k: [] for k in keys + ("top1_route", "top1_self", "top1_peer")}
     for name, corpus, rdir in a.set:
         docs = json.load(open(corpus))
-        meta = json.load(open(os.path.join(rdir, "meta.json")))
-        hid = meta["hidden"]
+        mp = os.path.join(rdir, "meta.json")
+        hid = json.load(open(mp))["hidden"] if os.path.exists(mp) else int(H.cfg.hidden_size)
         per = {k: [] for k in pooled}
         doc_rows = []
         for i, d in enumerate(docs):

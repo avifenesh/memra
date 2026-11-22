@@ -2402,11 +2402,13 @@ impl Route {
         ids: &[u32],
         wts: &[f32],
         threads: usize,
-        index_order: bool,
+        red: u8,
     ) -> Result<Vec<f32>, String> {
         use memra_reference::inkling2_actquant as aq;
-        // the red arm of the check: the reference's ascending-index accumulator, not the card's
-        let acc = if index_order {
+        // the check's red arms: 1, the reference's ascending-index accumulator, not the card's;
+        // 2, the routing weight applied after the down projection instead of before its
+        // quantization (a near miss of the declared program)
+        let acc = if red == 1 {
             aq::Accumulation::IndexOrder
         } else {
             aq::Accumulation::Sm120
@@ -2454,7 +2456,21 @@ impl Route {
                 .iter()
                 .map(|e| *e as usize)
                 .collect();
-            let gamma = &wts[r * top_k..(r + 1) * top_k];
+            let routed = &wts[r * top_k..(r + 1) * top_k];
+            let ones = vec![1f32; top_k];
+            let gamma: &[f32] = if red == 2 { &ones } else { routed };
+            let after = |blk: aq::ExpertBlockOut| -> Vec<f32> {
+                if red != 2 {
+                    return blk.out;
+                }
+                let mut acc = vec![0f32; hidden];
+                for (row, g) in blk.down.iter().zip(routed) {
+                    for (a, v) in acc.iter_mut().zip(row) {
+                        *a += aq::bf16(v * g);
+                    }
+                }
+                acc.into_iter().map(aq::bf16).collect()
+            };
             if b13.fmt == FMT_NVFP4 {
                 let up = aq::Nvfp4Experts {
                     codes: &d13,
@@ -2472,7 +2488,9 @@ impl Route {
                     n: b2.n,
                     k: b2.k,
                 };
-                aq::expert_block_w4a4(&row, &sel, gamma, &up, &down, &situ, acc).out
+                after(aq::expert_block_w4a4(
+                    &row, &sel, gamma, &up, &down, &situ, acc,
+                ))
             } else {
                 let up = aq::Mxfp8Experts {
                     values: &d13,
@@ -2486,7 +2504,9 @@ impl Route {
                     n: b2.n,
                     k: b2.k,
                 };
-                aq::expert_block_w8a8(&row, &sel, gamma, &up, &down, &situ, acc).out
+                after(aq::expert_block_w8a8(
+                    &row, &sel, gamma, &up, &down, &situ, acc,
+                ))
             }
         };
         let mut out = vec![0f32; rows * hidden];
