@@ -242,9 +242,6 @@ pub struct AdaptiveK {
     /// speculating (and stops capturing taps).
     losing_probes: usize,
     stopped: bool,
-    /// Price every length by the model at a lower bound of the acceptance (the 10% quantile of
-    /// its posterior, normal approximation) and the measured step time, never by a realized rate.
-    pub cautious: bool,
 }
 
 /// Losing probes in a row after which a request stops speculating. Each losing probe costs about
@@ -278,7 +275,6 @@ impl AdaptiveK {
             first_full: false,
             losing_probes: 0,
             stopped: false,
-            cautious: false,
         }
     }
 
@@ -319,20 +315,6 @@ impl AdaptiveK {
 
     /// The best length and its expected tokens per second, over 1..=max.
     fn best_length(&self) -> Option<(usize, f64)> {
-        if self.cautious {
-            let n = self.succ + self.fail;
-            let m = self.accept_rate();
-            let a = (m - 1.2816 * (m * (1.0 - m) / (n + 1.0)).sqrt()).clamp(0.0, 0.999);
-            let mut best: Option<(usize, f64)> = None;
-            for k in 1..=self.max {
-                let Some(t) = self.step_time(k) else { continue };
-                let rate = (1.0 - a.powi(k as i32 + 1)) / (1.0 - a) / t;
-                if best.is_none_or(|b| rate > b.1) {
-                    best = Some((k, rate));
-                }
-            }
-            return best;
-        }
         let a = self.accept_rate();
         let mut best: Option<(usize, f64)> = None;
         for k in 1..=self.max {
@@ -436,8 +418,6 @@ pub struct SpecArms {
     /// Tap `(index, slot)`: the drafter's tap `index` reads the input of `slot` instead of the
     /// plan's slot.
     pub tap_slot: Option<(usize, u32)>,
-    /// The cautious adaptive policy (`AdaptiveK::cautious`), measured against the default.
-    pub cautious: bool,
 }
 
 /// The slots whose inputs the drafter reads, from the plan (then the final norm), with an arm's
@@ -628,11 +608,7 @@ fn generate_inner(
     route.dev.sync()?;
     stats.prefill_s = t0.elapsed().as_secs_f64();
     let t1 = std::time::Instant::now();
-    let mut adapt = (k == 0).then(|| {
-        let mut a = AdaptiveK::new(drafter.g.rows - 1);
-        a.cautious = arms.cautious;
-        a
-    });
+    let mut adapt = (k == 0).then(|| AdaptiveK::new(drafter.g.rows - 1));
     let mut carry = route.carry()?;
     let mut out = vec![anchor];
     let vocab = route.vocab();
