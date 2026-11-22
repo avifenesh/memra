@@ -199,6 +199,10 @@ pub fn generate(
     )
 }
 
+/// A measurement arm (`--ks 99`): a speculative request that never verifies, so every step is a plain
+/// step with its taps captured and held for the drafter: the per-step cost of being speculative.
+pub const PLAIN_ARM: usize = 99;
+
 /// The proposal length of each verify call when a request asks for an adaptive one (`k == 0`):
 /// the length that maximizes expected committed tokens per second of a step, or a plain one-row
 /// step when no length beats it by `MARGIN`. Expected tokens come from the request's own
@@ -475,7 +479,11 @@ pub fn generate_arm(
 ) -> Result<(Vec<u32>, SpecStats), String> {
     let slots = tap_slots(route, arms)?;
     // k == 0: the request's proposal length adapts (`AdaptiveK`) up to the block's
-    let kmax = if k == 0 { drafter.g.rows - 1 } else { k };
+    let kmax = if k == 0 || k == PLAIN_ARM {
+        drafter.g.rows - 1
+    } else {
+        k
+    };
     if kmax > drafter.g.rows - 1 {
         return Err(format!(
             "{kmax} proposals; a block holds {}",
@@ -586,7 +594,11 @@ fn generate_inner(
                 route.context
             ));
         }
-        let want = adapt.as_mut().map_or(k, AdaptiveK::choose);
+        let want = if k == PLAIN_ARM {
+            0
+        } else {
+            adapt.as_mut().map_or(k, AdaptiveK::choose)
+        };
         let kk = want.min(n - out.len()).min(room - 1);
         let t_step = std::time::Instant::now();
         if kk == 0 {
