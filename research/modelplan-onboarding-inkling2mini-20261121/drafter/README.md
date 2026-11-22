@@ -235,6 +235,48 @@ nvfp4-rig the route's unembed is NVFP4 (lane M, #1401). The drafter's base logit
 it was trained against, so the attach will load its own BF16 head (0.92 GB) when the route's is not BF16 (not built yet). Acceptance on
 nvfp4-rig is re-measured once #1401 is in this stack.
 
+## One DSpark plan for DeepSeek-V4 and Inkling 2
+
+The drafter is no longer a parallel program. memra's DSpark plan (DeepSeek-V4: crates/memra-gguf/src/dsv4_dspark.rs,
+DsparkPlan, the DsparkFusion / DsparkMarkovHead / DsparkConfidenceHead operations) now has typed variants per
+component (crates/memra-gguf/src/model_plan/dspark.rs), and Inkling 2's plan.drafter is DrafterPlan::Dspark:
+
+| component | DeepSeek-V4 | Inkling 2 |
+|---|---|---|
+| rows | NoiseToken (noise_token_id) | Block: anchor through the trunk's normed embedding, learned mask rows |
+| fusion | MainProjection (main_proj, main_norm) | FuseWeights: softmax rows per layer plus the head, typed taps |
+| layers | TrunkBlocks (trunk-shaped blocks over their own rings) | Context: bidirectional block attention over context K/V (key norm, RoPE theta 1e6, local layers), dense SwiGLU |
+| Markov head | Bigram (w1[prev] . w2) | RnnHidden (gate, candidate, out over state, w1[prev], row hidden, feature; folded through the unembed) |
+| confidence | HiddenAndMarkovEmbedding | none |
+
+Operations: DsparkFusion and DsparkMarkovHead are shared names with typed variants, DsparkConfidenceHead is emitted
+only with a confidence head, and DsparkContextAttention replaces Inkling's former DsparkRnnDrafter. The reference
+executor (memra-reference inkling2_drafter) and the GPU drafter read the variants and refuse the DeepSeek-V4 ones (red
+arms in the refusal test). The DeepSeek-V4 program is DsparkPlan::deepseek_v4, and its Debug prints the five fields
+it always printed.
+
+DeepSeek-V4 stays byte-identical:
+
+- The serialized tiny plan (the rewrite receipts' plan_sha256) of every pack in PACKS and ONBOARDING_PROFILES, the
+  DSpark pack included, hashes as on the parent; only inkling2's changes.
+- No DeepSeek-V4 source changed: dsv4_dspark.rs, dsv4_gpu.rs and their kernels are untouched, and their gates
+  (dsv4_dspark_gate, dsv4_gpu_dspark_gate) read no DsparkPlan field.
+- memra-gguf and memra-reference suites pass on the dev desk: 448 + 183 tests and the rest, 0 failed. They include
+  the DeepSeek-V4 DSpark pack tests and the reference DSpark fixture.
+- Pending: the DeepSeek-V4 checkpoint gates and any Spark cell. No DeepSeek-V4 weights are on this rig, and nothing
+  they run changed.
+
+Kernels:
+
+- Shared: the first maximum of each proposal row is memra_dsv4_argmax, the DeepSeek-V4 drafter's argmax (lowest
+  index on ties). dk_pick and the per-block partials are gone. The 28 declared gate cells of that build equal the
+  parent's in accepted, steps and tokens (timed-dspark-unified/build.txt).
+- Separate, because the math differs:
+  - Norms: Inkling reduces in f64; DeepSeek-V4 runs an f32 rmsnorm under -fmad=false.
+  - The Markov head: a recurrent head on the device, against a bigram bias computed from a w1 row the host gathers.
+  - Attention: bidirectional over context K/V written once per commit, against hc blocks over FP8-QAT rings.
+  - GEMV: BF16, NVFP4 and FP8 weights with f32 activations, against DeepSeek-V4's MXFP4 experts and FP8 dense.
+
 ## Open
 
 - Resolved: a partial accept commits the verify's own rows (per-row conv history), no replay.
