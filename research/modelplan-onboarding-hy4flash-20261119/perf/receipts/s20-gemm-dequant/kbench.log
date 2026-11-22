@@ -1,0 +1,41 @@
+== pre rb
+pre fp8 16384x3072                     12428.2 us    34.1 TF/s  out b6656833d587c587
+pre fp8 3072x16384                     12473.5 us    34.0 TF/s  out 0dcf3c6b44541ee2
+pre fp8 8192x3072                       5614.4 us    37.7 TF/s  out 76430ce70029a77e
+pre bf16 1536x3072                       743.8 us    53.4 TF/s  out 4c6e03e1f9cb0595
+pre bf16 3072x1536                       756.1 us    52.5 TF/s  out f82703612aad30ed
+pre bf16 64x(256x512)                   3195.9 us    22.1 TF/s  out 4bf3003d81d6dd91
+pre experts nvfp4 33664 rows 769 tiles    9445.3 us    33.6 TF/s  out 2df8a87fe6f57072
+KBENCH PRE DONE
+== pre S20
+pre fp8 16384x3072                     12047.5 us    35.2 TF/s  out b6656833d587c587
+pre fp8 3072x16384                     12297.6 us    34.4 TF/s  out 0dcf3c6b44541ee2
+pre fp8 8192x3072                       5358.4 us    39.5 TF/s  out 76430ce70029a77e
+pre bf16 1536x3072                       738.2 us    53.8 TF/s  out 4c6e03e1f9cb0595
+pre bf16 3072x1536                       705.4 us    56.3 TF/s  out f82703612aad30ed
+pre bf16 64x(256x512)                   3111.0 us    22.7 TF/s  out 4bf3003d81d6dd91
+pre experts nvfp4 33664 rows 769 tiles    9015.2 us    35.2 TF/s  out 2df8a87fe6f57072
+KBENCH PRE DONE
+== pre S20
+pre fp8 16384x3072                     12013.0 us    35.3 TF/s  out b6656833d587c587
+pre fp8 3072x16384                     12368.7 us    34.2 TF/s  out 0dcf3c6b44541ee2
+pre fp8 8192x3072                       5422.2 us    39.1 TF/s  out 76430ce70029a77e
+pre bf16 1536x3072                       704.0 us    56.4 TF/s  out 4c6e03e1f9cb0595
+pre bf16 3072x1536                       762.7 us    52.1 TF/s  out f82703612aad30ed
+pre bf16 64x(256x512)                   3085.6 us    22.9 TF/s  out 4bf3003d81d6dd91
+pre experts nvfp4 33664 rows 769 tiles    9129.1 us    34.8 TF/s  out 2df8a87fe6f57072
+KBENCH PRE DONE
+== pre rb
+pre fp8 16384x3072                     12437.5 us    34.1 TF/s  out b6656833d587c587
+pre fp8 3072x16384                     12617.3 us    33.6 TF/s  out 0dcf3c6b44541ee2
+pre fp8 8192x3072                       5595.0 us    37.9 TF/s  out 76430ce70029a77e
+pre bf16 1536x3072                       744.2 us    53.4 TF/s  out 4c6e03e1f9cb0595
+pre bf16 3072x1536                       756.7 us    52.5 TF/s  out f82703612aad30ed
+pre bf16 64x(256x512)                   3125.9 us    22.6 TF/s  out 4bf3003d81d6dd91
+pre experts nvfp4 33664 rows 769 tiles    9461.5 us    33.6 TF/s  out 2df8a87fe6f57072
+KBENCH PRE DONE
+ncu pre_fp8_3072x16384 rc=0
+ncu pre_fp8_16384x3072 rc=0
+ncu pre_experts rc=0
+ncu pre_bf16_3072x1536 rc=0
+K1_DONE

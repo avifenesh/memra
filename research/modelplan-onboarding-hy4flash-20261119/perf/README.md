@@ -370,3 +370,12 @@ row count: with the rows in the order 4, 1, 1, 4 the first (m4) reads at 223 GB/
 272 to 284; warm or with a 4 GiB eviction read the same. 280 GB/s is above the bus (273), so
 `kbench`'s cold reads are partly cached; `ncu` (caches flushed, base clock) times m1 and m4 at
 250 us alike. The model's o_proj at 232 GB/s reads at the bus's streaming rate.
+
+### 20. Prefill GEMM: weights to BF16 by pairs (`receipts/s20-gemm-dequant/`, sampled)
+
+`r_gemm_kernel`'s staging converts the weights as the small-row kernel does: FP8 code pairs by
+the hardware pair conversion (E4M3 to F16 to BF16, exact), NVFP4 code bytes through a 256-entry
+table of BF16 pairs times the group scale in BF16 (the product is exact, so it equals the F32
+product rounded); the gate's red arm keeps the scalar path. `kbench` (`KB_PRE`) output hashes
+equal; FP8 shapes 2 to 4% faster, the experts 3 to 4%. `long`'s prefill 406.3 -> 412.2
+tokens/s (interleaved, two runs each), decode unchanged. 3 of 3 tapes bit-equal.

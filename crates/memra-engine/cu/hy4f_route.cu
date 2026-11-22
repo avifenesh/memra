@@ -197,6 +197,14 @@ struct RGemm {
   RSeg seg[R_MAXSEG];
 };
 
+static __device__ __forceinline__ uint32_t r_bf2_bits(__nv_bfloat162 v) { return *(uint32_t*)&v; }
+
+// e4m3 pair (low byte first) -> exact BF16 pair: through F16 (exact), then F32 (exact)
+static __device__ __forceinline__ uint32_t r_e4m3x2_bf16x2(uint16_t c) {
+  const float2 f = __half22float2(__half2(__nv_cvt_fp8x2_to_halfraw2(c, __NV_E4M3)));
+  return r_bf2_bits(__floats2bfloat162_rn(f.x, f.y));
+}
+
 #define RG_BN 64
 #define RG_BK 32
 #define RG_PAD 8
@@ -224,7 +232,13 @@ __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
   __shared__ __align__(16) uint16_t As[BM * LDS];
   __shared__ __align__(16) uint16_t Al[BM * LDS];
   __shared__ __align__(16) uint16_t Bs[RG_BN * LDS];
+  // NVFP4: a code byte's two values as a BF16 pair
+  __shared__ uint32_t lut[FMT == R_NVFP4 ? 256 : 1];
   const int tid = threadIdx.x, lane = tid & 31, warp = tid >> 5;
+  if (FMT == R_NVFP4) {
+    for (int c = tid; c < 256; c += 128) lut[c] = r_bf2_bits(__floats2bfloat162_rn(r_e2m1(c), r_e2m1(c >> 4)));
+    __syncthreads();
+  }
   const int wm = BM == 64 ? (warp >> 1) : 0;
   const int wn = BM == 64 ? (warp & 1) : warp;
 
@@ -301,16 +315,33 @@ __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
       for (int i = 0; i < 8; i++) bw[i] = s[i];
     } else if (FMT == R_FP8) {
       const uint8_t* c = (const uint8_t*)&wraw[0];
-      float bs = 1.0f;
-      if (g.red_dq) bs = ((const float*)sc)[(long)(gn / 128) * g.grid_cols + k0 / 128];
+      if (!g.red_dq) {
+        // the codes are exact in BF16: the pair conversion gives the bits r_pack(r_e4m3(..)) does
+        const uint16_t* c2 = (const uint16_t*)&wraw[0];
 #pragma unroll
-      for (int i = 0; i < 8; i++) bw[i] = r_pack(r_e4m3(c[2 * i]) * bs, r_e4m3(c[2 * i + 1]) * bs);
+        for (int i = 0; i < 8; i++) bw[i] = r_e4m3x2_bf16x2(c2[i]);
+      } else {
+        const float bs = ((const float*)sc)[(long)(gn / 128) * g.grid_cols + k0 / 128];
+#pragma unroll
+        for (int i = 0; i < 8; i++) bw[i] = r_pack(r_e4m3(c[2 * i]) * bs, r_e4m3(c[2 * i + 1]) * bs);
+      }
     } else {
       const uint8_t* c = (const uint8_t*)&wraw[0];
       float gs = r_e4m3((uint8_t)wsc);
-      if (g.red_dq) gs = gs * s2;
+      if (!g.red_dq) {
+        // code pair times the group scale in BF16: the product is exact, so it equals the F32
+        // product rounded to BF16 (as the small-row kernel)
+        const __nv_bfloat162 gs2 = __float2bfloat162_rn(gs);
 #pragma unroll
-      for (int i = 0; i < 8; i++) bw[i] = r_pack(r_e2m1(c[i]) * gs, r_e2m1(c[i] >> 4) * gs);
+        for (int i = 0; i < 8; i++) {
+          const uint32_t l = lut[c[i]];
+          bw[i] = r_bf2_bits(__hmul2(*(const __nv_bfloat162*)&l, gs2));
+        }
+      } else {
+        gs = gs * s2;
+#pragma unroll
+        for (int i = 0; i < 8; i++) bw[i] = r_pack(r_e2m1(c[i]) * gs, r_e2m1(c[i] >> 4) * gs);
+      }
     }
     uint32_t* aw = (uint32_t*)&As[ar * LDS + ak];
     uint32_t* al = (uint32_t*)&Al[ar * LDS + ak];
@@ -476,13 +507,6 @@ static __device__ __forceinline__ void r_cp_wait() {
   asm volatile("cp.async.wait_group %0;\n" ::"n"(N));
 }
 
-static __device__ __forceinline__ uint32_t r_bf2_bits(__nv_bfloat162 v) { return *(uint32_t*)&v; }
-
-// e4m3 pair (low byte first) -> exact BF16 pair: through F16 (exact), then F32 (exact)
-static __device__ __forceinline__ uint32_t r_e4m3x2_bf16x2(uint16_t c) {
-  const float2 f = __half22float2(__half2(__nv_cvt_fp8x2_to_halfraw2(c, __NV_E4M3)));
-  return r_bf2_bits(__floats2bfloat162_rn(f.x, f.y));
-}
 
 template <int FMT>
 struct GvGeom {
