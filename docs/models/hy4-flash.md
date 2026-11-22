@@ -56,14 +56,19 @@ MEMRA_MODELS=hy4=/path/Hy4-flash-NVFP4 memra-server
   gates above with drafts on; every answer of that gate equal to a drafts-off server's
   (`draft_identity.py`); and the chat turns with a refused draft round and a refused ring backup
   equal to the drafts-off answers (`MEMRA_HY4F_DRAFT_FAULT`, `turns_identity.py`).
+- Batched calls: `hy4f-spec batch` (requests generated alone and then together, every step one
+  call of their decode and verify rows with the next prefill chunk inside and one batched draft:
+  ids, drafts and every emitted row's logits bit-equal), and through the server every sampled
+  request at 1, 2, 4 and 8 at once equal to itself alone (`serve/scripts/conc_bench.py`).
 
 ## Limits
 
 - Untuned: about 6 tok/s decode without drafts and 205 tok/s prefill on a 2,104-token prompt for
   one request; with drafts and the draft gate, six sampled chat turns read 1.3 to 2.2 times the
   undrafted speed (9.1 against 5.8 tok/s over the six; 0.42 to 0.73 of the verified drafts
-  hold), and the 2,104-token prompt decodes at 9.05 tok/s (step 11). Requests run one call at a time, so throughput does
-  not grow with concurrency.
+  hold), and the 2,104-token prompt decodes at 9.05 tok/s (step 11). Each step is one call for every
+  request's rows (step 12), so throughput grows with concurrency: undrafted, on the 2,104-token
+  prompt, 15.9 tok/s for one request, about 24, 30 and 35 tok/s for two, four and eight.
 - No prefix reuse, constrained decoding or vision; drafts are greedy for sampled requests too
   (drawing them with the request's sampler kept fewer, step 11).
 - One GB10 only; the record covers no other device.

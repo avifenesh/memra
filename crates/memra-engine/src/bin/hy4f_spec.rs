@@ -32,6 +32,12 @@
 //!   prefill: the one-token call, the verify call of 2 to K + 1 rows (its ring backup and rollback
 //!   included) and the draft round of 1 to K drafts, R times each, interleaved shape by shape;
 //!   prints the medians in milliseconds (the draft gate's break-even).
+//! - `batch CKPT REQUEST N [--parts P] [--k K] [--prefill-chunk C] [--all-draft]`: the batched
+//!   call's identity gate (`Route::call_batch`, `Route::draft_batch`): P requests cut from the
+//!   request's prompt generate N tokens greedily alone, then together (every step one call of
+//!   every request's decode or verify rows and the next prefill chunk, then one batched draft);
+//!   ids, drafts and every emitted row's logits must be bit-equal, and some batched call must
+//!   hold all P requests.
 //! - `gen`: greedy generation of N tokens after the request's prefill, twice in one process:
 //!   plain (one decode call a token) and speculative (a draft round of K after every call, then
 //!   one verify call scoring the anchor and the K drafts, the longest agreeing prefix kept and
@@ -41,7 +47,9 @@
 
 use memra_engine::dsv4_gpu::{Dsv4SampleCfg, dsv4_sample_row};
 use memra_engine::hy4f_route::Dev;
-use memra_engine::hy4f_route::{Ckpt, DraftRed, ExternalTarget, Route, Session, mem_available};
+use memra_engine::hy4f_route::{
+    Ckpt, DraftRed, DraftReq, ExternalTarget, Part, Route, Session, mem_available,
+};
 use memra_gguf::config::{HfConfig, ModelConfig};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -104,11 +112,13 @@ fn run() -> Result<(), String> {
         Some("gate-route") => gate_route(&args[1..]),
         Some("replay") => replay(&args[1..]),
         Some("cost") => cost(&args[1..]),
+        Some("batch") => batch(&args[1..]),
         _ => Err(
             "usage: hy4f-spec gate CKPT REQUEST TARGET ORACLE_TAPE OUT [--red ARM] | \
                   gen CKPT REQUEST N [--k K] [--prefill-chunk C] [--bench R] | \
                   replay CKPT PROMPTS OUT [--k K] [--prefill-chunk C] | \
-                  cost CKPT REQUEST [--k K] [--reps R] [--temperature T]"
+                  cost CKPT REQUEST [--k K] [--reps R] [--temperature T] | \
+                  batch CKPT REQUEST N [--parts P] [--k K] [--prefill-chunk C] [--all-draft]"
                 .into(),
         ),
     }
@@ -978,4 +988,344 @@ fn gate_route(args: &[String]) -> Result<(), String> {
                "logits_sha256": tape["logits"]["sha256"], "seconds": tape["seconds"]})
     );
     Ok(())
+}
+
+/// One request of the batch gate: its prompt, its budget, whether it drafts, and what it
+/// produced (the ids, every emitted token's logits row, each round's drafts).
+struct BPart {
+    prompt: Vec<u32>,
+    n: usize,
+    spec: bool,
+    sess: Session,
+    prefilled: usize,
+    next: Option<u32>,
+    drafts: Vec<u32>,
+    src_row: usize,
+    ids: Vec<u32>,
+    rows: Vec<Vec<f32>>,
+    rounds: Vec<Vec<u32>>,
+}
+
+impl BPart {
+    fn done(&self) -> bool {
+        self.ids.len() >= self.n
+    }
+}
+
+/// One step of the batch gate over the parts in `live` (indices into `parts`): every decoding
+/// part's rows and the first prefilling part's next chunk (at most `chunk` rows a call), as one
+/// `call_batch` (`batched`) or each part's own `call_in`; then every decoding part's greedy
+/// choices and its rollback; then the drafting parts' next rounds, as one `draft_batch`
+/// (`batched`) or each part's own `draft_in`.
+fn bstep(
+    route: &mut Route,
+    v: usize,
+    k: usize,
+    chunk: usize,
+    parts: &mut [BPart],
+    live: &[usize],
+    batched: bool,
+) -> Result<(usize, usize), String> {
+    // (part, tokens, prefill end, backup)
+    let mut work: Vec<(usize, Vec<u32>, Option<usize>)> = Vec::new();
+    for &j in live {
+        if let Some(t) = parts[j].next {
+            let mut tokens = vec![t];
+            tokens.extend(std::mem::take(&mut parts[j].drafts));
+            work.push((j, tokens, None));
+        }
+    }
+    let decode_rows: usize = work.iter().map(|w| w.1.len()).sum();
+    if let Some(&j) = live
+        .iter()
+        .find(|&&j| parts[j].prefilled < parts[j].prompt.len())
+    {
+        let s0 = parts[j].prefilled;
+        let room = chunk.saturating_sub(decode_rows).max(1);
+        let s1 = (s0 + room).min(parts[j].prompt.len());
+        work.push((j, parts[j].prompt[s0..s1].to_vec(), Some(s1)));
+    }
+    work.sort_by_key(|w| w.0);
+    let call_rows: usize = work.iter().map(|w| w.1.len()).sum();
+    let mut backups = Vec::new();
+    for (j, tokens, pre) in &work {
+        backups.push(if pre.is_none() && tokens.len() > 1 {
+            let s = &parts[*j].sess;
+            Some(route.ring_backup_in(s, s.positions(), tokens.len())?)
+        } else {
+            None
+        });
+    }
+    let outs: Vec<Vec<f32>> = if batched {
+        let mut sess: Vec<&mut Session> = Vec::new();
+        let mut it = work.iter().peekable();
+        for (j, p) in parts.iter_mut().enumerate() {
+            if it.peek().is_some_and(|w| w.0 == j) {
+                it.next();
+                sess.push(&mut p.sess);
+            }
+        }
+        let mut cp: Vec<Part<'_>> = work
+            .iter()
+            .zip(sess)
+            .map(|(w, s)| Part {
+                sess: s,
+                tokens: &w.1,
+                all_logits: w.2.is_none() && w.1.len() > 1,
+            })
+            .collect();
+        route.call_batch(&mut cp)?
+    } else {
+        let mut o = Vec::new();
+        for (j, tokens, pre) in &work {
+            let all = pre.is_none() && tokens.len() > 1;
+            o.push(route.call_in(&mut parts[*j].sess, tokens, all, None, None)?);
+        }
+        o
+    };
+    // the next rounds: (part, source row, anchor, drafts)
+    let mut rounds: Vec<(usize, usize, u32, usize)> = Vec::new();
+    for (((j, tokens, pre), out), backup) in work.iter().zip(outs).zip(backups) {
+        let p = &mut parts[*j];
+        if let Some(s1) = pre {
+            p.prefilled = *s1;
+            if *s1 < p.prompt.len() {
+                continue;
+            }
+        }
+        let verify = pre.is_none() && tokens.len() > 1;
+        let from = p.sess.positions() - tokens.len();
+        let nrows = if verify { tokens.len() } else { 1 };
+        let mut kept = 0;
+        for r in 0..nrows {
+            let row = if verify {
+                out[r * v..(r + 1) * v].to_vec()
+            } else {
+                out.clone()
+            };
+            let t = argmax(&row);
+            kept = r + 1;
+            p.ids.push(t);
+            p.rows.push(row);
+            if p.done() || !(verify && r + 1 < tokens.len() && tokens[r + 1] == t) {
+                break;
+            }
+        }
+        if let Some(b) = &backup {
+            route.rollback_in(&mut p.sess, from + kept, b)?;
+        }
+        if p.done() {
+            p.next = None;
+            continue;
+        }
+        let t = *p.ids.last().unwrap();
+        p.next = Some(t);
+        // the round's source row: the call's last kept row (a prefill chunk's last row)
+        p.src_row = if pre.is_some() {
+            tokens.len() - 1
+        } else {
+            kept - 1
+        };
+        let kk = k.min(p.n - p.ids.len() - 1);
+        if p.spec && kk > 0 {
+            rounds.push((*j, p.src_row, t, kk));
+        }
+    }
+    // batched: one `draft_batch` of every round; alone: each part's own `draft_in`
+    let outs: Vec<Vec<u32>> = if batched {
+        let mut sess: Vec<&mut Session> = Vec::new();
+        let mut it = rounds.iter().peekable();
+        for (j, p) in parts.iter_mut().enumerate() {
+            if it.peek().is_some_and(|r| r.0 == j) {
+                it.next();
+                sess.push(&mut p.sess);
+            }
+        }
+        let mut reqs: Vec<DraftReq<'_, '_>> = sess
+            .into_iter()
+            .zip(&rounds)
+            .map(|(s, &(_, row, anchor, kk))| DraftReq {
+                sess: s,
+                row,
+                anchor,
+                k: kk,
+                pick: None,
+            })
+            .collect();
+        route
+            .draft_batch(&mut reqs)?
+            .into_iter()
+            .map(|d| d.map(|d| d.ids))
+            .collect::<Result<_, _>>()?
+    } else {
+        let mut o = Vec::new();
+        for &(j, row, anchor, kk) in &rounds {
+            o.push(
+                route
+                    .draft_in(&mut parts[j].sess, row, anchor, kk, None, false, None)?
+                    .ids,
+            );
+        }
+        o
+    };
+    for (&(j, ..), ids) in rounds.iter().zip(outs) {
+        parts[j].rounds.push(ids.clone());
+        parts[j].drafts = ids;
+    }
+    Ok((work.len(), call_rows))
+}
+
+/// `batch CKPT REQUEST N [--parts P] [--k K] [--prefill-chunk C] [--all-draft]`: the batched
+/// call's identity gate. P requests (the request's prompt cut to P lengths, the last one short
+/// enough to attend densely; every other one drafting K a round, or every one with `--all-draft`)
+/// generate N tokens greedily, first each alone on
+/// its own `call_in` calls (one request at a time), then all together, every step one
+/// `call_batch` of every request's decode or verify rows and the next prefill chunk (the chunk
+/// giving up the decode rows, so the prompts are cut at other places). Each request's ids, its
+/// rounds' drafts and every emitted token's logits row must be equal bit for bit.
+fn batch(args: &[String]) -> Result<(), String> {
+    let [ckpt, request, n, ..] = args else {
+        return Err(
+            "batch CKPT REQUEST N [--parts P] [--k K] [--prefill-chunk C] [--all-draft]".into(),
+        );
+    };
+    let n: usize = n.parse().map_err(|e| format!("N: {e}"))?;
+    let np: usize = flag(args, "--parts")
+        .map_or(Ok(4), str::parse)
+        .map_err(|e| format!("--parts: {e}"))?;
+    let chunk: usize = flag(args, "--prefill-chunk")
+        .map_or(Ok(2048), str::parse)
+        .map_err(|e| format!("--prefill-chunk: {e}"))?;
+    let all_draft = args.iter().any(|a| a == "--all-draft");
+    if np < 2 {
+        return Err("the batch gate needs at least two parts".into());
+    }
+    let ckpt = Path::new(ckpt);
+    let (config, plan) = plan_of(ckpt)?;
+    let hy = config
+        .hy_v4_flash
+        .as_ref()
+        .ok_or("not a Hy4-flash config")?;
+    let req = read_json(Path::new(request))?;
+    let full = u32s(&req["token_ids"]);
+    let from = req["decode_from"].as_u64().ok_or("no decode_from")? as usize;
+    let prompt = &full[..from];
+    let need: usize = 95_000_000_000 + (16usize << 30);
+    if mem_available().unwrap_or(0) < need {
+        return Err(
+            "MemAvailable cannot hold the resident weights, the drafter and headroom".into(),
+        );
+    }
+    let ck = Ckpt::open(ckpt)?;
+    let dev = Dev::new(0)?;
+    let mut route = Route::load(dev, &ck, &plan, hy, 8, plan.layers.len())?;
+    route.load_drafter(&ck)?;
+    drop(ck);
+    let k: usize = match flag(args, "--k") {
+        Some(s) => s.parse().map_err(|e| format!("--k: {e}"))?,
+        None => route.drafter_mut().unwrap().k.unwrap_or(5),
+    };
+    let v = route.vocab_size();
+    // the parts' prompts: the request's, then shorter cuts, the last one 37 tokens
+    let lens: Vec<usize> = (0..np)
+        .map(|j| {
+            if j + 1 == np && np > 1 {
+                37.min(prompt.len())
+            } else {
+                prompt.len().saturating_sub(j * 331).max(1)
+            }
+        })
+        .collect();
+    let mut runs: Vec<Vec<BPart>> = Vec::new();
+    let mut shape = (0usize, 0usize);
+    for batched in [false, true] {
+        let mut parts: Vec<BPart> = Vec::new();
+        for (j, &l) in lens.iter().enumerate() {
+            parts.push(BPart {
+                prompt: prompt[..l].to_vec(),
+                n,
+                spec: all_draft || j % 2 == 0,
+                sess: route.new_session(l + n + k + 2)?,
+                prefilled: 0,
+                next: None,
+                drafts: Vec::new(),
+                src_row: 0,
+                ids: Vec::new(),
+                rows: Vec::new(),
+                rounds: Vec::new(),
+            });
+        }
+        let t0 = Instant::now();
+        let (mut steps, mut calls, mut most_parts, mut most_rows) = (0usize, 0usize, 0, 0);
+        if batched {
+            let all: Vec<usize> = (0..np).collect();
+            while parts.iter().any(|p| !p.done()) {
+                let live: Vec<usize> = all.iter().copied().filter(|&j| !parts[j].done()).collect();
+                let (n, r) = bstep(&mut route, v, k, chunk, &mut parts, &live, true)?;
+                calls += usize::from(n > 0);
+                (most_parts, most_rows) = (most_parts.max(n), most_rows.max(r));
+                steps += 1;
+            }
+        } else {
+            for j in 0..np {
+                while !parts[j].done() {
+                    calls += bstep(&mut route, v, k, chunk, &mut parts, &[j], false)?.0;
+                    steps += 1;
+                }
+            }
+        }
+        route.dev.sync()?;
+        eprintln!(
+            "hy4f-spec batch: {} run: {steps} steps, {calls} calls, {:.1}s",
+            if batched { "batched" } else { "alone" },
+            t0.elapsed().as_secs_f64()
+        );
+        if batched {
+            eprintln!(
+                "hy4f-spec batch: batched calls held up to {most_parts} parts and {most_rows} rows"
+            );
+            if most_parts < np {
+                return Err(format!(
+                    "no batched call held all {np} parts (at most {most_parts}): the gate did not batch"
+                ));
+            }
+            shape = (most_parts, most_rows);
+        }
+        runs.push(parts);
+    }
+    let (alone, together) = (&runs[0], &runs[1]);
+    let mut ok = true;
+    let mut report = Vec::new();
+    for j in 0..np {
+        let (a, b) = (&alone[j], &together[j]);
+        let ids = a.ids == b.ids;
+        let rounds = a.rounds == b.rounds;
+        let rows_equal = a.rows.len() == b.rows.len()
+            && a.rows.iter().zip(&b.rows).all(|(x, y)| {
+                x.len() == y.len() && x.iter().zip(y).all(|(p, q)| p.to_bits() == q.to_bits())
+            });
+        let mut sha = Sha256::new();
+        for r in &a.rows {
+            for x in r {
+                sha.update(x.to_le_bytes());
+            }
+        }
+        ok &= ids && rounds && rows_equal;
+        report.push(json!({
+            "part": j, "prompt_tokens": lens[j], "drafts": a.spec, "tokens": a.ids.len(),
+            "rounds": a.rounds.len(), "ids_equal": ids, "rounds_equal": rounds,
+            "rows_bit_equal": rows_equal, "rows_sha256": sha_hex(&sha.finalize()),
+        }));
+    }
+    println!(
+        "{}",
+        json!({"k": k, "chunk": chunk, "n": n, "parts": report, "most_parts_a_call": shape.0,
+               "most_rows_a_call": shape.1, "pass": ok})
+    );
+    println!("BATCH-IDENTITY {}", if ok { "PASS" } else { "FAIL" });
+    if ok {
+        Ok(())
+    } else {
+        Err("a batched request's tokens or rows differ from its own".into())
+    }
 }

@@ -1279,22 +1279,26 @@ struct Scratch {
     emain: Grow,
     hx: Grow,
     hn: Grow,
+    /// a batched call's rows the head scores, gathered
+    hsel: Grow,
     logits: Grow,
     /// the hyper-connection reductions of a call's rows: 256 partials each
     hcd: Grow,
 }
 
 /// A call's index tables in one device buffer (`CallIdx::build` lays them out on the host, the
-/// call uploads them once): device pointers into it, each `[t]` i32 unless noted.
+/// call uploads them once): device pointers into it, each `[rows]` i32 over the call's rows in
+/// part order unless noted.
 #[derive(Default, Clone)]
 struct CallIdx {
     tok: u64,
     qpos: u64,
-    /// position - cos/sin table origin
+    /// the row of the position in the call's cos/sin table (its part's sub-table)
     posrow: u64,
     /// linear cache rows the call writes (`p + late`)
     kv_rows: u64,
-    rings: Vec<RingIdx>,
+    /// per part, per ring width
+    rings: Vec<Vec<RingIdx>>,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -1309,38 +1313,54 @@ struct RingIdx {
 }
 
 impl CallIdx {
-    /// The host table and the offsets (in i32 elements, the device base still to add).
-    fn build(
-        tokens: &[u32],
-        p0: usize,
-        cs_pos0: usize,
-        late: usize,
-        rings: &[usize],
-    ) -> (Vec<i32>, Self) {
-        let t = tokens.len();
+    /// The host table and the offsets (in i32 elements, the device base still to add). A call of
+    /// one part lays it out as a one-session call always has.
+    fn build(segs: &[Seg], rings: &[usize]) -> (Vec<i32>, Self) {
         let mut v: Vec<i32> = Vec::new();
         let at = |v: &mut Vec<i32>, it: &mut dyn Iterator<Item = i32>| -> u64 {
             let o = v.len() as u64;
             v.extend(it);
             o
         };
-        let tok = at(&mut v, &mut tokens.iter().map(|x| *x as i32));
-        let qpos = at(&mut v, &mut (p0..p0 + t).map(|p| p as i32));
-        let posrow = at(&mut v, &mut (p0..p0 + t).map(|p| (p - cs_pos0) as i32));
-        let kv_rows = at(&mut v, &mut (p0..p0 + t).map(|p| (p + late) as i32));
+        let span = |s: &Seg| s.p0..s.p0 + s.t();
+        let tok = at(
+            &mut v,
+            &mut segs.iter().flat_map(|s| s.tokens.iter().map(|x| *x as i32)),
+        );
+        let qpos = at(
+            &mut v,
+            &mut segs.iter().flat_map(|s| span(s).map(|p| p as i32)),
+        );
+        let posrow = at(
+            &mut v,
+            &mut segs
+                .iter()
+                .flat_map(|s| span(s).map(move |p| (s.cs0 + p - s.cs_pos0) as i32)),
+        );
+        let kv_rows = at(
+            &mut v,
+            &mut segs
+                .iter()
+                .flat_map(|s| span(s).map(move |p| (p + s.late) as i32)),
+        );
         let mut out = Vec::new();
-        for &w in rings {
-            let slot = at(&mut v, &mut std::iter::once(((p0 + late) % w) as i32));
-            let b0 = p0.saturating_sub(w - 1);
-            let lin = at(&mut v, &mut (b0..p0).map(|p| (p % w) as i32));
-            let keep = t.min(w);
-            let kp = at(&mut v, &mut (p0 + t - keep..p0 + t).map(|p| (p % w) as i32));
-            out.push(RingIdx {
-                w,
-                slot,
-                lin,
-                keep: kp,
-            });
+        for sg in segs {
+            let (p0, t, late) = (sg.p0, sg.t(), sg.late);
+            let mut per = Vec::new();
+            for &w in rings {
+                let slot = at(&mut v, &mut std::iter::once(((p0 + late) % w) as i32));
+                let b0 = p0.saturating_sub(w - 1);
+                let lin = at(&mut v, &mut (b0..p0).map(|p| (p % w) as i32));
+                let keep = t.min(w);
+                let kp = at(&mut v, &mut (p0 + t - keep..p0 + t).map(|p| (p % w) as i32));
+                per.push(RingIdx {
+                    w,
+                    slot,
+                    lin,
+                    keep: kp,
+                });
+            }
+            out.push(per);
         }
         let ci = Self {
             tok,
@@ -1358,20 +1378,22 @@ impl CallIdx {
         self.qpos = f(self.qpos);
         self.posrow = f(self.posrow);
         self.kv_rows = f(self.kv_rows);
-        for r in &mut self.rings {
-            r.slot = f(r.slot);
-            r.lin = f(r.lin);
-            r.keep = f(r.keep);
+        for per in &mut self.rings {
+            for r in per {
+                r.slot = f(r.slot);
+                r.lin = f(r.lin);
+                r.keep = f(r.keep);
+            }
         }
         self
     }
 
-    fn ring(&self, w: usize) -> Result<RingIdx, String> {
+    fn ring(&self, j: usize, w: usize) -> Result<RingIdx, String> {
         self.rings
-            .iter()
-            .find(|r| r.w == w)
+            .get(j)
+            .and_then(|per| per.iter().find(|r| r.w == w))
             .copied()
-            .ok_or_else(|| format!("no index table for a ring of {w}"))
+            .ok_or_else(|| format!("no index table for a ring of {w} in part {j}"))
     }
 }
 
@@ -1489,18 +1511,24 @@ impl Gm<'_> {
         y: *mut f32,
         m: usize,
     ) -> Result<(), String> {
-        if m <= 4 {
-            return cu!(memra_hy4r_gemm_f32(
-                x,
-                k as i64,
-                wp as *const _,
-                y,
-                n as i64,
-                m as i32,
-                n as i32,
-                k as i32,
-                self.dev.sp
-            ));
+        if m <= 16 {
+            // up to four rows a launch (a batched decode call's router and head rows): every
+            // row's chain is its own, so the rows' bits do not depend on the launch they share
+            for r0 in (0..m).step_by(4) {
+                let mr = 4.min(m - r0);
+                cu!(memra_hy4r_gemm_f32(
+                    x.wrapping_add(r0 * k),
+                    k as i64,
+                    wp as *const _,
+                    y.wrapping_add(r0 * n),
+                    n as i64,
+                    mr as i32,
+                    n as i32,
+                    k as i32,
+                    self.dev.sp
+                ))?;
+            }
+            return Ok(());
         }
         let rc = unsafe {
             memra_hy4f_gemm(
@@ -1535,13 +1563,18 @@ pub struct Route<'a> {
     hc_head: Hc,
     final_norm: DBuf,
     final_eps: f32,
-    /// the request whose cache the calls read and write (`call_in` swaps another one in)
+    /// the route's own session, the one [`Self::call`] scores on
     sess: Session,
+    /// the current call's sessions and rows, in row order (one for [`Self::call`] and
+    /// [`Self::call_in`], one per part for [`Self::call_batch`]); empty between calls
+    segs: Vec<Seg>,
     /// per RoPE base: (base, device inv_freq)
     bases: Vec<(f32, DBuf)>,
     sc: Scratch,
     /// the current call records its selections (a device sync per layer)
     recording: bool,
+    /// the current call has begun writing its sessions (their histories, then their caches)
+    wrote: bool,
     /// the current call's index tables
     ci: CallIdx,
     /// the Engram table readers
@@ -1560,9 +1593,68 @@ pub struct Session {
     history: Vec<u32>,
     /// a call failed mid-way: refuse until `reset`
     broken: bool,
+    /// the drafter's target index layers: the recall lists of this session's last call's last
+    /// rows (`dfly::Route::draft_in` reads them)
+    snaps: HashMap<usize, dfly::Snap>,
+    /// the first row of this session's rows in its last call (a batched call's rows follow the
+    /// parts' order): its last hidden rows sit there in the call's output
+    row0: usize,
+}
+
+/// One session's rows in a call.
+struct Seg {
+    sess: Session,
+    tokens: Vec<u32>,
+    all_logits: bool,
+    /// the session's positions before the call
+    p0: usize,
+    /// the first of its rows among the call's
+    row0: usize,
+    /// its cos/sin rows: their first position and their first row in the call's table
+    cs_pos0: usize,
+    cs0: usize,
+    /// the `kv_off_by_one` red arm on a one-token part
+    late: usize,
+}
+
+impl Seg {
+    fn t(&self) -> usize {
+        self.tokens.len()
+    }
+}
+
+/// A call's per-row buffers the attention's per-part work reads (each part at its rows).
+#[derive(Clone, Copy)]
+struct SegRows {
+    lat: *mut f32,
+    tkv: *mut f32,
+    qi: *mut f32,
+    hw: *mut f32,
+    qcat: *mut f32,
+    olat: *mut f32,
+}
+
+/// One request's rows of a batched call ([`Route::call_batch`]).
+pub struct Part<'a> {
+    pub sess: &'a mut Session,
+    pub tokens: &'a [u32],
+    /// every row's logits; else the last row's
+    pub all_logits: bool,
 }
 
 impl Session {
+    /// A session with no cache: the place a session's slot holds while a call has it.
+    fn detached() -> Self {
+        Self {
+            caches: Vec::new(),
+            cap: 0,
+            history: Vec::new(),
+            broken: false,
+            snaps: HashMap::new(),
+            row0: 0,
+        }
+    }
+
     /// Positions the session has scored.
     pub fn positions(&self) -> usize {
         self.history.len()
@@ -1870,9 +1962,11 @@ impl<'a> Route<'a> {
             final_norm,
             final_eps: plan.output_norm.epsilon,
             sess,
+            segs: Vec::new(),
             bases,
             sc: Scratch::default(),
             recording: false,
+            wrote: false,
             ci: CallIdx::default(),
             reader: ReadPool::new(16),
             dfly: None,
@@ -1897,6 +1991,8 @@ impl<'a> Route<'a> {
             cap,
             history: Vec::new(),
             broken: false,
+            snaps: HashMap::new(),
+            row0: 0,
         })
     }
 
@@ -1935,7 +2031,8 @@ impl<'a> Route<'a> {
                     + if tk > 0 { tk.max(16) } else { 0 }
                     + if gk > 0 { gk.max(16) } else { 0 }
             })
-            .sum()
+            .sum::<usize>()
+            + self.snap_bytes()
     }
 
     /// A new request's session of `cap` positions, admitted against MemAvailable with the
@@ -1968,7 +2065,7 @@ impl<'a> Route<'a> {
     }
 
     /// Score `tokens` on `sess` (another request's session): [`Self::call`] with that session's
-    /// cache and history swapped in for the call and back out after it.
+    /// cache and history in the call's place of the route's own.
     pub fn call_in(
         &mut self,
         sess: &mut Session,
@@ -1980,6 +2077,40 @@ impl<'a> Route<'a> {
         std::mem::swap(&mut self.sess, sess);
         let out = self.call(tokens, all_logits, rec, forced);
         std::mem::swap(&mut self.sess, sess);
+        out
+    }
+
+    /// Score several requests' rows in one call: each part's tokens on its own session, its
+    /// positions following its own history, its logits as [`Self::call_in`] would return them.
+    /// The weights are read once for all the rows; the cache, the indexer and the attention run
+    /// part by part on each session's own rows. Every row computes on its own (the route's
+    /// row-independence), so each part's logits and cache rows are those of its own
+    /// [`Self::call_in`] bit for bit. A call that fails marks every part's session broken.
+    pub fn call_batch(&mut self, parts: &mut [Part<'_>]) -> Result<Vec<Vec<f32>>, String> {
+        if parts.is_empty() {
+            return Ok(Vec::new());
+        }
+        if !self.segs.is_empty() {
+            return Err("a call is already holding sessions".into());
+        }
+        for p in parts.iter_mut() {
+            self.segs.push(Seg {
+                sess: std::mem::replace(p.sess, Session::detached()),
+                tokens: p.tokens.to_vec(),
+                all_logits: p.all_logits,
+                p0: 0,
+                row0: 0,
+                cs_pos0: 0,
+                cs0: 0,
+                late: 0,
+            });
+        }
+        // a panic below leaves the sessions here and every later call refused (the serve route
+        // stops on a panic)
+        let out = self.run_segs(None, None);
+        for (p, sg) in parts.iter_mut().zip(self.segs.drain(..)) {
+            *p.sess = sg.sess;
+        }
         out
     }
 
@@ -2066,14 +2197,14 @@ impl<'a> Route<'a> {
 
     /// The host memory a call's output takes: its logits, and with records the host copies of
     /// every layer's selections.
-    fn host_bytes(&self, t: usize, all_logits: bool, record: bool) -> usize {
+    fn host_bytes(&self, t: usize, all_logits: bool, record: bool, cap: usize) -> usize {
         let v = self.plan.vocab_size as usize;
         let mut host = if all_logits { t } else { 1 } * v * 4;
         if record {
             for l in &self.layers {
                 if let Some(ix) = &l.attn.indexer {
                     let ks = (ix.plan.top_k / ix.plan.pool) as usize;
-                    host += t * (ks + self.sess.cap / ix.plan.pool as usize + 1) * 4;
+                    host += t * (ks + cap / ix.plan.pool as usize + 1) * 4;
                 }
                 if let Mlp::Moe { experts, topk, .. } = &l.mlp {
                     host += t * (experts + topk) * 4;
@@ -2101,17 +2232,47 @@ impl<'a> Route<'a> {
         rec: Option<&mut Vec<(usize, LayerRec)>>,
         forced: Option<&Forced>,
     ) -> Result<Vec<f32>, String> {
+        if !self.segs.is_empty() {
+            return Err("a call is already holding sessions".into());
+        }
+        self.segs.push(Seg {
+            sess: std::mem::replace(&mut self.sess, Session::detached()),
+            tokens: tokens.to_vec(),
+            all_logits,
+            p0: 0,
+            row0: 0,
+            cs_pos0: 0,
+            cs0: 0,
+            late: 0,
+        });
+        let out = self.run_segs(rec, forced);
+        self.sess = self.segs.pop().expect("the call's one part").sess;
+        out.map(|mut v| v.pop().unwrap_or_default())
+    }
+
+    /// The call of the sessions in `self.segs`.
+    fn run_segs(
+        &mut self,
+        rec: Option<&mut Vec<(usize, LayerRec)>>,
+        forced: Option<&Forced>,
+    ) -> Result<Vec<Vec<f32>>, String> {
         // a call that fails may have written cache rows (a sliding ring row of an earlier
-        // position among them): the route refuses every call until `reset` starts a new request
-        if self.sess.broken {
+        // position among them): the route refuses every call on its sessions until `reset`
+        // starts a new request
+        if self.segs.iter().any(|s| s.sess.broken) {
             return Err(
                 "an earlier call failed mid-way; reset the route and replay the request".into(),
             );
         }
-        let out = self.call_inner(tokens, all_logits, rec, forced);
+        self.wrote = false;
+        let out = self.call_inner(rec, forced);
         self.dev.host_reserve.set(0);
-        if out.is_err() {
-            self.sess.broken = true;
+        // a call refused before it wrote anything (a part past its cache or the vocabulary, the
+        // host output refused) leaves its sessions as they were
+        if out.is_err() && self.wrote {
+            for s in &mut self.segs {
+                s.sess.broken = true;
+            }
             // copies queued before the failure may still read the pinned staging buffers:
             // drain the stream before a later call reuses them (the call's error stands)
             let _ = self.dev.sync();
@@ -2121,46 +2282,63 @@ impl<'a> Route<'a> {
 
     fn call_inner(
         &mut self,
-        tokens: &[u32],
-        all_logits: bool,
         mut rec: Option<&mut Vec<(usize, LayerRec)>>,
         forced: Option<&Forced>,
-    ) -> Result<Vec<f32>, String> {
+    ) -> Result<Vec<Vec<f32>>, String> {
         self.recording = rec.is_some();
-        let t = tokens.len();
-        let p0 = self.sess.history.len();
-        if t == 0 {
-            return Ok(Vec::new());
+        if self.segs.len() > 1 && (rec.is_some() || forced.is_some()) {
+            return Err("records and forced selections take a one-session call".into());
         }
-        if p0 + t > self.sess.cap {
-            return Err(format!(
-                "{} positions past the cache's {}",
-                p0 + t,
-                self.sess.cap
-            ));
+        let t: usize = self.segs.iter().map(Seg::t).sum();
+        if t == 0 {
+            return Ok(vec![Vec::new(); self.segs.len()]);
+        }
+        let v = self.plan.vocab_size as usize;
+        let mut host = 0usize;
+        let (mut row0, mut cs0) = (0usize, 0usize);
+        for sg in &mut self.segs {
+            let (p0, st) = (sg.sess.history.len(), sg.t());
+            if st == 0 {
+                return Err("a batched call's part has no tokens".into());
+            }
+            if p0 + st > sg.sess.cap {
+                return Err(format!(
+                    "{} positions past the cache's {}",
+                    p0 + st,
+                    sg.sess.cap
+                ));
+            }
+            if let Some(tk) = sg.tokens.iter().find(|tk| **tk as usize >= v) {
+                return Err(format!("token {tk} past the vocabulary {v}"));
+            }
+            sg.p0 = p0;
+            sg.row0 = row0;
+            sg.cs_pos0 = cs_pos0_of(p0);
+            sg.cs0 = cs0;
+            sg.late = usize::from(self.red.kv_off_by_one && st == 1);
+            row0 += st;
+            cs0 += p0 + st - sg.cs_pos0;
         }
         // the call's host output (logits, records); its device scratch is admitted where it
         // grows (`Grow::get`)
-        let host = self.host_bytes(t, all_logits, rec.is_some());
+        for sg in &self.segs {
+            host += self.host_bytes(sg.t(), sg.all_logits, rec.is_some(), sg.sess.cap);
+        }
         admit(host, "the call's host output")?;
         self.dev.host_reserve.set(host);
-        let v = self.plan.vocab_size as usize;
-        for &tk in tokens {
-            if tk as usize >= v {
-                return Err(format!("token {tk} past the vocabulary {v}"));
-            }
+        // from here the call writes its sessions
+        self.wrote = true;
+        for sg in &mut self.segs {
+            sg.sess.history.extend_from_slice(&sg.tokens);
+            sg.sess.row0 = sg.row0;
         }
-        self.sess.history.extend_from_slice(tokens);
         let h = self.plan.hidden_size as usize;
         let n = self.hy.hc_mult as usize;
         let dev = &self.dev;
         let sc = &mut self.sc;
         // the call's index tables, one upload while the stream is idle (the previous call ended
         // on its logits copy), so no copy inside the call waits for the stream
-        let cs_pos0 = p0.saturating_sub(3);
-        let cs_rows = p0 + t - cs_pos0;
-        let late = usize::from(self.red.kv_off_by_one && t == 1);
-        let mut rings: Vec<usize> = self
+        let mut rings: Vec<usize> = self.segs[0]
             .sess
             .caches
             .iter()
@@ -2169,21 +2347,24 @@ impl<'a> Route<'a> {
             .collect();
         rings.sort_unstable();
         rings.dedup();
-        let (table, ci) = CallIdx::build(tokens, p0, cs_pos0, late, &rings);
+        let (table, ci) = CallIdx::build(&self.segs, &rings);
         let idxb = sc.idx.get(dev, table.len() * 4)?.p;
         dev.put(idxb as *mut _, &table)?;
         self.ci = ci.at(idxb);
         let tokb = self.ci.tok;
+        // the cos/sin table: each part's positions from 3 before its first, a sub-table a part
         for (bi, (_, inv)) in self.bases.iter().enumerate() {
-            let b = sc.cs[bi].get(dev, cs_rows * 32 * 8)?;
-            cu!(memra_hy4r_rope_table(
-                b.v(),
-                cs_pos0 as i32,
-                cs_rows as i32,
-                32,
-                inv.p as *const f64,
-                dev.sp
-            ))?;
+            let b = sc.cs[bi].get(dev, cs0 * 32 * 8)?;
+            for sg in &self.segs {
+                cu!(memra_hy4r_rope_table(
+                    b.at(sg.cs0 * 32 * 8),
+                    sg.cs_pos0 as i32,
+                    (sg.p0 + sg.t() - sg.cs_pos0) as i32,
+                    32,
+                    inv.p as *const f64,
+                    dev.sp
+                ))?;
+            }
         }
         let s = sc.s.get(dev, t * n * h * 4)?.p as *mut f32;
         cu!(memra_hy4r_embed(
@@ -2198,7 +2379,7 @@ impl<'a> Route<'a> {
         // the Engram layers' table reads run on host threads beside the first layers
         let jobs = (0..self.layers.len())
             .filter(|il| self.layers[*il].engram.is_some())
-            .map(|il| self.engram_job(il, p0, t))
+            .map(|il| self.engram_job(il))
             .collect::<Result<Vec<_>, String>>()?;
         let mut fetch = if jobs.is_empty() {
             None
@@ -2216,8 +2397,7 @@ impl<'a> Route<'a> {
             } else {
                 None
             };
-            self.layer(il, p0, t, s, &mut lr, forced, ed)?;
-            self.dfly_after_layer(il, p0, t)?;
+            self.layer(il, t, s, &mut lr, forced, ed)?;
             if let Some(r) = rec.as_deref_mut() {
                 r.push((il, lr));
             }
@@ -2249,21 +2429,76 @@ impl<'a> Route<'a> {
             hn,
             dev.sp
         ))?;
-        let (r0, rows) = if all_logits { (0, t) } else { (t - 1, 1) };
+        let gm = Gm {
+            dev: &self.dev,
+            red: self.red,
+        };
+        if self.segs.len() == 1 {
+            let (r0, rows) = if self.segs[0].all_logits {
+                (0, t)
+            } else {
+                (t - 1, 1)
+            };
+            let lg = self
+                .sc
+                .logits
+                .get(&self.dev, HEAD_ROWS.min(rows) * v * 4)?
+                .f();
+            let mut out = Vec::with_capacity(rows * v);
+            for c0 in (r0..r0 + rows).step_by(HEAD_ROWS) {
+                let cr = HEAD_ROWS.min(r0 + rows - c0);
+                gm.gemm_f32_raw(hn.wrapping_add(c0 * h), self.lm_head.p, v, h, lg, cr)?;
+                out.extend(self.dev.down::<f32>(lg as *const _, cr * v)?);
+            }
+            return Ok(vec![out]);
+        }
+        // several parts: their rows the head scores (each part's all or its last), gathered in
+        // part order, one head pass over them; each row's logits are its own row's (the head's
+        // rows compute on their own)
+        let want: Vec<(usize, usize)> = self
+            .segs
+            .iter()
+            .map(|sg| {
+                if sg.all_logits {
+                    (sg.row0, sg.t())
+                } else {
+                    (sg.row0 + sg.t() - 1, 1)
+                }
+            })
+            .collect();
+        let rows: usize = want.iter().map(|w| w.1).sum();
+        let hsel = self.sc.hsel.get(&self.dev, rows * h * 4)?.f();
+        let mut at = 0usize;
+        for &(r0, nr) in &want {
+            cu!(memra_hy4r_copy(
+                hn.wrapping_add(r0 * h),
+                h as i64,
+                hsel.wrapping_add(at * h) as *mut _,
+                h as i64,
+                nr as i32,
+                h as i32,
+                0,
+                std::ptr::null(),
+                self.dev.sp
+            ))?;
+            at += nr;
+        }
         let lg = self
             .sc
             .logits
             .get(&self.dev, HEAD_ROWS.min(rows) * v * 4)?
             .f();
-        let mut out = Vec::with_capacity(rows * v);
-        for c0 in (r0..r0 + rows).step_by(HEAD_ROWS) {
-            let cr = HEAD_ROWS.min(r0 + rows - c0);
-            Gm {
-                dev: &self.dev,
-                red: self.red,
-            }
-            .gemm_f32_raw(hn.wrapping_add(c0 * h), self.lm_head.p, v, h, lg, cr)?;
-            out.extend(self.dev.down::<f32>(lg as *const _, cr * v)?);
+        let mut all = Vec::with_capacity(rows * v);
+        for c0 in (0..rows).step_by(HEAD_ROWS) {
+            let cr = HEAD_ROWS.min(rows - c0);
+            gm.gemm_f32_raw(hsel.wrapping_add(c0 * h), self.lm_head.p, v, h, lg, cr)?;
+            all.extend(self.dev.down::<f32>(lg as *const _, cr * v)?);
+        }
+        let mut out = Vec::with_capacity(want.len());
+        let mut at = 0usize;
+        for &(_, nr) in &want {
+            out.push(all[at * v..(at + nr) * v].to_vec());
+            at += nr;
         }
         Ok(out)
     }
@@ -2272,7 +2507,6 @@ impl<'a> Route<'a> {
     fn layer(
         &mut self,
         il: usize,
-        p0: usize,
         t: usize,
         s: *mut f32,
         rec: &mut LayerRec,
@@ -2312,7 +2546,7 @@ impl<'a> Route<'a> {
             xn,
             dev.sp
         ))?;
-        let a = self.attention(il, p0, t, xn, rec, forced)?;
+        let a = self.attention(il, t, xn, rec, forced)?;
         let dev = &self.dev;
         let l = &self.layers[il];
         cu!(memra_hy4r_write_back(
@@ -2355,7 +2589,6 @@ impl<'a> Route<'a> {
     fn attention(
         &mut self,
         il: usize,
-        p0: usize,
         t: usize,
         xn: *mut f32,
         rec: &mut LayerRec,
@@ -2364,6 +2597,17 @@ impl<'a> Route<'a> {
         let h = self.plan.hidden_size as usize;
         let eps = self.hy.rms_norm_eps;
         let bi = self.base_slot(self.layers[il].attn.plan.rope.base);
+        // the parts whose keys pass the indexer budget run it; the projections it reads are
+        // computed for every row when any part needs them (each row on its own)
+        let over: Vec<bool> = match &self.layers[il].attn.indexer {
+            Some(ix) => self
+                .segs
+                .iter()
+                .map(|sg| kv_len_of(sg.p0, sg.t()) > ix.plan.top_k as usize)
+                .collect(),
+            None => vec![false; self.segs.len()],
+        };
+        let any_over = over.iter().any(|x| *x);
         let dev = &self.dev;
         let sc = &mut self.sc;
         let l = &self.layers[il];
@@ -2373,7 +2617,6 @@ impl<'a> Route<'a> {
         let hd = 256usize;
         let cs = sc.cs[bi].get(dev, 0)?.p as *const std::os::raw::c_void;
         let posrow = self.ci.posrow as *mut i32;
-        let qpos = self.ci.qpos as *mut i32;
         let gate = sc.gate.get(dev, t * heads * hd * 4)?.f();
         let qa = sc.qa.get(dev, t * ql * 4)?.f();
         let qr = sc.qr.get(dev, t * ql * 4)?.f();
@@ -2411,7 +2654,7 @@ impl<'a> Route<'a> {
             if let Some(ix) = &a.indexer {
                 let (ih, id) = (ix.plan.heads as usize, ix.plan.head_dim as usize);
                 outs.push((xn, h, &ix.tk, tkv, id));
-                if kv_len_of(p0, t) > ix.plan.top_k as usize {
+                if any_over {
                     outs.push((xn, h, &ix.hw, hwb, ih));
                 }
             }
@@ -2510,8 +2753,141 @@ impl<'a> Route<'a> {
             std::ptr::null(),
             sp
         ))?;
+        // the indexer's per-row work: the token keys' norm and the queries
+        let mut qi: *mut f32 = std::ptr::null_mut();
+        if let Some(ix) = &a.indexer {
+            let ip = ix.plan;
+            let (ih, id) = (ip.heads as usize, ip.head_dim as usize);
+            cu!(memra_hy4r_rms(
+                tkv,
+                id as i64,
+                ix.tk_norm.f(),
+                tkv,
+                id as i64,
+                t as i32,
+                id as i32,
+                eps,
+                sp
+            ))?;
+            if any_over {
+                qi = sc.qi.get(dev, t * ih * id * 4)?.f();
+                route.gemm(qr, ql, &ix.q, qi, ih * id, t)?;
+                cu!(memra_hy4r_rope(
+                    qi,
+                    (ih * id) as i64,
+                    id as i64,
+                    t as i32,
+                    ih as i32,
+                    (id - ip.rope_head_dim as usize) as i32,
+                    (ip.rope_head_dim / 2) as i32,
+                    cs,
+                    posrow,
+                    sp
+                ))?;
+            }
+        }
+        // each part on its own session: its cache rows, its indexer selection, its attention
+        let rows = SegRows {
+            lat,
+            tkv,
+            qi,
+            hw: hwb,
+            qcat,
+            olat,
+        };
+        for (j, &ov) in over.iter().enumerate() {
+            self.attend_seg(il, j, bi, ov, rows, rec, forced)?;
+            self.dfly_after_seg(il, j)?;
+        }
+        let l = &self.layers[il];
+        let a = &l.attn;
+        let route = Gm {
+            dev: &self.dev,
+            red: self.red,
+        };
+        // values: o[h] = kv_b_value[h] o_lat[h]
+        cu!(memra_hy4r_gemm(
+            olat,
+            (heads * 512) as i64,
+            512,
+            a.kvb.v(),
+            (256 * kvl * 2) as i64,
+            std::ptr::null(),
+            0,
+            std::ptr::null(),
+            FMT_BF16,
+            0,
+            o,
+            (heads * hd) as i64,
+            hd as i64,
+            t as i32,
+            256,
+            kvl as i32,
+            heads as i32,
+            std::ptr::null(),
+            0,
+            0,
+            i32::from(t <= 16),
+            0,
+            sp
+        ))?;
+        cu!(memra_hy4r_act(
+            gate,
+            o,
+            og,
+            (t * heads * hd) as i64,
+            -1.0,
+            1,
+            sp
+        ))?;
+        route.gemm(og, heads * hd, &a.o, ao, h, t)?;
+        cu!(memra_hy4r_rms(
+            ao,
+            h as i64,
+            a.post_norm.f(),
+            aout,
+            h as i64,
+            t as i32,
+            h as i32,
+            a.plan.post_projection_norm.epsilon,
+            sp
+        ))?;
+        Ok(aout)
+    }
+
+    /// Part `j`'s attention at layer `il` (its rows of the call's per-row buffers `rows`): its
+    /// cache rows written, the indexer's selection over its own keys (`over`: its keys pass the
+    /// budget), the attention of its queries over its own cache into its rows of `rows.olat`.
+    #[allow(clippy::too_many_arguments)]
+    fn attend_seg(
+        &mut self,
+        il: usize,
+        j: usize,
+        bi: usize,
+        over: bool,
+        rows: SegRows,
+        rec: &mut LayerRec,
+        forced: Option<&Forced>,
+    ) -> Result<(), String> {
+        let eps = self.hy.rms_norm_eps;
+        let dev = &self.dev;
+        let sc = &mut self.sc;
+        let sg = &self.segs[j];
+        let (p0, t, r0) = (sg.p0, sg.t(), sg.row0);
+        let l = &self.layers[il];
+        let a = &l.attn;
+        let heads = a.plan.query_heads as usize;
+        let sp = dev.sp;
+        // the part's rows of the call's buffers and index tables
+        let lat = rows.lat.wrapping_add(r0 * 576);
+        let qcat = rows.qcat.wrapping_add(r0 * heads * 576);
+        let olat = rows.olat.wrapping_add(r0 * heads * 512);
+        let qpos = (self.ci.qpos as *mut i32).wrapping_add(r0);
+        let kv_rows = (self.ci.kv_rows as *const i32).wrapping_add(r0);
+        // the part's cos/sin sub-table (its first row is position `cs_pos0`)
+        let cs = sc.cs[bi].get(dev, 0)?.at(sg.cs0 * 32 * 8) as *const std::os::raw::c_void;
         // the cache rows of this call
-        let cache = &self.sess.caches[il];
+        let cache = &sg.sess.caches[il];
         let kv_len = p0 + t;
         let scale = (256f64).powf(-0.5) as f32;
         let sinks = a.sinks.f();
@@ -2526,7 +2902,7 @@ impl<'a> Route<'a> {
             if win as usize != w {
                 return Err("ring and window differ".into());
             }
-            let ri = self.ci.ring(w)?;
+            let ri = self.ci.ring(j, w)?;
             if t == 1 {
                 let sb = ri.slot as *const i32;
                 cu!(memra_hy4r_copy(
@@ -2592,7 +2968,6 @@ impl<'a> Route<'a> {
                 base = b0;
             }
         } else {
-            let rb = self.ci.kv_rows as *const i32;
             cu!(memra_hy4r_copy(
                 lat,
                 576,
@@ -2601,7 +2976,7 @@ impl<'a> Route<'a> {
                 t as i32,
                 576,
                 0,
-                rb,
+                kv_rows,
                 sp
             ))?;
             kvp = cache.kv.p;
@@ -2616,18 +2991,7 @@ impl<'a> Route<'a> {
         if let Some(ix) = &a.indexer {
             let ip = ix.plan;
             let (ih, id, pool) = (ip.heads as usize, ip.head_dim as usize, ip.pool as usize);
-            cu!(memra_hy4r_rms(
-                tkv,
-                id as i64,
-                ix.tk_norm.f(),
-                tkv,
-                id as i64,
-                t as i32,
-                id as i32,
-                eps,
-                sp
-            ))?;
-            let rb = self.ci.qpos as *const i32;
+            let tkv = rows.tkv.wrapping_add(r0 * id);
             let tkc = cache.tk.as_ref().unwrap();
             let gkc = cache.gk.as_ref().unwrap();
             cu!(memra_hy4r_copy(
@@ -2638,7 +3002,7 @@ impl<'a> Route<'a> {
                 t as i32,
                 id as i32,
                 0,
-                rb,
+                qpos,
                 sp
             ))?;
             // groups whose last key is in this call close now (the red arm: their third)
@@ -2668,22 +3032,9 @@ impl<'a> Route<'a> {
                     sp
                 ))?;
             }
-            if kv_len > ip.top_k as usize {
-                let qi = sc.qi.get(dev, t * ih * id * 4)?.f();
-                route.gemm(qr, ql, &ix.q, qi, ih * id, t)?;
-                cu!(memra_hy4r_rope(
-                    qi,
-                    (ih * id) as i64,
-                    id as i64,
-                    t as i32,
-                    ih as i32,
-                    (id - ip.rope_head_dim as usize) as i32,
-                    (ip.rope_head_dim / 2) as i32,
-                    cs,
-                    posrow,
-                    sp
-                ))?;
-                let hw = hwb;
+            if over {
+                let qi = rows.qi.wrapping_add(r0 * ih * id);
+                let hw = rows.hw.wrapping_add(r0 * ih);
                 let ng = kv_len / pool;
                 let ilog = sc.ilog.get(dev, t * ng * 4)?.f();
                 let hscale = ((ih as f64).powf(-0.5) * (id as f64).powf(-0.5)) as f32;
@@ -2788,7 +3139,7 @@ impl<'a> Route<'a> {
         let pml = sc.pml.get(dev, slab * heads * chunks * 2 * 4)?.f();
         let ldl = max_len;
         for s0 in (0..qn).step_by(ATTN_SLAB) {
-            let rows = ATTN_SLAB.min(qn - s0);
+            let nq = ATTN_SLAB.min(qn - s0);
             cu!(memra_hy4r_attn(
                 qcat.wrapping_add(s0 * heads * 576),
                 kvp as *const _,
@@ -2808,7 +3159,7 @@ impl<'a> Route<'a> {
                 window as i32,
                 ring as i32,
                 base as i32,
-                rows as i32,
+                nq as i32,
                 heads as i32,
                 chunks as i32,
                 scale,
@@ -2819,54 +3170,7 @@ impl<'a> Route<'a> {
                 sp
             ))?;
         }
-        // values: o[h] = kv_b_value[h] o_lat[h]
-        cu!(memra_hy4r_gemm(
-            olat,
-            (heads * 512) as i64,
-            512,
-            a.kvb.v(),
-            (256 * kvl * 2) as i64,
-            std::ptr::null(),
-            0,
-            std::ptr::null(),
-            FMT_BF16,
-            0,
-            o,
-            (heads * hd) as i64,
-            hd as i64,
-            t as i32,
-            256,
-            kvl as i32,
-            heads as i32,
-            std::ptr::null(),
-            0,
-            0,
-            i32::from(t <= 16),
-            0,
-            sp
-        ))?;
-        cu!(memra_hy4r_act(
-            gate,
-            o,
-            og,
-            (t * heads * hd) as i64,
-            -1.0,
-            1,
-            sp
-        ))?;
-        route.gemm(og, heads * hd, &a.o, ao, h, t)?;
-        cu!(memra_hy4r_rms(
-            ao,
-            h as i64,
-            a.post_norm.f(),
-            aout,
-            h as i64,
-            t as i32,
-            h as i32,
-            a.plan.post_projection_norm.epsilon,
-            sp
-        ))?;
-        Ok(aout)
+        Ok(())
     }
 
     fn mlp(
@@ -2944,7 +3248,9 @@ impl<'a> Route<'a> {
                 let rpick = sc.rpick.get(dev, t * k * 4)?.i();
                 let rw = sc.rw.get(dev, t * k * 4)?.f();
                 let rows = t * k;
-                let small = rows <= 16;
+                // up to 16 tokens: an expert's tile holds at most one row a token, so the experts
+                // run on the small-row kernel's tiles of 16 (a batched decode call's rows)
+                let small = t <= 16;
                 let bm = if small { 16 } else { 64 };
                 let max_tiles = rows.div_ceil(bm) + e.min(rows);
                 let tiles = sc.tiles.get(dev, max_tiles * 3 * 4)?.i();
@@ -3189,28 +3495,36 @@ impl<'a> Route<'a> {
     }
 
     /// An Engram layer's reads for the call's rows: the n-gram hashes (on the host, the step 5
-    /// code) and the table rows they name, checked against the table.
-    fn engram_job(&self, il: usize, p0: usize, t: usize) -> Result<EngramJob, String> {
+    /// code) over each part's own history and the table rows they name, checked against the
+    /// table, in the call's row order.
+    fn engram_job(&self, il: usize) -> Result<EngramJob, String> {
         let eg = self.layers[il].engram.as_ref().unwrap();
         let ep = &eg.plan;
         let heads = ep.heads as usize;
-        // n-grams over the history: a window that starts `max_ngram - 1` tokens back
-        let back = (ep.max_ngram as usize).saturating_sub(1);
-        let w0 = p0.saturating_sub(back);
-        let ids = &self.sess.history[w0..p0 + t];
-        let positions: Vec<u32> = (w0..p0 + t).map(|p| p as u32).collect();
-        let ngrams = hashing::ngram_tokens(ep, ids, &positions);
-        let hashes = hashing::hash_ids(ep, &eg.lookup, &eg.multipliers, &eg.moduli, &ngrams)?;
-        let skip = p0 - w0;
-        let rows: Vec<Vec<u64>> = hashes
-            .chunks(heads)
-            .skip(skip)
-            .map(|r| r.iter().zip(&eg.offsets).map(|(a, b)| a + b).collect())
-            .collect();
-        let mask: Vec<u8> = hashing::engram_mask(ep, &self.sess.history[p0..p0 + t])
-            .into_iter()
-            .map(u8::from)
-            .collect();
+        let mut rows: Vec<Vec<u64>> = Vec::new();
+        let mut mask: Vec<u8> = Vec::new();
+        for sg in &self.segs {
+            let (p0, t, history) = (sg.p0, sg.t(), &sg.sess.history);
+            // n-grams over the history: a window that starts `max_ngram - 1` tokens back
+            let back = (ep.max_ngram as usize).saturating_sub(1);
+            let w0 = p0.saturating_sub(back);
+            let ids = &history[w0..p0 + t];
+            let positions: Vec<u32> = (w0..p0 + t).map(|p| p as u32).collect();
+            let ngrams = hashing::ngram_tokens(ep, ids, &positions);
+            let hashes = hashing::hash_ids(ep, &eg.lookup, &eg.multipliers, &eg.moduli, &ngrams)?;
+            let skip = p0 - w0;
+            rows.extend(
+                hashes
+                    .chunks(heads)
+                    .skip(skip)
+                    .map(|r| r.iter().zip(&eg.offsets).map(|(a, b)| a + b).collect()),
+            );
+            mask.extend(
+                hashing::engram_mask(ep, &history[p0..p0 + t])
+                    .into_iter()
+                    .map(u8::from),
+            );
+        }
         let total = ep.table_rows as usize;
         if let Some(ri) = rows.iter().flatten().find(|ri| **ri as usize >= total) {
             return Err(format!(
@@ -3574,4 +3888,6 @@ mod tests {
 }
 
 mod dfly;
-pub use dfly::{DraftOut, DraftPick, DraftRed, Drafter, ExternalTarget, MAX_DRAFTS, RingBackup};
+pub use dfly::{
+    DraftOut, DraftPick, DraftRed, DraftReq, Drafter, ExternalTarget, MAX_DRAFTS, RingBackup,
+};

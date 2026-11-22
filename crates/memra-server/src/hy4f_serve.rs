@@ -5,7 +5,7 @@
 //! the shared one; this module is the worker side.
 //!
 //! The program. A request scores its prompt in prefill calls of at most `MEMRA_HY4F_PREFILL_CHUNK`
-//! tokens (default 2,048) against its own carried cache, then one decode call per generated
+//! tokens (default 2,048) against its own carried cache, then one decode row per generated
 //! token. The route's kernels compute every row on its own, in an order that depends on neither
 //! the call's other rows nor its length, so a token gets the same bits in any prefill chunk as in a
 //! decode call (research/modelplan-onboarding-hy4flash-20261119/serve: chunked and whole prefills
@@ -16,10 +16,16 @@
 //!
 //! Sessions. Every admitted request owns a `hy4f_route::Session`: its cache rows (576 F32 values a
 //! token a layer, a 512-row ring on the sliding layers, the indexer's token and group keys on the
-//! indexed layers) and its token history. The weights and the call scratch are shared, and the
-//! route runs one call at a time, so a request's numbers do not depend on the others it is
-//! served beside. Each step runs at most one prefill chunk (the oldest request still prefilling)
-//! and one decode call for every request that is generating.
+//! indexed layers), its token history and its drafter recall lists. The weights and the call
+//! scratch are shared. Each step is one batched call (`Route::call_batch`): every generating
+//! request's decode rows (its next token, or the anchor and the drafts it verifies) and the
+//! oldest prefilling request's next chunk, which gives up the rows the decode parts take so the
+//! call stays within the chunk (decode rows past the chunk hold the prefill and run as further
+//! calls of the step). The weights are read once a call for all its rows; the cache, the indexer
+//! and the attention run part by part on each request's own session. A failed call fails every
+//! request it carried. Every row computes on its own, so a request's tokens do not depend on the
+//! others it is served beside or on how its prompt was chunked: a request's answer is its answer
+//! alone. The step's draft rounds run as one batched draft (`Route::draft_batch`).
 //!
 //! Memory, on unified memory. The weights take about 87 GiB of the box's memory and stay
 //! resident; the Engram tables stay on disk, read through the checkpoint's own mapping, so their
@@ -58,8 +64,7 @@
 //! `Calib`, `Price`); a request whose rounds price no draft decodes a stretch undrafted (`Stretch`).
 //!
 //! Deliberate limits, stated: `response_format`/grammar refused by name; image and video parts
-//! refused (no Hy4 vision program); no prefix cache, no CUDA graphs, no batched decode across
-//! requests.
+//! refused (no Hy4 vision program); no prefix cache, no CUDA graphs.
 
 use crate::dsv4_admit::Admission;
 use crate::dsv4_serve::{admission_answer, fail_request, settle, snap};
@@ -69,7 +74,9 @@ use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request, SpecUsa
 use memra_engine::decode::StopReason;
 use memra_engine::dsv4_gpu::{Dsv4PenaltyCfg, Dsv4SampleCfg, dsv4_penalize_row, dsv4_sample_row};
 use memra_engine::dsv41_gpu::draft::RowCost;
-use memra_engine::hy4f_route::{Ckpt, Dev, Route, Session, mem_available};
+use memra_engine::hy4f_route::{
+    Ckpt, Dev, DraftReq, Part, RingBackup, Route, Session, mem_available,
+};
 use memra_tokenizer::Tokenizer;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -809,6 +816,43 @@ impl Price {
     }
 }
 
+/// `over` once it prices every size `1 ..= n`, else this table (never a mix of the two).
+trait Overlay {
+    fn overlaid(&self, over: &RowCost, n: usize) -> RowCost;
+}
+
+impl Overlay for RowCost {
+    fn overlaid(&self, over: &RowCost, n: usize) -> RowCost {
+        if (1..=n.max(1)).all(|k| over.ms(k).is_some()) {
+            over.clone()
+        } else {
+            self.clone()
+        }
+    }
+}
+
+impl Price {
+    /// A request's prices in a step whose call decodes for `b` requests: its verify of `n` rows
+    /// costs a `b`-th of a step of `b * n` rows (the step's table), as each of `b` like requests
+    /// verifying `n` rows would pay; so the fixed cost of a call is shared and a verified row
+    /// costs what it adds to the call. One request (`b == 1`) keeps its own prices.
+    fn batched(&self, step: &RowCost, b: usize, max_drafts: usize) -> Self {
+        if b <= 1 {
+            return self.clone();
+        }
+        let mut verify = RowCost::new(max_drafts + 1);
+        for n in 1..=max_drafts + 1 {
+            if let Some(ms) = step.ms(b * n) {
+                verify.observe(n, ms / b as f64);
+            }
+        }
+        Self {
+            verify,
+            draft: self.draft.clone(),
+        }
+    }
+}
+
 /// The drafter's probability of its draft: the softmax at temperature `t` of its row at `id`.
 fn draft_prob(row: &[f32], id: usize, t: f64) -> f64 {
     let mx = row[id] as f64;
@@ -1150,6 +1194,11 @@ struct Up<'a> {
     steps: usize,
     /// what the route's decode calls and draft rounds cost (the draft gate's prices)
     price: Price,
+    /// what a step's call costs by its rows, over every request it decodes for (a batched
+    /// step's prices, `Price::batched`)
+    step: RowCost,
+    /// what a round drafted beside others costs by its drafts: its share of the batched draft
+    shared_draft: RowCost,
 }
 
 fn engine_thread(cfg: EngineCfg, ready: Sender<Result<Ready, String>>, start: Receiver<Start>) {
@@ -1376,18 +1425,33 @@ fn bring_up<'a>(
         held.saturating_sub(weights) as f64 / (1u64 << 30) as f64,
         avail as f64 / (1u64 << 30) as f64
     );
+    // the step table starts from the warm-up's calls, each a step of one request
+    // a call holds at most the chunk's rows (or one request's verify rows past it)
+    let mut step = RowCost::new(cfg.chunk.max(cfg.drafts + 1));
+    for n in [1, cfg.drafts + 1] {
+        if let Some(ms) = price.verify.ms(n) {
+            step.observe(n, ms);
+        }
+    }
+    let shared_draft = RowCost::new(cfg.drafts.max(1));
     Ok(Up {
         route,
         book,
         steps: 0,
         price,
+        step,
+        shared_draft,
     })
 }
 
-/// What one call of a step was: a prefill chunk of a request, or its decode call.
-enum Work {
-    Prefill { i: usize, s0: usize, s1: usize },
-    Decode { i: usize, t: u32 },
+/// One request's part of a step's call: a prefill chunk (`prefill`: the prompt position it
+/// scores to and whether that ends the prompt), or its decode call (the next token, and the
+/// round's drafts it verifies with their rings' backup).
+struct Work {
+    i: usize,
+    tokens: Vec<u32>,
+    prefill: Option<(usize, bool)>,
+    backup: Option<RingBackup>,
 }
 
 fn serve_loop(
@@ -1577,121 +1641,219 @@ fn serve_loop(
         if act.is_empty() {
             continue;
         }
-        // the step: the oldest prefilling request's next chunk, then every generating request's
-        // decode call, each a call of its own on its own session
-        let mut work = Vec::with_capacity(act.len());
+        // the step: one call of every generating request's rows (its decode token, or the anchor
+        // and the round's drafts it verifies) and the oldest prefilling request's next chunk,
+        // each part on its own session. The chunk gives up the rows the decode parts take, so
+        // the call's rows stay within the chunk the warm-up grew the call scratch for; decode
+        // parts past the chunk hold the prefill and run as further calls.
+        let mut work: Vec<Work> = Vec::with_capacity(act.len());
+        for (i, a) in act.iter_mut().enumerate() {
+            if let Some(t) = a.next {
+                // a verify call scores the anchor and the round's drafts in one call; every row
+                // computes on its own, so each row is the decode call's row bit for bit
+                let mut tokens = vec![t];
+                tokens.extend(std::mem::take(&mut a.drafts));
+                work.push(Work {
+                    i,
+                    tokens,
+                    prefill: None,
+                    backup: None,
+                });
+            }
+        }
+        let decode_rows: usize = work.iter().map(|w| w.tokens.len()).sum();
+        let mut prefill_rows = 0usize;
         if let Some(i) = act.iter().position(|a| a.prefilled < a.prompt.len()) {
             let s0 = act[i].prefilled;
-            let s1 = (s0 + cfg.chunk).min(act[i].prompt.len());
-            work.push(Work::Prefill { i, s0, s1 });
-        }
-        for (i, a) in act.iter().enumerate() {
-            if let Some(t) = a.next {
-                work.push(Work::Decode { i, t });
+            let room = cfg.chunk.saturating_sub(decode_rows);
+            if room > 0 || decode_rows == 0 {
+                let s1 = (s0 + room.max(1)).min(act[i].prompt.len());
+                prefill_rows = s1 - s0;
+                let at = work.partition_point(|w| w.i < i);
+                work.insert(
+                    at,
+                    Work {
+                        i,
+                        tokens: act[i].prompt[s0..s1].to_vec(),
+                        prefill: Some((s1, s1 == act[i].prompt.len())),
+                        backup: None,
+                    },
+                );
             }
         }
         let ts = Instant::now();
         up.steps += 1;
         let mut done: Vec<usize> = Vec::new();
         let mut device_fault: Option<String> = None;
-        let (mut prefill_rows, mut decode_rows) = (0usize, 0usize);
-        for w in work {
-            let (i, mut tokens, is_prefill_end) = match w {
-                Work::Prefill { i, s0, s1 } => {
-                    prefill_rows += s1 - s0;
-                    let end = s1 == act[i].prompt.len();
-                    (i, act[i].prompt[s0..s1].to_vec(), Some((s1, end)))
-                }
-                Work::Decode { i, t } => {
-                    // a verify call scores the anchor and the round's drafts in one call; every
-                    // row computes on its own, so each row is the decode call's row bit for bit
-                    let mut tokens = vec![t];
-                    tokens.extend(std::mem::take(&mut act[i].drafts));
-                    decode_rows += tokens.len();
-                    (i, tokens, None)
-                }
-            };
-            let route = &mut up.route;
-            let a = &mut act[i];
-            let mut verify = is_prefill_end.is_none() && tokens.len() > 1;
+        // the decode parts' price clock: the backups and the call, shared by their rows
+        let tcall = Instant::now();
+        // the verify parts' ring backups, before the call overwrites the rows
+        for w in work.iter_mut() {
+            if w.prefill.is_some() || w.tokens.len() < 2 {
+                continue;
+            }
+            let a = &mut act[w.i];
             let from = a.sess.positions();
-            let tcall = Instant::now();
-            let called = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let backup = if verify {
-                    let taken = route
-                        .ring_backup_in(&a.sess, from, tokens.len())
-                        .and_then(|b| {
-                            if cfg.draft_fault == Some(DraftFault::Backup(a.spec.rounds)) {
-                                Err(INJECTED.to_string())
-                            } else {
-                                Ok(b)
-                            }
-                        });
-                    match taken {
-                        Ok(b) => Some(b),
-                        Err(e) => {
-                            // a refused backup costs the round, never the request: the anchor
-                            // alone is the undrafted route's call. No probe here: the call reads
-                            // its rows back, so a device fault fails it and is probed below. The
-                            // round's dropped drafts are in no usage count.
-                            eprintln!(
-                                "[hy4f-serve] request_id={:?}: ring backup of {} rows at {from}: \
-                                 {e}; serving it without drafts",
-                                a.req.request_id,
-                                tokens.len(),
-                            );
-                            a.draft_off = true;
-                            tokens.truncate(1);
-                            verify = false;
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
+            let route = &mut up.route;
+            let taken = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 route
-                    .call_in(&mut a.sess, &tokens, verify, None, None)
-                    .map(|rows| (rows, backup))
+                    .ring_backup_in(&a.sess, from, w.tokens.len())
+                    .and_then(|b| {
+                        if cfg.draft_fault == Some(DraftFault::Backup(a.spec.rounds)) {
+                            Err(INJECTED.to_string())
+                        } else {
+                            Ok(b)
+                        }
+                    })
             }));
-            let (rows, backup) = match called {
-                Ok(Ok(x)) => x,
+            match taken {
+                Ok(Ok(b)) => w.backup = Some(b),
                 Ok(Err(e)) => {
+                    // a refused backup costs the round, never the request: the anchor alone is
+                    // the undrafted route's call. No probe here: the call reads its rows back, so
+                    // a device fault fails it and is probed below. The round's dropped drafts are
+                    // in no usage count.
                     eprintln!(
-                        "[hy4f-serve] request_id={:?}: call of {} tokens at {from}: {e}; failing it",
+                        "[hy4f-serve] request_id={:?}: ring backup of {} rows at {from}: {e}; \
+                         serving it without drafts",
                         a.req.request_id,
-                        tokens.len(),
+                        w.tokens.len(),
                     );
-                    let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
-                        "hy_v4_flash route: {e}"
-                    ))));
-                    a.stream.client_gone = true;
-                    a.fault = true;
-                    done.push(i);
+                    a.draft_off = true;
+                    a.draft_q.clear();
+                    w.tokens.truncate(1);
+                }
+                Err(payload) => {
+                    device_fault = Some(format!(
+                        "hy_v4_flash route stopped on a panic in a ring backup: {}",
+                        panic_text(payload.as_ref())
+                    ));
+                    break;
+                }
+            }
+        }
+        let decode_rows: usize = work
+            .iter()
+            .filter(|w| w.prefill.is_none())
+            .map(|w| w.tokens.len())
+            .sum();
+        // the step's calls: its parts in order, packed into calls of at most the chunk's rows (a
+        // part larger than that alone)
+        let mut groups: Vec<std::ops::Range<usize>> = Vec::new();
+        let (mut g0, mut grows) = (0usize, 0usize);
+        for (k, w) in work.iter().enumerate() {
+            if k > g0 && grows + w.tokens.len() > cfg.chunk {
+                groups.push(g0..k);
+                (g0, grows) = (k, 0);
+            }
+            grows += w.tokens.len();
+        }
+        if g0 < work.len() {
+            groups.push(g0..work.len());
+        }
+        let mut calls = 0usize;
+        // each part's logits, None when its call failed
+        let mut outs: Vec<Option<Vec<f32>>> = vec![None; work.len()];
+        for g in groups.iter().cloned() {
+            if device_fault.is_some() {
+                break;
+            }
+            // the call's sessions, in act order (`work` is sorted by request)
+            let called = {
+                let ws = &work[g.clone()];
+                let mut sess: Vec<&mut Session> = Vec::with_capacity(ws.len());
+                let mut it = ws.iter().peekable();
+                for (i, a) in act.iter_mut().enumerate() {
+                    if it.peek().is_some_and(|w| w.i == i) {
+                        it.next();
+                        sess.push(&mut a.sess);
+                    }
+                }
+                let mut parts: Vec<Part<'_>> = ws
+                    .iter()
+                    .zip(sess)
+                    .map(|(w, s)| Part {
+                        sess: s,
+                        tokens: &w.tokens,
+                        all_logits: w.prefill.is_none() && w.tokens.len() > 1,
+                    })
+                    .collect();
+                let route = &mut up.route;
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    route.call_batch(&mut parts)
+                }))
+            };
+            calls += 1;
+            match called {
+                Ok(Ok(o)) => {
+                    for (k, rows) in g.zip(o) {
+                        outs[k] = Some(rows);
+                    }
+                }
+                Ok(Err(e)) => {
+                    // a failed call may have written any of its parts' cache rows: it fails
+                    // every request it carried
+                    for w in &work[g.clone()] {
+                        let a = &mut act[w.i];
+                        eprintln!(
+                            "[hy4f-serve] request_id={:?}: call of {} tokens at {} (one of {} \
+                             parts): {e}; failing it",
+                            a.req.request_id,
+                            w.tokens.len(),
+                            a.sess.positions(),
+                            g.len()
+                        );
+                        let _ = a.req.tx.send(Event::Error(EngineError::engine(format!(
+                            "hy_v4_flash route: {e}"
+                        ))));
+                        a.stream.client_gone = true;
+                        a.fault = true;
+                        done.push(w.i);
+                    }
                     // a call that failed on the device leaves the context unusable: probe it
-                    if let Err(probe) = route.dev.sync() {
+                    if let Err(probe) = up.route.dev.sync() {
                         device_fault = Some(format!(
                             "hy_v4_flash route stopped: the device probe after a failed call \
                              failed: {probe} (the call: {e})"
                         ));
-                        break;
                     }
-                    continue;
                 }
                 Err(payload) => {
                     device_fault = Some(format!(
                         "hy_v4_flash route stopped on a panic: {}",
                         panic_text(payload.as_ref())
                     ));
-                    break;
                 }
-            };
-            if let Some((s1, end)) = is_prefill_end {
+            }
+        }
+        let call_ms = tcall.elapsed().as_secs_f64() * 1e3;
+        // the requests the call decoded for (a verify part or a decode token each)
+        let decoding = work.iter().filter(|w| w.prefill.is_none()).count();
+        // the step's table prices a step of one call, every part answered, no prefill rows
+        let priced_step =
+            prefill_rows == 0 && decode_rows > 0 && calls == 1 && outs.iter().all(Option::is_some);
+        let tposts = Instant::now();
+        // (request, source row, anchor, most drafts) of the rounds the step drafts next
+        let mut rounds: Vec<(usize, usize, u32, usize)> = Vec::new();
+        for (w, rows) in work.iter().zip(outs) {
+            if device_fault.is_some() {
+                break;
+            }
+            let Some(rows) = rows else { continue };
+            let i = w.i;
+            let tokens = &w.tokens;
+            let tpost = Instant::now();
+            let a = &mut act[i];
+            let verify = w.prefill.is_none() && tokens.len() > 1;
+            if let Some((s1, end)) = w.prefill {
                 a.prefilled = s1;
                 memra_engine::progress::note_prime_rows(tokens.len());
                 if !end {
                     continue;
                 }
             }
+            // the session's positions before the call
+            let from = a.sess.positions() - tokens.len();
             a.steps += 1;
             // the tokens of the call's rows: each row's choice, kept while the next row's input
             // (the round's draft) is that choice; the first other choice ends the round
@@ -1740,7 +1902,7 @@ fn serve_loop(
                 a.spec.accepted += matched as u64;
                 // keep the anchor and the accepted drafts: the positions `from .. from + kept`
                 let keep = from + kept.max(1);
-                if let Some(b) = &backup
+                if let Some(b) = &w.backup
                     && let Err(e) = up.route.rollback_in(&mut a.sess, keep, b)
                 {
                     failed = Some(format!("hy_v4_flash route: rollback: {e}"));
@@ -1751,10 +1913,16 @@ fn serve_loop(
                 a.calib
                     .observe(&std::mem::take(&mut a.draft_q), matched, compared);
             }
-            if is_prefill_end.is_none() && failed.is_none() {
+            if w.prefill.is_none()
+                && failed.is_none()
+                && prefill_rows == 0
+                && decoding == 1
+                && calls == 1
+            {
                 // the decode call's cost by its rows: the backup, the call, the choices, the
-                // rollback
-                let ms = tcall.elapsed().as_secs_f64() * 1e3;
+                // rollback, when the call was this request's alone (a batched step prices the
+                // step's table, below)
+                let ms = call_ms + tpost.elapsed().as_secs_f64() * 1e3;
                 up.price.verify.observe(tokens.len(), ms);
                 a.price.verify.observe(tokens.len(), ms);
             }
@@ -1798,91 +1966,34 @@ fn serve_loop(
                 } else {
                     tokens.len() - 1
                 };
-                // greedy drafts; with the gate each step prices the round (`RoundPlan`) from the
-                // drafter's probability of its draft at the request's temperature
-                let tq = a.sample.as_ref().map_or(1.0, |c| f64::from(c.temperature));
-                let gate = cfg.draft_gate;
-                let price = &a.price;
-                let scale = a.calib.scale();
-                let mut plan = RoundPlan::new();
-                let mut claims = Vec::with_capacity(max);
-                let mut pick = |_s: usize, row: &[f32]| -> Result<(u32, bool), String> {
-                    let d = argmax(row);
-                    if !gate {
-                        return Ok((d as u32, true));
-                    }
-                    let q = draft_prob(row, d, tq);
-                    claims.push(q);
-                    plan.push(q * scale);
-                    Ok((d as u32, plan.go_on(price, max)))
-                };
-                let route = &mut up.route;
-                let td = Instant::now();
-                let drafted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    route
-                        .draft_in(&mut a.sess, src, t, max, None, false, Some(&mut pick))
-                        .and_then(|d| {
-                            if cfg.draft_fault == Some(DraftFault::Draft(a.spec.rounds)) {
-                                Err(INJECTED.to_string())
-                            } else {
-                                Ok(d)
-                            }
-                        })
-                }));
-                match drafted {
-                    Ok(Ok(mut d)) => {
-                        let steps = d.ids.len();
-                        if steps == max {
-                            let ms = td.elapsed().as_secs_f64() * 1e3;
-                            up.price.draft.observe(steps, ms);
-                            a.price.draft.observe(steps, ms);
-                        }
-                        let k = if gate { plan.depth(&a.price) } else { steps };
-                        if gate {
-                            a.stretch.priced(k);
-                        }
-                        a.depths[k] += 1;
-                        d.ids.truncate(k);
-                        claims.truncate(k);
-                        a.drafts = d.ids;
-                        a.draft_q = claims;
-                    }
-                    Ok(Err(e)) => {
-                        // a drafter fault costs speed, never the answer: the request goes on
-                        // without drafts, on the calls the undrafted route makes. The round wrote
-                        // only block rows past the session's positions, which the next call
-                        // writes again before any query reads them. A device fault stops the route.
-                        eprintln!(
-                            "[hy4f-serve] request_id={:?}: draft round at {}: {e}; serving it \
-                             without drafts",
-                            a.req.request_id,
-                            a.sess.positions()
-                        );
-                        a.draft_off = true;
-                        if let Err(probe) = up.route.dev.sync() {
-                            device_fault = Some(format!(
-                                "hy_v4_flash route stopped: the device probe after a failed draft \
-                                 round failed: {probe} (the round: {e})"
-                            ));
-                            break;
-                        }
-                    }
-                    Err(payload) => {
-                        device_fault = Some(format!(
-                            "hy_v4_flash route stopped on a panic in a draft round: {}",
-                            panic_text(payload.as_ref())
-                        ));
-                        break;
-                    }
-                }
+                rounds.push((i, src, t, max));
             }
+        }
+        // the next rounds: one batched draft of every request that drafts, each round right
+        // after the call that scored its source row (greedy drafts; with the gate each step
+        // prices its round, `RoundPlan`, from the drafter's probability of its draft at the
+        // request's temperature)
+        if priced_step && device_fault.is_none() {
+            // the step's cost by its rows, whatever requests they belong to: the backups and the
+            // call, then every part's choices and rollback (the draft round is priced apart)
+            up.step
+                .observe(decode_rows, call_ms + tposts.elapsed().as_secs_f64() * 1e3);
+        }
+        if !rounds.is_empty() && device_fault.is_none() {
+            // the requests the next call decodes for: every one that goes on
+            let next = act
+                .iter()
+                .enumerate()
+                .filter(|(i, a)| a.next.is_some() && !done.contains(i))
+                .count();
+            draft_step(cfg, up, &mut act, &rounds, next, &mut device_fault);
         }
         health.note_round();
         load.note_round(last_step.elapsed().as_millis() as u64);
         last_step = Instant::now();
         eprintln!(
             "[hy4f-step] step={} prefill_rows={prefill_rows} decode_rows={decode_rows} \
-             step_s={:.3} running={} device_live={}",
+             calls={calls} step_s={:.3} running={} device_live={}",
             up.steps,
             ts.elapsed().as_secs_f64(),
             act.len(),
@@ -1911,6 +2022,198 @@ fn serve_loop(
             drain_into(rx, &mut pending);
             fail_pending(&mut pending, health, &dead);
             return Some(dead);
+        }
+    }
+}
+
+/// A gated round's state while it drafts: its plan, the drafter's probabilities of its drafts,
+/// the request's temperature and calibration, its most drafts.
+struct Gated {
+    plan: RoundPlan,
+    claims: Vec<f64>,
+    tq: f64,
+    scale: f64,
+    max: usize,
+}
+
+/// The step's draft rounds (`rounds`: request, source row, anchor, most drafts, in `act`
+/// order) as one batched draft (`Route::draft_batch`), then each request's verified depth. A
+/// round's cost is its share of the batched draft by its block rows; only rounds that ran all
+/// their allowed drafts price the table. A refused round (a drafter fault or the fault gate's
+/// injection) costs its requests their drafts, never their answers; a device fault stops the
+/// route (`device_fault`).
+fn draft_step(
+    cfg: &EngineCfg,
+    up: &mut Up,
+    act: &mut [Active],
+    rounds: &[(usize, usize, u32, usize)],
+    next: usize,
+    device_fault: &mut Option<String>,
+) {
+    let gate = cfg.draft_gate;
+    // each round's prices in the next step: its own, its verify shared with the step's other
+    // requests (`Price::batched`), its round shared with the others drafting beside it (the
+    // route's table of shared rounds)
+    let shared = rounds.len() > 1;
+    let priced: Vec<Price> = rounds
+        .iter()
+        .map(|&(i, ..)| {
+            let mut p = act[i].price.batched(&up.step, next, cfg.drafts);
+            if shared {
+                p.draft = p.draft.overlaid(&up.shared_draft, cfg.drafts);
+            }
+            p
+        })
+        .collect();
+    let mut gs: Vec<Gated> = rounds
+        .iter()
+        .map(|&(i, _, _, max)| Gated {
+            plan: RoundPlan::new(),
+            claims: Vec::with_capacity(max),
+            tq: act[i]
+                .sample
+                .as_ref()
+                .map_or(1.0, |c| f64::from(c.temperature)),
+            scale: act[i].calib.scale(),
+            max,
+        })
+        .collect();
+    let td = Instant::now();
+    let drafted = {
+        // each round's session (`rounds` is in `act` order)
+        let mut sess: Vec<&mut Session> = Vec::with_capacity(rounds.len());
+        let mut it = rounds.iter().peekable();
+        for (i, a) in act.iter_mut().enumerate() {
+            if it.peek().is_some_and(|r| r.0 == i) {
+                it.next();
+                sess.push(&mut a.sess);
+            }
+        }
+        type Pick<'p> = Box<dyn FnMut(usize, &[f32]) -> Result<(u32, bool), String> + 'p>;
+        let mut picks: Vec<Pick<'_>> = gs
+            .iter_mut()
+            .zip(&priced)
+            .map(|(g, price)| -> Pick<'_> {
+                Box::new(move |_s: usize, row: &[f32]| {
+                    let d = argmax(row);
+                    if !gate {
+                        return Ok((d as u32, true));
+                    }
+                    let q = draft_prob(row, d, g.tq);
+                    g.claims.push(q);
+                    g.plan.push(q * g.scale);
+                    Ok((d as u32, g.plan.go_on(price, g.max)))
+                })
+            })
+            .collect();
+        let mut reqs: Vec<DraftReq<'_, '_>> = sess
+            .into_iter()
+            .zip(picks.iter_mut())
+            .zip(rounds)
+            .map(|((s, pk), &(_, src, t, max))| DraftReq {
+                sess: s,
+                row: src,
+                anchor: t,
+                k: max,
+                pick: Some(&mut **pk),
+            })
+            .collect();
+        let route = &mut up.route;
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            route.draft_batch(&mut reqs)
+        }))
+    };
+    let ms = td.elapsed().as_secs_f64() * 1e3;
+    let block_rows: usize = rounds.iter().map(|r| r.3 + 1).sum();
+    match drafted {
+        Ok(Ok(outs)) => {
+            for (((&(i, _, _, max), d), mut g), price) in
+                rounds.iter().zip(outs).zip(gs).zip(&priced)
+            {
+                let a = &mut act[i];
+                let mut d = match d {
+                    Ok(d) => d,
+                    Err(e) => {
+                        // this round's inputs were refused (it ran nothing): the request goes on
+                        // without drafts, its peers' rounds stand
+                        eprintln!(
+                            "[hy4f-serve] request_id={:?}: draft round at {}: {e}; serving it \
+                             without drafts",
+                            a.req.request_id,
+                            a.sess.positions()
+                        );
+                        a.draft_off = true;
+                        continue;
+                    }
+                };
+                if cfg.draft_fault == Some(DraftFault::Draft(a.spec.rounds)) {
+                    eprintln!(
+                        "[hy4f-serve] request_id={:?}: draft round at {}: {INJECTED}; serving it \
+                         without drafts",
+                        a.req.request_id,
+                        a.sess.positions()
+                    );
+                    a.draft_off = true;
+                    if let Err(probe) = up.route.dev.sync() {
+                        *device_fault = Some(format!(
+                            "hy_v4_flash route stopped: the device probe after a failed draft \
+                             round failed: {probe} (the round: {INJECTED})"
+                        ));
+                        return;
+                    }
+                    continue;
+                }
+                let steps = d.ids.len();
+                if steps == max {
+                    if shared {
+                        // a round drafted beside others: its share of the batched draft prices
+                        // the shared table, never a request's own
+                        let share = ms * (max + 1) as f64 / block_rows.max(1) as f64;
+                        up.shared_draft.observe(steps, share);
+                    } else {
+                        up.price.draft.observe(steps, ms);
+                        a.price.draft.observe(steps, ms);
+                    }
+                }
+                let k = if gate { g.plan.depth(price) } else { steps };
+                if gate {
+                    a.stretch.priced(k);
+                }
+                a.depths[k] += 1;
+                d.ids.truncate(k);
+                g.claims.truncate(k);
+                a.drafts = d.ids;
+                a.draft_q = g.claims;
+            }
+        }
+        Ok(Err(e)) => {
+            // a drafter fault costs speed, never the answer: the requests go on without drafts,
+            // on the calls the undrafted route makes. The rounds wrote only block rows past their
+            // sessions' positions, which their next calls write again before any query reads
+            // them. A device fault stops the route.
+            for &(i, ..) in rounds {
+                let a = &mut act[i];
+                eprintln!(
+                    "[hy4f-serve] request_id={:?}: draft round at {} (one of {}): {e}; serving it \
+                     without drafts",
+                    a.req.request_id,
+                    a.sess.positions(),
+                    rounds.len()
+                );
+                a.draft_off = true;
+            }
+            if let Err(probe) = up.route.dev.sync() {
+                *device_fault = Some(format!(
+                    "hy_v4_flash route stopped: the device probe after a failed draft round \
+                     failed: {probe} (the round: {e})"
+                ));
+            }
+        }
+        Err(payload) => {
+            *device_fault = Some(format!(
+                "hy_v4_flash route stopped on a panic in a draft round: {}",
+                panic_text(payload.as_ref())
+            ));
         }
     }
 }
