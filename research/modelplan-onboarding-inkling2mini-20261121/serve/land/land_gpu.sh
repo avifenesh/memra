@@ -2,10 +2,10 @@
 # land/inkling2mini-1 on the RTX 5090 Laptop: the memra-engine GPU test binaries the dev desk cannot
 # run, and the batching gate of both served classes on the landing's ink2-gpu (frozen in land-frozen).
 L=/home/avifenesh/.cache/inkling2mini
-B=$L/land-frozen2
+B=${LAND_BIN:-$L/land-frozen2}
 T=$L/oracle/tapes
 M=/home/avifenesh/models/inkling2-mini
-O=/home/avifenesh/.cache/inkling2mini/wt-serve/research/modelplan-onboarding-inkling2mini-20261121/serve/land2
+O=${LAND_GPU_OUT:-/home/avifenesh/.cache/inkling2mini/wt-serve/research/modelplan-onboarding-inkling2mini-20261121/serve/land2}
 mkdir -p $O; cd $O
 cat $B/COMMIT $B/SHA256SUMS
 run() { tag=$1; shift; echo "MARK $tag $(date +%T.%N)"; "$@" > $tag.log 2>&1; echo "RC $tag=$?"; tail -n 2 $tag.log; }

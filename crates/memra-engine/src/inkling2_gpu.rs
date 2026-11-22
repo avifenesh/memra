@@ -1387,6 +1387,24 @@ struct RowDesc {
 
 const ROW_DESC_BYTES: usize = std::mem::size_of::<RowDesc>();
 
+/// One attention launch of a call: its caches, the cache size, the position (on the device when
+/// posd is set), its rows from r0 and the batched rows' descriptors (0: none)
+struct AttnCall {
+    kc: u64,
+    vc: u64,
+    cap: usize,
+    posd: u64,
+    pos0: i64,
+    rows: usize,
+    r0: usize,
+    desc: u64,
+}
+
+/// Attention arm 4's bounds in cu/inkling2_gpu.cu: INK2G_T4_MAX_TILES tiles a row at most, a tile
+/// row of INK2G_FOLD_DIM + 2 words (the tile's output, max and sum)
+const T4_MAX_TILES: usize = 512;
+const T4_LD: usize = T4_MAX_TILES * (128 + 2);
+
 /// What a caller can read out of a call, per slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tap {
@@ -1503,6 +1521,11 @@ struct Work {
     asc: CudaSlice<f64>,
     asc_ld: usize,
     asc_rows: usize,
+    /// the tiles of attention arm 4 when `asc` cannot hold them (a session made with new_seq past
+    /// the load's context): [t4_rows][heads][t4_ld], room for the most tiles a row can have
+    t4s: CudaSlice<f64>,
+    t4_ld: usize,
+    t4_rows: usize,
     logits: CudaSlice<f32>,
     best: CudaSlice<u32>,
     tok: CudaSlice<u32>,
@@ -2143,6 +2166,7 @@ impl Route {
         // with the context
         // a row holds its scores and, last, the row's max (the fold's top)
         let asc_rows = ((64usize << 20) / (max_heads * (max_keys + 1) * 8)).clamp(1, chunk);
+        let t4_rows = ((64usize << 20) / (max_heads * T4_LD * 8)).clamp(1, chunk);
         if max_keys == context {
             account.per_position += max_heads * 8;
         }
@@ -2189,6 +2213,9 @@ impl Route {
             asc: dev.zeros(asc_rows * max_heads * (max_keys + 1))?,
             asc_ld: max_keys + 1,
             asc_rows,
+            t4s: dev.zeros(t4_rows * max_heads * T4_LD)?,
+            t4_ld: T4_LD,
+            t4_rows,
             logits: dev.zeros(HEAD_ROWS * keep)?,
             best: dev.zeros(HEAD_ROWS)?,
             tok: dev.zeros(chunk)?,
@@ -2990,6 +3017,7 @@ impl Route {
         let lp = &program.loop_plan;
         let rh = chunk * hidden;
         // a batched call: every row's own position, caches and conv histories, per slot
+        let mut host_rows: Vec<RowDesc> = Vec::new();
         let desc_base: u64 = match batch.as_deref_mut() {
             None => 0,
             Some(seqs) => {
@@ -3041,6 +3069,7 @@ impl Route {
                     )
                 };
                 dev.put(bytes, &mut w.desc)?;
+                host_rows = table.clone();
                 dptr(&w.desc, &st)
             }
         };
@@ -3558,54 +3587,107 @@ impl Route {
             let window = a.window.map_or(0, |v| v as i32);
             let mask = i32::from(a.relative.beyond_extent == BeyondExtent::Masked);
             let att = dptr_mut(&mut w.att, &st);
-            // The split form's scratch holds the keys of the load's context; a sequence made with
-            // new_seq can hold more (the serve route loads at one position), and its full slots
-            // then run the tiled form, the same bits.
-            let most = a.window.map_or(ss.cap, |v| v as usize);
-            let (scr, scr_ld) = if most <= w.asc_ld {
-                (dptr_mut(&mut w.asc, &st), w.asc_ld as i64)
+            // Every call of a sequence runs that sequence's attention program. The split form takes
+            // the call when its scratch holds a row's scores; arm 4 needs only its tiles, and `t4s`
+            // holds the most tiles a row can have, so arm 4 runs at every session size. A batched
+            // call runs the split arms (3, 4) row by row, each row as its sequence's solo call: the
+            // rows are different sequences, and the split form is the solo program.
+            let arm = dev.prec.get().attn;
+            let per_row = desc_slot != 0 && matches!(arm, 3 | 4);
+            let calls: Vec<AttnCall> = if per_row {
+                (0..rows)
+                    .map(|r| {
+                        let d = host_rows[slot as usize * rows + r];
+                        AttnCall {
+                            kc: d.kc,
+                            vc: d.vc,
+                            cap: d.cap as usize,
+                            posd: 0,
+                            pos0: d.pos,
+                            rows: 1,
+                            r0: r,
+                            desc: 0,
+                        }
+                    })
+                    .collect()
             } else {
-                (0, 0)
+                vec![AttnCall {
+                    kc,
+                    vc,
+                    cap: ss.cap,
+                    posd,
+                    pos0: pos0 as i64,
+                    rows,
+                    r0: 0,
+                    desc: desc_slot,
+                }]
             };
-            dev.launched("memra_ink2g_attn", unsafe {
-                ffi::memra_ink2g_attn(
-                    qb as *const f32,
-                    rb as *const f32,
-                    dptr(&lw.table, &st) as *const f32,
-                    dptr(&w.sinkb, &st) as *const f32,
-                    kc as *const c_void,
-                    vc as *const c_void,
-                    i32::from(ss.fp8),
-                    ss.cap as i64,
-                    posd as *const i64,
-                    pos0 as i64,
-                    window,
-                    extent as i32,
-                    mask,
-                    att as *mut f32,
-                    rows as i32,
-                    heads as i32,
-                    kvh as i32,
-                    dim as i32,
-                    rank as i32,
-                    scr as *mut f64,
-                    scr_ld,
-                    // attn arm 3: the f64 program with a chunk's scores split over blocks in groups of
-                    // asc_rows rows (the decode form, per row); a different f64 evaluation order
-                    // attn arm 4: f32 tiles over keys with f64 merges, in the same groups
-                    if matches!(dev.prec.get().attn, 3 | 4) {
-                        w.asc_rows as i32
+            for AttnCall {
+                kc,
+                vc,
+                cap,
+                posd,
+                pos0,
+                rows: n,
+                r0,
+                desc,
+            } in calls
+            {
+                let most = a.window.map_or(cap, |v| v as usize);
+                let (scr, scr_ld, scr_rows) = if arm == 4 {
+                    let tile = 256 * cap.div_ceil(256 * T4_MAX_TILES);
+                    if most.div_ceil(tile) * (dim + 2) <= w.asc_ld {
+                        (
+                            dptr_mut(&mut w.asc, &st),
+                            w.asc_ld as i64,
+                            w.asc_rows as i32,
+                        )
                     } else {
-                        0
-                    },
-                    match dev.prec.get().attn {
-                        3 => 0,
-                        a => a as i32,
-                    },
-                    desc_slot as *const c_void,
-                    dev.sp(),
-                )
-            })?;
+                        (dptr_mut(&mut w.t4s, &st), w.t4_ld as i64, w.t4_rows as i32)
+                    }
+                } else if most < w.asc_ld {
+                    // attn arm 3: the f64 program with a chunk's scores split over blocks in
+                    // groups of asc_rows rows (the decode form, per row); a different f64
+                    // evaluation order
+                    let group = if arm == 3 { w.asc_rows as i32 } else { 0 };
+                    (dptr_mut(&mut w.asc, &st), w.asc_ld as i64, group)
+                } else {
+                    (0, 0, 0)
+                };
+                let (qo, ro) = ((r0 * qw * 4) as u64, (r0 * heads * rank * 4) as u64);
+                dev.launched("memra_ink2g_attn", unsafe {
+                    ffi::memra_ink2g_attn(
+                        (qb + qo) as *const f32,
+                        (rb + ro) as *const f32,
+                        dptr(&lw.table, &st) as *const f32,
+                        dptr(&w.sinkb, &st) as *const f32,
+                        kc as *const c_void,
+                        vc as *const c_void,
+                        i32::from(ss.fp8),
+                        cap as i64,
+                        posd as *const i64,
+                        pos0,
+                        window,
+                        extent as i32,
+                        mask,
+                        (att + qo) as *mut f32,
+                        n as i32,
+                        heads as i32,
+                        kvh as i32,
+                        dim as i32,
+                        rank as i32,
+                        scr as *mut f64,
+                        scr_ld,
+                        scr_rows,
+                        match arm {
+                            3 => 0,
+                            a => a as i32,
+                        },
+                        desc as *const c_void,
+                        dev.sp(),
+                    )
+                })?;
+            }
             if let Some(o) = obs.as_deref_mut()
                 && o.attn_probe(slot)
             {
