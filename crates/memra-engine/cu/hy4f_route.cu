@@ -1052,7 +1052,7 @@ static void r_gemv_f32_go(const float* x, long ldx, const void* w, float* y, lon
     attr = true;
   }
   const int rows = WARPS * 32;
-  r_launch(r_gemv_f32_kernel<WARPS, STAGES, ROWB>, (n + rows - 1) / rows, WARPS * 32, smem, st, 
+  r_launch(r_gemv_f32_kernel<WARPS, STAGES, ROWB>, (n + rows - 1) / rows, WARPS * 32, smem, st,
       x, ldx, (const uint16_t*)w, y, ldy, m, n, k);
 }
 
