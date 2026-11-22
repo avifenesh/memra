@@ -94,11 +94,29 @@ The battery's kernel-gate and tensor-parallel counts came from memra#1337's rece
 added checks, so `gpu-battery.sh` now takes each count from the base arm (or an `EXPECT_*` pin) and holds the
 receipts' figures as a floor; the dry run gained three cases for it.
 
+## The PRO 6000 battery (2026-11-22)
+
+`gpu-battery.sh` phases `kgate` and `tp4` on four RTX PRO 6000 Blackwell Max-Q, one window with all four box locks
+held and no other GPU process (02:24 to 02:27 IST, right after memra#1337's four-card cells in the same window). BASE was
+memra#1337 at `2df9c40b39` and HEAD this change at `868417afce`, both built on the box the same day (nvcc 13.4,
+sm_120a). The later heads add research files only, so their binaries are the same. Both phases printed
+`BATTERY PASS`:
+
+- kgate (`dsv41-gate kernels`, card 0): 1,091 checks and 0 failed on each arm, the 1,091 check lines equal between
+  the arms.
+- tp4 (`dsv41-gate tp`, needle, layers 1,2,14,20,21,24, four ranks, two decode steps): default 1,056 of 1,056,
+  peer-pull 1,054 of 1,054 and host-canonical 1,054 of 1,054 on each arm, 180 HASH lines a transport, equal
+  between the arms.
+
+Receipts: `receipts-l30/` (`battery.log`, the gate logs and JSON under `kgate/` and `tp4/`, the phases' outputs,
+and the window's log `window-summary.txt`).
+
 ## Not shown here
 
-Nothing was run on a card. `gpu-battery.sh` is the GPU battery prepared for the merge, with the expected counts
-(the kernel gate, the four-rank tensor-parallel gates, the full pair battery), to run when an RTX PRO 6000 box is
-free.
+The `pair` phase (the full battery on the board models) was not run. No board model reaches these kernels: only
+`cu/dsv41_gpu.cu` and `cu/dsv41_cutlass.cu` include the headers, and the SASS comparison above shows the V4.1
+kernels unchanged. The landing's sm_120a record runs the device battery (kernel-check, the argmax gate and
+run-spec K=1..8 on the roster) on the landing commit that carries this change.
 
 `gpu-battery-dryrun.sh CASE` runs the battery against fake binaries, a fake `nvidia-smi`, `cargo` and
 `release-battery.sh` (no GPU): the passing pair, kgate and tp4 phases, and one case for each failure path (a
