@@ -1114,9 +1114,15 @@ fn row_spans(rows: &[usize]) -> String {
     out.join(", ")
 }
 
-/// The most rows a batched decode call carries: the small-M GEMM bodies' limit
-/// (`dsv41_gpu::SMALL_M`).
-const BATCH_ROWS_MAX: usize = v41::SMALL_M;
+/// The rows a batched decode call carries when `MEMRA_DSV41_BATCH_ROWS` is unset: the small-M
+/// GEMM bodies' limit (`dsv41_gpu::SMALL_M`).
+const BATCH_ROWS_DEFAULT: usize = v41::SMALL_M;
+
+/// The most rows `MEMRA_DSV41_BATCH_ROWS` admits. Past `SMALL_M` rows the expert GEMMs take the
+/// small-row body on 8-row tiles (`moe_bm`, up to `WIDE_TILES` rows), and `dsv41-spec batch-rows
+/// wide16` holds a 16-row call's rows to each sequence's own call (record:
+/// `docs/decisions/DSV41-ROWS-ABOVE-8-FOUR-RANKS.md`).
+const BATCH_ROWS_MAX: usize = 2 * v41::SMALL_M;
 
 /// One running request's rows of a step: the request, its logits rows (empty when the device
 /// chose), the call that holds them, its first row there, and the device's choice of a batched
@@ -1124,10 +1130,10 @@ const BATCH_ROWS_MAX: usize = v41::SMALL_M;
 type StepRows<'a> = (usize, Vec<f32>, &'a Out, usize, Option<u32>);
 
 /// `MEMRA_DSV41_BATCH_ROWS`: the one-token steps one decode call carries, 1 (every call alone)
-/// to the small-M limit (unset: the limit).
+/// to [`BATCH_ROWS_MAX`] (unset: [`BATCH_ROWS_DEFAULT`]).
 fn resolve_batch_rows(raw: Option<&str>) -> Result<usize, String> {
     match raw.map(str::trim) {
-        None | Some("") => Ok(BATCH_ROWS_MAX),
+        None | Some("") => Ok(BATCH_ROWS_DEFAULT),
         Some(x) => match x.parse::<usize>() {
             Ok(n) if (1..=BATCH_ROWS_MAX).contains(&n) => Ok(n),
             _ => Err(format!(
@@ -2548,11 +2554,12 @@ mod tests {
 
     #[test]
     fn the_batch_width_defaults_to_the_small_m_limit_and_refuses_what_is_outside_it() {
-        assert_eq!(resolve_batch_rows(None), Ok(BATCH_ROWS_MAX));
+        assert_eq!(resolve_batch_rows(None), Ok(8));
         assert_eq!(resolve_batch_rows(Some("1")), Ok(1));
         assert_eq!(resolve_batch_rows(Some("8")), Ok(8));
+        assert_eq!(resolve_batch_rows(Some("16")), Ok(16));
         assert!(resolve_batch_rows(Some("0")).is_err());
-        assert!(resolve_batch_rows(Some("9")).is_err());
+        assert!(resolve_batch_rows(Some("17")).is_err());
         // a batched call holds every running request's key rows at once
         let mut m = flash();
         let alone = Book {
