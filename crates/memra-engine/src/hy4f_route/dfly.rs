@@ -152,13 +152,12 @@ pub struct Drafter {
     pub weight_bytes: usize,
 }
 
-/// How a draft step turns its logits row into a draft: `pick(step, row)`. Unset, a draft is the
-/// first maximum. The serve route passes the request's own chooser at the draft's position (the
-/// position-keyed draw of a sampled request, the penalty window grown by the drafts before it),
-/// so a sampled request's drafts are coupled to the target's draws: a draft holds when the
-/// drafter's row puts the target's uniform on the same token. A pick decides only which drafts
-/// a verify call scores, never a served token.
-pub type DraftPick<'p> = &'p mut dyn FnMut(usize, &[f32]) -> Result<u32, String>;
+/// How a draft step turns its logits row into a draft: `pick(step, row)` answers the draft and
+/// whether the round drafts on after it. Unset, every draft is the first maximum and the round
+/// runs its `k` steps. The serve route's draft gate ends a round early once another draft cannot
+/// pay (`hy4f_serve`); the lane's replay tools draw drafts in other ways to compare them. A pick
+/// decides only which drafts a verify call scores, never a served token.
+pub type DraftPick<'p> = &'p mut dyn FnMut(usize, &[f32]) -> Result<(u32, bool), String>;
 
 /// A round's drafts and, when asked for, every step's logits (`[k, vocab]`).
 #[derive(Debug, Clone, Default)]
@@ -608,7 +607,8 @@ impl<'a> Route<'a> {
     /// A draft round after `sess`'s last call: the source is that call's row `row`, which must be
     /// the session's last position `p`; `anchor` is the token chosen at `p`. `forced` replaces each
     /// step's previous token after step 0 (the gate's forced runs); `pick` chooses each draft from
-    /// its logits row (unset: the first maximum, `DraftPick`).
+    /// its logits row and may end the round after it (unset: the first maximum, all `k`;
+    /// `DraftPick`).
     #[allow(clippy::too_many_arguments)]
     pub fn draft_in(
         &mut self,
@@ -1247,8 +1247,11 @@ impl<'a> Route<'a> {
             if row.iter().any(|x| !x.is_finite()) {
                 return Err(format!("draft step {s}: non-finite logits"));
             }
-            let best = match pick.as_mut() {
-                Some(f) => f(s, &row)? as usize,
+            let (best, go_on) = match pick.as_mut() {
+                Some(f) => {
+                    let (d, go_on) = f(s, &row)?;
+                    (d as usize, go_on)
+                }
                 None => {
                     // `greedy_argmax`: the first of equal maxima
                     let mut best = 0usize;
@@ -1257,7 +1260,7 @@ impl<'a> Route<'a> {
                             best = i;
                         }
                     }
-                    best
+                    (best, true)
                 }
             };
             if best >= v {
@@ -1273,6 +1276,9 @@ impl<'a> Route<'a> {
                 Some(f) => f[s],
                 None => best as u32,
             };
+            if !go_on {
+                break;
+            }
         }
         Ok(DraftOut {
             ids: out_ids,

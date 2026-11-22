@@ -591,17 +591,18 @@ fn replay(args: &[String]) -> Result<(), String> {
                 1.0
             };
             let mut qs = Vec::with_capacity(k);
-            let mut top = |_s: usize, row: &[f32]| -> Result<u32, String> {
+            let mut top = |_s: usize, row: &[f32]| -> Result<(u32, bool), String> {
                 let best = argmax(row);
                 let mx = row[best as usize] as f64;
                 let z: f64 = row.iter().map(|&x| ((x as f64 - mx) / tq).exp()).sum();
                 qs.push(1.0 / z);
-                Ok(best)
+                Ok((best, true))
             };
             let g = route.draft_in(&mut sess, src, t, k, None, false, Some(&mut top))?;
             q_greedy.push(qs);
             let pos0 = pl + ids.len();
-            let mut pick = |s: usize, row: &[f32]| pick_row(row, pos0 + s, sample.as_ref());
+            let mut pick =
+                |s: usize, row: &[f32]| pick_row(row, pos0 + s, sample.as_ref()).map(|d| (d, true));
             let c = route.draft_in(&mut sess, src, t, k, None, false, Some(&mut pick))?;
             greedy_drafts.push(g.ids);
             chosen_drafts.push(c.ids);
@@ -611,7 +612,8 @@ fn replay(args: &[String]) -> Result<(), String> {
                     temperature: cfg.temperature * 0.5,
                     ..*cfg
                 };
-                let mut pick = |s: usize, row: &[f32]| pick_row(row, pos0 + s, Some(&half));
+                let mut pick =
+                    |s: usize, row: &[f32]| pick_row(row, pos0 + s, Some(&half)).map(|d| (d, true));
                 let hd = route.draft_in(&mut sess, src, t, k, None, false, Some(&mut pick))?;
                 half_drafts.push(hd.ids);
             }
@@ -714,7 +716,8 @@ fn cost(args: &[String]) -> Result<(), String> {
     for _ in 0..reps {
         for d in 1..=k {
             let pos0 = sess.positions() + 1;
-            let mut pick = |s: usize, row: &[f32]| pick_row(row, pos0 + s, sample.as_ref());
+            let mut pick =
+                |s: usize, row: &[f32]| pick_row(row, pos0 + s, sample.as_ref()).map(|d| (d, true));
             let td = Instant::now();
             let out = route.draft_in(&mut sess, src, t, d, None, false, Some(&mut pick))?;
             draft_ms[d - 1].push(td.elapsed().as_secs_f64() * 1e3);
