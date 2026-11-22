@@ -447,6 +447,68 @@ int memra_ink2d_gemv_nvfp4(const float* x, int64_t ldx, const void* codes, const
   return dk_rc();
 }
 
+// FP8 control arm: y[r, col] = bias[col] + rs[col] * sum_k x[r, k] * e4m3(w[col, k]); e4m3 bytes [n, ldw],
+// one f32 scale per output row. Per 16-input group a fused multiply-add chain, the groups summed per lane,
+// then across the warp.
+__global__ void dk_gemv_fp8_kernel(const float* __restrict__ x, int64_t ldx, const uint8_t* __restrict__ w,
+                                   int64_t ldw, const float* __restrict__ rs, const float* __restrict__ bias,
+                                   float* __restrict__ y, int64_t ldy, int m, int n, int k) {
+  const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+  const int col = blockIdx.x * 8 + warp;
+  if (col >= n) return;
+  const uint8_t* wr = w + (int64_t)col * ldw;
+  for (int r0 = blockIdx.y * DK_MR; r0 < m; r0 += gridDim.y * DK_MR) {
+    float s[DK_MR];
+#pragma unroll
+    for (int i = 0; i < DK_MR; i++) s[i] = 0.f;
+    for (int g = lane; g < k / 16; g += 32) {
+      const uint4 pk = *reinterpret_cast<const uint4*>(wr + (int64_t)g * 16);
+      const uint32_t words[4] = {pk.x, pk.y, pk.z, pk.w};
+      float wv[16];
+#pragma unroll
+      for (int j = 0; j < 16; j++) {
+        const uint32_t b = (words[j >> 2] >> ((j & 3) * 8)) & 0xffu;
+        const uint32_t e = (b >> 3) & 15u, mm = b & 7u;
+        const float mag = e == 0 ? (float)mm * 0x1p-9f : (float)(8u + mm) * __uint_as_float((e + 117u) << 23);
+        wv[j] = (b & 0x80u) ? -mag : mag;
+      }
+#pragma unroll
+      for (int i = 0; i < DK_MR; i++) {
+        if (r0 + i < m) {
+          const float4* xp = reinterpret_cast<const float4*>(x + (int64_t)(r0 + i) * ldx + g * 16);
+          float acc = 0.f;
+#pragma unroll
+          for (int q = 0; q < 4; q++) {
+            const float4 a = xp[q];
+            acc = fmaf(wv[4 * q], a.x, acc);
+            acc = fmaf(wv[4 * q + 1], a.y, acc);
+            acc = fmaf(wv[4 * q + 2], a.z, acc);
+            acc = fmaf(wv[4 * q + 3], a.w, acc);
+          }
+          s[i] += acc;
+        }
+      }
+    }
+#pragma unroll
+    for (int i = 0; i < DK_MR; i++) {
+      const float v = dk_warp_sum(s[i]);
+      if (lane == 0 && r0 + i < m) y[(int64_t)(r0 + i) * ldy + col] = (bias ? bias[col] : 0.f) + rs[col] * v;
+    }
+  }
+}
+
+int memra_ink2d_gemv_fp8(const float* x, int64_t ldx, const void* w, int64_t ldw, const float* rs, const float* bias,
+                         float* y, int64_t ldy, int m, int n, int k, void* stream) {
+  if (!x || !w || !rs || !y || m <= 0 || n <= 0 || k <= 0 || k % 16 || ldx % 4 || ((uintptr_t)x & 15) ||
+      ((uintptr_t)w & 15) || ldw % 16 || ldw < k)
+    return 46018;
+  const int groups = (m + DK_MR - 1) / DK_MR;
+  dim3 grid((n + 7) / 8, groups < 64 ? groups : 64);
+  dk_gemv_fp8_kernel<<<grid, 256, 0, (cudaStream_t)stream>>>(x, ldx, (const uint8_t*)w, ldw, rs, bias, y, ldy, m, n,
+                                                              k);
+  return dk_rc();
+}
+
 // [state | dequant(w1[prev])] from an NVFP4 markov_w1 ([vocab, rank]).
 __global__ void dk_markov_in_nvfp4_kernel(const float* __restrict__ state, const uint8_t* __restrict__ codes,
                                           const uint8_t* __restrict__ scales, float t, const uint32_t* __restrict__ prev,
