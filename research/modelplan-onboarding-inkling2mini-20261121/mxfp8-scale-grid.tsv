@@ -1,0 +1,11 @@
+# MXFP8 expert scale planes: aligned 32-row groups whose 32 rows are identical.
+# A 32x32 block grid repeated over rows would make every group uniform.
+tensor	shape	row_groups	uniform_groups	rows_differing_from_group_first	min_exponent	max_exponent
+model.llm.layers.20.mlp.experts.w13_weight_scale	128,2304,72	9216	0	285696	113	117
+model.llm.layers.20.mlp.experts.w2_weight_scale	128,2304,36	9216	0	285695	113	118
+model.llm.layers.21.mlp.experts.w13_weight_scale	128,2304,72	9216	0	285696	113	117
+model.llm.layers.21.mlp.experts.w2_weight_scale	128,2304,36	9216	0	285694	113	118
+model.llm.layers.22.mlp.experts.w13_weight_scale	128,2304,72	9216	0	285696	113	118
+model.llm.layers.22.mlp.experts.w2_weight_scale	128,2304,36	9216	0	285695	113	118
+model.llm.layers.23.mlp.experts.w13_weight_scale	128,2304,72	9216	0	285696	113	118
+model.llm.layers.23.mlp.experts.w2_weight_scale	128,2304,36	9216	0	285695	113	118

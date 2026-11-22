@@ -461,7 +461,33 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
         | OperationKind::HyV4Engram
         | OperationKind::Fp8BlockWeightOnlyLinear
         | OperationKind::Nvfp4W4A16Linear
-        | OperationKind::HyV4StreamExit => Surfaces::NONE,
+        | OperationKind::HyV4StreamExit
+        // Logit truncation: the reference executor implements it (memra-reference
+        // `apply_logits_transforms`, pinned by
+        // `logits_truncate_keeps_the_head_bits_and_makes_the_padded_tail_unselectable`); no
+        // tuned surface does.
+        | OperationKind::LogitsTruncate
+        // Inkling 2: typed and contract-owned; no reference executor or tuned surface implements
+        // these yet, so every surface refuses a plan that names one.
+        | OperationKind::Nvfp4FloatInputExperts
+        | OperationKind::Mxfp8FloatInputExperts
+        | OperationKind::EmbeddingNorm
+        | OperationKind::LoopWeightSharing
+        | OperationKind::LoopMessageMix
+        | OperationKind::LoopController
+        | OperationKind::Nvfp4W4A4Experts
+        | OperationKind::Mxfp8W8A8Experts
+        | OperationKind::RelativeBiasAttention
+        | OperationKind::AttentionL2Clip
+        | OperationKind::AttentionLogScale
+        | OperationKind::PerQuerySink
+        | OperationKind::PerDimOutputGate
+        | OperationKind::ShortConv
+        | OperationKind::DynamicShortConv
+        | OperationKind::RelativeBiasState
+        | OperationKind::BlockAttentionResidual
+        | OperationKind::SoftcappedSwiGluActivation
+        | OperationKind::DsparkRnnDrafter => Surfaces::NONE,
     }
 }
 
@@ -552,6 +578,26 @@ pub const ALL_OPERATIONS: &[OperationKind] = &[
     OperationKind::Fp8BlockWeightOnlyLinear,
     OperationKind::Nvfp4W4A16Linear,
     OperationKind::HyV4StreamExit,
+    OperationKind::Nvfp4FloatInputExperts,
+    OperationKind::Mxfp8FloatInputExperts,
+    OperationKind::EmbeddingNorm,
+    OperationKind::LoopWeightSharing,
+    OperationKind::LoopMessageMix,
+    OperationKind::LoopController,
+    OperationKind::Nvfp4W4A4Experts,
+    OperationKind::Mxfp8W8A8Experts,
+    OperationKind::RelativeBiasAttention,
+    OperationKind::AttentionL2Clip,
+    OperationKind::AttentionLogScale,
+    OperationKind::PerQuerySink,
+    OperationKind::PerDimOutputGate,
+    OperationKind::ShortConv,
+    OperationKind::DynamicShortConv,
+    OperationKind::RelativeBiasState,
+    OperationKind::BlockAttentionResidual,
+    OperationKind::SoftcappedSwiGluActivation,
+    OperationKind::DsparkRnnDrafter,
+    OperationKind::LogitsTruncate,
     OperationKind::Mtp,
     OperationKind::DraftPlan,
     OperationKind::MtpFusion,
@@ -610,7 +656,7 @@ mod tests {
         // follow. Bump it in the same commit as the variant.
         assert_eq!(
             ALL_OPERATIONS.len(),
-            93,
+            113,
             "OperationKind variant count moved; update ALL_OPERATIONS"
         );
     }

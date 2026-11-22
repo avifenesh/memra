@@ -1,0 +1,1019 @@
+//! Inkling 2 (`inkling2`) pack: config normalization, the typed 48-slot plan and the
+//! config-derived tensor schema for `thinkingmachines/Inkling-2-Mini`. No executor runs the
+//! plan yet: support is none and every execution surface refuses it.
+//!
+//! The checkpoint defines the program. Its `config.json` gives the topology and
+//! `hf_quant_config.json` gives the numerics: the routed experts are NVFP4 (layers 0-19) or
+//! MXFP8 (layers 20-23) and each group REQUIRES its input quantized the same way. That declared
+//! program is the family's default numeric class. Running the experts on float inputs is a
+//! second, named bring-up class and is never presented as the first.
+//!
+//! Checkpoint namespaces (1,298 header tensors):
+//!   model.llm.*      trunk: 24 physical layers, loop controllers and queries, embed, unembed
+//!   model.visual.*   ViT tower and projector; contract-owned, not executed (text only)
+//!   mtp.*            the DSpark drafter of `mtp.safetensors` (a file outside the shard index;
+//!                    the prefix is the census's); contract-owned, not executed
+//!
+//! Layers 6..18 run three passes over shared weights, so the plan has 48 layer entries (cache
+//! slots) over 24 weight sets; `ModelPlan::inkling2.loop_plan` maps each slot to its physical
+//! layer. Tensor ids are keyed on the physical layer.
+
+use std::collections::BTreeMap;
+
+use super::*;
+use crate::config::Inkling2Config;
+use crate::dsv4::TensorSpec;
+use crate::model_plan::{
+    ActivationPlan, AttentionInputs, AttentionPlan, BeyondExtent, BlockAttentionPlan, ClipScale,
+    DenseNumericsPlan, DenseTensorClass, DraftSourcePlan, DrafterHead, DrafterTap,
+    ExpertActivationMode, ExpertNumericsPlan, ExpertWeightFormat, Inkling2DrafterPlan,
+    Inkling2NumericClass, Inkling2Numerics, Inkling2Plan, L2ClipPlan, LayerPlan,
+    LogPositionScalePlan, LogitsTransform, LoopMessageTarget, LoopPlan, LoopSlotPlan, MlpPlan,
+    MoeMlpPlan, NormKind, NormPlan, OutputGatePlan, QuerySinkPlan, RelativeBiasAttentionPlan,
+    RelativeBiasPlan, RelativeBiasStatePlan, ResidualTopology, RouterPlan, ShortConvPlan,
+    ShortConvTaps, StatePlan, ValueNorm, WeightTransform,
+};
+use crate::quant_groups::ComputeDtype;
+use crate::tensor_contract::{
+    FloatType, LayerTensor, QuantConstraint, TensorId, TensorMatch, TensorOwner, TensorRequirement,
+    TensorTransform,
+};
+
+const FAMILY: &str = "inkling2";
+
+/// Census prefix of the drafter file's tensors.
+pub const DRAFTER_PREFIX: &str = "mtp.";
+
+/// Epsilon of the L2 clips, the residual mixes and the controller norms. It is a constant of the
+/// program, not a config key.
+const PROGRAM_EPSILON: f32 = 1e-6;
+
+/// Planes of a stacked expert bank, in the order the safetensors census lists them.
+const BANK_PLANES: [&str; 3] = ["_scale", "_amax", "_outer_scale_denominator"];
+
+pub static PACK: ModelPack = ModelPack {
+    family: "inkling2",
+    output_head: OutputHeadContract::SeparateHead,
+    tensor_consumption: TensorConsumption::Report,
+    auxiliary_files: &[AuxiliaryTensorFile {
+        file: "mtp.safetensors",
+        prefix: DRAFTER_PREFIX,
+    }],
+    aliases: &[
+        "inkling2",
+        "inkling2_loop",
+        "inkling2_loop_text",
+        "inkling-2-mini",
+    ],
+    config_layout: ConfigLayout::FlatOrTextConfig,
+    tokenizer_sources: &[TokenizerSource::TokenizerJson],
+    // The artifact ships `chat_template.jinja`.
+    template: TemplateContract::ArtifactRequired,
+    // No executor implements the plan's operations: inspection only.
+    support: None,
+    gates: &[
+        Gate::Config,
+        Gate::TokenizerTemplate,
+        Gate::TensorCensus,
+        Gate::TinyParity,
+        Gate::CheckpointParity,
+        Gate::RewriteParity,
+        Gate::Serve,
+    ],
+    // No oracle of the declared numeric class exists yet, so no band is declared; the
+    // checkpoint gate cannot pass until one is.
+    checkpoint_parity: None,
+    checkpoint_parity_classes: &[],
+    checkpoint_probe: None,
+    checkpoint_requests: &[],
+    matches_config: |config| matches!(config.arch, Arch::Inkling2Loop) && config.inkling2.is_some(),
+    plan_builder,
+    tensor_schema,
+    tiny_plan: None,
+};
+
+fn inkling(config: &ModelConfig) -> Result<&Inkling2Config, PlanCompileError> {
+    config
+        .inkling2
+        .as_ref()
+        .ok_or_else(|| PlanCompileError::UnsupportedSemantics {
+            field: "inkling2",
+            value: "config carries no inkling2 block".into(),
+        })
+}
+
+/// The family's default plan: every layer runs its declared activation quantizer.
+fn plan_builder(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
+    let layers = inkling(config)?.num_hidden_layers as usize;
+    plan_with_expert_activation(config, &vec![ExpertActivationMode::Declared; layers])
+}
+
+/// The plan with the expert input mode chosen per physical layer. The default plan is all
+/// `Declared`; anything else is a measurement plan with its own numeric class and plan hash,
+/// which is how a per-layer study of the quantizer's effect names what it ran.
+pub fn plan_with_expert_activation(
+    config: &ModelConfig,
+    modes: &[ExpertActivationMode],
+) -> Result<ModelPlan, PlanCompileError> {
+    config.validate_plan_semantics()?;
+    let ink = inkling(config)?;
+    if modes.len() != ink.num_hidden_layers as usize {
+        return Err(PlanCompileError::UnsupportedSemantics {
+            field: "expert activation modes",
+            value: format!(
+                "{} modes for {} physical layers",
+                modes.len(),
+                ink.num_hidden_layers
+            ),
+        });
+    }
+    if ink.num_hidden_layers == 0 {
+        return Err(PlanCompileError::EmptyModel);
+    }
+    let numerics_error = |value: String| PlanCompileError::UnsupportedSemantics {
+        field: "hf_quant_config.json",
+        value,
+    };
+    let quant = ink.quant.as_ref().ok_or_else(|| {
+        numerics_error(
+            "not attached; the expert formats and the required activation quantizers are declared there"
+                .into(),
+        )
+    })?;
+    let norm = NormPlan {
+        kind: NormKind::Rms,
+        epsilon: ink.rms_norm_eps,
+        weight_transform: WeightTransform::Identity,
+    };
+    let experts = (0..ink.num_hidden_layers)
+        .map(|physical| {
+            let declared = ink.expert_quant(physical).map_err(&numerics_error)?;
+            Ok(ExpertNumericsPlan {
+                physical_layer: physical,
+                weight: match declared.compute {
+                    ComputeDtype::Nvfp4 => ExpertWeightFormat::Nvfp4Amax,
+                    ComputeDtype::Mxfp8 => ExpertWeightFormat::Mxfp8Row32,
+                    other => {
+                        return Err(numerics_error(format!(
+                            "layer {physical} experts compute in {other:?}; only nvfp4 and mxfp8 banks are typed"
+                        )));
+                    }
+                },
+                declared_activation: declared.activation,
+                activation: modes[physical as usize],
+            })
+        })
+        .collect::<Result<Vec<_>, PlanCompileError>>()?;
+    let dense = dense_numerics(quant).map_err(&numerics_error)?;
+    declaration_covers_census(config, quant).map_err(&numerics_error)?;
+
+    let slots = ink.slots();
+    let layers = (0..slots).map(|slot| layer_plan(ink, slot, norm)).collect();
+    let loop_slots = (0..slots)
+        .map(|slot| {
+            let pass = ink.slot_pass(slot);
+            LoopSlotPlan {
+                slot,
+                physical_layer: ink.physical_layer(slot),
+                pass,
+                message: pass.is_some_and(|pass| pass > 0),
+            }
+        })
+        .collect();
+    let execution_order = ink.execution_order();
+    let drafter = &ink.drafter;
+    let taps = drafter
+        .target_layer_ids
+        .iter()
+        .map(|&visit| match execution_order.get(visit as usize) {
+            Some(&slot) => DrafterTap::SlotInput { slot },
+            None => DrafterTap::FinalNorm,
+        })
+        .collect();
+    Ok(ModelPlan {
+        speech: None,
+        arch: config.arch.clone(),
+        prefill_activation: None,
+        hidden_size: ink.hidden_size,
+        // Rows of the embedding and the output projection; `Truncate` drops the padding.
+        vocab_size: ink.vocab_size,
+        context_length: ink.model_max_length,
+        embedding_scale: 1.0,
+        // The ViT tower and projector are contract-owned and not part of the text plan.
+        vision: None,
+        mimo_audio_patch: None,
+        multimodal: None,
+        per_layer_input: None,
+        layers,
+        output_norm: norm,
+        exit_mixer: None,
+        logits: vec![
+            LogitsTransform::Softcap(ink.final_logit_softcapping),
+            LogitsTransform::Truncate(ink.unpadded_vocab_size),
+        ],
+        mtp_blocks: Vec::new(),
+        // The shipped drafter is declared on `inkling2.drafter`; it is not a `DsparkPlan`
+        // program and nothing executes it, so no executable draft source is claimed.
+        drafter: None,
+        draft_source: DraftSourcePlan::None,
+        sampling_defaults: None,
+        // A loop revisits its layers; no pipeline cut is declared.
+        partition_boundaries: Vec::new(),
+        deepseek_v41: None,
+        hy_v4_flash: None,
+        inkling2: Some(Inkling2Plan {
+            embedding_norm: norm,
+            loop_plan: LoopPlan {
+                core_start: ink.loop_core_start,
+                core_end: ink.loop_core_end,
+                passes: ink.loop_num_passes,
+                gate_rank: ink.loop_gate_rank,
+                controller_epsilon: PROGRAM_EPSILON,
+                targets: [
+                    LoopMessageTarget::Query,
+                    LoopMessageTarget::Key,
+                    LoopMessageTarget::Value,
+                    LoopMessageTarget::Mlp,
+                ],
+                slots: loop_slots,
+                execution_order,
+            },
+            mlp_output_conv: ShortConvPlan {
+                kernel: ink.sconv_kernel_size,
+                channels: ink.hidden_size,
+                taps: ShortConvTaps::Static,
+            },
+            output_queries: 1,
+            numerics: Inkling2Numerics {
+                default_class: Inkling2NumericClass::DeclaredActivationQuant,
+                bring_up_class: Inkling2NumericClass::FloatActivation,
+                class: Inkling2Numerics::class_of(&experts),
+                experts,
+                dense,
+                gate_up_interleaved: true,
+                routed_weight_before_down: true,
+                quant_config_sha256: quant.sha256.clone(),
+            },
+            drafter: Inkling2DrafterPlan {
+                blocks: drafter.num_hidden_layers,
+                block_size: drafter.block_size,
+                query_heads: drafter.num_attention_heads,
+                kv_heads: drafter.num_key_value_heads,
+                head_dim: drafter.head_dim,
+                intermediate_size: drafter.intermediate_size,
+                rope_base: drafter.rope_theta,
+                local_blocks: drafter.local_layer_ids.clone(),
+                window: drafter.sliding_window_size,
+                head: DrafterHead::RnnHidden {
+                    rank: drafter.markov_rank,
+                },
+                target_visit_ids: drafter.target_layer_ids.clone(),
+                taps,
+            },
+            vision_executed: false,
+        }),
+    })
+}
+
+/// The declaration and the derived census name the same tensors: every tensor the checkpoint
+/// must hold is in a parameter group of its file's part, and every declared tensor is one the
+/// checkpoint must hold. Quantization planes are declared through their bank.
+fn declaration_covers_census(
+    config: &ModelConfig,
+    quant: &crate::quant_groups::QuantGroups,
+) -> Result<(), String> {
+    let expected = expected_census(config)?;
+    let mut model = 0usize;
+    let mut drafter = 0usize;
+    for name in expected.keys() {
+        if plane_owner(name, &expected).is_some() {
+            continue;
+        }
+        match name.strip_prefix(DRAFTER_PREFIX) {
+            Some(tensor) => {
+                drafter += 1;
+                if quant.mtp_group(tensor).is_none() {
+                    return Err(format!("no mtp parameter group declares {tensor}"));
+                }
+            }
+            None => {
+                model += 1;
+                if quant.model_group(name).is_none() {
+                    return Err(format!("no model parameter group declares {name}"));
+                }
+            }
+        }
+    }
+    // Names are unique within a part, so equal counts leave no declared tensor unaccounted for;
+    // the loops below only name the first stray one.
+    for (part, groups, count, prefix) in [
+        ("model", &quant.model, model, ""),
+        ("mtp", &quant.mtp, drafter, DRAFTER_PREFIX),
+    ] {
+        if groups
+            .iter()
+            .map(|group| group.tensors.len())
+            .sum::<usize>()
+            == count
+        {
+            continue;
+        }
+        for tensor in groups.iter().flat_map(|group| &group.tensors) {
+            if !expected.contains_key(&format!("{prefix}{tensor}")) {
+                return Err(format!(
+                    "the {part} parameter groups declare {tensor}, which the config does not derive"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The dense tensor class of a trunk tensor; `None` for expert banks.
+fn dense_class(name: &str) -> Option<DenseTensorClass> {
+    let rest = name.strip_prefix("model.llm.")?;
+    Some(match rest {
+        "embed.weight" => DenseTensorClass::Embedding,
+        "unembed.weight" => DenseTensorClass::OutputProjection,
+        _ if rest.contains(".mlp.experts.") => return None,
+        _ if rest.ends_with(".mlp.gate.weight") => DenseTensorClass::Router,
+        _ if rest.ends_with(".mlp.gate.bias") => DenseTensorClass::RouterBias,
+        _ if rest.contains(".controllers.") => DenseTensorClass::LoopControllers,
+        _ if rest.contains("sconv.") => DenseTensorClass::ShortConvs,
+        _ if rest.starts_with("attn_res.") || rest.starts_with("middle_cycle_cross_pass_") => {
+            DenseTensorClass::ResidualQueries
+        }
+        _ if rest.ends_with("norm.weight") => DenseTensorClass::Norms,
+        _ if rest.contains(".attn.") => DenseTensorClass::AttentionProjections,
+        _ => return None,
+    })
+}
+
+/// Numerics of every dense tensor class, read from the parameter groups. Each trunk tensor
+/// that is not an expert bank must fall in a class, and a class must be declared one way.
+fn dense_numerics(
+    quant: &crate::quant_groups::QuantGroups,
+) -> Result<Vec<DenseNumericsPlan>, String> {
+    const CLASSES: [DenseTensorClass; 9] = [
+        DenseTensorClass::AttentionProjections,
+        DenseTensorClass::Router,
+        DenseTensorClass::RouterBias,
+        DenseTensorClass::LoopControllers,
+        DenseTensorClass::ShortConvs,
+        DenseTensorClass::Norms,
+        DenseTensorClass::ResidualQueries,
+        DenseTensorClass::Embedding,
+        DenseTensorClass::OutputProjection,
+    ];
+    let mut found: Vec<Option<DenseNumericsPlan>> = vec![None; CLASSES.len()];
+    for group in &quant.model {
+        for tensor in &group.tensors {
+            if !tensor.starts_with("model.llm.") || tensor.contains(".mlp.experts.") {
+                continue;
+            }
+            let class = dense_class(tensor)
+                .ok_or_else(|| format!("{tensor} is in no typed dense tensor class"))?;
+            if group.compute_dtype.is_quantized() {
+                return Err(format!(
+                    "{tensor} is declared {:?}; only the routed experts are quantized in this program",
+                    group.compute_dtype
+                ));
+            }
+            let this = DenseNumericsPlan {
+                class,
+                weight: group.compute_dtype,
+                output_f32: match group.fwd_output_dtype.as_deref() {
+                    None => false,
+                    Some("float32") => true,
+                    Some(other) => {
+                        return Err(format!("{tensor} declares fwd_output_dtype {other:?}"));
+                    }
+                },
+            };
+            let slot = &mut found[CLASSES
+                .iter()
+                .position(|&c| c == class)
+                .expect("listed class")];
+            if slot.is_some_and(|first| first != this) {
+                return Err(format!(
+                    "tensor class {class:?} is declared two ways (at {tensor})"
+                ));
+            }
+            *slot = Some(this);
+        }
+    }
+    CLASSES
+        .iter()
+        .zip(found)
+        .map(|(class, numerics)| {
+            numerics.ok_or_else(|| format!("no tensor of class {class:?} is declared"))
+        })
+        .collect()
+}
+
+fn layer_plan(ink: &Inkling2Config, slot: u32, norm: NormPlan) -> LayerPlan {
+    let physical = ink.physical_layer(slot);
+    let local = ink.is_local(physical);
+    let kv_width = ink.num_key_value_heads * ink.head_dim;
+    let window = local.then_some(ink.sliding_window_size);
+    let kv_conv = ShortConvPlan {
+        kernel: ink.sconv_kernel_size,
+        channels: kv_width,
+        taps: if local {
+            ShortConvTaps::Static
+        } else {
+            ShortConvTaps::StaticPlusDynamic {
+                groups: ink.num_key_value_heads,
+            }
+        },
+    };
+    LayerPlan {
+        index: slot,
+        pre_attention_norm: norm,
+        attention: AttentionPlan::RelativeBias(RelativeBiasAttentionPlan {
+            query_heads: ink.num_attention_heads,
+            kv_heads: ink.num_key_value_heads,
+            head_dim: ink.head_dim,
+            window,
+            inputs: if local {
+                AttentionInputs::SharedNorm
+            } else {
+                AttentionInputs::SeparateQkvNorms
+            },
+            query_clip: L2ClipPlan {
+                threshold: ink.qk_l2_clip_threshold,
+                epsilon: PROGRAM_EPSILON,
+                scale: ClipScale::PerHeadChannel,
+            },
+            key_clip: L2ClipPlan {
+                threshold: ink.qk_l2_clip_threshold,
+                epsilon: PROGRAM_EPSILON,
+                scale: ClipScale::None,
+            },
+            value_norm: ValueNorm::WeightlessRms,
+            value_norm_epsilon: ink.rms_norm_eps,
+            relative: RelativeBiasPlan {
+                rank: ink.d_rel,
+                // A sliding layer's table spans its window; a full layer's spans rel_extent.
+                extent: if local {
+                    ink.sliding_window_size
+                } else {
+                    ink.rel_extent
+                },
+                clip: L2ClipPlan {
+                    threshold: ink.rel_l2_clip_threshold,
+                    epsilon: PROGRAM_EPSILON,
+                    scale: ClipScale::PerHeadChannel,
+                },
+                beyond_extent: if local {
+                    BeyondExtent::Masked
+                } else {
+                    BeyondExtent::ZeroBias
+                },
+            },
+            log_scale: (!local).then_some(LogPositionScalePlan {
+                floor: ink.log_scaling_n_floor,
+                alpha: ink.log_scaling_alpha,
+            }),
+            sink: QuerySinkPlan::PerQueryProjection,
+            output_gate: OutputGatePlan::SeparatePerDimSigmoid,
+            key_conv: kv_conv,
+            value_conv: kv_conv,
+            output_conv: ShortConvPlan {
+                kernel: ink.sconv_kernel_size,
+                channels: ink.hidden_size,
+                taps: ShortConvTaps::Static,
+            },
+        }),
+        pre_mlp_norm: norm,
+        mlp: MlpPlan::Moe(MoeMlpPlan {
+            expert_count: ink.n_routed_experts,
+            experts_per_token: ink.num_experts_per_tok,
+            expert_intermediate_size: ink.intermediate_size,
+            // Sigmoid scores; `gate.bias` steers the selection only; the selected raw scores are
+            // renormalized and scaled by `route_scale`.
+            router: RouterPlan::Sigmoid {
+                normalize_selected: true,
+                scaling_factor: ink.route_scale,
+                selection_bias: ink.use_gate_bias,
+            },
+            shared: None,
+            activation: ActivationPlan::SwiGluSoftcapped {
+                gate_cap: ink.mlp_gate_softcap,
+                up_cap: ink.mlp_up_softcap,
+            },
+        }),
+        residual: ResidualTopology::BlockAttention(BlockAttentionPlan {
+            block: ink.n_layers_per_attn_res_block,
+            starts_block: ink.starts_block(physical),
+            attention_queries: attention_queries(ink, physical),
+            normalize_values: ink.attn_res_normalize_values,
+            epsilon: PROGRAM_EPSILON,
+        }),
+        state: StatePlan::RelativeBias(RelativeBiasStatePlan {
+            key_width: kv_width,
+            value_width: kv_width,
+            window,
+            conv_history: ink.sconv_kernel_size - 1,
+            conv_channels: ink.conv_state_channels(),
+        }),
+        sparse_overlay: None,
+        ple: None,
+    }
+}
+
+/// Residual queries of a layer's attention sublayer: none on layer 0 (nothing to mix yet), one
+/// on a sliding layer, three (Q, K, V) on a full layer.
+fn attention_queries(ink: &Inkling2Config, physical: u32) -> u32 {
+    if physical == 0 {
+        0
+    } else if ink.is_local(physical) {
+        1
+    } else {
+        3
+    }
+}
+
+/// The complete expected header census, derived from config math: every tensor of the indexed
+/// shard under its own name and every tensor of the drafter file under [`DRAFTER_PREFIX`].
+/// Shapes are the stored safetensors shapes (packed U8 experts carry `in / 2` bytes per row).
+pub fn expected_census(config: &ModelConfig) -> Result<BTreeMap<String, TensorSpec>, String> {
+    let ink = config
+        .inkling2
+        .as_ref()
+        .ok_or("inkling2 census needs an inkling2 config")?;
+    let hidden = u64::from(ink.hidden_size);
+    let vocab = u64::from(ink.vocab_size);
+    let heads = u64::from(ink.num_attention_heads);
+    let head_dim = u64::from(ink.head_dim);
+    let q_width = heads * head_dim;
+    let kv_heads = u64::from(ink.num_key_value_heads);
+    let kv_width = kv_heads * head_dim;
+    let rank = u64::from(ink.d_rel);
+    let kernel = u64::from(ink.sconv_kernel_size);
+    let experts = u64::from(ink.n_routed_experts);
+    let inter = u64::from(ink.intermediate_size);
+    let gate_rank = u64::from(ink.loop_gate_rank);
+    let mut map = BTreeMap::new();
+    let mut put = |name: String, dtype: &'static str, shape: Vec<u64>| {
+        assert!(
+            map.insert(name.clone(), TensorSpec { dtype, shape })
+                .is_none(),
+            "inkling2 census derives {name} twice"
+        );
+    };
+    let llm = "model.llm.";
+    put(format!("{llm}embed.weight"), "BF16", vec![vocab, hidden]);
+    put(format!("{llm}embed_norm.weight"), "BF16", vec![hidden]);
+    put(format!("{llm}norm.weight"), "BF16", vec![hidden]);
+    put(format!("{llm}unembed.weight"), "BF16", vec![vocab, hidden]);
+    put(format!("{llm}attn_res.output_query"), "F32", vec![hidden]);
+    for name in [
+        "middle_cycle_cross_pass_queries",
+        "middle_cycle_cross_pass_kv_queries",
+    ] {
+        // Two message queries per core layer in each tensor.
+        put(
+            format!("{llm}{name}"),
+            "F32",
+            vec![2 * u64::from(ink.core_len()), hidden],
+        );
+    }
+    for layer in 0..ink.num_hidden_layers {
+        let local = ink.is_local(layer);
+        let p = format!("{llm}layers.{layer}.");
+        // `attn_queries.N` belongs to layer N + 1.
+        match attention_queries(ink, layer) {
+            0 => {}
+            1 => put(
+                format!("{llm}attn_res.attn_queries.{}", layer - 1),
+                "F32",
+                vec![hidden],
+            ),
+            n => put(
+                format!("{llm}attn_res.attn_queries.{}", layer - 1),
+                "F32",
+                vec![u64::from(n), hidden],
+            ),
+        }
+        put(
+            format!("{llm}attn_res.mlp_queries.{layer}"),
+            "F32",
+            vec![hidden],
+        );
+        put(
+            format!("{p}attn.wq_du.weight"),
+            "BF16",
+            vec![q_width, hidden],
+        );
+        put(
+            format!("{p}attn.wk_dv.weight"),
+            "BF16",
+            vec![kv_width, hidden],
+        );
+        put(
+            format!("{p}attn.wv_dv.weight"),
+            "BF16",
+            vec![kv_width, hidden],
+        );
+        put(
+            format!("{p}attn.wo_ud.weight"),
+            "BF16",
+            vec![hidden, q_width],
+        );
+        put(
+            format!("{p}attn.wr_du.weight"),
+            "BF16",
+            vec![heads * rank, hidden],
+        );
+        put(
+            format!("{p}attn.gate_attn.weight"),
+            "BF16",
+            vec![q_width, hidden],
+        );
+        put(
+            format!("{p}attn.attn_sink_proj.weight"),
+            "BF16",
+            vec![heads, hidden],
+        );
+        put(
+            format!("{p}attn.q_l2_clip.scale"),
+            "BF16",
+            vec![heads, head_dim],
+        );
+        put(
+            format!("{p}attn.rel_l2_clip.scale"),
+            "BF16",
+            vec![heads, rank],
+        );
+        put(
+            format!("{p}attn.rel_logits_proj.proj"),
+            "BF16",
+            vec![
+                rank,
+                u64::from(if local {
+                    ink.sliding_window_size
+                } else {
+                    ink.rel_extent
+                }),
+            ],
+        );
+        for conv in ["k_sconv", "v_sconv"] {
+            if local {
+                put(
+                    format!("{p}attn.{conv}.weight"),
+                    "BF16",
+                    vec![kv_width, 1, kernel],
+                );
+            } else {
+                put(
+                    format!("{p}attn.{conv}.static_w"),
+                    "BF16",
+                    vec![kernel, kv_width],
+                );
+                put(
+                    format!("{p}attn.{conv}.weight_proj"),
+                    "BF16",
+                    vec![kernel * kv_heads, hidden],
+                );
+            }
+        }
+        if local {
+            put(format!("{p}attn_norm.weight"), "BF16", vec![hidden]);
+        } else {
+            for input in ["q", "k", "v"] {
+                put(
+                    format!("{p}{input}_input_norm.weight"),
+                    "BF16",
+                    vec![hidden],
+                );
+            }
+        }
+        put(
+            format!("{p}attn_sconv.weight"),
+            "BF16",
+            vec![hidden, 1, kernel],
+        );
+        put(
+            format!("{p}mlp_sconv.weight"),
+            "BF16",
+            vec![hidden, 1, kernel],
+        );
+        put(format!("{p}mlp_norm.weight"), "BF16", vec![hidden]);
+        put(format!("{p}mlp.gate.weight"), "BF16", vec![experts, hidden]);
+        put(format!("{p}mlp.gate.bias"), "F32", vec![experts]);
+        if (ink.loop_core_start..ink.loop_core_end).contains(&layer) {
+            for controller in ["attn", "k", "v", "mlp"] {
+                let c = format!("{p}controllers.{controller}.");
+                put(
+                    format!("{c}down_weight"),
+                    "BF16",
+                    vec![gate_rank, 2 * hidden],
+                );
+                put(format!("{c}forget_weight"), "BF16", vec![hidden, gate_rank]);
+                put(format!("{c}gain_weight"), "BF16", vec![hidden, gate_rank]);
+            }
+        }
+        // Expert banks: gate and up interleaved in w13 [experts, 2 * inter, hidden], down in w2
+        // [experts, hidden, inter].
+        let format = ink.expert_quant(layer)?.compute;
+        for (bank, rows, inputs) in [
+            ("w13_weight", 2 * inter, hidden),
+            ("w2_weight", hidden, inter),
+        ] {
+            let name = format!("{p}mlp.experts.{bank}");
+            match format {
+                ComputeDtype::Nvfp4 => {
+                    put(name.clone(), "U8", vec![experts, rows, inputs / 2]);
+                    put(
+                        format!("{name}_scale"),
+                        "F8_E4M3",
+                        vec![experts, rows, inputs / 16],
+                    );
+                    put(format!("{name}_amax"), "F32", vec![experts]);
+                    put(format!("{name}_outer_scale_denominator"), "F32", vec![1]);
+                }
+                ComputeDtype::Mxfp8 => {
+                    put(name.clone(), "F8_E4M3", vec![experts, rows, inputs]);
+                    put(
+                        format!("{name}_scale"),
+                        "U8",
+                        vec![experts, rows, inputs / 32],
+                    );
+                }
+                other => {
+                    return Err(format!(
+                        "layer {layer} experts compute in {other:?}; only nvfp4 and mxfp8 banks are typed"
+                    ));
+                }
+            }
+        }
+    }
+
+    // ViT tower and projector (contract-owned, not in the text plan).
+    let v = &ink.vision;
+    let vd = u64::from(v.hidden_size);
+    let vmlp = (f64::from(v.hidden_size) * f64::from(v.mlp_ratio)) as u64;
+    let patch = u64::from(v.native_patch_size);
+    let grid = u64::from(v.posemb_grid_size);
+    let projection = u64::from(v.projection_hidden_dim);
+    let merge = u64::from(v.adapter_merge_size);
+    let vis = "model.visual.";
+    let emb = format!("{vis}backbone.embeddings.");
+    put(format!("{emb}class_embedding"), "BF16", vec![vd]);
+    put(format!("{emb}cls_position_embedding"), "BF16", vec![vd]);
+    put(
+        format!("{emb}patch_embedding.weight"),
+        "BF16",
+        vec![vd, 3 * patch * patch],
+    );
+    put(
+        format!("{emb}position_embedding"),
+        "BF16",
+        vec![grid * grid, vd],
+    );
+    put(format!("{vis}backbone.ln_pre.weight"), "BF16", vec![vd]);
+    put(format!("{vis}backbone.ln_pre.bias"), "BF16", vec![vd]);
+    for block in 0..v.num_hidden_layers {
+        let p = format!("{vis}backbone.layers.{block}.");
+        for norm in ["ln_1", "ln_2"] {
+            put(format!("{p}{norm}.weight"), "BF16", vec![vd]);
+            put(format!("{p}{norm}.bias"), "BF16", vec![vd]);
+        }
+        put(format!("{p}ls_1.gamma"), "BF16", vec![vd]);
+        put(format!("{p}ls_2.gamma"), "BF16", vec![vd]);
+        put(format!("{p}mlp.c_fc.weight"), "BF16", vec![vmlp, vd]);
+        put(format!("{p}mlp.c_fc.bias"), "BF16", vec![vmlp]);
+        put(format!("{p}mlp.c_proj.weight"), "BF16", vec![vd, vmlp]);
+        put(format!("{p}mlp.c_proj.bias"), "BF16", vec![vd]);
+        for projection in ["q_proj", "k_proj", "v_proj", "out_proj"] {
+            put(
+                format!("{p}self_attn.{projection}.weight"),
+                "BF16",
+                vec![vd, vd],
+            );
+            put(format!("{p}self_attn.{projection}.bias"), "BF16", vec![vd]);
+        }
+    }
+    put(
+        format!("{vis}proj_in.weight"),
+        "BF16",
+        vec![projection, vd * merge * merge],
+    );
+    put(
+        format!("{vis}proj_out.weight"),
+        "BF16",
+        vec![u64::from(v.text_hidden_size), projection],
+    );
+
+    // DSpark drafter (`mtp.safetensors`; contract-owned, not executed). All BF16.
+    let d = &ink.drafter;
+    let dq = u64::from(d.num_attention_heads) * u64::from(d.head_dim);
+    let dkv = u64::from(d.num_key_value_heads) * u64::from(d.head_dim);
+    let dhead = u64::from(d.head_dim);
+    let dinter = u64::from(d.intermediate_size);
+    let markov = u64::from(d.markov_rank);
+    let taps = d.target_layer_ids.len() as u64;
+    let m = DRAFTER_PREFIX;
+    // One fuse row per drafter block plus one for the head, over the taps.
+    put(
+        format!("{m}fuse_weight"),
+        "BF16",
+        vec![u64::from(d.num_hidden_layers) + 1, taps],
+    );
+    put(format!("{m}mask_embed"), "BF16", vec![hidden]);
+    put(format!("{m}norm.weight"), "BF16", vec![hidden]);
+    for block in 0..d.num_hidden_layers {
+        let p = format!("{m}layers.{block}.");
+        for norm in ["dflare_norm", "input_layernorm", "post_attention_layernorm"] {
+            put(format!("{p}{norm}.weight"), "BF16", vec![hidden]);
+        }
+        put(
+            format!("{p}self_attn.q_proj.weight"),
+            "BF16",
+            vec![dq, hidden],
+        );
+        for projection in ["k_proj", "v_proj", "k_proj_ctx", "v_proj_ctx"] {
+            put(
+                format!("{p}self_attn.{projection}.weight"),
+                "BF16",
+                vec![dkv, hidden],
+            );
+        }
+        put(
+            format!("{p}self_attn.o_proj.weight"),
+            "BF16",
+            vec![hidden, dq],
+        );
+        for norm in ["q_norm", "k_norm", "k_norm_ctx"] {
+            put(format!("{p}self_attn.{norm}.weight"), "BF16", vec![dhead]);
+        }
+        put(
+            format!("{p}mlp.gate_proj.weight"),
+            "BF16",
+            vec![dinter, hidden],
+        );
+        put(
+            format!("{p}mlp.up_proj.weight"),
+            "BF16",
+            vec![dinter, hidden],
+        );
+        put(
+            format!("{p}mlp.down_proj.weight"),
+            "BF16",
+            vec![hidden, dinter],
+        );
+    }
+    let head = format!("{m}markov_head.");
+    put(format!("{head}dflare_norm.weight"), "BF16", vec![hidden]);
+    put(
+        format!("{head}markov_w1.weight"),
+        "BF16",
+        vec![vocab, markov],
+    );
+    // Recurrent head: [gate | candidate | out] rows over [state | embedding | hidden | feature].
+    put(
+        format!("{head}rnn_proj.weight"),
+        "BF16",
+        vec![3 * markov, 2 * markov + 2 * hidden],
+    );
+    put(format!("{head}rnn_proj.bias"), "BF16", vec![3 * markov]);
+    put(
+        format!("{head}hidden_out.weight"),
+        "BF16",
+        vec![hidden, markov],
+    );
+    put(format!("{head}hidden_out.bias"), "BF16", vec![hidden]);
+    Ok(map)
+}
+
+/// The bank a quantization plane belongs to, when `name` is one.
+fn plane_owner<'a>(name: &'a str, expected: &BTreeMap<String, TensorSpec>) -> Option<&'a str> {
+    BANK_PLANES.into_iter().find_map(|suffix| {
+        name.strip_suffix(suffix)
+            .filter(|bank| bank.ends_with("_weight") && expected.contains_key(*bank))
+    })
+}
+
+#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
+fn tensor_schema(
+    config: &ModelConfig,
+    plan: &ModelPlan,
+    dialect: CheckpointDialect,
+    _options: ContractOptions,
+) -> Result<TensorContract, TensorContractError> {
+    if dialect != CheckpointDialect::HfSafetensors {
+        return Err(TensorContractError::UnsupportedPlanOperation {
+            operation: "inkling2 non-safetensors schema",
+        });
+    }
+    let Some(program) = plan.inkling2.as_ref() else {
+        return Err(TensorContractError::UnsupportedPlanOperation {
+            operation: "inkling2 schema without its plan",
+        });
+    };
+    let expected =
+        expected_census(config).map_err(|_| TensorContractError::UnsupportedPlanOperation {
+            operation: "inkling2 schema without typed expert formats",
+        })?;
+    let mut requirements = Vec::new();
+    for (name, spec) in &expected {
+        if plane_owner(name, &expected).is_some() {
+            continue;
+        }
+        let planes: Vec<String> = BANK_PLANES
+            .into_iter()
+            .map(|suffix| format!("{name}{suffix}"))
+            .filter(|plane| expected.contains_key(plane))
+            .collect();
+        let mut shape = spec.shape.clone();
+        let quant = match (spec.dtype, planes.len()) {
+            ("BF16", 0) => QuantConstraint::ExactFloat(FloatType::Bf16),
+            ("F32", 0) => QuantConstraint::ExactFloat(FloatType::F32),
+            ("U8", 3) => {
+                // e2m1 pairs: the requirement carries the logical [experts, out, in].
+                *shape.last_mut().expect("expert bank rank") *= 2;
+                QuantConstraint::Nvfp4Amax
+            }
+            ("F8_E4M3", 1) => QuantConstraint::Mxfp8Row32,
+            _ => {
+                return Err(TensorContractError::UnsupportedPlanOperation {
+                    operation: "unknown inkling2 dtype or plane pairing",
+                });
+            }
+        };
+        requirements.push(TensorRequirement {
+            id: semantic_tensor_id(name),
+            names: vec![name.clone()],
+            match_mode: TensorMatch::OneOf,
+            shape,
+            owner: tensor_owner(name, program.drafter.blocks),
+            transform: TensorTransform::Identity,
+            quant,
+            auxiliaries: Some(planes),
+            required: true,
+        });
+    }
+    Ok(TensorContract {
+        dialect,
+        requirements,
+    })
+}
+
+fn tensor_owner(name: &str, drafter_blocks: u32) -> TensorOwner {
+    let index_after = |prefix: &str| {
+        name.strip_prefix(prefix)
+            .and_then(|rest| rest.split('.').next())
+            .and_then(|index| index.parse::<u32>().ok())
+    };
+    if let Some(layer) = index_after("model.llm.layers.") {
+        TensorOwner::Layer(layer)
+    } else if name.starts_with("model.visual.") {
+        TensorOwner::Vision(index_after("model.visual.backbone.layers."))
+    } else if let Some(rest) = name.strip_prefix(DRAFTER_PREFIX) {
+        // Input-side glue belongs to the first block, the head and exit norm to the last.
+        TensorOwner::Mtp(index_after("mtp.layers.").unwrap_or(
+            if rest == "fuse_weight" || rest == "mask_embed" {
+                0
+            } else {
+                drafter_blocks.saturating_sub(1)
+            },
+        ))
+    } else {
+        TensorOwner::Global
+    }
+}
+
+/// Typed ids where an existing role is exactly this tensor's role; family keys for everything
+/// the family alone has. Layer ids are keyed on the PHYSICAL layer: loop slots share them.
+pub fn semantic_tensor_id(name: &str) -> TensorId {
+    match name {
+        "model.llm.embed.weight" => return TensorId::TokenEmbedding,
+        "model.llm.unembed.weight" => return TensorId::OutputProjection,
+        "model.llm.norm.weight" => return TensorId::OutputNorm,
+        _ => {}
+    }
+    let family = || TensorId::Family {
+        family: FAMILY,
+        key: name.strip_prefix("model.").unwrap_or(name).to_string(),
+    };
+    let Some((index, suffix)) = name
+        .strip_prefix("model.llm.layers.")
+        .and_then(|rest| rest.split_once('.'))
+        .and_then(|(index, suffix)| Some((index.parse::<u32>().ok()?, suffix)))
+    else {
+        return family();
+    };
+    let tensor = match suffix {
+        "mlp_norm.weight" => LayerTensor::PreMlpNorm,
+        "mlp.gate.weight" => LayerTensor::MoeRouter,
+        "mlp.gate.bias" => LayerTensor::MoeRouterBias,
+        "mlp.experts.w13_weight" => LayerTensor::MoeExpertGateUpBank,
+        "mlp.experts.w2_weight" => LayerTensor::MoeExpertDownBank,
+        _ => return family(),
+    };
+    TensorId::Layer { index, tensor }
+}
+
+#[cfg(test)]
+mod tests;

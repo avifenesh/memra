@@ -65,6 +65,7 @@ pub static PACK: ModelPack = ModelPack {
     family: "hy_v4_flash",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
+    auxiliary_files: &[],
     aliases: &["hy_v4_flash", "hy-v4-flash", "hy4-flash"],
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
@@ -282,6 +283,7 @@ fn plan_builder(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
         sampling_defaults: None,
         partition_boundaries: (1..hy.trunk_layers() as usize).collect(),
         deepseek_v41: None,
+        inkling2: None,
         hy_v4_flash: Some(HyV4FlashNumerics {
             streams: hy.hc_mult,
             exit_epsilon: hy.hc_eps,

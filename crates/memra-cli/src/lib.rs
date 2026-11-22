@@ -1488,7 +1488,7 @@ pub fn inspect_model(
 ) -> Result<InspectSummary, Box<dyn std::error::Error>> {
     let pack = model_packs::by_alias(&request.against)
         .ok_or_else(|| format!("unknown model pack {:?}", request.against))?;
-    let source = load_source(&request.source)?;
+    let source = load_source(&request.source, pack)?;
     let plan = pack.compile_plan(&source.config)?;
     // Head ownership and the bind are the loader's own boundary (memra#541): what inspection
     // refuses here, `memra-server` refuses before upload with the same text.
@@ -1656,13 +1656,69 @@ pub fn inspect_model(
     })
 }
 
-fn load_source(source: &str) -> Result<SourceData, Box<dyn std::error::Error>> {
+fn load_source(source: &str, pack: &ModelPack) -> Result<SourceData, Box<dyn std::error::Error>> {
     let path = Path::new(source);
     if path.exists() {
-        return load_local(path);
+        return load_local(path, pack);
     }
     let (repo, revision) = parse_pinned_hf_source(source)?;
-    load_remote(repo, revision)
+    load_remote(repo, revision, pack)
+}
+
+/// Attach `hf_quant_config.json` to a config whose plan reads its numerics from it. `read`
+/// returns the file's text, or `None` when the artifact has none.
+fn attach_quant_groups(
+    config: &mut ModelConfig,
+    read: impl FnOnce() -> Result<Option<String>, Box<dyn std::error::Error>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !config.needs_quant_groups() {
+        return Ok(());
+    }
+    let text = read()?.ok_or(
+        "the artifact has no hf_quant_config.json; this family's expert formats and required activation quantizers are declared there",
+    )?;
+    config.attach_quant_groups(&text)?;
+    Ok(())
+}
+
+/// The JSON header of a local safetensors file.
+fn local_safetensors_header(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::Read;
+    let mut file =
+        std::fs::File::open(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let mut prefix = [0u8; 8];
+    file.read_exact(&mut prefix)?;
+    let header_len = u64::from_le_bytes(prefix) as usize;
+    if header_len == 0 || header_len > MAX_TEXT_BYTES {
+        return Err(format!(
+            "{}: invalid safetensors header length {header_len}",
+            path.display()
+        )
+        .into());
+    }
+    let mut bytes = vec![0u8; header_len];
+    file.read_exact(&mut bytes)?;
+    Ok(String::from_utf8(bytes)?)
+}
+
+/// Add the tensors of a weight file outside the shard index to `headers`, under the pack's
+/// census prefix for that file.
+fn add_auxiliary_headers(
+    headers: &mut BTreeMap<String, StInfo>,
+    auxiliary: &memra_gguf::model_packs::AuxiliaryTensorFile,
+    header_json: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for (name, info) in parse_header(header_json)? {
+        let name = format!("{}{name}", auxiliary.prefix);
+        if headers.insert(name.clone(), info).is_some() {
+            return Err(format!(
+                "tensor {name} of {} collides with an indexed tensor",
+                auxiliary.file
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 fn load_config_only(source: &str) -> Result<ModelConfig, Box<dyn std::error::Error>> {
@@ -1672,14 +1728,21 @@ fn load_config_only(source: &str) -> Result<ModelConfig, Box<dyn std::error::Err
     }
     if path.is_dir() {
         let bytes = std::fs::read(path.join("config.json"))?;
-        return Ok(ModelConfig::from_hf(&HfConfig::try_parse(
-            std::str::from_utf8(&bytes)?,
-        )?));
+        let mut config = ModelConfig::from_hf(&HfConfig::try_parse(std::str::from_utf8(&bytes)?)?);
+        attach_quant_groups(&mut config, || {
+            local_text(&path.join("hf_quant_config.json"))
+        })?;
+        return Ok(config);
     }
     let (repo, revision) = parse_pinned_hf_source(source)?;
-    let url = format!("https://huggingface.co/{repo}/resolve/{revision}/config.json");
-    let config = http_text(&url)?.ok_or("pinned model has no config.json")?;
-    Ok(ModelConfig::from_hf(&HfConfig::try_parse(&config)?))
+    let base = format!("https://huggingface.co/{repo}/resolve/{revision}");
+    let config =
+        http_text(&format!("{base}/config.json"))?.ok_or("pinned model has no config.json")?;
+    let mut config = ModelConfig::from_hf(&HfConfig::try_parse(&config)?);
+    attach_quant_groups(&mut config, || {
+        http_text(&format!("{base}/hf_quant_config.json"))
+    })?;
+    Ok(config)
 }
 
 /// `config_bytes` for a GGUF or Hy3-repack source, whose lock hashes its config as normalized,
@@ -1692,7 +1755,16 @@ fn normalized_config_bytes(config: &ModelConfig) -> Vec<u8> {
     format!("{config:#?}").into_bytes()
 }
 
-fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
+/// A local text file, or `None` when it does not exist.
+fn local_text(path: &Path) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("{}: {error}", path.display()).into()),
+    }
+}
+
+fn load_local(path: &Path, pack: &ModelPack) -> Result<SourceData, Box<dyn std::error::Error>> {
     if path.is_file() {
         let gguf = GgufFile::open(path)?;
         let tokenizer = inspect_gguf_tokenizer(&gguf);
@@ -1733,7 +1805,10 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
 
     let config_bytes = std::fs::read(path.join("config.json"))?;
     let config_text = std::str::from_utf8(&config_bytes)?;
-    let config = ModelConfig::from_hf(&HfConfig::try_parse(config_text)?);
+    let mut config = ModelConfig::from_hf(&HfConfig::try_parse(config_text)?);
+    attach_quant_groups(&mut config, || {
+        local_text(&path.join("hf_quant_config.json"))
+    })?;
     if let Some(map) = config.per_layer_quant_map() {
         let file = match std::fs::read_to_string(path.join("hf_quant_config.json")) {
             Ok(text) => Some(text),
@@ -1744,15 +1819,20 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
     }
     let tokenizer = inspect_hf_tokenizer_dir(path);
     let model = StModel::open(path)?;
-    let shards = local_shards(path)?;
+    let mut shards = local_shards(path)?;
     let revision = local_hf_revision(path, &shards).unwrap_or_else(|| "local".to_string());
-    let headers = model
+    let mut headers: BTreeMap<String, StInfo> = model
         .names()
         .map(|name| {
             let info = model.info(name).expect("StModel name must resolve");
             (name.clone(), info.clone())
         })
         .collect();
+    for auxiliary in pack.auxiliary_files {
+        let header = local_safetensors_header(&path.join(auxiliary.file))?;
+        add_auxiliary_headers(&mut headers, auxiliary, &header)?;
+        shards.push(auxiliary.file.to_string());
+    }
     Ok(SourceData {
         label: path.display().to_string(),
         revision,
@@ -1765,12 +1845,20 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
     })
 }
 
-fn load_remote(repo: &str, revision: &str) -> Result<SourceData, Box<dyn std::error::Error>> {
+fn load_remote(
+    repo: &str,
+    revision: &str,
+    pack: &ModelPack,
+) -> Result<SourceData, Box<dyn std::error::Error>> {
     let base = format!("https://huggingface.co/{repo}/resolve/{revision}");
     let config_bytes = http_text(&format!("{base}/config.json"))?
         .ok_or("pinned model has no config.json")?
         .into_bytes();
-    let config = ModelConfig::from_hf(&HfConfig::try_parse(std::str::from_utf8(&config_bytes)?)?);
+    let mut config =
+        ModelConfig::from_hf(&HfConfig::try_parse(std::str::from_utf8(&config_bytes)?)?);
+    attach_quant_groups(&mut config, || {
+        http_text(&format!("{base}/hf_quant_config.json"))
+    })?;
     // A config that carries a per-layer ModelOpt map must agree with the artifact's
     // hf_quant_config.json, the second copy of the same map.
     if let Some(map) = config.per_layer_quant_map() {
@@ -1778,7 +1866,7 @@ fn load_remote(repo: &str, revision: &str) -> Result<SourceData, Box<dyn std::er
     }
     let tokenizer = inspect_remote_hf_tokenizer(&base);
     let index = http_text(&format!("{base}/model.safetensors.index.json"))?;
-    let shards: Vec<String> = if let Some(index) = index {
+    let mut shards: Vec<String> = if let Some(index) = index {
         let mut files: Vec<_> = parse_index_json(&index)?.into_values().collect();
         files.sort();
         files.dedup();
@@ -1786,8 +1874,7 @@ fn load_remote(repo: &str, revision: &str) -> Result<SourceData, Box<dyn std::er
     } else {
         vec!["model.safetensors".to_string()]
     };
-    let mut headers = BTreeMap::new();
-    for shard in &shards {
+    let remote_header = |shard: &str| -> Result<String, Box<dyn std::error::Error>> {
         validate_remote_filename(shard)?;
         let url = format!("{base}/{shard}");
         let prefix = http_range(&url, 0, 7)?;
@@ -1806,12 +1893,21 @@ fn load_remote(repo: &str, revision: &str) -> Result<SourceData, Box<dyn std::er
             )
             .into());
         }
-        let parsed = parse_header(std::str::from_utf8(&bytes)?)?;
+        Ok(String::from_utf8(bytes)?)
+    };
+    let mut headers = BTreeMap::new();
+    for shard in &shards {
+        let parsed = parse_header(&remote_header(shard)?)?;
         for (name, info) in parsed {
             if headers.insert(name.clone(), info).is_some() {
                 return Err(format!("tensor {name} occurs in multiple safetensors shards").into());
             }
         }
+    }
+    for auxiliary in pack.auxiliary_files {
+        let header = remote_header(auxiliary.file)?;
+        add_auxiliary_headers(&mut headers, auxiliary, &header)?;
+        shards.push(auxiliary.file.to_string());
     }
     Ok(SourceData {
         label: repo.to_string(),
@@ -2546,6 +2642,11 @@ fn format_lock(
         .unwrap();
     }
     writeln!(output, "config_sha256={config}").unwrap();
+    // Only a family whose numerics come from `hf_quant_config.json` writes this line: every
+    // other lock keeps its bytes.
+    if let Some(line) = quant_config_lock_line(&source.config) {
+        output.push_str(&line);
+    }
     writeln!(output, "census_sha256={census}").unwrap();
     writeln!(output, "plan_sha256={plan}").unwrap();
     writeln!(output, "rewrite_manifest_sha256={rewrites}").unwrap();
@@ -2580,6 +2681,15 @@ fn format_lock(
         writeln!(output, "shard={}", lock_value(shard)).unwrap();
     }
     output
+}
+
+/// The lock line for `hf_quant_config.json`, a semantic input of the plan for a family that
+/// reads its numerics from it. The plan text carries the same hash, so `plan_sha256` already
+/// covers the file; the line makes that visible without reading the plan.
+fn quant_config_lock_line(config: &ModelConfig) -> Option<String> {
+    config
+        .quant_groups_sha256()
+        .map(|sha| format!("quant_config_sha256={sha}\n"))
 }
 
 fn parse_header(
@@ -3144,6 +3254,37 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use memra_reference::execute;
+
+    /// The lock names `hf_quant_config.json` for a family whose plan reads its numerics from
+    /// it, and only for such a family.
+    #[test]
+    fn lock_names_the_quant_declaration_only_where_the_plan_reads_one() {
+        let mut inkling = ModelConfig::from_hf(&HfConfig::parse(include_str!(
+            "../../memra-gguf/src/model_packs/inkling2/fixtures/config.json"
+        )));
+        assert_eq!(
+            quant_config_lock_line(&inkling),
+            None,
+            "nothing attached yet"
+        );
+        inkling
+            .attach_quant_groups(include_str!(
+                "../../memra-gguf/src/model_packs/inkling2/fixtures/hf_quant_config.json"
+            ))
+            .unwrap();
+        assert_eq!(
+            quant_config_lock_line(&inkling).as_deref(),
+            Some(
+                "quant_config_sha256=7c656207d3ce37879c7be209a036b0dde43bf01f78159bff06880b868ed57143\n"
+            )
+        );
+        let qwen = ModelConfig::from_hf(&HfConfig::parse(
+            r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":64,
+            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+            "intermediate_size":128,"vocab_size":16,"max_position_embeddings":128}"#,
+        ));
+        assert_eq!(quant_config_lock_line(&qwen), None);
+    }
 
     #[test]
     fn hf_template_lock_uses_decoded_json_and_refuses_malformed_sidecars() {

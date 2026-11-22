@@ -471,6 +471,12 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
                     hidden,
                 )?;
             }
+            ResidualTopology::BlockAttention(_) => {
+                return Err(ReferenceError::UnsupportedOperation {
+                    layer: Some(layer.index),
+                    operation: "block attention residual",
+                });
+            }
             ResidualTopology::SinglePassHyperConnections(_) => {
                 return Err(ReferenceError::UnsupportedOperation {
                     layer: Some(layer.index),
@@ -532,6 +538,13 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
             }
             AttentionPlan::KimiDeltaNet(kda) => {
                 add_kda_fixture(&mut weights, layer.index, kda, hidden)?;
+            }
+            // Inkling 2 relative-bias attention has no reference implementation yet.
+            AttentionPlan::RelativeBias(_) => {
+                return Err(ReferenceError::UnsupportedOperation {
+                    layer: Some(layer.index),
+                    operation: "relative-bias attention",
+                });
             }
             AttentionPlan::Csa2(_) => {
                 return Err(ReferenceError::UnsupportedOperation {
@@ -4343,6 +4356,14 @@ fn apply_logits_transforms(logits: &mut [f32], vocab: usize, transforms: &[Logit
                     *value = *cap * (*value / *cap).tanh();
                 }
             }
+            // The reference keeps the row width, so a dropped id becomes unselectable.
+            LogitsTransform::Truncate(keep) => {
+                for row in logits.chunks_exact_mut(vocab) {
+                    for value in row.iter_mut().skip(*keep as usize) {
+                        *value = f32::NEG_INFINITY;
+                    }
+                }
+            }
             LogitsTransform::SuppressTokens(ids) => {
                 for row in logits.chunks_exact_mut(vocab) {
                     for &id in ids {
@@ -4502,6 +4523,13 @@ fn execute_layer(
             tokens,
             hidden,
         )?,
+        // Inkling 2 relative-bias attention has no reference implementation yet.
+        AttentionPlan::RelativeBias(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "relative-bias attention",
+            });
+        }
         AttentionPlan::Csa2(_) => {
             return Err(ReferenceError::UnsupportedOperation {
                 layer: Some(layer.index),
@@ -4928,6 +4956,13 @@ fn execute_hyper_layer(
             tokens,
             hidden,
         )?,
+        // Inkling 2 relative-bias attention has no reference implementation yet.
+        AttentionPlan::RelativeBias(_) => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer.index),
+                operation: "relative-bias attention",
+            });
+        }
         AttentionPlan::Csa2(_) => {
             return Err(ReferenceError::UnsupportedOperation {
                 layer: Some(layer.index),
@@ -8433,6 +8468,12 @@ fn activate_pair(
         ActivationPlan::SwiGluPreClamped { limit } => {
             silu(gate.min(*limit)) * up.clamp(-*limit, *limit)
         }
+        ActivationPlan::SwiGluSoftcapped { .. } => {
+            return Err(ReferenceError::UnsupportedOperation {
+                layer: Some(layer),
+                operation: "softcapped SwiGLU activation",
+            });
+        }
         ActivationPlan::Named(_) => {
             return Err(ReferenceError::UnsupportedOperation {
                 layer: Some(layer),
@@ -10054,6 +10095,66 @@ mod tests {
         assert!((output[0] - 0.474_592_9).abs() < 1e-4, "{output:?}");
         assert!((output[1] - 0.931_047_0).abs() < 1e-4, "{output:?}");
         assert!((output[2] - 8.868_546_0).abs() < 1e-3, "{output:?}");
+    }
+
+    /// `LogitsTransform::Truncate` through `execute` on a real tiny plan: every id below the
+    /// cut keeps its logit bit for bit, every id at or past it is unselectable, and the row
+    /// width does not change. This is the reference surface the registry names for
+    /// `LogitsTruncate`.
+    #[test]
+    fn logits_truncate_keeps_the_head_bits_and_makes_the_padded_tail_unselectable() {
+        let pack = memra_gguf::model_packs::by_alias("qwen3").expect("qwen3 pack");
+        let plan = pack.compile_tiny_plan().expect("tiny plan compiles");
+        let fixture = deterministic_fixture(&plan).unwrap();
+        let plain = execute(&plan, &fixture.weights, &fixture.token_ids).unwrap();
+        let vocab = plain.vocab;
+        assert!(vocab > 4 && plain.tokens > 1);
+        assert!(plain.logits.iter().all(|value| value.is_finite()));
+        let keep = vocab - 3;
+        let mut truncated_plan = plan.clone();
+        truncated_plan
+            .logits
+            .push(LogitsTransform::Truncate(keep as u32));
+        let truncated = execute(&truncated_plan, &fixture.weights, &fixture.token_ids).unwrap();
+        assert_eq!((truncated.tokens, truncated.vocab), (plain.tokens, vocab));
+        for (row, (cut, full)) in truncated
+            .logits
+            .chunks_exact(vocab)
+            .zip(plain.logits.chunks_exact(vocab))
+            .enumerate()
+        {
+            for id in 0..vocab {
+                if id < keep {
+                    assert_eq!(cut[id].to_bits(), full[id].to_bits(), "row {row} id {id}");
+                } else {
+                    assert_eq!(cut[id], f32::NEG_INFINITY, "row {row} id {id}");
+                }
+            }
+        }
+        // A cut at or past the width drops nothing.
+        let mut whole = plan.clone();
+        whole
+            .logits
+            .push(LogitsTransform::Truncate(vocab as u32 + 7));
+        let whole = execute(&whole, &fixture.weights, &fixture.token_ids).unwrap();
+        assert_eq!(whole.logits, plain.logits);
+        // Order matters and is the plan's: a softcap before the cut still caps the kept ids.
+        let mut capped = plan.clone();
+        capped.logits = vec![
+            LogitsTransform::Softcap(2.0),
+            LogitsTransform::Truncate(keep as u32),
+        ];
+        let capped = execute(&capped, &fixture.weights, &fixture.token_ids).unwrap();
+        for (cut, full) in capped
+            .logits
+            .chunks_exact(vocab)
+            .zip(plain.logits.chunks_exact(vocab))
+        {
+            for id in 0..keep {
+                assert_eq!(cut[id].to_bits(), (2.0 * (full[id] / 2.0).tanh()).to_bits());
+            }
+            assert!(cut[keep..].iter().all(|value| *value == f32::NEG_INFINITY));
+        }
     }
 
     /// The qwen4_exp pack's tiny plan executes end-to-end through `execute`: gated

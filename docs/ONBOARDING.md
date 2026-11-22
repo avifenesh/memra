@@ -36,7 +36,7 @@ safetensors, 2026-08) and the procedure this page replaced are in
 | `docs/support-records.toml` | One record per supported capability, with the receipts behind each passed gate. |
 
 `ModelPack` fields: `family`, `aliases`, `matches_config`, `config_layout`, `output_head`,
-`tensor_consumption`, `tokenizer_sources`, `template`, `support`, `gates`, `checkpoint_parity`,
+`tensor_consumption`, `auxiliary_files`, `tokenizer_sources`, `template`, `support`, `gates`, `checkpoint_parity`,
 `plan_builder`, `tensor_schema` and `tiny_plan`. Load-time selection walks `PACKS` in order and
 takes the first pack whose `matches_config` accepts the config (`llama_dense` is last).
 `ONBOARDING_PROFILES` are artifact-storage profiles (`hy3_nvfp4`, `mimo_v2_mint`, `mimo_v2_source`)
@@ -101,7 +101,12 @@ The source is either a pinned Hugging Face revision, `owner/repo@<40-character c
 local path: a GGUF file (any shard of a split GGUF), an HF safetensors directory (`config.json`
 plus `model.safetensors[.index.json]`), or a Hy3 repack directory with `manifest.json`. A pinned remote
 source is inspected from its config, tokenizer files and safetensors headers over HTTP range reads;
-no weights download. Execution (`verify checkpoint`, `verify serve`) needs the artifact on disk.
+no weights download. A pack's `auxiliary_files` are weight files the shard index does not list (a
+drafter shipped beside the model); inspection reads their headers the same way and their tensors
+enter the census under the pack's prefix. A family whose numerics live in `hf_quant_config.json`
+(the `parameter_groups` form, read by `quant_groups.rs`) has that file attached to its config
+before the plan compiles, and the plan refuses without it.
+Execution (`verify checkpoint`, `verify serve`) needs the artifact on disk.
 For a local artifact, hash every file the source reads: the config, tokenizer files, index and
 every indexed shard, or every GGUF shard.
 

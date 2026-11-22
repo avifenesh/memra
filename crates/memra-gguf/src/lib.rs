@@ -50,6 +50,7 @@ pub mod nemo;
 pub mod nvfp4_repack;
 pub mod op_registry;
 pub mod placement;
+pub mod quant_groups;
 pub mod safetensors;
 pub mod source;
 pub mod spec_oracle;

@@ -13,6 +13,7 @@ pub static PACK: ModelPack = ModelPack {
     family: "glm5_next",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
+    auxiliary_files: &[],
     aliases: &["glm5_next_text", "glm5-next"],
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
@@ -179,6 +180,7 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
         partition_boundaries: vec![1],
         deepseek_v41: None,
         hy_v4_flash: None,
+        inkling2: None,
     })
 }
 
