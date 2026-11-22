@@ -1,0 +1,6 @@
+ink2-gpu: memory: device 23.511 GiB, driver free at open 23.174, weights 17.594, full KV 0.125 (2048 positions x 65536 B), rings 0.625, conv 0.007, work 0.227, declared work 0.000, driver free before KV 4.674 and after load 4.549, max context 76586
+ink2-gpu: class inkling2-gpu-f32-stream/FloatActivation; resident weights 17.594 GiB, with state 18.614 GiB, loaded in 16.2s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 1531 positions in 25.6s: resid attn worst slot 7.460e-4, ffn worst slot 8.409e-4, router rows 73487/73488, logits max abs 1.485e-1 KL mean 2.212e-7, argmax 1531/1531, greedy 32/32
+ink2-gpu: 1500 rows as calls of 512: 13.3s
+ink2-gpu: 1500 rows as calls of 300: 14.5s
+ink2-gpu: chunkings 512 vs 300 over 1500 rows: slot rows differ 0/72000, logit rows differ 0, argmax differ 0

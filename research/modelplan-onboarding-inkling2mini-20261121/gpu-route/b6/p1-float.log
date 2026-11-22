@@ -1,0 +1,8 @@
+ink2-gpu: memory: device 23.511 GiB, driver free at open 23.174, weights 17.594, full KV 0.125 (2048 positions x 65536 B), rings 0.625, conv 0.007, work 0.227, declared work 0.000, driver free before KV 4.674 and after load 4.549, max context 76586
+ink2-gpu: class inkling2-gpu-f32-stream/FloatActivation; resident weights 17.594 GiB, with state 18.614 GiB, loaded in 14.0s; context 2048, chunk 512; auxiliary files ["mtp.* (54 tensors)"]
+ink2-gpu: score 57 positions in 8.2s: resid attn worst slot 8.163e-7, ffn worst slot 7.208e-7, router rows 2736/2736, logits max abs 3.052e-5 KL mean 1.960e-12, argmax 57/57, greedy 32/32
+ink2-gpu: gen 32 ids, 32/32 equal to the oracle's greedy prefix; 1541.0 launches a token; 4.33 tok/s (clocks 2730 MHz, 14001 MHz, 121.76 W, 81, 100 %)
+gen 200001,200008,371,150409,171960,25,196980,100887,149881,150011,156021,151661,149876,158808,149884,152978,152778,13,1,170289,150893,150011,156021,13,170289,151791,153606,25,158808,156090,152778,150489
+ink2-gpu: 57 rows as calls of 26: 1.5s
+ink2-gpu: 57 rows as calls of 1: 13.3s
+ink2-gpu: chunkings 26 vs 1 over 57 rows: slot rows differ 0/2736, logit rows differ 0, argmax differ 0

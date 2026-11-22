@@ -230,3 +230,9 @@ state).
 
 The tokenizer and chat dialect; the checkpoint runner for the declared numeric class, with an
 oracle of that class from a serving binary; the drafter.
+
+## GPU route
+
+The native sm_120a route and its checkpoint gates (float and declared classes, red arms, chunking
+invariance, timed decode at full clocks) are in [gpu-route/](gpu-route/README.md). The support state
+does not move with it: serve and rewrite gates are pending.

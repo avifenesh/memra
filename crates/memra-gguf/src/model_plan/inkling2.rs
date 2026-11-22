@@ -273,7 +273,10 @@ pub struct DenseNumericsPlan {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Inkling2NumericClass {
     /// The program the checkpoint declares as required: quantized expert inputs (NVFP4 W4A4,
-    /// MXFP8 W8A8), BF16 elsewhere with f32 accumulation. The default and the support target.
+    /// MXFP8 W8A8) with the routed experts' bf16 rounding points, and an f32 stream outside the
+    /// experts (BF16 and F32 weights as stored, f32 activations, f32 accumulation). The default
+    /// and the support target. Running the stream outside the experts in BF16 is a different
+    /// program and needs its own measured KL receipt before any route adopts it.
     DeclaredActivationQuant,
     /// Float expert inputs against the exactly dequantized weights. A bring-up and oracle
     /// class: never the default, never a support claim.

@@ -1,0 +1,15 @@
+Loading weights:   0%|          | 0/645 [00:00<?, ?it/s]Loading weights:   8%|▊         | 49/645 [00:00<00:03, 198.03it/s]Loading weights:  72%|███████▏  | 467/645 [00:00<00:00, 1636.47it/s]Loading weights: 100%|██████████| 645/645 [00:00<00:00, 1067.45it/s]
+[transformers] `causal_conv1d_fn` is falling back to its reference PyTorch implementation because `causal_conv1d` is not installed. This is correct but much slower; install `causal_conv1d` for the optimized kernel.
+/home/avifenesh/.cache/inkling2mini/oracle/ink2_oracle.py:128: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:208.)
+  w = torch.from_numpy(np.ascontiguousarray(d["w"][e])).long()
+prefill 0+1024/8260 181.6s
+prefill 1024+1024/8260 185.4s
+prefill 2048+1024/8260 188.3s
+prefill 3072+1024/8260 190.6s
+prefill 4096+1024/8260 188.1s
+prefill 5120+1024/8260 185.4s
+prefill 6144+1024/8260 178.6s
+prefill 7168+1024/8260 186.8s
+prefill 8192+68/8260 62.6s
+{"greedy": [200001], "checks": {}, "timing": {"load_s": 3.6055235862731934, "dequant_s": 780.2496972084045, "n_dequant": 48063, "prefill_s": 1547.3195188045502, "steps_s": 0}}
+CAPTURE_DONE

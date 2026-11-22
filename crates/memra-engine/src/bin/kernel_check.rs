@@ -11220,6 +11220,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fails += failed as i32;
     }
 
+    // Inkling 2 Mini native GPU route (cu/inkling2_gpu.cu): every kernel against the f64
+    // reference operation of the same role, rows alone against rows in a call bit for bit, state
+    // carried across calls against one call, and each red arm of the checkpoint gate.
+    {
+        let dev = memra_engine::inkling2_gpu::Dev::on(e.stream());
+        // an error inside the gate is one failed cell, not the end of the summary
+        match memra_engine::inkling2_gpu::ink2g_gate(&dev) {
+            Ok((lines, failed)) => {
+                for line in &lines {
+                    println!("{line}");
+                }
+                fails += failed as i32;
+            }
+            Err(error) => {
+                println!("ink2g-gate FAIL: {error}");
+                fails += 1;
+            }
+        }
+    }
+
     for name in take_observed_cells() {
         cells.record(&name);
     }
