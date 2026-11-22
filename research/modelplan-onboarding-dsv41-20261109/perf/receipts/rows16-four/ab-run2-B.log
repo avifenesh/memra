@@ -1,0 +1,15 @@
+server ready after 20 s
+warm-up request rc 0 {"object":"text_completion","model":"v41","choices":[{"index":0,"text":" 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20.","finish_reason"
+[dsv41-serve] v41: card 0 ranks [0]: weights 71.87 GiB resident (71.87 GiB a rank) in 17.1s, 22.51 GiB of 95.06 GiB left for requests (22.51 GiB a rank)
+[dsv41-serve] v41: card 1 ranks [1]: weights 71.87 GiB resident (71.87 GiB a rank) in 17.1s, 22.54 GiB of 95.06 GiB left for requests (22.54 GiB a rank)
+[dsv41-serve] v41: card 2 ranks [2]: weights 71.87 GiB resident (71.87 GiB a rank) in 17.1s, 22.54 GiB of 95.06 GiB left for requests (22.54 GiB a rank)
+[dsv41-serve] v41: card 3 ranks [3]: weights 71.87 GiB resident (71.87 GiB a rank) in 17.1s, 22.54 GiB of 95.06 GiB left for requests (22.54 GiB a rank)
+[dsv41-serve] v41: warm-up in 0.0s; one-token call 9.2 ms
+[dsv41-serve] v41: 4 rank(s) on devices [0, 1, 2, 3]; routed experts on the cards; resident weights [77169772480, 77169772480, 77169772480, 77169772480] bytes per rank; ceiling [24166837804, 24202489388, 24202489388, 24202489388] bytes; expert cache [] slots of 18800640 bytes (floor 0 slots, all 0);
+[dsv41-serve] v41: capacity: the longest session with the route idle is 8192 positions (max_seq 8192); at once: 2113 sessions of 1,536 positions (1,024-token prompts), 1063 of 4,608 (4,096-token prompts), 489 of 32,768, 635 of 131,072; MEMRA_MAX_SESSIONS 32
+[dsv41-serve] v41: up in 17.8s
+15:11:07 label w15-ab/run2-B engine memra model v41 seed 56737526 plan ['conc32', 'dconc16']
+15:12:14 conc32 0 {'wall_s': 34.014, 'completion_tokens': 16384, 'agg_out_tok_s': 481.69, 'n_err': 0} 16.9 None None
+15:12:49 dconc16 0 {'wall_s': 17.374, 'completion_tokens': 8192, 'agg_out_tok_s': 471.51, 'n_err': 0} 32.915 None None
+15:12:49 DONE w15-ab/run2-B elapsed 102 s quality pass: None
+serve_bench w15-ab/run2-B rc 0

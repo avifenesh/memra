@@ -1,0 +1,10 @@
+PASS batch-time distinct8 argmax   ms at [1, 2, 4, 8]: 9.20 / 10.41 / 12.65 / 16.60
+PASS batch-time distinct8 fwd      ms at [1, 2, 4, 8]: 8.92 / 10.13 / 12.36 / 16.20
+PASS batch-time distinct8 batched  ms at [1, 2, 4, 8]: 9.25 / 10.51 / 12.83 / 16.94
+PASS batch-time distinct8 alone    ms at [1, 2, 4, 8]: 9.23 / 17.66 / 34.42 / 68.01
+PASS batch-time distinct16 argmax   ms at [1, 2, 4, 8, 16]: 9.19 / 10.28 / 12.67 / 16.06 / 24.72
+PASS batch-time distinct16 fwd      ms at [1, 2, 4, 8, 16]: 8.92 / 10.03 / 12.37 / 15.67 / 24.02
+PASS batch-time distinct16 batched  ms at [1, 2, 4, 8, 16]: 9.22 / 10.39 / 12.84 / 16.40 / 25.49
+PASS batch-time distinct16 alone    ms at [1, 2, 4, 8, 16]: 9.20 / 17.63 / 34.42 / 67.96 / 135.74
+PASS batch-time distinct16 chunk8   ms at [1, 2, 4, 8, 16]: - / - / - / - / 32.45
+jobs 2, red 0

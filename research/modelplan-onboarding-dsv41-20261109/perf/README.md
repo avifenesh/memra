@@ -2716,6 +2716,65 @@ head) and both arms rebuilt the same day on the four-card box (nvcc 13.4, sm_120
 The decode token tape is one hash over all 8 runs, `cd38e1b772b75d5a`, the same as the 2026-11-18 runs. No card
 showed a thermal reason in any run: SM clocks 2,250 to 2,321 MHz, power 204 to 244 W, at most 73 C.
 
+### The served batch at 16 rows on four ranks (2026-11-22): the four-rank default
+
+One window on four RTX PRO 6000 Blackwell Max-Q, 40 layers, device-push (the four-rank default
+transport), nothing else on the box. The binary is `632ea9564b` on main `63f806baf9`
+(`MEMRA_DSV41_BATCH_ROWS` admits 1 to 16, unset 8), memra-server sha256 `1d01fad3...8d5f` in every
+run. The gates run first, and a red one would have ended the window before any timing:
+
+- **Bytes of a 16-row call.** `dsv41-spec batch-rows wide16 --batch-max 16`: 16 sequences, 480
+  rows, all 29 calls 16 rows wide. Logits, taps and device argmax are equal to each sequence's own
+  one-token call on 480 of 480 rows.
+- **The four-rank chat gate** (memra#1337's four-rank serve smoke), unset batch rows, against
+  native references made fresh by this binary's `dsv41-run` on the same four ranks: PASS. The lane's
+  stored references from 2026-11-09 predate the CUTLASS lane's numerics, and a 9-layer rehearsal on
+  one card failed against them and passed against fresh ones.
+- **The served 16-wide gate** at `MEMRA_DSV41_BATCH_ROWS=16` (`scripts/wide_gate.py`): 16
+  prompts greedy, each alone and then all at once, 64 tokens each. Text and token count are equal on
+  16 of 16, and the server log shows 48 steps carried as 16-row calls.
+
+**One call of 16 against two of 8** (`dsv41-spec batch-time`, ms a call, steady):
+
+| rows | 1 | 2 | 4 | 8 | 16 | 16 as two calls of 8 |
+|---|---|---|---|---|---|---|
+| argmax | 9.19 | 10.28 | 12.67 | 16.06 | 24.72 | 32.45 |
+| alone (each row its own call) | 9.20 | 17.63 | 34.42 | 67.96 | 135.74 | |
+
+The 11-10 inversion (one 16-row call 72.6 ms against 46.9 ms for two of 8) is gone: after the
+CUTLASS lane, memra#1311 and memra#1337, a 16-row call costs 0.76 of two 8-row calls.
+
+**The served A/B.** A is `MEMRA_DSV41_BATCH_ROWS=8`, B is 16, the same binary, order A B B A A B,
+one boot a run, `serve_bench.sh` conc32 and dconc16 one sample a boot, 32 sessions,
+`MEMRA_CTX=8192`, no errors in any run. Medians of 3 runs an arm [min, max]:
+
+| workload | metric | 8 rows | 16 rows | 16/8 |
+|---|---|---|---|---|
+| conc32 | aggregate output tok/s | 381.69 [381.41, 384.61] | 481.69 [481.12, 483.36] | 1.262 |
+| conc32 | per-request decode tok/s | 13.10 [13.09, 13.18] | 16.90 [16.89, 16.98] | 1.291 |
+| conc32 | TTFT median s | 3.545 [3.465, 3.564] | 3.491 [3.475, 3.491] | 0.985 |
+| conc32 | TTFT max s | 7.472 [7.281, 7.480] | 7.190 [7.179, 7.195] | 0.962 |
+| dconc16 | aggregate output tok/s | 372.97 [370.71, 373.88] | 472.33 [471.51, 474.02] | 1.266 |
+| dconc16 | per-request decode tok/s | 25.40 [25.25, 25.47] | 32.97 [32.92, 33.11] | 1.298 |
+| dconc16 | TTFT median s | 1.739 [1.734, 1.752] | 1.735 [1.733, 1.740] | 0.998 |
+| dconc16 | TTFT max s | 3.413 [3.410, 3.436] | 3.366 [3.360, 3.366] | 0.986 |
+
+The arms' ranges do not overlap on any throughput row. The bench records per-request decode rates
+and TTFT, not per-token gaps, so ITL and TPOT percentiles are not in these receipts; the
+per-request minimum rate is (`per_run.md`). The regime is power-capped on every card in both arms:
+250 ms telemetry over the busy samples shows mean power 255 to 277 W, mean SM clock 2,141 to 2,215
+MHz, at most 91 C, with clock event reason 0x4 (software power cap) on most samples and 0x400 on
+the rest (`telemetry.md`). The arms interleave, so both read the same regime.
+
+So on four ranks the unset default is now 16 rows (`BATCH_ROWS_FOUR_RANKS` in
+`crates/memra-server/src/dsv41_serve.rs`); `MEMRA_DSV41_BATCH_ROWS=8` is the rollback. One card and
+two ranks keep 8: neither was measured at 16 rows, and the pair's and one card's crossovers differ
+from four ranks'.
+
+Raw runs: `receipts/rows16-four/` (`summary.txt`, `per_run.md`, `telemetry.md`, the gates, the
+batch-time job, each run's bench and server log, and the window's runner under `scripts/`). The
+native references' logit dumps are kept by their sha256 (`greedyfull/full.f32.sha256`).
+
 ## What exact bytes cost at one row on four ranks, and what each relaxation would buy
 
 Every change in this lane keeps the bytes of the one-card route. At one row on four ranks three

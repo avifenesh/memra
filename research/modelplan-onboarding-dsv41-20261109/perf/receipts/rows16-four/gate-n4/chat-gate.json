@@ -1,0 +1,696 @@
+{
+ "gates": {
+  "render": {
+   "pass": true,
+   "detail": "8 prompts tokenized through /v1/tokenize vs the tape ids"
+  },
+  "solo": {
+   "pass": true,
+   "detail": "served greedy content and token counts equal dsv41-run --gen on 8 cases"
+  },
+  "batched": {
+   "pass": true,
+   "detail": "five concurrent requests answer byte for byte as solo"
+  },
+  "stream": {
+   "pass": true,
+   "detail": "14 deltas of sys_json"
+  },
+  "sampled": {
+   "pass": true,
+   "detail": "seed 1017, T 0.8, top_p 0.95, top_k 40: two solo runs and one beside four others"
+  },
+  "stops": {
+   "pass": true,
+   "detail": "stop ':\"A' cuts sys_json at its first occurrence; max_tokens 5 cuts gsm with finish length"
+  },
+  "penalties": {
+   "pass": true,
+   "detail": "frequency 0.5, presence 0.3 greedy: served, identical twice"
+  },
+  "budget": {
+   "pass": true,
+   "detail": "63 -> 200 (reasoning 68 chars), 101 -> 400"
+  }
+ },
+ "cases": {
+  "capital": {
+   "render": {
+    "status": 200,
+    "n": 16,
+    "equal": true,
+    "got_head": [
+     0,
+     128803,
+     3085,
+     344,
+     270,
+     6102,
+     294,
+     8760
+    ]
+   },
+   "native": {
+    "ids": [
+     51119,
+     1
+    ],
+    "n": 1,
+    "eos": true,
+    "text": "Paris",
+    "status": 200
+   },
+   "solo": {
+    "content": "Paris",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 16,
+     "completion_tokens": 1,
+     "total_tokens": 17,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.030547419
+    },
+    "status": 200,
+    "wall_s": 0.032,
+    "equal_native": true
+   },
+   "batched": {
+    "content": "Paris",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 16,
+     "completion_tokens": 1,
+     "total_tokens": 17,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.075493015
+    },
+    "status": 200,
+    "wall_s": 0.078,
+    "equal_solo": true
+   }
+  },
+  "gsm": {
+   "render": {
+    "status": 200,
+    "n": 42,
+    "equal": true,
+    "got_head": [
+     0,
+     128803,
+     35,
+     111555,
+     4491,
+     223,
+     1173,
+     113581
+    ]
+   },
+   "native": {
+    "ids": [
+     1173,
+     12,
+     25,
+     31,
+     10475,
+     29,
+     223,
+     10475,
+     15,
+     4980,
+     31,
+     864,
+     29,
+     223,
+     864,
+     15,
+     27,
+     31,
+     27,
+     16,
+     2143,
+     27,
+     1
+    ],
+    "n": 22,
+    "eos": true,
+    "text": "24*7=168; 168-150=18; 18-9=9.  \n9",
+    "status": 200
+   },
+   "solo": {
+    "content": "24*7=168; 168-150=18; 18-9=9.  \n9",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 42,
+     "completion_tokens": 22,
+     "total_tokens": 64,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.246061601
+    },
+    "status": 200,
+    "wall_s": 0.247,
+    "equal_native": true
+   },
+   "batched": {
+    "content": "24*7=168; 168-150=18; 18-9=9.  \n9",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 42,
+     "completion_tokens": 22,
+     "total_tokens": 64,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.442777363
+    },
+    "status": 200,
+    "wall_s": 0.466,
+    "equal_solo": true
+   }
+  },
+  "multiturn": {
+   "render": {
+    "status": 200,
+    "n": 45,
+    "equal": true,
+    "got_head": [
+     0,
+     128803,
+     6759,
+     2329,
+     344,
+     63651,
+     305,
+     342
+    ]
+   },
+   "native": {
+    "ids": [
+     37453,
+     57744,
+     1
+    ],
+    "n": 2,
+    "eos": true,
+    "text": "Haifa",
+    "status": 200
+   },
+   "solo": {
+    "content": "Haifa",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 45,
+     "completion_tokens": 2,
+     "total_tokens": 47,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.06492116
+    },
+    "status": 200,
+    "wall_s": 0.066,
+    "equal_native": true
+   },
+   "batched": {
+    "content": "Haifa",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 45,
+     "completion_tokens": 2,
+     "total_tokens": 47,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.137968992
+    },
+    "status": 200,
+    "wall_s": 0.216,
+    "equal_solo": true
+   }
+  },
+  "sys_json": {
+   "render": {
+    "status": 200,
+    "n": 31,
+    "equal": true,
+    "got_head": [
+     0,
+     128799,
+     3476,
+     3287,
+     1353,
+     418,
+     21886,
+     26639
+    ]
+   },
+   "native": {
+    "ids": [
+     24313,
+     2205,
+     16562,
+     11215,
+     10177,
+     69865,
+     16562,
+     48865,
+     10177,
+     53112,
+     432,
+     16562,
+     11124,
+     62773,
+     1
+    ],
+    "n": 14,
+    "eos": true,
+    "text": "{\"iron\":\"Fe\",\"gold\":\"Au\",\"silver\":\"Ag\"}",
+    "status": 200
+   },
+   "solo": {
+    "content": "{\"iron\":\"Fe\",\"gold\":\"Au\",\"silver\":\"Ag\"}",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 31,
+     "completion_tokens": 14,
+     "total_tokens": 45,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.166905247
+    },
+    "status": 200,
+    "wall_s": 0.168,
+    "equal_native": true
+   },
+   "batched": {
+    "content": "{\"iron\":\"Fe\",\"gold\":\"Au\",\"silver\":\"Ag\"}",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 31,
+     "completion_tokens": 14,
+     "total_tokens": 45,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.249114263
+    },
+    "status": 200,
+    "wall_s": 0.414,
+    "equal_solo": true
+   },
+   "stream": {
+    "content": "{\"iron\":\"Fe\",\"gold\":\"Au\",\"silver\":\"Ag\"}",
+    "chunks": 14
+   }
+  },
+  "hebrew": {
+   "render": {
+    "status": 200,
+    "n": 16,
+    "equal": true,
+    "got_head": [
+     0,
+     128803,
+     59109,
+     8693,
+     76482,
+     59526,
+     33,
+     73811
+    ]
+   },
+   "native": {
+    "ids": [
+     93430,
+     37718,
+     1
+    ],
+    "n": 2,
+    "eos": true,
+    "text": "ירושלים",
+    "status": 200
+   },
+   "solo": {
+    "content": "ירושלים",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 16,
+     "completion_tokens": 2,
+     "total_tokens": 18,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.038707483
+    },
+    "status": 200,
+    "wall_s": 0.04,
+    "equal_native": true
+   },
+   "batched": {
+    "content": "ירושלים",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 16,
+     "completion_tokens": 2,
+     "total_tokens": 18,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.130830739
+    },
+    "status": 200,
+    "wall_s": 0.265,
+    "equal_solo": true
+   }
+  },
+  "emoji_cjk": {
+   "render": {
+    "status": 200,
+    "n": 28,
+    "equal": true,
+    "got_head": [
+     0,
+     128803,
+     94973,
+     9045,
+     14,
+     418,
+     5760,
+     3006
+    ]
+   },
+   "native": {
+    "ids": [
+     80300,
+     227,
+     86387,
+     257,
+     109,
+     118,
+     6230,
+     817,
+     223,
+     2715,
+     249,
+     7351,
+     103,
+     242,
+     46088,
+     74287,
+     225,
+     3989,
+     1
+    ],
+    "n": 18,
+    "eos": true,
+    "text": "🙂 𠮷野家 龘 🧑‍🚀 done",
+    "status": 200
+   },
+   "solo": {
+    "content": "🙂 𠮷野家 龘 🧑‍🚀 done",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 28,
+     "completion_tokens": 18,
+     "total_tokens": 46,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.199720744
+    },
+    "status": 200,
+    "wall_s": 0.201,
+    "equal_native": true
+   },
+   "batched": {
+    "content": "🙂 𠮷野家 龘 🧑‍🚀 done",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 28,
+     "completion_tokens": 18,
+     "total_tokens": 46,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.247539454
+    },
+    "status": 200,
+    "wall_s": 0.465,
+    "equal_solo": true
+   }
+  },
+  "needle": {
+   "render": {
+    "status": 200,
+    "n": 3761,
+    "equal": true,
+    "got_head": [
+     0,
+     128803,
+     24694,
+     223,
+     1320,
+     28,
+     270,
+     94425
+    ]
+   },
+   "native": {
+    "ids": [
+     28224,
+     397,
+     1
+    ],
+    "n": 2,
+    "eos": true,
+    "text": "99220",
+    "status": 200
+   },
+   "solo": {
+    "content": "99220",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 3761,
+     "completion_tokens": 2,
+     "total_tokens": 3763,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 0.454070911
+    },
+    "status": 200,
+    "wall_s": 0.46,
+    "equal_native": true
+   }
+  },
+  "needle1200": {
+   "render": {
+    "status": 200,
+    "n": 18343,
+    "equal": true,
+    "got_head": [
+     0,
+     128803,
+     24694,
+     223,
+     1320,
+     504,
+     28,
+     270
+    ]
+   },
+   "native": {
+    "ids": [
+     17227,
+     1484,
+     1
+    ],
+    "n": 2,
+    "eos": true,
+    "text": "25940",
+    "status": 200
+   },
+   "solo": {
+    "content": "25940",
+    "reasoning": null,
+    "finish": "stop",
+    "usage": {
+     "prompt_tokens": 18343,
+     "completion_tokens": 2,
+     "total_tokens": 18345,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 2.049418298
+    },
+    "status": 200,
+    "wall_s": 2.07,
+    "equal_native": true
+   }
+  }
+ },
+ "sampled": {
+  "solo1": {
+   "content": "24*7=168\n168-150=18\n18-9=9\n9",
+   "reasoning": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 42,
+    "completion_tokens": 19,
+    "total_tokens": 61,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 0.232796009
+   }
+  },
+  "solo2": {
+   "content": "24*7=168\n168-150=18\n18-9=9\n9",
+   "reasoning": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 42,
+    "completion_tokens": 19,
+    "total_tokens": 61,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 0.232239285
+   }
+  },
+  "batched": {
+   "content": "24*7=168\n168-150=18\n18-9=9\n9",
+   "reasoning": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 42,
+    "completion_tokens": 19,
+    "total_tokens": 61,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 0.426532599
+   }
+  }
+ },
+ "stops": {
+  "stop_string": ":\"A",
+  "want": "{\"iron\":\"Fe\",\"gold\"",
+  "got": {
+   "content": "{\"iron\":\"Fe\",\"gold\"",
+   "reasoning": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 31,
+    "completion_tokens": 8,
+    "total_tokens": 39,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 0.102552389
+   }
+  },
+  "max_tokens_5": {
+   "content": "24*7=168",
+   "reasoning": null,
+   "finish": "length",
+   "usage": {
+    "prompt_tokens": 42,
+    "completion_tokens": 5,
+    "total_tokens": 47,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 0.081307095
+   }
+  },
+  "want_5": "24*7=168"
+ },
+ "penalties": {
+  "run1": {
+   "content": "24*7=168; 168-150=18; 18-9=9.  \n9",
+   "reasoning": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 42,
+    "completion_tokens": 22,
+    "total_tokens": 64,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 0.248272162
+   }
+  },
+  "run2": {
+   "content": "24*7=168; 168-150=18; 18-9=9.  \n9",
+   "reasoning": null,
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 42,
+    "completion_tokens": 22,
+    "total_tokens": 64,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 0.248326874
+   }
+  }
+ },
+ "budget": {
+  "63": {
+   "content": "Paris",
+   "reasoning": "We need answer one word. Capital France Paris. Need comply one word.",
+   "finish": "stop",
+   "usage": {
+    "prompt_tokens": 42,
+    "completion_tokens": 17,
+    "total_tokens": 59,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 0.201716233
+   },
+   "status": 200
+  },
+  "101": {
+   "status": 400,
+   "body": "{\"error\":{\"message\":\"bad reasoning_effort \\\"101\\\": a numeric reasoning budget is an integer in [1, 100] (or none|minimal|low|medium|high|max)\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":null}}"
+  }
+ },
+ "speed": {
+  "content": "Every evening, Elias climbed the spiral stairs to light the lamp. The sea was his only companion now. One grey dawn, a bottle rolled onto the rocks, sealed with crimson wax. Inside, a child's handwriting: *\"To the man in the tower—is anyone out there? I watch your light from my window across the bay. It makes me feel less alone.\"* Elias's hands trembled. He wrote back that very night, describing the gulls and the storms, and cast his reply into the waves. Weeks passed. Then a new bottle arrived: *\"I got your letter. I'm not alone anymore.\"",
+  "reasoning": null,
+  "finish": "length",
+  "usage": {
+   "prompt_tokens": 22,
+   "completion_tokens": 128,
+   "total_tokens": 150,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 1.204262768
+  },
+  "status": 200,
+  "wall_s": 1.205
+ },
+ "pass": true
+}

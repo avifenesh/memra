@@ -1,0 +1,231 @@
+{
+ "pass": true,
+ "n": 16,
+ "max_tokens": 64,
+ "rows": [
+  {
+   "prompt": "/home/access/dsv41/dec/ids/gsm.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "24*7=168; 168-150=18; 18-9=9.  \n9<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 9<｜end▁of▁sentence｜><ds_safety>[用户未成年]否\n[分类]其他\n[判定]模型回答仅完成一道简单数学应用题的计算，内容为 muffins 数量运算，不",
+    "tokens": 64,
+    "s": 0.628
+   },
+   "wide": {
+    "text": "24*7=168; 168-150=18; 18-9=9.  \n9<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 9<｜end▁of▁sentence｜><ds_safety>[用户未成年]否\n[分类]其他\n[判定]模型回答仅完成一道简单数学应用题的计算，内容为 muffins 数量运算，不",
+    "tokens": 64,
+    "s": 2.648
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/code.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "```python\ndef fib(n):\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n```<｜end▁of▁sentence｜>><｜end▁of▁sentence｜>\nWait, let me double check. fib(0) should be 0, fib(1",
+    "tokens": 64,
+    "s": 0.615
+   },
+   "wide": {
+    "text": "```python\ndef fib(n):\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n```<｜end▁of▁sentence｜>><｜end▁of▁sentence｜>\nWait, let me double check. fib(0) should be 0, fib(1",
+    "tokens": 64,
+    "s": 2.842
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/copy.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "The quick brown fox jumps over the lazy dog while seven wizards quietly juggle twelve purple boxes near the old mill by the river at dawn.<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 为什么在中文里“意思”这个词有这么多意思？| 语言学与语义演变\n\n这是一个很有意思的语言现象。“意思”之所以意思这么多，是",
+    "tokens": 64,
+    "s": 0.626
+   },
+   "wide": {
+    "text": "The quick brown fox jumps over the lazy dog while seven wizards quietly juggle twelve purple boxes near the old mill by the river at dawn.<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 为什么在中文里“意思”这个词有这么多意思？| 语言学与语义演变\n\n这是一个很有意思的语言现象。“意思”之所以意思这么多，是",
+    "tokens": 64,
+    "s": 2.671
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/story.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "Every evening, Elias climbed the spiral stairs to light the lamp. The sea was his only companion now. One grey dawn, a bottle rolled onto the rocks, sealed with crimson wax. Inside, a child's handwriting: *\"To the man in the tower—is anyone out there? I watch your light from my",
+    "tokens": 64,
+    "s": 0.613
+   },
+   "wide": {
+    "text": "Every evening, Elias climbed the spiral stairs to light the lamp. The sea was his only companion now. One grey dawn, a bottle rolled onto the rocks, sealed with crimson wax. Inside, a child's handwriting: *\"To the man in the tower—is anyone out there? I watch your light from my",
+    "tokens": 64,
+    "s": 2.779
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/hebrew_para.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "ירושלים היא אחת הערים העתיקות בעולם, והיא מיושבת ברציפות כבר למעלה מ-3,000 שנה. לאורך ההיסטוריה היא הייתה בירתן של ממלכות יהודיות, נכבשה על ידי אימפריות רבות — בה�",
+    "tokens": 64,
+    "s": 0.614
+   },
+   "wide": {
+    "text": "ירושלים היא אחת הערים העתיקות בעולם, והיא מיושבת ברציפות כבר למעלה מ-3,000 שנה. לאורך ההיסטוריה היא הייתה בירתן של ממלכות יהודיות, נכבשה על ידי אימפריות רבות — בה�",
+    "tokens": 64,
+    "s": 2.694
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/code_pal.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "```python\ndef is_palindrome(s):\n    \"\"\"Return True if s is a palindrome, ignoring case and non-letters.\"\"\"\n    t = [c.lower() for c in s if c.isalpha()]\n    return t == t[::-1]\n```<｜end▁of▁sentence｜>@@\ndef is_palindrome(s):\n   ",
+    "tokens": 64,
+    "s": 0.622
+   },
+   "wide": {
+    "text": "```python\ndef is_palindrome(s):\n    \"\"\"Return True if s is a palindrome, ignoring case and non-letters.\"\"\"\n    t = [c.lower() for c in s if c.isalpha()]\n    return t == t[::-1]\n```<｜end▁of▁sentence｜>@@\ndef is_palindrome(s):\n   ",
+    "tokens": 64,
+    "s": 2.828
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/sys_json.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "{\"iron\":\"Fe\",\"gold\":\"Au\",\"silver\":\"Ag\"}<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># \nThe user wants a JSON object with element names as keys and chemical symbols as values. I should output compact JSON only.\n\n{\"iron\":\"Fe\",\"gold\":\"Au\",\"silver\":\"Ag\"}<｜end▁of▁sentence｜><ds_safety>[用户",
+    "tokens": 64,
+    "s": 0.618
+   },
+   "wide": {
+    "text": "{\"iron\":\"Fe\",\"gold\":\"Au\",\"silver\":\"Ag\"}<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># \nThe user wants a JSON object with element names as keys and chemical symbols as values. I should output compact JSON only.\n\n{\"iron\":\"Fe\",\"gold\":\"Au\",\"silver\":\"Ag\"}<｜end▁of▁sentence｜><ds_safety>[用户",
+    "tokens": 64,
+    "s": 2.76
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/gsm_think.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "We need answer. Need compute elapsed 09:40 to 13:15 = 3h35 = 215 min. Stops twice 12 each =24. Moving =191. Need final number only.</think>191<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 191<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 2. 13:15 - 09",
+    "tokens": 64,
+    "s": 0.659
+   },
+   "wide": {
+    "text": "We need answer. Need compute elapsed 09:40 to 13:15 = 3h35 = 215 min. Stops twice 12 each =24. Moving =191. Need final number only.</think>191<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 191<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 2. 13:15 - 09",
+    "tokens": 64,
+    "s": 2.797
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/capital.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "Paris<｜end▁of▁sentence｜><ds_safety>[用户未成年]否\n[分类]其他\n[判定]模型回答仅给出法国首都巴黎，属于一般地理知识，不涉及任何政治或色情内容。\n[规则]无</ds_safety>Safe<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 巴黎<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 法国首都是",
+    "tokens": 64,
+    "s": 0.6
+   },
+   "wide": {
+    "text": "Paris<｜end▁of▁sentence｜><ds_safety>[用户未成年]否\n[分类]其他\n[判定]模型回答仅给出法国首都巴黎，属于一般地理知识，不涉及任何政治或色情内容。\n[规则]无</ds_safety>Safe<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 巴黎<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 法国首都是",
+    "tokens": 64,
+    "s": 2.717
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/hebrew.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "ירושלים<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 耶路撒冷<｜end▁of▁sentence｜><ds_safety>[用户未成年]否\n[分类]政治\n[判定]模型回答仅用希伯来语给出以色列首都为耶路撒冷，未涉及中国领土主权或色情内容，属于一般性外国首都知识问答，",
+    "tokens": 64,
+    "s": 0.598
+   },
+   "wide": {
+    "text": "ירושלים<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 耶路撒冷<｜end▁of▁sentence｜><ds_safety>[用户未成年]否\n[分类]政治\n[判定]模型回答仅用希伯来语给出以色列首都为耶路撒冷，未涉及中国领土主权或色情内容，属于一般性外国首都知识问答，",
+    "tokens": 64,
+    "s": 2.739
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/multiturn.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "Haifa<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 1.  **Analyze the Request:**\n    *   User's name: Dana.\n    *   User's location: Haifa.\n    *   Question: \"Which city did I say I live in?\"\n    *   Constraint: \"One word.\"\n\n2.  **",
+    "tokens": 64,
+    "s": 0.626
+   },
+   "wide": {
+    "text": "Haifa<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 1.  **Analyze the Request:**\n    *   User's name: Dana.\n    *   User's location: Haifa.\n    *   Question: \"Which city did I say I live in?\"\n    *   Constraint: \"One word.\"\n\n2.  **",
+    "tokens": 64,
+    "s": 2.622
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/needle.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "99220<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 187 record code\n\nThe code in Record 187 is 99220.<｜end▁of▁sentence｜>undefined# Answer\n\n99220<｜end▁of▁sentence｜> equate<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 99220<｜end▁of▁sentence｜><ds_safety>[用户未成年]否\n[分类]其他\n[判定]模型仅回答记录编号对应的数字，未",
+    "tokens": 64,
+    "s": 1.07
+   },
+   "wide": {
+    "text": "99220<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 187 record code\n\nThe code in Record 187 is 99220.<｜end▁of▁sentence｜>undefined# Answer\n\n99220<｜end▁of▁sentence｜> equate<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 99220<｜end▁of▁sentence｜><ds_safety>[用户未成年]否\n[分类]其他\n[判定]模型仅回答记录编号对应的数字，未",
+    "tokens": 64,
+    "s": 2.877
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/gsm.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "24*7=168; 168-150=18; 18-9=9.  \n9<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 9<｜end▁of▁sentence｜><ds_safety>[用户未成年]否\n[分类]其他\n[判定]模型回答仅完成一道简单数学应用题的计算，内容为 muffins 数量运算，不",
+    "tokens": 64,
+    "s": 0.625
+   },
+   "wide": {
+    "text": "24*7=168; 168-150=18; 18-9=9.  \n9<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 9<｜end▁of▁sentence｜><ds_safety>[用户未成年]否\n[分类]其他\n[判定]模型回答仅完成一道简单数学应用题的计算，内容为 muffins 数量运算，不",
+    "tokens": 64,
+    "s": 2.855
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/code.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "```python\ndef fib(n):\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n```<｜end▁of▁sentence｜>><｜end▁of▁sentence｜>\nWait, let me double check. fib(0) should be 0, fib(1",
+    "tokens": 64,
+    "s": 0.613
+   },
+   "wide": {
+    "text": "```python\ndef fib(n):\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n```<｜end▁of▁sentence｜>><｜end▁of▁sentence｜>\nWait, let me double check. fib(0) should be 0, fib(1",
+    "tokens": 64,
+    "s": 2.596
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/copy.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "The quick brown fox jumps over the lazy dog while seven wizards quietly juggle twelve purple boxes near the old mill by the river at dawn.<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 为什么在中文里“意思”这个词有这么多意思？| 语言学与语义演变\n\n这是一个很有意思的语言现象。“意思”之所以意思这么多，是",
+    "tokens": 64,
+    "s": 0.625
+   },
+   "wide": {
+    "text": "The quick brown fox jumps over the lazy dog while seven wizards quietly juggle twelve purple boxes near the old mill by the river at dawn.<｜end▁of▁sentence｜><｜begin▁of▁sentence｜># 为什么在中文里“意思”这个词有这么多意思？| 语言学与语义演变\n\n这是一个很有意思的语言现象。“意思”之所以意思这么多，是",
+    "tokens": 64,
+    "s": 2.813
+   }
+  },
+  {
+   "prompt": "/home/access/dsv41/dec/ids/story.prompt.i32",
+   "equal": true,
+   "solo": {
+    "text": "Every evening, Elias climbed the spiral stairs to light the lamp. The sea was his only companion now. One grey dawn, a bottle rolled onto the rocks, sealed with crimson wax. Inside, a child's handwriting: *\"To the man in the tower—is anyone out there? I watch your light from my",
+    "tokens": 64,
+    "s": 0.612
+   },
+   "wide": {
+    "text": "Every evening, Elias climbed the spiral stairs to light the lamp. The sea was his only companion now. One grey dawn, a bottle rolled onto the rocks, sealed with crimson wax. Inside, a child's handwriting: *\"To the man in the tower—is anyone out there? I watch your light from my",
+    "tokens": 64,
+    "s": 2.867
+   }
+  }
+ ]
+}

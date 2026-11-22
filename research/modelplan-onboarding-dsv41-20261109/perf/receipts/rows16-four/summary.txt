@@ -1,0 +1,45 @@
+12:28:28 r16 632ea9564b built 2026-11-22T03:36:20+02:00 on the four-card box, cuda 13.4, sm_120a
+1d01fad3deedb7b3be4e5aa0f56e49c99627bf0030e4af8a7fdc06b2fb498d5f  memra-server
+371ebf41ef5522743ff93666639114499466f519c3aaf61b88d5a022fce17fc3  dsv41-spec
+5337ccb95eccd1c0f3618b8e04ad4d272e5b1f0bc3ad095adfe751a41fc789d6  dsv41-run
+12:28:28 armed; waiting for dssparks.window-0123; give up 2026-11-24 06:00
+15:03:23 W15-START: window from ds-sparks; all four box locks held; host free 933 GiB; load 0.18 0.46 0.58; hard stop 15:43:23
+0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 270.00 W, 57, 180 MHz
+1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 267.00 W, 36, 180 MHz
+2, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 283.00 W, 71, 2310 MHz
+3, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 278.00 W, 60, 2340 MHz
+15:05:34 wide16 rc 0: jobs 1, red 0
+PASS batch-rows wide16: 16 sequences, rows 480, logits equal 480, taps equal 480, device argmax equal 480, calls by width [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 29], first_bad None
+15:06:31 batchtime rc 0: jobs 2, red 0
+PASS batch-time distinct8 argmax   ms at [1, 2, 4, 8]: 9.20 / 10.41 / 12.65 / 16.60
+PASS batch-time distinct8 fwd      ms at [1, 2, 4, 8]: 8.92 / 10.13 / 12.36 / 16.20
+PASS batch-time distinct8 batched  ms at [1, 2, 4, 8]: 9.25 / 10.51 / 12.83 / 16.94
+PASS batch-time distinct8 alone    ms at [1, 2, 4, 8]: 9.23 / 17.66 / 34.42 / 68.01
+PASS batch-time distinct16 argmax   ms at [1, 2, 4, 8, 16]: 9.19 / 10.28 / 12.67 / 16.06 / 24.72
+PASS batch-time distinct16 fwd      ms at [1, 2, 4, 8, 16]: 8.92 / 10.03 / 12.37 / 15.67 / 24.02
+PASS batch-time distinct16 batched  ms at [1, 2, 4, 8, 16]: 9.22 / 10.39 / 12.84 / 16.40 / 25.49
+PASS batch-time distinct16 alone    ms at [1, 2, 4, 8, 16]: 9.20 / 17.63 / 34.42 / 67.96 / 135.74
+PASS batch-time distinct16 chunk8   ms at [1, 2, 4, 8, 16]: - / - / - / - / 32.45
+15:07:31 served gate on 0,1,2,3 rc 0: 8 pass lines; CHAT-GATE PASS
+15:08:09 served wide gate on 0,1,2,3 rc 0: wide-gate: PASS 16 of 16 answers equal solo (64 tokens each, all at once); 48 steps of 16 rows
+15:10:46 ab run1-A (rows 8) rc 0
+  conc32: aggregate 384.61 tok/s, per request 13.18, ttft max 7.2811 s, errors 0
+  dconc16: aggregate 370.71 tok/s, per request 25.25, ttft max 3.436 s, errors 0
+15:12:56 ab run2-B (rows 16) rc 0
+  conc32: aggregate 481.69 tok/s, per request 16.9, ttft max 7.1788 s, errors 0
+  dconc16: aggregate 471.51 tok/s, per request 32.915, ttft max 3.3659 s, errors 0
+15:15:07 ab run3-B (rows 16) rc 0
+  conc32: aggregate 481.12 tok/s, per request 16.885, ttft max 7.1952 s, errors 0
+  dconc16: aggregate 474.02 tok/s, per request 33.105, ttft max 3.3657 s, errors 0
+15:17:43 ab run4-A (rows 8) rc 0
+  conc32: aggregate 381.69 tok/s, per request 13.095, ttft max 7.4715 s, errors 0
+  dconc16: aggregate 372.97 tok/s, per request 25.4, ttft max 3.4101 s, errors 0
+15:20:20 ab run5-A (rows 8) rc 0
+  conc32: aggregate 381.41 tok/s, per request 13.09, ttft max 7.4803 s, errors 0
+  dconc16: aggregate 373.88 tok/s, per request 25.47, ttft max 3.4134 s, errors 0
+15:22:29 ab run6-B (rows 16) rc 0
+  conc32: aggregate 483.36 tok/s, per request 16.975, ttft max 7.1898 s, errors 0
+  dconc16: aggregate 472.33 tok/s, per request 32.965, ttft max 3.3602 s, errors 0
+15:22:29 all four box locks released (1146 s in the window)
+15:22:30 touched dsv41.r16-4card-done
+15:22:30 W15-DONE
