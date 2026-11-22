@@ -14,6 +14,22 @@
 //!   applied (the target class's gate run), keeps every row's final hidden row and every target
 //!   index layer's history, then drafts at the drafter oracle tape's anchors (last first) from
 //!   its own cache, along the oracle's drafts; the band is the composite bf16x2a backend's.
+//! - `replay CKPT PROMPTS OUT [--k K] [--prefill-chunk C]`: teacher-forced draft replay. For each
+//!   prompt of PROMPTS (a JSON list of `{"name", "prompt_ids", "n", "temperature", "seed",
+//!   "eos"}`), the route generates the answer one token a call, sampled as the serve route samples
+//!   (the position-keyed draw at the request's temperature and seed; temperature 0 is the first
+//!   maximum), up to `n` tokens or the end token, and after every call drafts a round of K from
+//!   that call's row twice: greedy drafts (the first maximum) and drafts drawn with the request's
+//!   own chooser at their positions. Writes one JSON line a prompt: the ids, and for every anchor
+//!   `i` how many of each round's drafts equal the answer's next tokens from the front
+//!   (`m_greedy[i]`, `m_chosen[i]`; for a sampled prompt also `m_half[i]`, the coupled draw from
+//!   the drafter's row at half the request's temperature). The DFly2 block is causal, so a round of `k < K` drafts keeps
+//!   `min(m, k)`: one replay prices every depth. The answer is the target's own, so arms of another
+//!   drafter (another checkpoint directory over the same target) replay the same tokens.
+//! - `cost CKPT REQUEST [--k K] [--reps R] [--temperature T]`: what a step costs by its shape, after the request's
+//!   prefill: the one-token call, the verify call of 2 to K + 1 rows (its ring backup and rollback
+//!   included) and the draft round of 1 to K drafts, R times each, interleaved shape by shape;
+//!   prints the medians in milliseconds (the draft gate's break-even).
 //! - `gen`: greedy generation of N tokens after the request's prefill, twice in one process:
 //!   plain (one decode call a token) and speculative (a draft round of K after every call, then
 //!   one verify call scoring the anchor and the K drafts, the longest agreeing prefix kept and
@@ -21,6 +37,7 @@
 //!   every emitted token's logits row is bit-identical between the two, and the acceptance. With
 //!   `--bench R` it times R more runs of each after a warm-up.
 
+use memra_engine::dsv4_gpu::{Dsv4SampleCfg, dsv4_sample_row};
 use memra_engine::hy4f_route::Dev;
 use memra_engine::hy4f_route::{Ckpt, DraftRed, ExternalTarget, Route, Session, mem_available};
 use memra_gguf::config::{HfConfig, ModelConfig};
@@ -83,9 +100,13 @@ fn run() -> Result<(), String> {
         Some("gate") => gate(&args[1..]),
         Some("gen") => generate(&args[1..]),
         Some("gate-route") => gate_route(&args[1..]),
+        Some("replay") => replay(&args[1..]),
+        Some("cost") => cost(&args[1..]),
         _ => Err(
             "usage: hy4f-spec gate CKPT REQUEST TARGET ORACLE_TAPE OUT [--red ARM] | \
-                  gen CKPT REQUEST N [--k K] [--prefill-chunk C] [--bench R]"
+                  gen CKPT REQUEST N [--k K] [--prefill-chunk C] [--bench R] | \
+                  replay CKPT PROMPTS OUT [--k K] [--prefill-chunk C] | \
+                  cost CKPT REQUEST [--k K] [--reps R]"
                 .into(),
         ),
     }
@@ -463,6 +484,265 @@ fn generate(args: &[String]) -> Result<(), String> {
     if !exact {
         return Err("drafted greedy differs from plain greedy".into());
     }
+    Ok(())
+}
+
+/// The serve route's choice for a row: the first maximum, or the position-keyed draw.
+fn pick_row(row: &[f32], pos: usize, sample: Option<&Dsv4SampleCfg>) -> Result<u32, String> {
+    if row.iter().any(|x| !x.is_finite()) {
+        return Err("non-finite logits".into());
+    }
+    match sample {
+        None => Ok(argmax(row)),
+        Some(cfg) => dsv4_sample_row(row, pos, cfg),
+    }
+}
+
+/// How many of `drafts` equal `ids` from the front.
+fn lead(drafts: &[u32], ids: &[u32]) -> usize {
+    drafts.iter().zip(ids).take_while(|(a, b)| a == b).count()
+}
+
+fn replay(args: &[String]) -> Result<(), String> {
+    let [ckpt, prompts, out, ..] = args else {
+        return Err("replay CKPT PROMPTS OUT".into());
+    };
+    let ckpt = Path::new(ckpt);
+    let (config, plan) = plan_of(ckpt)?;
+    let hy = config
+        .hy_v4_flash
+        .as_ref()
+        .ok_or("not a Hy4-flash config")?;
+    let list = read_json(Path::new(prompts))?;
+    let list = list.as_array().ok_or("PROMPTS is not a JSON list")?;
+    let chunk: usize = flag(args, "--prefill-chunk")
+        .map_or(Ok(2048), str::parse)
+        .map_err(|e| format!("{e}"))?;
+    let need: usize = 95_000_000_000 + (16usize << 30);
+    if mem_available().unwrap_or(0) < need {
+        return Err(
+            "MemAvailable cannot hold the resident weights, the drafter and headroom".into(),
+        );
+    }
+    let ck = Ckpt::open(ckpt)?;
+    let dev = Dev::new(0)?;
+    let t0 = Instant::now();
+    let mut route = Route::load(dev, &ck, &plan, hy, 8, plan.layers.len())?;
+    route.load_drafter(&ck)?;
+    let k: usize = match flag(args, "--k") {
+        Some(s) => s.parse().map_err(|e| format!("--k: {e}"))?,
+        None => route
+            .drafter_mut()
+            .unwrap()
+            .k
+            .ok_or("no declared k; pass --k")?,
+    };
+    eprintln!(
+        "hy4f-spec replay: resident {:.1} GiB in {:.1}s; k={k}",
+        route.dev.live_bytes() as f64 / (1u64 << 30) as f64,
+        t0.elapsed().as_secs_f64()
+    );
+    drop(ck);
+    let mut w = std::fs::File::create(out).map_err(|e| format!("{out}: {e}"))?;
+    for p in list {
+        let name = p["name"].as_str().unwrap_or("?").to_string();
+        let prompt = u32s(&p["prompt_ids"]);
+        let n = p["n"].as_u64().ok_or("n")? as usize;
+        let eos = p["eos"].as_u64().map(|x| x as u32);
+        let temperature = p["temperature"].as_f64().unwrap_or(0.0) as f32;
+        let sample = (temperature > 0.0).then(|| Dsv4SampleCfg {
+            temperature,
+            top_p: 1.0,
+            top_k: 0,
+            seed: p["seed"].as_u64().unwrap_or(0),
+        });
+        if prompt.is_empty() || n == 0 {
+            return Err(format!("{name}: an empty prompt or budget"));
+        }
+        let tr = Instant::now();
+        let mut sess = route.new_session(prompt.len() + n + k + 2)?;
+        let mut last = Vec::new();
+        let mut s0 = 0;
+        while s0 < prompt.len() {
+            let s1 = (s0 + chunk).min(prompt.len());
+            last = route.call_in(&mut sess, &prompt[s0..s1], false, None, None)?;
+            s0 = s1;
+        }
+        let pl = prompt.len();
+        let mut src = (pl - 1) % chunk;
+        let mut ids = vec![pick_row(&last, pl, sample.as_ref())?];
+        let mut greedy_drafts: Vec<Vec<u32>> = Vec::new();
+        let mut chosen_drafts: Vec<Vec<u32>> = Vec::new();
+        let mut half_drafts: Vec<Vec<u32>> = Vec::new();
+        loop {
+            let t = *ids.last().unwrap();
+            if ids.len() >= n || eos == Some(t) {
+                break;
+            }
+            // the round after this call, both ways; its block rows sit past the session's
+            // positions and the next call writes them again before any query reads them
+            let g = route.draft_in(&mut sess, src, t, k, None, false, None)?;
+            let pos0 = pl + ids.len();
+            let mut pick = |s: usize, row: &[f32]| pick_row(row, pos0 + s, sample.as_ref());
+            let c = route.draft_in(&mut sess, src, t, k, None, false, Some(&mut pick))?;
+            greedy_drafts.push(g.ids);
+            chosen_drafts.push(c.ids);
+            // the same coupled draw from the drafter's row sharpened to half the temperature
+            if let Some(cfg) = sample.as_ref() {
+                let half = Dsv4SampleCfg {
+                    temperature: cfg.temperature * 0.5,
+                    ..*cfg
+                };
+                let mut pick = |s: usize, row: &[f32]| pick_row(row, pos0 + s, Some(&half));
+                let hd = route.draft_in(&mut sess, src, t, k, None, false, Some(&mut pick))?;
+                half_drafts.push(hd.ids);
+            }
+            let row = route.call_in(&mut sess, &[t], false, None, None)?;
+            ids.push(pick_row(&row, pl + ids.len(), sample.as_ref())?);
+            src = 0;
+        }
+        let m_greedy: Vec<usize> = greedy_drafts
+            .iter()
+            .enumerate()
+            .map(|(i, d)| lead(d, &ids[i + 1..]))
+            .collect();
+        let m_chosen: Vec<usize> = chosen_drafts
+            .iter()
+            .enumerate()
+            .map(|(i, d)| lead(d, &ids[i + 1..]))
+            .collect();
+        let m_half: Vec<usize> = half_drafts
+            .iter()
+            .enumerate()
+            .map(|(i, d)| lead(d, &ids[i + 1..]))
+            .collect();
+        let line = json!({
+            "name": name, "prompt_tokens": pl, "n": n, "k": k, "temperature": temperature,
+            "seed": sample.as_ref().map(|c| c.seed), "ids": ids, "m_greedy": m_greedy,
+            "m_chosen": m_chosen, "m_half": m_half, "seconds": tr.elapsed().as_secs_f64(),
+        });
+        use std::io::Write;
+        writeln!(w, "{line}").map_err(|e| format!("{out}: {e}"))?;
+        eprintln!(
+            "hy4f-spec replay: {name}: {} tokens, mean m greedy {:.3}, chosen {:.3} ({:.1}s)",
+            ids.len(),
+            m_greedy.iter().sum::<usize>() as f64 / m_greedy.len().max(1) as f64,
+            m_chosen.iter().sum::<usize>() as f64 / m_chosen.len().max(1) as f64,
+            tr.elapsed().as_secs_f64()
+        );
+    }
+    Ok(())
+}
+
+fn cost(args: &[String]) -> Result<(), String> {
+    let [ckpt, request, ..] = args else {
+        return Err("cost CKPT REQUEST".into());
+    };
+    let ckpt = Path::new(ckpt);
+    let (config, plan) = plan_of(ckpt)?;
+    let hy = config
+        .hy_v4_flash
+        .as_ref()
+        .ok_or("not a Hy4-flash config")?;
+    let req = read_json(Path::new(request))?;
+    let tokens = u32s(&req["token_ids"]);
+    let decode_from = req["decode_from"].as_u64().ok_or("decode_from")? as usize;
+    let prompt = &tokens[..decode_from];
+    let reps: usize = flag(args, "--reps")
+        .map_or(Ok(8), str::parse)
+        .map_err(|e| format!("--reps: {e}"))?;
+    let need: usize = 95_000_000_000 + (16usize << 30);
+    if mem_available().unwrap_or(0) < need {
+        return Err(
+            "MemAvailable cannot hold the resident weights, the drafter and headroom".into(),
+        );
+    }
+    let ck = Ckpt::open(ckpt)?;
+    let dev = Dev::new(0)?;
+    let mut route = Route::load(dev, &ck, &plan, hy, 8, plan.layers.len())?;
+    route.load_drafter(&ck)?;
+    let k: usize = match flag(args, "--k") {
+        Some(s) => s.parse().map_err(|e| format!("--k: {e}"))?,
+        None => route
+            .drafter_mut()
+            .unwrap()
+            .k
+            .ok_or("no declared k; pass --k")?,
+    };
+    drop(ck);
+    let v = plan.vocab_size as usize;
+    let mut sess = route.new_session(prompt.len() + reps * (k + 2) + k + 4)?;
+    let mut last = Vec::new();
+    for c in prompt.chunks(2048) {
+        last = route.call_in(&mut sess, c, false, None, None)?;
+    }
+    let mut t = argmax(&last);
+    // the source row of the next round: the last call's last row
+    let mut src = (prompt.len() - 1) % 2048;
+    // `--temperature T`: drafts and choices drawn as a sampled request's are (each verify row
+    // chosen: the most a call chooses), so the prices include the host sampler
+    let temperature: f32 = flag(args, "--temperature")
+        .map_or(Ok(0.0), str::parse)
+        .map_err(|e| format!("--temperature: {e}"))?;
+    let sample = (temperature > 0.0).then_some(Dsv4SampleCfg {
+        temperature,
+        top_p: 1.0,
+        top_k: 0,
+        seed: 20261121,
+    });
+    let mut verify_ms: Vec<Vec<f64>> = vec![Vec::new(); k + 1];
+    let mut draft_ms: Vec<Vec<f64>> = vec![Vec::new(); k];
+    for _ in 0..reps {
+        for d in 1..=k {
+            let pos0 = sess.positions() + 1;
+            let mut pick = |s: usize, row: &[f32]| pick_row(row, pos0 + s, sample.as_ref());
+            let td = Instant::now();
+            let out = route.draft_in(&mut sess, src, t, d, None, false, Some(&mut pick))?;
+            draft_ms[d - 1].push(td.elapsed().as_secs_f64() * 1e3);
+            // the verify call of the anchor and these drafts, rolled back to the anchor
+            let mut call = vec![t];
+            call.extend(&out.ids);
+            let tv = Instant::now();
+            let from = sess.positions();
+            let backup = route.ring_backup_in(&sess, from, call.len())?;
+            let rows = route.call_in(&mut sess, &call, true, None, None)?;
+            let mut chosen = Vec::with_capacity(call.len());
+            for r in 0..call.len() {
+                chosen.push(pick_row(
+                    &rows[r * v..(r + 1) * v],
+                    from + 1 + r,
+                    sample.as_ref(),
+                )?);
+            }
+            route.rollback_in(&mut sess, from + 1, &backup)?;
+            verify_ms[d].push(tv.elapsed().as_secs_f64() * 1e3);
+            // the session moves one token on, as a one-token call would have
+            t = chosen[0];
+            src = 0;
+        }
+        let tc = Instant::now();
+        let row = route.call_in(&mut sess, &[t], false, None, None)?;
+        let next = pick_row(&row, sess.positions(), sample.as_ref())?;
+        verify_ms[0].push(tc.elapsed().as_secs_f64() * 1e3);
+        t = next;
+        src = 0;
+    }
+    let med = |x: &[f64]| -> f64 {
+        let mut y = x.to_vec();
+        y.sort_by(f64::total_cmp);
+        y[y.len() / 2]
+    };
+    println!(
+        "{}",
+        json!({
+            "request": req["name"], "prompt_tokens": prompt.len(), "k": k, "reps": reps,
+            "temperature": temperature,
+            // index i: a call of i + 1 rows; a round of i + 1 drafts
+            "verify_ms_by_rows": (0..=k).map(|r| med(&verify_ms[r])).collect::<Vec<_>>(),
+            "draft_ms_by_drafts": (0..k).map(|d| med(&draft_ms[d])).collect::<Vec<_>>(),
+            "verify_rows_runs": verify_ms, "draft_runs": draft_ms,
+        })
+    );
     Ok(())
 }
 
