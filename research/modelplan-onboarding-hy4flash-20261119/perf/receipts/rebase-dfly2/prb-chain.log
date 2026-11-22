@@ -1,0 +1,46 @@
+PRB-CHAIN START 2026-11-22 01:02:00 2815fbd9ab638c64d9bcadf10f79157b6ab3f7f4
+run chatf rc=0
+run lsplit rc=0
+run long rc=0
+CHECK3 3/3
+bench chat rc=0
+bench long rc=0
+rb-chat.jsonl          N=3 prefill tok/s   105.61 [105.28-105.88] decode tok/s    17.29 [17.28-17.32] step p50 ms    57.70 [57.66-57.71] ids d6514054f539ff62 sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+rb-long.jsonl          N=3 prefill tok/s   404.00 [403.68-404.22] decode tok/s    16.11 [16.11-16.20] step p50 ms    61.71 [61.59-61.92] ids ead08f022a2590ca sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+gen chat rc=0
+gen long rc=0
+gate-route chat rc=0
+gate chat rc=0
+gate chat red layers rc=0
+gate chat red width rc=0
+gate chat red no-correction rc=0
+gate chat red topk rc=0
+gate-route long rc=0
+gate long rc=0
+gate long red layers rc=0
+gate long red width rc=0
+gate long red no-correction rc=0
+gate long red topk rc=0
+family=hy_v4_flash verified=Serve
+SERVE rc=0 2026-11-22 01:33:36
+Config=passed
+TokenizerTemplate=passed
+TensorCensus=passed
+TinyParity=pending
+CheckpointParity=passed
+RewriteParity=pending
+Serve=passed
+spec5 rc=0
+plain rc=0
+spec5-b rc=0
+draft-identity rc=0
+bench-identity spec5 rc=0
+turns-identity spec5 rc=0
+bench-identity spec5-b rc=0
+turns-identity spec5-b rc=0
+plain-greedy rc=0
+fault-draft rc=0
+turns-identity fault-draft rc=0
+fault-backup rc=0
+turns-identity fault-backup rc=0
+PRB-CHAIN-DONE 2026-11-22 02:17:23

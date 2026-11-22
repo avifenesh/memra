@@ -98,6 +98,23 @@ route as the native runner, then the five red arms (`tools/verify-chain.sh`). On
 0.0060, reversed ties are refused, the cache off by one fails at 0.0097, the early pool at 0.894
 past 0.0224: the points step 8 fails at.
 
+### On the DFly2 drafter's branch (`receipts/rebase-dfly2/`)
+
+The 23 steps replayed on the drafter's branch (the serving route and the DFly2 drafts); the
+drafter reads the same 4 KiB weight tiles. One build of source 2815fbd9ab (`bins.sha256`;
+the branch head adds only docs and receipts on top), one GB10, `prb-chain.log` in order:
+
+- check3: 3 of 3 `BITWISE_EQUAL` to step 8's reference tapes (`prb-check3.log`).
+- sampled reading: chat 57.70 ms a step (17.29 tok/s), long 61.71 ms (16.11), long prefill
+  404.0 tok/s (`bench/rb-*.jsonl`); the same ids as before the replay.
+- drafter: both gens run; the 12 drafter gate logits hashes (chat and long, the gate, its four
+  red arms and `gate-route`) equal the drafter branch's own pins (`prb-gate-*.log`).
+- `memra model verify`: Checkpoint and Serve passed (`prb-verify-rb.log`).
+- serving gate with drafts on and off (`serve/*/chat-gate.log`: CHAT-GATE PASS both), sampled
+  bench and real turns drafts on, off, on again: draft, bench and turns identity PASS
+  (`serve/*identity*.json`); the greedy fault cells (draft and backup faults at round 3) give the
+  plain answers, 6 of 6 refusals logged.
+
 ### 1. Small-row GEMMs (`receipts/s1-gemv/`)
 
 Base profile (`receipts/base/profile-chat-*.txt`): a step was 171.5 ms of wall, 162.3 ms of GPU
