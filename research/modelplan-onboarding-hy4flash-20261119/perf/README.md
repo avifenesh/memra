@@ -58,6 +58,7 @@ L2.
 | step 17 (abb019d9d2) | 17.33 [17.30-17.37] | 57.6 | 16.19 [16.13-16.20] | 61.5 | 105.8 | 389.4 |
 | step 18: prefill hyper-connection reductions over one read | 17.35 [17.29-17.35] | 57.5 | 16.20 [16.17-16.20] | 61.5 | 105.8 | 403.8 |
 | step 21: prefill GEMM live slices, pair dequant, 8 warps (`receipts/s21-gemm-warps/`) | 17.29 [17.28-17.30] | 57.8 | 16.17 [16.14-16.20] | 61.6 | 116.3 | 434.8 |
+| step 22: prefill attention, queries resident, pieces read ahead (`receipts/s22-attn-prefetch/`) | 17.23 [17.23-17.30] | 57.8 | 16.15 [16.11-16.18] | 61.7 | 116.2 | 472.9 |
 
 `receipts/sampled-step9-step17/`: both builds run the same runner and draw the same ids. On `chat`
 the first sampled token is the end token (as the argmax was), so its 63 calls decode past the
@@ -407,4 +408,22 @@ an SM: BF16 and experts 1.3 to 1.8x slower, FP8 level); the attention merge's ch
 a block instead of once an output (level, the bytes equal).
 
 `long`'s prefill 412.1 -> 434.8 tokens/s, `chat`'s 108.0 -> 116.3 (interleaved vs step 20);
+decode unchanged. 3 of 3 tapes bit-equal.
+
+### 22. Prefill attention: a pass's queries resident, the next piece read ahead (`receipts/s22-attn-prefetch/`, sampled)
+
+`ncu` on `r_attn_all_kernel` (step 21 with the output weights read four keys at a time,
+`ncu-opcodes-S30.txt`): the shared stores stalled 32% of the samples at 2.7% of the
+instructions, waiting on the global reads before them. Every piece of a key tile was read
+from global memory and stored in the same step, and the 32 queries of a pass (74 KB) were read
+again for every tile.
+
+Now a pass (32 heads) walks the chunk's tiles with its queries resident (read once, 16-byte
+reads), a tile is nine piece steps (the dots of pieces 0 to 4, the outputs of 3 to 0), and each
+step's next piece is read into registers while the current one is used. The output sums read a
+head's weights of four keys in one broadcast read. A pass keeps only its own heads' sums (the
+first try kept both passes' sums, 254 registers, and spilled: 30% slower,
+`kbench-attn-S30-S31.log`). Each head's sequence is unchanged; the slab's 33.5 MB equal byte
+for byte. `kbench attn` slab 5.43 -> 5.32 ms (weights by four) -> 3.99 ms. `long`'s prefill
+435.5 -> 472.9 tokens/s (interleaved vs step 21), `chat` (36 tokens, the decode kernel) and
 decode unchanged. 3 of 3 tapes bit-equal.

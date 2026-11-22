@@ -2221,7 +2221,6 @@ __global__ void __launch_bounds__(256) r_attn_all_kernel(RAttn a) {
   float* qs = (float*)smem;                 // [32][576]: the pass's queries
   float* ks = qs + 32 * AT_DK;              // [32][129]: a piece of the tile
   float* ps = ks + AT_TILE * AT_PW;         // [32][32]
-  __shared__ long krow[AT_TILE];            // the tile's cache rows (element offsets)
   const int qi = blockIdx.x, c = blockIdx.z;
   const int tid = threadIdx.x, lane = tid & 31, hl = tid >> 5;
   int len, lo = 0;
@@ -2233,112 +2232,161 @@ __global__ void __launch_bounds__(256) r_attn_all_kernel(RAttn a) {
     len = p - lo + 1;
   }
   const int j0 = c * AT_CHUNK, j1 = min(len, j0 + AT_CHUNK);
-  float o[NP][4][16], m[NP][4], l[NP][4];
+  // piece `pc`: values pc * 128 .. of each key (the last piece the 64 rope values). A pass (32
+  // heads) walks the chunk's tiles with its queries resident; a tile is nine piece steps (the
+  // dots of pieces 0..4, the outputs of 3..0), and the next step's piece is read into registers
+  // while this one is used (the same values, staged ahead).
+  __shared__ long krow2[2][AT_TILE];
+  constexpr int PU = AT_TILE * (AT_PD / 4) / 256;  // float4 a thread a piece
+  float4 pre[PU];
+  auto fetch = [&](int pc, int buf) {
+    const int w4 = (pc < AT_NPC - 1 ? AT_PD : AT_DK - AT_DV) / 4;
 #pragma unroll
-  for (int p = 0; p < NP; p++) {
-#pragma unroll
-    for (int s = 0; s < 4; s++) {
-#pragma unroll
-      for (int i = 0; i < 16; i++) o[p][s][i] = 0.0f;
-      m[p][s] = -INFINITY;
-      l[p][s] = 0.0f;
-    }
-  }
-  // piece `pc`: values pc * 128 .. of each key (the last piece the 64 rope values)
-  auto load_piece = [&](int pc) {
-    const int w4 = (pc < AT_NPC - 1 ? AT_PD : AT_DK - AT_DV) / 4;  // float4 a key
-#pragma unroll
-    for (int u = 0; u < AT_TILE * (AT_PD / 4) / 256; u++) {
+    for (int u = 0; u < PU; u++) {
       const int e = tid + u * 256;
+      pre[u] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
       if (e < AT_TILE * w4) {
         const int r = e / w4, d4 = e % w4;
-        const long kr0 = krow[r];
-        const float4 v =
-            kr0 >= 0 ? *(const float4*)(a.kv + kr0 + pc * AT_PD + 4 * d4) : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-        float* dst = ks + r * AT_PW + 4 * d4;
-        dst[0] = v.x;
-        dst[1] = v.y;
-        dst[2] = v.z;
-        dst[3] = v.w;
+        const long kr0 = krow2[buf][r];
+        if (kr0 >= 0) pre[u] = *(const float4*)(a.kv + kr0 + pc * AT_PD + 4 * d4);
       }
     }
   };
-  for (int t0 = j0; t0 < j1; t0 += AT_TILE) {
-    const int nt = min(AT_TILE, j1 - t0);
-    if (tid < AT_TILE) krow[tid] = tid < nt ? (long)r_key_row(a, qi, t0 + tid, lo) * AT_DK : -1;
-    __syncthreads();  // the tile's rows; the previous tile is done
-    load_piece(0);
+  auto store = [&](int pc) {
+    const int w4 = (pc < AT_NPC - 1 ? AT_PD : AT_DK - AT_DV) / 4;
 #pragma unroll
-    for (int p = 0; p < NP; p++) {
-      for (int e = tid; e < 32 * AT_DK; e += 256) qs[e] = a.q[((long)qi * a.H + p * 32) * AT_DK + e];
+    for (int u = 0; u < PU; u++) {
+      const int e = tid + u * 256;
+      if (e < AT_TILE * w4) {
+        const int r = e / w4, d4 = e % w4;
+        float* dst = ks + r * AT_PW + 4 * d4;
+        dst[0] = pre[u].x;
+        dst[1] = pre[u].y;
+        dst[2] = pre[u].z;
+        dst[3] = pre[u].w;
+      }
+    }
+  };
+  auto set_rows = [&](int ti, int buf) {
+    const int t0 = j0 + ti * AT_TILE, nt = min(AT_TILE, j1 - t0);
+    if (tid < AT_TILE) krow2[buf][tid] = tid < nt ? (long)r_key_row(a, qi, t0 + tid, lo) * AT_DK : -1;
+  };
+  const int ntile = j1 > j0 ? (j1 - j0 + AT_TILE - 1) / AT_TILE : 0;
+#pragma unroll
+  for (int p = 0; p < NP; p++) {
+    // this pass's heads: hl + 8 s + 32 p
+    float o[4][16], m[4], l[4];
+#pragma unroll
+    for (int s = 0; s < 4; s++) {
+#pragma unroll
+      for (int i = 0; i < 16; i++) o[s][i] = 0.0f;
+      m[s] = -INFINITY;
+      l[s] = 0.0f;
+    }
+    if (ntile > 0) {
+    __syncthreads();  // the previous pass is done with the queries and the rows
+    {
+      const float4* src = (const float4*)(a.q + ((long)qi * a.H + p * 32) * AT_DK);
+      for (int e = tid; e < 32 * AT_DK / 4; e += 256) ((float4*)qs)[e] = src[e];
+    }
+    set_rows(0, 0);
+    __syncthreads();
+    fetch(0, 0);
+    for (int ti = 0; ti < ntile; ti++) {
+      const int buf = ti & 1;
+      const int nt = min(AT_TILE, j1 - (j0 + ti * AT_TILE));
       const float* kr = ks + lane * AT_PW;
       float d[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 #pragma unroll
-      for (int pc = 0; pc < AT_NPC; pc++) {
-        if (pc > 0) load_piece(pc);
-        __syncthreads();  // the piece (and with the first the pass's queries) is in place
-        if (lane < nt) {
-          const int w4 = (pc < AT_NPC - 1 ? AT_PD : AT_DK - AT_DV) / 4;
+      for (int step = 0; step < 2 * AT_NPC - 1; step++) {
+        const int pc = step < AT_NPC ? step : 2 * AT_NPC - 2 - step;
+        __syncthreads();  // the piece buffer is free
+        store(pc);
+        if (step == 0 && ti + 1 < ntile) set_rows(ti + 1, buf ^ 1);
+        __syncthreads();  // the piece is in place
+        if (step < 2 * AT_NPC - 2) {
+          const int nx = step + 1 < AT_NPC ? step + 1 : 2 * AT_NPC - 3 - step;
+          fetch(nx, buf);
+        } else if (ti + 1 < ntile) {
+          fetch(0, buf ^ 1);
+        }
+        if (step < AT_NPC) {
+          if (lane < nt) {
+            const int w4 = (pc < AT_NPC - 1 ? AT_PD : AT_DK - AT_DV) / 4;
 #pragma unroll 4
-          for (int d4 = 0; d4 < w4; d4++) {
-            const float k0 = kr[4 * d4], k1 = kr[4 * d4 + 1], k2 = kr[4 * d4 + 2], k3 = kr[4 * d4 + 3];
+            for (int d4 = 0; d4 < w4; d4++) {
+              const float k0 = kr[4 * d4], k1 = kr[4 * d4 + 1], k2 = kr[4 * d4 + 2], k3 = kr[4 * d4 + 3];
+#pragma unroll
+              for (int s = 0; s < 4; s++) {
+                const float4 qv = ((const float4*)(qs + (hl + 8 * s) * AT_DK))[pc * (AT_PD / 4) + d4];
+                d[s] += qv.x * k0;
+                d[s] += qv.y * k1;
+                d[s] += qv.z * k2;
+                d[s] += qv.w * k3;
+              }
+            }
+          }
+          if (step == AT_NPC - 1) {
 #pragma unroll
             for (int s = 0; s < 4; s++) {
-              const float4 qv = ((const float4*)(qs + (hl + 8 * s) * AT_DK))[pc * (AT_PD / 4) + d4];
-              d[s] += qv.x * k0;
-              d[s] += qv.y * k1;
-              d[s] += qv.z * k2;
-              d[s] += qv.w * k3;
+              const float sc = lane < nt ? d[s] * a.scale : -INFINITY;
+              const float mt = r_warp_max(sc);
+              const float mn = fmaxf(m[s], mt);
+              const float corr = expf(m[s] - mn);
+              const float pr = lane < nt ? expf(sc - mn) : 0.0f;
+              l[s] = l[s] * corr + r_warp_sum(pr);
+              m[s] = mn;
+#pragma unroll
+              for (int i = 0; i < 16; i++) o[s][i] *= corr;
+              ps[(hl + 8 * s) * AT_TILE + lane] = pr;
+            }
+            __syncwarp();
+          }
+        } else {
+          // four keys' weights of a head in one broadcast read; each output's sum in key order
+          int kk = 0;
+          for (; kk + 4 <= nt; kk += 4) {
+            float4 pk4[4];
+#pragma unroll
+            for (int s = 0; s < 4; s++) pk4[s] = *(const float4*)(ps + (hl + 8 * s) * AT_TILE + kk);
+#pragma unroll
+            for (int u = 0; u < 4; u++) {
+              const float* vr = ks + (kk + u) * AT_PW;
+#pragma unroll
+              for (int i = 0; i < AT_PD / 32; i++) {
+                const float v = vr[lane + 32 * i];
+#pragma unroll
+                for (int s = 0; s < 4; s++) {
+                  const float pk = u == 0 ? pk4[s].x : (u == 1 ? pk4[s].y : (u == 2 ? pk4[s].z : pk4[s].w));
+                  o[s][pc * (AT_PD / 32) + i] += pk * v;
+                }
+              }
+            }
+          }
+          for (; kk < nt; kk++) {
+            const float* vr = ks + kk * AT_PW;
+            float pk[4];
+#pragma unroll
+            for (int s = 0; s < 4; s++) pk[s] = ps[(hl + 8 * s) * AT_TILE + kk];
+#pragma unroll
+            for (int i = 0; i < AT_PD / 32; i++) {
+              const float v = vr[lane + 32 * i];
+#pragma unroll
+              for (int s = 0; s < 4; s++) o[s][pc * (AT_PD / 32) + i] += pk[s] * v;
             }
           }
         }
-        __syncthreads();  // the piece is scored
-      }
-#pragma unroll
-      for (int s = 0; s < 4; s++) {
-        const float sc = lane < nt ? d[s] * a.scale : -INFINITY;
-        const float mt = r_warp_max(sc);
-        const float mn = fmaxf(m[p][s], mt);
-        const float corr = expf(m[p][s] - mn);
-        const float pr = lane < nt ? expf(sc - mn) : 0.0f;
-        l[p][s] = l[p][s] * corr + r_warp_sum(pr);
-        m[p][s] = mn;
-#pragma unroll
-        for (int i = 0; i < 16; i++) o[p][s][i] *= corr;
-        ps[(hl + 8 * s) * AT_TILE + lane] = pr;
-      }
-      __syncwarp();
-      // the outputs of each latent piece (4 a piece: values lane + 32 i), the first piece last
-#pragma unroll
-      for (int pc = AT_NPC - 2; pc >= 0; pc--) {
-        load_piece(pc);
-        __syncthreads();
-        for (int kk = 0; kk < nt; kk++) {
-          const float* vr = ks + kk * AT_PW;
-          float pk[4];
-#pragma unroll
-          for (int s = 0; s < 4; s++) pk[s] = ps[(hl + 8 * s) * AT_TILE + kk];
-#pragma unroll
-          for (int i = 0; i < AT_PD / 32; i++) {
-            const float v = vr[lane + 32 * i];
-#pragma unroll
-            for (int s = 0; s < 4; s++) o[p][s][pc * (AT_PD / 32) + i] += pk[s] * v;
-          }
-        }
-        __syncthreads();  // the piece is used (the first stays for the next pass)
       }
     }
-  }
-#pragma unroll
-  for (int p = 0; p < NP; p++) {
+    }
 #pragma unroll
     for (int s = 0; s < 4; s++) {
       const long pidx = ((long)qi * a.H + p * 32 + s * 8 + hl) * a.C + c;
 #pragma unroll
-      for (int i = 0; i < 16; i++) a.po[pidx * AT_DV + lane + 32 * i] = o[p][s][i];
+      for (int i = 0; i < 16; i++) a.po[pidx * AT_DV + lane + 32 * i] = o[s][i];
       if (lane == 0) {
-        a.pml[pidx * 2] = m[p][s];
-        a.pml[pidx * 2 + 1] = l[p][s];
+        a.pml[pidx * 2] = m[s];
+        a.pml[pidx * 2 + 1] = l[s];
       }
     }
   }
