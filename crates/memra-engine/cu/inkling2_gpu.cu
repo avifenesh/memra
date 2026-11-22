@@ -1629,6 +1629,8 @@ int ink2g_gemv_nvfp4_jobs(const float* const* xs, const void* const* ws, const v
 // o_t / L, tiles oldest first. A different numeric program from arms 0..3: measured by KL.
 #define INK2G_T4_MAX_TILE 1024
 #define INK2G_T4_MAX_TILES 512
+// the grouped kernel holds tiles of up to 512 keys for each of its heads
+#define INK2G_T4G_TILE 512
 template <typename KV>
 __global__ void __launch_bounds__(256) ink2g_attn_t4_kernel(
     const float* __restrict__ q, const float* __restrict__ rel, const float* __restrict__ table,
@@ -1704,6 +1706,177 @@ __global__ void __launch_bounds__(256) ink2g_attn_t4_kernel(
   if (t < dim) part[2 + t] = (double)a;
 }
 
+// Arm 4 for a group of G query heads over one KV head: the K and V rows of a tile are read once (16 bytes at
+// a time) and decoded once for all G heads. Every per-head value keeps the program of ink2g_attn_t4_kernel:
+// each key's dot in dim order, the scale and bias by the same expression, the max and the block sum over the
+// same 256-thread mapping (lanes by the shuffle tree, warps in order), each output's chain over the keys
+// oldest first. G = heads / kv_heads.
+template <typename KV>
+__device__ __forceinline__ void ink2g_kv_row16(const KV* p, int c, float* f);
+template <>
+__device__ __forceinline__ void ink2g_kv_row16<uint8_t>(const uint8_t* p, int c, float* f) {
+  const uint4 u = *reinterpret_cast<const uint4*>(p + c);
+  const uint32_t w[4] = {u.x, u.y, u.z, u.w};
+#pragma unroll
+  for (int i = 0; i < 16; i++) f[i] = ink2g_e4m3((uint8_t)(w[i >> 2] >> (8 * (i & 3))));
+}
+template <>
+__device__ __forceinline__ void ink2g_kv_row16<float>(const float* p, int c, float* f) {
+#pragma unroll
+  for (int q = 0; q < 4; q++) {
+    const float4 v = *reinterpret_cast<const float4*>(p + c + 4 * q);
+    f[4 * q] = v.x;
+    f[4 * q + 1] = v.y;
+    f[4 * q + 2] = v.z;
+    f[4 * q + 3] = v.w;
+  }
+}
+
+template <typename KV, int G>
+__global__ void __launch_bounds__(256) ink2g_attn_t4g_kernel(
+    const float* __restrict__ q, const float* __restrict__ rel, const float* __restrict__ table,
+    const KV* __restrict__ kc, const KV* __restrict__ vc, int64_t cap, const int64_t* __restrict__ posd,
+    int64_t pos0, int window, int extent, int mask_beyond, double* __restrict__ scr, int64_t ld, int heads,
+    int kv_heads, int dim, int rank, int r0, int tile) {
+  __shared__ float sh[G][8];
+  __shared__ float qs[G][INK2G_FOLD_DIM];
+  __shared__ float sb[G][INK2G_T4G_TILE];
+  __shared__ float sp[G][INK2G_T4G_TILE];
+  __shared__ float tv[INK2G_FOLD_TILE * INK2G_FOLD_DIM];
+  __shared__ float scl;
+  const int ti = blockIdx.x, kvh = blockIdx.y, t = threadIdx.x, nt = blockDim.x, r = r0 + (int)blockIdx.z;
+  const int lane = t & 31, warp = t >> 5;
+  const int64_t pos = (posd ? *posd : pos0) + r;
+  const int64_t nkeys = window > 0 ? (pos + 1 < window ? pos + 1 : window) : pos + 1;
+  const int64_t d0 = (int64_t)ti * tile;
+  if (d0 >= nkeys) return;
+  const int cnt = (int)(nkeys - d0 < tile ? nkeys - d0 : tile);
+  const int kvw = kv_heads * dim;
+  for (int i = t; i < G * dim; i += nt) {
+    const int g = i / dim, c = i - g * dim;
+    qs[g][c] = q[((int64_t)r * heads + kvh * G + g) * dim + c];
+  }
+  if (t == 0) scl = 1.0f / sqrtf((float)dim);
+  for (int i = t; i < cnt; i += nt) {
+    const int64_t d = d0 + i;
+    if (d < extent) {
+#pragma unroll
+      for (int g = 0; g < G; g++) {
+        const float* relr = rel + ((int64_t)r * heads + kvh * G + g) * rank;
+        float b = 0.0f;
+        for (int k = 0; k < rank; k++) b += relr[k] * table[(int64_t)k * extent + d];
+        sb[g][i] = b;
+      }
+    }
+  }
+  __syncthreads();
+  float mx[G];
+#pragma unroll
+  for (int g = 0; g < G; g++) mx[g] = -INFINITY;
+  for (int i = t; i < cnt; i += nt) {
+    const int64_t d = d0 + i;
+    if (d >= extent && mask_beyond) {
+#pragma unroll
+      for (int g = 0; g < G; g++) sp[g][i] = -INFINITY;
+      continue;
+    }
+    const KV* kr = kc + ((pos - d) % cap) * kvw + kvh * dim;
+    float dot[G];
+#pragma unroll
+    for (int g = 0; g < G; g++) dot[g] = 0.0f;
+    for (int c = 0; c < dim; c += 16) {
+      float kf[16];
+      ink2g_kv_row16<KV>(kr, c, kf);
+#pragma unroll
+      for (int e = 0; e < 16; e++)
+#pragma unroll
+        for (int g = 0; g < G; g++) dot[g] += qs[g][c + e] * kf[e];
+    }
+#pragma unroll
+    for (int g = 0; g < G; g++) {
+      const float s = dot[g] * scl + (d < extent ? sb[g][i] : 0.0f);
+      sp[g][i] = s;
+      mx[g] = fmaxf(mx[g], s);
+    }
+  }
+  // per head: the block max (exact in any order) and, below, the block sum in ink2g_block_sum's order
+  __shared__ float mts[G];
+#pragma unroll
+  for (int g = 0; g < G; g++) {
+    float v = mx[g];
+    for (int o = 16; o > 0; o >>= 1) v = fmaxf(v, __shfl_down_sync(0xffffffffu, v, o));
+    if (lane == 0) sh[g][warp] = v;
+  }
+  __syncthreads();
+  if (t < G) {
+    float m = -INFINITY;
+    for (int w = 0; w < (nt + 31) / 32; w++) m = fmaxf(m, sh[t][w]);
+    mts[t] = m;
+  }
+  __syncthreads();
+  float ls[G];
+#pragma unroll
+  for (int g = 0; g < G; g++) {
+    ls[g] = 0.0f;
+    const float m = mts[g];
+    if (m == -INFINITY) continue;
+    for (int i = t; i < cnt; i += nt) {
+      const float e = expf(sp[g][i] - m);
+      sp[g][i] = e;
+      ls[g] += e;
+    }
+  }
+#pragma unroll
+  for (int g = 0; g < G; g++) {
+    float v = ls[g];
+    for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffffu, v, o);
+    if (lane == 0) sh[g][warp] = v;
+  }
+  __syncthreads();
+  float lg[G];
+#pragma unroll
+  for (int g = 0; g < G; g++) {
+    float s = 0.0f;
+    for (int w = 0; w < (nt + 31) / 32; w++) s += sh[g][w];
+    lg[g] = s;
+  }
+  float a[G];
+#pragma unroll
+  for (int g = 0; g < G; g++) a[g] = 0.0f;
+  for (int hi = cnt - 1; hi >= 0; hi -= INK2G_FOLD_TILE) {
+    const int n = hi + 1 < INK2G_FOLD_TILE ? hi + 1 : INK2G_FOLD_TILE;
+    for (int e = t; e < n * (dim / 16); e += nt) {
+      const int j = e / (dim / 16), c = (e - j * (dim / 16)) * 16;
+      ink2g_kv_row16<KV>(vc + ((pos - (d0 + hi - j)) % cap) * kvw + kvh * dim, c, tv + j * INK2G_FOLD_DIM + c);
+    }
+    __syncthreads();
+    if (t < dim)
+      for (int j = 0; j < n; j++) {
+        const float v = tv[j * INK2G_FOLD_DIM + t];
+#pragma unroll
+        for (int g = 0; g < G; g++) a[g] = fmaf(sp[g][hi - j], v, a[g]);
+      }
+    __syncthreads();
+  }
+#pragma unroll
+  for (int g = 0; g < G; g++) {
+    double* part = scr + ((int64_t)blockIdx.z * heads + kvh * G + g) * ld + (int64_t)ti * (dim + 2);
+    if (mts[g] == -INFINITY) {
+      if (t == 0) {
+        part[0] = -INFINITY;
+        part[1] = 0.0;
+      }
+      for (int c = t; c < dim; c += nt) part[2 + c] = 0.0;
+      continue;
+    }
+    if (t == 0) {
+      part[0] = (double)mts[g];
+      part[1] = (double)lg[g];
+    }
+    if (t < dim) part[2 + t] = (double)a[g];
+  }
+}
+
 __global__ void __launch_bounds__(128) ink2g_attn_t4_merge_kernel(const float* __restrict__ sink,
                                                                   const int64_t* __restrict__ posd, int64_t pos0,
                                                                   int window, const double* __restrict__ scr,
@@ -1761,8 +1934,8 @@ static int ink2g_attn_any(const float* q, const float* rel, const float* table, 
     // the split form, scr_rows rows a launch pair (scratch [scr_rows][heads][scr_ld]); the most keys a
     // row can attend: a replayed step reads its position on the device
     const int64_t most = window > 0 ? (int64_t)window : (R == 1 ? cap : pos0 + R);
-    // a row of scratch holds its scores and, last, the max of the row
-    if (scr_ld < most + 1 || dim > INK2G_FOLD_DIM) return 45025;
+    // a row of scratch holds its scores and, last, the max of the row (arm 4: its tiles, bound below)
+    if (dim > INK2G_FOLD_DIM) return 45025;
     const int group = R == 1 ? 1 : scr_rows;
     if (prec == 4) {
       // tiles of 256 keys, wider when a row would need more than INK2G_T4_MAX_TILES of them
@@ -1773,15 +1946,23 @@ static int ink2g_attn_any(const float* q, const float* rel, const float* table, 
       for (int r0 = 0; r0 < R; r0 += group) {
         const int n = R - r0 < group ? R - r0 : group;
         const int64_t keys = R == 1 ? most : (window > 0 ? most : pos0 + r0 + n);
-        ink2g_attn_t4_kernel<KV><<<dim3((unsigned)((keys + tile - 1) / tile), heads, n), 256, 0, (cudaStream_t)stream>>>(
-            q, rel, table, kc, vc, cap, posd, pos0, window, extent, mask_beyond, scr, scr_ld, heads, kv_heads, dim,
-            rank, r0, (int)tile);
+        const dim3 gt((unsigned)((keys + tile - 1) / tile), kv_heads, n);
+        const int grp = heads / kv_heads;
+        if (grp == 3 && tile <= INK2G_T4G_TILE && dim % 16 == 0)
+          ink2g_attn_t4g_kernel<KV, 3><<<gt, 256, 0, (cudaStream_t)stream>>>(
+              q, rel, table, kc, vc, cap, posd, pos0, window, extent, mask_beyond, scr, scr_ld, heads, kv_heads, dim,
+              rank, r0, (int)tile);
+        else
+          ink2g_attn_t4_kernel<KV><<<dim3((unsigned)((keys + tile - 1) / tile), heads, n), 256, 0, (cudaStream_t)stream>>>(
+              q, rel, table, kc, vc, cap, posd, pos0, window, extent, mask_beyond, scr, scr_ld, heads, kv_heads, dim,
+              rank, r0, (int)tile);
         ink2g_attn_t4_merge_kernel<<<dim3(n, heads), 128, 0, (cudaStream_t)stream>>>(sink, posd, pos0, window, scr,
                                                                                      scr_ld, out, heads, dim, r0,
                                                                                      (int)tile);
       }
       return ink2g_rc();
     }
+    if (scr_ld < most + 1) return 45025;
     for (int r0 = 0; r0 < R; r0 += group) {
       const int n = R - r0 < group ? R - r0 : group;
       // the keys of the group's last row
