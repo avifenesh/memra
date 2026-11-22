@@ -27,6 +27,29 @@ use memra_reference::inkling2_drafter as refd;
 use std::io::Write;
 use std::path::PathBuf;
 
+/// The overlay tensor of a component name (`--draft-nv-only`).
+fn draft_component(c: &str) -> Result<String, String> {
+    let layer = |l: &str, s: &str| -> Result<String, String> {
+        let p = format!("layers.{l}.");
+        Ok(match s {
+            "q" | "k" | "v" | "o" => format!("{p}self_attn.{s}_proj.weight"),
+            "kctx" => format!("{p}self_attn.k_proj_ctx.weight"),
+            "vctx" => format!("{p}self_attn.v_proj_ctx.weight"),
+            "gate" | "up" | "down" => format!("{p}mlp.{s}_proj.weight"),
+            _ => return Err(format!("unknown drafter component {c}")),
+        })
+    };
+    match c {
+        "w1" => Ok("markov_head.markov_w1.weight".into()),
+        "rnn" => Ok("markov_head.rnn_proj.weight".into()),
+        "fold" => Ok("fold".into()),
+        _ => match c.strip_prefix('L').and_then(|r| r.split_once('.')) {
+            Some((l, s)) if l.parse::<u32>().is_ok() => layer(l, s),
+            _ => Err(format!("unknown drafter component {c}")),
+        },
+    }
+}
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("ink2-spec: {e}");
@@ -52,6 +75,13 @@ struct Args {
     /// The drafter's output projection: `shared` (the class's unembed) or `bf16` (the
     /// checkpoint's own BF16 rows, loaded beside an NVFP4 unembed).
     draft_head: String,
+    /// An NVFP4 drafter overlay (`ink2-mint drafter`) and the components read from it (empty:
+    /// every one it holds): L<i>.{q,k,v,o,kctx,vctx,gate,up,down}, w1, rnn, fold.
+    draft_nv: Option<PathBuf>,
+    draft_nv_only: Vec<String>,
+    /// One drafter per entry (`none`, `all` or a component), each timed by `--bench` reps and
+    /// run on every prompt at the first `--ks` length.
+    draft_nv_sweep: Vec<String>,
     chunk: usize,
     context: usize,
     out: Option<PathBuf>,
@@ -67,6 +97,9 @@ fn parse() -> Result<Args, String> {
         ks: vec![7],
         class: "declared".into(),
         draft_head: "shared".into(),
+        draft_nv: None,
+        draft_nv_only: Vec::new(),
+        draft_nv_sweep: Vec::new(),
         chunk: 512,
         context: 4096,
         seed: 1,
@@ -102,6 +135,21 @@ fn parse() -> Result<Args, String> {
             }
             "--class" => a.class = val()?,
             "--draft-head" => a.draft_head = val()?,
+            "--draft-nv" => a.draft_nv = Some(PathBuf::from(val()?)),
+            "--draft-nv-sweep" => {
+                a.draft_nv_sweep = val()?
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect()
+            }
+            "--draft-nv-only" => {
+                a.draft_nv_only = val()?
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect()
+            }
             "--chunk" => a.chunk = num(val()?)?,
             "--context" => a.context = num(val()?)?,
             "--out" => a.out = Some(PathBuf::from(val()?)),
@@ -214,14 +262,38 @@ fn run() -> Result<(), String> {
         .find(|(_, m)| m.raw("fuse_weight").is_some())
         .ok_or("no drafter file among the checkpoint's auxiliary files")?;
     let shared = Shared::of_route(&route)?;
-    let mut drafter = DraftGpu::load(
+    let nv_st = match &a.draft_nv {
+        Some(p) => Some(
+            memra_gguf::safetensors::StModel::open(p)
+                .map_err(|e| format!("{}: {e}", p.display()))?,
+        ),
+        None => None,
+    };
+    let only = a
+        .draft_nv_only
+        .iter()
+        .map(|c| draft_component(c))
+        .collect::<Result<Vec<_>, _>>()?;
+    let overlay = nv_st
+        .as_ref()
+        .map(|st| memra_engine::inkling2_dspark::NvOverlay {
+            st,
+            only: only.clone(),
+        });
+    let mut drafter = DraftGpu::load_nv(
         &route.dev,
         g.clone(),
         &CkptDraft(&aux.1),
+        overlay
+            .as_ref()
+            .map(|o| o as &dyn memra_engine::inkling2_dspark::NvSource),
         shared,
         a.context,
         a.chunk,
     )?;
+    if let Some(p) = &a.draft_nv {
+        eprintln!("[draft-nv] {} components {:?}", p.display(), only);
+    }
     drafter.charge(&mut route.account);
     eprintln!("{}", route.account.describe());
     eprintln!(
@@ -259,6 +331,94 @@ fn run() -> Result<(), String> {
             );
         }
         return Ok(());
+    }
+    if !a.draft_nv_sweep.is_empty() {
+        let st = nv_st.as_ref().ok_or("--draft-nv-sweep needs --draft-nv")?;
+        let k = *a.ks.first().ok_or("--draft-nv-sweep needs --ks K")?;
+        let mut failed = 0;
+        let sampling = match a.sample {
+            Some(t) => Sampling::Sample {
+                temperature: t,
+                seed: a.seed,
+            },
+            None => Sampling::Greedy,
+        };
+        let plains: Vec<Option<Vec<u32>>> = prompts
+            .iter()
+            .map(|(_, _, ids)| {
+                if a.sample.is_none() {
+                    plain_greedy(&mut route, ids, a.gen_tokens, &stop).map(Some)
+                } else {
+                    Ok(None)
+                }
+            })
+            .collect::<Result<_, String>>()?;
+        drop(drafter);
+        for comp in &a.draft_nv_sweep {
+            let only = match comp.as_str() {
+                "none" => None,
+                "all" => Some(Vec::new()),
+                c => Some(vec![draft_component(c)?]),
+            };
+            let ov = only
+                .clone()
+                .map(|only| memra_engine::inkling2_dspark::NvOverlay { st, only });
+            let mut d = DraftGpu::load_nv(
+                &route.dev,
+                g.clone(),
+                &CkptDraft(&aux.1),
+                ov.as_ref()
+                    .map(|o| o as &dyn memra_engine::inkling2_dspark::NvSource),
+                Shared::of_route(&route)?,
+                a.context,
+                a.chunk,
+            )?;
+            let c = bench_costs(&mut route, &mut d, &prompts[0].2, g.rows, a.bench.max(1))?;
+            let mut rows = Vec::new();
+            for ((id, kind, ids), plain) in prompts.iter().zip(&plains) {
+                let (toks, s) = generate_arm(
+                    &mut route,
+                    &mut d,
+                    ids,
+                    a.gen_tokens,
+                    k,
+                    sampling,
+                    &stop,
+                    SpecArms::default(),
+                )?;
+                let equal = plain.as_ref().map(|p| *p == toks);
+                if equal == Some(false) {
+                    failed += 1;
+                }
+                rows.push(serde_json::json!({"id": id, "kind": kind, "steps": s.steps,
+                    "proposed": s.proposed, "accepted": s.accepted, "hist": s.hist,
+                    "equal_plain": equal}));
+            }
+            let (acc, prop): (usize, usize) = rows.iter().fold((0, 0), |(x, y), r| {
+                (
+                    x + r["accepted"].as_u64().unwrap_or(0) as usize,
+                    y + r["steps"].as_u64().unwrap_or(0) as usize,
+                )
+            });
+            eprintln!(
+                "[sweep] {comp}: draft {:?} ms, accepted per step {:.3}",
+                c.draft_ms,
+                acc as f64 / prop.max(1) as f64
+            );
+            writeln!(
+                out,
+                "{}",
+                serde_json::json!({"comp": comp, "k": k, "temperature": a.sample,
+                    "draft_ms_by_k": c.draft_ms, "plain_step_ms": c.plain_step_ms,
+                    "verify_ms_by_rows": c.verify_ms, "prompts": rows})
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        return if failed == 0 {
+            Ok(())
+        } else {
+            Err(format!("{failed} sweep runs differ from plain greedy"))
+        };
     }
     if let Some(dir) = &a.per_position {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
