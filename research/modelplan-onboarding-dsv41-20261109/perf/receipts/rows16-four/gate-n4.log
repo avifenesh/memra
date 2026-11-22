@@ -1,0 +1,24 @@
+ids exist: /home/access/dsv41/spec/idsx/emoji_cjk.prompt.i32
+native greedy for 8 case(s) rc 0 dsv41-run: 23 forwards, 71 calls, 40 layer loads (0.0s), blocks 3.0s, total 20.4s
+server ready after 47 s
+[dsv41-serve] v41: card 0 ranks [0]: weights 71.87 GiB resident (71.87 GiB a rank) in 17.6s, 22.50 GiB of 95.06 GiB left for requests (22.50 GiB a rank)
+[dsv41-serve] v41: card 1 ranks [1]: weights 71.87 GiB resident (71.87 GiB a rank) in 17.6s, 22.53 GiB of 95.06 GiB left for requests (22.53 GiB a rank)
+[dsv41-serve] v41: card 2 ranks [2]: weights 71.87 GiB resident (71.87 GiB a rank) in 17.6s, 22.53 GiB of 95.06 GiB left for requests (22.53 GiB a rank)
+[dsv41-serve] v41: card 3 ranks [3]: weights 71.87 GiB resident (71.87 GiB a rank) in 17.6s, 22.53 GiB of 95.06 GiB left for requests (22.53 GiB a rank)
+[dsv41-serve] v41: warm-up in 0.0s; one-token call 9.3 ms
+[dsv41-serve] v41: 4 rank(s) on devices [0, 1, 2, 3]; routed experts on the cards; resident weights [77169772480, 77169772480, 77169772480, 77169772480] bytes per rank; ceiling [24154254892, 24189906476, 24189906476, 24189906476] bytes; expert cache [] slots o
+379
+[dsv41-step] calls=2 prefill=16 decode_rows=2 step_s=0.031 transient_peak=33995037 predicted_live_need=1621551065 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=2 prefill=31 decode_rows=3 step_s=0.050 transient_peak=36719883 predicted_live_need=1626289217 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+[dsv41-step] calls=2 prefill=28 decode_rows=3 step_s=0.047 transient_peak=36431043 predicted_live_need=1625324220 cache_slots=[] hits=0 misses=0 h2d_bytes=0
+render: PASS 8 prompts tokenized through /v1/tokenize vs the tape ids
+solo: PASS served greedy content and token counts equal dsv41-run --gen on 8 cases
+batched: PASS five concurrent requests answer byte for byte as solo
+stream: PASS 14 deltas of sys_json
+sampled: PASS seed 1017, T 0.8, top_p 0.95, top_k 40: two solo runs and one beside four others
+stops: PASS stop ':"A' cuts sys_json at its first occurrence; max_tokens 5 cuts gsm with finish length
+penalties: PASS frequency 0.5, presence 0.3 greedy: served, identical twice
+budget: PASS 63 -> 200 (reasoning 68 chars), 101 -> 400
+speed: story 200 {'prompt_tokens': 22, 'completion_tokens': 128, 'total_tokens': 150, 'prompt_tokens_details': {'cached_tokens': 0}, 'elapsed_s': 1.204262768} in 1.2s
+CHAT-GATE PASS
+serve_gate9 w15-gate-n4 rc 0

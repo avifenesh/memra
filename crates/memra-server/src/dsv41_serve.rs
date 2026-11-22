@@ -1114,9 +1114,17 @@ fn row_spans(rows: &[usize]) -> String {
     out.join(", ")
 }
 
-/// The rows a batched decode call carries when `MEMRA_DSV41_BATCH_ROWS` is unset: the small-M
-/// GEMM bodies' limit (`dsv41_gpu::SMALL_M`).
+/// The rows a batched decode call carries when `MEMRA_DSV41_BATCH_ROWS` is unset, off a four-rank
+/// split: the small-M GEMM bodies' limit (`dsv41_gpu::SMALL_M`).
 const BATCH_ROWS_DEFAULT: usize = v41::SMALL_M;
+
+/// The unset default on a four-rank split: [`BATCH_ROWS_MAX`]. On four RTX PRO 6000 Max-Q one
+/// 16-row call costs 24.7 ms against 32.5 ms for two of 8, and the served A/B (A B B A A B, 8
+/// against 16 rows) gave 16 rows +26% aggregate output at 32 requests and +27% at 16 (record:
+/// `docs/decisions/DSV41-ROWS-ABOVE-8-FOUR-RANKS.md`). One card and two ranks were not measured at
+/// 16 rows and keep [`BATCH_ROWS_DEFAULT`].
+const BATCH_ROWS_FOUR_RANKS: usize = BATCH_ROWS_MAX;
+const FOUR_RANKS: usize = 4;
 
 /// The most rows `MEMRA_DSV41_BATCH_ROWS` admits. Past `SMALL_M` rows the expert GEMMs take the
 /// small-row body on 8-row tiles (`moe_bm`, up to `WIDE_TILES` rows), and `dsv41-spec batch-rows
@@ -1130,9 +1138,11 @@ const BATCH_ROWS_MAX: usize = 2 * v41::SMALL_M;
 type StepRows<'a> = (usize, Vec<f32>, &'a Out, usize, Option<u32>);
 
 /// `MEMRA_DSV41_BATCH_ROWS`: the one-token steps one decode call carries, 1 (every call alone)
-/// to [`BATCH_ROWS_MAX`] (unset: [`BATCH_ROWS_DEFAULT`]).
-fn resolve_batch_rows(raw: Option<&str>) -> Result<usize, String> {
+/// to [`BATCH_ROWS_MAX`] (unset: [`BATCH_ROWS_FOUR_RANKS`] on `ranks` = 4, else
+/// [`BATCH_ROWS_DEFAULT`]).
+fn resolve_batch_rows(raw: Option<&str>, ranks: usize) -> Result<usize, String> {
     match raw.map(str::trim) {
+        None | Some("") if ranks == FOUR_RANKS => Ok(BATCH_ROWS_FOUR_RANKS),
         None | Some("") => Ok(BATCH_ROWS_DEFAULT),
         Some(x) => match x.parse::<usize>() {
             Ok(n) if (1..=BATCH_ROWS_MAX).contains(&n) => Ok(n),
@@ -1351,7 +1361,8 @@ fn bring_up<'a>(
     let (stages, block) = draft
         .as_ref()
         .map_or((0, 0), |(dw, _)| (dw.cfg.stages, dw.cfg.block));
-    let batch_rows = resolve_batch_rows(std::env::var("MEMRA_DSV41_BATCH_ROWS").ok().as_deref())?;
+    let batch_rows =
+        resolve_batch_rows(std::env::var("MEMRA_DSV41_BATCH_ROWS").ok().as_deref(), n)?;
     let mut model = MemModel::with_draft(&g, trunk, PREFILL_CHUNK, stages, block);
     model.batched = batch_rows > 1;
     let book = Book {
@@ -2553,13 +2564,18 @@ mod tests {
     }
 
     #[test]
-    fn the_batch_width_defaults_to_the_small_m_limit_and_refuses_what_is_outside_it() {
-        assert_eq!(resolve_batch_rows(None), Ok(8));
-        assert_eq!(resolve_batch_rows(Some("1")), Ok(1));
-        assert_eq!(resolve_batch_rows(Some("8")), Ok(8));
-        assert_eq!(resolve_batch_rows(Some("16")), Ok(16));
-        assert!(resolve_batch_rows(Some("0")).is_err());
-        assert!(resolve_batch_rows(Some("17")).is_err());
+    fn the_batch_width_defaults_by_the_rank_count_and_refuses_what_is_outside_it() {
+        for ranks in [1, 2, 3, 5, 8] {
+            assert_eq!(resolve_batch_rows(None, ranks), Ok(8));
+            assert_eq!(resolve_batch_rows(Some(""), ranks), Ok(8));
+        }
+        assert_eq!(resolve_batch_rows(None, 4), Ok(16));
+        assert_eq!(resolve_batch_rows(Some(" "), 4), Ok(16));
+        assert_eq!(resolve_batch_rows(Some("8"), 4), Ok(8));
+        assert_eq!(resolve_batch_rows(Some("1"), 1), Ok(1));
+        assert_eq!(resolve_batch_rows(Some("16"), 1), Ok(16));
+        assert!(resolve_batch_rows(Some("0"), 4).is_err());
+        assert!(resolve_batch_rows(Some("17"), 4).is_err());
         // a batched call holds every running request's key rows at once
         let mut m = flash();
         let alone = Book {

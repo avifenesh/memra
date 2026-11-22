@@ -1,4 +1,4 @@
-# DeepSeek-V4.1 on four ranks: no call above 8 rows by default until memra#1311 is fixed (2026-11-14; amended the same day: the fix; amended 2026-11-17: its confirm)
+# DeepSeek-V4.1 on four ranks: no call above 8 rows by default until memra#1311 is fixed (2026-11-14; amended the same day: the fix; amended 2026-11-17: its confirm; amended 2026-11-22: 16 rows the four-rank default)
 
 > Amended 2026-11-14: memra#1311's fix changes the split MoE's gather rule
 > ([amendment](#amendment-2026-11-14-the-gather-fix-measured-in-two-halves)). Window 3 measured it
@@ -8,6 +8,9 @@
 > ([amendment](#amendment-2026-11-17-the-final-binarys-four-card-confirm)). With the fix landed, the
 > gather no longer holds the two limits below on a four-rank split; what holds them now is in that
 > amendment. The decision and its measurement below stay as they were written.
+>
+> Amended 2026-11-22: the served batch cap on four ranks is now 16 rows by default
+> ([amendment](#amendment-2026-11-22-16-rows-the-four-rank-default)). Drafting stays off.
 
 ## Decision
 
@@ -176,3 +179,40 @@ kernels or the launches and not in the gathers.
 Raw runs: `research/modelplan-onboarding-dsv41-20261109/perf/receipts/cfix-pro6000/gather2-four`
 and `window4/`. The write-up is "The four-card confirm of the final binary (2026-11-17)" in the
 lane's README.
+
+## Amendment 2026-11-22: 16 rows the four-rank default
+
+**Chosen.** On a four-rank split the unset `MEMRA_DSV41_BATCH_ROWS` is 16 rows
+(`BATCH_ROWS_FOUR_RANKS` in `crates/memra-server/src/dsv41_serve.rs`); any other rank count keeps 8.
+The admitted range is 1 to 16, and `MEMRA_DSV41_BATCH_ROWS=8` is the rollback. Drafting is not
+changed: it stays off for its own reasons.
+
+**Measured.** One window on four RTX PRO 6000 Blackwell Max-Q, 40 layers, device-push, binary
+`632ea9564b` on main `63f806baf9`, nothing else on the box:
+
+- The bytes first. A 16-row call's rows equal each sequence's own one-token call on 480 of 480 rows
+  (`dsv41-spec batch-rows wide16`), the four-rank chat gate passes against fresh native references,
+  and 16 prompts served at once at 16 rows give the same text and token count as each alone, on 16
+  of 16.
+- One call of 16 rows costs 24.72 ms against 32.45 ms for two of 8 (0.76). On 11-10, before the
+  CUTLASS lane, memra#1311 and memra#1337, it was 72.6 ms against 46.9 ms; that inversion is gone.
+- The served A/B, 8 against 16 rows, A B B A A B, one boot a run, 3 runs an arm, no errors:
+  aggregate output 381.7 to 481.7 tok/s at 32 concurrent requests (1.262) and 373.0 to 472.3 at 16
+  (1.266); per-request decode 1.291 and 1.298; TTFT median 0.985 and 0.998, max 0.962 and 0.986. The
+  arms' ranges do not overlap on any throughput row. Every card was power-capped in both arms.
+
+**Rejected.** Keeping 8 on four ranks: it gives up a quarter of served throughput at 16 and 32
+requests, and the byte gates hold at 16. Raising one card or the pair to 16 by the same evidence:
+neither was measured at 16 rows (memra's per-hardware rule; the pair's crossovers differ from four
+ranks'). Rows above 16: the small-M bodies' 8-row tiles were measured to 16 and no further. With 9 to 15
+running requests the step is now one call of that width instead of 8 rows plus the rest. On
+landing 30's four-card timing (memra#1337's A/B, steady ms a call: 8 rows 14.56, 9 rows 16.80, 10
+rows 17.51, 12 rows 18.53, 16 rows 21.22, against about 9 ms for one row) one wide call beats the 8
+plus the rest at every width from 9, so the 1% that 9 and 10 rows stay behind the base (memra#1324)
+does not change this either. Served throughput itself was measured at 16 and 32 requests only.
+
+**Not measured.** ITL and TPOT percentiles (the bench records per-request rates and TTFT), the
+peer-pull and host-canonical transports, and contexts above 8,192 at 16 rows.
+
+Raw runs: `research/modelplan-onboarding-dsv41-20261109/perf/receipts/rows16-four/`. The write-up is
+"The served batch at 16 rows on four ranks (2026-11-22)" in the lane's perf README.

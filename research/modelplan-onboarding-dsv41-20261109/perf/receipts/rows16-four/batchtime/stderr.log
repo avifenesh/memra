@@ -1,0 +1,47 @@
+[dsv41-tp] ranks=4 devices=[0, 1, 2, 3] transport=device-push (MEMRA_TP_TRANSPORT) issue=parallel gathers-only=true
+[dsv41-resident] device 0 ranks [0]: 40 of 40 layers + head resident, 71.87 GiB (71.87 GiB a rank); free 94.44 -> 22.57 GiB of 95.06 GiB; reserve 8.00 GiB; load 16.9s
+[dsv41-resident] device 1 ranks [1]: 40 of 40 layers + head resident, 71.87 GiB (71.87 GiB a rank); free 94.44 -> 22.57 GiB of 95.06 GiB; reserve 8.00 GiB; load 16.9s
+[dsv41-resident] device 2 ranks [2]: 40 of 40 layers + head resident, 71.87 GiB (71.87 GiB a rank); free 94.44 -> 22.57 GiB of 95.06 GiB; reserve 8.00 GiB; load 16.9s
+[dsv41-resident] device 3 ranks [3]: 40 of 40 layers + head resident, 71.87 GiB (71.87 GiB a rank); free 94.44 -> 22.57 GiB of 95.06 GiB; reserve 8.00 GiB; load 16.9s
+dsv41-spec: 40 layers resident in 16.9s
+dsv41-spec: 2 job(s), 40 layers + 0 draft stages, 4 rank(s) on devices [0, 1, 2, 3], up in 17.9s
+dsv41-spec: batch-time distinct8 batched_1_ms 9.251
+dsv41-spec: batch-time distinct8 alone_1_ms 9.231
+dsv41-spec: batch-time distinct8 argmax_1_ms 9.196
+dsv41-spec: batch-time distinct8 fwd_1_ms 8.924
+dsv41-spec: batch-time distinct8 batched_2_ms 10.514
+dsv41-spec: batch-time distinct8 alone_2_ms 17.656
+dsv41-spec: batch-time distinct8 argmax_2_ms 10.412
+dsv41-spec: batch-time distinct8 fwd_2_ms 10.133
+dsv41-spec: batch-time distinct8 batched_4_ms 12.831
+dsv41-spec: batch-time distinct8 alone_4_ms 34.415
+dsv41-spec: batch-time distinct8 argmax_4_ms 12.650
+dsv41-spec: batch-time distinct8 fwd_4_ms 12.356
+dsv41-spec: batch-time distinct8 batched_8_ms 16.942
+dsv41-spec: batch-time distinct8 alone_8_ms 68.006
+dsv41-spec: batch-time distinct8 argmax_8_ms 16.604
+dsv41-spec: batch-time distinct8 fwd_8_ms 16.203
+dsv41-spec: distinct8 done in 10.1s
+dsv41-spec: batch-time distinct16 batched_1_ms 9.222
+dsv41-spec: batch-time distinct16 alone_1_ms 9.200
+dsv41-spec: batch-time distinct16 argmax_1_ms 9.191
+dsv41-spec: batch-time distinct16 fwd_1_ms 8.921
+dsv41-spec: batch-time distinct16 batched_2_ms 10.387
+dsv41-spec: batch-time distinct16 alone_2_ms 17.628
+dsv41-spec: batch-time distinct16 argmax_2_ms 10.280
+dsv41-spec: batch-time distinct16 fwd_2_ms 10.033
+dsv41-spec: batch-time distinct16 batched_4_ms 12.837
+dsv41-spec: batch-time distinct16 alone_4_ms 34.421
+dsv41-spec: batch-time distinct16 argmax_4_ms 12.672
+dsv41-spec: batch-time distinct16 fwd_4_ms 12.370
+dsv41-spec: batch-time distinct16 batched_8_ms 16.397
+dsv41-spec: batch-time distinct16 alone_8_ms 67.956
+dsv41-spec: batch-time distinct16 argmax_8_ms 16.056
+dsv41-spec: batch-time distinct16 fwd_8_ms 15.670
+dsv41-spec: batch-time distinct16 batched_16_ms 25.491
+dsv41-spec: batch-time distinct16 alone_16_ms 135.741
+dsv41-spec: batch-time distinct16 argmax_16_ms 24.722
+dsv41-spec: batch-time distinct16 fwd_16_ms 24.022
+dsv41-spec: batch-time distinct16 chunk8_16_ms 32.446
+dsv41-spec: distinct16 done in 22.4s
+dsv41-spec: expert cache CacheStats { lookups: 0, hits: 0, misses: 0, h2d_bytes: 0, evictions: 0, slabs_released: 0, slabs_grown: 0 }, slots []
