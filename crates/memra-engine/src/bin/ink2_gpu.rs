@@ -1234,16 +1234,18 @@ fn oracle_runner(out: PathBuf) -> Result<(), String> {
     // [--class C] [--overlay DIR] before CKPT_DIR: a class other than the shipped one (a wrapper
     // script passes them; the onboarding CLI calls the runner with the directory and the tokens)
     let mut it = std::env::args().skip(1).peekable();
-    let (mut class, mut overlay) = ("shipped".to_string(), None);
+    let (mut class, mut overlay, mut prec) = ("shipped".to_string(), None, String::new());
     while let Some(flag) = it.peek().filter(|f| f.starts_with("--")).cloned() {
         it.next();
         let v = it.next().ok_or(format!("{flag} needs a value"))?;
         match flag.as_str() {
             "--class" => class = if v == "declared" { "shipped".into() } else { v },
             "--overlay" => overlay = Some(PathBuf::from(v)),
+            // a precision arm (lane P's Prec::parse), for the measurement of the program's spread
+            "--prec" => prec = v,
             _ => {
                 return Err(format!(
-                    "the oracle runner takes --class and --overlay, not {flag}"
+                    "the oracle runner takes --class, --overlay and --prec, not {flag}"
                 ));
             }
         }
@@ -1284,6 +1286,9 @@ fn oracle_runner(out: PathBuf) -> Result<(), String> {
     let dev = Dev::new(0)?;
     let context = (tokens.len() + 8).next_power_of_two().max(2048);
     let mut route = Route::load(dev, &ck, &plan, context, a.chunk)?;
+    if !prec.is_empty() {
+        route.dev.prec.set(Prec::parse(&prec)?);
+    }
     let vocab = route.vocab();
     let mut logits = Vec::new();
     for s0 in (0..tokens.len()).step_by(a.chunk) {
