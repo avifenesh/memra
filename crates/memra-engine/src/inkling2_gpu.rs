@@ -1547,9 +1547,11 @@ pub struct Route {
     last_call_rows: usize,
     /// The decode step as a CUDA graph, one per conv-history parity (the step reads the history
     /// of one parity and writes the other), captured after one eager step at that parity. A graph
-    /// reads its position and token from the device, so it replays at every position.
-    graphs: [Option<CudaGraph>; 2],
-    warm: [bool; 2],
+    /// reads its position and token from the device, so it replays at every position. Indexed
+    /// [tap capture on][parity]: a step that captures taps records their copies into the capture
+    /// buffer (`set_capture` drops those graphs with the buffer).
+    graphs: [[Option<CudaGraph>; 2]; 2],
+    warm: [[bool; 2]; 2],
     /// Decode steps served by a graph replay since the last counter reset.
     pub graph_steps: Cell<u64>,
     /// A check seam: every step runs eager (the graph's bits are checked against it).
@@ -1563,6 +1565,8 @@ pub struct Route {
     pub account: MemoryAccount,
     /// Rows of the drafter's taps, when a caller asked for them ([`Route::set_capture`]).
     tap_capture: Option<Capture>,
+    /// A BF16 output projection the drafter reads instead of the class's (`set_draft_head`).
+    draft_head: Option<CudaSlice<u8>>,
 }
 
 /// The drafter's taps of one call: the stream on entry to each named slot (the running partial
@@ -2188,8 +2192,8 @@ impl Route {
             red: RedArms::default(),
             fail_after_slot: None,
             last_call_rows: 0,
-            graphs: [None, None],
-            warm: [false, false],
+            graphs: [[None, None], [None, None]],
+            warm: [[false, false], [false, false]],
             graph_steps: Cell::new(0),
             graph_off: false,
             softcap,
@@ -2198,12 +2202,16 @@ impl Route {
             weight_bytes,
             account,
             tap_capture: None,
+            draft_head: None,
         })
     }
 
     /// Capture the stream on entry to each of `slots` and the final norm output on every later
     /// call. Their order is the tap order; an empty list turns capture off.
     pub fn set_capture(&mut self, slots: &[u32]) -> Result<(), String> {
+        // the capturing graphs copy into the old buffer
+        self.graphs[1] = [None, None];
+        self.warm[1] = [false, false];
         if slots.is_empty() {
             self.tap_capture = None;
             return Ok(());
@@ -2237,6 +2245,9 @@ impl Route {
         &self,
     ) -> Result<(&CudaSlice<u8>, &CudaSlice<f32>, SharedHead<'_>), String> {
         let u = &self.unembed;
+        if let Some(h) = &self.draft_head {
+            return Ok((&self.embed, &self.embed_norm, SharedHead::Bf16(h)));
+        }
         let head = match u.fmt {
             FMT_BF16 => SharedHead::Bf16(&u.data),
             FMT_NVFP4 => {
@@ -2256,6 +2267,20 @@ impl Route {
             }
         };
         Ok((&self.embed, &self.embed_norm, head))
+    }
+
+    /// The drafter reads this BF16 output projection (`[vocab, hidden]` bytes, the checkpoint's
+    /// own) instead of the class's unembed: the separate-head arm of an NVFP4 class.
+    pub fn set_draft_head(&mut self, bf16: &[u8]) -> Result<(), String> {
+        let want = self.plan.vocab_size as usize * self.hidden * 2;
+        if bf16.len() != want {
+            return Err(format!(
+                "a draft head of {} bytes; the head holds {want}",
+                bf16.len()
+            ));
+        }
+        self.draft_head = Some(self.dev.up(bf16)?);
+        Ok(())
     }
 
     pub fn plan(&self) -> &ModelPlan {
@@ -2529,7 +2554,6 @@ impl Route {
             && obs.is_none()
             && self.red == RedArms::default()
             && self.fail_after_slot.is_none()
-            && self.tap_capture.is_none()
             && self.position < self.context as u64
             && tokens[0] < self.plan.vocab_size;
         if !graphable {
@@ -2538,10 +2562,12 @@ impl Route {
             return Ok(out);
         }
         let p = self.parity;
-        if self.graphs[p].is_none() {
-            if !self.warm[p] {
+        let tap = usize::from(self.tap_capture.is_some());
+        if self.graphs[tap][p].is_none() {
+            if !self.warm[tap][p] {
                 let out = self.forward_body(tokens, head, None, false)?;
-                self.warm[p] = true;
+                self.warm[tap][p] = true;
+                self.last_call_rows = 1;
                 return Ok(out);
             }
             // capture one step: the token and the position go up first, outside the graph
@@ -2561,13 +2587,13 @@ impl Route {
                 )
                 .map_err(|e| format!("end_capture: {e:?}"))?;
             body?;
-            self.graphs[p] = Some(graph.ok_or("an empty decode graph")?);
+            self.graphs[tap][p] = Some(graph.ok_or("an empty decode graph")?);
         } else {
             self.dev.bind()?;
             self.dev.put(tokens, &mut self.w.tok)?;
             self.dev.put(&[self.position as i64], &mut self.w.posd)?;
         }
-        let graph = self.graphs[p].as_ref().ok_or("no decode graph")?;
+        let graph = self.graphs[tap][p].as_ref().ok_or("no decode graph")?;
         graph.launch().map_err(|e| format!("graph launch: {e:?}"))?;
         self.dev.launches.set(self.dev.launches.get() + 1);
         self.graph_steps.set(self.graph_steps.get() + 1);
@@ -2975,7 +3001,11 @@ impl Route {
             let ss = &mut slots[slot as usize];
             // the history after every row of the call, when the caller keeps it (a verify call)
             let hp: [u64; 4] = match ss.row_hist.as_mut() {
-                Some((h, max)) if rows <= *max => [0, 1, 2, 3].map(|i| dptr_mut(&mut h[i], &st)),
+                // a one-row call commits whole, so it needs none (and a decode graph holds no
+                // pointer into it)
+                Some((h, max)) if rows > 1 && rows <= *max => {
+                    [0, 1, 2, 3].map(|i| dptr_mut(&mut h[i], &st))
+                }
                 _ => [0; 4],
             };
             let conv = |dev: &Dev,

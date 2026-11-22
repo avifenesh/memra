@@ -49,6 +49,9 @@ struct Args {
     bench: usize,
     profile_rows: usize,
     class: String,
+    /// The drafter's output projection: `shared` (the class's unembed) or `bf16` (the
+    /// checkpoint's own BF16 rows, loaded beside an NVFP4 unembed).
+    draft_head: String,
     chunk: usize,
     context: usize,
     out: Option<PathBuf>,
@@ -63,6 +66,7 @@ fn parse() -> Result<Args, String> {
         gen_tokens: 128,
         ks: vec![7],
         class: "declared".into(),
+        draft_head: "shared".into(),
         chunk: 512,
         context: 4096,
         seed: 1,
@@ -97,6 +101,7 @@ fn parse() -> Result<Args, String> {
                 a.red_tap = Some((num(i.into())?, num(s.into())? as u32));
             }
             "--class" => a.class = val()?,
+            "--draft-head" => a.draft_head = val()?,
             "--chunk" => a.chunk = num(val()?)?,
             "--context" => a.context = num(val()?)?,
             "--out" => a.out = Some(PathBuf::from(val()?)),
@@ -183,6 +188,26 @@ fn run() -> Result<(), String> {
     let ck = Ckpt::open(&ckpt, pack, &config, &plan)?;
     let dev = Dev::new(a.device)?;
     let mut route = Route::load(dev, &ck, &plan, a.context, a.chunk)?;
+    match a.draft_head.as_str() {
+        "shared" => {}
+        "bf16" => {
+            // the checkpoint's BF16 rows, read through the shipped class (no overlay)
+            let shipped = pack
+                .compile_plan(&config)
+                .map_err(|e| format!("plan: {e:?}"))?;
+            let ck0 = Ckpt::open(&ckpt, pack, &config, &shipped)?;
+            let rows = ck0.f32s(
+                "model.llm.unembed.weight",
+                &[plan.vocab_size as usize, plan.hidden_size as usize],
+            )?;
+            let bytes: Vec<u8> = rows
+                .iter()
+                .flat_map(|x| ((x.to_bits() >> 16) as u16).to_le_bytes())
+                .collect();
+            route.set_draft_head(&bytes)?;
+        }
+        other => return Err(format!("--draft-head is shared or bf16, not {other}")),
+    }
     let aux = ck
         .auxiliary
         .iter()
