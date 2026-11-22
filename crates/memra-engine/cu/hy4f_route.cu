@@ -217,14 +217,23 @@ static __device__ __forceinline__ void r_mma(float* c, const uint32_t* a, const 
       : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
 }
 
-// BM 64: four warps 2x2, a warp 32 rows x 32 cols. BM 16: four warps 1x4, a warp 16 x 16. Both
+static __device__ __forceinline__ void r_ldm4(uint32_t* r, const void* p) {
+  const unsigned a = (unsigned)__cvta_generic_to_shared(p);
+  asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
+               : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
+               : "r"(a));
+}
+
+// BM 64: eight warps 4x2, a warp 16 rows x 32 cols (`NW` 4: 2x2 of 32 x 32). BM 16: four warps
+// 1x4, a warp 16 x 16. All
 // run the same per-element sequence: per 32-wide K step two mma (k 0..15, 16..31) into the same
 // accumulator, the FP8 block scale folded in every 128 inputs.
-template <int BM, int FMT>
-__global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
+template <int BM, int FMT, int NW = 4>
+__global__ void __launch_bounds__(NW * 32) r_gemm_kernel(RGemm g) {
   r_pdl_trigger();
   r_pdl_wait();
-  constexpr int WR = BM == 64 ? 32 : 16;
+  // BM 64: 4 warps 2 x 2 of 32 x 32, or 8 warps 4 x 2 of 16 x 32 (`NW`)
+  constexpr int WR = BM == 64 ? (NW == 8 ? 16 : 32) : 16;
   constexpr int WC = BM == 64 ? 32 : 16;
   constexpr int MT = WR / 16;
   constexpr int NT = WC / 8;
@@ -236,7 +245,7 @@ __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
   __shared__ uint32_t lut[FMT == R_NVFP4 ? 256 : 1];
   const int tid = threadIdx.x, lane = tid & 31, warp = tid >> 5;
   if (FMT == R_NVFP4) {
-    for (int c = tid; c < 256; c += 128) lut[c] = r_bf2_bits(__floats2bfloat162_rn(r_e2m1(c), r_e2m1(c >> 4)));
+    for (int c = tid; c < 256; c += NW * 32) lut[c] = r_bf2_bits(__floats2bfloat162_rn(r_e2m1(c), r_e2m1(c >> 4)));
     __syncthreads();
   }
   const int wm = BM == 64 ? (warp >> 1) : 0;
@@ -271,12 +280,14 @@ __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
 
   // staging maps: weight row tid/2, 16 inputs from (tid&1)*16; activations likewise for BM 64,
   // row tid/8 and 4 inputs from (tid&7)*4 for BM 16
-  const int wr = tid >> 1, wk = (tid & 1) * 16;
+  // (8 warps, BM 64: row tid/4, 8 inputs from (tid&3)*8)
+  constexpr int TPR = NW * 32 / RG_BN, WK = RG_BK / TPR;  // threads a weight row, its inputs
+  const int wr = tid / TPR, wk = (tid % TPR) * WK;
   const int gn = n0 + wr;
   const bool wok = gn < n;
-  constexpr int AV = BM == 64 ? 16 : 4;
-  const int ar = BM == 64 ? (tid >> 1) : (tid >> 3);
-  const int ak = BM == 64 ? (tid & 1) * 16 : (tid & 7) * 4;
+  constexpr int AV = BM == 64 ? WK : 4;
+  const int ar = BM == 64 ? (tid / TPR) : (tid >> 3);
+  const int ak = BM == 64 ? (tid % TPR) * WK : (tid & 7) * 4;
   const bool aok = m0 + ar < m;
 
   uint4 wraw[2];
@@ -287,13 +298,23 @@ __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
     if (wok) {
       if (FMT == R_BF16) {
         wraw[0] = *(const uint4*)(w + r_toff(gn, ((long)k0 + wk) * 2, (long)k * 2));
-        wraw[1] = *(const uint4*)(w + r_toff(gn, ((long)k0 + wk) * 2 + 16, (long)k * 2));
+        if (WK == 16) wraw[1] = *(const uint4*)(w + r_toff(gn, ((long)k0 + wk) * 2 + 16, (long)k * 2));
       } else if (FMT == R_FP8) {
-        wraw[0] = *(const uint4*)(w + r_toff(gn, (long)k0 + wk, (long)k));
+        if (WK == 16) {
+          wraw[0] = *(const uint4*)(w + r_toff(gn, (long)k0 + wk, (long)k));
+        } else {
+          const uint2 c = *(const uint2*)(w + r_toff(gn, (long)k0 + wk, (long)k));
+          wraw[0].x = c.x;
+          wraw[0].y = c.y;
+        }
       } else {
-        uint2 c = *(const uint2*)(w + r_toff(gn, ((long)k0 + wk) / 2, (long)k / 2));
-        wraw[0].x = c.x;
-        wraw[0].y = c.y;
+        if (WK == 16) {
+          const uint2 c = *(const uint2*)(w + r_toff(gn, ((long)k0 + wk) / 2, (long)k / 2));
+          wraw[0].x = c.x;
+          wraw[0].y = c.y;
+        } else {
+          wraw[0].x = *(const uint32_t*)(w + r_toff(gn, ((long)k0 + wk) / 2, (long)k / 2));
+        }
         wsc = sc[(long)gn * (k / 16) + (k0 + wk) / 16];
       }
     }
@@ -308,22 +329,22 @@ __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
     uint32_t* bw = (uint32_t*)&Bs[wr * LDS + wk];
     if (!wok) {
 #pragma unroll
-      for (int i = 0; i < 8; i++) bw[i] = 0;
+      for (int i = 0; i < WK / 2; i++) bw[i] = 0;
     } else if (FMT == R_BF16) {
       const uint32_t* s = (const uint32_t*)wraw;
 #pragma unroll
-      for (int i = 0; i < 8; i++) bw[i] = s[i];
+      for (int i = 0; i < WK / 2; i++) bw[i] = s[i];
     } else if (FMT == R_FP8) {
       const uint8_t* c = (const uint8_t*)&wraw[0];
       if (!g.red_dq) {
         // the codes are exact in BF16: the pair conversion gives the bits r_pack(r_e4m3(..)) does
         const uint16_t* c2 = (const uint16_t*)&wraw[0];
 #pragma unroll
-        for (int i = 0; i < 8; i++) bw[i] = r_e4m3x2_bf16x2(c2[i]);
+        for (int i = 0; i < WK / 2; i++) bw[i] = r_e4m3x2_bf16x2(c2[i]);
       } else {
         const float bs = ((const float*)sc)[(long)(gn / 128) * g.grid_cols + k0 / 128];
 #pragma unroll
-        for (int i = 0; i < 8; i++) bw[i] = r_pack(r_e4m3(c[2 * i]) * bs, r_e4m3(c[2 * i + 1]) * bs);
+        for (int i = 0; i < WK / 2; i++) bw[i] = r_pack(r_e4m3(c[2 * i]) * bs, r_e4m3(c[2 * i + 1]) * bs);
       }
     } else {
       const uint8_t* c = (const uint8_t*)&wraw[0];
@@ -333,14 +354,14 @@ __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
         // product rounded to BF16 (as the small-row kernel)
         const __nv_bfloat162 gs2 = __float2bfloat162_rn(gs);
 #pragma unroll
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < WK / 2; i++) {
           const uint32_t l = lut[c[i]];
           bw[i] = r_bf2_bits(__hmul2(*(const __nv_bfloat162*)&l, gs2));
         }
       } else {
         gs = gs * s2;
 #pragma unroll
-        for (int i = 0; i < 8; i++) bw[i] = r_pack(r_e2m1(c[i]) * gs, r_e2m1(c[i] >> 4) * gs);
+        for (int i = 0; i < WK / 2; i++) bw[i] = r_pack(r_e2m1(c[i]) * gs, r_e2m1(c[i] >> 4) * gs);
       }
     }
     uint32_t* aw = (uint32_t*)&As[ar * LDS + ak];
@@ -387,25 +408,23 @@ __global__ void __launch_bounds__(128) r_gemm_kernel(RGemm g) {
     for (int kk = 0; kk < RG_BK && live[0]; kk += 16) {
       uint32_t af[MT][4], afl[MT][4], bfr[NT][2];
 #pragma unroll
+      // the fragments by ldmatrix (the values the per-lane loads read): A rows lane & 15, column
+      // half lane >> 4; B rows lane & 7 of n8 tile b + (lane >> 4), column half (lane >> 3) & 1
       for (int a = 0; a < MT; a++) {
         if (!live[a]) continue;
-        const int r = wm * WR + a * 16 + (lane >> 2);
-        const int c = kk + (lane & 3) * 2;
-        af[a][0] = *(const uint32_t*)&As[r * LDS + c];
-        af[a][1] = *(const uint32_t*)&As[(r + 8) * LDS + c];
-        af[a][2] = *(const uint32_t*)&As[r * LDS + c + 8];
-        af[a][3] = *(const uint32_t*)&As[(r + 8) * LDS + c + 8];
-        afl[a][0] = *(const uint32_t*)&Al[r * LDS + c];
-        afl[a][1] = *(const uint32_t*)&Al[(r + 8) * LDS + c];
-        afl[a][2] = *(const uint32_t*)&Al[r * LDS + c + 8];
-        afl[a][3] = *(const uint32_t*)&Al[(r + 8) * LDS + c + 8];
+        const int r = wm * WR + a * 16 + (lane & 15);
+        const int c = kk + (lane >> 4) * 8;
+        r_ldm4(af[a], &As[r * LDS + c]);
+        r_ldm4(afl[a], &Al[r * LDS + c]);
       }
 #pragma unroll
-      for (int b = 0; b < NT; b++) {
-        const int r = wn * WC + b * 8 + (lane >> 2);
-        const int c = kk + (lane & 3) * 2;
-        bfr[b][0] = *(const uint32_t*)&Bs[r * LDS + c];
-        bfr[b][1] = *(const uint32_t*)&Bs[r * LDS + c + 8];
+      for (int b = 0; b < NT; b += 2) {
+        uint32_t t[4];
+        r_ldm4(t, &Bs[(wn * WC + b * 8 + (lane & 7) + (lane >> 4) * 8) * LDS + kk + ((lane >> 3) & 1) * 8]);
+        bfr[b][0] = t[0];
+        bfr[b][1] = t[1];
+        bfr[b + 1][0] = t[2];
+        bfr[b + 1][1] = t[3];
       }
 #pragma unroll
       for (int a = 0; a < MT; a++) {
@@ -860,12 +879,15 @@ static int r_gemm_launch(const RGemm& g, int fmt, int batch, int tiles, cudaStre
   dim3 grid((g.n + RG_BN - 1) / RG_BN, g.tiles ? tiles : (g.m + BM - 1) / BM, g.tiles ? 1 : batch);
   if (grid.y == 0) return 0;
   if (grid.y > 65535 || grid.z > 65535) return 45004;
+  // BM 64 runs 8 warps of 16 x 32: half the accumulators a thread (FP8 keeps its block partials
+  // beside the sums), twice the warps an SM to hide the staging loads
+  constexpr int NW = BM == 64 ? 8 : 4;
   if (fmt == R_BF16)
-    r_launch(r_gemm_kernel<BM, R_BF16>, grid, 128, 0, st, g);
+    r_launch(r_gemm_kernel<BM, R_BF16, NW>, grid, NW * 32, 0, st, g);
   else if (fmt == R_FP8)
-    r_launch(r_gemm_kernel<BM, R_FP8>, grid, 128, 0, st, g);
+    r_launch(r_gemm_kernel<BM, R_FP8, NW>, grid, NW * 32, 0, st, g);
   else
-    r_launch(r_gemm_kernel<BM, R_NVFP4>, grid, 128, 0, st, g);
+    r_launch(r_gemm_kernel<BM, R_NVFP4, NW>, grid, NW * 32, 0, st, g);
   return r_rc();
 }
 

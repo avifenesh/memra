@@ -57,6 +57,7 @@ L2.
 | step 9 (87b68fd76c, this session's start) | 14.50 [14.50-14.52] | 68.8 | 13.67 [13.67-13.69] | 72.9 | 106.0 | 317.4 |
 | step 17 (abb019d9d2) | 17.33 [17.30-17.37] | 57.6 | 16.19 [16.13-16.20] | 61.5 | 105.8 | 389.4 |
 | step 18: prefill hyper-connection reductions over one read | 17.35 [17.29-17.35] | 57.5 | 16.20 [16.17-16.20] | 61.5 | 105.8 | 403.8 |
+| step 21: prefill GEMM live slices, pair dequant, 8 warps (`receipts/s21-gemm-warps/`) | 17.29 [17.28-17.30] | 57.8 | 16.17 [16.14-16.20] | 61.6 | 116.3 | 434.8 |
 
 `receipts/sampled-step9-step17/`: both builds run the same runner and draw the same ids. On `chat`
 the first sampled token is the end token (as the argmax was), so its 63 calls decode past the
@@ -379,3 +380,22 @@ table of BF16 pairs times the group scale in BF16 (the product is exact, so it e
 product rounded); the gate's red arm keeps the scalar path. `kbench` (`KB_PRE`) output hashes
 equal; FP8 shapes 2 to 4% faster, the experts 3 to 4%. `long`'s prefill 406.3 -> 412.2
 tokens/s (interleaved, two runs each), decode unchanged. 3 of 3 tapes bit-equal.
+
+### 21. Prefill GEMM: ldmatrix fragments, 8 warps of 16 x 32 (`receipts/s21-gemm-warps/`, sampled)
+
+`ncu` on the FP8 shapes: 172 registers a thread (the 32 x 32 warp tile's sums and its FP8 block
+partials), 2 blocks an SM, the tensor pipe 33% active. Each block of 64 x 64 outputs now runs 8
+warps of 16 x 32 (half the accumulators a thread, twice the warps an SM), and the fragments come
+from ldmatrix (the values the per-lane loads read). Per-element sequence unchanged; `kbench`
+output hashes equal at every arm. `kbench` (`kbench-*.log`): ldmatrix alone experts -3.5%, BF16
+-3%; 8 warps of 32 x 16: FP8 o_proj (3072 x 16384) -14%, the per-head BF16 products (K 192, 512)
+-34%, experts +2.5%; of 16 x 32: experts -4.4% and o_proj -12% more, the rest level.
+
+Tried and dropped: FP8 at 3 or 4 blocks an SM by launch bounds (level; spills at 4, 2x slower);
+a cp.async ring of each thread's raw operands, converted by the thread that copied them
+(`kbench-pipelined-S22.log`: the global-load stalls go, but the 40-50 KB ring halves the blocks
+an SM: BF16 and experts 1.3 to 1.8x slower, FP8 level); the attention merge's chunk weights once
+a block instead of once an output (level, the bytes equal).
+
+`long`'s prefill 412.1 -> 434.8 tokens/s, `chat`'s 108.0 -> 116.3 (interleaved vs step 20);
+decode unchanged. 3 of 3 tapes bit-equal.

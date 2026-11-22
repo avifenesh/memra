@@ -1,0 +1,21 @@
+V START 2026-11-22 03:15:40 tag=S28 base=S20 src=91a36ad02797d6146b173fd7a7cab81946220b10
+run chatf rc=0
+run lsplit rc=0
+run long rc=0
+CHECK3 3/3
+chatf BITWISE_EQUAL
+lsplit BITWISE_EQUAL
+long BITWISE_EQUAL
+bench S20 long 1 rc=0
+bench S28 long 1 rc=0
+bench S28 long 2 rc=0
+bench S20 long 2 rc=0
+bench S28 chat 1 rc=0
+bench S20 chat 1 rc=0
+v-S28-S20-long-1.jsonl N=3 prefill tok/s   411.64 [410.85-411.72] decode tok/s    16.22 [16.14-16.24] step p50 ms    61.47 [61.41-61.94] ids ead08f022a2590ca sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+v-S28-S28-long-1.jsonl N=3 prefill tok/s   435.75 [435.55-435.98] decode tok/s    16.17 [16.14-16.20] step p50 ms    61.58 [61.57-61.65] ids ead08f022a2590ca sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+v-S28-S28-long-2.jsonl N=3 prefill tok/s   433.90 [433.73-434.13] decode tok/s    16.15 [16.14-16.18] step p50 ms    61.61 [61.60-61.63] ids ead08f022a2590ca sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+v-S28-S20-long-2.jsonl N=3 prefill tok/s   412.59 [412.43-412.70] decode tok/s    16.21 [16.08-16.22] step p50 ms    61.54 [61.49-62.09] ids ead08f022a2590ca sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+v-S28-S28-chat-1.jsonl N=3 prefill tok/s   116.33 [115.79-116.80] decode tok/s    17.29 [17.28-17.30] step p50 ms    57.76 [57.72-57.78] ids d6514054f539ff62 sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+v-S28-S20-chat-1.jsonl N=3 prefill tok/s   108.03 [100.87-109.14] decode tok/s    16.95 [16.88-17.26] step p50 ms    58.04 [57.82-58.06] ids d6514054f539ff62 sampled T=0.9 top_k=0 top_p=1.0 seed=20261121
+V-DONE 2026-11-22 03:37:12
