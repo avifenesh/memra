@@ -17,6 +17,9 @@
 //!       (f64 sums over the BF16 rows), with the class's quantizer: NAME (codes), NAME_scale (e4m3)
 //!       and NAME_scale_2 (f32). A measurement overlay: the drafter reads the components it is told
 //!       to (`ink2-spec --draft-nv`).
+//!   ink2-mint drafter-fp8 CKPT_DIR OUT_FILE [--threads N]
+//!       the FP8 control arm of the same tensors: NAME (e4m3 bytes, round to nearest even, the
+//!       row's largest magnitude at 448) and NAME_rscale (f32, one per row)
 
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_packs::inkling2::nvfp4_rig as rig;
@@ -62,7 +65,12 @@ fn run() -> Result<(), String> {
         }
     }
     match pos.as_slice() {
-        [cmd, ckpt, out] if cmd == "drafter" => drafter(Path::new(ckpt), Path::new(out), threads),
+        [cmd, ckpt, out] if cmd == "drafter" => {
+            drafter(Path::new(ckpt), Path::new(out), threads, false)
+        }
+        [cmd, ckpt, out] if cmd == "drafter-fp8" => {
+            drafter(Path::new(ckpt), Path::new(out), threads, true)
+        }
         [cmd, ckpt, out] if cmd == "mint" => mint(
             Path::new(ckpt),
             Path::new(out),
@@ -74,7 +82,7 @@ fn run() -> Result<(), String> {
     }
 }
 
-fn drafter(ckpt: &Path, out: &Path, threads: usize) -> Result<(), String> {
+fn drafter(ckpt: &Path, out: &Path, threads: usize, fp8: bool) -> Result<(), String> {
     use std::collections::BTreeMap;
     let t0 = Instant::now();
     let mtp = StModel::open(&ckpt.join("mtp.safetensors"))
@@ -93,6 +101,36 @@ fn drafter(ckpt: &Path, out: &Path, threads: usize) -> Result<(), String> {
     let mut tensors: BTreeMap<String, (&'static str, Vec<usize>, Vec<u8>)> = BTreeMap::new();
     let mut put = |name: &str, shape: &[usize], w: &[f32]| {
         let k = shape[1];
+        if fp8 {
+            let mut bytes = vec![0u8; w.len()];
+            let mut rs = Vec::with_capacity(shape[0]);
+            let (mut num, mut den) = (0f64, 0f64);
+            for (row, out) in w.chunks_exact(k).zip(bytes.chunks_exact_mut(k)) {
+                let s = (rig::amax(row) / 448.0).max(1e-30);
+                for (v, o) in row.iter().zip(out.iter_mut()) {
+                    let b = rig::e4m3_rne_index(v.abs() / s) | if *v < 0.0 { 0x80 } else { 0 };
+                    *o = b;
+                    let d = rig::e4m3_value(b) * s;
+                    num += f64::from(v - d).powi(2);
+                    den += f64::from(*v).powi(2);
+                }
+                rs.push(s);
+            }
+            eprintln!(
+                "ink2-mint: {name} {shape:?} fp8 rel_mse {:.3e}",
+                num / den.max(1e-300)
+            );
+            tensors.insert(name.into(), ("F8_E4M3", vec![shape[0], k], bytes));
+            tensors.insert(
+                format!("{name}_rscale"),
+                (
+                    "F32",
+                    vec![shape[0]],
+                    rs.iter().flat_map(|x| x.to_le_bytes()).collect(),
+                ),
+            );
+            return;
+        }
         let t = rig::tensor_scale(rig::amax(w));
         let mut codes = vec![0u8; w.len() / 2];
         let mut scales = vec![0u8; w.len() / 16];
