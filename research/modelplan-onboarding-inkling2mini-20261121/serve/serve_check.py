@@ -12,7 +12,8 @@ Concurrency: at each level c, n greedy streamed chat requests, c at a time; ever
 must equal the same request served alone (c=1). Metrics per level (metrics.json): TTFT, TPOT,
 ITL and E2E p50/p95/p99 in ms, request and output-token throughput.
 """
-import json, sys, time, threading, urllib.request, urllib.error, statistics
+import json
+import os, sys, time, threading, urllib.request, urllib.error, statistics
 
 BASE, KEY, MODEL, OUT = sys.argv[1:5]
 args = sys.argv[5:]
@@ -83,9 +84,12 @@ s, body, _ = req("/v1/chat/completions", chat(img, max_tokens=8))
 check("image part refused", 400 <= s < 500, f"status {s}: {body[:200]}")
 s, body, _ = req("/v1/chat/completions", chat(user("weather?"), tools=tools, tool_choice="required", max_tokens=8))
 check("forced tool_choice refused", s == 400, f"status {s}: {body[:160]}")
-s, body, _ = req("/v1/chat/completions", chat(user("Name three primary colors."), numeric_class="shipped"))
-check("numeric_class shipped (the default) equals the unnamed answer", s == 200 and json.loads(body)["choices"][0]["message"] == first, body[:160] if s != 200 else "")
-s, body, _ = req("/v1/chat/completions", chat(user("Say hi."), numeric_class="nvfp4-rig", max_tokens=8))
+# the class this boot serves, and one it does not (MEMRA_INK2_CLASS picks the served one)
+SERVED = os.environ.get("SERVE_CHECK_CLASS", "shipped")
+OTHER = "nvfp4-rig" if SERVED == "shipped" else "shipped"
+s, body, _ = req("/v1/chat/completions", chat(user("Name three primary colors."), numeric_class=SERVED))
+check(f"numeric_class {SERVED} (the boot's class) equals the unnamed answer", s == 200 and json.loads(body)["choices"][0]["message"] == first, body[:160] if s != 200 else "")
+s, body, _ = req("/v1/chat/completions", chat(user("Say hi."), numeric_class=OTHER, max_tokens=8))
 check("numeric_class this boot does not serve refused", s == 400, f"status {s}: {body[:200]}")
 
 # concurrency and metrics

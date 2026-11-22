@@ -1122,7 +1122,7 @@ fn review_every_census_tensor_is_declared_and_every_declared_tensor_exists() {
 }
 
 #[test]
-fn only_the_declared_class_has_a_checkpoint_band() {
+fn only_the_served_classes_have_a_checkpoint_band() {
     // A fallback band would let an oracle of any class, the float-activation one included, write
     // a CheckpointParity pass for this pack. The declared class's band is the source program's
     // own spread between backends (docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md).

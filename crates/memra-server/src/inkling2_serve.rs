@@ -582,8 +582,16 @@ fn class_name(plan: &memra_gguf::model_plan::ModelPlan) -> Result<&'static str, 
 fn bring_up(cfg: &EngineCfg) -> Result<Up, String> {
     let config = load_config(&cfg.dir)?;
     let pack = memra_gguf::model_packs::for_config(&config).ok_or("no pack matches this config")?;
-    // the class this boot serves: MEMRA_INK2_CLASS, else the checkpoint's shipped program
-    let want = std::env::var("MEMRA_INK2_CLASS").unwrap_or_else(|_| "shipped".to_string());
+    // the class this boot serves: MEMRA_INK2_CLASS, else nvfp4-rig (the owner-ruled default class)
+    // when its minted overlay sits beside the checkpoint, else the checkpoint's shipped program
+    let want = std::env::var("MEMRA_INK2_CLASS").unwrap_or_else(|_| {
+        let overlay = memra_gguf::model_packs::inkling2::nvfp4_rig::default_overlay_dir(&cfg.dir);
+        if overlay.join("overlay.safetensors").is_file() {
+            "nvfp4-rig".to_string()
+        } else {
+            "shipped".to_string()
+        }
+    });
     let plan = match want.as_str() {
         "shipped" => pack.compile_plan(&config),
         "nvfp4-rig" => memra_gguf::model_packs::inkling2::nvfp4_rig_plan(&config),
