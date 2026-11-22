@@ -1,0 +1,102 @@
+[
+ {
+  "check": "chat non-stream",
+  "ok": true,
+  "detail": "status 200 finish length"
+ },
+ {
+  "check": "chat stream",
+  "ok": true,
+  "detail": "64 frames"
+ },
+ {
+  "check": "stream text equals non-stream",
+  "ok": true,
+  "detail": "0 chars"
+ },
+ {
+  "check": "greedy determinism",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "completions",
+  "ok": true,
+  "detail": "{\"object\":\"text_completion\",\"model\":\"ink2\",\"choices\":[{\"index\":0,\"text\":\" Paris.\\n\\nA. Noun\\n\\n\",\"finish_reason\":\"length\"}],\"usage\":{\"prompt_tokens\":5,\"completi"
+ },
+ {
+  "check": "tool call parsed",
+  "ok": true,
+  "detail": "[{\"id\": \"call_0acaa39fa4e08df2\", \"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"arguments\": \"{\\\"city\\\":\\\"Paris\\\"}\"}}]"
+ },
+ {
+  "check": "reasoning_effort 0.5 accepted",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "reasoning_effort 'high' accepted",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "reasoning_effort 0.0 accepted",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "reasoning_effort 'none' accepted",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "reasoning_effort '0.5' refused",
+  "ok": true,
+  "detail": "status 400: {\"error\":{\"message\":\"bad reasoning_effort \\\"0.5\\\": Unknown reasoning_effort: 0.5 (none|minimal|low|medium|high|xhigh|max, or a number in [0.0, 0.99])\",\"type\":\"i"
+ },
+ {
+  "check": "reasoning_effort 1.5 refused",
+  "ok": true,
+  "detail": "status 400: {\"error\":{\"message\":\"bad reasoning_effort 1.5: reasoning_effort must be in [0.0, 0.99]\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":null}}"
+ },
+ {
+  "check": "reasoning_effort 'ultra' refused",
+  "ok": true,
+  "detail": "status 400: {\"error\":{\"message\":\"bad reasoning_effort \\\"ultra\\\": Unknown reasoning_effort: ultra (none|minimal|low|medium|high|xhigh|max, or a number in [0.0, 0.99])\",\"type"
+ },
+ {
+  "check": "image part refused",
+  "ok": true,
+  "detail": "status 400: {\"error\":{\"message\":\"user message: image input is not enabled on this deployment\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":null}}"
+ },
+ {
+  "check": "forced tool_choice refused",
+  "ok": true,
+  "detail": "status 400: {\"error\":{\"message\":\"tool_choice required/named and parallel_tool_calls=false are not available on the inkling2 route (its calls are framed by control tokens no"
+ },
+ {
+  "check": "numeric_class shipped (the boot's class) equals the unnamed answer",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "numeric_class this boot does not serve refused",
+  "ok": true,
+  "detail": "status 400: {\"error\":{\"message\":\"numeric_class \\\"nvfp4-rig\\\" is not served by this route; it serves shipped\",\"type\":\"invalid_request_error\",\"param\":\"numeric_class\",\"code\":null}}"
+ },
+ {
+  "check": "c=1: every request equals its c=1 answer",
+  "ok": true,
+  "detail": "8/8 equal"
+ },
+ {
+  "check": "c=2: every request equals its c=1 answer",
+  "ok": true,
+  "detail": "8/8 equal"
+ },
+ {
+  "check": "c=4: every request equals its c=1 answer",
+  "ok": true,
+  "detail": "8/8 equal"
+ }
+]

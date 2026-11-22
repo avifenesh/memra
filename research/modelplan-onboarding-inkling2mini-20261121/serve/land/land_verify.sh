@@ -3,12 +3,12 @@
 # c=1/2/4 of both classes under clampcheck, on the landing's own binaries (land-frozen3). Run from the
 # serve worktree (receipts land in its research tree).
 L=/home/avifenesh/.cache/inkling2mini
-B=$L/land-frozen3
+B=${LAND_BIN:-$L/land-frozen3}
 M=/home/avifenesh/models/inkling2-mini
 C=$L/ceiling/clampcheck.sh
 R=/home/avifenesh/.cache/inkling2mini/wt-serve/research/modelplan-onboarding-inkling2mini-20261121
 CP=$R/checkpoint-parity
-O=$R/serve/land-verify
+O=${LAND_OUT:-$R/serve/land-verify}
 mkdir -p $O; cd $O
 cat $B/COMMIT $B/SHA256SUMS
 bash $C; echo "CLAMPCHECK_RC=$?"
