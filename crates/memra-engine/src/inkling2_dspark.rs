@@ -309,11 +309,22 @@ impl NvSource for NvOverlay<'_> {
             .st
             .raw(&format!("{name}_scale_2"))
             .ok_or_else(|| format!("{name}_scale_2 missing from the drafter overlay"))?;
-        if ci.dtype != "U8" || cb.len() != n * k / 2 || sb.len() != n * k / 16 || tb.len() != 4 {
+        // rows past n (a padded vocabulary's) are not read
+        let rows = cb.len() / (k / 2).max(1);
+        if ci.dtype != "U8"
+            || cb.len() != rows * k / 2
+            || sb.len() != rows * k / 16
+            || rows < n
+            || tb.len() != 4
+        {
             return Err(format!("{name}: an overlay tensor of the wrong shape"));
         }
         let t = f32::from_le_bytes([tb[0], tb[1], tb[2], tb[3]]);
-        Ok(Some((cb.to_vec(), sb.to_vec(), t)))
+        Ok(Some((
+            cb[..n * k / 2].to_vec(),
+            sb[..n * k / 16].to_vec(),
+            t,
+        )))
     }
 }
 
