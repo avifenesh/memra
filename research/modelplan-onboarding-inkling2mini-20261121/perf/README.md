@@ -204,3 +204,19 @@ Final table on the adopted program (binary a18 for the long rows, a20 for c=1 ri
 | float | 15.9 | | | |
 
 The decode floor of nvfp4-rig is 3.58 ms a token (3.10 GB at 865 GB/s, about 279 tok/s): c=1 runs at 25% of it.
+
+## Step 12: grouped-query f32t attention (2026-11-22)
+
+One block a (row, KV head, tile) serves its 3 query heads: the K and V rows are read 16 bytes at a time and
+decoded once, every per-head chain and reduction keeps its order (bit-identical: gate ALL OK; digests equal
+on shipped and nvfp4-rig at chunk 1, 4, 512 and on p3 8k). Three interleaved takes, no voids:
+
+| | before | after |
+|---|---|---|
+| nvfp4-rig c=1 decode | 68.7 tok/s (p50 14.0 ms) | 71.3 (13.5 ms) |
+| nvfp4-rig 4k decode | 47.9 (p50 20.2 ms) | 65.9 (14.6 ms) |
+| shipped 4k decode | 45.2 (21.4 ms) | 57.5 (16.8 ms) |
+| nvfp4-rig 4k prefill | 316 | 753 |
+| shipped 4k prefill | 326 | 783 |
+
+At 4k the attention is 1.32 ms a token (was 6.31); nvfp4-rig is now ahead of shipped at 4k. Receipts: s12-breakdown.
