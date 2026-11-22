@@ -3345,13 +3345,18 @@ impl Route {
                 } else {
                     (0, 0, 0)
                 };
-                let (qo, ro) = ((r0 * qw * 4) as u64, (r0 * heads * rank * 4) as u64);
+                // row r0's query, relative factors, sink logits and output
+                let (qo, ro, so) = (
+                    (r0 * qw * 4) as u64,
+                    (r0 * heads * rank * 4) as u64,
+                    (r0 * heads * 4) as u64,
+                );
                 dev.launched("memra_ink2g_attn", unsafe {
                     ffi::memra_ink2g_attn(
                         (qb + qo) as *const f32,
                         (rb + ro) as *const f32,
                         dptr(&lw.table, &st) as *const f32,
-                        dptr(&w.sinkb, &st) as *const f32,
+                        (dptr(&w.sinkb, &st) + so) as *const f32,
                         kc as *const c_void,
                         vc as *const c_void,
                         i32::from(ss.fp8),
