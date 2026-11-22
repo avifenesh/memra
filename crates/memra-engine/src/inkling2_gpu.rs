@@ -110,6 +110,22 @@ mod ffi {
             k: i32,
             stream: *mut c_void,
         ) -> i32;
+        pub fn memra_ink2g_gemv_rows_jobs(
+            xs: *const *const f32,
+            ldx: i64,
+            ws: *const *const c_void,
+            scs: *const *const c_void,
+            amaxs: *const *const f32,
+            denoms: *const f32,
+            ys: *const *mut f32,
+            ldys: *const i64,
+            ns: *const i32,
+            count: i32,
+            fp4: i32,
+            m: i32,
+            k: i32,
+            stream: *mut c_void,
+        ) -> i32;
         pub fn memra_ink2g_gemv_nvfp4_jobs(
             xs: *const *const f32,
             ws: *const *const c_void,
@@ -515,6 +531,44 @@ fn gemv_jobs(dev: &Dev, jobs: &[(u64, u64, u64, usize)], k: usize) -> Result<(),
 
 /// Dense NVFP4 decode GEMVs over one input row each, all of input width k, in one launch: jobs of
 /// (x, the weight's parts, y) and the output width. The denominator of a dense NVFP4 weight is 1.
+/// Projections of the same `rows` (2..8) input rows, one weight format (BF16 or dense NVFP4), in one
+/// launch a pass of up to 4 rows: jobs of (x, the weight's parts, y, the output width); x rows k apart,
+/// y rows n apart.
+fn gemv_rows_jobs(
+    dev: &Dev,
+    jobs: &[(u64, WeightParts, u64, usize)],
+    rows: usize,
+    k: usize,
+) -> Result<(), String> {
+    let fp4 = jobs[0].1.0 == FMT_NVFP4;
+    let xs: Vec<*const f32> = jobs.iter().map(|j| j.0 as *const f32).collect();
+    let ws: Vec<*const c_void> = jobs.iter().map(|j| j.1.1 as *const c_void).collect();
+    let scs: Vec<*const c_void> = jobs.iter().map(|j| j.1.2 as *const c_void).collect();
+    let amaxs: Vec<*const f32> = jobs.iter().map(|j| j.1.3 as *const f32).collect();
+    let denoms: Vec<f32> = vec![1.0; jobs.len()];
+    let ys: Vec<*mut f32> = jobs.iter().map(|j| j.2 as *mut f32).collect();
+    let ldys: Vec<i64> = jobs.iter().map(|j| j.3 as i64).collect();
+    let ns: Vec<i32> = jobs.iter().map(|j| j.3 as i32).collect();
+    dev.launched("memra_ink2g_gemv_rows_jobs", unsafe {
+        ffi::memra_ink2g_gemv_rows_jobs(
+            xs.as_ptr(),
+            k as i64,
+            ws.as_ptr(),
+            scs.as_ptr(),
+            amaxs.as_ptr(),
+            denoms.as_ptr(),
+            ys.as_ptr(),
+            ldys.as_ptr(),
+            ns.as_ptr(),
+            ns.len() as i32,
+            i32::from(fp4),
+            rows as i32,
+            k as i32,
+            dev.sp(),
+        )
+    })
+}
+
 fn gemv_nvfp4_jobs(
     dev: &Dev,
     jobs: &[(u64, WeightParts, u64, usize)],
@@ -2654,9 +2708,10 @@ impl Route {
              -> Result<(), String> {
                 DenseW::gemm_parts(dev, wt, x, hidden, dptr_mut(y, &st), n, rows, n, hidden)
             };
-            if rows == 1 {
-                // a decode step: the BF16 projections that read the three normed inputs in one
-                // launch (the same bits as one GEMV each); an NVFP4 projection runs its own GEMV
+            if rows <= 8 {
+                // a decode step (or a call of up to 8 rows): the BF16 projections that read the three
+                // normed inputs in one launch, the NVFP4 ones in another (the same bits as one GEMV
+                // each)
                 let list: Vec<(u64, WeightParts, u64, usize)> = {
                     let mut l = vec![
                         (xq, lw.wq.parts(&st), dptr_mut(&mut w.qb, &st), qw),
@@ -2697,14 +2752,27 @@ impl Route {
                     } else if parts.0 == FMT_NVFP4 {
                         jobs4.push((x, parts, y, n));
                     } else {
-                        DenseW::gemm_parts(dev, parts, x, hidden, y, n, 1, n, hidden)?;
+                        DenseW::gemm_parts(dev, parts, x, hidden, y, n, rows, n, hidden)?;
                     }
                 }
-                if !jobs.is_empty() {
-                    gemv_jobs(dev, &jobs, hidden)?;
-                }
-                if !jobs4.is_empty() {
-                    gemv_nvfp4_jobs(dev, &jobs4, hidden)?;
+                if rows == 1 {
+                    if !jobs.is_empty() {
+                        gemv_jobs(dev, &jobs, hidden)?;
+                    }
+                    if !jobs4.is_empty() {
+                        gemv_nvfp4_jobs(dev, &jobs4, hidden)?;
+                    }
+                } else {
+                    let bf: Vec<(u64, WeightParts, u64, usize)> = jobs
+                        .iter()
+                        .map(|(x, w, y, n)| (*x, (FMT_BF16, *w, 0, 0), *y, *n))
+                        .collect();
+                    if !bf.is_empty() {
+                        gemv_rows_jobs(dev, &bf, rows, hidden)?;
+                    }
+                    if !jobs4.is_empty() {
+                        gemv_rows_jobs(dev, &jobs4, rows, hidden)?;
+                    }
                 }
             } else {
                 proj(dev, xq, lw.wq.parts(&st), &mut w.qb, qw)?;

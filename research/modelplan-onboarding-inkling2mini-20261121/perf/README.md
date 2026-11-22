@@ -232,3 +232,18 @@ tok/s (p50 13.43 -> 12.93 ms), 3 interleaved takes; launches a token 1693 -> 149
 Measured and rejected (deleted): the depth mix's dot and output in one launch (the last block of a pair
 forms all outputs; 1.53 -> 2.22 ms a token, slower); the expert GEMM streaming two 16-row tiles a warp
 through one ring (4.24 -> 5.33 ms a token, slower).
+
+## Step 14: the projections of a 2..8-row call in one launch (2026-11-22)
+
+Every BF16 and every NVFP4 projection of a 2..8-row call (spec verify, batched decode) runs in one launch
+each, the multi-row GEMV's program per job (bit-identical: digests equal on shipped and nvfp4-rig at chunk
+1, 2, 3, 4, 5 and 8). Eager kernel time per call (prof-rows7): nvfp4-rig 2 rows 19.3 -> 17.4 ms (the GEMV
+6.9 -> 6.0 ms), 8 rows 22.8 -> 19.1 ms of GEMV; shipped 2 rows GEMV 6.9 -> 5.5 ms. The second row still
+costs about +3.4 ms of GEMV and +2.5 ms of expert GEMM.
+
+Measured and not kept: the expert GEMM reading 4 K-steps a copy group (128 B a row) was flat (4.24 ->
+4.22 ms a token, +0.8% c=1). Decode-shape ncu of the expert GEMM (s14-rowjobs/ncu-ex-details.txt): 8
+blocks of one warp an SM (shared-memory bound, 16% occupancy), 90% of cycles with no eligible warp,
+stalls on long scoreboard (39%) and the MIO queue (34%), 43-54% of DRAM bandwidth.
+
+PERSISTENT-SLOT-DESIGN.md: the design of the per-slot persistent kernel for the latency-bound stages.

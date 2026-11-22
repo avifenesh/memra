@@ -1391,12 +1391,42 @@ int ink2g_gemv_jobs(const float* const* xs, const void* const* ws, float* const*
 // (BF16: added; NVFP4: fmaf(partial, e4m3 scale, sum), the tensor scale once in f64). A lane reads its
 // weight slice once and forms the partial of every input row from it.
 // rows of a block: 8 warps of RPW weight rows (RPW 1 when the call has few rows, so the blocks spread)
+struct Ink2gRowJobs {
+  const float* x[INK2G_JOBS];
+  const void* w[INK2G_JOBS];
+  const uint8_t* sc[INK2G_JOBS];
+  const float* amax[INK2G_JOBS];
+  float denom[INK2G_JOBS];
+  float* y[INK2G_JOBS];
+  int64_t ldy[INK2G_JOBS];
+  int n[INK2G_JOBS];
+  int first[INK2G_JOBS + 1];
+  int count;  // 0: one projection, the kernel's own arguments
+};
+
 template <int ITERS, int R, bool FP4, int RPW>
 __global__ void __launch_bounds__(256) ink2g_gemv_rows_kernel(const float* __restrict__ x, int64_t ldx,
                                                              const void* __restrict__ w, const uint8_t* __restrict__ sc,
                                                              const float* __restrict__ amax, float denom,
-                                                             float* __restrict__ y, int64_t ldy, int n, int k) {
+                                                             float* __restrict__ y, int64_t ldy, int n, int k,
+                                                             const Ink2gRowJobs jt) {
   extern __shared__ float ink2g_mr[];
+  // a jobs launch: the block's projection (each its own x, weights and y, one k), its block index
+  // within that projection
+  int bidx = (int)blockIdx.x;
+  if (jt.count > 0) {
+    int j = 0;
+    while (j + 1 < jt.count && (int)blockIdx.x >= jt.first[j + 1]) j++;
+    x = jt.x[j];
+    w = jt.w[j];
+    sc = jt.sc[j];
+    amax = jt.amax[j];
+    denom = jt.denom[j];
+    y = jt.y[j];
+    ldy = jt.ldy[j];
+    n = jt.n[j];
+    bidx -= jt.first[j];
+  }
   constexpr int WARPS = 8;
   const int groups = k >> 4, pstride = groups + 1;
   // x transposed per input row: element i of group g at xs[r * k + i * groups + g] (a warp's lanes,
@@ -1404,7 +1434,7 @@ __global__ void __launch_bounds__(256) ink2g_gemv_rows_kernel(const float* __res
   float* xs = ink2g_mr;                                                   // [R][16][groups]
   float* ps = xs + R * k;                                                 // [WARPS][R][pstride]
   uint8_t* sv = reinterpret_cast<uint8_t*>(ps + WARPS * R * pstride);     // [WARPS][pstride] (NVFP4)
-  const int r0 = (int)blockIdx.x * (WARPS * RPW);
+  const int r0 = bidx * (WARPS * RPW);
   for (int i = threadIdx.x; i < R * k; i += 256) {
     const int r = i / k, e = i - r * k;
     xs[r * k + (e & 15) * groups + (e >> 4)] = x[(int64_t)r * ldx + e];
@@ -1496,7 +1526,7 @@ int ink2g_gemv_rows_r(const float* x, int64_t ldx, const void* w, const uint8_t*
   auto go = [&](auto kern) -> int {
     const cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
     if (e != cudaSuccess) return 10000 + (int)e;
-    kern<<<blocks, 256, smem, stream>>>(x, ldx, w, sc, amax, denom, y, ldy, n, k);
+    kern<<<blocks, 256, smem, stream>>>(x, ldx, w, sc, amax, denom, y, ldy, n, k, Ink2gRowJobs{});
     return ink2g_rc();
   };
 #define INK2G_MR_GO(I) \
@@ -1538,6 +1568,48 @@ int ink2g_gemv_rows(const float* x, int64_t ldx, const void* w, const uint8_t* s
   }
   return 0;
 }
+
+// Several projections of the same m (2..8) input rows and the same k in one launch a pass of up to 4
+// rows: each job's blocks run its single launch's program.
+template <int R, bool FP4>
+int ink2g_gemv_rows_jobs_r(Ink2gRowJobs jt, const float* const* xs, int64_t ldx, int r0, int k,
+                           cudaStream_t stream) {
+  const int iters = (k / 16 + 31) / 32;
+  const size_t smem = (size_t)R * k * 4 + (size_t)8 * R * (k / 16 + 1) * 4 + (size_t)8 * (k / 16 + 1);
+  if (smem > 99 * 1024) return -1;
+  int wide_blocks = 0;
+  for (int j = 0; j < jt.count; j++) wide_blocks += (jt.n[j] + 31) / 32;
+  const bool wide = wide_blocks >= 2 * 82;
+  int blocks = 0;
+  for (int j = 0; j < jt.count; j++) {
+    jt.first[j] = blocks;
+    jt.x[j] = xs[j] + (int64_t)r0 * ldx;
+    jt.y[j] = jt.y[j] + (int64_t)r0 * jt.ldy[j];
+    blocks += wide ? (jt.n[j] + 31) / 32 : (jt.n[j] + 7) / 8;
+  }
+  jt.first[jt.count] = blocks;
+  auto go = [&](auto kern) -> int {
+    const cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+    if (e != cudaSuccess) return 10000 + (int)e;
+    kern<<<blocks, 256, smem, stream>>>(jt.x[0], ldx, jt.w[0], jt.sc[0], jt.amax[0], jt.denom[0], jt.y[0], jt.ldy[0],
+                                         jt.n[0], k, jt);
+    return ink2g_rc();
+  };
+#define INK2G_MRJ_GO(I) \
+  return wide ? go(ink2g_gemv_rows_kernel<I, R, FP4, 4>) : go(ink2g_gemv_rows_kernel<I, R, FP4, 1>)
+  switch (iters) {
+    case 1: INK2G_MRJ_GO(1);
+    case 2: INK2G_MRJ_GO(2);
+    case 3: INK2G_MRJ_GO(3);
+    case 4: INK2G_MRJ_GO(4);
+    case 5: INK2G_MRJ_GO(5);
+    case 6: INK2G_MRJ_GO(6);
+    case 7: INK2G_MRJ_GO(7);
+    default: INK2G_MRJ_GO(8);
+  }
+#undef INK2G_MRJ_GO
+}
+
 
 
 // ---- decode GEMV over dense NVFP4 weights, several jobs a launch --------------------------------
@@ -2164,6 +2236,46 @@ int memra_ink2g_gemm_tile_v0(const void* x, int64_t ldx, const void* w, const vo
 }
 
 // Several dense NVFP4 decode GEMVs of the same input width in one launch (the bits of each alone).
+// Projections of the same m input rows (2..8, x rows ldx apart) and the same k, one format, in one launch
+// a pass of up to 4 rows; y of job j holds m rows ldy[j] apart.
+int memra_ink2g_gemv_rows_jobs(const float* const* xs, int64_t ldx, const void* const* ws, const void* const* scs,
+                               const float* const* amaxs, const float* denoms, float* const* ys, const int64_t* ldys,
+                               const int* ns, int count, int fp4, int m, int k, void* stream) {
+  if (!xs || !ws || !ys || !ns || !ldys || count <= 0 || count > INK2G_JOBS || m < 2 || m > 8 || (k % 16) != 0 ||
+      k > INK2G_GV_MAX_K)
+    return 45049;
+  Ink2gRowJobs jt{};
+  jt.count = count;
+  for (int j = 0; j < count; j++) {
+    if (!xs[j] || !ws[j] || !ys[j] || ns[j] <= 0 || ((uintptr_t)ws[j] & 15) != 0) return 45049;
+    if (fp4 && (!scs || !scs[j] || !amaxs || !amaxs[j])) return 45049;
+    jt.w[j] = ws[j];
+    jt.sc[j] = fp4 ? (const uint8_t*)scs[j] : nullptr;
+    jt.amax[j] = fp4 ? amaxs[j] : nullptr;
+    jt.denom[j] = denoms ? denoms[j] : 1.0f;
+    jt.y[j] = ys[j];
+    jt.ldy[j] = ldys[j];
+    jt.n[j] = ns[j];
+  }
+  for (int r0 = 0; r0 < m; r0 += 4) {
+    const int r = m - r0 < 4 ? m - r0 : 4;
+    const cudaStream_t st = (cudaStream_t)stream;
+    int rc;
+    if (fp4)
+      rc = r == 1 ? ink2g_gemv_rows_jobs_r<1, true>(jt, xs, ldx, r0, k, st)
+         : r == 2 ? ink2g_gemv_rows_jobs_r<2, true>(jt, xs, ldx, r0, k, st)
+         : r == 3 ? ink2g_gemv_rows_jobs_r<3, true>(jt, xs, ldx, r0, k, st)
+                  : ink2g_gemv_rows_jobs_r<4, true>(jt, xs, ldx, r0, k, st);
+    else
+      rc = r == 1 ? ink2g_gemv_rows_jobs_r<1, false>(jt, xs, ldx, r0, k, st)
+         : r == 2 ? ink2g_gemv_rows_jobs_r<2, false>(jt, xs, ldx, r0, k, st)
+         : r == 3 ? ink2g_gemv_rows_jobs_r<3, false>(jt, xs, ldx, r0, k, st)
+                  : ink2g_gemv_rows_jobs_r<4, false>(jt, xs, ldx, r0, k, st);
+    if (rc != 0) return rc == -1 ? 45050 : rc;
+  }
+  return 0;
+}
+
 int memra_ink2g_gemv_nvfp4_jobs(const float* const* xs, const void* const* ws, const void* const* scs,
                                 const float* const* amaxs, const float* denoms, float* const* ys, const int* ns,
                                 int count, int k, void* stream) {

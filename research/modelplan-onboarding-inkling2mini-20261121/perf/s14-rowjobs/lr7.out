@@ -1,0 +1,41 @@
+gpulock: 5090 leased as claude-code-20261122T124451-2355624 for 45m
+samples=8 clamp_hits=1 P4, 525 MHz, 9001 MHz, 25.33 W, 140.00 W, 0x0000000000000400
+UNSURE
+CLAMP_RC=2
+waitfor: until bash /home/avifenesh/.cache/inkling2mini/ceiling/clampcheck.sh (deadline 1m00s, every 15s)
+waitfor: MET after 0m02s
+CLAMP_AFTER=0
+GATE_RC=0
+ink2-gpu-gate: ALL OK (36 cells, 0 skipped)
+RC shipped c1 base=0
+RC shipped c1 new=0
+RC shipped c2 base=0
+RC shipped c2 new=0
+RC shipped c3 base=0
+RC shipped c3 new=0
+RC shipped c4 base=0
+RC shipped c4 new=0
+RC shipped c5 base=0
+RC shipped c5 new=0
+RC shipped c8 base=0
+RC shipped c8 new=0
+RC nvfp4-rig c1 base=0
+RC nvfp4-rig c1 new=0
+RC nvfp4-rig c2 base=0
+RC nvfp4-rig c2 new=0
+RC nvfp4-rig c3 base=0
+RC nvfp4-rig c3 new=0
+RC nvfp4-rig c4 base=0
+RC nvfp4-rig c4 new=0
+RC nvfp4-rig c5 base=0
+RC nvfp4-rig c5 new=0
+RC nvfp4-rig c8 base=0
+RC nvfp4-rig c8 new=0
+NSYS shipped 1=0
+NSYS shipped 2=0
+NSYS shipped 4=0
+NSYS shipped 8=0
+NSYS nvfp4-rig 1=0
+NSYS nvfp4-rig 2=0
+NSYS nvfp4-rig 4=0
+NSYS nvfp4-rig 8=0
