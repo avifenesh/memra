@@ -1,0 +1,65 @@
+gpulock: 5090 leased as claude-code-20261121T202806-3592740 for 60m
+a83aeaae331840386a090e17199f61175e11f0dcf61d45a4c89d7484e67f2c3a  ink2-gpu
+96c887abc610fdfa6ab539af0a5dca1952d7dce02e6c8e2b63b23c417d3355b5  memra-server
+dd2149c380da326585b5c46a84368e97ad8c78cc3e2480d2936c786e86526424  memra
+e0527898838ecf4cc263327ce47f2d08d1355331
+loadavg 23.02 20.62 16.00 15/6722 2861314
+samples=8 clamp_hits=0 P4, 405 MHz, 9001 MHz, 22.88 W, 143.46 W, 0x0000000000000400
+OK
+CLAMPCHECK_RC=0
+MARK batch-float 22:09:48.023213598
+RC batch-float=0
+ink2-gpu: batch check b=4: 45 decode rows over 17 batched calls (up to 4 rows) and 9 interleaved prefill chunks of 7; rows differing from solo: 0
+MARK batch-declared 22:10:04.702017137
+RC batch-declared=0
+ink2-gpu: batch check b=4: 45 decode rows over 17 batched calls (up to 4 rows) and 9 interleaved prefill chunks of 7; rows differing from solo: 0
+MARK batch-declared-p2 22:10:15.524020482
+RC batch-declared-p2=0
+ink2-gpu: batch check b=6: 138 decode rows over 32 batched calls (up to 6 rows) and 27 interleaved prefill chunks of 5; rows differing from solo: 0
+MARK batch-long-declared 22:10:34.171336767
+RC batch-long-declared=0
+ink2-gpu: batch check b=4: 61 decode rows over 20 batched calls (up to 4 rows) and 19 interleaved prefill chunks of 256; rows differing from solo: 0
+MARK batch-long-float 22:11:34.711793954
+RC batch-long-float=0
+ink2-gpu: batch check b=4: 61 decode rows over 20 batched calls (up to 4 rows) and 19 interleaved prefill chunks of 256; rows differing from solo: 0
+MARK batch-red 22:13:10.567648180
+RC batch-red=0
+ink2-gpu: batch check b=4: 45 decode rows over 17 batched calls (up to 4 rows) and 9 interleaved prefill chunks of 7; rows differing from solo: 43
+MARK p1-moe-ref 22:13:29.627142180
+RC p1-moe-ref=0
+ink2-gpu: moe reference: 2736/2736 rows bit-equal over 48 slots (0 bf16 outputs differ)
+ink2-gpu: score 57 positions in 180.8s: resid attn worst slot 2.056e-4, ffn worst slot 2.616e-4, router rows 2736/2736, logits max abs 1.255e-2 KL mean 2.324e-8, argmax 57/57, greedy 32/32
+MARK probe-native 22:16:35.761571934
+RC probe-native=0
+PROBE_TAPE_BIT_EQUAL_TO_PRE_MERGE
+MARK dump-oracle 22:16:40.632208872
+RC dump-oracle=0
+ink2-gpu: dumped 2 documents in 8.7s
+HEAD_ROWS oracle: 2 of 2 documents bit-equal to the pre-merge dump
+MARK dump-rawdoc 22:16:54.329042850
+RC dump-rawdoc=0
+ink2-gpu: dumped 15 documents in 78.9s
+HEAD_ROWS rawdoc: 15 of 15 documents bit-equal to the pre-merge dump
+MARK dump-chatwrap 22:18:18.200759016
+RC dump-chatwrap=0
+ink2-gpu: dumped 15 documents in 79.4s
+HEAD_ROWS chatwrap: 15 of 15 documents bit-equal to the pre-merge dump
+MARK server-boot 22:19:42.571375606
+waitfor: http http://127.0.0.1:18341/readyz (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: TIMEOUT after 5m00s, condition not met
+SERVER NOT READY
+[server] build: memra-0.141.1-0a7b0faafb76 (id: source-tree, git: e0527898838e)
+[server] starting; models config = [("ink2", "/home/avifenesh/models/inkling2-mini", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[worker] loading model "ink2" <- /home/avifenesh/models/inkling2-mini
+[inkling2-serve] ink2: rewrite bundle /home/avifenesh/.cache/inkling2mini/wt-serve/research/modelplan-onboarding-inkling2mini-20261121/serve/verify-serve installed for plan b66d8356c1cacd7751c14935f6d3fbafca04549df203032c6e177496435daf7a; the route runs the plan's own native program, no rewrite
+[inkling2-serve] ink2: class shipped (inkling2-gpu-f32-stream/DeclaredActivationQuant); memory: device 23.511 GiB, driver free at open 23.016, weights 17.594, full KV 0.000 (1 positions x 65536 B), rings 0.625, conv 0.007, work 0.230, declared work 0.063, driver free before KV 4.454 and after load 4.454, max context 72974
+[server] FATAL: worker init failed: load ink2: inkling2 model "ink2": memra_ink2g_attn: CUDA error 35025
+/home/avifenesh/.cache/inkling2mini/wt-serve/research/modelplan-onboarding-inkling2mini-20261121/serve/s3/s3.sh: line 53: kill: (3404515) - No such process
+waitfor: gone 3404515 (deadline 2m00s, every 15s)
+waitfor: MET after 0m00s
+S3_DONE

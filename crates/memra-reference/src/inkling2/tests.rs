@@ -1183,6 +1183,7 @@ fn the_fixture_is_the_pinned_checkpoint_image_and_its_schedules() {
             ("offsplits", vec![7, 11, 23], None),
             ("steps", vec![], Some(5)),
             ("declared", vec![], None),
+            ("nvfp4-rig", vec![], None),
         ]
     );
     let main = crate::execute_fixture(&plan, &fixture).unwrap();
@@ -1216,6 +1217,8 @@ fn the_fixture_is_the_pinned_checkpoint_image_and_its_schedules() {
 /// own tests pin the program and not only its parts.
 const PINNED_FLOAT: &str =
     include_str!("../../../memra-cli/tests/fixtures/tiny-oracle/inkling2.tsv");
+const PINNED_RIG: &str =
+    include_str!("../../../memra-cli/tests/fixtures/tiny-oracle/inkling2-nvfp4-rig.tsv");
 const PINNED_DECLARED: &str =
     include_str!("../../../memra-cli/tests/fixtures/tiny-oracle/inkling2-declared.tsv");
 
@@ -1249,7 +1252,12 @@ fn float_activation_program_is_the_pinned_oracle_to_the_bit_under_every_schedule
     }
     for variant in crate::tiny_variants(&plan).unwrap() {
         let exact = variant.fixture.tiny_gate == crate::TinyGate::Exact;
-        assert_eq!(exact, variant.name != "declared", "{}", variant.name);
+        assert_eq!(
+            exact,
+            !matches!(variant.name, "declared" | "nvfp4-rig"),
+            "{}",
+            variant.name
+        );
     }
     assert_eq!(
         crate::deterministic_fixture(&plan).unwrap().tiny_gate,
@@ -1298,4 +1306,112 @@ fn declared_program_is_inside_its_tiny_band_of_the_simulation_with_every_argmax(
         .zip(&float)
         .fold(0f32, |w, (a, e)| w.max((a - e).abs()));
     assert!(apart > 1.0, "{apart}");
+}
+
+// ============================ nvfp4-rig ============================
+
+fn rig_plan() -> ModelPlan {
+    let layers = pack::tiny_declared_plan()
+        .unwrap()
+        .inkling2
+        .unwrap()
+        .numerics
+        .experts
+        .len();
+    pack::tiny_nvfp4_rig_plan(&vec![ExpertActivationMode::Declared; layers]).unwrap()
+}
+
+fn rig_weights() -> ReferenceWeights {
+    let mut w = tiny_weights();
+    merge_overlay(&mut w, &tiny_overlay().unwrap()).unwrap();
+    w
+}
+
+/// Worst distance to the pinned nvfp4-rig oracle, in units of the variant's band (1 = the edge).
+fn rig_band_distance(out: &ReferenceOutput) -> f32 {
+    let crate::TinyGate::Band { max_abs, max_rel } = TINY_DECLARED_GATE else {
+        panic!("the variant has a stated band");
+    };
+    out.logits
+        .iter()
+        .zip(&pinned(PINNED_RIG))
+        .fold(0f32, |w, (a, e)| {
+            w.max((a - e).abs() / (max_abs + max_rel * e.abs()))
+        })
+}
+
+#[test]
+fn nvfp4_rig_plan_reads_the_minted_set_and_e4m3_kv_on_every_slot() {
+    let plan = rig_plan();
+    let numerics = &plan.inkling2.as_ref().unwrap().numerics;
+    assert_eq!(numerics.weight_class, Inkling2WeightClass::Nvfp4Rig);
+    assert_eq!(numerics.default_weight_class, Inkling2WeightClass::Nvfp4Rig);
+    assert!(numerics.kv.iter().all(|k| *k == KvCacheFormat::E4m3Unit));
+    assert_eq!(numerics.kv.len(), plan.layers.len());
+    // tiny: the attention of all 8 layers (6 each), the MXFP8 banks of layers 6-7, the unembed
+    assert_eq!(numerics.minted.len(), 8 * 6 + 2 * 2 + 1);
+    for e in &numerics.experts {
+        assert_eq!(e.minted, e.physical_layer >= 6);
+        assert_eq!(e.weight, ExpertWeightFormat::Nvfp4Amax);
+    }
+    let shipped = pack::tiny_declared_plan().unwrap();
+    let s = &shipped.inkling2.as_ref().unwrap().numerics;
+    assert_eq!(s.weight_class, Inkling2WeightClass::Shipped);
+    assert!(s.minted.is_empty() && s.kv.iter().all(|k| *k == KvCacheFormat::F32));
+}
+
+#[test]
+fn nvfp4_rig_matches_its_oracle_and_its_red_arms_leave_the_band() {
+    let plan = rig_plan();
+    let weights = rig_weights();
+    let out = run(&plan, &weights, &[], None);
+    let d = rig_band_distance(&out);
+    // 1.7e-6 abs at most when pinned: well inside the band
+    assert!(d <= 1.0, "nvfp4-rig against its oracle: {d} bands");
+
+    // red arm: f32 KV under the same weights
+    let mut f32kv = plan.clone();
+    for k in &mut f32kv.inkling2.as_mut().unwrap().numerics.kv {
+        *k = KvCacheFormat::F32;
+    }
+    let d = rig_band_distance(&run(&f32kv, &weights, &[], None));
+    assert!(d > 10.0, "f32 KV stays inside the nvfp4-rig band: {d}");
+
+    // red arm: the minted dense tensors read as stored (the shipped BF16 attention and unembed)
+    let base = tiny_weights();
+    let mut mixed = base.clone();
+    for (id, t) in weights_from_safetensors(&tiny_overlay().unwrap()).unwrap() {
+        let name = format!("{id:?}");
+        if name.contains("experts") {
+            mixed.insert(id, t);
+        }
+    }
+    let mut stored = plan.clone();
+    let n = stored.inkling2.as_mut().unwrap();
+    n.numerics.minted.retain(|m| m.contains(".mlp.experts."));
+    let err = execute_schedule(&stored, &mixed, &TINY_TOKENS, &[], None);
+    // a plan whose minted list is not the class's set is not a plan of the class
+    assert!(err.is_err() || rig_band_distance(&err.unwrap()) > 10.0);
+
+    // fail closed: the class's plan over the base checkpoint without its overlay
+    assert!(execute_schedule(&plan, &base, &TINY_TOKENS, &[], None).is_err());
+
+    // the schedule does not change the class's logits beyond the band either
+    let split = run(&plan, &weights, &[8, 12, 24], None);
+    assert!(rig_band_distance(&split) <= 1.0);
+}
+
+#[test]
+fn e4m3_unit_rounds_f32_values_to_nearest_even_and_saturates() {
+    assert_eq!(e4m3_unit(0.0), 0.0);
+    assert!(e4m3_unit(-0.0).is_sign_negative());
+    assert_eq!(e4m3_unit(1.0), 1.0);
+    assert_eq!(e4m3_unit(1000.0), 448.0);
+    assert_eq!(e4m3_unit(-1000.0), -448.0);
+    // 1.0625 is the midpoint of 1.0 (even) and 1.125: ties to even
+    assert_eq!(e4m3_unit(1.0625), 1.0);
+    // 1.1875 is the midpoint of 1.125 (odd) and 1.25 (even)
+    assert_eq!(e4m3_unit(1.1875), 1.25);
+    // subnormal grid 2^-9
+    assert_eq!(e4m3_unit(3.0 * 2f64.powi(-10)), 2.0 * 2f64.powi(-9));
 }

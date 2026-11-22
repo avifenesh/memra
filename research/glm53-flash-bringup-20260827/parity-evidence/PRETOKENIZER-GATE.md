@@ -1,5 +1,12 @@
 # glm4 pre-tokenizer gate — GLM-5.3-Flash (lane/glm53-flash-bringup, 2026-08-28)
 
+> **2026-11-21.** This gate measured the split, and its numbers stand. It did not exercise the
+> checkpoint's `ignore_merges: true`: 893 vocabulary pieces encode as one id only through that
+> whole-word lookup, memra did not read the flag, and none of the 526 cases below holds one of
+> them as a whole word. "526/526 identical" was therefore true and incomplete. The fix, its
+> 1,786-case gate (1,695 red on the base, 0 after) and the scan of committed receipts are in
+> [`ignore-merges-20261121/`](ignore-merges-20261121/README.md).
+
 Artifact pins (all re-verified locally, not taken from the lane's earlier receipts):
 
 | thing | sha256 | matches |

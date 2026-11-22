@@ -1,0 +1,40 @@
+Loading weights:   0%|          | 0/645 [00:00<?, ?it/s]Loading weights:   8%|▊         | 49/645 [00:00<00:10, 55.37it/s]Loading weights:  54%|█████▍    | 348/645 [00:00<00:00, 459.98it/s]Loading weights:  80%|████████  | 518/645 [00:01<00:00, 589.71it/s]Loading weights: 100%|██████████| 645/645 [00:02<00:00, 307.30it/s]
+/home/avifenesh/.cache/inkling2mini/klsens/klh.py:209: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:208.)
+  d = {"w": torch.from_numpy(np.ascontiguousarray(st.raw(p + nm + "_weight"))).to(DEV),
+[transformers] `causal_conv1d_fn` is falling back to its reference PyTorch implementation because `causal_conv1d` is not installed. This is correct but much slower; install `causal_conv1d` for the optimized kernel.
+harness loaded in 35.9s, gpu mem 16.84 GiB
+tape_cross p1_chat.actq_f32 {"lane_e_cpu||klh_actq": 0.052589, "lane_e_cpu||klh_actq_rev": 0.052589, "klh_actq||klh_actq_rev": 0.0, "lane_e_cpu||route": 0.060866, "klh_actq||route": 0.055634, "klh_actq_rev||route": 0.055634}
+tape_cross p2_window.actq_f32 {"lane_e_cpu||klh_actq": 0.532864, "lane_e_cpu||klh_actq_rev": 0.500477, "klh_actq||klh_actq_rev": 0.235359, "lane_e_cpu||route": 0.494521, "klh_actq||route": 0.451722, "klh_actq_rev||route": 0.366308}
+oracle {"name": "p1_chat", "tokens": 57, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.05563438673574744, "kl_route_mean": 0.05563438673574744, "top1_route": 0.9298245614035088}
+oracle {"name": "p2_window", "tokens": 1531, "kl_self_mean": 0.23535934170452638, "kl_route_vs_rev_mean": 0.36630800553357207, "kl_route_mean": 0.4517223440434575, "top1_route": 0.8563030698889614}
+rawdoc {"name": "R_D_code_matrix.rs", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.014756722344454921, "kl_route_mean": 0.014756722344454921, "top1_route": 0.9697265625}
+rawdoc {"name": "R_D_doc_README.md", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.007392825406548695, "kl_route_mean": 0.007392825406548695, "top1_route": 0.9609375}
+rawdoc {"name": "R_D_multi_el_help", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.009294940873074085, "kl_route_mean": 0.009294940873074085, "top1_route": 0.9658203125}
+rawdoc {"name": "R_D_code_gemma4-spec-cells.py", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.011376974256504947, "kl_route_mean": 0.011376974256504947, "top1_route": 0.9697265625}
+rawdoc {"name": "R_D_multi_fr_man", "tokens": 1024, "kl_self_mean": 0.0038933332337038884, "kl_route_vs_rev_mean": 0.02227993258412242, "kl_route_mean": 0.021910455715250687, "top1_route": 0.943359375}
+rawdoc {"name": "R_D_multi_he_help", "tokens": 1024, "kl_self_mean": 0.003076090077490434, "kl_route_vs_rev_mean": 0.01240400759670234, "kl_route_mean": 0.012565193305664182, "top1_route": 0.9423828125}
+rawdoc {"name": "R_D_multi_pt_BR_man", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.013173209356820786, "kl_route_mean": 0.013173209356820786, "top1_route": 0.9677734375}
+rawdoc {"name": "R_D_code_h2d_probe.rs", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.007102934677070059, "kl_route_mean": 0.007102934677070059, "top1_route": 0.984375}
+rawdoc {"name": "R_D_multi_ar_man", "tokens": 1024, "kl_self_mean": 0.002983835155263763, "kl_route_vs_rev_mean": 0.015724150502921863, "kl_route_mean": 0.01564146538868283, "top1_route": 0.9423828125}
+rawdoc {"name": "R_D_code_mmq_q8_0_f32acc.cu", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.020956081916800106, "kl_route_mean": 0.020956081916800106, "top1_route": 0.9375}
+rawdoc {"name": "R_D_multi_ko_man", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.01883771084287219, "kl_route_mean": 0.01883771084287219, "top1_route": 0.9609375}
+rawdoc {"name": "R_D_multi_tr_man", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.020474133121381355, "kl_route_mean": 0.020474133121381355, "top1_route": 0.943359375}
+rawdoc {"name": "R_D_code_moe_router.cu", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.013929356656566895, "kl_route_mean": 0.013929356656566895, "top1_route": 0.9677734375}
+rawdoc {"name": "R_D_code_build_hy3_quant_sensitivity.py", "tokens": 1024, "kl_self_mean": 0.0048117242751495185, "kl_route_vs_rev_mean": 0.011907887069144956, "kl_route_mean": 0.01107589983462277, "top1_route": 0.9658203125}
+rawdoc {"name": "R_D_multi_zh_CN_man", "tokens": 1024, "kl_self_mean": 2.047492928015237e-06, "kl_route_vs_rev_mean": 0.01852384119925754, "kl_route_mean": 0.018515627812474844, "top1_route": 0.9580078125}
+chatwrap {"name": "W_D_code_matrix.rs", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.018606981239533596, "kl_route_mean": 0.018606981239533596, "top1_route": 0.9580078125}
+chatwrap {"name": "W_D_doc_README.md", "tokens": 1024, "kl_self_mean": 7.579262708730742e-11, "kl_route_vs_rev_mean": 0.01514195353624829, "kl_route_mean": 0.015141950108245946, "top1_route": 0.9521484375}
+chatwrap {"name": "W_D_multi_el_help", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.016670066443780135, "kl_route_mean": 0.016670066443780135, "top1_route": 0.958984375}
+chatwrap {"name": "W_D_code_gemma4-spec-cells.py", "tokens": 1024, "kl_self_mean": -7.418020605667673e-19, "kl_route_vs_rev_mean": 0.02010617691622977, "kl_route_mean": 0.02010617691622758, "top1_route": 0.9609375}
+chatwrap {"name": "W_D_multi_fr_man", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.02793068445512435, "kl_route_mean": 0.02793068445512435, "top1_route": 0.9365234375}
+chatwrap {"name": "W_D_multi_he_help", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.019206272474386735, "kl_route_mean": 0.019206272474386735, "top1_route": 0.9443359375}
+chatwrap {"name": "W_D_multi_pt_BR_man", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.021244701972723632, "kl_route_mean": 0.021244701972723632, "top1_route": 0.951171875}
+chatwrap {"name": "W_D_code_h2d_probe.rs", "tokens": 1024, "kl_self_mean": 9.747643382110702e-16, "kl_route_vs_rev_mean": 0.010751305557768244, "kl_route_mean": 0.010751305585962247, "top1_route": 0.97265625}
+chatwrap {"name": "W_D_multi_ar_man", "tokens": 1024, "kl_self_mean": 2.8031236151075358e-15, "kl_route_vs_rev_mean": 0.020328332571945745, "kl_route_mean": 0.020328332572151803, "top1_route": 0.947265625}
+chatwrap {"name": "W_D_code_mmq_q8_0_f32acc.cu", "tokens": 1024, "kl_self_mean": 0.008974983860664731, "kl_route_vs_rev_mean": 0.023507513293171363, "kl_route_mean": 0.02496856867524017, "top1_route": 0.935546875}
+chatwrap {"name": "W_D_multi_ko_man", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.020817387821264778, "kl_route_mean": 0.020817387821264778, "top1_route": 0.9306640625}
+chatwrap {"name": "W_D_multi_tr_man", "tokens": 1024, "kl_self_mean": 7.389324844554358e-12, "kl_route_vs_rev_mean": 0.027710725734264564, "kl_route_mean": 0.027710727553674076, "top1_route": 0.9404296875}
+chatwrap {"name": "W_D_code_moe_router.cu", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.01577279680516048, "kl_route_mean": 0.01577279680516048, "top1_route": 0.9697265625}
+chatwrap {"name": "W_D_code_build_hy3_quant_sensitivity.py", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.01740131095291888, "kl_route_mean": 0.01740131095291888, "top1_route": 0.9560546875}
+chatwrap {"name": "W_D_multi_zh_CN_man", "tokens": 1024, "kl_self_mean": 0.0, "kl_route_vs_rev_mean": 0.02499593898429924, "kl_route_mean": 0.02499593898429924, "top1_route": 0.9384765625}
+PARITY_KL_DONE

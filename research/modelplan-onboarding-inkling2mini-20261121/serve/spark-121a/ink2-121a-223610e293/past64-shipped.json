@@ -1,0 +1,70 @@
+{
+  "batch_check": {
+    "batched_calls": 17,
+    "bit_identical": true,
+    "decode_rows_compared": 45,
+    "decode_rows_differ": 0,
+    "max_rows": 4,
+    "prefill_calls": 9,
+    "prefill_chunk": 7,
+    "red_batch_attn_one_call": false,
+    "red_batch_rows_rotated": false,
+    "red_t4_scratch_absent": false,
+    "schedule": [
+      {
+        "decode": 12,
+        "offset": 0,
+        "prompt": 6
+      },
+      {
+        "decode": 11,
+        "offset": 3,
+        "prompt": 11
+      },
+      {
+        "decode": 10,
+        "offset": 6,
+        "prompt": 16
+      },
+      {
+        "decode": 12,
+        "offset": 1,
+        "prompt": 21
+      }
+    ],
+    "sequences": 4,
+    "session_positions": 4096,
+    "solo_digest": "baae75293b9b637e"
+  },
+  "chunk": 512,
+  "clocks_at_end": "2184 MHz, [N/A], 20.99 W, 49, 73 %",
+  "clocks_at_start": "2190 MHz, [N/A], 9.01 W, 47, 9 %",
+  "context": 64,
+  "expert_activation_class": "DeclaredActivationQuant",
+  "force_moe_in": false,
+  "force_router": false,
+  "load_s": 41.763166097,
+  "loadavg_at_start": "0.93 0.67 0.52 1/646 2164505",
+  "memory": {
+    "conv": 7667712,
+    "declared_work": 67241096,
+    "device_total": 130661138432,
+    "driver_free_after_load": 5768658944,
+    "driver_free_at_open": 27155931136,
+    "driver_free_before_kv": 5768658944,
+    "kv_full": 4194304,
+    "kv_rings": 671088640,
+    "max_context": 88022,
+    "per_position": 65536,
+    "weights": 18891855904,
+    "work": 377851208
+  },
+  "numeric_class": "inkling2-gpu-f32-stream/shipped/DeclaredActivationQuant",
+  "red_arms": [],
+  "resident_gib": 18.68020112812519,
+  "runner": "ink2-gpu",
+  "stream_outside_experts": "f32",
+  "tape": "/home/avifenesh/projects/ink2-tapes/tapes/p1_chat.exact_f32",
+  "tape_arm": "exact",
+  "weight_gib": 17.59441187977791
+}

@@ -174,7 +174,7 @@ fn the_pack_selects_by_config_and_alias_and_only_it_compiles_the_family() {
     for alias in ["inkling2", "inkling2_loop", "inkling-2-mini"] {
         assert_eq!(by_alias(alias).unwrap().family, "inkling2");
     }
-    assert_eq!(PACK.support, Some(NativeSupport::NativeReference));
+    assert_eq!(PACK.support, Some(NativeSupport::NativeQualified));
     assert_eq!(PACK.gates.len(), 7);
     assert_eq!(
         ModelPlan::compile(&config),
@@ -1065,18 +1065,23 @@ fn review_every_census_tensor_is_declared_and_every_declared_tensor_exists() {
 }
 
 #[test]
-fn no_checkpoint_band_is_declared_for_any_numeric_class() {
+fn only_the_served_classes_have_a_checkpoint_band() {
     // A fallback band would let an oracle of any class, the float-activation one included, write
-    // a CheckpointParity pass for this pack.
+    // a CheckpointParity pass for this pack. The declared class's band is the source program's
+    // own spread between backends (docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md).
     assert_eq!(PACK.checkpoint_parity, None);
-    assert!(PACK.checkpoint_parity_classes.is_empty());
     for class in [
         "source-weights-float32-accumulation",
         "inkling2-float-activation",
-        "inkling2-declared-activation-quant",
     ] {
         assert_eq!(PACK.checkpoint_parity_for(class), None, "{class}");
     }
+    let gate = PACK.checkpoint_parity_for(DECLARED_PARITY_CLASS).unwrap();
+    assert_eq!(
+        (gate.max_abs, gate.max_rel, gate.require_argmax),
+        (3.7, 0.0, true)
+    );
+    assert_eq!(PACK.checkpoint_probe_tokens().len(), 26);
 }
 
 #[test]
@@ -1095,4 +1100,71 @@ fn loop_controller_norms_take_the_config_rms_epsilon() {
         panic!("block attention residual");
     };
     assert_eq!(residual.epsilon, 1e-6);
+}
+
+// ============================ nvfp4-rig binding ============================
+
+fn rig_census(config: &ModelConfig, plan: &ModelPlan) -> PinnedCensus {
+    expected_census_for(config, plan)
+        .unwrap()
+        .into_iter()
+        .map(|(name, spec)| (name, (spec.dtype.to_string(), spec.shape)))
+        .collect()
+}
+
+fn bind_with(plan: &ModelPlan, census: &PinnedCensus) -> Result<usize, String> {
+    let config = config();
+    let census =
+        census_from_safetensors_headers(&headers_from(census)).map_err(|e| e.to_string())?;
+    crate::checkpoint_binding::bind_census(Some(&PACK), &config, plan, &census)
+        .map(|binding| binding.bound.tensors.len())
+        .map_err(|error| error.to_string())
+}
+
+#[test]
+fn nvfp4_rig_binds_only_the_checkpoint_merged_with_its_overlay() {
+    let config = config();
+    let rig = nvfp4_rig_plan(&config).unwrap();
+    let shipped = PACK.compile_plan(&config).unwrap();
+    let merged = rig_census(&config, &rig);
+    // the merged census is the shipped one with 153 tensors moved to the NVFP4 layout: 145 dense
+    // tensors gain two planes (scale, scale_2), 8 MXFP8 banks trade one plane for three
+    assert_eq!(merged.len(), pinned_census().len() + 145 * 2 + 8 * 2);
+    // the outside-loop measurement class leaves the loop core's attention as stored
+    let outside = nvfp4_rig_outside_loop_plan(&config).unwrap();
+    let merged_outside = rig_census(&config, &outside);
+    assert_eq!(merged_outside.len(), pinned_census().len() + 73 * 2 + 8 * 2);
+    assert!(bind_with(&outside, &merged_outside).is_ok());
+    assert!(bind_with(&outside, &merged).is_err());
+    assert!(bind_with(&rig, &merged_outside).is_err());
+    assert_eq!(
+        merged["model.llm.unembed.weight"],
+        ("U8".to_string(), vec![201024, 1152])
+    );
+    assert_eq!(
+        merged["model.llm.layers.20.mlp.experts.w2_weight_scale"],
+        ("F8_E4M3".to_string(), vec![128, 2304, 72])
+    );
+    assert_eq!(
+        merged["model.llm.layers.0.attn.wq_du.weight_scale_2"],
+        ("F32".to_string(), vec![])
+    );
+    // loop-core attention is minted too (owner ruling 2026-11-21)
+    assert_eq!(
+        merged["model.llm.layers.6.attn.wq_du.weight"],
+        ("U8".to_string(), vec![3072, 1152])
+    );
+    let bound = bind_with(&rig, &merged).unwrap();
+    assert_eq!(bound, bind_with(&shipped, &pinned_census()).unwrap());
+    // the class over the bare checkpoint, and the shipped class over the merged one, refuse
+    assert!(bind_with(&rig, &pinned_census()).is_err());
+    assert!(bind_with(&shipped, &merged).is_err());
+    // a missing minted plane refuses
+    let mut missing = merged.clone();
+    missing.remove("model.llm.unembed.weight_scale_2");
+    assert!(bind_with(&rig, &missing).is_err());
+    // a plan whose minted list is not the class's set has no census
+    let mut wrong = rig.clone();
+    wrong.inkling2.as_mut().unwrap().numerics.minted.pop();
+    assert!(expected_census_for(&config, &wrong).is_err());
 }

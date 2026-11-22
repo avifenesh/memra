@@ -27,11 +27,11 @@ use crate::model_plan::{
     ActivationPlan, AttentionInputs, AttentionPlan, BeyondExtent, BlockAttentionPlan, ClipScale,
     DenseNumericsPlan, DenseTensorClass, DraftSourcePlan, DrafterHead, DrafterTap,
     ExpertActivationMode, ExpertNumericsPlan, ExpertWeightFormat, Inkling2DrafterPlan,
-    Inkling2NumericClass, Inkling2Numerics, Inkling2Plan, L2ClipPlan, LayerPlan,
-    LogPositionScalePlan, LogitsTransform, LoopMessageTarget, LoopPlan, LoopSlotPlan, MlpPlan,
-    MoeMlpPlan, NormKind, NormPlan, OutputGatePlan, QuerySinkPlan, RelativeBiasAttentionPlan,
-    RelativeBiasPlan, RelativeBiasStatePlan, ResidualTopology, RouterPlan, ShortConvPlan,
-    ShortConvTaps, StatePlan, ValueNorm, WeightTransform,
+    Inkling2NumericClass, Inkling2Numerics, Inkling2Plan, Inkling2WeightClass, KvCacheFormat,
+    L2ClipPlan, LayerPlan, LogPositionScalePlan, LogitsTransform, LoopMessageTarget, LoopPlan,
+    LoopSlotPlan, MlpPlan, MoeMlpPlan, NormKind, NormPlan, OutputGatePlan, QuerySinkPlan,
+    RelativeBiasAttentionPlan, RelativeBiasPlan, RelativeBiasStatePlan, ResidualTopology,
+    RouterPlan, ShortConvPlan, ShortConvTaps, StatePlan, ValueNorm, WeightTransform,
 };
 use crate::quant_groups::ComputeDtype;
 use crate::tensor_contract::{
@@ -44,12 +44,23 @@ const FAMILY: &str = "inkling2";
 /// Census prefix of the drafter file's tensors.
 pub const DRAFTER_PREFIX: &str = "mtp.";
 
+/// The oracle numeric class of the checkpoint's declared program (NVFP4 W4A4 on layers 0..19,
+/// MXFP8 W8A8 on 20..23, everything outside the experts in f32): the class name a
+/// `memra-checkpoint-oracle-v1` tape of that program carries, and the key of its parity band.
+pub const DECLARED_PARITY_CLASS: &str = "inkling2-declared-activation-quant";
+
+/// The oracle numeric class of the nvfp4-rig program (the declared experts, the minted NVFP4
+/// overlay, e4m3 K/V): the class name its tapes carry and the key of its parity band.
+pub const NVFP4_RIG_PARITY_CLASS: &str = "inkling2-nvfp4-rig";
+
 /// Epsilon of the L2 clips, the residual mixes and the controller norms. It is a constant of the
 /// program, not a config key.
 const PROGRAM_EPSILON: f32 = 1e-6;
 
 /// Planes of a stacked expert bank, in the order the safetensors census lists them.
-const BANK_PLANES: [&str; 3] = ["_scale", "_amax", "_outer_scale_denominator"];
+/// Quantization planes, as suffixes of the tensor they belong to: a stacked bank's three, and a
+/// minted dense tensor's modelopt `_scale` and `_scale_2` (`nvfp4-rig`).
+const BANK_PLANES: [&str; 4] = ["_scale", "_amax", "_outer_scale_denominator", "_scale_2"];
 
 pub static PACK: ModelPack = ModelPack {
     family: "inkling2",
@@ -69,8 +80,10 @@ pub static PACK: ModelPack = ModelPack {
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
     // The artifact ships `chat_template.jinja`.
     template: TemplateContract::ArtifactRequired,
-    // The reference executor runs the plan (memra-reference `inkling2`); no tuned surface does.
-    support: Some(NativeSupport::NativeReference),
+    // The shipped class is qualified on its GPU route (record inkling2-shipped-gpu-1x-5090:
+    // CheckpointParity on the declared class's band and Serve, on the pinned artifact); no tuned
+    // rewrite is qualified.
+    support: Some(NativeSupport::NativeQualified),
     gates: &[
         Gate::Config,
         Gate::TokenizerTemplate,
@@ -80,15 +93,50 @@ pub static PACK: ModelPack = ModelPack {
         Gate::RewriteParity,
         Gate::Serve,
     ],
-    // No band is declared, for any class, so `verify checkpoint` cannot pass: a band of the
-    // declared class has to come from that class's source program measured on two backends, and
-    // none has been. With no fallback band, a float-activation oracle cannot write a
-    // CheckpointParity pass for a pack whose default class is the declared one. The tiny gate
-    // does not read this field: its fixtures carry their own comparison (memra-reference
-    // `TinyGate`).
+    // No default band: an oracle of another class (a float-activation one, say) cannot write a
+    // CheckpointParity pass for a pack whose default class is the declared one. The tiny gate does
+    // not read this field: its fixtures carry their own comparison (memra-reference `TinyGate`).
     checkpoint_parity: None,
-    checkpoint_parity_classes: &[],
-    checkpoint_probe: None,
+    // The declared class: its band is twice the largest spread between independent backends of
+    // the source program on the probe below. Lane E's CPU oracle and lane F's harness (the
+    // transformers model with the act-quant experts) on CPU and on the GPU differ pairwise by
+    // 1.76 to 1.84 logits at most (far-tail logits; KL under 1e-9, the same argmax), so a native
+    // run may sit 3.7 from the oracle and must give its argmax. The route's per-MoE bits, its
+    // float trunk and its end-to-end KL on longer text are held separately
+    // (docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md,
+    // research/modelplan-onboarding-inkling2mini-20261121/checkpoint-parity/).
+    checkpoint_parity_classes: &[
+        ClassParityGate {
+            numeric_class: DECLARED_PARITY_CLASS,
+            gate: CheckpointParityGate {
+                max_abs: 3.7,
+                max_rel: 0.0,
+                require_argmax: true,
+            },
+        },
+        // The nvfp4-rig class (the declared experts over the minted NVFP4 overlay, e4m3 K/V): the
+        // same rule over the same probe. Lane E's CPU oracle of the class (the overlay dequantized,
+        // K/V rounded to e4m3 on the store) and lane F's harness with its nvfp4-rig arm on CPU and
+        // on the GPU differ pairwise by 0.30 to 2.75 logits at most (KL under 2e-9, the same
+        // argmax), so the band is 5.5 with the argmax required
+        // (docs/decisions/INKLING2-DECLARED-CHECKPOINT-PARITY.md).
+        ClassParityGate {
+            numeric_class: NVFP4_RIG_PARITY_CLASS,
+            gate: CheckpointParityGate {
+                max_abs: 5.5,
+                max_rel: 0.0,
+                require_argmax: true,
+            },
+        },
+    ],
+    // The probe is a real chat turn: the system turn "Thinking effort level: 0.9" and the user turn
+    // "Explain in one sentence why the sky is usually blue." rendered by the checkpoint's template
+    // (lane E's p1_chat prompt, 26 tokens), whose next token every backend picks by a margin of
+    // 20.3 logits or more. The default 1,2,3,4 is not a sequence the model ever sees.
+    checkpoint_probe: Some(&[
+        200002, 200004, 34182, 279, 154554, 150628, 25, 220, 15, 13, 24, 200010, 200000, 200004,
+        100887, 149881, 150011, 156021, 151661, 149876, 158808, 149884, 152978, 152778, 13, 200010,
+    ]),
     matches_config: |config| matches!(config.arch, Arch::Inkling2Loop) && config.inkling2.is_some(),
     plan_builder,
     tensor_schema,
@@ -164,6 +212,47 @@ pub fn plan_with_expert_activation(
     config: &ModelConfig,
     modes: &[ExpertActivationMode],
 ) -> Result<ModelPlan, PlanCompileError> {
+    plan_with_classes(config, Inkling2WeightClass::Shipped, modes)
+}
+
+/// The `nvfp4-rig` plan: the family's default weight and cache class, every layer on its
+/// declared activation quantizer. It binds only a checkpoint merged with its minted overlay.
+pub fn nvfp4_rig_plan(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
+    let layers = inkling(config)?.num_hidden_layers as usize;
+    plan_with_classes(
+        config,
+        Inkling2WeightClass::Nvfp4Rig,
+        &vec![ExpertActivationMode::Declared; layers],
+    )
+}
+
+/// The measurement class `nvfp4-rig-outside-loop`: `nvfp4-rig` with the loop core's attention
+/// read as stored (BF16), every layer on its declared quantizer.
+pub fn nvfp4_rig_outside_loop_plan(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
+    let layers = inkling(config)?.num_hidden_layers as usize;
+    plan_with_classes(
+        config,
+        Inkling2WeightClass::Nvfp4RigOutsideLoop,
+        &vec![ExpertActivationMode::Declared; layers],
+    )
+}
+
+/// The tiny config under `nvfp4-rig` with the expert input mode chosen per physical layer.
+pub fn tiny_nvfp4_rig_plan(modes: &[ExpertActivationMode]) -> Result<ModelPlan, PlanCompileError> {
+    plan_with_classes(&tiny_config()?, Inkling2WeightClass::Nvfp4Rig, modes)
+}
+
+/// The tiny config (for the mint and the tiny gates of other crates).
+pub fn tiny_model_config() -> Result<ModelConfig, PlanCompileError> {
+    tiny_config()
+}
+
+/// The plan of a weight class with the expert input mode chosen per physical layer.
+pub fn plan_with_classes(
+    config: &ModelConfig,
+    weight_class: Inkling2WeightClass,
+    modes: &[ExpertActivationMode],
+) -> Result<ModelPlan, PlanCompileError> {
     config.validate_plan_semantics()?;
     let ink = inkling(config)?;
     if modes.len() != ink.num_hidden_layers as usize {
@@ -194,10 +283,29 @@ pub fn plan_with_expert_activation(
         epsilon: ink.rms_norm_eps,
         weight_transform: WeightTransform::Identity,
     };
+    let rig = weight_class != Inkling2WeightClass::Shipped;
+    let loop_attention = weight_class == Inkling2WeightClass::Nvfp4Rig;
+    // The NVFP4 program a minted bank runs: the declared quantizer of the shipped NVFP4 layers.
+    let nvfp4_declared = (0..ink.num_hidden_layers)
+        .filter_map(|physical| ink.expert_quant(physical).ok())
+        .find(|q| q.compute == ComputeDtype::Nvfp4)
+        .map(|q| q.activation);
     let experts = (0..ink.num_hidden_layers)
         .map(|physical| {
-            let declared = ink.expert_quant(physical).map_err(&numerics_error)?;
+            let mut declared = ink.expert_quant(physical).map_err(&numerics_error)?;
+            let minted = rig
+                && nvfp4_rig::converts_experts(ink, physical).map_err(&numerics_error)?;
+            if minted {
+                declared.compute = ComputeDtype::Nvfp4;
+                declared.activation = nvfp4_declared.ok_or_else(|| {
+                    numerics_error(
+                        "nvfp4-rig converts MXFP8 banks to the NVFP4 program, and no layer declares one"
+                            .into(),
+                    )
+                })?;
+            }
             Ok(ExpertNumericsPlan {
+                minted,
                 physical_layer: physical,
                 weight: match declared.compute {
                     ComputeDtype::Nvfp4 => ExpertWeightFormat::Nvfp4Amax,
@@ -298,6 +406,25 @@ pub fn plan_with_expert_activation(
                 default_class: Inkling2NumericClass::DeclaredActivationQuant,
                 bring_up_class: Inkling2NumericClass::FloatActivation,
                 class: Inkling2Numerics::class_of(&experts),
+                default_weight_class: Inkling2WeightClass::Nvfp4Rig,
+                weight_class,
+                minted: if rig {
+                    nvfp4_rig::class_tensors(ink, loop_attention)
+                        .map_err(&numerics_error)?
+                        .iter()
+                        .map(|t| t.name().to_string())
+                        .collect()
+                } else {
+                    Vec::new()
+                },
+                kv: vec![
+                    if rig {
+                        KvCacheFormat::E4m3Unit
+                    } else {
+                        KvCacheFormat::F32
+                    };
+                    slots as usize
+                ],
                 experts,
                 dense,
                 gate_up_interleaved: true,
@@ -937,12 +1064,65 @@ pub fn expected_census(config: &ModelConfig) -> Result<BTreeMap<String, TensorSp
     Ok(map)
 }
 
-/// The bank a quantization plane belongs to, when `name` is one.
+/// The bank a quantization plane belongs to, when `name` is one: an expert bank's
+/// (`*_weight`) or a minted dense tensor's (`*.weight`).
 fn plane_owner<'a>(name: &'a str, expected: &BTreeMap<String, TensorSpec>) -> Option<&'a str> {
     BANK_PLANES.into_iter().find_map(|suffix| {
-        name.strip_suffix(suffix)
-            .filter(|bank| bank.ends_with("_weight") && expected.contains_key(*bank))
+        name.strip_suffix(suffix).filter(|bank| {
+            (bank.ends_with("_weight") || bank.ends_with(".weight")) && expected.contains_key(*bank)
+        })
     })
+}
+
+/// The census a plan binds: the shipped census, with every tensor the plan reads as minted
+/// NVFP4 (`nvfp4-rig`) in the overlay's NVFP4 layout instead of its stored one.
+pub fn expected_census_for(
+    config: &ModelConfig,
+    plan: &ModelPlan,
+) -> Result<BTreeMap<String, TensorSpec>, String> {
+    let mut map = expected_census(config)?;
+    let Some(program) = plan.inkling2.as_ref() else {
+        return Ok(map);
+    };
+    if program.numerics.weight_class == Inkling2WeightClass::Shipped {
+        return Ok(map);
+    }
+    let ink = inkling(config).map_err(|e| format!("{e:?}"))?;
+    let set = nvfp4_rig::class_tensors(
+        ink,
+        program.numerics.weight_class == Inkling2WeightClass::Nvfp4Rig,
+    )?;
+    let names: Vec<&str> = set.iter().map(|t| t.name()).collect();
+    if names
+        != program
+            .numerics
+            .minted
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+    {
+        return Err("the plan's minted list is not the nvfp4-rig set of its config".into());
+    }
+    for t in &set {
+        let spec = map
+            .get(t.name())
+            .ok_or_else(|| format!("{} is not in the shipped census", t.name()))?;
+        let mut logical: Vec<usize> = spec.shape.iter().map(|v| *v as usize).collect();
+        if spec.dtype == "U8" {
+            *logical.last_mut().expect("rank") *= 2;
+        }
+        map.remove(&format!("{}_scale", t.name()));
+        for (plane, dtype, shape) in nvfp4_rig::overlay_planes(t, &logical) {
+            map.insert(
+                plane,
+                TensorSpec {
+                    dtype,
+                    shape: shape.iter().map(|v| *v as u64).collect(),
+                },
+            );
+        }
+    }
+    Ok(map)
 }
 
 #[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
@@ -962,10 +1142,11 @@ fn tensor_schema(
             operation: "inkling2 schema without its plan",
         });
     };
-    let expected =
-        expected_census(config).map_err(|_| TensorContractError::UnsupportedPlanOperation {
+    let expected = expected_census_for(config, plan).map_err(|_| {
+        TensorContractError::UnsupportedPlanOperation {
             operation: "inkling2 schema without typed expert formats",
-        })?;
+        }
+    })?;
     let mut requirements = Vec::new();
     for (name, spec) in &expected {
         if plane_owner(name, &expected).is_some() {
@@ -986,6 +1167,11 @@ fn tensor_schema(
                 QuantConstraint::Nvfp4Amax
             }
             ("F8_E4M3", 1) => QuantConstraint::Mxfp8Row32,
+            ("U8", 2) => {
+                // a minted dense tensor (nvfp4-rig): e2m1 pairs, per-16 e4m3 scales, scale_2
+                *shape.last_mut().expect("matrix rank") *= 2;
+                QuantConstraint::Nvfp4
+            }
             _ => {
                 return Err(TensorContractError::UnsupportedPlanOperation {
                     operation: "unknown inkling2 dtype or plane pairing",
@@ -1067,3 +1253,5 @@ pub fn semantic_tensor_id(name: &str) -> TensorId {
 
 #[cfg(test)]
 mod tests;
+
+pub mod nvfp4_rig;

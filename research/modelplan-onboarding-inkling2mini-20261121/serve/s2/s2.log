@@ -1,0 +1,52 @@
+gpulock: 5090 leased as claude-code-20261121T132234-3582489 for 40m
+cd34850891e46f6a39e22ebcf3062fb0d3fd5b234b54d006852dbde4d25aba7f  ink2-gpu
+b0ce8bdbdffcc6b9cc6b63dce91deee489d9160549baaca2249efd06796844e5  ink2-gpu-gate
+56e8803a1fa76766db0a5747d9d112e3ba99245bb03185525fafb000046cf021  memra
+b9cc5e60615f098f93b2bd8bc644455506dd58c9949b957cf978d86c82242c18  memra-server
+loadavg 16.39 22.07 19.91 9/6894 4150199
+samples=8 clamp_hits=2 P5, 180 MHz, 810 MHz, 20.99 W, 174.19 W, 0x0000000000000400
+UNSURE
+CLAMPCHECK_RC=2
+MARK batch-red 14:04:25.763879486
+RC batch-red=0
+ink2-gpu: batch check b=4: 45 decode rows over 17 batched calls (up to 4 rows) and 9 interleaved prefill chunks of 7; rows differing from solo: 43
+MARK batch-long-declared 14:04:47.581768866
+RC batch-long-declared=0
+ink2-gpu: batch check b=4: 61 decode rows over 20 batched calls (up to 4 rows) and 19 interleaved prefill chunks of 256; rows differing from solo: 0
+MARK batch-long-float 14:05:58.195890501
+RC batch-long-float=0
+ink2-gpu: batch check b=4: 61 decode rows over 20 batched calls (up to 4 rows) and 19 interleaved prefill chunks of 256; rows differing from solo: 0
+MARK server-boot 14:07:42.880589024
+waitfor: http http://127.0.0.1:18341/readyz (deadline 5m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m45s
+MARK serve-check 14:08:27.949562622
+RC serve-check=0
+PASS chat non-stream: status 200 finish length
+PASS chat stream: 64 frames
+PASS stream text equals non-stream: 0 chars
+PASS greedy determinism
+PASS completions: {"object":"text_completion","model":"ink2","choices":[{"index":0,"text":" Paris.\n\nA. Noun clause","finish_reason":"length"}],"usage":{"prompt_tokens":5,"compl
+PASS tool call parsed: [{"id": "call_0acaa39fa4e08df2", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\":\"Paris\"}"}}]
+PASS reasoning_effort 0.5 accepted
+PASS reasoning_effort 'high' accepted
+PASS reasoning_effort 0.0 accepted
+PASS reasoning_effort 'none' accepted
+PASS reasoning_effort '0.5' refused: status 400: {"error":{"message":"bad reasoning_effort \"0.5\": Unknown reasoning_effort: 0.5 (none|minimal|low|medium|high|xhigh|max, or a number in [0.0, 0.99])","type":"i
+PASS reasoning_effort 1.5 refused: status 400: {"error":{"message":"bad reasoning_effort 1.5: reasoning_effort must be in [0.0, 0.99]","type":"invalid_request_error","param":null,"code":null}}
+PASS reasoning_effort 'ultra' refused: status 400: {"error":{"message":"bad reasoning_effort \"ultra\": Unknown reasoning_effort: ultra (none|minimal|low|medium|high|xhigh|max, or a number in [0.0, 0.99])","type
+PASS image part refused: status 400: {"error":{"message":"user message: image input is not enabled on this deployment","type":"invalid_request_error","param":null,"code":null}}
+PASS forced tool_choice refused: status 400: {"error":{"message":"tool_choice required/named and parallel_tool_calls=false are not available on the inkling2 route (its calls are framed by control tokens no
+PASS numeric_class shipped (the default) equals the unnamed answer
+PASS numeric_class this boot does not serve refused: status 400: {"error":{"message":"numeric_class \"nvfp4-rig\" is not served by this route; it serves shipped","type":"invalid_request_error","param":"numeric_class","code":null}}
+PASS c=1: every request equals its c=1 answer: 8/8 equal
+c=1: {"requests": 8, "wall_s": 196.20165895903483, "ttft_ms": {"p50": 379.3719634995796, "p95": 380.5744493904058, "p99": 380.62806184520014}, "tpot_ms": {"p50": 190.14787885468587, "p95": 191.79562054062077, "p99": 192.31681623999359}, "itl_ms": {"p50": 190.26769447373226, "p95": 192.81972236349247, "p99": 194.87371094175614}, "e2e_ms": {"p50": 24528.774508973584, "p95": 24737.752305925824, "p99": 24803.54226597119}, "req_per_s": 0.040774374908166953, "out_tok_per_s": 5.21911998824537, "output_tokens": 1024, "failures": 0}
+PASS c=2: every request equals its c=1 answer: 8/8 equal
+c=2: {"requests": 8, "wall_s": 126.05339902895503, "ttft_ms": {"p50": 590.8241829602048, "p95": 716.8776490492746, "p99": 717.8042465774342}, "tpot_ms": {"p50": 243.41616974767723, "p95": 244.43148102388557, "p99": 244.43627087598279}, "itl_ms": {"p50": 242.3130374518223, "p95": 247.9251644515898, "p99": 250.17284653964452}, "e2e_ms": {"p50": 31517.975850962102, "p95": 31527.37983481493, "p99": 31528.343194960617}, "req_per_s": 0.06346516683903435, "out_tok_per_s": 8.123541355396396, "output_tokens": 1024, "failures": 0}
+PASS c=4: every request equals its c=1 answer: 8/8 equal
+c=4: {"requests": 8, "wall_s": 67.05927994195372, "ttft_ms": {"p50": 880.788964452222, "p95": 1047.001620969968, "p99": 1048.4871169982944}, "tpot_ms": {"p50": 254.93327478738868, "p95": 263.66346462613234, "p99": 265.4280156089088}, "itl_ms": {"p50": 250.48174854600802, "p95": 257.0664618338924, "p99": 266.35636250837183}, "e2e_ms": {"p50": 33309.3093970092, "p95": 34068.481594271725, "p99": 34216.45770928706}, "req_per_s": 0.11929743365757539, "out_tok_per_s": 15.27007150816965, "output_tokens": 1024, "failures": 0}
+serve_check: ALL PASS
+MARK serve-check-end 14:16:16.035852078
+waitfor: gone 20060 (deadline 2m00s, every 15s)
+waitfor: not yet
+waitfor: MET after 0m15s

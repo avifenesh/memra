@@ -1,0 +1,27 @@
+gpulock: 5090 leased as claude-code-20261121T123111-2676652 for 30m
+043b1315897b98302f71bc5c6090d13e778bcc3c7bbdd2a0092ed769c889c91a  ink2-gpu
+ff934447ab8ea3e048790b890262bf753fa1277b2d2383f7e258056e6c9c0955  ink2-gpu-gate
+MARK gate 13:09:30.446333560
+RC gate=0
+ink2g-moe-declared-nvfp4 [rows=9 top_k=4 hidden=256 width=128] vs the reference block: bf16 outputs equal 2304/2304 (worst row rel L2 0.000e0); one call per row vs one call bit-differ=0; red arms moved: weight-after-down 1660/2304, token-rows 2304/2304 OK
+ink2g-moe-declared-mxfp8 [rows=9 top_k=4 hidden=256 width=128] vs the reference block: bf16 outputs equal 2304/2304 (worst row rel L2 0.000e0); one call per row vs one call bit-differ=0; red arms moved: weight-after-down 2212/2304, token-rows 2303/2304 OK
+ink2g-load-refusals E8M0 0xFF, NVFP4 amax NaN / inf / 0 / negative, denominator 0: refused 6/6; valid planes accepted true OK
+ink2-gpu-gate: ALL OK (18 cells, 0 skipped)
+MARK p1-float 13:09:33.856565151
+RC p1-float=0
+ink2-gpu: score 57 positions in 8.3s: resid attn worst slot 8.163e-7, ffn worst slot 7.208e-7, router rows 2736/2736, logits max abs 3.052e-5 KL mean 1.960e-12, argmax 57/57, greedy 32/32
+MARK p1-declared 13:10:09.182216443
+RC p1-declared=0
+gen 200001,200008,371,150409,171960,149887,150011,156021,181130,151661,149876,158808,149884,152978,152778,13,170289,150893,149911,4123,13,170289,151791,153606,25,220,47157,180553,25,177113,152778,166386
+ink2-gpu: 57 rows as calls of 26: 1.0s
+ink2-gpu: 57 rows as calls of 1: 10.8s
+ink2-gpu: chunkings 26 vs 1 over 57 rows: slot rows differ 0/2736, logit rows differ 0, argmax differ 0
+MARK batch-float 13:10:54.476258986
+RC batch-float=0
+ink2-gpu: batch check b=4: 45 decode rows over 17 batched calls (up to 4 rows) and 9 interleaved prefill chunks of 7; rows differing from solo: 0
+MARK batch-declared 13:11:42.820991511
+RC batch-declared=0
+ink2-gpu: batch check b=4: 45 decode rows over 17 batched calls (up to 4 rows) and 9 interleaved prefill chunks of 7; rows differing from solo: 0
+MARK batch-declared-p2 13:12:27.928947532
+RC batch-declared-p2=0
+ink2-gpu: batch check b=6: 138 decode rows over 32 batched calls (up to 6 rows) and 27 interleaved prefill chunks of 5; rows differing from solo: 0
