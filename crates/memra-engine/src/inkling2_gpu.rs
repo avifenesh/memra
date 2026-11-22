@@ -1582,8 +1582,6 @@ pub struct Route {
     pub account: MemoryAccount,
     /// Rows of the drafter's taps, when a caller asked for them ([`Route::set_capture`]).
     tap_capture: Option<Capture>,
-    /// The capture buffer while capture is off (`set_capture`), with its graphs kept.
-    parked_capture: Option<Capture>,
     /// A BF16 output projection the drafter reads instead of the class's (`set_draft_head`).
     draft_head: Option<CudaSlice<u8>>,
 }
@@ -2222,7 +2220,6 @@ impl Route {
             weight_bytes,
             account,
             tap_capture: None,
-            parked_capture: None,
             draft_head: None,
         })
     }
@@ -2230,30 +2227,13 @@ impl Route {
     /// Capture the stream on entry to each of `slots` and the final norm output on every later
     /// call. Their order is the tap order; an empty list turns capture off.
     pub fn set_capture(&mut self, slots: &[u32]) -> Result<(), String> {
-        // Off parks the buffer and its graphs; the same taps again take both back, so every
-        // speculative request does not recapture its graphs.
-        if slots.is_empty() {
-            if let Some(c) = self.tap_capture.take() {
-                self.parked_capture = Some(c);
-            }
-            return Ok(());
-        }
-        if self.tap_capture.as_ref().is_some_and(|c| c.slots == slots) {
-            return Ok(());
-        }
-        if self
-            .parked_capture
-            .as_ref()
-            .is_some_and(|c| c.slots == slots)
-        {
-            self.tap_capture = self.parked_capture.take();
-            return Ok(());
-        }
         // the capturing graphs copy into the old buffer
         self.graphs.retain(|k, _| !k.tap);
         self.warm.retain(|k| !k.tap);
-        self.tap_capture = None;
-        self.parked_capture = None;
+        if slots.is_empty() {
+            self.tap_capture = None;
+            return Ok(());
+        }
         if let Some(bad) = slots.iter().find(|s| **s as usize >= self.slots.len()) {
             return Err(format!(
                 "capture of slot {bad}; the plan has {}",
@@ -2330,19 +2310,15 @@ impl Route {
     /// [`Route::commit_rows`] can commit the first rows of the last call without running them
     /// again. `0` frees it.
     pub fn keep_row_history(&mut self, max_rows: usize) -> Result<(), String> {
-        // 0 keeps what is held (a call commits whole without it, and the graphs of several rows
-        // point into it); a history at least this long is kept as it is
-        if max_rows == 0
-            || self
-                .slots
-                .iter()
-                .all(|s| s.row_hist.as_ref().is_some_and(|(_, m)| *m >= max_rows))
-        {
-            return Ok(());
-        }
         // a graph of several rows writes the history buffers this replaces
         self.graphs.retain(|k, _| k.rows == 1);
         self.warm.retain(|k| k.rows == 1);
+        if max_rows == 0 {
+            for s in &mut self.slots {
+                s.row_hist = None;
+            }
+            return Ok(());
+        }
         if max_rows > self.chunk {
             return Err(format!(
                 "row history for {max_rows} rows; a call holds {}",
