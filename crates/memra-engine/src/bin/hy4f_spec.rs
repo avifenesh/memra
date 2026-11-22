@@ -25,7 +25,8 @@
 //!   (`m_greedy[i]`, `m_chosen[i]`; for a sampled prompt also `m_half[i]`, the coupled draw from
 //!   the drafter's row at half the request's temperature), and `q_greedy[i]`, the drafter's
 //!   probability of each greedy draft at the request's temperature (1 for a greedy prompt). The DFly2 block is causal, so a round of `k < K` drafts keeps
-//!   `min(m, k)`: one replay prices every depth. The answer is the target's own, so arms of another
+//!   `min(m, k)`: one replay prices every depth. The last `K` anchors' counts are capped by the
+//!   answer's end, not by the drafter. The answer is the target's own, so arms of another
 //!   drafter (another checkpoint directory over the same target) replay the same tokens.
 //! - `cost CKPT REQUEST [--k K] [--reps R] [--temperature T]`: what a step costs by its shape, after the request's
 //!   prefill: the one-token call, the verify call of 2 to K + 1 rows (its ring backup and rollback
@@ -107,7 +108,7 @@ fn run() -> Result<(), String> {
             "usage: hy4f-spec gate CKPT REQUEST TARGET ORACLE_TAPE OUT [--red ARM] | \
                   gen CKPT REQUEST N [--k K] [--prefill-chunk C] [--bench R] | \
                   replay CKPT PROMPTS OUT [--k K] [--prefill-chunk C] | \
-                  cost CKPT REQUEST [--k K] [--reps R]"
+                  cost CKPT REQUEST [--k K] [--reps R] [--temperature T]"
                 .into(),
         ),
     }
@@ -668,10 +669,19 @@ fn cost(args: &[String]) -> Result<(), String> {
     let req = read_json(Path::new(request))?;
     let tokens = u32s(&req["token_ids"]);
     let decode_from = req["decode_from"].as_u64().ok_or("decode_from")? as usize;
+    if decode_from == 0 || decode_from > tokens.len() {
+        return Err(format!(
+            "decode_from {decode_from} of {} tokens",
+            tokens.len()
+        ));
+    }
     let prompt = &tokens[..decode_from];
     let reps: usize = flag(args, "--reps")
         .map_or(Ok(8), str::parse)
         .map_err(|e| format!("--reps: {e}"))?;
+    if reps == 0 {
+        return Err("--reps 0 times nothing".into());
+    }
     let need: usize = 95_000_000_000 + (16usize << 30);
     if mem_available().unwrap_or(0) < need {
         return Err(
@@ -700,8 +710,9 @@ fn cost(args: &[String]) -> Result<(), String> {
     let mut t = argmax(&last);
     // the source row of the next round: the last call's last row
     let mut src = (prompt.len() - 1) % 2048;
-    // `--temperature T`: drafts and choices drawn as a sampled request's are (each verify row
-    // chosen: the most a call chooses), so the prices include the host sampler
+    // `--temperature T`: the host work of a sampled request as the serve route does it: greedy
+    // drafts with the drafter's probability of each (the draft gate's), and every verify row
+    // chosen by the position-keyed draw (the most a call chooses)
     let temperature: f32 = flag(args, "--temperature")
         .map_or(Ok(0.0), str::parse)
         .map_err(|e| format!("--temperature: {e}"))?;
@@ -715,9 +726,18 @@ fn cost(args: &[String]) -> Result<(), String> {
     let mut draft_ms: Vec<Vec<f64>> = vec![Vec::new(); k];
     for _ in 0..reps {
         for d in 1..=k {
-            let pos0 = sess.positions() + 1;
-            let mut pick =
-                |s: usize, row: &[f32]| pick_row(row, pos0 + s, sample.as_ref()).map(|d| (d, true));
+            let tq = if temperature > 0.0 {
+                temperature as f64
+            } else {
+                1.0
+            };
+            let mut pick = |_s: usize, row: &[f32]| -> Result<(u32, bool), String> {
+                let best = argmax(row);
+                let mx = row[best as usize] as f64;
+                let z: f64 = row.iter().map(|&x| ((x as f64 - mx) / tq).exp()).sum();
+                std::hint::black_box(1.0 / z);
+                Ok((best, true))
+            };
             let td = Instant::now();
             let out = route.draft_in(&mut sess, src, t, d, None, false, Some(&mut pick))?;
             draft_ms[d - 1].push(td.elapsed().as_secs_f64() * 1e3);

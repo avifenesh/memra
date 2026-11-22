@@ -643,8 +643,12 @@ struct Active {
     /// drafter's probabilities of the drafts the next verify call scores
     calib: Calib,
     draft_q: Vec<f64>,
-    /// DFly2: rounds by verified depth (index 0: steps decoded without drafts by the gate)
+    /// DFly2: rounds by verified depth (index 0: steps the gate kept undrafted, a stretch's or a
+    /// round it priced at no draft)
     depths: Vec<u64>,
+    /// DFly2: the draft gate's prices, the route's at admission, then updated by this request's
+    /// own calls
+    price: Price,
 }
 
 /// A request past rendering, waiting for its memory.
@@ -785,7 +789,10 @@ fn choose(
 /// What the route's calls cost on this device, in milliseconds, filled from its own calls (an
 /// exponential average per size, seeded by the warm-up): a decode call by its rows (the anchor
 /// and the drafts it verifies, the ring backup, the choices and the rollback included) and a draft
-/// round by the draft steps it ran.
+/// round by its drafts (rounds that ran all the drafts they were allowed: the drafter's block is
+/// the round's full length either way). The route keeps one table for all its calls and each
+/// request starts from a copy that its own calls update: a call's cost moves with its context.
+#[derive(Debug, Clone)]
 struct Price {
     verify: RowCost,
     draft: RowCost,
@@ -910,9 +917,10 @@ impl Calib {
         (self.held + Self::PRIOR) / (self.claimed + Self::PRIOR)
     }
 
-    /// A verified round: the drafter's probabilities of its drafts and how many held.
-    fn observe(&mut self, q: &[f64], kept: usize) {
-        for (j, &qj) in q.iter().enumerate().take(kept + 1) {
+    /// A verified round: the drafter's probabilities of its drafts, how many held and how many
+    /// were compared (a stop can end the call's rows before a draft is compared).
+    fn observe(&mut self, q: &[f64], kept: usize, compared: usize) {
+        for (j, &qj) in q.iter().enumerate().take(compared) {
             self.claimed = self.claimed * (1.0 - Self::ALPHA) + qj;
             self.held = self.held * (1.0 - Self::ALPHA) + if j < kept { 1.0 } else { 0.0 };
         }
@@ -1268,7 +1276,7 @@ fn bring_up<'a>(
     // maximum and proves the route answers finite logits
     let tw = Instant::now();
     let n = 2 * cfg.chunk;
-    let mut warm = route.new_session(n + 2 + cfg.drafts + 1)?;
+    let mut warm = route.new_session(n + cfg.drafts + 4)?;
     let ids: Vec<u32> = (0..n).map(|i| 1000 + (i as u32 * 7919) % 60000).collect();
     let mut last = Vec::new();
     for c in ids.chunks(cfg.chunk) {
@@ -1287,40 +1295,47 @@ fn bring_up<'a>(
         next = route.call_in(&mut warm, &[t1], false, None, None)?;
         price.verify.observe(1, tc.elapsed().as_secs_f64() * 1e3);
         // one round past the indexer budget grows the drafter's scratch to its maximum: a
-        // draft, the verify call of the anchor and the drafts, the rollback of all of them;
-        // then a one-draft round from the kept anchor. Each is timed: the gate's first prices.
-        let t2 = argmax(&next) as u32;
-        let td = Instant::now();
-        let d = route.draft_in(&mut warm, 0, t2, cfg.drafts, None, false, None)?;
-        price
-            .draft
-            .observe(cfg.drafts, td.elapsed().as_secs_f64() * 1e3);
-        let mut verify = vec![t2];
-        verify.extend(&d.ids);
-        let tv = Instant::now();
-        let from = warm.positions();
-        let backup = route.ring_backup_in(&warm, from, verify.len())?;
-        let rows = route.call_in(&mut warm, &verify, true, None, None)?;
-        if rows.iter().any(|x| !x.is_finite()) {
-            return Err("the warm-up's verify call answered non-finite logits".into());
+        // draft, the verify call of the anchor and the drafts, the rollback of all of them
+        // (untimed: its first calls allocate); then the same round again and a one-draft round,
+        // timed, from the kept anchor: the gate's first prices
+        let mut anchor = argmax(&next) as u32;
+        let mut first = None;
+        for timed in [false, true] {
+            let td = Instant::now();
+            let d = route.draft_in(&mut warm, 0, anchor, cfg.drafts, None, false, None)?;
+            let draft_ms = td.elapsed().as_secs_f64() * 1e3;
+            let mut verify = vec![anchor];
+            verify.extend(&d.ids);
+            let tv = Instant::now();
+            let from = warm.positions();
+            let backup = route.ring_backup_in(&warm, from, verify.len())?;
+            let rows = route.call_in(&mut warm, &verify, true, None, None)?;
+            if rows.iter().any(|x| !x.is_finite()) {
+                return Err("the warm-up's verify call answered non-finite logits".into());
+            }
+            route.rollback_in(&mut warm, from + 1, &backup)?;
+            if timed {
+                price.draft.observe(cfg.drafts, draft_ms);
+                price
+                    .verify
+                    .observe(verify.len(), tv.elapsed().as_secs_f64() * 1e3);
+            }
+            anchor = argmax(&rows[..route.vocab_size()]) as u32;
+            first.get_or_insert(d.ids);
         }
-        route.rollback_in(&mut warm, from + 1, &backup)?;
-        price
-            .verify
-            .observe(verify.len(), tv.elapsed().as_secs_f64() * 1e3);
-        let t3 = argmax(&rows[..route.vocab_size()]) as u32;
         let td1 = Instant::now();
-        route.draft_in(&mut warm, 0, t3, 1, None, false, None)?;
+        route.draft_in(&mut warm, 0, anchor, 1, None, false, None)?;
         price.draft.observe(1, td1.elapsed().as_secs_f64() * 1e3);
+        let d_ids = first.unwrap_or_default();
         eprintln!(
             "[hy4f-serve] {}: warm-up draft round {:?}; drafter scratch {:.1} MiB; one-token call \
              {:.1} ms, {}-row call {:.1} ms, draft of 1 {:.1} ms, of {} {:.1} ms; draft gate {}",
             cfg.name,
-            d.ids,
+            d_ids,
             route.drafter_scratch_bytes() as f64 / (1u64 << 20) as f64,
             price.verify.ms(1).unwrap_or(0.0),
-            verify.len(),
-            price.verify.ms(verify.len()).unwrap_or(0.0),
+            cfg.drafts + 1,
+            price.verify.ms(cfg.drafts + 1).unwrap_or(0.0),
             price.draft.ms(1).unwrap_or(0.0),
             cfg.drafts,
             price.draft.ms(cfg.drafts).unwrap_or(0.0),
@@ -1506,6 +1521,7 @@ fn serve_loop(
                         calib: Calib::new(),
                         draft_q: Vec::new(),
                         depths: vec![0; cfg.drafts + 1],
+                        price: up.price.clone(),
                     });
                 }
                 Ok(None) => {
@@ -1727,14 +1743,18 @@ fn serve_loop(
                 {
                     failed = Some(format!("hy_v4_flash route: rollback: {e}"));
                 }
-                a.calib.observe(&std::mem::take(&mut a.draft_q), matched);
+                // the drafts compared: up to the first that failed, or to the stop that ended
+                // the call's rows
+                let compared = kept.min(drafted);
+                a.calib
+                    .observe(&std::mem::take(&mut a.draft_q), matched, compared);
             }
             if is_prefill_end.is_none() && failed.is_none() {
                 // the decode call's cost by its rows: the backup, the call, the choices, the
                 // rollback
-                up.price
-                    .verify
-                    .observe(tokens.len(), tcall.elapsed().as_secs_f64() * 1e3);
+                let ms = tcall.elapsed().as_secs_f64() * 1e3;
+                up.price.verify.observe(tokens.len(), ms);
+                a.price.verify.observe(tokens.len(), ms);
             }
             if let Some(e) = failed {
                 let _ = a.req.tx.send(Event::Error(EngineError::engine(e)));
@@ -1780,7 +1800,7 @@ fn serve_loop(
                 // drafter's probability of its draft at the request's temperature
                 let tq = a.sample.as_ref().map_or(1.0, |c| f64::from(c.temperature));
                 let gate = cfg.draft_gate;
-                let price = &up.price;
+                let price = &a.price;
                 let scale = a.calib.scale();
                 let mut plan = RoundPlan::new();
                 let mut claims = Vec::with_capacity(max);
@@ -1810,10 +1830,12 @@ fn serve_loop(
                 match drafted {
                     Ok(Ok(mut d)) => {
                         let steps = d.ids.len();
-                        up.price
-                            .draft
-                            .observe(steps, td.elapsed().as_secs_f64() * 1e3);
-                        let k = if gate { plan.depth(&up.price) } else { steps };
+                        if steps == max {
+                            let ms = td.elapsed().as_secs_f64() * 1e3;
+                            up.price.draft.observe(steps, ms);
+                            a.price.draft.observe(steps, ms);
+                        }
+                        let k = if gate { plan.depth(&a.price) } else { steps };
                         if gate {
                             a.stretch.priced(k);
                         }
@@ -2181,18 +2203,22 @@ mod tests {
         // drafts claimed at 0.8 that held half the time: the scale falls under one (the running
         // sums settle at 1.71 held of 3.2 claimed, beside the start's 2 of 2)
         for _ in 0..40 {
-            c.observe(&[0.8, 0.8], 1);
+            c.observe(&[0.8, 0.8], 1, 2);
         }
         assert!((c.scale() - 3.714 / 5.2).abs() < 1e-3, "{}", c.scale());
         // only the drafts up to the first that failed are counted
         let mut d = Calib::new();
-        d.observe(&[0.9, 0.9, 0.9, 0.9, 0.9], 0);
+        d.observe(&[0.9, 0.9, 0.9, 0.9, 0.9], 0, 1);
         assert!((d.claimed - 0.9).abs() < 1e-12 && d.held == 0.0);
+        // a stop after two held drafts: the third was never compared
+        let mut f = Calib::new();
+        f.observe(&[0.9, 0.9, 0.9], 2, 2);
+        assert!((f.held - 1.75).abs() < 1e-12 && (f.claimed - 0.9 * 1.75).abs() < 1e-12);
         // drafts that always hold at a claim of 0.5: the scale rises over one (4 held of 2
         // claimed, beside the start's 2 of 2)
         let mut e = Calib::new();
         for _ in 0..40 {
-            e.observe(&[0.5], 1);
+            e.observe(&[0.5], 1, 1);
         }
         assert!((e.scale() - 1.5).abs() < 1e-3, "{}", e.scale());
     }
