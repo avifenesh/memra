@@ -789,8 +789,10 @@ fn choose(
 /// What the route's calls cost on this device, in milliseconds, filled from its own calls (an
 /// exponential average per size, seeded by the warm-up): a decode call by its rows (the anchor
 /// and the drafts it verifies, the ring backup, the choices and the rollback included) and a draft
-/// round by its drafts (rounds that ran all the drafts they were allowed: the drafter's block is
-/// the round's full length either way). The route keeps one table for all its calls and each
+/// round by its drafts (only rounds that ran all the drafts they were allowed). A round the gate
+/// stops early ran a block of its allowed length, so pricing its `s` steps at a full round of `s`
+/// reads a little low (the drafter's block is about 2 ms of a 71 ms five-draft round); a
+/// request whose rounds always stop early leaves the table at its seeds. The route keeps one table for all its calls and each
 /// request starts from a copy that its own calls update: a call's cost moves with its context.
 #[derive(Debug, Clone)]
 struct Price {

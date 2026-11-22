@@ -1,5 +1,10 @@
 # Hy4-flash: DFly2 drafts on the serve route, on by default (2026-11-21)
 
+> **Superseded in part (2026-11-22):** drafts stay on and greedy, but the fixed five drafts a round
+> gave way to the draft gate, which prices each round's depth from the drafter's own probabilities
+> and the route's measured costs. See [HY4F-DRAFT-GATE.md](HY4F-DRAFT-GATE.md). The numbers below
+> are the fixed-five readings and stay as measured.
+
 **Status:** decided with step 10 of the Hy4-flash onboarding: the serve route (`hy4f_serve`) drafts
 with the checkpoint's DFly2 drafter by default, 5 tokens a round
 (`speculative_config.num_speculative_tokens`), and `MEMRA_HY4F_DRAFT` sets the count (`0`: no
