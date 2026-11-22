@@ -294,7 +294,7 @@ fn greedy(
             continue;
         }
         drafted += kk;
-        let d = route.draft_in(sess, src_row, next, kk, None, false)?;
+        let d = route.draft_in(sess, src_row, next, kk, None, false, None)?;
         let mut verify = vec![next];
         verify.extend(&d.ids);
         let from = sess.positions();

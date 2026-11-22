@@ -2840,4 +2840,4 @@ mod tests {
 }
 
 mod dfly;
-pub use dfly::{DraftOut, DraftRed, Drafter, ExternalTarget, MAX_DRAFTS, RingBackup};
+pub use dfly::{DraftOut, DraftPick, DraftRed, Drafter, ExternalTarget, MAX_DRAFTS, RingBackup};

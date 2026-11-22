@@ -152,6 +152,14 @@ pub struct Drafter {
     pub weight_bytes: usize,
 }
 
+/// How a draft step turns its logits row into a draft: `pick(step, row)`. Unset, a draft is the
+/// first maximum. The serve route passes the request's own chooser at the draft's position (the
+/// position-keyed draw of a sampled request, the penalty window grown by the drafts before it),
+/// so a sampled request's drafts are coupled to the target's draws: a draft holds when the
+/// drafter's row puts the target's uniform on the same token. A pick decides only which drafts
+/// a verify call scores, never a served token.
+pub type DraftPick<'p> = &'p mut dyn FnMut(usize, &[f32]) -> Result<u32, String>;
+
 /// A round's drafts and, when asked for, every step's logits (`[k, vocab]`).
 #[derive(Debug, Clone, Default)]
 pub struct DraftOut {
@@ -599,7 +607,9 @@ impl<'a> Route<'a> {
 
     /// A draft round after `sess`'s last call: the source is that call's row `row`, which must be
     /// the session's last position `p`; `anchor` is the token chosen at `p`. `forced` replaces each
-    /// step's previous token after step 0 (the gate's forced runs).
+    /// step's previous token after step 0 (the gate's forced runs); `pick` chooses each draft from
+    /// its logits row (unset: the first maximum, `DraftPick`).
+    #[allow(clippy::too_many_arguments)]
     pub fn draft_in(
         &mut self,
         sess: &mut Session,
@@ -608,6 +618,7 @@ impl<'a> Route<'a> {
         k: usize,
         forced: Option<&[u32]>,
         all_logits: bool,
+        pick: Option<DraftPick<'_>>,
     ) -> Result<DraftOut, String> {
         let p = sess
             .history
@@ -653,7 +664,9 @@ impl<'a> Route<'a> {
         let h = self.plan.hidden_size as usize;
         let hidden_p = self.sc.hn.get(&self.dev, 0)?.p + (row * h * 4) as u64;
         let kvp: Vec<u64> = dr.target_kv.iter().map(|l| sess.caches[*l].kv.p).collect();
-        self.draft_core(hidden_p, &kvp, &hist, p, anchor, k, forced, all_logits)
+        self.draft_core(
+            hidden_p, &kvp, &hist, p, anchor, k, forced, all_logits, pick,
+        )
     }
 
     /// The last call's final normed hidden rows (`[rows, hidden]`), the head's input.
@@ -683,7 +696,7 @@ impl<'a> Route<'a> {
         }
         let kvp: Vec<u64> = dr.target_kv.iter().map(|l| sess.caches[*l].kv.p).collect();
         let hb = self.dev.upload(hidden)?;
-        let out = self.draft_core(hb.p, &kvp, hist, p, anchor, k, forced, true);
+        let out = self.draft_core(hb.p, &kvp, hist, p, anchor, k, forced, true, None);
         self.dev.sync()?;
         drop(hb);
         out
@@ -733,7 +746,7 @@ impl<'a> Route<'a> {
                     .ok_or(format!("no target history for layer {l}"))
             })
             .collect::<Result<_, _>>()?;
-        let out = self.draft_core(hb.p, &kvp, &hist, p, anchor, k, forced, true);
+        let out = self.draft_core(hb.p, &kvp, &hist, p, anchor, k, forced, true, None);
         self.dev.sync()?;
         drop(held);
         out
@@ -750,6 +763,7 @@ impl<'a> Route<'a> {
         k: usize,
         forced: Option<&[u32]>,
         all_logits: bool,
+        mut pick: Option<DraftPick<'_>>,
     ) -> Result<DraftOut, String> {
         if k == 0 || k > MAX_DRAFTS {
             return Err(format!("{k} drafts a round; DFly drafts 1 to {MAX_DRAFTS}"));
@@ -1233,12 +1247,23 @@ impl<'a> Route<'a> {
             if row.iter().any(|x| !x.is_finite()) {
                 return Err(format!("draft step {s}: non-finite logits"));
             }
-            // `greedy_argmax`: the first of equal maxima
-            let mut best = 0usize;
-            for (i, x) in row.iter().enumerate() {
-                if *x > row[best] {
-                    best = i;
+            let best = match pick.as_mut() {
+                Some(f) => f(s, &row)? as usize,
+                None => {
+                    // `greedy_argmax`: the first of equal maxima
+                    let mut best = 0usize;
+                    for (i, x) in row.iter().enumerate() {
+                        if *x > row[best] {
+                            best = i;
+                        }
+                    }
+                    best
                 }
+            };
+            if best >= v {
+                return Err(format!(
+                    "draft step {s}: picked id {best} past the vocabulary"
+                ));
             }
             out_ids.push(best as u32);
             if all_logits {
