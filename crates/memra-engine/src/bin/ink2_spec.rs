@@ -88,6 +88,7 @@ struct Args {
     device: usize,
     limit: usize,
     red_no_restore: bool,
+    cautious: bool,
     red_tap: Option<(usize, u32)>,
 }
 
@@ -128,6 +129,13 @@ fn parse() -> Result<Args, String> {
             "--bench" => a.bench = num(val()?)?,
             "--profile-rows" => a.profile_rows = num(val()?)?,
             "--red-no-restore" => a.red_no_restore = true,
+            "--policy" => {
+                a.cautious = match val()?.as_str() {
+                    "default" => false,
+                    "cautious" => true,
+                    other => return Err(format!("--policy is default or cautious, not {other}")),
+                }
+            }
             "--red-tap-slot" => {
                 let v = val()?;
                 let (i, s) = v.split_once(':').ok_or("--red-tap-slot INDEX:SLOT")?;
@@ -436,6 +444,7 @@ fn run() -> Result<(), String> {
                 SpecArms {
                     skip_restore: false,
                     tap_slot: a.red_tap,
+                    cautious: a.cautious,
                 },
             )?;
         }
@@ -486,6 +495,7 @@ fn run() -> Result<(), String> {
                 SpecArms {
                     skip_restore: a.red_no_restore,
                     tap_slot: a.red_tap,
+                    cautious: a.cautious,
                 },
             )?;
             // a sampled request has no token-for-token reference
