@@ -572,7 +572,8 @@ int memra_ink2_expert_gemm_x(int kind, int nb, const void* act, const void* act_
     const bool one = nb == 0;
     if (one) nb = 1;
     if (!(nb == 1 || nb == 2 || (nb == 4 && kind == 0))) return 5;
-    if (wpb <= 0) wpb = nb == 1 ? 1 : 8;
+    // several-row groups of the nb 1 layout stage eight columns: four warps share them
+    if (wpb <= 0) wpb = one ? 1 : (nb == 1 ? 4 : 8);
     if (wpb > 8) return 6;
     const uint32_t* ap = static_cast<const uint32_t*>(act);
     const uint8_t* asp = static_cast<const uint8_t*>(act_scales);

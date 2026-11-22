@@ -523,7 +523,8 @@ pub struct Dev {
 
 /// Precision arms per operation group: 0 = f64 (the #1397 program), 1 = f32, 2 = f32 with every
 /// sequential sum compensated (Kahan); attention also 3 = f64 with a chunk's scores split over
-/// blocks (f64g). A measurement seam: each arm is a different numeric program.
+/// blocks (f64g), 4 = f32 tiles over keys with f64 merges (f32t). A measurement seam: each arm is a
+/// different numeric program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Prec {
     pub controller: u8,
@@ -540,18 +541,17 @@ pub struct Prec {
 
 impl Default for Prec {
     /// The route's program: the arms adopted by docs/decisions/INKLING2-PRECISION-ARMS.md (the
-    /// controller and the norms and clips in f32; attention f64 with a chunk's scores split over
-    /// blocks); every other group f64 (the epilogue in f32 was backed off: with the norms it moves
-    /// p3 into the 1e-2 flip cluster).
+    /// controller and the norms and clips in f32; convolutions and the router in compensated f32;
+    /// attention in f32 tiles over keys with f64 merges); the depth mix and the epilogues f64.
     fn default() -> Self {
         Self {
             controller: 1,
             mix: 0,
             norm: 1,
-            conv: 0,
-            router: 0,
+            conv: 2,
+            router: 2,
             epilogue: 0,
-            attn: 3,
+            attn: 4,
         }
     }
 }
@@ -582,7 +582,8 @@ impl Prec {
                 "f32" => 1,
                 "f32c" => 2,
                 "f64g" => 3,
-                _ => return Err(format!("precision {v}: f64, f32 or f32c")),
+                "f32t" => 4,
+                _ => return Err(format!("precision {v}: f64, f32, f32c, f64g or f32t")),
             };
             let all = g == "all";
             let mut hit = all;
@@ -2050,7 +2051,8 @@ impl Route {
         }
         // the split attention's scores: 64 MiB of rows a launch pair, at least one row, which grows
         // with the context
-        let asc_rows = ((64usize << 20) / (max_heads * max_keys * 8)).clamp(1, chunk);
+        // a row holds its scores and, last, the row's max (the fold's top)
+        let asc_rows = ((64usize << 20) / (max_heads * (max_keys + 1) * 8)).clamp(1, chunk);
         if max_keys == context {
             account.per_position += max_heads * 8;
         }
@@ -2094,8 +2096,8 @@ impl Route {
             moe: dev.zeros(rh)?,
             dscr: dev.zeros(chunk * 128)?,
             posd: dev.zeros(1)?,
-            asc: dev.zeros(asc_rows * max_heads * max_keys)?,
-            asc_ld: max_keys,
+            asc: dev.zeros(asc_rows * max_heads * (max_keys + 1))?,
+            asc_ld: max_keys + 1,
             asc_rows,
             logits: dev.zeros(HEAD_ROWS * keep)?,
             best: dev.zeros(HEAD_ROWS)?,
@@ -3281,12 +3283,16 @@ impl Route {
                     scr_ld,
                     // attn arm 3: the f64 program with a chunk's scores split over blocks in groups of
                     // asc_rows rows (the decode form, per row); a different f64 evaluation order
-                    if dev.prec.get().attn == 3 {
+                    // attn arm 4: f32 tiles over keys with f64 merges, in the same groups
+                    if matches!(dev.prec.get().attn, 3 | 4) {
                         w.asc_rows as i32
                     } else {
                         0
                     },
-                    (dev.prec.get().attn % 3) as i32,
+                    match dev.prec.get().attn {
+                        3 => 0,
+                        a => a as i32,
+                    },
                     desc_slot as *const c_void,
                     dev.sp(),
                 )
@@ -5150,7 +5156,9 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
             let mut kc = dev.zeros::<f32>(cap * kvw)?;
             let mut vc = dev.zeros::<f32>(cap * kvw)?;
             let mut out = dev.zeros::<f32>(total * heads * dim)?;
-            let mut ascr = dev.zeros::<f64>(3 * heads * cap)?;
+            // a row of the arm-4 scratch holds its tiles' partials, (dim + 2) values a tile
+            let ld = (cap + 1).max(dim + 2);
+            let mut ascr = dev.zeros::<f64>(3 * heads * ld)?;
             let mut at = 0usize;
             for rows in splits {
                 // the rows of the call enter the cache before any row attends
@@ -5192,7 +5200,7 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                         rank as i32,
                         // a call of one row runs the split form
                         dptr_mut(&mut ascr, &st) as *mut f64,
-                        cap as i64,
+                        ld as i64,
                         scr_rows,
                         dev.prec.get().attn as i32,
                         std::ptr::null(),
@@ -5209,13 +5217,20 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
         // a chunk in the split form, 3 rows a launch pair (a short last group)
         let grouped = run(&vec![8; total / 8], 3)?;
         let grouped_differ = bits_differ(&grouped, &chunked);
+        // attn arm 4 (f32 tiles, f64 merges), decode rows and groups of 3, against the reference
+        let saved = dev.prec.get();
+        dev.prec.set(Prec { attn: 4, ..saved });
+        let t4 = (run(&vec![1; total], 0), run(&vec![8; total / 8], 3));
+        dev.prec.set(saved);
+        let (t4_one, t4_grp) = (t4.0?, t4.1?);
+        let e4 = worst_rel(&t4_one, &want, 1.0).max(worst_rel(&t4_grp, &want, 1.0));
         // against the scale of a value row: an output is a convex mix of values of order 1
         let e = worst_rel(&chunked, &want, 1.0);
         let alone = bits_differ(&chunked, &ones);
         verdict(
-            e <= ROUND && alone == 0 && grouped_differ == 0,
+            e <= ROUND && alone == 0 && grouped_differ == 0 && e4 <= 1e-4,
             format!(
-                "{name} [positions={total} window={window} extent={extent} mask_beyond={mask} cache rows={cap}] max |err| / (|ref| + 1)={e:.3e}; calls of 8 vs calls of 1 (split form) bit-differ={alone}; calls of 8 split 3 rows a launch vs the tiled kernel bit-differ={grouped_differ}"
+                "{name} [positions={total} window={window} extent={extent} mask_beyond={mask} cache rows={cap}] max |err| / (|ref| + 1)={e:.3e}; calls of 8 vs calls of 1 (split form) bit-differ={alone}; calls of 8 split 3 rows a launch vs the tiled kernel bit-differ={grouped_differ}; arm f32t max |err| / (|ref| + 1)={e4:.3e} (bound 1e-4)"
             ),
         );
     }
@@ -5732,7 +5747,9 @@ pub fn ink2g_gate(dev: &Dev) -> Result<(Vec<String>, usize), String> {
                 && p.norm == 1
                 && p.controller == 1
                 && p.epilogue == 0
-                && p.attn == 3,
+                && p.conv == 2
+                && p.router == 2
+                && p.attn == 4,
             format!(
                 "ink2g-prec-adopted [{p:?}] f32 norm max rel={e_norm:.3e}, f32 controller max rel={e_ctrl:.3e}, output gate (f64) max rel={e_gate:.3e} (bound {F32:.0e})"
             ),
