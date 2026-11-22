@@ -22,6 +22,7 @@
 //
 // Return codes: 0 ok, 10000 + cudaError_t, 45xxx for a refused contract.
 
+#include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include <math.h>
 #include <stdint.h>
@@ -68,6 +69,28 @@ __device__ __forceinline__ float ink2g_e2m1(uint8_t nib) {
   uint32_t bits = m == 0u ? 0u : (m == 1u ? 0x3f000000u : ((126u + (m >> 1)) << 23) | ((m & 1u) << 22));
   bits |= (uint32_t)(nib & 8u) << 28;
   return __uint_as_float(bits);
+}
+
+// Eight e2m1 codes of a word (code i at bits 4i..4i+3) to f32, exactly and without branches: each code's
+// fp16 high byte (sign | the magnitude's byte from an 8-entry byte table) by one byte permute per four
+// codes, the bytes spread to fp16 pairs, the pairs widened. The same values as ink2g_e2m1 (-0 included).
+__device__ __forceinline__ void ink2g_e2m1x8(uint32_t w, float* v) {
+  const uint32_t lut_lo = 0x3E3C3800u, lut_hi = 0x46444240u;  // fp16 high bytes of 0, .5, 1, 1.5 | 2, 3, 4, 6
+#pragma unroll
+  for (int h = 0; h < 2; h++) {
+    const uint32_t q = (w >> (4 * h)) & 0x0F0F0F0Fu;  // codes h, h + 2, h + 4, h + 6, a byte each
+    const uint32_t m = q & 0x07070707u;
+    const uint32_t t = m | (m >> 4);
+    const uint32_t sel = (t & 0xFFu) | ((t >> 8) & 0xFF00u);
+    const uint32_t hb = __byte_perm(lut_lo, lut_hi, sel) | ((q & 0x08080808u) << 4);
+    const uint32_t p01 = __byte_perm(hb, 0u, 0x1404u), p23 = __byte_perm(hb, 0u, 0x3424u);
+    const float2 a = __half22float2(*reinterpret_cast<const __half2*>(&p01));
+    const float2 b = __half22float2(*reinterpret_cast<const __half2*>(&p23));
+    v[h] = a.x;
+    v[h + 2] = a.y;
+    v[h + 4] = b.x;
+    v[h + 6] = b.y;
+  }
 }
 
 // Sum of one value per thread over the block, in a fixed order: lanes inside a warp by the shuffle
@@ -1315,21 +1338,21 @@ int ink2g_gemv_jobs(const float* const* xs, const void* const* ws, float* const*
 // GEMM): per 16-input group a fused multiply-add chain from 0, the partials folded in group order
 // (BF16: added; NVFP4: fmaf(partial, e4m3 scale, sum), the tensor scale once in f64). A lane reads its
 // weight slice once and forms the partial of every input row from it.
-#define INK2G_MR_ROWS 32
-template <int ITERS, int R, bool FP4>
+// rows of a block: 8 warps of RPW weight rows (RPW 1 when the call has few rows, so the blocks spread)
+template <int ITERS, int R, bool FP4, int RPW>
 __global__ void __launch_bounds__(256) ink2g_gemv_rows_kernel(const float* __restrict__ x, int64_t ldx,
                                                              const void* __restrict__ w, const uint8_t* __restrict__ sc,
                                                              const float* __restrict__ amax, float denom,
                                                              float* __restrict__ y, int64_t ldy, int n, int k) {
   extern __shared__ float ink2g_mr[];
-  constexpr int WARPS = 8, RPW = INK2G_MR_ROWS / WARPS;
+  constexpr int WARPS = 8;
   const int groups = k >> 4, pstride = groups + 1;
   // x transposed per input row: element i of group g at xs[r * k + i * groups + g] (a warp's lanes,
   // consecutive groups, read consecutive words)
   float* xs = ink2g_mr;                                                   // [R][16][groups]
   float* ps = xs + R * k;                                                 // [WARPS][R][pstride]
   uint8_t* sv = reinterpret_cast<uint8_t*>(ps + WARPS * R * pstride);     // [WARPS][pstride] (NVFP4)
-  const int r0 = (int)blockIdx.x * INK2G_MR_ROWS;
+  const int r0 = (int)blockIdx.x * (WARPS * RPW);
   for (int i = threadIdx.x; i < R * k; i += 256) {
     const int r = i / k, e = i - r * k;
     xs[r * k + (e & 15) * groups + (e >> 4)] = x[(int64_t)r * ldx + e];
@@ -1338,6 +1361,27 @@ __global__ void __launch_bounds__(256) ink2g_gemv_rows_kernel(const float* __res
   const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
   float* pw = ps + warp * R * pstride;
   uint8_t* sw = sv + warp * pstride;
+  // the raw weight bytes of a warp's row; the next row's are loaded before this row's fold
+  uint2 c4[FP4 ? ITERS : 1];
+  uint8_t s4[FP4 ? ITERS : 1];
+  uint4 lo[FP4 ? 1 : ITERS], hi[FP4 ? 1 : ITERS];
+  auto fetch = [&](int row) {
+#pragma unroll
+    for (int it = 0; it < ITERS; it++) {
+      const int g = it * 32 + lane;
+      if (row < n && g < groups) {
+        if constexpr (FP4) {
+          c4[it] = __ldcs(reinterpret_cast<const uint2*>((const uint8_t*)w + (int64_t)row * (k / 2)) + g);
+          s4[it] = sc[(int64_t)row * groups + g];
+        } else {
+          const uint4* wr = reinterpret_cast<const uint4*>((const uint16_t*)w + (int64_t)row * k);
+          lo[it] = __ldcs(wr + 2 * g);
+          hi[it] = __ldcs(wr + 2 * g + 1);
+        }
+      }
+    }
+  };
+  fetch(r0 + warp * RPW);
   for (int q = 0; q < RPW; q++) {
     const int row = r0 + warp * RPW + q;
     if (row >= n) break;
@@ -1347,18 +1391,11 @@ __global__ void __launch_bounds__(256) ink2g_gemv_rows_kernel(const float* __res
       if (g >= groups) continue;
       float wv[16];
       if constexpr (FP4) {
-        const uint2 c = __ldcs(reinterpret_cast<const uint2*>((const uint8_t*)w + (int64_t)row * (k / 2)) + g);
-        const uint32_t cw[2] = {c.x, c.y};
-#pragma unroll
-        for (int i = 0; i < 16; i++) {
-          const uint32_t b = (cw[i >> 3] >> (8 * ((i >> 1) & 3))) & 0xffu;
-          wv[i] = ink2g_e2m1((i & 1) ? (uint8_t)(b >> 4) : (uint8_t)b);
-        }
-        sw[g] = sc[(int64_t)row * groups + g];
+        ink2g_e2m1x8(c4[it].x, wv);
+        ink2g_e2m1x8(c4[it].y, wv + 8);
+        sw[g] = s4[it];
       } else {
-        const uint4* wr = reinterpret_cast<const uint4*>((const uint16_t*)w + (int64_t)row * k);
-        const uint4 lo = __ldcs(wr + 2 * g), hi = __ldcs(wr + 2 * g + 1);
-        const uint32_t ww[8] = {lo.x, lo.y, lo.z, lo.w, hi.x, hi.y, hi.z, hi.w};
+        const uint32_t ww[8] = {lo[it].x, lo[it].y, lo[it].z, lo[it].w, hi[it].x, hi[it].y, hi[it].z, hi[it].w};
 #pragma unroll
         for (int i = 0; i < 8; i++) {
           wv[2 * i] = __uint_as_float(ww[i] << 16);
@@ -1374,15 +1411,18 @@ __global__ void __launch_bounds__(256) ink2g_gemv_rows_kernel(const float* __res
         pw[r * pstride + g] = part;
       }
     }
+    if (q + 1 < RPW) fetch(row + 1);
     __syncwarp();
     // lane r folds input row r of this weight row, in group order
     if (lane < R) {
       const float* p = pw + lane * pstride;
       float acc = 0.0f;
       if constexpr (FP4) {
+        #pragma unroll 8
         for (int g = 0; g < groups; g++) acc = fmaf(p[g], ink2g_e4m3(sw[g]), acc);
         acc = (float)((double)acc * (double)amax[0] / (double)denom);
       } else {
+        #pragma unroll 8
         for (int g = 0; g < groups; g++) acc = __fadd_rn(acc, p[g]);
       }
       y[(int64_t)lane * ldy + row] = acc;
@@ -1398,23 +1438,28 @@ int ink2g_gemv_rows_r(const float* x, int64_t ldx, const void* w, const uint8_t*
   const int iters = (k / 16 + 31) / 32;
   const size_t smem = (size_t)R * k * 4 + (size_t)8 * R * (k / 16 + 1) * 4 + (size_t)8 * (k / 16 + 1);
   if (smem > 99 * 1024) return -1;
-  const int blocks = (n + INK2G_MR_ROWS - 1) / INK2G_MR_ROWS;
+  // four rows a warp only when that still gives two blocks an SM
+  const bool wide = (n + 31) / 32 >= 2 * 82;
+  const int blocks = wide ? (n + 31) / 32 : (n + 7) / 8;
   auto go = [&](auto kern) -> int {
     const cudaError_t e = cudaFuncSetAttribute(kern, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
     if (e != cudaSuccess) return 10000 + (int)e;
     kern<<<blocks, 256, smem, stream>>>(x, ldx, w, sc, amax, denom, y, ldy, n, k);
     return ink2g_rc();
   };
+#define INK2G_MR_GO(I) \
+  return wide ? go(ink2g_gemv_rows_kernel<I, R, FP4, 4>) : go(ink2g_gemv_rows_kernel<I, R, FP4, 1>)
   switch (iters) {
-    case 1: return go(ink2g_gemv_rows_kernel<1, R, FP4>);
-    case 2: return go(ink2g_gemv_rows_kernel<2, R, FP4>);
-    case 3: return go(ink2g_gemv_rows_kernel<3, R, FP4>);
-    case 4: return go(ink2g_gemv_rows_kernel<4, R, FP4>);
-    case 5: return go(ink2g_gemv_rows_kernel<5, R, FP4>);
-    case 6: return go(ink2g_gemv_rows_kernel<6, R, FP4>);
-    case 7: return go(ink2g_gemv_rows_kernel<7, R, FP4>);
-    default: return go(ink2g_gemv_rows_kernel<8, R, FP4>);
+    case 1: INK2G_MR_GO(1);
+    case 2: INK2G_MR_GO(2);
+    case 3: INK2G_MR_GO(3);
+    case 4: INK2G_MR_GO(4);
+    case 5: INK2G_MR_GO(5);
+    case 6: INK2G_MR_GO(6);
+    case 7: INK2G_MR_GO(7);
+    default: INK2G_MR_GO(8);
   }
+#undef INK2G_MR_GO
 }
 
 // m in 2..8 input rows, in passes of up to 4 (a pass re-reads the weights, mostly from L2)
@@ -1506,13 +1551,12 @@ __global__ void __launch_bounds__(INK2G_GV_THREADS, 3) ink2g_gemv_nvfp4_jobs_ker
     for (int q = 0; q < RPW; q++) {
       const int rl = warp + q * (INK2G_GV_THREADS / 32), row = r0 + rl;
       if (row >= n) continue;
-      const uint32_t cw[2] = {c[q][it].x, c[q][it].y};
+      float wv[16];
+      ink2g_e2m1x8(c[q][it].x, wv);
+      ink2g_e2m1x8(c[q][it].y, wv + 8);
       float part = 0.0f;
 #pragma unroll
-      for (int i = 0; i < 16; i++) {
-        const uint32_t b = (cw[i >> 3] >> (8 * ((i >> 1) & 3))) & 0xffu;
-        part = fmaf(xv[i], ink2g_e2m1((i & 1) ? (uint8_t)(b >> 4) : (uint8_t)b), part);
-      }
+      for (int i = 0; i < 16; i++) part = fmaf(xv[i], wv[i], part);
       ps[rl * pstride + g] = part;
       sv[rl * pstride + g] = sb[q][it];
     }
@@ -1525,6 +1569,7 @@ __global__ void __launch_bounds__(INK2G_GV_THREADS, 3) ink2g_gemv_nvfp4_jobs_ker
       const float* p = ps + rl * pstride;
       const uint8_t* sp = sv + rl * pstride;
       float acc = 0.0f;
+      #pragma unroll 8
       for (int g = 0; g < groups; g++) acc = fmaf(p[g], ink2g_e4m3(sp[g]), acc);
       jobs.y[j][row] = (float)((double)acc * (double)jobs.amax[j][0] / (double)jobs.denom[j]);
     }
