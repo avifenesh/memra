@@ -113,6 +113,10 @@ pub struct Turn {
     /// `wo_eos`, a prefill the model continues). Set only by the fixture harness; every other
     /// dialect ignores it.
     pub wo_eos: bool,
+    /// inkling2: the message's `content` was null or missing, which `content: ""` cannot say.
+    /// The template writes an empty text message for the empty string and no message for null.
+    /// Every other dialect ignores it.
+    pub no_content: bool,
 }
 
 /// Thinking control (owner directive 2026-08-07: every supported model is a thinking model,
@@ -234,6 +238,21 @@ pub fn apply_chat_template_str(
     messages: &[(&str, &str)],
     add_generation_prompt: bool,
 ) -> String {
+    // Inkling 2: its own dialect; the plain path renders the template's default effort.
+    if template.is_some_and(template_is_inkling2) {
+        let turns: Vec<Turn> = messages
+            .iter()
+            .map(|(role, content)| Turn {
+                role: (*role).to_string(),
+                content: (*content).to_string(),
+                ..Default::default()
+            })
+            .collect();
+        // The template refuses a role it does not know and this entry has no error to return:
+        // the serve path renders through `apply_chat_template_tools_ex`, which does.
+        return apply_inkling2_template(&turns, &[], INKLING2_DEFAULT_EFFORT)
+            .expect("inkling2 plain render: roles are user/assistant/system/tool");
+    }
     if template.is_some_and(template_is_mimo_v26) {
         let turns: Vec<Turn> = messages
             .iter()
@@ -564,6 +583,20 @@ pub fn apply_chat_template_tools_ex(
     reasoning_effort: Option<&str>,
     dsv4_encoding: Option<Dsv4Encoding>,
 ) -> Result<String, String> {
+    // Inkling 2: its own dialect all the way through, tools included; it has none of the
+    // markers the checks below read, so it dispatches first. Tool definitions come from
+    // `tools_struct` (the template re-serializes them sorted), never the `tools_json` strings.
+    if template.is_some_and(template_is_inkling2) {
+        if !tools_json.is_empty() && tools_struct.is_empty() {
+            return Err(
+                "inkling2 tool definitions need the structured `tools_struct` (the tool or \
+                 function objects): call apply_chat_template_tools_ex"
+                    .into(),
+            );
+        }
+        let effort = inkling2_effort(think, reasoning_effort)?;
+        return apply_inkling2_template(turns, tools_struct, effort);
+    }
     let has_tool_features = !tools_json.is_empty()
         || turns
             .iter()
@@ -1738,6 +1771,360 @@ pub fn apply_hy4_template(
         if effort == "no_think" {
             out.push_str(THINK_END);
         }
+    }
+    Ok(out)
+}
+/// The name packs and the serve path use for the Inkling 2 chat dialect: the renderer
+/// [`apply_inkling2_template`] and the response parser `ToolStreamParser::inkling2` in
+/// memra-server.
+pub const INKLING2_DIALECT: &str = "inkling2";
+
+/// Inkling 2 (`thinkingmachines/Inkling-2-Mini`) `chat_template.jinja`: the only committed
+/// template that writes the `<|content_invoke_tool_json|>` call marker and the
+/// `Thinking effort level: ` system line.
+pub fn template_is_inkling2(t: &str) -> bool {
+    t.contains("<|content_invoke_tool_json|>") && t.contains("Thinking effort level: ")
+}
+
+/// The effort the template writes when the request names none.
+pub const INKLING2_DEFAULT_EFFORT: f64 = 0.9;
+
+/// The template's `effort_map`.
+const INKLING2_EFFORT_MAP: [(&str, f64); 7] = [
+    ("none", 0.0),
+    ("minimal", 0.1),
+    ("low", 0.2),
+    ("medium", 0.7),
+    ("high", 0.9),
+    ("xhigh", 0.99),
+    ("max", 0.99),
+];
+
+/// A numeric `reasoning_effort` as the template accepts it: within [0.0, 0.99].
+pub fn inkling2_effort_number(level: f64) -> Result<f64, String> {
+    // NaN passes the template's two comparisons and renders as `nan`; no request means that.
+    if level.is_nan() || !(0.0..=0.99).contains(&level) {
+        return Err("reasoning_effort must be in [0.0, 0.99]".into());
+    }
+    Ok(level)
+}
+
+/// The Inkling 2 thinking effort level for a request. A named effort is trimmed and looked up
+/// in the template's map (it raises on any other string, a numeric string included); without
+/// one the template's default, 0.9, applies. A thinking-off request (`ThinkMode::NoThink`)
+/// renders level 0, the map's `none`, whatever effort it names: a name the template refuses is
+/// still refused.
+pub fn inkling2_effort(think: ThinkMode, reasoning_effort: Option<&str>) -> Result<f64, String> {
+    let named = match reasoning_effort {
+        None => None,
+        Some(effort) => {
+            let key = effort.trim();
+            let level = INKLING2_EFFORT_MAP
+                .iter()
+                .find(|(name, _)| *name == key)
+                .map(|(_, level)| *level)
+                .ok_or_else(|| format!("Unknown reasoning_effort: {effort}"))?;
+            Some(level)
+        }
+    };
+    if think == ThinkMode::NoThink {
+        return Ok(0.0);
+    }
+    Ok(named.unwrap_or(INKLING2_DEFAULT_EFFORT))
+}
+
+/// Python `str(float)` for a level in [0.0, 0.99], as jinja writes `{{ num }}`: the shortest
+/// digits that round-trip, in exponent form below 1e-4 with an exponent of at least two digits.
+/// The template writes `0` for 0.0 itself.
+fn inkling2_effort_text(level: f64) -> String {
+    if level == 0.0 {
+        return "0".into();
+    }
+    py_float_repr(level)
+}
+
+/// Python `repr(float)`, which is what `json.dumps` and jinja's `{{ x }}` write: the shortest
+/// digits that round-trip, positional for a decimal exponent in -4..16 (a whole value keeps its
+/// `.0`) and `d.ddde±XX` outside it, the exponent signed and at least two digits.
+fn py_float_repr(value: f64) -> String {
+    if value.is_nan() {
+        return "NaN".into();
+    }
+    if value.is_infinite() {
+        return if value > 0.0 { "Infinity" } else { "-Infinity" }.into();
+    }
+    let sign = if value.is_sign_negative() { "-" } else { "" };
+    if value == 0.0 {
+        return format!("{sign}0.0");
+    }
+    let sci = format!("{:e}", value.abs());
+    let (mantissa, exponent) = sci.split_once('e').expect("LowerExp writes an exponent");
+    let exponent: i32 = exponent.parse().expect("LowerExp exponent is an integer");
+    if !(-4..16).contains(&exponent) {
+        let exp_sign = if exponent < 0 { '-' } else { '+' };
+        return format!("{sign}{mantissa}e{exp_sign}{:02}", exponent.abs());
+    }
+    let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+    if exponent < 0 {
+        let zeros = "0".repeat((-exponent - 1) as usize);
+        return format!("{sign}0.{zeros}{digits}");
+    }
+    let whole = exponent as usize + 1;
+    if digits.len() <= whole {
+        let zeros = "0".repeat(whole - digits.len());
+        format!("{sign}{digits}{zeros}.0")
+    } else {
+        format!("{sign}{}.{}", &digits[..whole], &digits[whole..])
+    }
+}
+
+/// A JSON number as Python's `json.dumps(json.loads(text))` writes it. An integer literal is an
+/// exact Python int and keeps its digits, whatever its size; anything with a fraction or an
+/// exponent is a float and takes [`py_float_repr`]. So `1e-7`, `0.00001` and `1E16` come out
+/// as `1e-07`, `1e-05` and `1e+16`: the request's own spelling does not reach the prompt.
+fn py_json_number(text: &str) -> String {
+    if !text.contains(['.', 'e', 'E']) {
+        return if text == "-0" {
+            "0".into()
+        } else {
+            text.to_string()
+        };
+    }
+    match text.parse::<f64>() {
+        Ok(value) => py_float_repr(value),
+        Err(_) => text.to_string(),
+    }
+}
+
+/// `json.dumps(v, ensure_ascii=False, separators=(",", ":"), sort_keys=sort)`: the compact form
+/// the template asks `tojson` for. Keys sort by code point at every depth when `sort` is set.
+fn inkling2_json(v: &Val, sort: bool, out: &mut String) {
+    match v {
+        Val::Arr(a) => {
+            out.push('[');
+            for (i, x) in a.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                inkling2_json(x, sort, out);
+            }
+            out.push(']');
+        }
+        Val::Obj(o) => {
+            let mut pairs: Vec<&(String, Val)> = o.iter().collect();
+            if sort {
+                pairs.sort_by(|a, b| a.0.cmp(&b.0));
+            }
+            out.push('{');
+            for (i, (k, val)) in pairs.into_iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push('"');
+                py_json_escape(k, out);
+                out.push_str("\":");
+                inkling2_json(val, sort, out);
+            }
+            out.push('}');
+        }
+        Val::Num(text) => out.push_str(&py_json_number(text)),
+        scalar => py_json(scalar, out),
+    }
+}
+
+/// One tool as the template declares it: `description`, `name`, `parameters` and `type` only,
+/// read from the tool's `function` object when it has one and from the tool itself otherwise;
+/// a missing or empty description, parameters or type takes the template's default.
+fn inkling2_tool_spec(tool: &Val) -> Result<Val, String> {
+    let outer = as_obj(tool).ok_or("inkling2: a tool definition must be an object")?;
+    let func = match val_get(outer, "function") {
+        Some(function) => {
+            as_obj(function).ok_or("inkling2: a tool's function must be an object")?
+        }
+        None => outer,
+    };
+    let name = val_get(func, "name").ok_or("inkling2: a tool definition needs a name")?;
+    let or_default = |obj: &[(String, Val)], key: &str, default: Val| {
+        val_get(obj, key)
+            .filter(|v| truthy(v))
+            .cloned()
+            .unwrap_or(default)
+    };
+    Ok(Val::Obj(vec![
+        (
+            "description".into(),
+            or_default(func, "description", Val::Str(String::new())),
+        ),
+        ("name".into(), name.clone()),
+        (
+            "parameters".into(),
+            or_default(func, "parameters", Val::Obj(Vec::new())),
+        ),
+        (
+            "type".into(),
+            or_default(outer, "type", Val::Str("function".into())),
+        ),
+    ]))
+}
+
+/// Exact reproduction of Inkling 2 Mini's pinned `chat_template.jinja` (sha256 53a9035f...;
+/// research/modelplan-onboarding-inkling2mini-20261121/chat/, goldens rendered by transformers
+/// 5.23.0 `render_jinja_template`). `tools_struct` are the request's tool objects (a tool
+/// wrapping a `function` object, or the function object itself); `effort` comes from
+/// [`inkling2_effort`] or [`inkling2_effort_number`].
+///
+/// The program: tools are declared first, as one `<|message_system|>tool_declare<|content_xml|>`
+/// message holding the sorted compact JSON of every tool. The system line
+/// `Thinking effort level: N` is always written, once, before the first message that is not a
+/// system message, or after the last message when every message is one. Each message is
+/// `{role marker}{name}{content marker}{body}<|end_message|>`: a tool result's name is its own
+/// `name` or the name of the call its `tool_call_id` matches, an assistant's is its `name`
+/// (`Turn::tool_name`). An assistant writes its reasoning as a `<|content_thinking|>` message,
+/// its text (skipped when empty beside reasoning or calls), then one
+/// `<|message_model|>{name}<|content_invoke_tool_json|>{"name":..,"args":{..}}` message a call,
+/// the arguments sorted by key at the top level only, and closes with
+/// `<|content_model_end_sampling|>`. The template never reads `add_generation_prompt`: the
+/// model opens its own message, so the prompt ends where the last message ends.
+///
+/// Image parts are refused: this engine serves the text program only.
+pub fn apply_inkling2_template(
+    turns: &[Turn],
+    tools_struct: &[Val],
+    effort: f64,
+) -> Result<String, String> {
+    const USER: &str = "<|message_user|>";
+    const MODEL: &str = "<|message_model|>";
+    const SYSTEM: &str = "<|message_system|>";
+    const TOOL: &str = "<|message_tool|>";
+    const TEXT: &str = "<|content_text|>";
+    const THINKING: &str = "<|content_thinking|>";
+    const INVOKE: &str = "<|content_invoke_tool_json|>";
+    const END: &str = "<|end_message|>";
+    const END_SAMPLING: &str = "<|content_model_end_sampling|>";
+
+    let effort = inkling2_effort_number(effort)?;
+    let effort_line = format!(
+        "{SYSTEM}{TEXT}Thinking effort level: {}{END}",
+        inkling2_effort_text(effort)
+    );
+    let mut out = String::new();
+    if !tools_struct.is_empty() {
+        let specs = tools_struct
+            .iter()
+            .map(inkling2_tool_spec)
+            .collect::<Result<Vec<Val>, String>>()?;
+        out.push_str(SYSTEM);
+        out.push_str("tool_declare<|content_xml|>");
+        inkling2_json(&Val::Arr(specs), true, &mut out);
+        out.push_str(END);
+    }
+
+    let mut effort_emitted = false;
+    for turn in turns {
+        let role_token = match turn.role.as_str() {
+            "user" => USER,
+            "assistant" => MODEL,
+            "system" => SYSTEM,
+            "tool" => TOOL,
+            other => return Err(format!("Unknown message role: {other}")),
+        };
+        if !effort_emitted && turn.role != "system" {
+            out.push_str(&effort_line);
+            effort_emitted = true;
+        }
+        let is_assistant = turn.role == "assistant";
+        let own_name = turn.tool_name.as_deref().filter(|name| !name.is_empty());
+        let mut header = role_token.to_string();
+        if turn.role == "tool" {
+            if let Some(name) = own_name {
+                header.push_str(name);
+            } else if let Some(id) = turn.tool_call_id.as_deref().filter(|id| !id.is_empty()) {
+                // every call of the conversation that carries this id names the result
+                for call in turns
+                    .iter()
+                    .filter(|prev| prev.role == "assistant")
+                    .flat_map(|prev| prev.tool_calls.iter())
+                    .filter(|call| call.id.as_deref() == Some(id))
+                {
+                    header.push_str(&call.name);
+                }
+            }
+        } else if is_assistant && let Some(name) = own_name {
+            header.push_str(name);
+        }
+
+        let reasoning = turn.reasoning.as_deref().filter(|r| !r.is_empty());
+        if is_assistant && let Some(reasoning) = reasoning {
+            out.push_str(&header);
+            out.push_str(THINKING);
+            out.push_str(reasoning);
+            out.push_str(END);
+        }
+        match &turn.parts {
+            // null or missing content: the template writes no message for it
+            None if turn.no_content => {}
+            None => {
+                let beside = is_assistant && (!turn.tool_calls.is_empty() || reasoning.is_some());
+                if !turn.content.is_empty() || !beside {
+                    out.push_str(&header);
+                    out.push_str(TEXT);
+                    out.push_str(&turn.content);
+                    out.push_str(END);
+                }
+            }
+            Some(parts) => {
+                for part in parts {
+                    match part {
+                        ContentPart::Text(text) => {
+                            out.push_str(&header);
+                            out.push_str(TEXT);
+                            out.push_str(text);
+                            out.push_str(END);
+                        }
+                        ContentPart::Image(_) => {
+                            return Err(
+                                "inkling2: image parts are not served (no vision program)".into()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        if is_assistant {
+            for call in &turn.tool_calls {
+                if let Some(name) = own_name
+                    && name != call.name
+                {
+                    return Err(format!(
+                        "assistant name {name} does not match its tool call {}",
+                        call.name
+                    ));
+                }
+                out.push_str(MODEL);
+                out.push_str(&call.name);
+                out.push_str(INVOKE);
+                out.push_str("{\"name\":\"");
+                py_json_escape(&call.name, &mut out);
+                out.push_str("\",\"args\":{");
+                let mut args: Vec<&(String, Val)> = call.args.iter().collect();
+                args.sort_by(|a, b| a.0.cmp(&b.0));
+                for (i, (key, value)) in args.into_iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    out.push('"');
+                    py_json_escape(key, &mut out);
+                    out.push_str("\":");
+                    inkling2_json(value, false, &mut out);
+                }
+                out.push_str("}}");
+                out.push_str(END);
+            }
+            out.push_str(END_SAMPLING);
+        }
+    }
+    if !effort_emitted {
+        out.push_str(&effort_line);
     }
     Ok(out)
 }
