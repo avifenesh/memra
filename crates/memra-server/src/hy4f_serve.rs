@@ -51,7 +51,11 @@
 //! backup that is refused (not a device fault) costs that request its drafts, never its answer:
 //! it is served on by the undrafted route's calls. Each session books one round's cache
 //! positions beside its own (the per-session draft state); the drafter's weights and call scratch
-//! are the route's, resident and grown in the warm-up before the book's ceiling is read.
+//! are the route's, resident and grown in the warm-up before the book's ceiling is read. The draft
+//! gate (`MEMRA_HY4F_DRAFT_GATE`, on) prices each round as it is drafted from the drafter's own
+//! probabilities, scaled by how the request's drafts held, against the route's measured call and
+//! draft costs, and verifies the depth with the most expected tokens per millisecond (`RoundPlan`,
+//! `Calib`, `Price`); a request whose rounds price no draft decodes a stretch undrafted (`Stretch`).
 //!
 //! Deliberate limits, stated: `response_format`/grammar refused by name; image and video parts
 //! refused (no Hy4 vision program); no prefix cache, no CUDA graphs, no batched decode across
@@ -64,7 +68,7 @@ use crate::route_telemetry::{RouteLoad, RouteRun, ServeStats};
 use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request, SpecUsage};
 use memra_engine::decode::StopReason;
 use memra_engine::dsv4_gpu::{Dsv4PenaltyCfg, Dsv4SampleCfg, dsv4_penalize_row, dsv4_sample_row};
-use memra_engine::dsv41_gpu::draft::{DraftGate, RowCost};
+use memra_engine::dsv41_gpu::draft::RowCost;
 use memra_engine::hy4f_route::{Ckpt, Dev, Route, Session, mem_available};
 use memra_tokenizer::Tokenizer;
 use std::collections::VecDeque;
@@ -218,8 +222,9 @@ struct EngineCfg {
     drafts: usize,
     /// `MEMRA_HY4F_DRAFT_FAULT`: the draft-fault gate's injection
     draft_fault: Option<DraftFault>,
-    /// `MEMRA_HY4F_DRAFT_GATE`: each round's depth is priced and a request whose rounds do not
-    /// pay stops drafting for a stretch (`DepthGate`); off, every round drafts `drafts`
+    /// `MEMRA_HY4F_DRAFT_GATE`: each round's depth is priced from the drafter's probabilities
+    /// (`RoundPlan`) and a request whose rounds price no draft decodes a stretch undrafted
+    /// (`Stretch`); off, every round drafts `drafts`
     draft_gate: bool,
 }
 
@@ -632,8 +637,14 @@ struct Active {
     draft_off: bool,
     /// DFly2 rounds, drafts and accepted drafts
     spec: SpecUsage,
-    /// DFly2: the request's draft depth (`DepthGate`)
-    gate: DepthGate,
+    /// DFly2: the request's undrafted stretch (`Stretch`)
+    stretch: Stretch,
+    /// DFly2: the request's ratio of held drafts to the drafter's claims (`Calib`), and the
+    /// drafter's probabilities of the drafts the next verify call scores
+    calib: Calib,
+    draft_q: Vec<f64>,
+    /// DFly2: rounds by verified depth (index 0: steps decoded without drafts by the gate)
+    depths: Vec<u64>,
 }
 
 /// A request past rendering, waiting for its memory.
@@ -774,7 +785,7 @@ fn choose(
 /// What the route's calls cost on this device, in milliseconds, filled from its own calls (an
 /// exponential average per size, seeded by the warm-up): a decode call by its rows (the anchor
 /// and the drafts it verifies, the ring backup, the choices and the rollback included) and a draft
-/// round by its drafts.
+/// round by the draft steps it ran.
 struct Price {
     verify: RowCost,
     draft: RowCost,
@@ -787,113 +798,163 @@ impl Price {
             draft: RowCost::new(max_drafts.max(1)),
         }
     }
-
-    /// The time of a step that drafts `k` (the draft round, then the call verifying the anchor
-    /// and the `k` drafts); None while the tables cannot price it.
-    fn step_ms(&self, k: usize) -> Option<f64> {
-        let call = self.verify.ms(k + 1)?;
-        if k == 0 {
-            return Some(call);
-        }
-        Some(call + self.draft.ms(k)?)
-    }
 }
 
-/// A request's draft depth, round by round, from what its own rounds kept. `surv[j]` is the running
-/// chance that draft `j + 1` holds when every draft before it held, updated by each verified round
-/// at the depths it reached; it starts at 1 (drafts hold until the request's rounds show
-/// otherwise, which is the ungated route's full round). A round drafts the depth, 1 to the route's
-/// count, with the most expected tokens per millisecond of its step at the route's prices
-/// (`Price`); a deeper round is taken only when it is strictly better. Whether the request drafts at
-/// all is the deepseek-v4.1 route's gate (`DraftGate`): a request whose drafted steps yield less
-/// than its one-token steps would stops drafting for a stretch (8 steps, doubling to 64 while it
-/// keeps happening) and then tries again from an even start. A depth only decides which drafts a
-/// verify call scores: the tokens are the route's own choices either way.
+/// The drafter's probability of its draft: the softmax at temperature `t` of its row at `id`.
+fn draft_prob(row: &[f32], id: usize, t: f64) -> f64 {
+    let mx = row[id] as f64;
+    let z: f64 = row.iter().map(|&x| ((x as f64 - mx) / t).exp()).sum();
+    1.0 / z
+}
+
+/// One round of the draft gate, priced as it is drafted. Each draft step adds a draft the drafter
+/// holds with probability `q` (its softmax at the request's temperature, 1 for a greedy request);
+/// draft `j` survives the verify call with the product of the probabilities of drafts 1 to `j`.
+/// The round verifies the depth, 0 to the steps it ran, with the most expected tokens per
+/// millisecond of its step (the draft steps it ran and the verify call of the anchor and the
+/// depth's drafts, at the route's prices), a deeper one only when strictly better; it drafts on
+/// while one more draft that surely held could still beat that. While the route's tables cannot
+/// price a shape the round drafts and verifies everything (those calls fill the tables). A depth
+/// decides only which drafts a verify call scores: the tokens are the route's own choices.
 #[derive(Debug, Clone)]
-struct DepthGate {
-    surv: Vec<f64>,
-    stop: DraftGate,
-    /// the last decision was a stretch's undrafted step: the next round starts even
-    paused: bool,
-    /// rounds by depth (index 0: steps the gate kept undrafted)
-    depths: Vec<u64>,
+struct RoundPlan {
+    /// expected tokens of a verify call of depth `j`, `j` from 0 to the steps run
+    exp: Vec<f64>,
+    /// the survival of the last draft
+    alive: f64,
 }
 
-impl DepthGate {
-    /// Weight of a new round in the running survival (the house's running-average weight).
-    const ALPHA: f64 = 0.25;
-
-    fn new(max: usize) -> Self {
+impl RoundPlan {
+    fn new() -> Self {
         Self {
-            surv: vec![1.0; max],
-            stop: DraftGate::new(),
-            paused: false,
-            depths: vec![0; max + 1],
+            exp: vec![1.0],
+            alive: 1.0,
         }
     }
 
-    /// Expected tokens of a step that drafts `k`: its anchor's next token always, and draft `j`
-    /// when it and every draft before it hold.
-    fn expected_tokens(&self, k: usize) -> f64 {
-        let mut alive = 1.0;
-        let mut tokens = 1.0;
-        for s in self.surv.iter().take(k) {
-            alive *= s;
-            tokens += alive;
-        }
-        tokens
+    fn steps(&self) -> usize {
+        self.exp.len() - 1
     }
 
-    /// The drafts of the next round, 0 to `max` (0: the step is a one-token call).
-    fn depth(&mut self, max: usize, price: &Price) -> usize {
-        let max = max.min(self.surv.len());
-        if max == 0 {
-            return 0;
-        }
-        if !self.stop.drafts() {
-            self.paused = true;
-            self.depths[0] += 1;
-            return 0;
-        }
-        if self.paused {
-            self.paused = false;
-            self.surv.fill(1.0);
-        }
-        let mut best = (max, f64::NEG_INFINITY);
-        let mut priced = true;
-        for k in 1..=max {
-            let Some(ms) = price.step_ms(k) else {
-                priced = false;
-                break;
-            };
-            let rate = self.expected_tokens(k) / ms;
+    /// A draft step drew a draft the drafter holds with probability `q`.
+    fn push(&mut self, q: f64) {
+        self.alive *= q.clamp(0.0, 1.0);
+        let last = *self.exp.last().expect("never empty");
+        self.exp.push(last + self.alive);
+    }
+
+    /// The depth to verify after the steps run so far and its tokens per millisecond; None while
+    /// the tables cannot price it.
+    fn best(&self, price: &Price) -> Option<(usize, f64)> {
+        let s = self.steps();
+        let drafted = if s == 0 { 0.0 } else { price.draft.ms(s)? };
+        let mut best = (0usize, f64::NEG_INFINITY);
+        for (k, e) in self.exp.iter().enumerate() {
+            let rate = e / (drafted + price.verify.ms(k + 1)?);
             if rate > best.1 {
                 best = (k, rate);
             }
         }
-        let k = if priced { best.0 } else { max };
-        self.depths[k] += 1;
-        k
+        Some(best)
     }
 
-    /// A verified round drafted `drafted` and the route's choices kept the first `kept` of them;
-    /// `step_ms` is its step at the route's prices and `plain_ms` a one-token step's.
-    fn observe(
-        &mut self,
-        drafted: usize,
-        kept: usize,
-        step_ms: Option<f64>,
-        plain_ms: Option<f64>,
-    ) {
-        for j in 0..drafted.min(self.surv.len()) {
-            let held = if j < kept { 1.0 } else { 0.0 };
-            self.surv[j] += Self::ALPHA * (held - self.surv[j]);
-            if j >= kept {
-                break;
-            }
+    /// Whether the round drafts another step, `max` the most it may run.
+    fn go_on(&self, price: &Price, max: usize) -> bool {
+        let s = self.steps();
+        if s >= max {
+            return false;
         }
-        if let (Some(step), Some(plain)) = (step_ms, plain_ms) {
-            self.stop.observe(kept + 1, step, plain);
+        let (Some((_, best)), Some(d), Some(v)) = (
+            self.best(price),
+            price.draft.ms(s + 1),
+            price.verify.ms(s + 2),
+        ) else {
+            return true;
+        };
+        let e = *self.exp.last().expect("never empty");
+        (e + self.alive) / (d + v) > best
+    }
+
+    /// The depth the round's verify call scores.
+    fn depth(&self, price: &Price) -> usize {
+        self.best(price).map_or(self.steps(), |b| b.0)
+    }
+}
+
+/// How far a request's drafts hold against what the drafter claims: the running ratio of its
+/// verified drafts that held to the probabilities the drafter gave them (each draft up to the
+/// first one that failed), starting at 1 with the weight of two drafts. The drafter is
+/// over-confident in the middle of its range on this artifact (drafts it gave 0.6 to 0.8 held
+/// 0.46 of the time over the lane's replays) and the shortfall moves with the text, so each
+/// request scales the drafter's probabilities by its own ratio.
+#[derive(Debug, Clone)]
+struct Calib {
+    held: f64,
+    claimed: f64,
+}
+
+impl Calib {
+    /// Weight of a new draft in the running sums (the house's running-average weight).
+    const ALPHA: f64 = 0.25;
+    /// The start's weight, in drafts.
+    const PRIOR: f64 = 2.0;
+
+    fn new() -> Self {
+        Self {
+            held: 0.0,
+            claimed: 0.0,
+        }
+    }
+
+    fn scale(&self) -> f64 {
+        (self.held + Self::PRIOR) / (self.claimed + Self::PRIOR)
+    }
+
+    /// A verified round: the drafter's probabilities of its drafts and how many held.
+    fn observe(&mut self, q: &[f64], kept: usize) {
+        for (j, &qj) in q.iter().enumerate().take(kept + 1) {
+            self.claimed = self.claimed * (1.0 - Self::ALPHA) + qj;
+            self.held = self.held * (1.0 - Self::ALPHA) + if j < kept { 1.0 } else { 0.0 };
+        }
+    }
+}
+
+/// A request whose rounds price no draft at all: the gate decodes it with one-token calls for a
+/// stretch (8 steps, doubling to 64 while it keeps happening, back to 8 once a round prices a
+/// draft), then prices a round again. The stretch saves the draft step such a round pays.
+#[derive(Debug, Clone)]
+struct Stretch {
+    pause: usize,
+    len: usize,
+}
+
+impl Stretch {
+    /// Undrafted steps of the first stretch and of the longest (the deepseek-v4.1 route's).
+    const LEN: (usize, usize) = (8, 64);
+
+    fn new() -> Self {
+        Self {
+            pause: 0,
+            len: Self::LEN.0,
+        }
+    }
+
+    /// Whether the next step drafts; an undrafted step counts the stretch down.
+    fn drafts(&mut self) -> bool {
+        if self.pause > 0 {
+            self.pause -= 1;
+            return false;
+        }
+        true
+    }
+
+    /// A round priced `k` drafts.
+    fn priced(&mut self, k: usize) {
+        if k == 0 {
+            self.pause = self.len;
+            self.len = (self.len * 2).min(Self::LEN.1);
+        } else {
+            self.len = Self::LEN.0;
         }
     }
 }
@@ -1441,7 +1502,10 @@ fn serve_loop(
                         drafts: Vec::new(),
                         draft_off: false,
                         spec: SpecUsage::default(),
-                        gate: DepthGate::new(cfg.drafts),
+                        stretch: Stretch::new(),
+                        calib: Calib::new(),
+                        draft_q: Vec::new(),
+                        depths: vec![0; cfg.drafts + 1],
                     });
                 }
                 Ok(None) => {
@@ -1663,12 +1727,7 @@ fn serve_loop(
                 {
                     failed = Some(format!("hy_v4_flash route: rollback: {e}"));
                 }
-                a.gate.observe(
-                    drafted,
-                    matched,
-                    up.price.step_ms(drafted),
-                    up.price.step_ms(0),
-                );
+                a.calib.observe(&std::mem::take(&mut a.draft_q), matched);
             }
             if is_prefill_end.is_none() && failed.is_none() {
                 // the decode call's cost by its rows: the backup, the call, the choices, the
@@ -1702,44 +1761,44 @@ fn serve_loop(
             // the next round, right after the call that scored its source row
             let room = (a.cap - a.sess.positions())
                 .min(a.stream.budget.saturating_sub(a.stream.ids.len()));
-            let k = if a.draft_off || cfg.drafts == 0 {
+            let mut max = if a.draft_off {
                 0
-            } else if cfg.draft_gate {
-                a.gate
-                    .depth(cfg.drafts.min(room.saturating_sub(1)), &up.price)
             } else {
-                let k = cfg.drafts.min(room.saturating_sub(1));
-                a.gate.depths[k] += 1;
-                k
+                cfg.drafts.min(room.saturating_sub(1))
             };
-            if k > 0 {
+            if max > 0 && cfg.draft_gate && !a.stretch.drafts() {
+                a.depths[0] += 1;
+                max = 0;
+            }
+            if max > 0 {
                 let src = if verify {
                     kept.max(1) - 1
                 } else {
                     tokens.len() - 1
                 };
-                let route = &mut up.route;
-                // each draft is the request's own choice on the drafter's row at the draft's
-                // position: greedy the first maximum, sampled the position-keyed draw (coupled to
-                // the target's draw there), the penalty window grown by the drafts before it
-                let pos0 = a.prompt.len() + a.stream.ids.len();
-                let (sample, pen) = (a.sample.as_ref(), a.pen.as_ref());
-                let mut window = if pen.is_some() {
-                    a.window.clone()
-                } else {
-                    Vec::new()
-                };
-                let mut pick = |s: usize, row: &[f32]| -> Result<u32, String> {
-                    let d = choose(row.to_vec(), pos0 + s, sample, pen, &window)?;
-                    if pen.is_some() {
-                        window.push(d);
+                // greedy drafts; with the gate each step prices the round (`RoundPlan`) from the
+                // drafter's probability of its draft at the request's temperature
+                let tq = a.sample.as_ref().map_or(1.0, |c| f64::from(c.temperature));
+                let gate = cfg.draft_gate;
+                let price = &up.price;
+                let scale = a.calib.scale();
+                let mut plan = RoundPlan::new();
+                let mut claims = Vec::with_capacity(max);
+                let mut pick = |_s: usize, row: &[f32]| -> Result<(u32, bool), String> {
+                    let d = argmax(row);
+                    if !gate {
+                        return Ok((d as u32, true));
                     }
-                    Ok(d)
+                    let q = draft_prob(row, d, tq);
+                    claims.push(q);
+                    plan.push(q * scale);
+                    Ok((d as u32, plan.go_on(price, max)))
                 };
+                let route = &mut up.route;
                 let td = Instant::now();
                 let drafted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     route
-                        .draft_in(&mut a.sess, src, t, k, None, false, Some(&mut pick))
+                        .draft_in(&mut a.sess, src, t, max, None, false, Some(&mut pick))
                         .and_then(|d| {
                             if cfg.draft_fault == Some(DraftFault::Draft(a.spec.rounds)) {
                                 Err(INJECTED.to_string())
@@ -1749,9 +1808,20 @@ fn serve_loop(
                         })
                 }));
                 match drafted {
-                    Ok(Ok(d)) => {
-                        up.price.draft.observe(k, td.elapsed().as_secs_f64() * 1e3);
+                    Ok(Ok(mut d)) => {
+                        let steps = d.ids.len();
+                        up.price
+                            .draft
+                            .observe(steps, td.elapsed().as_secs_f64() * 1e3);
+                        let k = if gate { plan.depth(&up.price) } else { steps };
+                        if gate {
+                            a.stretch.priced(k);
+                        }
+                        a.depths[k] += 1;
+                        d.ids.truncate(k);
+                        claims.truncate(k);
                         a.drafts = d.ids;
+                        a.draft_q = claims;
                     }
                     Ok(Err(e)) => {
                         // a drafter fault costs speed, never the answer: the request goes on
@@ -1900,7 +1970,7 @@ fn finish(mut a: Active, health: &Arc<RouteHealth>) {
             u.drafted,
             u.accepted,
             a.stream.ids.len(),
-            a.gate.depths
+            a.depths
         );
     }
     a.stream.finish(a.prompt.len(), elapsed, spec);
@@ -2026,15 +2096,37 @@ mod tests {
         assert!(resolve_draft_fault(Some("draft:x")).is_err());
     }
 
-    /// Prices like the GB10 route's at five drafts: a one-token step 171 ms, each verified row and
-    /// each draft about 14 ms more.
+    /// The GB10 route's prices at five drafts on the long probe (`hy4f-spec cost`, sampled): a
+    /// one-token call 185 ms, each verified row about 20 ms more, a draft step about 14 ms.
     fn gb10_price() -> Price {
         let mut p = Price::new(5);
-        p.verify.observe(1, 171.0);
-        p.verify.observe(6, 245.0);
-        p.draft.observe(1, 20.0);
-        p.draft.observe(5, 70.0);
+        for (rows, ms) in [
+            (1, 185.2),
+            (2, 208.2),
+            (3, 226.4),
+            (4, 245.7),
+            (5, 263.4),
+            (6, 285.1),
+        ] {
+            p.verify.observe(rows, ms);
+        }
+        for (steps, ms) in [(1, 22.7), (2, 36.5), (3, 51.0), (4, 64.2), (5, 78.8)] {
+            p.draft.observe(steps, ms);
+        }
         p
+    }
+
+    /// Draft a round with the drafter probabilities `qs`, as the serve loop does: the steps it
+    /// runs and the depth it verifies.
+    fn round(qs: &[f64], price: &Price, max: usize) -> (usize, usize) {
+        let mut plan = RoundPlan::new();
+        for &q in qs {
+            plan.push(q);
+            if !plan.go_on(price, max) {
+                break;
+            }
+        }
+        (plan.steps(), plan.depth(price))
     }
 
     #[test]
@@ -2046,76 +2138,90 @@ mod tests {
     }
 
     #[test]
-    fn a_round_drafts_the_depth_with_the_most_tokens_a_millisecond() {
+    fn a_round_verifies_the_depth_with_the_most_tokens_a_millisecond() {
         let price = gb10_price();
-        // a fresh request: every draft assumed to hold, the full round
-        let mut g = DepthGate::new(5);
-        assert_eq!(g.depth(5, &price), 5);
-        // rounds that keep every draft: still the full round
-        for _ in 0..8 {
-            g.observe(5, 5, price.step_ms(5), price.step_ms(0));
-        }
-        assert_eq!(g.depth(5, &price), 5);
-        // prose: about half the first drafts hold, a quarter of the second, almost no deeper one
-        let mut p = DepthGate::new(5);
-        p.surv = vec![0.5, 0.5, 0.2, 0.1, 0.1];
-        let k = p.depth(5, &price);
+        // drafts the drafter is sure of: the full round
+        assert_eq!(round(&[0.99; 5], &price, 5), (5, 5));
+        // the room left caps it
+        assert_eq!(round(&[0.99; 5], &price, 3), (3, 3));
+        // prose: a likely first draft, then doubtful ones
+        let (steps, k) = round(&[0.8, 0.5, 0.3, 0.3, 0.3], &price, 5);
         assert!((1..=2).contains(&k), "prose depth {k}");
-        // the room left caps the depth
-        assert_eq!(g.depth(3, &price), 3);
-        // tables that cannot price a round yet: the full round
-        let mut q = DepthGate::new(5);
-        q.surv = vec![0.5, 0.5, 0.2, 0.1, 0.1];
-        assert_eq!(q.depth(5, &Price::new(5)), 5);
-        // a deeper round only when strictly better: drafts that never hold past the first
-        let mut r = DepthGate::new(5);
-        r.surv = vec![0.9, 0.0, 0.0, 0.0, 0.0];
-        assert_eq!(r.depth(5, &price), 1);
-        assert!((r.expected_tokens(5) - 1.9).abs() < 1e-12);
-    }
-
-    #[test]
-    fn survival_moves_only_at_the_depths_a_round_reached() {
-        let mut g = DepthGate::new(5);
-        // two drafts held, the third did not: depths 4 and 5 were not reached
-        g.observe(5, 2, None, None);
-        assert_eq!(g.surv, vec![1.0, 1.0, 0.75, 1.0, 1.0]);
-        // a round of one draft that held
-        g.observe(1, 1, None, None);
-        assert_eq!(g.surv, vec![1.0, 1.0, 0.75, 1.0, 1.0]);
-        // nothing held
-        g.observe(5, 0, None, None);
-        assert_eq!(g.surv, vec![0.75, 1.0, 0.75, 1.0, 1.0]);
-    }
-
-    #[test]
-    fn a_request_whose_rounds_do_not_pay_stops_drafting_for_a_stretch() {
-        let price = gb10_price();
-        let mut g = DepthGate::new(5);
-        // rounds that keep nothing: each step costs more than a one-token step and yields one token
-        let mut rounds = 0;
-        loop {
-            let k = g.depth(5, &price);
-            if k == 0 {
-                break;
-            }
-            g.observe(k, 0, price.step_ms(k), price.step_ms(0));
-            rounds += 1;
-            assert!(rounds < 16, "never stopped");
-        }
-        assert_eq!(
-            rounds, 1,
-            "one round at a third the one-token rate ends drafting"
+        assert!(
+            steps <= 3,
+            "drafted on past any chance of paying: {steps} steps"
         );
-        // the stretch: 8 undrafted steps (the one just taken included), then a round from an
-        // even start
-        let mut undrafted = 1;
-        while g.depth(5, &price) == 0 {
+        // a hopeless first draft: one step, a one-token call
+        assert_eq!(round(&[0.05; 5], &price, 5), (1, 0));
+        // tables that cannot price yet: every draft drafted and verified
+        assert_eq!(round(&[0.05; 5], &Price::new(5), 5), (5, 5));
+        // rows that cost almost nothing more verify doubtful drafts too
+        let mut flat = Price::new(5);
+        flat.verify.observe(1, 185.0);
+        flat.verify.observe(6, 186.0);
+        flat.draft.observe(1, 1.0);
+        flat.draft.observe(5, 2.0);
+        assert_eq!(round(&[0.8, 0.5, 0.3, 0.3, 0.3], &flat, 5).1, 5);
+    }
+
+    #[test]
+    fn expected_tokens_are_the_survivals_summed() {
+        let mut plan = RoundPlan::new();
+        for q in [0.5, 0.5, 2.0] {
+            plan.push(q);
+        }
+        // 1, then 0.5, 0.25 and a probability clamped to 1
+        assert_eq!(plan.exp, vec![1.0, 1.5, 1.75, 2.0]);
+    }
+
+    #[test]
+    fn a_requests_drafts_scale_the_drafters_claims_by_how_they_held() {
+        let mut c = Calib::new();
+        assert_eq!(c.scale(), 1.0);
+        // drafts claimed at 0.8 that held half the time: the scale falls under one (the running
+        // sums settle at 1.71 held of 3.2 claimed, beside the start's 2 of 2)
+        for _ in 0..40 {
+            c.observe(&[0.8, 0.8], 1);
+        }
+        assert!((c.scale() - 3.714 / 5.2).abs() < 1e-3, "{}", c.scale());
+        // only the drafts up to the first that failed are counted
+        let mut d = Calib::new();
+        d.observe(&[0.9, 0.9, 0.9, 0.9, 0.9], 0);
+        assert!((d.claimed - 0.9).abs() < 1e-12 && d.held == 0.0);
+        // drafts that always hold at a claim of 0.5: the scale rises over one (4 held of 2
+        // claimed, beside the start's 2 of 2)
+        let mut e = Calib::new();
+        for _ in 0..40 {
+            e.observe(&[0.5], 1);
+        }
+        assert!((e.scale() - 1.5).abs() < 1e-3, "{}", e.scale());
+    }
+
+    #[test]
+    fn a_request_whose_rounds_price_no_draft_decodes_a_stretch_undrafted() {
+        let mut st = Stretch::new();
+        assert!(st.drafts());
+        st.priced(0);
+        let mut undrafted = 0;
+        while !st.drafts() {
             undrafted += 1;
         }
         assert_eq!(undrafted, 8);
-        assert_eq!(g.surv, vec![1.0; 5]);
-        assert_eq!(g.depths[0], 8);
+        // again: twice as long
+        st.priced(0);
+        let mut undrafted = 0;
+        while !st.drafts() {
+            undrafted += 1;
+        }
+        assert_eq!(undrafted, 16);
+        // a round that priced a draft: back to the first stretch
+        st.priced(2);
+        st.priced(0);
+        let mut undrafted = 0;
+        while !st.drafts() {
+            undrafted += 1;
+        }
+        assert_eq!(undrafted, 8);
     }
 
     #[test]
