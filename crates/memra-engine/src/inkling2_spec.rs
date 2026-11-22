@@ -48,6 +48,8 @@ pub struct SpecStats {
     pub decode_s: f64,
     /// Committed tokens after the prompt.
     pub generated: usize,
+    /// The output length at which an adaptive request stopped speculating, if it did.
+    pub stopped_at: Option<usize>,
 }
 
 impl SpecStats {
@@ -199,6 +201,10 @@ pub fn generate(
     )
 }
 
+/// A measurement arm (`--ks 99`): a speculative request that never verifies, so every step is a plain
+/// step with its taps captured and held for the drafter: the per-step cost of being speculative.
+pub const PLAIN_ARM: usize = 99;
+
 /// The proposal length of each verify call when a request asks for an adaptive one (`k == 0`):
 /// the length that maximizes expected committed tokens per second of a step, or a plain one-row
 /// step when no length beats it by `MARGIN`. Expected tokens come from the request's own
@@ -220,10 +226,30 @@ pub struct AdaptiveK {
     probe_every: usize,
     first_plain: Vec<f64>,
     probing: bool,
-    /// Realized committed tokens per second of each length (an exponential average of the
-    /// request's own steps); a measured length is priced by this, not by the model.
-    realized: Vec<Option<f64>>,
+    /// Committed tokens and seconds of each length's steps in this request, both decayed by
+    /// DECAY at each new step of that length. A measured length is priced by their ratio with a
+    /// prior of PRIOR_STEPS plain steps at the plain rate, so one lucky step does not buy a run
+    /// of losing ones.
+    tokens: Vec<f64>,
+    secs: Vec<f64>,
+    /// The first verify accepted every proposal (the exploration then tries the longest).
+    first_full: bool,
+    /// Probes in a row that did not make speculation pay; at STOP_AFTER the request stops
+    /// speculating (and stops capturing taps).
+    losing_probes: usize,
+    stopped: bool,
 }
+
+/// Losing probes in a row after which a request stops speculating. Each losing probe costs about
+/// one plain step over a plain decode, and the exploration about one more, so a request whose
+/// text the drafter cannot predict loses at most about three plain steps, then runs at the plain
+/// rate with no capture.
+const STOP_AFTER: usize = 2;
+
+/// Weight of a length's older steps at each new one.
+const DECAY: f64 = 0.9;
+/// Plain steps' worth of prior on a measured length's rate.
+const PRIOR_STEPS: f64 = 2.0;
 
 /// A length must beat a plain step by this factor to be taken.
 const MARGIN: f64 = 1.05;
@@ -240,7 +266,11 @@ impl AdaptiveK {
             probe_every: 16,
             first_plain: Vec::new(),
             probing: false,
-            realized: vec![None; max + 1],
+            tokens: vec![0.0; max + 1],
+            secs: vec![0.0; max + 1],
+            first_full: false,
+            losing_probes: 0,
+            stopped: false,
         }
     }
 
@@ -267,12 +297,24 @@ impl AdaptiveK {
         (self.succ / (self.succ + self.fail)).min(0.999)
     }
 
+    /// The measured rate of length k, shrunk toward the plain rate.
+    fn realized(&self, k: usize) -> Option<f64> {
+        if self.secs[k] <= 0.0 {
+            return None;
+        }
+        let (prior_tok, prior_s) = match self.time[0] {
+            Some(t) => (PRIOR_STEPS, PRIOR_STEPS * t),
+            None => (0.0, 0.0),
+        };
+        Some((self.tokens[k] + prior_tok) / (self.secs[k] + prior_s))
+    }
+
     /// The best length and its expected tokens per second, over 1..=max.
     fn best_length(&self) -> Option<(usize, f64)> {
         let a = self.accept_rate();
         let mut best: Option<(usize, f64)> = None;
         for k in 1..=self.max {
-            let rate = match self.realized[k] {
+            let rate = match self.realized(k) {
                 Some(r) => r,
                 None => {
                     let Some(t) = self.step_time(k) else { continue };
@@ -289,10 +331,15 @@ impl AdaptiveK {
     /// The length of the next verify call (1..=max), or 0 for a plain one-row step.
     pub fn choose(&mut self) -> usize {
         self.probing = false;
+        if self.stopped {
+            return 0;
+        }
+        // exploration: a short verify, the longest only when it accepted everything, then
+        // plain steps for the plain step's time
         match self.steps {
-            0 => return self.max,
-            1 => return 2.min(self.max),
-            2..=4 => return 0,
+            0 => return 2.min(self.max),
+            1 if self.first_full => return self.max,
+            1..=4 => return 0,
             _ => {}
         }
         let plain = self.time[0].map_or(0.0, |t| 1.0 / t);
@@ -307,6 +354,11 @@ impl AdaptiveK {
             }
             _ => 0,
         }
+    }
+
+    /// The request has stopped speculating.
+    pub fn stopped(&self) -> bool {
+        self.stopped
     }
 
     /// A finished step of length `k` (0: a plain step) that accepted `accepted` proposals in
@@ -326,11 +378,11 @@ impl AdaptiveK {
             return;
         }
         self.plain_run = 0;
-        let r = (accepted + 1) as f64 / secs.max(1e-9);
-        self.realized[k] = Some(match self.realized[k] {
-            Some(o) => 0.8 * o + 0.2 * r,
-            None => r,
-        });
+        if self.steps == 1 {
+            self.first_full = accepted == k;
+        }
+        self.tokens[k] = DECAY * self.tokens[k] + (accepted + 1) as f64;
+        self.secs[k] = DECAY * self.secs[k] + secs;
         self.succ += accepted as f64;
         if accepted < k {
             self.fail += 1.0;
@@ -347,6 +399,8 @@ impl AdaptiveK {
             } else {
                 (self.probe_every * 2).min(256)
             };
+            self.losing_probes = if won { 0 } else { self.losing_probes + 1 };
+            self.stopped = self.losing_probes >= STOP_AFTER;
         }
     }
 }
@@ -449,7 +503,11 @@ pub fn generate_arm(
 ) -> Result<(Vec<u32>, SpecStats), String> {
     let slots = tap_slots(route, arms)?;
     // k == 0: the request's proposal length adapts (`AdaptiveK`) up to the block's
-    let kmax = if k == 0 { drafter.g.rows - 1 } else { k };
+    let kmax = if k == 0 || k == PLAIN_ARM {
+        drafter.g.rows - 1
+    } else {
+        k
+    };
     if kmax > drafter.g.rows - 1 {
         return Err(format!(
             "{kmax} proposals; a block holds {}",
@@ -560,7 +618,11 @@ fn generate_inner(
                 route.context
             ));
         }
-        let want = adapt.as_mut().map_or(k, AdaptiveK::choose);
+        let want = if k == PLAIN_ARM {
+            0
+        } else {
+            adapt.as_mut().map_or(k, AdaptiveK::choose)
+        };
         let kk = want.min(n - out.len()).min(room - 1);
         let t_step = std::time::Instant::now();
         if kk == 0 {
@@ -568,10 +630,17 @@ fn generate_inner(
                 Sampling::Greedy => Head::LastArgmax,
                 Sampling::Sample { .. } => Head::All,
             };
+            // a request that stopped speculating stops capturing: its plain steps are plain decode
+            if adapt.as_ref().is_some_and(AdaptiveK::stopped) && route.captured().is_some() {
+                route.set_capture(&[])?;
+                stats.stopped_at = Some(out.len());
+            }
             let o = route.forward(&[anchor], head, None)?;
-            let cap = route.captured().ok_or("capture is off")?;
-            // held, and committed with the next proposal's batch: a plain step stays a plain step
-            drafter.stage(&route.dev, cap, chunk, 0, 1)?;
+            if let Some(cap) = route.captured() {
+                // held, and committed with the next proposal's batch: a plain step stays a plain
+                // step
+                drafter.stage(&route.dev, cap, chunk, 0, 1)?;
+            }
             anchor = match sampling {
                 Sampling::Greedy => o.argmax[0],
                 Sampling::Sample { temperature, .. } => {
@@ -897,11 +966,11 @@ mod tests {
     /// with high acceptance and a cheap extra row it goes long, with low acceptance short.
     #[test]
     fn adaptive_k_follows_acceptance_and_step_time() {
-        // exploration: the longest, 2, then three plain steps
+        // exploration: 2, the longest after a full accept, then three plain steps
         let mut a = AdaptiveK::new(7);
-        for (want, (acc, secs)) in [7, 2, 0, 0, 0].into_iter().zip([
-            (7, 0.090),
+        for (want, (acc, secs)) in [2, 7, 0, 0, 0].into_iter().zip([
             (2, 0.052),
+            (7, 0.090),
             (0, 0.021),
             (0, 0.040),
             (0, 0.021),
@@ -916,8 +985,9 @@ mod tests {
         }
         assert_eq!(a.choose(), 7, "every proposal accepted: the longest");
         let mut b = AdaptiveK::new(7);
-        for (k, secs) in [(7, 0.090), (2, 0.052), (0, 0.021), (0, 0.021), (0, 0.021)] {
-            b.choose();
+        // nothing accepted: the exploration skips the longest
+        for (k, secs) in [(2, 0.052), (0, 0.021), (0, 0.021), (0, 0.021), (0, 0.021)] {
+            assert_eq!(b.choose(), k);
             b.record(k, 0, secs);
         }
         assert_eq!(b.choose(), 0, "nothing accepted: plain steps");
@@ -929,9 +999,27 @@ mod tests {
             }
             b.record(k, 0, if k > 0 { 0.052 } else { 0.021 });
         }
-        // the first probe when the plain run reaches 16 (3 plain steps came from the exploration),
-        // then a losing probe doubles the interval: 32, then 64 plain steps
-        assert_eq!(&probes[..3], &[13, 13 + 33, 13 + 33 + 65], "{probes:?}");
+        // the first probe when the plain run reaches 16 (4 plain steps came from the exploration),
+        // then a losing probe doubles the interval; after the second losing one the request
+        // stops speculating
+        assert_eq!(&probes[..], &[12, 12 + 33], "{probes:?}");
+        assert!(b.stopped());
+        // one lucky K = 2 step among losing ones buys no run of them: after a 3-token step,
+        // the next losing step already falls back to plain
+        let mut c = AdaptiveK::new(7);
+        for (k, acc, secs) in [
+            (2, 0, 0.034),
+            (0, 0, 0.021),
+            (0, 0, 0.021),
+            (0, 0, 0.021),
+            (0, 0, 0.021),
+        ] {
+            assert_eq!(c.choose(), k);
+            c.record(k, acc, secs);
+        }
+        c.record(2, 2, 0.034);
+        c.record(2, 0, 0.034);
+        assert_eq!(c.choose(), 0, "{:?}", c.realized(2));
     }
 
     #[test]

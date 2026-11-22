@@ -313,25 +313,6 @@ fn run() -> Result<(), String> {
         memra_engine::inkling2_spec::profile_verify(&mut route, &prompts[0].2, a.profile_rows, 10)?;
         return Ok(());
     }
-    if a.bench > 0 {
-        for (id, kind, ids) in &prompts {
-            let c = bench_costs(&mut route, &mut drafter, ids, g.rows, a.bench)?;
-            writeln!(
-                out,
-                "{}",
-                serde_json::json!({"id": id, "kind": kind, "bench": {"reps": a.bench,
-                    "prompt_tokens": ids.len(), "plain_step_ms": c.plain_step_ms,
-                    "verify_ms_by_rows": c.verify_ms, "draft_ms_by_k": c.draft_ms,
-                    "commit_rows_ms": c.commit_rows_ms}})
-            )
-            .map_err(|e| e.to_string())?;
-            eprintln!(
-                "bench {id}: plain {:.2} ms, verify {:?} ms, draft {:?} ms, commit {:.3} ms",
-                c.plain_step_ms, c.verify_ms, c.draft_ms, c.commit_rows_ms
-            );
-        }
-        return Ok(());
-    }
     if !a.draft_nv_sweep.is_empty() {
         let st = nv_st.as_ref().ok_or("--draft-nv-sweep needs --draft-nv")?;
         let k = *a.ks.first().ok_or("--draft-nv-sweep needs --ks K")?;
@@ -419,6 +400,25 @@ fn run() -> Result<(), String> {
         } else {
             Err(format!("{failed} sweep runs differ from plain greedy"))
         };
+    }
+    if a.bench > 0 {
+        for (id, kind, ids) in &prompts {
+            let c = bench_costs(&mut route, &mut drafter, ids, g.rows, a.bench)?;
+            writeln!(
+                out,
+                "{}",
+                serde_json::json!({"id": id, "kind": kind, "bench": {"reps": a.bench,
+                    "prompt_tokens": ids.len(), "plain_step_ms": c.plain_step_ms,
+                    "verify_ms_by_rows": c.verify_ms, "draft_ms_by_k": c.draft_ms,
+                    "commit_rows_ms": c.commit_rows_ms, "graph_steps": route.graph_steps.get()}})
+            )
+            .map_err(|e| e.to_string())?;
+            eprintln!(
+                "bench {id}: plain {:.2} ms, verify {:?} ms, draft {:?} ms, commit {:.3} ms",
+                c.plain_step_ms, c.verify_ms, c.draft_ms, c.commit_rows_ms
+            );
+        }
+        return Ok(());
     }
     if let Some(dir) = &a.per_position {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -513,7 +513,7 @@ fn run() -> Result<(), String> {
                     "temperature": a.sample, "k": k, "prompt_tokens": ids.len(), "generated": st.generated,
                     "steps": st.steps, "proposed": st.proposed, "accepted": st.accepted,
                     "acceptance_length": st.acceptance_length(), "tokens_per_step": st.tokens_per_step(),
-                    "hist": st.hist, "k_hist": st.k_hist, "partial_commits": st.partial_commits, "plain_steps": st.plain_steps, "prefill_s": st.prefill_s, "decode_s": st.decode_s,
+                    "hist": st.hist, "k_hist": st.k_hist, "partial_commits": st.partial_commits, "plain_steps": st.plain_steps, "stopped_at": st.stopped_at, "prefill_s": st.prefill_s, "decode_s": st.decode_s,
                     "decode_tok_s": (st.generated.max(1) - 1) as f64 / st.decode_s,
                     "equal_plain": equal, "first_diff": first_diff, "tokens": toks})
             )
