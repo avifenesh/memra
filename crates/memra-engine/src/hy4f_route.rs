@@ -675,6 +675,27 @@ impl Dev {
         ))?;
         Ok((b, per))
     }
+
+    /// `tiled` for a batch whose GEMM calls stride it as plain rows (`rows * rb` bytes an
+    /// entry): refused unless the tile layout adds no padding rows (rows a multiple of 32).
+    fn tiled_dense(
+        &self,
+        src: *const std::os::raw::c_void,
+        rows: usize,
+        rb: usize,
+        src_ld: usize,
+        src_bs: usize,
+        batch: usize,
+    ) -> Result<DBuf, String> {
+        let (b, per) = self.tiled(src, rows, rb, src_ld, src_bs, batch)?;
+        if per != rows * rb {
+            return Err(format!(
+                "tiled batch of {rows} rows x {rb} bytes is {per} bytes an entry, not {}",
+                rows * rb
+            ));
+        }
+        Ok(b)
+    }
 }
 
 /// Page-locked host staging, grown on demand: an upload from it runs in stream order without
@@ -1689,13 +1710,12 @@ impl<'a> Route<'a> {
                 kva_norm: ck.vec(&dev, &at("kv_a_layernorm.weight"), &[kvl])?,
                 kb_t: {
                     let rows = ck.stage_host(&dev, &kb_t)?;
-                    dev.tiled(rows, kvl, nope * 2, nope * 2, kvl * nope * 2, heads)?
-                        .0
+                    dev.tiled_dense(rows, kvl, nope * 2, nope * 2, kvl * nope * 2, heads)?
                 },
                 kvb: {
                     // the value rows of each head (192..448 of its 448), tiled per head
                     let rows = ck.stage_host(&dev, &kvb_host)?;
-                    dev.tiled(
+                    dev.tiled_dense(
                         (rows as u64 + (nope * kvl * 2) as u64) as *const _,
                         vd,
                         kvl * 2,
@@ -1703,7 +1723,6 @@ impl<'a> Route<'a> {
                         (nope + vd) * kvl * 2,
                         heads,
                     )?
-                    .0
                 },
                 o: ck.weight(&dev, &at("o_proj.weight"), h, heads * vd, pw)?,
                 post_norm: ck.vec(&dev, &at("post_proj_norm.weight"), &[h])?,
@@ -2093,6 +2112,9 @@ impl<'a> Route<'a> {
         self.dev.host_reserve.set(0);
         if out.is_err() {
             self.sess.broken = true;
+            // copies queued before the failure may still read the pinned staging buffers:
+            // drain the stream before a later call reuses them (the call's error stands)
+            let _ = self.dev.sync();
         }
         out
     }

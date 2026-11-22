@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# b23d: compare a native tape's arrays bitwise with a PR 8 reference tape. usage: cmp.sh TAG REF
-D=$HOME/hy4flash/perf/native/$1; R=$HOME/hy4flash/pr8ref/$2
+# compare a native tape's arrays bitwise with a PR 8 reference tape. usage: cmp.sh TAG REF
+D=${HY4F_ROOT:?set HY4F_ROOT to the lane run root}/perf/native/$1; R=${HY4F_ROOT:?set HY4F_ROOT to the lane run root}/pr8ref/$2
 ok=1
 for f in logits.f32 router_scores.f32 router_sel.i32 indexer_logits.f32 indexer_sel.i32; do
   if cmp -s $D/$f $R/$f; then echo "EQUAL $f"; else echo "DIFF $f"; ok=0; fi

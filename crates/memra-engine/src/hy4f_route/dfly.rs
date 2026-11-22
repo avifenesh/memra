@@ -312,12 +312,11 @@ impl<'a> Route<'a> {
                 // the value rows of each head (192..448 of its 448)
                 kb_t: {
                     let rows = ck.stage_host(dev, &kb_t)?;
-                    dev.tiled(rows, kvl, nope * 2, nope * 2, kvl * nope * 2, heads)?
-                        .0
+                    dev.tiled_dense(rows, kvl, nope * 2, nope * 2, kvl * nope * 2, heads)?
                 },
                 kvb: {
                     let rows = ck.stage_host(dev, &kvb_host)?;
-                    dev.tiled(
+                    dev.tiled_dense(
                         (rows as u64 + (nope * kvl * 2) as u64) as *const _,
                         vd,
                         kvl * 2,
@@ -325,7 +324,6 @@ impl<'a> Route<'a> {
                         (nope + vd) * kvl * 2,
                         heads,
                     )?
-                    .0
                 },
                 o: ck.dfly_weight(dev, &at("o_proj.weight"), h, heads * vd)?,
                 post_norm: ck.vec(dev, &at("post_proj_norm.weight"), &[h])?,

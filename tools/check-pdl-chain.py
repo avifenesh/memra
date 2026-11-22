@@ -71,8 +71,22 @@ for f, s in text.items():
         if head.startswith("r_pdl_trigger();"):
             head = head[len("r_pdl_trigger();"):].lstrip()
         body = rest[: rest.find("\n}\n")] if "\n}\n" in rest else rest
-        if not head.startswith("r_pdl_wait();") and "// pdl: resident weights before the wait" not in body:
+        if head.startswith("r_pdl_wait();"):
+            continue
+        exempt = "// pdl: resident weights before the wait" in body
+        if not exempt:
             bad.append(f"{f.name}: {name} does not open with r_pdl_wait()")
+            continue
+        # an exempt kernel reads only resident weights before its wait: it must wait, and the
+        # code before the first wait must not store an output (lambdas defined there may name
+        # the inputs; what they are called with is the kernel's comment's to state)
+        w = body.find("r_pdl_wait();")
+        if w < 0:
+            bad.append(f"{f.name}: {name} is exempt but never calls r_pdl_wait()")
+            continue
+        pre = body[:w]
+        if re.search(r"\b(y|out|a\.po|a\.pml)\s*\[[^\]]*\]\s*=(?!=)", pre):
+            bad.append(f"{f.name}: {name} touches its inputs or outputs before r_pdl_wait()")
 launched |= r_launched
 found |= r_found
 missing = sorted(launched - found)

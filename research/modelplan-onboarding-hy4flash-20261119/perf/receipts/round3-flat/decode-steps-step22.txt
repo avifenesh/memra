@@ -1,0 +1,25 @@
+calls 24, decode calls analysed 20
+step wall p50 57.00 ms, GPU busy p50 56.81 ms, ops/step 1534.0
+kernel                                                        ms/step n/step  %busy
+r_gemv_kernel<                                                 71.761    422  126.3
+r_rms_kernel                                                   14.984    184   26.4
+r_gemv_f32_split_kernel                                        13.227     42   23.3
+r_hc_mix_kernel                                                11.547     85   20.3
+r_write_back_kernel                                            11.261     84   19.8
+r_hc_dots_kernel                                               11.194     85   19.7
+r_route_kernel                                                 10.124     41   17.8
+r_act_kernel                                                    3.050    125    5.4
+r_add_kernel                                                    2.717     61    4.8
+r_moe_gather_kernel                                             1.844     41    3.2
+r_rope_kernel                                                   1.646     84    2.9
+r_copy_kernel                                                   1.603    138    2.8
+r_attn_merge_kernel                                             1.350     42    2.4
+r_attn_kernel<                                                  1.151     42    2.0
+r_moe_combine_kernel                                            0.969     41    1.7
+r_pool_kernel                                                   0.629     12    1.1
+r_engram_mix_kernel                                             0.204      4    0.4
+r_engram_rows_kernel                                            0.061      4    0.1
+[CUDA memcpy Device-to-Host]                                    0.014      1    0.0
+[CUDA memcpy Host-to-Device]                                    0.012      5    0.0
+r_rope_table_kernel                                             0.010      2    0.0
+r_embed_kernel                                                  0.010      1    0.0

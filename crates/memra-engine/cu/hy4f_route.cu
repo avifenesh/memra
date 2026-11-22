@@ -1,5 +1,5 @@
 // Hy4-flash GPU route kernels (`crate::hy4f_route`, binary `hy4f-gpu`), numeric class
-// `hy-v4-flash-bf16-activations`.
+// `hy-v4-flash-bf16x2-activations`.
 //
 // The class: every weight GEMM carries its input activations as two BF16 terms (hi = bf16(x),
 // lo = bf16(x - hi): 16 significant bits) and multiplies both on the tensor cores (mma.sync
@@ -13,8 +13,8 @@
 // layers, the indexer's token key (128 F32) and the pooled group keys (128 F32).
 //
 // Every kernel computes a row (a token, a query, a group) on its own, in an order that does
-// not depend on the other rows of the call or on the tile size: the GEMM never splits K and
-// walks K in the same 32-wide steps in both its tile shapes, attention walks a query's key list
+// not depend on the other rows of the call or on the tile size: the GEMMs never split K and
+// walk it in the same 16-wide steps in the tiled and the small-row kernel, attention walks a query's key list
 // in fixed 256-key chunks merged in order, and reductions are fixed trees. A token therefore
 // gets the same bits whether it is scored in a prefill or in a decode call.
 //
@@ -224,17 +224,14 @@ static __device__ __forceinline__ void r_ldm4(uint32_t* r, const void* p) {
                : "r"(a));
 }
 
-// BM 64: eight warps 4x2, a warp 16 rows x 32 cols (`NW` 4: 2x2 of 32 x 32). BM 16: four warps
-// 1x4, a warp 16 x 16. All
-// run the same per-element sequence: per 32-wide K step two mma (k 0..15, 16..31) into the same
+// A block of 64 x 64 outputs: eight warps 4 x 2, a warp 16 rows x 32 columns. Every element
+// runs the same sequence: per 32-wide K step two mma (k 0..15, 16..31) into the same
 // accumulator, the FP8 block scale folded in every 128 inputs.
-template <int BM, int FMT, int NW = 4>
-__global__ void __launch_bounds__(NW * 32) r_gemm_kernel(RGemm g) {
+template <int FMT>
+__global__ void __launch_bounds__(256) r_gemm_kernel(RGemm g) {
   r_pdl_trigger();
   r_pdl_wait();
-  // BM 64: 4 warps 2 x 2 of 32 x 32, or 8 warps 4 x 2 of 16 x 32 (`NW`)
-  constexpr int WR = BM == 64 ? (NW == 8 ? 16 : 32) : 16;
-  constexpr int WC = BM == 64 ? 32 : 16;
+  constexpr int BM = 64, NW = 8, WR = 16, WC = 32;
   constexpr int MT = WR / 16;
   constexpr int NT = WC / 8;
   constexpr int LDS = RG_BK + RG_PAD;
@@ -248,8 +245,7 @@ __global__ void __launch_bounds__(NW * 32) r_gemm_kernel(RGemm g) {
     for (int c = tid; c < 256; c += NW * 32) lut[c] = r_bf2_bits(__floats2bfloat162_rn(r_e2m1(c), r_e2m1(c >> 4)));
     __syncthreads();
   }
-  const int wm = BM == 64 ? (warp >> 1) : 0;
-  const int wn = BM == 64 ? (warp & 1) : warp;
+  const int wm = warp >> 1, wn = warp & 1;
 
   const float* x = g.x;
   const uint8_t* w = g.w;
@@ -278,19 +274,17 @@ __global__ void __launch_bounds__(NW * 32) r_gemm_kernel(RGemm g) {
   const int n0 = blockIdx.x * RG_BN;
   const int n = g.n, k = g.k;
 
-  // staging maps: weight row tid/2, 16 inputs from (tid&1)*16; activations likewise for BM 64,
-  // row tid/8 and 4 inputs from (tid&7)*4 for BM 16
-  // (8 warps, BM 64: row tid/4, 8 inputs from (tid&3)*8)
-  constexpr int TPR = NW * 32 / RG_BN, WK = RG_BK / TPR;  // threads a weight row, its inputs
+  // staging maps: weight row tid/4, 8 inputs from (tid&3)*8; the activation rows likewise
+  constexpr int TPR = NW * 32 / RG_BN, WK = RG_BK / TPR;  // threads a weight row (4), its inputs (8)
+  static_assert(WK == 8, "a thread stages 8 inputs a K step");
   const int wr = tid / TPR, wk = (tid % TPR) * WK;
   const int gn = n0 + wr;
   const bool wok = gn < n;
-  constexpr int AV = BM == 64 ? WK : 4;
-  const int ar = BM == 64 ? (tid / TPR) : (tid >> 3);
-  const int ak = BM == 64 ? (tid % TPR) * WK : (tid & 7) * 4;
+  constexpr int AV = WK;
+  const int ar = tid / TPR, ak = (tid % TPR) * WK;
   const bool aok = m0 + ar < m;
 
-  uint4 wraw[2];
+  uint4 wraw[1];  // a thread's 8 weights a K step: 16 BF16 bytes, 8 FP8 codes or 4 NVFP4 bytes
   uint32_t wsc = 0;
   float4 araw[AV / 4];
 
@@ -298,23 +292,12 @@ __global__ void __launch_bounds__(NW * 32) r_gemm_kernel(RGemm g) {
     if (wok) {
       if (FMT == R_BF16) {
         wraw[0] = *(const uint4*)(w + r_toff(gn, ((long)k0 + wk) * 2, (long)k * 2));
-        if (WK == 16) wraw[1] = *(const uint4*)(w + r_toff(gn, ((long)k0 + wk) * 2 + 16, (long)k * 2));
       } else if (FMT == R_FP8) {
-        if (WK == 16) {
-          wraw[0] = *(const uint4*)(w + r_toff(gn, (long)k0 + wk, (long)k));
-        } else {
-          const uint2 c = *(const uint2*)(w + r_toff(gn, (long)k0 + wk, (long)k));
-          wraw[0].x = c.x;
-          wraw[0].y = c.y;
-        }
+        const uint2 c = *(const uint2*)(w + r_toff(gn, (long)k0 + wk, (long)k));
+        wraw[0].x = c.x;
+        wraw[0].y = c.y;
       } else {
-        if (WK == 16) {
-          const uint2 c = *(const uint2*)(w + r_toff(gn, ((long)k0 + wk) / 2, (long)k / 2));
-          wraw[0].x = c.x;
-          wraw[0].y = c.y;
-        } else {
-          wraw[0].x = *(const uint32_t*)(w + r_toff(gn, ((long)k0 + wk) / 2, (long)k / 2));
-        }
+        wraw[0].x = *(const uint32_t*)(w + r_toff(gn, ((long)k0 + wk) / 2, (long)k / 2));
         wsc = sc[(long)gn * (k / 16) + (k0 + wk) / 16];
       }
     }
@@ -500,18 +483,36 @@ static __device__ __forceinline__ void r_cp4(void* dst, const void* src) {
   const unsigned d = (unsigned)__cvta_generic_to_shared(dst);
   asm volatile("cp.async.ca.shared.global [%0], [%1], 4;\n" ::"r"(d), "l"(src));
 }
-// a stage's weight tile: one bulk copy completing on the stage's mbarrier
+// a stage's weight tile: one bulk copy completing on the stage's mbarrier (sm_90 and up; below,
+// the launchers run the tiled kernel instead, whose bits are the same, and these bodies trap)
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 900
+#define R_NO_BULK 1
+#endif
 static __device__ __forceinline__ void r_mb_init(uint64_t* mb) {
+#ifndef R_NO_BULK
   asm volatile("mbarrier.init.shared::cta.b64 [%0], 1;" ::"r"((unsigned)__cvta_generic_to_shared(mb)));
+#else
+  __trap();
+#endif
+}
+static __device__ __forceinline__ void r_mb_fence() {
+#ifndef R_NO_BULK
+  asm volatile("fence.mbarrier_init.release.cluster;" ::: "memory");
+#endif
 }
 static __device__ __forceinline__ void r_bulk(void* dst, const void* src, unsigned bytes, uint64_t* mb) {
+#ifndef R_NO_BULK
   const unsigned m = (unsigned)__cvta_generic_to_shared(mb), d = (unsigned)__cvta_generic_to_shared(dst);
   asm volatile("mbarrier.arrive.expect_tx.shared::cta.b64 _, [%0], %1;" ::"r"(m), "r"(bytes) : "memory");
   asm volatile("cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes [%0], [%1], %2, [%3];" ::"r"(d),
                "l"(src), "r"(bytes), "r"(m)
                : "memory");
+#else
+  __trap();
+#endif
 }
 static __device__ __forceinline__ void r_mb_wait(uint64_t* mb, unsigned parity) {
+#ifndef R_NO_BULK
   const unsigned m = (unsigned)__cvta_generic_to_shared(mb);
   unsigned ok = 0;
   while (!ok)
@@ -519,6 +520,9 @@ static __device__ __forceinline__ void r_mb_wait(uint64_t* mb, unsigned parity) 
                  : "=r"(ok)
                  : "r"(m), "r"(parity)
                  : "memory");
+#else
+  __trap();
+#endif
 }
 static __device__ __forceinline__ void r_cp_commit() { asm volatile("cp.async.commit_group;\n" ::); }
 template <int N>
@@ -595,7 +599,6 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
   const long wrow = FMT == R_BF16 ? (long)k * 2 : (FMT == R_FP8 ? (long)k : (long)k / 2);
   const int nst = (k + G::KPS - 1) / G::KPS;
   const int srow = k / 16;  // NVFP4 scale bytes a row
-  const bool sc_async = FMT == R_NVFP4 && (srow % 16) == 0;
   const float* xb = x + (long)m0 * ldx;
   if (FMT == R_NVFP4 && !RED)
     for (int c = tid; c < 256; c += NT) lut[c] = r_bf2_bits(__floats2bfloat162_rn(r_e2m1(c), r_e2m1(c >> 4)));
@@ -604,7 +607,7 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
   __shared__ uint64_t mbar[STAGES];  // a stage's weight tile landed
   if (tid == 0) {
     for (int i = 0; i < STAGES; i++) r_mb_init(&mbar[i]);
-    asm volatile("fence.mbarrier_init.release.cluster;" ::: "memory");
+    r_mb_fence();
   }
   __syncthreads();
 
@@ -621,18 +624,11 @@ __global__ void __launch_bounds__(GV_WARPS * 32) r_gemv_kernel(RGemm g) {
       if (FMT == R_NVFP4) {
         const int s0 = k0 / 16;
         unsigned char* sbuf = buf + G::WB;
-        if (sc_async) {
-          if (tid < GV_COLS) {
-            const int gn = nb0 + tid;
-            r_cp16(sbuf + tid * GV_SCS, sc + (long)min(gn, n - 1) * srow + s0, gn < n && s0 < srow);
-          }
-        } else {
-          const int sb = min(G::KPS / 16, srow - s0);
-          for (int c = tid; c < GV_COLS * 16; c += NT) {
-            const int r = c >> 4, q = c & 15;
-            const int gn = nb0 + r;
-            sbuf[r * GV_SCS + q] = gn < n && q < sb ? sc[(long)gn * srow + s0 + q] : 0;
-          }
+        // a whole number of 128-byte rows makes k a multiple of 256: the 16 scale bytes of a
+        // stage are one aligned 16-byte piece (srow % 16 == 0)
+        if (tid < GV_COLS) {
+          const int gn = nb0 + tid;
+          r_cp16(sbuf + tid * GV_SCS, sc + (long)min(gn, n - 1) * srow + s0, gn < n && s0 < srow);
         }
       } else if (FMT == R_FP8) {
         // the block scale of these 32 rows (one 128-row block) for this stage's 128 inputs
@@ -874,25 +870,41 @@ static int r_gemv_launch(RGemm g, int fmt, int batch, int tiles, int tile_rows, 
   return r_gemv_fmt<R_NVFP4>(g, grid, mr, st);
 }
 
-template <int BM>
 static int r_gemm_launch(const RGemm& g, int fmt, int batch, int tiles, cudaStream_t st) {
-  dim3 grid((g.n + RG_BN - 1) / RG_BN, g.tiles ? tiles : (g.m + BM - 1) / BM, g.tiles ? 1 : batch);
+  dim3 grid((g.n + RG_BN - 1) / RG_BN, g.tiles ? tiles : (g.m + 63) / 64, g.tiles ? 1 : batch);
   if (grid.y == 0) return 0;
   if (grid.y > 65535 || grid.z > 65535) return 45004;
-  // BM 64 runs 8 warps of 16 x 32: half the accumulators a thread (FP8 keeps its block partials
-  // beside the sums), twice the warps an SM to hide the staging loads
-  constexpr int NW = BM == 64 ? 8 : 4;
   if (fmt == R_BF16)
-    r_launch(r_gemm_kernel<BM, R_BF16, NW>, grid, NW * 32, 0, st, g);
+    r_launch(r_gemm_kernel<R_BF16>, grid, 256, 0, st, g);
   else if (fmt == R_FP8)
-    r_launch(r_gemm_kernel<BM, R_FP8, NW>, grid, NW * 32, 0, st, g);
+    r_launch(r_gemm_kernel<R_FP8>, grid, 256, 0, st, g);
   else
-    r_launch(r_gemm_kernel<BM, R_NVFP4, NW>, grid, NW * 32, 0, st, g);
+    r_launch(r_gemm_kernel<R_NVFP4>, grid, 256, 0, st, g);
   return r_rc();
 }
 
+static int r_cc_major() {
+  static int cc = -1;
+  if (cc < 0) {
+    int dev = 0, major = 0;
+    cudaGetDevice(&dev);
+    cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev);
+    cc = major;
+  }
+  return cc;
+}
+
+// the weight and scale bases every kernel reads in 16-byte pieces (FP8 block scales: 4 bytes)
+static bool r_w_aligned(int fmt, const void* w, long wbs, const void* sc, long scbs) {
+  if (((uintptr_t)w) % 16 != 0 || wbs % 16 != 0) return false;
+  if (fmt == R_NVFP4 && (((uintptr_t)sc) % 16 != 0 || scbs % 16 != 0)) return false;
+  if (fmt == R_FP8 && (((uintptr_t)sc) % 4 != 0 || scbs % 4 != 0)) return false;
+  return true;
+}
+
 // `small` picks the small-row kernel (a decode call, up to 16 rows; grouped tiles of up to
-// `tile_rows` rows); the result does not depend on it.
+// `tile_rows` rows); the result does not depend on it. Below compute capability 9.0 (no bulk
+// copy) every call runs the tiled kernel, the same bits.
 extern "C" int memra_hy4r_gemm(const float* x, long ldx, long xbs, const void* w, long wbs, const void* sc, long scbs,
                                const float* s2, int fmt, int grid_cols, float* y, long ldy, long ybs, int m, int n,
                                int k, int batch, const int* tiles, int ntiles, int red_dq, int small, int tile_rows,
@@ -901,6 +913,7 @@ extern "C" int memra_hy4r_gemm(const float* x, long ldx, long xbs, const void* w
   if (fmt != R_BF16 && fmt != R_FP8 && fmt != R_NVFP4) return 45002;
   if (fmt != R_BF16 && sc == nullptr) return 45003;
   if ((ldx % 4) != 0 || (xbs % 4) != 0 || (((uintptr_t)x) % 16) != 0) return 45005;
+  if (!r_w_aligned(fmt, w, wbs, sc, scbs)) return 45005;
   // the weight's rows are whole tiles (see r_toff)
   const long rb = fmt == R_BF16 ? (long)k * 2 : (fmt == R_FP8 ? (long)k : (long)k / 2);
   if (rb % RT_BYTES != 0) return 45009;
@@ -908,7 +921,8 @@ extern "C" int memra_hy4r_gemm(const float* x, long ldx, long xbs, const void* w
   RGemm g{x, ldx, xbs, (const uint8_t*)w, wbs, (const uint8_t*)sc, scbs, s2, y, ldy, ybs, m, n, k, grid_cols, tiles, red_dq,
           tile_rows, 0, {}};
   cudaStream_t st = (cudaStream_t)stream;
-  return small ? r_gemv_launch(g, fmt, batch, ntiles, tile_rows, st) : r_gemm_launch<64>(g, fmt, batch, ntiles, st);
+  return small && r_cc_major() >= 9 ? r_gemv_launch(g, fmt, batch, ntiles, tile_rows, st)
+                                    : r_gemm_launch(g, fmt, batch, ntiles, st);
 }
 
 // Up to R_MAXSEG small-row GEMMs of one format and K in one launch (decode: the projections that
@@ -922,11 +936,38 @@ extern "C" int memra_hy4r_gemm_multi(const RSeg* segs, int nseg, int fmt, long x
   if (k <= 0 || (k % RG_BK) != 0 || m < 0) return 45001;
   if (fmt != R_BF16 && fmt != R_FP8 && fmt != R_NVFP4) return 45002;
   if ((fmt == R_BF16 ? (long)k * 2 : (fmt == R_FP8 ? (long)k : (long)k / 2)) % RT_BYTES != 0) return 45009;
+  // every output as memra_hy4r_gemm checks its one
+  for (int t = 0; t < nseg; t++) {
+    if (segs[t].n <= 0) return 45001;
+    if (fmt != R_BF16 && segs[t].sc == nullptr) return 45003;
+    if ((segs[t].ldx % 4) != 0 || (xbs % 4) != 0 || (((uintptr_t)segs[t].x) % 16) != 0) return 45005;
+    if (!r_w_aligned(fmt, segs[t].w, wbs, segs[t].sc, scbs)) return 45005;
+  }
   if (!tiles && m == 0) return 0;
   RGemm g{segs[0].x, segs[0].ldx, xbs, segs[0].w, wbs, segs[0].sc, scbs, segs[0].s2, segs[0].y, segs[0].ldy, ybs, m,
           segs[0].n, k, segs[0].grid_cols, tiles, red_dq, tile_rows, nseg, {}};
+  cudaStream_t st = (cudaStream_t)stream;
+  if (r_cc_major() < 9) {
+    // no bulk copy: each output through the tiled kernel
+    for (int t = 0; t < nseg; t++) {
+      RGemm o = g;
+      o.x = segs[t].x;
+      o.ldx = segs[t].ldx;
+      o.w = segs[t].w;
+      o.sc = segs[t].sc;
+      o.s2 = segs[t].s2;
+      o.y = segs[t].y;
+      o.ldy = segs[t].ldy;
+      o.n = segs[t].n;
+      o.grid_cols = segs[t].grid_cols;
+      o.nseg = 0;
+      const int rc = r_gemm_launch(o, fmt, batch, ntiles, st);
+      if (rc) return rc;
+    }
+    return 0;
+  }
   for (int t = 0; t < nseg; t++) g.seg[t] = segs[t];
-  return r_gemv_launch(g, fmt, batch, ntiles, tile_rows, (cudaStream_t)stream);
+  return r_gemv_launch(g, fmt, batch, ntiles, tile_rows, st);
 }
 
 // ---- the F32 islands' small-row GEMM (router logits, head) ---------------------------------------
@@ -1781,6 +1822,7 @@ __global__ void r_router_w_kernel(const float* scores, int e, const int* picks, 
 extern "C" int memra_hy4r_router_weights(const float* scores, int rows, int e, const int* picks, int k, int normalize,
                                          float scaling, float* w, void* stream) {
   if (rows == 0) return 0;
+  if (k <= 0) return 45306;
   r_launch(r_router_w_kernel, (rows + 127) / 128, 128, 0, (cudaStream_t)stream, scores, e, picks, k, normalize, scaling, w,
                                                                           rows);
   return r_rc();
@@ -1904,6 +1946,7 @@ __global__ void __launch_bounds__(256) r_route_kernel(RRoute a) {
   }
 }
 
+// 45306: no picks (k <= 0) for the router weights or the MoE combine.
 // 45305: more picks or experts than the one-block router takes (the caller runs the separate
 // kernels)
 extern "C" int memra_hy4r_route(const float* logits, const float* bias, float* scores, float* choice, int rows, int e,
@@ -2055,6 +2098,7 @@ __global__ void r_moe_combine_kernel(const float* y, int d, const int* rowmap, c
 extern "C" int memra_hy4r_moe_combine(const float* y, int d, const int* rowmap, const float* w, int rows, int k,
                                       float* out, void* stream) {
   if (rows == 0) return 0;
+  if (k <= 0) return 45306;
   r_launch(r_moe_combine_kernel, rows, 256, 0, (cudaStream_t)stream, y, d, rowmap, w, k, out);
   return r_rc();
 }
@@ -2206,9 +2250,9 @@ __global__ void __launch_bounds__(256) r_attn_kernel(RAttn a) {
 // warp. The shared-memory loads bound this kernel, so a lane loads a key value once for its
 // four heads (their score dots and output sums run side by side, each head's chain as before).
 // To leave room for the 32 queries the tile is staged a piece at a time: four pieces of 128
-// latent values a key and the 64 rope values. A pass runs the dots piece by piece in value
-// order, the softmax step, then the outputs of each latent piece (the last first, the first
-// last: it stays for the next pass's dots). Every head's tile sequence (score chain in value
+// latent values a key and the 64 rope values. A pass (32 heads) walks the chunk's tiles: the
+// dots piece by piece in value order, the softmax step, then the outputs of each latent piece
+// (the last first). Every head's tile sequence (score chain in value
 // order, max, sums, each output's sum in key order) is that of `r_attn_kernel`.
 #define AT_PD 128              // latent values a key in a piece
 #define AT_PW (AT_PD + 1)      // f32 a key row of a piece in shared memory

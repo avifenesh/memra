@@ -641,8 +641,9 @@ fn main() {
             "cu/hy4f_gpu.cu",
             // Hy4-flash GPU route (`hy4f-gpu`): BF16-activation tensor-core GEMMs over the stored
             // formats (BF16, FP8 128x128 blocks, NVFP4), MLA attention over the latent cache,
-            // the pooled indexer, router, hyper-connections and Engram kernels; portable CUDA
-            // (mma.sync m16n8k16, sm_80 and up), no arch stub.
+            // the pooled indexer, router, hyper-connections and Engram kernels; mma.sync m16n8k16
+            // (sm_80 and up); the decode GEMM's bulk copies need sm_90 and below it the launcher
+            // runs the tiled GEMM (the same bits), so every accepted arch builds.
             "cu/hy4f_route.cu",
             // Pinned MiMo source QKV shard outputs gathered on-device.
             "cu/mimo_qkv_gather.cu",

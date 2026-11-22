@@ -1,5 +1,5 @@
 // Standalone kernel bench + bit-equality check for the hy4f route's small-row GEMMs.
-// Build (b23d): nvcc -O3 -arch=sm_121a -std=c++17 -o kbench kbench.cu route.o gpu.o
+// Build (the unit): nvcc -O3 -arch=sm_121a -std=c++17 -o kbench kbench.cu route.o gpu.o
 // where route.o = hy4f_route.cu (default flags), gpu.o = hy4f_gpu.cu (-fmad=false).
 #include <cuda_runtime.h>
 #include <stdint.h>

@@ -60,11 +60,18 @@ L2.
 | step 21: prefill GEMM live slices, pair dequant, 8 warps (`receipts/s21-gemm-warps/`) | 17.29 [17.28-17.30] | 57.8 | 16.17 [16.14-16.20] | 61.6 | 116.3 | 434.8 |
 | step 22: prefill attention, queries resident, pieces read ahead (`receipts/s22-attn-prefetch/`) | 17.23 [17.23-17.30] | 57.8 | 16.15 [16.11-16.18] | 61.7 | 116.2 | 472.9 |
 
+How the rows were read: steps 9, 17 and 18 one build a session, one after the other (not
+interleaved); steps 19 to 22 interleaved against the step before in both orders (`long` two
+runs an arm, `chat` one); each run is the median of three timed calls sequences. The
+interleaved A/B at three runs an arm in both orders with 250 ms GPU telemetry is
+`receipts/ab-final/` (the head against step 18). One GB10, otherwise idle, at its default
+clocks and power (the box's own fan curve; no clock lock).
+
 `receipts/sampled-step9-step17/`: both builds run the same runner and draw the same ids. On `chat`
 the first sampled token is the end token (as the argmax was), so its 63 calls decode past the
 end; on `long` the end token comes at call 33. The reading times the calls either way.
 
-### Greedy readings, steps 0 to 17 (argmax decode; kept as measured)
+### Greedy readings, steps 0 to 17 (argmax decode; one build a session, read one after the other, not interleaved)
 
 | step | chat decode tok/s | step p50 ms | long (2.1k) decode tok/s | step p50 ms | chat prefill tok/s | long prefill tok/s |
 |---|---:|---:|---:|---:|---:|---:|
@@ -427,3 +434,16 @@ first try kept both passes' sums, 254 registers, and spilled: 30% slower,
 for byte. `kbench attn` slab 5.43 -> 5.32 ms (weights by four) -> 3.99 ms. `long`'s prefill
 435.5 -> 472.9 tokens/s (interleaved vs step 21), `chat` (36 tokens, the decode kernel) and
 decode unchanged. 3 of 3 tapes bit-equal.
+
+### Tried after step 22, level (`receipts/round3-flat/`)
+
+- The FP8 prefill GEMM with 128-wide output tiles (8 warps of 16 x 64, 200 registers, one
+  block an SM): level on all three FP8 shapes (`kbench-fp8-bn128.log`).
+- Decode on step 22 (`decode-steps-step22.txt`, `decode-gaps-step22.txt`): the GPU is busy
+  56.8 of 57.0 ms a step, 1534 launches, 0.15 ms of gaps. Two launches a layer removed (the
+  RoPE written out of place, into the latent row and the absorbed query rows, in place of two
+  copies: 84 launches a step fewer, bits equal, 3 of 3 tapes): level (`rope-to-run.log`, chat
+  57.71 vs 57.79 ms). With dependent launch the small kernels overlap their neighbours, so a
+  launch removed is not a step's time saved; the change was dropped.
+- The weight tiling (`r_tile_kernel`, 0.78 s) runs once at load, inside a 104 s load; not on a
+  call's path.

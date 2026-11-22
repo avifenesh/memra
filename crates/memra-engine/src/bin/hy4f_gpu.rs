@@ -402,32 +402,49 @@ struct Sampler {
     temperature: f64,
     top_k: usize,
     top_p: f64,
-    eos: Option<u32>,
+    eos: Vec<u32>,
     state: u64,
 }
 
 impl Sampler {
     fn open(ckpt: &Path, greedy: bool) -> Result<Self, String> {
         let path = ckpt.join("generation_config.json");
-        let text =
-            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let v: serde_json::Value =
-            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        let v: serde_json::Value = match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?
+            }
+            // the argmax reading needs no generation settings
+            Err(_) if greedy => serde_json::Value::Null,
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        };
+        let sample = !greedy && v["do_sample"].as_bool().unwrap_or(false);
         let temperature = v["temperature"].as_f64().unwrap_or(1.0);
-        if temperature.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+        if sample && temperature.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
             return Err(format!("{}: temperature {temperature}", path.display()));
         }
+        // a single id or a list of them
+        let ids = |e: &serde_json::Value| -> Vec<u32> {
+            match e {
+                serde_json::Value::Array(a) => a
+                    .iter()
+                    .filter_map(|t| t.as_u64().and_then(|t| u32::try_from(t).ok()))
+                    .collect(),
+                t => t
+                    .as_u64()
+                    .and_then(|t| u32::try_from(t).ok())
+                    .into_iter()
+                    .collect(),
+            }
+        };
         Ok(Self {
-            sample: !greedy && v["do_sample"].as_bool().unwrap_or(false),
+            sample,
             temperature,
             top_k: v["top_k"]
                 .as_i64()
                 .filter(|k| *k > 0)
                 .map_or(0, |k| k as usize),
             top_p: v["top_p"].as_f64().unwrap_or(1.0),
-            eos: v["eos_token_id"]
-                .as_u64()
-                .and_then(|t| u32::try_from(t).ok()),
+            eos: ids(&v["eos_token_id"]),
             state: 0,
         })
     }
@@ -536,7 +553,7 @@ fn bench(route: &mut Route, a: &Args, vocab: usize, load_s: f64) -> Result<(), S
             "top_k": sampler.top_k,
             "top_p": sampler.top_p,
             "seed": a.seed,
-            "first_end_token": sampler.eos.and_then(|e| ids.iter().position(|t| *t == e)),
+            "first_end_token": ids.iter().position(|t| sampler.eos.contains(t)),
             "ids_fnv1a": fnv1a(&ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")),
             "first_ids": ids.iter().take(16).collect::<Vec<_>>(),
             "steps_ms": steps.iter().map(|s| (s * 1e5).round() / 100.0).collect::<Vec<_>>(),
